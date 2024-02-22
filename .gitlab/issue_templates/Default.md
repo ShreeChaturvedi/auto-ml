@@ -14,4 +14,4 @@
 - [ ] during sprint planning...
 - [ ] follow your team's 'definition of done'
 
-> Don't forget to assign sprint nbr, DLC stage, and feature labels and assign the work to a team member
+> _don't forget to add labels for sprint, DLC stage, feature and assign a resource_

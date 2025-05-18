@@ -5,7 +5,7 @@ This begins your capstone development effort.  You will use GitLab as your prima
 
 Regarding this readme.md file, ultimately you will update this page to reflect your project and assist anyone who has access to your repository.
 
-[[__TOC__]]
+[[_TOC_]]
 
 # References
 Read the following articles to familiarize yourself with Gitlab and how you will be expected to use it during your project.

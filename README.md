@@ -5,8 +5,9 @@ This begins your capstone development effort.  You will use GitLab as your prima
 
 Regarding this readme.md file, ultimately you will update this page to reflect your project and assist anyone who has access to your repository.
 
+[[__TOC__]]
 
-# Read these articles
+# References
 Read the following articles to familiarize yourself with Gitlab and how you will be expected to use it during your project.
 
 * [How to use GitLab for Agile Software Development](https://about.gitlab.com/blog/2018/03/05/gitlab-for-agile-software-development/). 

@@ -4,15 +4,6 @@
 >
 >Regarding this readme.md file, ultimately you will update this page to reflect your project and assist anyone who has access to your repository.
 >
->[[_TOC_]].
-
-
-# CSE Capstone Project Template
-
-
-This begins your capstone development effort.  You will use GitLab as your primary repository for code and documentation.  In these early phases, you may not be delivering 'working software' but you will be delivering just enough documentation to show an understanding of the product in order to communicate a high-level understanding of the product, objectives, scope and quality requirements.  The issues and boards can also be used to collaborate on research.  For those of you on an R&D project, issues are a great way to track each research question.  The comments and team collaboration build a large body of knowledge during your efforts. 
-
-Regarding this readme.md file, ultimately you will update this page to reflect your project and assist anyone who has access to your repository.
 
 [[_TOC_]]
 

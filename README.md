@@ -7,7 +7,7 @@
 
 [[_TOC_]]
 
-# References
+# REFERENCES
 Read the following articles to familiarize yourself with Gitlab and how you will be expected to use it during your project.
 
 * [How to use GitLab for Agile Software Development](https://about.gitlab.com/blog/2018/03/05/gitlab-for-agile-software-development/). 
@@ -16,7 +16,7 @@ Read the following articles to familiarize yourself with Gitlab and how you will
 * [Template Samples](https://gitlab.com/gitlab-org/gitlab/-/tree/master/.gitlab/issue_templates)
 
 
-# Branches
+# BRANCHING
 
 This project templates includes 2 branches to start with.  
 
@@ -25,21 +25,21 @@ This project templates includes 2 branches to start with.
 | MAIN         | Protected branch.  You cannot push directly to MAIN.  This branch should be what you push to your test server (ceclnx for example) or other devices for your client to review. |
 | . . .          | Thereafter, you should follow the code management strategy defined and agreed upon by the team.  I recommend a branch from MAIN for each sprint or interval.  From the sprint-branch, I recommend branching by issue.  Throughout the sprint, rebase your issue branch regularly especially begore a commit.  If an issue is incomplete during the prescribed sprint, commit it to the next spring branch.  This approach gives the MAIN branch an additional degree of protection. |
 
-## PROTECTED BRANCH
+## Protected Branches
 The MAIN branch is the default branch.  There are several protections in place:
 1. By default, all team members are added as 'developer'.  
 1. Maintainers & developers can merge into MAIN.  
 1. Only maintainers can push & merge into MAIN however.  For code quality purposes, then, elect 1-2 team members to act be assigned as a maintainer.
 1. **Push constraints require the commit author's email be from miamioh.edu.** Make sure you are using the correct credentials in your IDE (like VS Code) or in your repository manager, like [GitHub Desktop](https://docs.github.com/en/desktop). 
 
-## MERGE CONSTRAINTS
+## Merge Constraints
 The projects are setup with some merge constraints.
 1. All merge requests (MR), regardless of branch, require at least one (1) approval.
 1. MRs cannot be approved by the MR author.
 1. MRs cannot be approved by a user how has contributed a commit to the MR.
 
  
-# Time Tracking
+# ESTIMATING & TIME TRACKING
 
 **Time tracking is NOT required.**  It's very simple though.  There are other useful quick actions like /done, /assign, /approve and /wip to name a few.
 

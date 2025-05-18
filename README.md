@@ -15,9 +15,32 @@ Read the following articles to familiarize yourself with Gitlab and how you will
 * [Template Samples](https://gitlab.com/gitlab-org/gitlab/-/tree/master/.gitlab/issue_templates)
 
 
+# Branches
+
+This project templates includes 2 branches to start with.  
+
+| **Name**   | **Description** |
+| ------ | ------ |
+| MAIN         | Protected branch.  You cannot push directly to MAIN.  This branch should be what you push to your test server (ceclnx for example) or other devices for your client to review. |
+| . . .          | Thereafter, you should follow the code management strategy defined and agreed upon by the team.  I recommend a branch from MAIN for each sprint or interval.  From the sprint-branch, I recommend branching by issue.  Throughout the sprint, rebase your issue branch regularly especially begore a commit.  If an issue is incomplete during the prescribed sprint, commit it to the next spring branch.  This approach gives the MAIN branch an additional degree of protection. |
+
+## PROTECTED BRANCH
+The MAIN branch is the default branch.  There are several protections in place:
+1. By default, all team members are added as 'developer'.  
+1. Maintainers & developers can merge into MAIN.  
+1. Only maintainers can push & merge into MAIN however.  For code quality purposes, then, elect 1-2 team members to act be assigned as a maintainer.
+1. **Push constraints require the commit author's email be from miamioh.edu.** Make sure you are using the correct credentials in your IDE (like VS Code) or in your repository manager, like [GitHub Desktop](https://docs.github.com/en/desktop). 
+
+## MERGE CONSTRAINTS
+The projects are setup with some merge constraints.
+1. All merge requests (MR), regardless of branch, require at least one (1) approval.
+1. MRs cannot be approved by the MR author.
+1. MRs cannot be approved by a user how has contributed a commit to the MR.
+
+ 
 # Time Tracking
 
-Time tracking is NOT required.  It's very simple though.  There are other useful actions like /done, /assign, /approve and /wip to name a few.
+**Time tracking is NOT required.**  It's very simple though.  There are other useful quick actions like /done, /assign, /approve and /wip to name a few.
 
 | cmd | purpose |
 | ------ | ------ |
@@ -26,14 +49,4 @@ Time tracking is NOT required.  It's very simple though.  There are other useful
 
 Here's the link to [Quick Actions](https://docs.gitlab.com/ee/user/project/quick_actions.html).  
 
-# Branches
-
-This project templates includes 2 branches to start with.  
-
-| **Name**   | **Description** |
-| ------ | ------ |
-| Master         | Protected branch.  You cannot push directly to master.  This branch should be what you push to your test server (ceclnx for example) or other devices for your client to review. |
-| . . .          | Thereafter, you should follow the code management strategy defined and agreed upon by the team.  I recommend a branch from master for each sprint or interval.  From the sprint-branch, I recommend branching by issue.  Throughout the sprint, rebase your issue branch regularly especially begore a commit.  If an issue is incomplete during the prescribed sprint, commit it to the next spring branch.  This approach gives the master branch an additional degree of protection. |
-
- 
 

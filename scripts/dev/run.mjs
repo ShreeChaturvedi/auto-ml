@@ -140,7 +140,8 @@ function startDevServers() {
   log('Starting backend and frontend dev servers.');
 
   const backend = spawn('npm', ['--prefix', 'backend', 'run', 'dev'], { stdio: 'inherit' });
-  const frontend = spawn('npm', ['--prefix', 'frontend', 'run', 'dev'], { stdio: 'inherit' });
+  // Frontend `dev` can include backend in some branches; use `dev:ui` to avoid double-starting backend here.
+  const frontend = spawn('npm', ['--prefix', 'frontend', 'run', 'dev:ui'], { stdio: 'inherit' });
 
   const shutdown = (signal) => {
     if (!backend.killed) {

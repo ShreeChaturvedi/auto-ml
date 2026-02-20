@@ -44,17 +44,17 @@ From sprint known-issues list, key items still open include:
 - Notebook/code-cell reliability (autosave/sync/performance/hangs).
 - Chat edit UX polish beyond current fix.
 
-## GitLab Issue Preparation
-- Drafted issue content for unresolved high-priority bug:
-  - `docs/gitlab-issue-draft-tool-calls-thinking-off.md`
-- Note: issue could not be created directly from this CLI session because GitLab CLI (`glab`) and GitLab API token were not available in environment.
+## GitLab Issues Created
+- Issue #18: Tool calls fail when Thinking mode is OFF in Training chat  
+  - `https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain/-/issues/18`
+- Issue #19: File upload shows failure state until page refresh (false negative)  
+  - `https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain/-/issues/19`
 
 ## Risks / Blockers
-- Missing local GitLab CLI authentication blocks direct issue creation from terminal automation.
 - Existing unrelated frontend lint errors make full lint gate red, even when changed files are clean.
 
 ## Plan for Next Sprint
-1. Create the prepared GitLab issue and prioritize tool-calling reliability fix.
-2. Triage upload status and SQL-table lookup failures with reproducible test cases.
+1. Prioritize Issue #18 and Issue #19 fixes and close them with regression tests.
+2. Triage SQL-table lookup failures with reproducible test cases.
 3. Add regression coverage around training chat edit/resend flow and tool execution continuation.
 4. Continue reducing known-issues backlog in order of user-facing impact.

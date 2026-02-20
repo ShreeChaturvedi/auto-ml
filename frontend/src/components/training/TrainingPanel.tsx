@@ -949,27 +949,34 @@ export function TrainingPanel() {
   }, []);
 
   const handleSaveEdit = useCallback((msgId: string) => {
-    if (!editContent.trim()) return;
+    const trimmedEdit = editContent.trim();
+    if (!trimmedEdit || isAiThinking || !projectId) return;
 
     // Find message index
     const idx = messages.findIndex(m => m.id === msgId);
     if (idx === -1) return;
+    const existing = messages[idx];
+    if (existing?.type !== 'user') return;
+    if (existing.content.trim() === trimmedEdit) return;
 
     // Truncate all messages after edited one
     const newMessages = messages.slice(0, idx);
     // Add the edited message with new content
-    newMessages.push({ ...messages[idx], content: editContent.trim() } as ChatMessage);
+    newMessages.push({ ...existing, content: trimmedEdit } as ChatMessage);
     setMessages(newMessages);
 
     // Reset edit state
     setEditingMessageId(null);
     setEditContent('');
 
-    // Re-send the edited message to LLM
-    setTrainingPrompt(editContent.trim());
-    // Trigger a new chat submit with edited content
-    setChatInput(editContent.trim());
-  }, [messages, editContent]);
+    // Re-send edited message immediately so submit button behaves like expected.
+    setTrainingPrompt(trimmedEdit);
+    setIsAiThinking(true);
+    void handleGenerateTrainingPlan(trimmedEdit).finally(() => {
+      setIsAiThinking(false);
+      textareaRef.current?.focus();
+    });
+  }, [messages, editContent, isAiThinking, projectId, handleGenerateTrainingPlan]);
 
   const handleDeleteMessage = useCallback((msgId: string) => {
     // Find message index
@@ -1101,9 +1108,15 @@ export function TrainingPanel() {
                                       <textarea
                                         value={editContent}
                                         onChange={(e) => setEditContent(e.target.value)}
-                                        className="w-full min-w-[200px] bg-transparent text-foreground text-sm resize-none outline-none border-none focus:ring-0 focus:outline-none"
+                                        onKeyDown={(event) => {
+                                          if (event.key === 'Enter' && !event.shiftKey) {
+                                            event.preventDefault();
+                                            void handleSaveEdit(msg.id);
+                                          }
+                                        }}
+                                        className="w-full min-w-[220px] bg-transparent p-0 text-sm leading-relaxed text-foreground resize-none border-0 shadow-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                                         style={{ minHeight: '1.5em' }}
-                                        rows={Math.max(1, editContent.split('\n').length)}
+                                        rows={Math.max(1, msg.content.split('\n').length)}
                                         autoFocus
                                       />
                                       <div className="flex justify-end gap-0.5 -mr-2 -mb-1">
@@ -1122,6 +1135,11 @@ export function TrainingPanel() {
                                           className="h-6 w-6"
                                           onClick={() => handleSaveEdit(msg.id)}
                                           title="Save and re-send"
+                                          disabled={
+                                            isAiThinking ||
+                                            !editContent.trim() ||
+                                            editContent.trim() === msg.content.trim()
+                                          }
                                         >
                                           <Check className="h-3 w-3 text-emerald-600" />
                                         </Button>

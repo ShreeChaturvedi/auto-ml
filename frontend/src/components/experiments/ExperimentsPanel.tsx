@@ -172,7 +172,7 @@ export function ExperimentsPanel() {
         <div className="grid h-full gap-4 p-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
           <Card className="h-full overflow-hidden">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">New Training Run</CardTitle>
+              <CardTitle className="text-sm">Training Run</CardTitle>
             </CardHeader>
             <CardContent className="flex h-full flex-col gap-4 overflow-hidden">
               <div className="space-y-2">

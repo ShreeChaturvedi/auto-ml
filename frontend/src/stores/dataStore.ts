@@ -26,8 +26,8 @@ interface DataState {
   queryCounter: number; // For auto-naming artifacts
 
   // File tab management (for Data Viewer phase)
-  activeFileTabId: string | null; // Can be fileId or artifactId
-  fileTabType: 'file' | 'artifact' | null; // Track what type of tab is active
+  activeFileTabId: string | null; // Can be fileId, artifactId, or planId
+  fileTabType: 'file' | 'artifact' | 'plan' | null; // Track what type of tab is active
   openFileTabs: string[];
 
   // Hydration state (per project)
@@ -72,7 +72,7 @@ interface DataState {
   clearProjectArtifacts: (projectId: string) => void;
 
   // File tab actions
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | null) => void;
+  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => void;
   openFileTab: (id: string) => void;
   closeFileTab: (id: string) => void;
 }
@@ -298,7 +298,7 @@ export const useDataStore = create<DataState>((set, get) => ({
   },
 
   // File tab actions
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | null) => {
+  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => {
     set({ activeFileTabId: id, fileTabType: type });
   },
   openFileTab: (id: string) => {

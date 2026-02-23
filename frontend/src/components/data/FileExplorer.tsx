@@ -9,7 +9,8 @@ import {
   File,
   MoreVertical,
   Download,
-  Trash2
+  Trash2,
+  ClipboardList
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -20,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
@@ -121,9 +123,15 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const navigate = useNavigate();
   const files = useDataStore((state) => state.files);
   const activeFileTabId = useDataStore((state) => state.activeFileTabId);
+  const fileTabType = useDataStore((state) => state.fileTabType);
   const openFileTab = useDataStore((state) => state.openFileTab);
+  const setActiveFileTab = useDataStore((state) => state.setActiveFileTab);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const removeFile = useDataStore((state) => state.removeFile);
+
+  const project = useProjectStore((state) =>
+    state.projects.find((p) => p.id === projectId)
+  );
 
   useEffect(() => {
     if (projectId) {
@@ -146,10 +154,24 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
     [projectFiles]
   );
 
+  // Derive plan entries from project metadata
+  const plans = useMemo(() => {
+    const metadata = project?.metadata as Record<string, unknown> | undefined;
+    const planName = metadata?.projectPlanName as string | undefined;
+    const planContent = metadata?.projectPlan as string | undefined;
+    if (!planName || !planContent) return [];
+    return [{ id: `plan-${planName}`, name: planName, content: planContent }];
+  }, [project?.metadata]);
+
   const handleOpenFile = useCallback((fileId: string) => {
     openFileTab(fileId);
     navigate(`/project/${projectId}/data-viewer`);
   }, [openFileTab, navigate, projectId]);
+
+  const handleOpenPlan = useCallback((planId: string) => {
+    setActiveFileTab(planId, 'plan');
+    navigate(`/project/${projectId}/data-viewer`);
+  }, [setActiveFileTab, navigate, projectId]);
 
   const handleDeleteFile = useCallback(async (file: UploadedFile) => {
     try {
@@ -222,7 +244,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
     );
   };
 
-  if (projectFiles.length === 0) {
+  if (projectFiles.length === 0 && plans.length === 0) {
     return (
       <div className="space-y-4">
         <CollapsibleSection title="Data Files">
@@ -249,6 +271,33 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
       <CollapsibleSection title="Context Files">
         {renderFileList(contextFiles, 'No context docs yet.')}
       </CollapsibleSection>
+
+      {plans.length > 0 && (
+        <CollapsibleSection title="Plans">
+          <div className="space-y-0.5">
+            {plans.map((plan) => (
+              <div
+                key={plan.id}
+                className={cn(
+                  'group flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer',
+                  plan.id === activeFileTabId && fileTabType === 'plan'
+                    ? 'bg-muted text-foreground font-medium'
+                    : 'text-foreground hover:bg-muted'
+                )}
+                onClick={() => handleOpenPlan(plan.id)}
+              >
+                <ClipboardList className={cn(
+                  'h-3.5 w-3.5 shrink-0',
+                  plan.id === activeFileTabId && fileTabType === 'plan'
+                    ? 'text-indigo-500'
+                    : 'text-muted-foreground'
+                )} />
+                <span className="text-workflow truncate flex-1">{plan.name}</span>
+              </div>
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
     </div>
   );
 }

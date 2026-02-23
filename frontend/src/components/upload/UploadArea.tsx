@@ -1,59 +1,87 @@
-/**
- * UploadArea - Main upload interface with split-column layout
- *
- * Layout Structure:
- * ┌─────────────────────────────────────────────────────┐
- * │  Project Header (icon, title, description)          │
- * ├─────────────────────┬───────────────────────────────┤
- * │  Custom Instructions│  Data Upload Panel            │
- * │  (Left Column)      │  (Right Column)               │
- * │                     │                               │
- * │  - Domain context   │  - Drag & drop area           │
- * │  - Instructions     │  - File cards                 │
- * │  - Business goals   │  - Proceed button             │
- * └─────────────────────┴───────────────────────────────┘
- *
- * Features:
- * - Professional project header with colored icon
- * - Split-column layout for instructions and upload
- * - Responsive design (stacks on mobile)
- * - Proper overflow handling for long content
- * - Clean, polished aesthetic
- *
- * Design Philosophy:
- * - Establish project context first (header)
- * - Instructions on left guide the user
- * - Upload actions on right for natural flow
- * - Everything visible without excessive scrolling
- */
-
-import { useEffect } from 'react';
-import { useProjectStore } from '@/stores/projectStore';
-import { useDataStore } from '@/stores/dataStore';
-import { ProjectHeader } from './ProjectHeader';
-import { CustomInstructions } from './CustomInstructions';
-import { DataUploadPanel } from './DataUploadPanel';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 
+import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
+
+import { PlanningStage } from './PlanningStage';
+import { ProcessingStage } from './ProcessingStage';
+import { ProjectHeader } from './ProjectHeader';
+import { UploadStage } from './UploadStage';
+
+type UploadFlowStage = 'upload' | 'processing' | 'chat';
+
+const STAGE_ORDER: UploadFlowStage[] = ['upload', 'processing', 'chat'];
+
+interface UploadFlowMetadata {
+  uploadStage?: UploadFlowStage;
+  projectPlan?: string;
+  projectPlanName?: string;
+  customInstructions?: string;
+  [key: string]: unknown;
+}
+
+function isValidUploadStage(value: unknown): value is UploadFlowStage {
+  return typeof value === 'string' && STAGE_ORDER.includes(value as UploadFlowStage);
+}
+
 export function UploadArea() {
+  const navigate = useNavigate();
+
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const projects = useProjectStore((state) => state.projects);
-  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : undefined;
+  const updateProject = useProjectStore((state) => state.updateProject);
+  const completePhase = useProjectStore((state) => state.completePhase);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
 
-  // Hydrate persisted datasets on mount
+  const activeProject = useMemo(
+    () => (activeProjectId ? projects.find((project) => project.id === activeProjectId) : undefined),
+    [activeProjectId, projects]
+  );
+
+  const [stage, setStage] = useState<UploadFlowStage>('upload');
+  const initializedProjectIdRef = useRef<string | null>(null);
+  const persistedMetadataRef = useRef<string>('');
+
   useEffect(() => {
-    if (activeProjectId) {
-      void hydrateFromBackend(activeProjectId);
-    }
+    if (!activeProjectId) return;
+    void hydrateFromBackend(activeProjectId);
   }, [activeProjectId, hydrateFromBackend]);
 
-  // Safety check - should not happen in normal flow
+  useEffect(() => {
+    if (!activeProject) return;
+    if (initializedProjectIdRef.current === activeProject.id) return;
+
+    const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+    const nextStage = isValidUploadStage(metadata.uploadStage) ? metadata.uploadStage : 'upload';
+
+    setStage(nextStage);
+    persistedMetadataRef.current = JSON.stringify({ uploadStage: nextStage });
+    initializedProjectIdRef.current = activeProject.id;
+  }, [activeProject]);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    if (initializedProjectIdRef.current !== activeProject.id) return;
+
+    const snapshot = JSON.stringify({ uploadStage: stage });
+    if (snapshot === persistedMetadataRef.current) return;
+    persistedMetadataRef.current = snapshot;
+
+    const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+    void updateProject(activeProject.id, {
+      metadata: { ...existingMetadata, uploadStage: stage },
+    }).catch((error) => {
+      console.error('Failed to persist upload stage metadata', error);
+    });
+  }, [activeProject, stage, updateProject]);
+
   if (!activeProject) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <div className="text-center space-y-3 max-w-md">
-          <AlertCircle className="h-12 w-12 text-muted-foreground/50 mx-auto" />
+        <div className="max-w-md space-y-3 text-center">
+          <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground/50" />
           <div className="space-y-1">
             <h3 className="text-lg font-semibold text-foreground">No Active Project</h3>
             <p className="text-sm text-muted-foreground">
@@ -66,23 +94,57 @@ export function UploadArea() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Project Header - Fixed at top */}
-      <ProjectHeader project={activeProject} />
+    <div className="flex h-full flex-col overflow-hidden" data-testid="upload-area">
+      <ProjectHeader
+        project={activeProject}
+        editable
+        onUpdate={(updates) => {
+          void updateProject(activeProject.id, updates);
+        }}
+      />
 
-      {/* Split Column Layout - Fills remaining space */}
-      {/* On mobile: stack vertically with full width for each section */}
-      {/* On desktop (lg+): side-by-side with divider */}
-      <div className="flex-1 flex flex-col lg:flex-row lg:divide-x divide-border overflow-hidden">
-        {/* Left Column: Custom Instructions */}
-        <div className="flex flex-col min-h-0 p-4 sm:p-6 lg:pr-4 lg:w-1/2 border-b lg:border-b-0">
-          <CustomInstructions projectId={activeProject.id} />
-        </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {stage === 'upload' ? (
+          <UploadStage
+            projectId={activeProject.id}
+            onNext={() => setStage('processing')}
+          />
+        ) : null}
 
-        {/* Right Column: Data Upload */}
-        <div className="flex flex-col min-h-0 p-4 sm:p-6 lg:pl-4 lg:w-1/2">
-          <DataUploadPanel projectId={activeProject.id} />
-        </div>
+        {stage === 'processing' ? (
+          <ProcessingStage
+            projectId={activeProject.id}
+            onBack={() => setStage('upload')}
+            onComplete={() => setStage('chat')}
+          />
+        ) : null}
+
+        {stage === 'chat' ? (
+          <PlanningStage
+            projectId={activeProject.id}
+            onBack={() => setStage('upload')}
+            onPlanApproved={(plan, planName) => {
+              const metadata = { ...((activeProject.metadata ?? {}) as UploadFlowMetadata) };
+              delete metadata.customInstructions;
+
+              void updateProject(activeProject.id, {
+                metadata: {
+                  ...metadata,
+                  uploadStage: 'chat',
+                  projectPlan: plan,
+                  projectPlanName: planName,
+                },
+              })
+                .then(() => {
+                  completePhase(activeProject.id, 'upload');
+                  navigate(`/project/${activeProject.id}/data-viewer`);
+                })
+                .catch((error) => {
+                  console.error('Failed to save approved plan', error);
+                });
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

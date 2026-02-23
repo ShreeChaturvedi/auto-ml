@@ -16,6 +16,7 @@ export interface LlmToolDefinition {
 }
 
 export type LlmToolChoice = 'auto' | 'any' | 'none';
+export type LlmThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
 
 export interface LlmToolCall {
   name: string;
@@ -44,6 +45,7 @@ export interface LlmRequest {
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
   enableThinking?: boolean;
+  thinkingLevel?: LlmThinkingLevel;
   contextId?: string;
 }
 
@@ -58,30 +60,30 @@ export interface LlmClient {
   stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string>;
 }
 
-export function createLlmClient(): LlmClient {
+export function createLlmClient(modelOverride?: string): LlmClient {
   const provider = env.llmProvider.toLowerCase();
 
   if (provider === 'openai') {
     return new OpenAiClient({
       apiKey: env.llmApiKey,
       baseUrl: env.llmBaseUrl,
-      model: env.llmModel,
+      model: modelOverride || env.llmModel,
       timeoutMs: env.llmTimeoutMs
     });
   }
 
   return new GeminiClient({
     apiKey: env.geminiApiKey || env.llmApiKey,
-    model: env.geminiModel || env.llmModel,
+    model: modelOverride || env.geminiModel || env.llmModel,
     timeoutMs: env.llmTimeoutMs
   });
 }
 
-export function createThinkingLlmClient(): LlmClient {
+export function createThinkingLlmClient(modelOverride?: string): LlmClient {
   // Thinking model is only supported for Gemini
   return new GeminiClient({
     apiKey: env.geminiApiKey || env.llmApiKey,
-    model: env.geminiThinkingModel,
+    model: modelOverride || env.geminiThinkingModel,
     timeoutMs: env.llmTimeoutMs * 2 // Double timeout for thinking model
   });
 }

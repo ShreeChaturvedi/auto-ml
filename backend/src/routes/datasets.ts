@@ -170,34 +170,55 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         writeFileSync(filePath, req.file.buffer);
 
         let tableName = sanitizeTableName(req.file.originalname, dataset.datasetId);
+        let loadWarning: string | undefined;
 
         if (hasDatabaseConfiguration()) {
-          const { tableName: loadedTableName, rowsLoaded } = await loadDatasetIntoPostgres({
-            datasetId: dataset.datasetId,
-            filename: req.file.originalname,
-            fileType,
-            buffer: req.file.buffer,
-            columns: profiling.columns,
-            rows
-          });
+          try {
+            const { tableName: loadedTableName, rowsLoaded } = await loadDatasetIntoPostgres({
+              datasetId: dataset.datasetId,
+              filename: req.file.originalname,
+              fileType,
+              buffer: req.file.buffer,
+              columns: profiling.columns,
+              rows
+            });
 
-          tableName = loadedTableName;
-          const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
-            ...current,
-            nRows: rowsLoaded,
-            metadata: {
-              ...(current.metadata ?? {}),
-              tableName,
-              rowsLoaded
+            tableName = loadedTableName;
+            const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
+              ...current,
+              nRows: rowsLoaded,
+              metadata: {
+                ...(current.metadata ?? {}),
+                tableName,
+                rowsLoaded
+              }
+            }));
+            if (updated) {
+              dataset = updated;
             }
-          }));
-          if (updated) {
-            dataset = updated;
-          }
 
-          console.log(
-            `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
-          );
+            console.log(
+              `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
+            );
+          } catch (loadError) {
+            loadWarning = loadError instanceof Error ? loadError.message : String(loadError);
+            console.error(
+              `[datasets] Dataset uploaded but Postgres load failed for ${req.file.originalname}:`,
+              loadWarning
+            );
+
+            const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
+              ...current,
+              metadata: {
+                ...(current.metadata ?? {}),
+                tableName,
+                loadWarning
+              }
+            }));
+            if (updated) {
+              dataset = updated;
+            }
+          }
         } else {
           const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
             ...current,
@@ -228,8 +249,10 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
             null_counts: Object.fromEntries(dataset.columns.map((column) => [column.name, column.nullCount])),
             sample: dataset.sample,
             createdAt: dataset.createdAt,
-            tableName
-          }
+            tableName,
+            warning: loadWarning
+          },
+          warning: loadWarning
         });
       } catch (error) {
         console.error('[datasets] Upload failed:', error instanceof Error ? error.message : String(error));

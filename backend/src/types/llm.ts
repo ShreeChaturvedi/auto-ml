@@ -5,6 +5,7 @@ export const ToolNameSchema = z.enum([
   'get_dataset_profile',
   'get_dataset_sample',
   'search_documents',
+  'ask_user',
   'list_cells',
   'read_cell',
   'write_cell',
@@ -28,11 +29,32 @@ export const ToolCallSchema = z.object({
 
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 
+export const AskUserQuestionSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  header: z.string().min(1),
+  type: z.enum(['single_select', 'multi_select', 'free_text']),
+  options: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        description: z.string().min(1)
+      })
+    )
+    .optional(),
+  allowCustom: z.boolean().optional()
+});
+
+export const AskUserPayloadSchema = z.object({
+  questions: z.array(AskUserQuestionSchema)
+});
+
 export const LlmEnvelopeSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding']),
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
+  ask_user: AskUserPayloadSchema.optional(),
   ui: z.unknown().optional()
 });
 

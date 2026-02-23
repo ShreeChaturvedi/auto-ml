@@ -41,6 +41,10 @@ export async function executeToolCall(projectId: string, call: ToolCall): Promis
       case 'insert_cell':
         return { id: call.id, tool: call.tool, output: await insertCell(projectId, call.args) };
 
+      // User interaction tools
+      case 'ask_user':
+        return { id: call.id, tool: call.tool, output: { type: 'user_interaction', message: 'Awaiting user response' } };
+
       // Package management tools
       case 'install_package':
         return { id: call.id, tool: call.tool, output: await handleInstallPackage(projectId, call.args) };

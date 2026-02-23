@@ -1,22 +1,31 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 
-import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { env } from '../config.js';
-import { hasDatabaseConfiguration } from '../db.js';
+import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { createDatasetRepository } from '../repositories/datasetRepository.js';
+import { createProjectRepository } from '../repositories/projectRepository.js';
 import { searchDocuments } from '../services/documentSearchService.js';
 import { FEATURE_METHODS } from '../services/featureEngineering.js';
-import { createLlmClient, createThinkingLlmClient, type LlmClient, type LlmRequest } from '../services/llm/llmClient.js';
-import { buildFeatureEngineeringRequest, buildTrainingRequest } from '../services/llm/prompts.js';
-import { LLM_ALL_TOOLS, LLM_RENDER_UI_TOOL, LLM_TOOL_DEFINITIONS } from '../services/llm/toolRegistry.js';
+import {
+  createLlmClient,
+  createThinkingLlmClient,
+  type LlmClient,
+  type LlmRequest,
+  type LlmThinkingLevel
+} from '../services/llm/llmClient.js';
+import { buildFeatureEngineeringRequest, buildOnboardingRequest, buildTrainingRequest } from '../services/llm/prompts.js';
+import { LLM_ALL_TOOLS, LLM_ONBOARDING_TOOLS, LLM_RENDER_UI_TOOL, LLM_TOOL_DEFINITIONS } from '../services/llm/toolRegistry.js';
 import { listMcpToolsForLlm, executeMcpTool } from '../services/mcp/mcpAdapter.js';
-import { ToolCallSchema } from '../types/llm.js';
+import { AskUserPayloadSchema, ToolCallSchema } from '../types/llm.js';
 import type { LlmEnvelope } from '../types/llm.js';
 import { UiSchema } from '../types/llmUi.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+const projectRepository = createProjectRepository(env.storagePath);
 
 const toolResultSchema = z.object({
   id: z.string().min(1),
@@ -24,6 +33,8 @@ const toolResultSchema = z.object({
   output: z.unknown().optional(),
   error: z.string().optional()
 });
+
+const thinkingLevelSchema = z.enum(['dynamic', 'low', 'medium', 'high']);
 
 const planSchema = z.object({
   projectId: z.string().min(1),
@@ -33,8 +44,37 @@ const planSchema = z.object({
   toolCalls: z.array(ToolCallSchema).optional(),
   toolResults: z.array(toolResultSchema).optional(),
   featureSummary: z.string().optional(),
-  enableThinking: z.boolean().optional()
+  enableThinking: z.boolean().optional(),
+  thinkingLevel: thinkingLevelSchema.optional(),
+  model: z.string().optional()
 });
+
+const onboardingSchema = z.object({
+  projectId: z.string().min(1),
+  userIntent: z.string().optional(),
+  questionAnswers: z
+    .array(
+      z.object({
+        questionId: z.string(),
+        answer: z.union([z.string(), z.array(z.string())])
+      })
+    )
+    .optional(),
+  toolCalls: z.array(ToolCallSchema).optional(),
+  toolResults: z.array(toolResultSchema).optional(),
+  round: z.number().int().min(0).max(5).default(0),
+  enableThinking: z.boolean().optional(),
+  thinkingLevel: thinkingLevelSchema.optional(),
+  model: z.string().optional()
+});
+
+function shouldUseThinkingClient(enableThinking?: boolean, thinkingLevel?: LlmThinkingLevel): boolean {
+  if (enableThinking) {
+    return true;
+  }
+
+  return thinkingLevel !== undefined && thinkingLevel !== 'dynamic';
+}
 
 const executeToolsSchema = z.object({
   projectId: z.string().min(1),
@@ -75,6 +115,92 @@ export function createLlmRouter() {
     return res.json({ tools: LLM_TOOL_DEFINITIONS });
   });
 
+  router.post('/llm/onboarding/stream', async (req, res) => {
+    const parsed = onboardingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+
+    const project = await projectRepository.getById(parsed.data.projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const [datasets, documents] = await Promise.all([
+      datasetRepository.list(),
+      listProjectDocuments(parsed.data.projectId)
+    ]);
+    const projectDatasets = datasets.filter((dataset) => dataset.projectId === parsed.data.projectId);
+
+    const fileSummaries = [
+      ...projectDatasets.map((dataset) => ({
+        filename: dataset.filename,
+        type: 'dataset' as const,
+        stats: {
+          datasetId: dataset.datasetId,
+          nRows: dataset.nRows,
+          nCols: dataset.nCols,
+          columns: dataset.columns.map((column) => ({ name: column.name, dtype: column.dtype }))
+        }
+      })),
+      ...documents.map((document) => ({
+        filename: document.filename,
+        type: 'document' as const,
+        stats: {
+          documentId: document.documentId,
+          mimeType: document.mimeType
+        }
+      }))
+    ];
+
+    const ragQuery = [
+      parsed.data.userIntent,
+      ...(parsed.data.questionAnswers?.map((entry) =>
+        `${entry.questionId}: ${Array.isArray(entry.answer) ? entry.answer.join(', ') : entry.answer}`
+      ) ?? [])
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    const ragSnippets = documents.length > 0
+      ? await loadRagSnippets(parsed.data.projectId, ragQuery)
+      : [];
+
+    const toolCallHistory = parsed.data.toolCalls?.map((call) => ({
+      name: call.tool,
+      args: call.args ?? {}
+    }));
+    const toolResultHistory = parsed.data.toolResults?.map((result) => ({
+      name: result.tool,
+      response: result.error ? { error: result.error } : { output: result.output }
+    }));
+
+    const request = buildOnboardingRequest({
+      projectTitle: project.name,
+      projectDescription: project.description ?? '',
+      fileSummaries,
+      userIntent: parsed.data.userIntent,
+      questionAnswers: parsed.data.questionAnswers,
+      ragSnippets,
+      round: parsed.data.round,
+      toolCallHistory,
+      toolResultHistory,
+      toolDefinitions: LLM_ONBOARDING_TOOLS,
+      enableThinking: parsed.data.enableThinking,
+      thinkingLevel: parsed.data.thinkingLevel
+    });
+
+    // Resolve model: 'auto' or absent = default, otherwise use override
+    const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
+      ? parsed.data.model
+      : undefined;
+    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
+      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
+    await streamLlmResponse(res, client, request, 'onboarding');
+  });
+
   router.post('/llm/feature-plan/stream', async (req, res) => {
     const parsed = planSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -91,6 +217,10 @@ export function createLlmRouter() {
     }
 
     const ragSnippets = await loadRagSnippets(parsed.data.projectId, parsed.data.prompt ?? dataset.filename);
+    const project = await projectRepository.getById(parsed.data.projectId);
+    const projectPlan = typeof project?.metadata?.projectPlan === 'string'
+      ? project.metadata.projectPlan
+      : undefined;
     const toolDefinitions = await resolveLlmToolDefinitions();
     const toolCallHistory = parsed.data.toolCalls?.map((call) => ({
       name: call.tool,
@@ -105,17 +235,24 @@ export function createLlmRouter() {
       dataset,
       targetColumn: parsed.data.targetColumn,
       prompt: parsed.data.prompt,
+      projectPlan,
       ragSnippets,
       toolResults: parsed.data.toolResults,
       toolCallHistory,
       toolResultHistory,
       featureMethods: [...FEATURE_METHODS],
       toolDefinitions,
-      enableThinking: parsed.data.enableThinking
+      enableThinking: parsed.data.enableThinking,
+      thinkingLevel: parsed.data.thinkingLevel
     });
 
-    // Use thinking client if enabled
-    const client = parsed.data.enableThinking ? thinkingLlmClient : llmClient;
+    // Use thinking client if enabled; support per-request model override
+    const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
+      ? parsed.data.model
+      : undefined;
+    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
+      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'feature_engineering');
   });
 
@@ -137,6 +274,10 @@ export function createLlmRouter() {
     }
 
     const ragSnippets = await loadRagSnippets(parsed.data.projectId, parsed.data.prompt ?? dataset.filename);
+    const project = await projectRepository.getById(parsed.data.projectId);
+    const projectPlan = typeof project?.metadata?.projectPlan === 'string'
+      ? project.metadata.projectPlan
+      : undefined;
     const toolDefinitions = await resolveLlmToolDefinitions();
 
     const toolCallHistory = parsed.data.toolCalls?.map((call) => ({
@@ -152,17 +293,24 @@ export function createLlmRouter() {
       dataset,
       targetColumn: parsed.data.targetColumn,
       prompt: parsed.data.prompt,
+      projectPlan,
       ragSnippets,
       toolResults: parsed.data.toolResults,
       featureSummary: parsed.data.featureSummary,
       toolCallHistory,
       toolResultHistory,
       toolDefinitions,
-      enableThinking: parsed.data.enableThinking
+      enableThinking: parsed.data.enableThinking,
+      thinkingLevel: parsed.data.thinkingLevel
     });
 
-    // Use thinking client if enabled
-    const client = parsed.data.enableThinking ? thinkingLlmClient : llmClient;
+    // Use thinking client if enabled; support per-request model override
+    const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
+      ? parsed.data.model
+      : undefined;
+    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
+      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'training');
   });
 
@@ -192,6 +340,22 @@ async function resolveLlmToolDefinitions() {
   }
 }
 
+async function listProjectDocuments(projectId: string) {
+  if (!hasDatabaseConfiguration()) {
+    return [];
+  }
+  const pool = getDbPool();
+  const result = await pool.query(
+    `SELECT document_id, filename, mime_type FROM documents WHERE project_id = $1 ORDER BY created_at DESC`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    documentId: row.document_id as string,
+    filename: row.filename as string,
+    mimeType: row.mime_type as string
+  }));
+}
+
 async function loadRagSnippets(projectId: string, query: string) {
   if (!hasDatabaseConfiguration()) return [];
   if (!query.trim()) return [];
@@ -206,7 +370,7 @@ async function streamLlmResponse(
   res: Response,
   client: LlmClient,
   request: LlmRequest,
-  kind: 'feature_engineering' | 'training'
+  kind: 'feature_engineering' | 'training' | 'onboarding'
 ) {
   res.setHeader('Content-Type', 'application/x-ndjson');
   res.setHeader('Cache-Control', 'no-cache');
@@ -214,6 +378,7 @@ async function streamLlmResponse(
 
   const requestId = randomUUID().slice(0, 8);
   const toolCalls: z.infer<typeof ToolCallSchema>[] = [];
+  let askUserPayload: z.infer<typeof AskUserPayloadSchema> | null = null;
   let uiEnvelope: LlmEnvelope | null = null;
   let tokenChars = 0;
   let tokenPreview = '';
@@ -237,6 +402,16 @@ async function streamLlmResponse(
         writeEvent({ type: 'thinking', text });
       },
       onToolCall: (call) => {
+        if (call.name === 'ask_user') {
+          const parsedAskUser = AskUserPayloadSchema.safeParse(call.args);
+          if (!parsedAskUser.success) {
+            writeEvent({ type: 'error', message: 'ask_user payload failed validation.' });
+            return;
+          }
+          askUserPayload = parsedAskUser.data;
+          return;
+        }
+
         if (call.name === LLM_RENDER_UI_TOOL.name) {
           const rawArgs = call.args ?? {};
           let uiPayload: unknown = undefined;
@@ -327,7 +502,18 @@ async function streamLlmResponse(
       console.log(`[DEBUG][llm.ts] Tool calls to send:`, JSON.stringify(toolCalls, null, 2));
     }
 
-    if (uiEnvelope) {
+    if (askUserPayload) {
+      writeEvent({
+        type: 'envelope',
+        envelope: {
+          version: '1',
+          kind,
+          ask_user: askUserPayload,
+          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+          ui: null
+        }
+      });
+    } else if (uiEnvelope) {
       console.log(`[DEBUG][llm.ts] Sending UI envelope`);
       writeEvent({ type: 'envelope', envelope: uiEnvelope });
     } else if (toolCalls.length > 0) {
@@ -369,14 +555,16 @@ async function streamLlmResponse(
   }
 }
 
-function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'training') {
+function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'training' | 'onboarding') {
   if (!payload || typeof payload !== 'object') {
     return { version: '1', kind, sections: [] };
   }
   const candidate = payload as Record<string, unknown>;
   const normalized = {
     version: candidate.version === '1' ? '1' : '1',
-    kind: candidate.kind === 'feature_engineering' || candidate.kind === 'training' ? candidate.kind : kind,
+    kind: candidate.kind === 'feature_engineering' || candidate.kind === 'training' || candidate.kind === 'onboarding'
+      ? candidate.kind
+      : kind,
     title: typeof candidate.title === 'string' ? candidate.title : undefined,
     summary: typeof candidate.summary === 'string' ? candidate.summary : undefined,
     sections: Array.isArray(candidate.sections) ? candidate.sections : []

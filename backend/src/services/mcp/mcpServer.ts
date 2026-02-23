@@ -20,10 +20,17 @@ function toMcpResult(result: ToolResult) {
     typeof payload === 'string'
       ? payload
       : JSON.stringify(payload, null, 2) ?? String(payload);
-  const structuredContent: Record<string, unknown> =
-    payload && typeof payload === 'object'
-      ? (payload as Record<string, unknown>)
-      : { output: payload ?? null };
+
+  // MCP protocol requires structuredContent to be a record (object), not an array.
+  // Arrays must be wrapped in an object container to satisfy the schema.
+  let structuredContent: Record<string, unknown>;
+  if (Array.isArray(payload)) {
+    structuredContent = { items: payload };
+  } else if (payload && typeof payload === 'object') {
+    structuredContent = payload as Record<string, unknown>;
+  } else {
+    structuredContent = { output: payload ?? null };
+  }
 
   return {
     content: [{ type: 'text' as const, text }],
@@ -89,8 +96,8 @@ export function createMcpServer() {
       description: toolDescription('search_documents'),
       inputSchema: {
         projectId: projectIdSchema,
-        query: z.string().min(1).describe('Search query'),
-        limit: z.number().optional().describe('Maximum number of snippets')
+        query: z.string().describe('Search query'),
+        limit: z.coerce.number().optional().describe('Maximum number of snippets')
       }
     },
     async ({ projectId, query, limit }) =>

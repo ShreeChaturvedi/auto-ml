@@ -1,4 +1,10 @@
-import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall } from '../llmClient.js';
+import type {
+  LlmClient,
+  LlmRequest,
+  LlmStreamHandlers,
+  LlmThinkingLevel,
+  LlmToolCall
+} from '../llmClient.js';
 
 interface GeminiClientOptions {
   apiKey: string;
@@ -235,6 +241,8 @@ function buildGeminiBody(request: LlmRequest) {
     }
     : undefined;
 
+  const thinkingConfig = buildThinkingConfig(request);
+
   const body = {
     contents,
     systemInstruction: system ? { parts: [{ text: system.content }] } : undefined,
@@ -242,13 +250,7 @@ function buildGeminiBody(request: LlmRequest) {
       temperature: request.temperature ?? 0.3,
       maxOutputTokens: request.maxOutputTokens ?? 2048,
       responseMimeType: request.responseMimeType,
-      // Enable thinking mode for Gemini 3 models when explicitly requested
-      ...(request.enableThinking ? {
-        thinkingConfig: {
-          thinkingLevel: 'HIGH',
-          includeThoughts: true
-        }
-      } : {})
+      ...(thinkingConfig ? { thinkingConfig } : {})
     },
     tools,
     toolConfig
@@ -257,6 +259,45 @@ function buildGeminiBody(request: LlmRequest) {
   console.log('[DEBUG][buildGeminiBody] generationConfig:', JSON.stringify(body.generationConfig, null, 2));
 
   return body;
+}
+
+function buildThinkingConfig(request: LlmRequest) {
+  if (request.thinkingLevel === 'dynamic') {
+    return request.enableThinking
+      ? { includeThoughts: true }
+      : undefined;
+  }
+
+  const explicitLevel = toGeminiThinkingLevel(request.thinkingLevel);
+
+  if (explicitLevel) {
+    return {
+      thinkingLevel: explicitLevel,
+      includeThoughts: request.enableThinking ?? true
+    };
+  }
+
+  if (request.enableThinking) {
+    return {
+      thinkingLevel: 'HIGH' as const,
+      includeThoughts: true
+    };
+  }
+
+  return undefined;
+}
+
+function toGeminiThinkingLevel(level?: LlmThinkingLevel): 'LOW' | 'MEDIUM' | 'HIGH' | undefined {
+  switch (level) {
+    case 'low':
+      return 'LOW';
+    case 'medium':
+      return 'MEDIUM';
+    case 'high':
+      return 'HIGH';
+    default:
+      return undefined;
+  }
 }
 
 function extractGeminiText(payload: unknown): string {

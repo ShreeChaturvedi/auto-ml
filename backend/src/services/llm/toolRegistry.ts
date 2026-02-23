@@ -189,9 +189,61 @@ export const LLM_RENDER_UI_TOOL: LlmToolDefinition = {
   }
 };
 
+export const ASK_USER_TOOL: LlmToolDefinition = {
+  name: 'ask_user',
+  description: 'Ask the user one or more questions to clarify their intent. Each question can have predefined options (multiple choice) or be free-text. The user will see these as interactive UI cards and respond. Use this to gather requirements before generating a plan.',
+  parameters: {
+    type: 'object',
+    properties: {
+      questions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Unique identifier for this question' },
+            question: { type: 'string', description: 'The full question text' },
+            header: { type: 'string', description: 'Short label (max 30 chars)' },
+            type: {
+              type: 'string',
+              enum: ['single_select', 'multi_select', 'free_text'],
+              description: 'Question type'
+            },
+            options: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  label: { type: 'string', description: 'Short display text (1-5 words)' },
+                  description: { type: 'string', description: 'Explanation of this choice' }
+                },
+                required: ['label', 'description']
+              },
+              description: 'Available choices. For free_text type, this can be empty or contain suggestions.'
+            },
+            allowCustom: {
+              type: 'boolean',
+              description: 'Whether user can type a custom answer in addition to selecting options. Defaults to true for single_select/multi_select.'
+            }
+          },
+          required: ['id', 'question', 'header', 'type']
+        }
+      }
+    },
+    required: ['questions']
+  }
+};
+
 export const LLM_ALL_TOOLS: LlmToolDefinition[] = [
   ...LLM_TOOL_DEFINITIONS,
   LLM_RENDER_UI_TOOL
+];
+
+export const LLM_ONBOARDING_TOOLS: LlmToolDefinition[] = [
+  LLM_TOOL_DEFINITIONS.find(t => t.name === 'list_project_files')!,
+  LLM_TOOL_DEFINITIONS.find(t => t.name === 'get_dataset_profile')!,
+  LLM_TOOL_DEFINITIONS.find(t => t.name === 'get_dataset_sample')!,
+  LLM_TOOL_DEFINITIONS.find(t => t.name === 'search_documents')!,
+  ASK_USER_TOOL
 ];
 
 export function buildToolDescriptionText(tools: LlmToolDefinition[] = LLM_ALL_TOOLS): string {

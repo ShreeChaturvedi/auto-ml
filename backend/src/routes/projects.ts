@@ -9,7 +9,9 @@ const metadataSchema = z
     unlockedPhases: z.array(z.enum(PHASE_VALUES)).optional(),
     completedPhases: z.array(z.enum(PHASE_VALUES)).optional(),
     currentPhase: z.enum(PHASE_VALUES).optional(),
-    customInstructions: z.string().max(5000).optional()
+    customInstructions: z.string().max(5000).optional(),
+    projectPlan: z.string().max(50000).optional(),
+    projectPlanName: z.string().max(200).optional()
   })
   .catchall(z.unknown())
   .optional();

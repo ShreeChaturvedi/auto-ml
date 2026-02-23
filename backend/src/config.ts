@@ -96,10 +96,10 @@ export const env = {
   llmProvider: process.env.LLM_PROVIDER ?? 'gemini',
   llmApiKey: process.env.LLM_API_KEY ?? '',
   llmBaseUrl: process.env.LLM_BASE_URL ?? '',
-  llmModel: process.env.LLM_MODEL ?? 'gemini-1.5-flash',
+  llmModel: process.env.LLM_MODEL ?? 'gemini-3.1-pro-preview-customtools',
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
-  geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3-flash-preview',
-  geminiThinkingModel: process.env.GEMINI_THINKING_MODEL ?? 'gemini-3-flash-preview',
+  geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.1-pro-preview-customtools',
+  geminiThinkingModel: process.env.GEMINI_THINKING_MODEL ?? 'gemini-3.1-pro-preview-customtools',
   llmTimeoutMs: parseInteger(process.env.LLM_TIMEOUT_MS, 60000),
 
   // Notebook System

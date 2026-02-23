@@ -5,11 +5,18 @@ export const ToolNameSchema = z.enum([
   'get_dataset_profile',
   'get_dataset_sample',
   'search_documents',
+  'ask_user',
   'list_cells',
   'read_cell',
   'write_cell',
   'edit_cell',
-  'run_cell'
+  'run_cell',
+  'delete_cell',
+  'reorder_cells',
+  'insert_cell',
+  'install_package',
+  'uninstall_package',
+  'list_packages'
 ]);
 
 export const ToolCallSchema = z.object({
@@ -158,7 +165,7 @@ export type UiSection = z.infer<typeof UiSectionSchema>;
 
 export const UiSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding']),
   title: z.string().optional(),
   summary: z.string().optional(),
   sections: z.array(UiSectionSchema)
@@ -166,17 +173,43 @@ export const UiSchema = z.object({
 
 export type UiSchema = z.infer<typeof UiSchema>;
 
+export const AskUserQuestionSchema = z.object({
+  id: z.string(),
+  question: z.string(),
+  header: z.string(),
+  type: z.enum(['single_select', 'multi_select', 'free_text']),
+  options: z.array(z.object({
+    label: z.string(),
+    description: z.string()
+  })).optional(),
+  allowCustom: z.boolean().optional()
+});
+
+export type AskUserQuestion = z.infer<typeof AskUserQuestionSchema>;
+
+export const AskUserPayloadSchema = z.object({
+  questions: z.array(AskUserQuestionSchema)
+});
+
+export type AskUserPayload = z.infer<typeof AskUserPayloadSchema>;
+
+export interface QuestionAnswer {
+  questionId: string;
+  answer: string | string[];
+}
+
 export const LlmEnvelopeSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding']),
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
+  ask_user: AskUserPayloadSchema.optional(),
   ui: UiSchema.nullable().optional()
 });
 
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
 
-// ChatMessage type for interleaved rendering in Training tab
+// ChatMessage type for interleaved rendering in Training tab and Onboarding chat
 export type ChatMessage =
   | { id: string; type: 'user'; content: string; timestamp: number }
   | { id: string; type: 'assistant_text'; content: string }
@@ -184,4 +217,6 @@ export type ChatMessage =
   | { id: string; type: 'tool_call'; call: ToolCall; result?: ToolResult }
   | { id: string; type: 'code_cell'; cellId: string }
   | { id: string; type: 'ui'; schema: UiSchema }
-  | { id: string; type: 'error'; message: string };
+  | { id: string; type: 'error'; message: string }
+  | { id: string; type: 'ask_user'; questions: AskUserQuestion[]; answered?: boolean }
+  | { id: string; type: 'plan'; content: string; approved?: boolean };

@@ -1,6 +1,8 @@
 import { apiRequest, getApiBaseUrl } from './client';
 import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
 
+export type ThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
+
 export interface LlmPlanRequest {
   projectId: string;
   datasetId?: string;
@@ -10,12 +12,27 @@ export interface LlmPlanRequest {
   toolResults?: ToolResult[];
   featureSummary?: string;
   enableThinking?: boolean;
+  thinkingLevel?: ThinkingLevel;
+  model?: string;
+}
+
+export interface OnboardingStreamRequest {
+  projectId: string;
+  userIntent?: string;
+  questionAnswers?: Array<{ questionId: string; answer: string | string[] }>;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+  round?: number;
+  enableThinking?: boolean;
+  thinkingLevel?: ThinkingLevel;
+  model?: string;
 }
 
 export type LlmStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'envelope'; envelope: LlmEnvelope }
+  | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -35,6 +52,14 @@ export async function streamTrainingPlan(
   return streamLlm('/llm/training/stream', request, onEvent, signal);
 }
 
+export async function streamOnboardingPlan(
+  request: OnboardingStreamRequest,
+  onEvent: (event: LlmStreamEvent) => void,
+  signal?: AbortSignal
+) {
+  return streamLlm('/llm/onboarding/stream', request, onEvent, signal);
+}
+
 export async function executeToolCalls(projectId: string, toolCalls: ToolCall[]) {
   return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
     method: 'POST',
@@ -44,19 +69,10 @@ export async function executeToolCalls(projectId: string, toolCalls: ToolCall[])
 
 async function streamLlm(
   endpoint: string,
-  request: LlmPlanRequest,
+  request: LlmPlanRequest | OnboardingStreamRequest,
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  // DEBUG: Dump payload to backend for verification (silently ignore errors)
-  try {
-    fetch(`${getApiBaseUrl()}/llm/debug`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint, request })
-    }).catch(() => { /* debug only */ });
-  } catch { /* debug only */ }
-
   const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
@@ -89,6 +105,9 @@ async function streamLlm(
           const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
           if (parsed.success) {
             onEvent({ type: 'envelope', envelope: parsed.data });
+            if (parsed.data.ask_user?.questions?.length) {
+              onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
+            }
           } else {
             onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
           }
@@ -108,6 +127,9 @@ async function streamLlm(
         const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
         if (parsed.success) {
           onEvent({ type: 'envelope', envelope: parsed.data });
+          if (parsed.data.ask_user?.questions?.length) {
+            onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
+          }
         } else {
           onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
         }

@@ -15,34 +15,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle
 } from '@/components/ui/resizable';
 import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea
-} from '@/components/ui/input-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger
-} from '@/components/ui/tooltip';
-import {
   Plus,
   Code,
   Loader2,
   Wand2,
-  Paperclip,
   Brain,
-  ArrowUp,
-  Square,
-  Lightbulb,
   Pencil,
   Trash2,
   Check,
@@ -62,6 +47,14 @@ import { useFeatureStore } from '@/stores/featureStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import { getFileType, type UploadedFile } from '@/types/file';
 import type { ToolCall, ToolResult, UiItem, UiSchema, ChatMessage } from '@/types/llmUi';
+import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
+import {
+  ASSISTANT_MODEL_OPTIONS,
+  getModelOption,
+  getDefaultReasoningEffort,
+  getReasoningEffortOptions,
+  type ReasoningEffort
+} from '@/components/llm/modelOptions';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ThinkingBlock } from './ThinkingBlock';
 import { NotebookEditor } from '@/components/notebook/NotebookEditor';
@@ -71,14 +64,6 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import 'katex/dist/katex.min.css';
-
-const ASSISTANT_MODELS = [
-  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
-];
-
-const REASONING_MODES = [
-  { value: 'auto', label: 'Auto' }
-];
 
 const stripAssistantArtifacts = (text: string) => {
   if (!text) return '';
@@ -120,8 +105,10 @@ export function TrainingPanel() {
   const [cells, setCells] = useState<Cell[]>([]);
   const cellsRef = useRef<Cell[]>(cells);
   const [chatInput, setChatInput] = useState('');
-  const [assistantModel, setAssistantModel] = useState(ASSISTANT_MODELS[0]?.value ?? 'gemini-1.5-flash');
-  const [assistantReasoning, setAssistantReasoning] = useState(REASONING_MODES[0]?.value ?? 'auto');
+  const [assistantModel, setAssistantModel] = useState(ASSISTANT_MODEL_OPTIONS[0]?.value ?? 'auto');
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    getDefaultReasoningEffort(ASSISTANT_MODEL_OPTIONS[0]?.value ?? 'auto')
+  );
   const [enableThinking, setEnableThinking] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [attachmentStatus, setAttachmentStatus] = useState<'idle' | 'uploading' | 'error' | 'success'>('idle');
@@ -157,8 +144,8 @@ export function TrainingPanel() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const trainingAbortRef = useRef<AbortController | null>(null);
+  const activeRequestIdRef = useRef(0);
   const autoRunIdsRef = useRef(new Set<string>());
   // Pending cell executions scheduled by run_cell tool
   const [pendingRunCells, setPendingRunCells] = useState<string[]>([]);
@@ -196,8 +183,8 @@ export function TrainingPanel() {
     };
   }, [projectId, initializeNotebook, disconnectNotebook]);
 
-  // Track if notebook pane should be visible (when cells exist)
-  const showNotebook = notebookCells.length > 0;
+  // Track if notebook pane should be visible (always true for demo)
+  const showNotebook = true;
 
   // Get dataset files for autocomplete
   const files = useDataStore((s) => s.files);
@@ -235,6 +222,23 @@ export function TrainingPanel() {
     () => projectFiles.filter((file) => file.metadata?.documentId),
     [projectFiles]
   );
+  const reasoningEffortOptions = useMemo(
+    () => getReasoningEffortOptions(assistantModel),
+    [assistantModel]
+  );
+  const assistantModelOption = useMemo(
+    () => getModelOption(assistantModel),
+    [assistantModel]
+  );
+  const shouldIncludeThoughts = assistantModelOption.supportsThinking
+    && (assistantModelOption.thinkingAlwaysOn || enableThinking);
+
+  useEffect(() => {
+    const supportsCurrent = reasoningEffortOptions.some((option) => option.value === reasoningEffort);
+    if (!supportsCurrent) {
+      setReasoningEffort(getDefaultReasoningEffort(assistantModel));
+    }
+  }, [assistantModel, reasoningEffort, reasoningEffortOptions]);
 
   const llmCodeCells = useMemo(() => {
     if (!trainingUi) return [];
@@ -409,6 +413,7 @@ export function TrainingPanel() {
     if (!projectId || !selectedTrainingFile?.metadata?.datasetId) return;
 
     trainingAbortRef.current?.abort();
+    const requestId = ++activeRequestIdRef.current;
     const controller = new AbortController();
     trainingAbortRef.current = controller;
 
@@ -435,7 +440,10 @@ export function TrainingPanel() {
     setIsTrainingGenerating(true);
 
     try {
-      console.log('[TrainingPanel] Calling streamTrainingPlan with enableThinking:', enableThinking);
+      console.log('[TrainingPanel] Calling streamTrainingPlan', {
+        model: assistantModel,
+        thinkingLevel: reasoningEffort
+      });
       await streamTrainingPlan(
         {
           projectId,
@@ -445,9 +453,15 @@ export function TrainingPanel() {
           toolCalls: toolCallsOverride?.length ? toolCallsOverride : undefined,
           toolResults: toolResultsOverride?.length ? toolResultsOverride : undefined,
           featureSummary: buildFeatureSummary(),
-          enableThinking
+          enableThinking: shouldIncludeThoughts,
+          thinkingLevel: reasoningEffort,
+          model: assistantModel !== 'auto' ? assistantModel : undefined
         },
         (event) => {
+          if (requestId !== activeRequestIdRef.current) {
+            return;
+          }
+
           if (event.type === 'token') {
             // If we were thinking, mark thinking as complete now that tokens are arriving
             if (currentThinkingIdRef.current) {
@@ -501,6 +515,10 @@ export function TrainingPanel() {
               const toolCalls = event.envelope.tool_calls;
               executeToolCalls(projectId, toolCalls)
                 .then(({ results }) => {
+                  if (requestId !== activeRequestIdRef.current) {
+                    return;
+                  }
+
                   // Update each tool call message with its result
                   setMessages((prev) =>
                     prev.map((msg) => {
@@ -513,21 +531,30 @@ export function TrainingPanel() {
                       return msg;
                     })
                   );
-                  // Store results for LLM context
-                  trainingToolHistoryRef.current.results = results;
-                  setTrainingToolResults(results);
+                  // Store merged results for LLM context to avoid tool-history amnesia.
+                  const mergedResults = [...trainingToolHistoryRef.current.results, ...results];
+                  trainingToolHistoryRef.current.results = mergedResults;
+                  setTrainingToolResults(mergedResults);
 
                   // Re-invoke LLM with tool results to continue the agentic loop
                   // Use setTimeout to allow state updates to settle
                   setTimeout(() => {
+                    if (requestId !== activeRequestIdRef.current) {
+                      return;
+                    }
+
                     void handleGenerateTrainingPlan(
                       trainingPrompt, // Keep same prompt
-                      results,        // Pass tool results
-                      toolCalls       // Pass tool calls for context
+                      mergedResults,                      // Pass full tool result history
+                      trainingToolHistoryRef.current.calls // Pass full tool call history
                     );
                   }, 100);
                 })
                 .catch((toolError) => {
+                  if (requestId !== activeRequestIdRef.current) {
+                    return;
+                  }
+
                   console.error('[TrainingPanel] Tool execution failed:', toolError);
                   // Mark tools as failed
                   setMessages((prev) =>
@@ -608,6 +635,11 @@ export function TrainingPanel() {
       );
     } catch (error) {
       if ((error as Error).name === 'AbortError') return;
+
+      if (requestId !== activeRequestIdRef.current) {
+        return;
+      }
+
       setTrainingError(error instanceof Error ? error.message : 'Failed to generate training plan.');
       setIsTrainingGenerating(false);
       // Mark thinking as complete on catch to stop timer
@@ -620,8 +652,21 @@ export function TrainingPanel() {
         currentThinkingIdRef.current = null;
       }
       setIsThinkingComplete(true);
+    } finally {
+      if (trainingAbortRef.current === controller) {
+        trainingAbortRef.current = null;
+      }
     }
-  }, [projectId, selectedTrainingFile, trainingTargetColumn, trainingPrompt, buildFeatureSummary, enableThinking]);
+  }, [
+    projectId,
+    selectedTrainingFile,
+    trainingTargetColumn,
+    trainingPrompt,
+    buildFeatureSummary,
+    assistantModel,
+    shouldIncludeThoughts,
+    reasoningEffort
+  ]);
 
   // NOTE: Cell tool execution code was removed since ToolIndicator no longer has onRun prop.
   // The LLM tools (list_cells, read_cell, write_cell, edit_cell, run_cell) were processed by
@@ -629,8 +674,17 @@ export function TrainingPanel() {
   // If tool execution needs to be restored, implement it with proper safeguards.
 
   const handleStopTraining = useCallback(() => {
+    activeRequestIdRef.current += 1;
     trainingAbortRef.current?.abort();
+    trainingAbortRef.current = null;
     setIsTrainingGenerating(false);
+    setMessages((prev) => prev.map((msg) =>
+      msg.type === 'thinking' && !msg.isComplete
+        ? { ...msg, isComplete: true }
+        : msg
+    ));
+    currentThinkingIdRef.current = null;
+    currentTextIdRef.current = null;
   }, []);
 
   const resetTrainingToolHistory = useCallback(() => {
@@ -1310,130 +1364,37 @@ export function TrainingPanel() {
 
             {/* AI Chat Input */}
             <div className="border-t bg-background p-4 shrink-0">
-              <div className="max-w-5xl mx-auto space-y-2">
-                <InputGroup>
-                  <InputGroupTextarea
-                    ref={textareaRef}
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={handleChatKeyDown}
-                    placeholder="Ask AI for help with training, tuning, or debugging..."
-                    disabled={isAiThinking}
-                    className="min-h-[60px]"
-                  />
-                  <InputGroupAddon align="block-end">
-                    <div className="flex items-center justify-between w-full gap-2">
-                      {/* Left side: Model selectors - hidden on narrow widths since they're disabled */}
-                      <div className="hidden lg:flex items-center gap-2 shrink-0">
-                        <Select value={assistantModel} onValueChange={setAssistantModel} disabled>
-                          <SelectTrigger className="h-7 w-[100px] text-xs">
-                            <SelectValue placeholder="Model" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ASSISTANT_MODELS.map((model) => (
-                              <SelectItem key={model.value} value={model.value}>
-                                {model.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select value={assistantReasoning} onValueChange={setAssistantReasoning} disabled>
-                          <SelectTrigger className="h-7 w-[80px] text-xs">
-                            <SelectValue placeholder="Reasoning" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {REASONING_MODES.map((mode) => (
-                              <SelectItem key={mode.value} value={mode.value}>
-                                {mode.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Right side: Action buttons - always visible */}
-                      <div className="flex items-center gap-2 ml-auto shrink-0">
-                        <span className="hidden sm:inline text-[10px] text-muted-foreground/60">
-                          ⇧ + ⏎ for newline
-                        </span>
-                        <Badge variant="outline" className="text-[11px] gap-1 shrink-0">
-                          <Brain className="h-3 w-3" />
-                          {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
-                        </Badge>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setEnableThinking(!enableThinking)}
-                                className={cn(
-                                  'h-7 px-2 text-xs transition-colors shrink-0',
-                                  enableThinking && 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:hover:bg-yellow-900/60'
-                                )}
-                              >
-                                <Lightbulb
-                                  className={cn(
-                                    'h-3.5 w-3.5 transition-colors',
-                                    enableThinking && 'text-yellow-500 fill-yellow-400'
-                                  )}
-                                />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              <p>{enableThinking ? 'Disable' : 'Enable'} extended thinking</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={attachmentStatus === 'uploading'}
-                          title="Attach context file"
-                          className="shrink-0"
-                        >
-                          {attachmentStatus === 'uploading' ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Paperclip className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                        <InputGroupButton
-                          size="sm"
-                          onClick={isAiThinking ? handleStopTraining : handleChatSubmit}
-                          disabled={!chatInput.trim() && !isAiThinking}
-                          variant="ghost"
-                          className="h-9 w-9 rounded-full border border-foreground/30 bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-muted/30 disabled:text-muted-foreground shrink-0"
-                        >
-                          {isAiThinking ? <Square className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
-                        </InputGroupButton>
-                      </div>
-                    </div>
-                  </InputGroupAddon>
-                </InputGroup>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.md,.txt"
-                  onChange={handleAttachFile}
-                  className="hidden"
-                />
-
-                {attachmentMessage && (
-                  <div className="text-xs text-muted-foreground">
-                    <span
-                      className={cn(
-                        attachmentStatus === 'success' && 'text-emerald-600',
-                        attachmentStatus === 'error' && 'text-destructive'
-                      )}
-                    >
-                      {attachmentMessage}
-                    </span>
-                  </div>
+              <LlmChatComposer
+                value={chatInput}
+                onValueChange={setChatInput}
+                onKeyDown={handleChatKeyDown}
+                placeholder="Ask AI for help with training, tuning, or debugging..."
+                disabled={isAiThinking}
+                isStreaming={isAiThinking}
+                onSend={handleChatSubmit}
+                onStop={handleStopTraining}
+                model={assistantModel}
+                onModelChange={setAssistantModel}
+                modelOptions={ASSISTANT_MODEL_OPTIONS}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={setReasoningEffort}
+                reasoningOptions={reasoningEffortOptions}
+                enableThinking={enableThinking}
+                onToggleThinking={() => setEnableThinking((prev) => !prev)}
+                metaSlot={(
+                  <Badge variant="outline" className="text-[11px] gap-1 shrink-0">
+                    <Brain className="h-3 w-3" />
+                    {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
+                  </Badge>
                 )}
-              </div>
+                attachment={{
+                  onAttachFile: handleAttachFile,
+                  status: attachmentStatus,
+                  message: attachmentMessage
+                }}
+                maxWidthClassName="max-w-5xl"
+                textareaRef={textareaRef}
+              />
             </div>
           </div>
         </ResizablePanel>

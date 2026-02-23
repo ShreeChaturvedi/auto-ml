@@ -3,15 +3,23 @@ import express, { Request, Response, Router } from 'express';
 import morgan from 'morgan';
 
 import { env } from './config.js';
+import { getDbPool, hasDatabaseConfiguration } from './db.js';
 import { createDatasetRepository } from './repositories/datasetRepository.js';
 import { createProjectRepository } from './repositories/projectRepository.js';
 import { createAnswerRouter } from './routes/answer.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { createDatasetUploadRouter } from './routes/datasets.js';
 import { createDocumentRouter } from './routes/documents.js';
+import { createFeatureEngineeringRouter } from './routes/featureEngineering.js';
+import { createLlmRouter } from './routes/llm.js';
 import { registerHealthRoutes } from './routes/health.js';
+import modelRouter from './routes/models.js';
+import { createMcpRouter } from './routes/mcp.js';
 import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
+import executionRouter from './routes/execution.js';
+import notebookRouter from './routes/notebooks.js';
 
 export function createApp() {
   const app = express();
@@ -31,12 +39,25 @@ export function createApp() {
 
   const router = Router();
   registerHealthRoutes(router);
+  if (hasDatabaseConfiguration()) {
+    registerAuthRoutes(router, getDbPool());
+  } else {
+    router.use('/auth', (_req, res) => {
+      res.status(503).json({ error: 'Authentication is unavailable. Configure DATABASE_URL to enable auth.' });
+    });
+  }
   registerProjectRoutes(router, projectRepository);
   router.use(createDatasetUploadRouter(datasetRepository));
   router.use(createDocumentRouter());
   router.use(createQueryRouter());
   router.use(createAnswerRouter());
   router.use(createPreprocessingRouter());
+  router.use(createFeatureEngineeringRouter());
+  router.use(createLlmRouter());
+  router.use(createMcpRouter());
+  router.use('/models', modelRouter);
+  router.use('/execute', executionRouter);
+  router.use(notebookRouter);
 
   app.use('/api', router);
 

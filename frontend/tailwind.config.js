@@ -7,6 +7,10 @@ export default {
   ],
   theme: {
     extend: {
+      fontSize: {
+        workflow: ['0.8125rem', { lineHeight: '1.1rem' }],
+        'workflow-label': ['0.75rem', { lineHeight: '1rem' }],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -56,10 +60,32 @@ export default {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
+        spotlight: {
+          '0%': {
+            opacity: '0',
+            transform: 'translate(-72%, -62%) scale(0.5)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'translate(-50%, -40%) scale(1)',
+          },
+        },
+        'slide-in-right': {
+          '0%': {
+            opacity: '0',
+            transform: 'translateX(-8px)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'translateX(0)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        spotlight: 'spotlight 2s ease 0.75s 1 forwards',
+        'slide-in-right': 'slide-in-right 0.2s ease-out',
       },
     },
   },

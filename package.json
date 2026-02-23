@@ -2,8 +2,22 @@
   "name": "ai-augmented-automl-monorepo",
   "private": true,
   "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install && npm --prefix testing install",
+    "dev": "node scripts/dev/run.mjs",
+    "dev:ui": "npm --prefix frontend run dev:ui",
+    "dev:backend": "npm --prefix backend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "db:migrate": "npm --prefix backend run db:migrate",
     "benchmark": "npm --prefix testing run benchmark",
     "benchmark:headed": "npm --prefix testing run benchmark:headed",
+    "benchmark:api": "npm --prefix backend run benchmark:api",
     "eval": "npm --prefix testing run eval"
+  },
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.9.11"
   }
 }

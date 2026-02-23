@@ -57,12 +57,12 @@ export function ChatPanel({ projectId }: ChatPanelProps) {
         content:
           answer.status === 'ok'
             ? answer.answer
-            : answer.status === 'no_chunks'
+            : answer.status === 'not_found'
             ? 'No documents available yet. Upload PDFs or text to enable retrieval.'
             : 'Unable to generate an answer right now.',
         citations: answer.citations,
         timestamp: new Date(),
-        cached: answer.cached,
+        cached: answer.meta?.cached,
         status: answer.status
       };
 

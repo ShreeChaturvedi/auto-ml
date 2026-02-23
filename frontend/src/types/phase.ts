@@ -42,13 +42,13 @@ export const phaseConfig: Record<Phase, PhaseConfig> = {
   },
   'data-viewer': {
     icon: 'Table',
-    label: 'Data Explorer',
+    label: 'Explorer',
     description: 'Explore, query, and analyze your data',
     order: 1
   },
   'preprocessing': {
     icon: 'Workflow',
-    label: 'Preprocessing',
+    label: 'Processing',
     description: 'AI-powered data cleaning and transformation',
     order: 2
   },
@@ -60,7 +60,7 @@ export const phaseConfig: Record<Phase, PhaseConfig> = {
   },
   'training': {
     icon: 'Play',
-    label: 'Model Training',
+    label: 'Training',
     description: 'Train models with AI assistance',
     order: 4
   },

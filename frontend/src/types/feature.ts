@@ -56,7 +56,8 @@ export type FeatureMethod =
   // Text
   | 'text_length'
   | 'word_count'
-  | 'contains_pattern';
+  | 'contains_pattern'
+  | 'missing_indicator';
 
 export interface FeatureTemplate {
   id: string;
@@ -173,6 +174,18 @@ export const FEATURE_TEMPLATES: FeatureTemplate[] = [
     suggestedFor: ['numeric'],
     estimatedImpact: 'high',
     previewFormula: 'log(1 + x)'
+  },
+  {
+    id: 'missing_indicator',
+    method: 'missing_indicator',
+    category: 'numeric_transform',
+    displayName: 'Missing Indicator',
+    description: 'Create a binary flag for missing values',
+    rationale: 'Missingness often carries predictive signal. A binary indicator preserves it without imputation bias.',
+    params: {},
+    suggestedFor: ['numeric', 'categorical', 'datetime', 'boolean', 'text'],
+    estimatedImpact: 'medium',
+    previewFormula: 'isnull(x)'
   },
   {
     id: 'sqrt_transform',
@@ -350,6 +363,11 @@ export const FEATURE_TEMPLATES: FeatureTemplate[] = [
     description: 'Encode with mean of target variable',
     rationale: 'Powerful for high-cardinality features. Requires target variable and careful cross-validation.',
     params: {
+      targetColumn: {
+        type: 'column',
+        label: 'Target column',
+        default: ''
+      },
       smoothing: {
         type: 'number',
         label: 'Smoothing factor',
@@ -518,7 +536,13 @@ export const FEATURE_TEMPLATES: FeatureTemplate[] = [
     displayName: 'Ratio Feature',
     description: 'Create ratio of two numeric columns',
     rationale: 'Capture relative relationships. Common in financial and scientific data.',
-    params: {},
+    params: {
+      secondaryColumn: {
+        type: 'column',
+        label: 'Secondary column',
+        default: ''
+      }
+    },
     suggestedFor: ['numeric'],
     estimatedImpact: 'high',
     previewFormula: 'x / y'
@@ -530,7 +554,13 @@ export const FEATURE_TEMPLATES: FeatureTemplate[] = [
     displayName: 'Difference Feature',
     description: 'Calculate difference between two columns',
     rationale: 'Capture relative changes or deltas.',
-    params: {},
+    params: {
+      secondaryColumn: {
+        type: 'column',
+        label: 'Secondary column',
+        default: ''
+      }
+    },
     suggestedFor: ['numeric'],
     estimatedImpact: 'medium',
     previewFormula: 'x - y'
@@ -542,7 +572,13 @@ export const FEATURE_TEMPLATES: FeatureTemplate[] = [
     displayName: 'Product Feature',
     description: 'Multiply two numeric columns',
     rationale: 'Capture multiplicative interactions between features.',
-    params: {},
+    params: {
+      secondaryColumn: {
+        type: 'column',
+        label: 'Secondary column',
+        default: ''
+      }
+    },
     suggestedFor: ['numeric'],
     estimatedImpact: 'medium',
     previewFormula: 'x × y'

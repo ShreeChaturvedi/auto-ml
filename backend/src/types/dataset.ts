@@ -4,6 +4,19 @@ export interface DatasetProfileColumn {
   name: string;
   dtype: string;
   nullCount: number;
+  uniqueCount?: number;
+  sampleCount?: number;
+  topValues?: Array<{ value: string; count: number; percentage: number }>;
+  min?: number;
+  max?: number;
+  mean?: number;
+  median?: number;
+  stdDev?: number;
+  skewness?: number;
+  q1?: number;
+  q3?: number;
+  minDate?: string;
+  maxDate?: string;
 }
 
 export interface DatasetProfile {

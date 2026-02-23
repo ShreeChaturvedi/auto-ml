@@ -9,17 +9,48 @@
  * - Execute button
  *
  * Design decisions documented in:
- * frontend/documentation/design/data-viewer-system.md
+ * docs/design-system.md
  */
 
 import { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Textarea } from '@/components/ui/textarea';
-import { Play, Loader2, MessageSquare, Code2, PanelRightClose, PanelRight } from 'lucide-react';
+import { Loader2, MessageSquare, Code2, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import type { QueryMode } from '@/types/file';
+
+// Animated lightning bolt icon for execute button
+function AnimatedExecuteIcon({ isExecuting }: { isExecuting: boolean }) {
+  if (isExecuting) {
+    return <Loader2 className="h-4 w-4 animate-spin" />;
+  }
+  return (
+    <svg
+      className="h-4 w-4 execute-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <defs>
+        <linearGradient id="executeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#60a5fa" />
+          <stop offset="50%" stopColor="#a78bfa" />
+          <stop offset="100%" stopColor="#f472b6" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+        stroke="url(#executeGradient)"
+        className="animate-pulse"
+      />
+    </svg>
+  );
+}
 
 // Lazy load Monaco Editor to reduce initial bundle size
 const Editor = lazy(() =>
@@ -75,12 +106,12 @@ export function QueryPanel({
   onCollapsedChange
 }: QueryPanelProps) {
   const [mode, setMode] = useState<QueryMode>('sql');
-  
-  // Separate state for each mode (Issue #5)
+
+  // Separate state for each mode to preserve inputs when switching
   const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
-  
-  // Get current theme for Monaco Editor (Issue #2)
+
+  // Theme detection for Monaco Editor
   const { theme: appTheme } = useTheme();
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
   
@@ -117,7 +148,7 @@ export function QueryPanel({
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
 
-  // Handle mode toggle (Issue #3)
+  // Handle mode toggle
   const handleModeChange = useCallback((value: string) => {
     if (value === 'sql' || value === 'english') {
       setMode(value as QueryMode);
@@ -152,22 +183,30 @@ export function QueryPanel({
     [handleExecute]
   );
 
-  // Collapsed state - just show a thin bar with expand button
+  // Detect if user is on Mac for keyboard shortcut display
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const modKey = isMac ? '⌘' : '⌃';
+
+  // Collapsed state - clickable bar to expand
   if (collapsed) {
     return (
-      <div className={cn(
-        'flex flex-col h-full bg-card border-l items-center py-4 transition-all duration-300 ease-in-out',
-        className
-      )}>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => onCollapsedChange?.(false)}
-          className="mb-2"
-          title="Expand Query Panel"
-        >
-          <PanelRight className="h-4 w-4" />
-        </Button>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onCollapsedChange?.(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onCollapsedChange?.(false);
+          }
+        }}
+        className={cn(
+          'flex flex-col h-full bg-card border-l items-center py-4 transition-all duration-300 ease-in-out',
+          'cursor-[w-resize] hover:bg-muted/50',
+          className
+        )}
+        title="Expand Query Panel"
+      >
         <div className="flex-1 flex items-center justify-center">
           <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180">
             Query Builder
@@ -179,59 +218,53 @@ export function QueryPanel({
 
   return (
     <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
-      {/* Header */}
-      <div className="p-4 border-b space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Query Builder</h3>
+      {/* Header - single row with title, mode toggle, and collapse button */}
+      <div className="p-3 border-b">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-foreground whitespace-nowrap">Query Builder</h3>
+
+          {/* Compact Mode Toggle */}
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={handleModeChange}
+            className="flex-1 bg-muted/50 p-0.5 rounded-md h-7"
+          >
+            <ToggleGroupItem
+              value="english"
+              aria-label="Natural language mode"
+              className="flex-1 h-6 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm px-2"
+            >
+              <MessageSquare className="h-3 w-3" />
+              <span className="ml-1.5">English</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="sql"
+              aria-label="SQL mode"
+              className="flex-1 h-6 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm font-mono px-2"
+            >
+              <Code2 className="h-3 w-3" />
+              <span className="ml-1.5">SQL</span>
+            </ToggleGroupItem>
+          </ToggleGroup>
+
           <Button
             variant="ghost"
             size="icon"
             onClick={() => onCollapsedChange?.(true)}
-            className="h-8 w-8"
+            className="h-7 w-7 shrink-0"
             title="Collapse Query Panel"
           >
             <PanelRightClose className="h-4 w-4" />
           </Button>
         </div>
-
-        {/* Mode Toggle - Better UI (Issue #3) */}
-        <ToggleGroup
-          type="single"
-          value={mode}
-          onValueChange={handleModeChange}
-          className="w-full bg-muted/50 p-1 rounded-lg"
-        >
-          <ToggleGroupItem
-            value="english"
-            aria-label="Natural language mode"
-            className="flex-1 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span className="ml-2">English</span>
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="sql"
-            aria-label="SQL mode"
-            className="flex-1 data-[state=on]:bg-background data-[state=on]:shadow-sm font-mono"
-          >
-            <Code2 className="h-4 w-4" />
-            <span className="ml-2">SQL</span>
-          </ToggleGroupItem>
-        </ToggleGroup>
-
-        {/* Mode description */}
-        <p className="text-xs text-muted-foreground">
-          {mode === 'sql'
-            ? 'Write SQL queries to explore your data. Press Cmd/Ctrl+Enter to execute.'
-            : 'Describe what you want to see in plain English. Our AI will generate the SQL query.'}
-        </p>
       </div>
 
       {/* Query Input */}
-      <div className="flex-1 flex flex-col min-h-0 p-4">
+      <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
         {mode === 'sql' ? (
-          // SQL Mode: Monaco Editor with syntax highlighting (Issue #1 & #2)
-          <div className="flex-1 border rounded-md overflow-hidden bg-background">
+          // SQL Mode: Monaco Editor with syntax highlighting
+          <div className="relative flex-1 border rounded-md overflow-hidden bg-background">
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
@@ -245,6 +278,52 @@ export function QueryPanel({
                 value={sqlQuery}
                 onChange={(value) => handleQueryChange(value || '')}
                 onMount={(editorInstance, monaco: Monaco) => {
+                  // Define custom dark theme matching our site
+                  monaco.editor.defineTheme('custom-dark', {
+                    base: 'vs-dark',
+                    inherit: true,
+                    rules: [
+                      { token: 'keyword', foreground: '60a5fa', fontStyle: 'bold' }, // blue
+                      { token: 'string', foreground: '34d399' }, // green
+                      { token: 'number', foreground: 'f472b6' }, // pink
+                      { token: 'comment', foreground: '6b7280', fontStyle: 'italic' }, // gray
+                      { token: 'operator', foreground: 'a78bfa' }, // purple
+                      { token: 'identifier', foreground: 'fafafa' }, // white
+                      { token: 'type', foreground: 'fbbf24' }, // yellow
+                    ],
+                    colors: {
+                      'editor.background': '#000000', // Match site background
+                      'editor.foreground': '#fafafa',
+                      'editor.lineHighlightBackground': '#0a0a0a',
+                      'editor.selectionBackground': '#2563eb44',
+                      'editorLineNumber.foreground': '#404040',
+                      'editorLineNumber.activeForeground': '#808080',
+                      'editorGutter.background': '#000000',
+                      'editor.inactiveSelectionBackground': '#1e3a5f33',
+                    }
+                  });
+
+                  // Define custom light theme
+                  monaco.editor.defineTheme('custom-light', {
+                    base: 'vs',
+                    inherit: true,
+                    rules: [
+                      { token: 'keyword', foreground: '2563eb', fontStyle: 'bold' },
+                      { token: 'string', foreground: '059669' },
+                      { token: 'number', foreground: 'db2777' },
+                      { token: 'comment', foreground: '9ca3af', fontStyle: 'italic' },
+                      { token: 'operator', foreground: '7c3aed' },
+                    ],
+                    colors: {
+                      'editor.background': '#ffffff',
+                      'editorLineNumber.foreground': '#d4d4d4',
+                      'editorLineNumber.activeForeground': '#a3a3a3',
+                    }
+                  });
+
+                  // Apply the custom theme
+                  monaco.editor.setTheme(resolvedTheme === 'dark' ? 'custom-dark' : 'custom-light');
+
                   // Focus editor on mount
                   editorInstance.focus();
                   // Set up keyboard shortcuts
@@ -253,12 +332,12 @@ export function QueryPanel({
                     (window.navigator.platform.toLowerCase().includes('mac') ? 2048 : 2176) | 3,
                     handleExecute
                   );
-                  
+
                   // Clean up previous completion provider if it exists
                   if (completionProviderRef.current) {
                     completionProviderRef.current.dispose();
                   }
-                  
+
                   // Register custom SQL completion provider for keywords, tables, and columns
                   completionProviderRef.current = monaco.languages.registerCompletionItemProvider('sql', {
                     triggerCharacters: [' ', '.', ','],
@@ -317,11 +396,15 @@ export function QueryPanel({
                     }
                   });
                 }}
-                // Dynamic theme based on app theme (Issue #2)
-                theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
+                // Use custom themes defined in onMount
+                theme={resolvedTheme === 'dark' ? 'custom-dark' : 'custom-light'}
                 options={{
                   minimap: { enabled: false },
                   lineNumbers: 'on',
+                  lineNumbersMinChars: 2, // Narrower line numbers column
+                  glyphMargin: false, // Remove extra glyph margin
+                  folding: false, // Remove folding margin
+                  lineDecorationsWidth: 8, // Spacing between line numbers and code
                   roundedSelection: false,
                   scrollBeyondLastLine: false,
                   readOnly: isExecuting,
@@ -329,61 +412,56 @@ export function QueryPanel({
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                   wordWrap: 'on',
                   automaticLayout: true,
-                  padding: { top: 12, bottom: 12 },
-                  // Fix: Ensure autocomplete widgets render correctly in transformed containers
+                  padding: { top: 8, bottom: 8 },
                   fixedOverflowWidgets: true,
                   suggest: {
                     showKeywords: true,
                     showSnippets: true,
-                    // Improve autocomplete behavior
                     insertMode: 'replace',
                     filterGraceful: true,
                     localityBonus: true
                   },
-                  // Better cursor and selection visibility
                   cursorBlinking: 'smooth',
                   cursorSmoothCaretAnimation: 'on'
                 }}
               />
             </Suspense>
+            {/* Keyboard shortcut hint */}
+            <span className="absolute bottom-2 right-2 text-xs text-muted-foreground/50 pointer-events-none select-none">
+              {modKey} + ⏎
+            </span>
           </div>
         ) : (
-          // English Mode: Simple textarea
-          <Textarea
-            value={englishQuery}
-            onChange={(e) => handleQueryChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe what you want to see in plain English... For example: Show me all rows where revenue is greater than 1000"
-            disabled={isExecuting}
-            className="flex-1 resize-none leading-relaxed focus-visible:ring-1"
-            aria-label="Natural language query input"
-          />
+          // English Mode: Simple textarea with hint
+          <div className="relative flex-1 flex flex-col">
+            <Textarea
+              value={englishQuery}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe what you want to see in plain English... For example: Show me all rows where revenue is greater than 1000"
+              disabled={isExecuting}
+              className="flex-1 resize-none leading-relaxed focus-visible:ring-1"
+              aria-label="Natural language query input"
+            />
+            {/* Keyboard shortcut hint */}
+            <span className="absolute bottom-2 right-2 text-xs text-muted-foreground/50 pointer-events-none select-none">
+              {modKey} + ⏎
+            </span>
+          </div>
         )}
       </div>
 
       {/* Execute Button */}
-      <div className="p-4 border-t">
+      <div className="px-3 pb-3">
         <Button
+          variant="secondary"
           onClick={handleExecute}
           disabled={isExecuting || !currentQuery.trim()}
-          className="w-full"
-          size="lg"
+          className="w-full h-9 text-sm gap-2"
         >
-          {isExecuting ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Executing...
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4" />
-              Execute Query
-            </>
-          )}
+          <AnimatedExecuteIcon isExecuting={isExecuting} />
+          {isExecuting ? 'Executing...' : 'Execute'}
         </Button>
-        <p className="text-xs text-muted-foreground text-center mt-2">
-          Cmd/Ctrl + Enter
-        </p>
       </div>
     </div>
   );

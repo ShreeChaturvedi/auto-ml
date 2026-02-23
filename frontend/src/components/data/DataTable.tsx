@@ -263,9 +263,9 @@ export function DataTable({ preview, onSave, queryInfo, className }: DataTablePr
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
             <div className="flex items-center gap-3 flex-wrap">
               {/* View Toggle */}
-              <TabsList className="h-8">
-                <TabsTrigger value="table" className="text-xs h-7 px-3">Table</TabsTrigger>
-                <TabsTrigger value="eda" className="text-xs h-7 px-3">Analysis</TabsTrigger>
+              <TabsList className="h-8 p-1">
+                <TabsTrigger value="table" className="text-xs h-6 px-3 py-0">Table</TabsTrigger>
+                <TabsTrigger value="eda" className="text-xs h-6 px-3 py-0">Analysis</TabsTrigger>
               </TabsList>
 
               {queryInfo && (

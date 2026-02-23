@@ -21,6 +21,8 @@ export interface QueryResultPayload {
 
 export interface EdaSummary {
   numericColumns: NumericSummary[];
+  categoricalColumns: CategoricalSummary[];
+  dataQuality: DataQualitySummary[];
   histogram?: HistogramSummary;
   scatter?: ScatterSummary;
   correlations?: CorrelationSummary[];
@@ -31,7 +33,30 @@ export interface NumericSummary {
   min: number;
   max: number;
   mean: number;
+  median?: number;
   stdDev: number;
+  skewness?: number;
+  q1?: number;
+  q3?: number;
+  outlierCount?: number;
+}
+
+export interface CategoricalSummary {
+  column: string;
+  uniqueCount: number;
+  topValues: Array<{ value: string; count: number; percentage: number }>;
+  missingCount: number;
+  mode: string | null;
+}
+
+export interface DataQualitySummary {
+  column: string;
+  dataType: 'numeric' | 'categorical' | 'datetime' | 'boolean' | 'mixed';
+  totalCount: number;
+  missingCount: number;
+  missingPercentage: number;
+  uniqueCount: number;
+  uniquePercentage: number;
 }
 
 export interface HistogramSummary {

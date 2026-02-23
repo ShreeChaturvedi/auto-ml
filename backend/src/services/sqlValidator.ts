@@ -11,7 +11,7 @@ export interface ValidateSqlResult {
 }
 
 /**
- * Strip SQL comments (both -- line comments and /* block comments *​/)
+ * Strip SQL comments (both -- line comments and block comments)
  * to get the actual SQL statement for validation
  */
 function stripSqlComments(sql: string): string {

@@ -9,8 +9,8 @@ import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { profileDataset } from '../services/datasetProfiler.js';
-import { loadDatasetIntoPostgres } from '../services/datasetLoader.js';
+import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../services/datasetLoader.js';
+import { profileDatasetRows } from '../services/datasetProfiler.js';
 import type { DatasetFileType } from '../types/dataset.js';
 
 const upload = multer({
@@ -58,7 +58,15 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       datasets = datasets.filter(d => d.projectId === projectId);
     }
 
-    res.json({ datasets });
+    const withTableNames = datasets.map((dataset) => ({
+      ...dataset,
+      tableName:
+        typeof dataset.metadata?.tableName === 'string'
+          ? dataset.metadata.tableName
+          : sanitizeTableName(dataset.filename, dataset.datasetId)
+    }));
+
+    res.json({ datasets: withTableNames });
   });
 
   router.get('/datasets/:datasetId/sample', async (req, res) => {
@@ -82,6 +90,42 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     }
   });
 
+  // Download raw dataset file for use in code cells
+  router.get('/datasets/:datasetId/download', async (req, res) => {
+    const { datasetId } = req.params;
+
+    try {
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        return res.status(404).json({ error: 'Dataset not found' });
+      }
+
+      const datasetDir = join(env.datasetStorageDir, datasetId);
+      const filePath = join(datasetDir, dataset.filename);
+
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ error: 'Dataset file not found on disk' });
+      }
+
+      const buffer = readFileSync(filePath);
+
+      // Set appropriate content type based on file type
+      const contentTypes: Record<string, string> = {
+        csv: 'text/csv',
+        json: 'application/json',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      };
+
+      res.setHeader('Content-Type', contentTypes[dataset.fileType] || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${dataset.filename}"`);
+      res.setHeader('Content-Length', buffer.length);
+      return res.send(buffer);
+    } catch (error) {
+      console.error(`[datasets] Failed to download ${datasetId}`, error);
+      return res.status(500).json({ error: 'Failed to download dataset' });
+    }
+  });
+
   router.post(
     '/upload/dataset',
     upload.single('file'),
@@ -101,9 +145,14 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       }
 
       try {
-        const profiling = profileDataset(req.file.buffer, fileType);
+        const rows = parseDatasetRows(req.file.buffer, fileType);
+        if (rows.length === 0) {
+          return res.status(400).json({ error: 'Dataset has no rows to process' });
+        }
 
-        const dataset = await datasetRepository.create({
+        const profiling = profileDatasetRows(rows);
+
+        let dataset = await datasetRepository.create({
           projectId: parseResult.data.projectId,
           filename: req.file.originalname,
           fileType,
@@ -120,17 +169,51 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         const filePath = join(datasetDir, req.file.originalname);
         writeFileSync(filePath, req.file.buffer);
 
-        const { tableName, rowsLoaded } = await loadDatasetIntoPostgres({
-          datasetId: dataset.datasetId,
-          filename: req.file.originalname,
-          fileType,
-          buffer: req.file.buffer,
-          columns: profiling.columns
-        });
+        let tableName = sanitizeTableName(req.file.originalname, dataset.datasetId);
 
-        console.log(
-          `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
-        );
+        if (hasDatabaseConfiguration()) {
+          const { tableName: loadedTableName, rowsLoaded } = await loadDatasetIntoPostgres({
+            datasetId: dataset.datasetId,
+            filename: req.file.originalname,
+            fileType,
+            buffer: req.file.buffer,
+            columns: profiling.columns,
+            rows
+          });
+
+          tableName = loadedTableName;
+          const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
+            ...current,
+            nRows: rowsLoaded,
+            metadata: {
+              ...(current.metadata ?? {}),
+              tableName,
+              rowsLoaded
+            }
+          }));
+          if (updated) {
+            dataset = updated;
+          }
+
+          console.log(
+            `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
+          );
+        } else {
+          const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
+            ...current,
+            metadata: {
+              ...(current.metadata ?? {}),
+              tableName
+            }
+          }));
+          if (updated) {
+            dataset = updated;
+          }
+
+          console.info(
+            `[datasets] Stored ${req.file.originalname} (${fileType}) without database load`
+          );
+        }
 
         return res.status(201).json({
           dataset: {
@@ -161,6 +244,10 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // Migration endpoint: Create tables for existing datasets
   router.post('/datasets/migrate', async (req, res) => {
     try {
+      if (!hasDatabaseConfiguration()) {
+        return res.status(503).json({ error: 'Database is not configured for migration' });
+      }
+
       const datasets = await datasetRepository.list();
 
       const results = {
@@ -189,6 +276,15 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
           });
 
           console.log(`[datasets] Migrated ${dataset.filename} -> "${tableName}" (${rowsLoaded} rows)`);
+          await datasetRepository.update(dataset.datasetId, (current) => ({
+            ...current,
+            nRows: rowsLoaded,
+            metadata: {
+              ...(current.metadata ?? {}),
+              tableName,
+              rowsLoaded
+            }
+          }));
           results.migrated.push(dataset.datasetId);
 
         } catch (error) {
@@ -241,12 +337,10 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       if (hasDatabaseConfiguration()) {
         try {
           const pool = getDbPool();
-          const tableName = dataset.filename
-            .replace(/\.[^/.]+$/, '')
-            .replace(/[^a-zA-Z0-9_]/g, '_')
-            .replace(/^[^a-zA-Z]/, 'table_')
-            .toLowerCase()
-            .slice(0, 63);
+          const tableName =
+            typeof dataset.metadata?.tableName === 'string'
+              ? dataset.metadata.tableName
+              : sanitizeTableName(dataset.filename, dataset.datasetId);
 
           await pool.query(`DROP TABLE IF EXISTS "${tableName}"`);
         } catch (error) {

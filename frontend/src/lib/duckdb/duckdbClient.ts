@@ -12,8 +12,8 @@
  * - Memory management and cleanup
  * - User-friendly error messages
  *
- * Architecture documented in:
- * frontend/documentation/architecture/query-engine-duckdb.md
+ * Status: Experimental (not wired into the UI). See DECISIONS.md for current
+ * query engine direction.
  *
  * @example
  * ```typescript
@@ -32,6 +32,31 @@ import type {
   DuckDBConfig,
   ServiceStats
 } from './types';
+
+/**
+ * Type definitions for DuckDB/Arrow library types
+ * These are defined locally to avoid apache-arrow package.json exports issue
+ */
+interface ArrowField {
+  name: string;
+  nullable: boolean;
+  type: { typeId: number };
+}
+
+interface ArrowSchema {
+  fields: ArrowField[];
+}
+
+interface DuckDBArrowTable extends Iterable<Record<string, unknown>> {
+  schema: ArrowSchema;
+  toArray(): Record<string, unknown>[];
+}
+
+interface DuckDBDescribeRow {
+  column_name: string;
+  column_type: string;
+  null: string;
+}
 
 /**
  * Default configuration for DuckDB service
@@ -245,7 +270,7 @@ export class DuckDBService {
   /**
    * Execute query with timeout protection
    */
-  private async executeWithTimeout(sql: string): Promise<any> {
+  private async executeWithTimeout(sql: string): Promise<DuckDBArrowTable> {
     return Promise.race([
       this.conn!.query(sql),
       new Promise<never>((_, reject) =>
@@ -280,12 +305,12 @@ export class DuckDBService {
    * Convert Arrow table to QueryResult format
    */
   private async arrowToQueryResult(
-    arrowTable: any, // Arrow Table from DuckDB
+    arrowTable: DuckDBArrowTable,
     originalSQL: string
   ): Promise<QueryResult> {
     // Get schema information
     const schema = arrowTable.schema;
-    const columns: ColumnSchema[] = schema.fields.map((field: any) => ({
+    const columns: ColumnSchema[] = schema.fields.map((field: ArrowField) => ({
       name: field.name,
       type: this.arrowTypeToDuckDBType(field.type),
       nullable: field.nullable
@@ -331,7 +356,7 @@ export class DuckDBService {
   /**
    * Convert Arrow type to DuckDB type string
    */
-  private arrowTypeToDuckDBType(arrowType: any): string {
+  private arrowTypeToDuckDBType(arrowType: { typeId: number }): string {
     const typeId = arrowType.typeId;
     
     // Map Arrow type IDs to DuckDB types
@@ -373,7 +398,7 @@ export class DuckDBService {
     const columnsResult = await this.conn!.query(columnsSQL);
     const columnsArray = columnsResult.toArray();
 
-    const columns: ColumnSchema[] = columnsArray.map((col: any) => ({
+    const columns: ColumnSchema[] = columnsArray.map((col: DuckDBDescribeRow) => ({
       name: col.column_name,
       type: col.column_type,
       nullable: col.null === 'YES'
@@ -402,7 +427,7 @@ export class DuckDBService {
       const result = await this.conn!.query(sql);
       const rows = result.toArray();
 
-      return rows.map((row: any) => ({
+      return rows.map((row: DuckDBDescribeRow) => ({
         name: row.column_name,
         type: row.column_type,
         nullable: row.null === 'YES'
@@ -581,13 +606,13 @@ export class DuckDBService {
   /**
    * Logging helpers
    */
-  private log(message: string, ...args: any[]): void {
+  private log(message: string, ...args: unknown[]): void {
     if (this.config.enableLogging) {
       console.log(`[DuckDB] ${message}`, ...args);
     }
   }
 
-  private error(message: string, ...args: any[]): void {
+  private error(message: string, ...args: unknown[]): void {
     console.error(`[DuckDB] ${message}`, ...args);
   }
 }

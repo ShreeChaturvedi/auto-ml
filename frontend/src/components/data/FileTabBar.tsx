@@ -27,7 +27,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
-import { X, FileText, FileJson, FileSpreadsheet, Database } from 'lucide-react';
+import { X, FileText, FileJson, FileSpreadsheet, Database, FileCode, FileType, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { cn } from '@/lib/utils';
@@ -88,8 +88,16 @@ function SortableTab({
         return <FileJson className="h-4 w-4 text-blue-500" />;
       case 'excel':
         return <FileSpreadsheet className="h-4 w-4 text-emerald-500" />;
+      case 'pdf':
+        return <FileText className="h-4 w-4 text-rose-500" />;
+      case 'markdown':
+        return <FileCode className="h-4 w-4 text-purple-500" />;
+      case 'word':
+        return <FileType className="h-4 w-4 text-sky-500" />;
+      case 'text':
+        return <FileText className="h-4 w-4 text-slate-500" />;
       default:
-        return <FileText className="h-4 w-4 text-gray-500" />;
+        return <File className="h-4 w-4 text-gray-500" />;
     }
   };
 
@@ -102,7 +110,7 @@ function SortableTab({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group flex h-10 cursor-pointer items-center gap-2 border-b-2 px-4 transition-colors flex-none',
+        'group flex h-14 cursor-pointer items-center gap-2 border-b-2 px-4 transition-colors flex-none',
         isActive
           ? 'border-primary bg-muted text-foreground'
           : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -139,11 +147,11 @@ interface FileTabBarProps {
 
 export function FileTabBar({ projectId }: FileTabBarProps) {
   const allFiles = useDataStore((state) => state.files);
-  const allPreviews = useDataStore((state) => state.previews);
   const allArtifacts = useDataStore((state) => state.queryArtifacts);
   const activeFileTabId = useDataStore((state) => state.activeFileTabId);
   const setActiveFileTab = useDataStore((state) => state.setActiveFileTab);
-  const removeFile = useDataStore((state) => state.removeFile);
+  const openFileTabs = useDataStore((state) => state.openFileTabs);
+  const closeFileTab = useDataStore((state) => state.closeFileTab);
   const removeArtifact = useDataStore((state) => state.removeArtifact);
 
   // Get files and artifacts for this project
@@ -152,9 +160,12 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
     [allFiles, projectId]
   );
 
-  const filePreviews = useMemo(
-    () => allPreviews.filter((p) => files.some((f) => f.id === p.fileId)),
-    [allPreviews, files]
+  const openFiles = useMemo(
+    () =>
+      openFileTabs
+        .map((tabId) => files.find((file) => file.id === tabId))
+        .filter((file): file is NonNullable<typeof file> => Boolean(file)),
+    [openFileTabs, files]
   );
 
   const artifacts = useMemo(
@@ -164,14 +175,12 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
 
   // Combine files and artifacts into tabs
   const baseTabs: FileTab[] = useMemo(() => {
-    const fileTabs: FileTab[] = files
-      .filter((f) => filePreviews.some((p) => p.fileId === f.id))
-      .map((file) => ({
-        id: file.id,
-        name: file.name,
-        type: 'file' as const,
-        fileType: file.type
-      }));
+    const fileTabs: FileTab[] = openFiles.map((file) => ({
+      id: file.id,
+      name: file.name,
+      type: 'file' as const,
+      fileType: file.type
+    }));
 
     const artifactTabs: FileTab[] = artifacts.map((artifact) => ({
       id: artifact.id,
@@ -181,7 +190,7 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
     }));
 
     return [...fileTabs, ...artifactTabs];
-  }, [files, filePreviews, artifacts]);
+  }, [openFiles, artifacts]);
 
   // Maintain tab order state for drag-drop persistence
   const [orderedTabs, setOrderedTabs] = useState<FileTab[]>(baseTabs);
@@ -229,32 +238,34 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
 
   const handleCloseTab = (tab: FileTab) => {
     if (tab.type === 'file') {
-      removeFile(tab.id);
-    } else {
-      removeArtifact(tab.id);
+      closeFileTab(tab.id);
+      return;
     }
 
-    // If closing active tab, select another
-    if (tab.id === activeFileTabId && orderedTabs.length > 1) {
+    removeArtifact(tab.id);
+
+    if (tab.id === activeFileTabId) {
       const remainingTabs = orderedTabs.filter((t) => t.id !== tab.id);
       if (remainingTabs.length > 0) {
         const nextTab = remainingTabs[0];
         setActiveFileTab(nextTab.id, nextTab.type);
+      } else {
+        setActiveFileTab(null, null);
       }
     }
   };
 
   if (orderedTabs.length === 0) {
     return (
-      <div className="border-b border-border bg-card px-4 py-2 text-sm text-muted-foreground">
+      <div className="flex h-14 items-center border-b border-border bg-card px-4 text-sm text-muted-foreground">
         No files or queries to display
       </div>
     );
   }
 
   return (
-    <div className="border-b border-border bg-card">
-      <div className="flex items-center overflow-x-auto scrollbar-thin">
+    <div className="h-14 border-b border-border bg-card">
+      <div className="flex h-full items-center overflow-x-auto scrollbar-thin">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

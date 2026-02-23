@@ -90,8 +90,12 @@ export interface PreprocessingResponse {
 }
 
 export interface AvailableTable {
+  datasetId: string;
   name: string;
+  filename: string;
   sizeBytes: number;
+  nRows?: number;
+  nCols?: number;
 }
 
 // Severity configuration for styling
@@ -185,5 +189,6 @@ export const preprocessingTypeConfig: Record<PreprocessingType, {
     description: 'Handle duplicate rows'
   }
 };
+
 
 

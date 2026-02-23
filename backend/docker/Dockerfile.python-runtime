@@ -1,0 +1,47 @@
+# Python Runtime for AutoML Code Execution
+# Pre-built with common ML/Data Science libraries
+
+ARG PYTHON_VERSION=3.11
+
+FROM python:${PYTHON_VERSION}-slim
+
+# Create non-root user for sandboxed execution
+RUN useradd -m -s /bin/bash sandbox
+
+# System build tools for packages with native extensions
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    curl \
+    pkg-config \
+    libffi-dev \
+    libssl-dev \
+    libopenblas-dev \
+    gfortran \
+  && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip tooling
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install common ML/DS packages
+RUN pip install --no-cache-dir \
+    numpy==1.26.4 \
+    pandas==2.2.2 \
+    scikit-learn==1.5.1 \
+    matplotlib==3.9.2 \
+    seaborn==0.13.2 \
+    scipy==1.14.0 \
+    plotly==5.23.0 \
+    openpyxl==3.1.5 \
+    xlrd==2.0.1
+
+# Set up workspace
+WORKDIR /workspace
+
+# Switch to non-root user
+USER sandbox
+
+# Keep container running (will be exec'd into)
+CMD ["tail", "-f", "/dev/null"]

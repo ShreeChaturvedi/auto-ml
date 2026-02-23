@@ -181,7 +181,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                 type="button"
                 onClick={() => setIsIconPickerOpen(true)}
                 className={cn(
-                  'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background',
+                  'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-all hover:scale-105 focus:outline-none',
                   projectColorClasses[selectedColor].bg,
                   projectColorClasses[selectedColor].text,
                   projectColorClasses[selectedColor].border
@@ -246,7 +246,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                       'h-8 w-8 rounded-md border-2 transition-all',
                       colorClass,
                       selectedColor === color
-                        ? 'border-foreground ring-2 ring-offset-2 ring-offset-background ring-primary scale-110'
+                        ? 'border-foreground scale-110'
                         : 'border-border hover:border-foreground hover:scale-105'
                     )}
                     onClick={() => setValue('color', color)}

@@ -174,11 +174,26 @@ export const useProjectStore = create<ProjectState>()(
             });
           } catch (error) {
             console.error('Failed to load projects', error);
-            set({
-              isInitialized: true,
-              isLoading: false,
-              error: 'Unable to load projects from backend'
-            });
+
+            // Check if we have locally persisted projects to fall back to
+            const localProjects = get().projects;
+            const isDev = import.meta.env.DEV || import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
+
+            if (localProjects.length > 0 && isDev) {
+              // In dev mode with local data, continue working offline
+              console.warn('[projectStore] Backend unavailable, using local projects');
+              set({
+                isInitialized: true,
+                isLoading: false,
+                error: undefined // Clear error since we have local data
+              });
+            } else {
+              set({
+                isInitialized: true,
+                isLoading: false,
+                error: 'Unable to load projects from backend. Ensure the backend is running.'
+              });
+            }
           }
         },
 
@@ -197,6 +212,31 @@ export const useProjectStore = create<ProjectState>()(
             return project;
           } catch (error) {
             console.error('Failed to create project', error);
+
+            // In dev mode, allow local-only project creation when backend is unavailable
+            const isDev = import.meta.env.DEV || import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
+            if (isDev) {
+              console.warn('[projectStore] Backend unavailable, creating local-only project');
+              const localProject: Project = {
+                id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                title: data.title,
+                description: data.description,
+                icon: data.icon ?? 'Folder',
+                color: data.color ?? 'blue',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                ...DEFAULT_PHASE_STATE,
+                metadata: {}
+              };
+
+              set((state) => ({
+                projects: [...state.projects, localProject],
+                activeProjectId: localProject.id
+              }));
+
+              return localProject;
+            }
+
             set({ error: 'Unable to create project' });
             throw error;
           }

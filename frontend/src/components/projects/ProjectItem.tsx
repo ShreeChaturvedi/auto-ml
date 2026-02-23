@@ -6,9 +6,7 @@
  * - Project title
  * - Right-click context menu (edit, delete)
  * - Click to select project and navigate to it
- *
- * NOTE: This component is currently not actively used in the UI.
- * The sidebar now shows phases for the active project instead of a project list.
+ * - Collapsed state support for sidebar
  */
 
 import { useState } from 'react';
@@ -21,6 +19,12 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
 import { useProjectStore } from '@/stores/projectStore';
 import type { Project } from '@/types/project';
 import { projectColorClasses } from '@/types/project';
@@ -30,9 +34,10 @@ import * as LucideIcons from 'lucide-react';
 
 interface ProjectItemProps {
   project: Project;
+  collapsed?: boolean;
 }
 
-export function ProjectItem({ project }: ProjectItemProps) {
+export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   const navigate = useNavigate();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
@@ -62,39 +67,40 @@ export function ProjectItem({ project }: ProjectItemProps) {
 
   const handleProjectClick = () => {
     setActiveProject(project.id);
-    // Navigate to project (will redirect to current phase)
     navigate(`/project/${project.id}`);
   };
 
-  return (
-    <>
+  const itemContent = (
+    <div
+      data-testid={`project-item-${project.id}`}
+      className={cn(
+        'group flex items-center gap-2 rounded-md px-1.5 py-1.5 cursor-pointer transition-colors',
+        isActive
+          ? 'bg-accent text-accent-foreground'
+          : 'hover:bg-accent/50 text-foreground'
+      )}
+      onClick={handleProjectClick}
+    >
+      {/* Icon with colored background */}
       <div
-        data-testid={`project-item-${project.id}`}
         className={cn(
-          'group flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors',
-          isActive
-            ? 'bg-accent text-accent-foreground'
-            : 'hover:bg-accent/50 text-foreground'
+          'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
+          colorClasses.bg,
+          colorClasses.text
         )}
-        onClick={handleProjectClick}
       >
-        {/* Icon with colored background */}
-        <div
-          className={cn(
-            'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
-            colorClasses.bg,
-            colorClasses.text
-          )}
-        >
-          {IconComponent && <IconComponent className="h-3.5 w-3.5" />}
-        </div>
+        {IconComponent && <IconComponent className="h-3.5 w-3.5" />}
+      </div>
 
-        {/* Project title */}
+      {/* Project title - hidden when collapsed */}
+      {!collapsed && (
         <span className="flex-1 truncate text-sm font-medium" title={project.title}>
           {project.title}
         </span>
+      )}
 
-        {/* More options menu */}
+      {/* More options menu - hidden when collapsed */}
+      {!collapsed && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -109,7 +115,7 @@ export function ProjectItem({ project }: ProjectItemProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
-              onClick={(e: React.MouseEvent) => {
+              onClick={(e) => {
                 e.stopPropagation();
                 setIsEditDialogOpen(true);
               }}
@@ -118,7 +124,7 @@ export function ProjectItem({ project }: ProjectItemProps) {
               Edit
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={(e: React.MouseEvent) => {
+              onClick={(e) => {
                 e.stopPropagation();
                 void handleDelete();
               }}
@@ -129,7 +135,26 @@ export function ProjectItem({ project }: ProjectItemProps) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      {collapsed ? (
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              {itemContent}
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>{project.title}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        itemContent
+      )}
 
       {/* Edit Project Dialog */}
       <ProjectDialog

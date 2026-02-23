@@ -29,6 +29,7 @@ export function FeatureCard({ feature }: FeatureCardProps) {
               </Badge>
               <Badge variant="secondary" className="text-[11px]">
                 from {feature.sourceColumn}
+                {feature.secondaryColumn ? ` + ${feature.secondaryColumn}` : ''}
               </Badge>
             </div>
           </div>

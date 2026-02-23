@@ -9,9 +9,10 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { env } from '../config.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres } from '../services/datasetLoader.js';
-import { env } from '../config.js';
 
 async function migrateExistingDatasets() {
   console.log('[migration] Starting dataset migration');
@@ -44,6 +45,16 @@ async function migrateExistingDatasets() {
         buffer,
         columns: dataset.columns
       });
+
+      await repository.update(dataset.datasetId, (current) => ({
+        ...current,
+        nRows: rowsLoaded,
+        metadata: {
+          ...(current.metadata ?? {}),
+          tableName,
+          rowsLoaded
+        }
+      }));
 
       console.log(`[migration] Created table "${tableName}" (${rowsLoaded} rows)`);
       migrated++;

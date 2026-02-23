@@ -192,3 +192,5 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
 }
 
 
+
+

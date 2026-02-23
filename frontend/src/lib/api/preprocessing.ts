@@ -7,7 +7,7 @@ import type { PreprocessingResponse, AvailableTable } from '@/types/preprocessin
 
 export interface AnalyzeRequest {
   projectId: string;
-  tableName: string;
+  datasetId: string;
   sampleSize?: number;
 }
 
@@ -24,5 +24,6 @@ export async function listAvailableTables(projectId?: string): Promise<{ tables:
     : '/preprocessing/tables';
   return apiRequest<{ tables: AvailableTable[] }>(url, { method: 'GET' });
 }
+
 
 

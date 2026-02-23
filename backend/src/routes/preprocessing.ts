@@ -7,14 +7,23 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { env } from '../config.js';
 import { hasDatabaseConfiguration, getDbPool } from '../db.js';
+import { createDatasetRepository } from '../repositories/datasetRepository.js';
+import { sanitizeTableName } from '../services/datasetLoader.js';
 import { analyzeDataForPreprocessing } from '../services/preprocessingSuggestions.js';
 import type { QueryRow } from '../types/query.js';
 
+const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+
 const analyzeSchema = z.object({
   projectId: z.string().uuid('projectId must be a valid UUID'),
-  tableName: z.string().min(1, 'tableName is required'),
+  tableName: z.string().min(1).optional(),
+  datasetId: z.string().min(1).optional(),
   sampleSize: z.number().int().min(100).max(10000).optional().default(1000)
+}).refine((data) => Boolean(data.tableName || data.datasetId), {
+  message: 'tableName or datasetId is required',
+  path: ['tableName']
 });
 
 export function createPreprocessingRouter() {
@@ -39,7 +48,27 @@ export function createPreprocessingRouter() {
       return res.status(503).json({ error: 'Database is not configured' });
     }
 
-    const { projectId, tableName, sampleSize } = result.data;
+    const { tableName, datasetId, sampleSize } = result.data;
+
+    let resolvedTableName = tableName;
+
+    if (!resolvedTableName && datasetId) {
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        return res.status(404).json({ error: 'Dataset not found' });
+      }
+      if (dataset.projectId && dataset.projectId !== result.data.projectId) {
+        return res.status(403).json({ error: 'Dataset does not belong to this project' });
+      }
+      resolvedTableName =
+        typeof dataset.metadata?.tableName === 'string'
+          ? dataset.metadata.tableName
+          : sanitizeTableName(dataset.filename, dataset.datasetId);
+    }
+
+    if (!resolvedTableName) {
+      return res.status(400).json({ error: 'No table available for preprocessing' });
+    }
 
     try {
       const pool = getDbPool();
@@ -47,17 +76,17 @@ export function createPreprocessingRouter() {
       // Fetch sample data from the table
       // Use TABLESAMPLE for large tables, or regular LIMIT for smaller ones
       const countResult = await pool.query(
-        `SELECT COUNT(*)::integer as count FROM "${tableName}"`
+        `SELECT COUNT(*)::integer as count FROM "${resolvedTableName}"`
       );
       const totalRows = countResult.rows[0].count;
 
       let sampleQuery: string;
       if (totalRows > sampleSize * 2) {
         // Use random sampling for large tables
-        sampleQuery = `SELECT * FROM "${tableName}" ORDER BY RANDOM() LIMIT ${sampleSize}`;
+        sampleQuery = `SELECT * FROM "${resolvedTableName}" ORDER BY RANDOM() LIMIT ${sampleSize}`;
       } else {
         // Just get all rows for smaller tables
-        sampleQuery = `SELECT * FROM "${tableName}" LIMIT ${sampleSize}`;
+        sampleQuery = `SELECT * FROM "${resolvedTableName}" LIMIT ${sampleSize}`;
       }
 
       const dataResult = await pool.query(sampleQuery);
@@ -73,7 +102,7 @@ export function createPreprocessingRouter() {
             suggestions: []
           },
           metadata: {
-            tableName,
+            tableName: resolvedTableName,
             totalRows: 0,
             sampledRows: 0,
             samplePercentage: 0
@@ -87,7 +116,7 @@ export function createPreprocessingRouter() {
       return res.json({
         analysis,
         metadata: {
-          tableName,
+          tableName: resolvedTableName,
           totalRows,
           sampledRows: rows.length,
           samplePercentage: totalRows > 0 ? (rows.length / totalRows) * 100 : 100
@@ -110,26 +139,23 @@ export function createPreprocessingRouter() {
       return res.status(503).json({ error: 'Database is not configured' });
     }
 
-    const projectId = req.query.projectId as string | undefined;
-
     try {
-      const pool = getDbPool();
-      
-      // Get all user tables (excluding system tables)
-      const result = await pool.query(`
-        SELECT 
-          table_name,
-          pg_total_relation_size(quote_ident(table_name)) as size_bytes
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-          AND table_type = 'BASE TABLE'
-          AND table_name NOT IN ('projects', 'datasets', 'documents', 'chunks', 'embeddings', 'query_results', 'query_cache')
-        ORDER BY table_name
-      `);
+      const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+      let datasets = await datasetRepository.list();
+      if (projectId) {
+        datasets = datasets.filter((dataset) => dataset.projectId === projectId);
+      }
 
-      const tables = result.rows.map(row => ({
-        name: row.table_name,
-        sizeBytes: parseInt(row.size_bytes, 10)
+      const tables = datasets.map((dataset) => ({
+        datasetId: dataset.datasetId,
+        name:
+          typeof dataset.metadata?.tableName === 'string'
+            ? dataset.metadata.tableName
+            : sanitizeTableName(dataset.filename, dataset.datasetId),
+        filename: dataset.filename,
+        sizeBytes: dataset.size,
+        nRows: dataset.nRows,
+        nCols: dataset.nCols
       }));
 
       return res.json({ tables });
@@ -141,5 +167,6 @@ export function createPreprocessingRouter() {
 
   return router;
 }
+
 
 

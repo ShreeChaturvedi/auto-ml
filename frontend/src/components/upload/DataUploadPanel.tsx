@@ -1,25 +1,24 @@
 /**
- * DataUploadPanel - Backend-integrated file upload interface
+ * DataUploadPanel - Clean, minimal file upload interface
  *
  * Features:
- * - Drag-and-drop upload with backend persistence
- * - Automatic dataset upload to Postgres
- * - File hydration on mount (loads persisted files)
- * - Upload status tracking
- * - Delete with backend sync
+ * - Large drop zone when empty (matches custom instructions height)
+ * - Compact drop zone when files exist
+ * - Simple file rows without card borders
+ * - Horizontal separators between files
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, Database, FileStack } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Upload, FileStack, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
 import { getFileType } from '@/types/file';
-import { FileCard } from './FileCard';
+import { FileRow } from './FileRow';
 import { uploadDatasetFile } from '@/lib/api/datasets';
+import { uploadDocument } from '@/lib/api/documents';
 
 // Accepted file types (data files and context documents only - NO images)
 const acceptedFileTypes = {
@@ -31,8 +30,6 @@ const acceptedFileTypes = {
   // Context/documentation files (for RAG and business context)
   'application/pdf': ['.pdf'],
   'text/markdown': ['.md'],
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/msword': ['.doc'],
   'text/plain': ['.txt']
 };
 
@@ -41,10 +38,11 @@ interface DataUploadPanelProps {
 }
 
 export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
-  const [datasetUploadStatus, setDatasetUploadStatus] = useState<Record<string, 'uploading' | 'uploaded' | 'error'>>({});
-  const [datasetUploadErrors, setDatasetUploadErrors] = useState<Record<string, string>>({});
+  const [uploadStatus, setUploadStatus] = useState<Record<string, 'uploading' | 'uploaded' | 'error'>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
 
   const addFile = useDataStore((state) => state.addFile);
+  const addPreview = useDataStore((state) => state.addPreview);
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const allFiles = useDataStore((state) => state.files);
@@ -54,6 +52,8 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
     () => allFiles.filter((file) => file.projectId === projectId),
     [allFiles, projectId]
   );
+
+  const hasFiles = projectFiles.length > 0;
 
   // Hydrate files from backend on mount
   useEffect(() => {
@@ -65,7 +65,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   // Upload dataset files to backend
   const uploadDatasetToBackend = useCallback(
     async (file: UploadedFile) => {
-      setDatasetUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
+      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
 
       try {
         const response = await uploadDatasetFile(file.file!, projectId);
@@ -77,15 +77,59 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           tableName: dataset.tableName,
           rowCount: dataset.n_rows,
           columnCount: dataset.n_cols,
-          columns: dataset.columns
+          columns: dataset.columns,
+          datasetProfile: {
+            nRows: dataset.n_rows,
+            nCols: dataset.n_cols,
+            dtypes: dataset.dtypes,
+            nullCounts: dataset.null_counts
+          }
         });
 
-        setDatasetUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
+        addPreview({
+          fileId: file.id,
+          headers: dataset.columns,
+          rows: dataset.sample,
+          totalRows: dataset.n_rows,
+          previewRows: dataset.sample.length
+        });
+
+        setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
         console.log(`[DataUploadPanel] ✅ Uploaded ${file.name} to backend`);
       } catch (error) {
         console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
-        setDatasetUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
-        setDatasetUploadErrors((prev) => ({
+        setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.id]: error instanceof Error ? error.message : 'Upload failed'
+        }));
+      }
+    },
+    [projectId, setFileMetadata, addPreview]
+  );
+
+  const uploadDocumentToBackend = useCallback(
+    async (file: UploadedFile) => {
+      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
+
+      try {
+        const response = await uploadDocument(projectId, file.file!);
+        const document = response.document;
+
+        setFileMetadata(file.id, {
+          documentId: document.documentId,
+          chunkCount: document.chunkCount,
+          embeddingDimension: document.embeddingDimension,
+          mimeType: document.mimeType,
+          parseWarning: document.parseWarning
+        });
+
+        setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
+        console.log(`[DataUploadPanel] ✅ Ingested ${file.name} for RAG`);
+      } catch (error) {
+        console.error(`[DataUploadPanel] Failed to ingest ${file.name}:`, error);
+        setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
+        setUploadErrors((prev) => ({
           ...prev,
           [file.id]: error instanceof Error ? error.message : 'Upload failed'
         }));
@@ -113,10 +157,12 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         // Auto-upload dataset files
         if (['csv', 'json', 'excel'].includes(file.type)) {
           void uploadDatasetToBackend(file);
+        } else if (['pdf', 'markdown', 'word', 'text'].includes(file.type)) {
+          void uploadDocumentToBackend(file);
         }
       });
     },
-    [projectId, addFile, uploadDatasetToBackend]
+    [projectId, addFile, uploadDatasetToBackend, uploadDocumentToBackend]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -128,19 +174,19 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   const handleRemoveFile = async (fileId: string) => {
     try {
       await useDataStore.getState().deleteFile(fileId);
-      setDatasetUploadStatus((prev) => {
+      setUploadStatus((prev) => {
         const next = { ...prev };
         delete next[fileId];
         return next;
       });
-      setDatasetUploadErrors((prev) => {
+      setUploadErrors((prev) => {
         const next = { ...prev };
         delete next[fileId];
         return next;
       });
     } catch (error) {
       console.error('[DataUploadPanel] Failed to delete file:', error);
-      setDatasetUploadErrors((prev) => ({
+      setUploadErrors((prev) => ({
         ...prev,
         [fileId]: 'Failed to delete file from server'
       }));
@@ -150,115 +196,106 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   // Count file types
   const dataFiles = projectFiles.filter(f => ['csv', 'json', 'excel'].includes(f.type));
   const contextFiles = projectFiles.filter(f => ['pdf', 'markdown', 'word', 'text', 'other'].includes(f.type));
-  const isUploading = Object.values(datasetUploadStatus).some(status => status === 'uploading');
+  const isUploading = Object.values(uploadStatus).some(status => status === 'uploading');
 
   return (
-    <Card className="h-full flex flex-col border-0 shadow-none">
-      <CardHeader className="space-y-2">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2">
-            <div className="rounded-lg bg-primary/10 p-2">
-              <Database className="h-5 w-5 text-primary" />
-            </div>
-            <div className="space-y-0.5">
-              <CardTitle className="text-lg font-semibold">Data Upload</CardTitle>
-              <CardDescription className="text-xs">
-                Upload datasets and documentation for your project
-              </CardDescription>
-            </div>
+    <div className="h-full flex flex-col" data-testid="data-upload-panel">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg bg-primary/10 p-2">
+            <FileStack className="h-5 w-5 text-primary" />
           </div>
-          {isUploading && (
-            <Badge variant="secondary" className="text-xs">
-              Uploading...
-            </Badge>
-          )}
+          <div>
+            <h2 className="text-lg font-semibold">Data Upload</h2>
+            <p className="text-xs text-muted-foreground">
+              Datasets and documentation for your project
+            </p>
+          </div>
         </div>
-      </CardHeader>
+        {isUploading && (
+          <Badge variant="secondary" className="text-xs gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Uploading...
+          </Badge>
+        )}
+      </div>
 
-      <CardContent className="flex-1 flex flex-col space-y-4 pt-0 overflow-hidden">
-        {/* Drag and Drop Area */}
+      {/* Drop Zone + File List Container */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Drop Zone - Full height when empty, compact when has files */}
         <div
           {...getRootProps()}
           className={cn(
-            'flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 transition-all duration-200 cursor-pointer group',
+            'flex flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer',
+            hasFiles ? 'py-6 mb-4' : 'flex-1 min-h-[300px]',
             isDragActive
-              ? 'border-primary bg-primary/10 scale-[1.02]'
-              : 'border-border hover:border-primary/60 hover:bg-accent/30'
+              ? 'border-primary bg-primary/5 scale-[1.01]'
+              : 'border-border hover:border-primary/50 hover:bg-accent/20'
           )}
         >
           <input {...getInputProps()} />
 
-          <div className="flex flex-col items-center text-center space-y-4">
-            {/* Icon */}
-            <div
-              className={cn(
-                'rounded-2xl p-4 transition-all duration-200',
-                isDragActive
-                  ? 'bg-primary/20 scale-110'
-                  : 'bg-primary/10 group-hover:bg-primary/15 group-hover:scale-105'
-              )}
-            >
-              {isDragActive ? (
-                <Upload className="h-10 w-10 text-primary animate-bounce" />
-              ) : (
-                <FileStack className="h-10 w-10 text-primary" />
-              )}
-            </div>
-
-            {/* Text */}
-            <div className="space-y-2 max-w-md">
-              <h3 className="text-base font-semibold text-foreground">
-                {isDragActive ? 'Drop your files here' : 'Upload your files'}
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Drag and drop files here, or click anywhere in this area to browse. Supports CSV, JSON, Excel for data and PDF, Markdown, Word for context documents.
-              </p>
-            </div>
+          <div className={cn(
+            'rounded-2xl p-3 mb-3 transition-transform',
+            isDragActive ? 'bg-primary/20 scale-110' : 'bg-primary/10'
+          )}>
+            {isDragActive ? (
+              <Upload className="h-8 w-8 text-primary animate-bounce" />
+            ) : (
+              <FileStack className="h-8 w-8 text-primary" />
+            )}
           </div>
+
+          <h3 className="text-sm font-medium text-foreground mb-1">
+            {isDragActive ? 'Drop your files here' : 'Upload your files'}
+          </h3>
+          <p className="text-xs text-muted-foreground text-center max-w-sm px-4">
+            {hasFiles
+              ? 'Drop more files or click to browse'
+              : 'Drag and drop files here, or click anywhere. Supports CSV, JSON, Excel for data and PDF/Markdown/TXT for context.'}
+          </p>
         </div>
 
-        {/* Uploaded Files Section */}
-        {projectFiles.length > 0 && (
-          <div className="flex-1 flex flex-col space-y-3 min-h-0">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="text-sm font-semibold text-foreground">Uploaded Files</h3>
-                <div className="flex items-center gap-2">
-                  {dataFiles.length > 0 && (
-                    <Badge variant="secondary" className="text-xs font-medium">
-                      {dataFiles.length} data
-                    </Badge>
-                  )}
-                  {contextFiles.length > 0 && (
-                    <Badge variant="outline" className="text-xs font-medium">
-                      {contextFiles.length} context
-                    </Badge>
-                  )}
-                </div>
+        {/* File List - Simple rows with separators */}
+        {hasFiles && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Header with counts */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium">Uploaded Files</span>
+              <div className="flex items-center gap-2">
+                {dataFiles.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {dataFiles.length} data
+                  </Badge>
+                )}
+                {contextFiles.length > 0 && (
+                  <Badge variant="outline" className="text-xs">
+                    {contextFiles.length} context
+                  </Badge>
+                )}
               </div>
-              <span className="text-xs text-muted-foreground">
-                {projectFiles.length} total
-              </span>
             </div>
 
-            {/* File Grid - Scrollable */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide">
-              <div className="grid grid-cols-1 gap-3">
-                {projectFiles.map((file) => (
-                  <FileCard
-                    key={file.id}
+            {/* Scrollable file list */}
+            <div className="flex-1 overflow-y-auto -mx-1 px-1">
+              {projectFiles.map((file, index) => (
+                <div key={file.id}>
+                  <FileRow
                     file={file}
                     onRemove={handleRemoveFile}
-                    status={datasetUploadStatus[file.id]}
-                    errorMessage={datasetUploadErrors[file.id]}
+                    status={uploadStatus[file.id]}
+                    errorMessage={uploadErrors[file.id]}
                   />
-                ))}
-              </div>
+                  {index < projectFiles.length - 1 && (
+                    <hr className="border-border my-2" />
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

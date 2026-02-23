@@ -5,160 +5,70 @@
  * - Sidebar (left, collapsible) - shows phases for active project
  * - MainContent (center, contains phase content)
  *
- * Responsive behavior:
- * - Desktop: All panels visible
- * - Tablet: Sidebar auto-collapses, can be toggled
- * - Mobile: Full-screen content, sidebar as overlay
+ * Note: Global top ribbon removed. Each phase shows its own contextual ribbon.
+ * Theme toggle and sidebar collapse are now in the sidebar header.
+ * ContinueButton is fixed at bottom-right for phase navigation.
  */
 
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { PanelLeftClose, PanelLeftOpen, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { ThemeToggle } from '@/components/theme-toggle';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbSeparator
-} from '@/components/ui/breadcrumb';
-import { useProjectStore } from '@/stores/projectStore';
+import { useParams } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { ContinueButton } from './ContinueButton';
-import { cn } from '@/lib/utils';
-import { phaseConfig, getAllPhasesSorted, getNextPhase } from '@/types/phase';
+import { useProjectStore } from '@/stores/projectStore';
 import type { Phase } from '@/types/phase';
+import { cn } from '@/lib/utils';
 
 interface AppShellProps {
   children: React.ReactNode;
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { projectId, phase } = useParams<{ projectId: string; phase: string }>();
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
-  const getProjectById = useProjectStore((state) => state.getProjectById);
+  const projects = useProjectStore((state) => state.projects);
 
-  const activeProject = activeProjectId ? getProjectById(activeProjectId) : undefined;
+  // Get current phase from URL or project state
+  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+  const currentPhase = (phase as Phase) || activeProject?.currentPhase;
+  const effectiveProjectId = projectId || activeProjectId;
 
-  // Get unlocked phases sorted by workflow order
-  const unlockedPhases = activeProject
-    ? getAllPhasesSorted().filter((phase) => activeProject.unlockedPhases.includes(phase))
-    : [];
-
-  // Parse phase from URL pathname (source of truth)
-  // URL format: /project/:projectId/:phase
-  const pathParts = location.pathname.split('/').filter(Boolean);
-  const currentPhaseFromURL = pathParts.length >= 3 ? (pathParts[2] as Phase) : undefined;
-  const currentPhase = currentPhaseFromURL || activeProject?.currentPhase;
-
-  const handlePhaseClick = (phase: Phase) => {
-    if (activeProjectId) {
-      // Navigate only - App.tsx will sync currentPhase from URL
-      navigate(`/project/${activeProjectId}/${phase}`);
-    }
-  };
+  // Only show continue button if phase is not yet completed (first time viewing)
+  const isPhaseCompleted = activeProject?.completedPhases?.includes(currentPhase as Phase) ?? false;
+  const showContinueButton = effectiveProjectId && currentPhase && !isPhaseCompleted;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      {/* Sidebar */}
+      {/* Sidebar - collapsed = narrow (icons only), expanded = full width */}
       <div
         className={cn(
-          'flex-shrink-0 border-r border-border bg-card transition-all duration-300',
-          sidebarCollapsed ? 'w-0' : 'w-72'
+          'flex-shrink-0 border-r border-border bg-card transition-all duration-300 ease-in-out',
+          sidebarCollapsed ? 'w-16' : 'w-72'
         )}
       >
-        <Sidebar collapsed={sidebarCollapsed} />
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content Area - no top bar, phase content fills entire area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top Bar with Breadcrumbs */}
-        <div className="flex h-14 items-center justify-between border-b border-border bg-card px-4">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="h-8 w-8 shrink-0"
-            >
-              {sidebarCollapsed ? (
-                <PanelLeftOpen className="h-4 w-4" />
-              ) : (
-                <PanelLeftClose className="h-4 w-4" />
-              )}
-              <span className="sr-only">Toggle sidebar</span>
-            </Button>
-
-            <Separator orientation="vertical" className="h-6 shrink-0" />
-
-            {/* Phase Progression Breadcrumb */}
-            {activeProject && unlockedPhases.length > 0 && (
-              <Breadcrumb className="min-w-0">
-                <BreadcrumbList className="flex-wrap">
-                  <BreadcrumbItem>
-                    <BreadcrumbLink
-                      href={`/project/${activeProjectId}/${unlockedPhases[0]}`}
-                      className="text-sm hover:text-foreground max-w-[120px] truncate"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const firstPhase = unlockedPhases[0];
-                        handlePhaseClick(firstPhase);
-                      }}
-                    >
-                      {activeProject.title}
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-
-                  {/* Show all unlocked phases */}
-                  {unlockedPhases.map((phase) => [
-                    <BreadcrumbSeparator key={`sep-${phase}`}>
-                      <ChevronRight className="h-4 w-4" />
-                    </BreadcrumbSeparator>,
-                    <BreadcrumbItem key={phase}>
-                      <BreadcrumbLink
-                        href={`/project/${activeProject?.id}/${phase}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handlePhaseClick(phase);
-                        }}
-                        className={cn(
-                          'text-sm transition-colors',
-                          phase === currentPhase
-                            ? 'text-primary font-semibold pointer-events-none'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        {phaseConfig[phase].label}
-                      </BreadcrumbLink>
-                    </BreadcrumbItem>
-                  ])}
-                </BreadcrumbList>
-              </Breadcrumb>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Continue Button - only show if there's a next phase */}
-            {activeProject && currentPhase && getNextPhase(currentPhase) && (
-              <ContinueButton
-                currentPhase={currentPhase}
-                projectId={activeProject.id}
-                className="h-8"
-              />
-            )}
-            <ThemeToggle />
-          </div>
-        </div>
-
-        {/* Main Content (no TabBar) */}
         <div className="flex-1 overflow-auto">
           {children}
         </div>
       </div>
+
+      {/* Fixed Continue Button at bottom-right - only shows for uncompleted phases */}
+      {showContinueButton && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <ContinueButton
+            currentPhase={currentPhase}
+            projectId={effectiveProjectId}
+            className="shadow-lg"
+          />
+        </div>
+      )}
     </div>
   );
 }

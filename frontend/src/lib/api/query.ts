@@ -12,6 +12,7 @@ export interface SqlQueryRequest {
 export interface NlQueryRequest {
   projectId: string;
   query: string;
+  tableName?: string;
 }
 
 export interface QueryResultPayload {

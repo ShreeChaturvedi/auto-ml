@@ -1,7 +1,6 @@
-import { parse as parseCsv } from 'csv-parse/sync';
-import XLSX from 'xlsx';
-
 import type { DatasetFileType, DatasetProfileColumn } from '../types/dataset.js';
+
+import { parseDatasetRows } from './datasetLoader.js';
 
 interface ProfileOptions {
   sampleSize?: number;
@@ -20,90 +19,24 @@ export interface DatasetProfilingResult {
 }
 
 export function profileDataset(buffer: Buffer, fileType: DatasetFileType, options: ProfileOptions = {}): DatasetProfilingResult {
+  const rows = parseDatasetRows(buffer, fileType);
+  return profileDatasetRows(rows, options);
+}
+
+export function profileDatasetRows(
+  rows: Record<string, unknown>[],
+  options: ProfileOptions = {}
+): DatasetProfilingResult {
   const effectiveOptions = { ...DEFAULT_OPTIONS, ...options };
-  let rows: Record<string, unknown>[] = [];
-
-  switch (fileType) {
-    case 'csv':
-      rows = profileCsv(buffer, effectiveOptions);
-      break;
-    case 'json':
-      rows = profileJson(buffer, effectiveOptions);
-      break;
-    case 'xlsx':
-      rows = profileXlsx(buffer, effectiveOptions);
-      break;
-    default:
-      throw new Error(`Unsupported dataset file type: ${fileType}`);
-  }
-
-  const columns = buildColumns(rows);
-  const sample = rows.slice(0, effectiveOptions.sampleSize);
+  const rowsForProfile = rows.slice(0, effectiveOptions.maxRows);
+  const columns = buildColumns(rowsForProfile);
+  const sample = rowsForProfile.slice(0, effectiveOptions.sampleSize);
 
   return {
     nRows: rows.length,
     columns,
     sample
   };
-}
-
-function profileCsv(buffer: Buffer, options: Required<ProfileOptions>): Record<string, unknown>[] {
-  const text = buffer.toString('utf8');
-  const records = parseCsv(text, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-    to: options.maxRows
-  }) as Record<string, unknown>[];
-  return records;
-}
-
-function profileJson(buffer: Buffer, options: Required<ProfileOptions>): Record<string, unknown>[] {
-  const text = buffer.toString('utf8');
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .filter((item) => typeof item === 'object' && item !== null)
-        .slice(0, options.maxRows) as Record<string, unknown>[];
-    }
-
-    if (typeof parsed === 'object' && parsed !== null) {
-      return [parsed as Record<string, unknown>];
-    }
-  } catch (error) {
-    // Attempt to parse as NDJSON
-    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const rows: Record<string, unknown>[] = [];
-    for (const line of lines) {
-      try {
-        const value = JSON.parse(line);
-        if (typeof value === 'object' && value !== null) {
-          rows.push(value as Record<string, unknown>);
-        }
-        if (rows.length >= options.maxRows) break;
-      } catch {
-        console.warn('[datasetProfiler] Skipping invalid JSON line');
-      }
-    }
-    if (rows.length > 0) {
-      return rows;
-    }
-    throw error;
-  }
-
-  return [];
-}
-
-function profileXlsx(buffer: Buffer, options: Required<ProfileOptions>): Record<string, unknown>[] {
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: null
-  });
-  return rows.slice(0, options.maxRows);
 }
 
 function buildColumns(rows: Record<string, unknown>[]): DatasetProfileColumn[] {
@@ -131,60 +64,209 @@ function buildColumns(rows: Record<string, unknown>[]): DatasetProfileColumn[] {
     });
   }
 
-  return Array.from(columns.entries()).map(([name, data]) => ({
-    name,
-    dtype: inferColumnType(data.values),
-    nullCount: data.nullCount
-  }));
+  return Array.from(columns.entries()).map(([name, data]) => {
+    const sampleCount = data.values.length;
+    const { dtype, numericValues, dateValues } = inferColumnType(data.values);
+    const uniqueStats = buildUniqueStats(data.values);
+    const numericStats =
+      dtype === 'number' ? buildNumericStats(numericValues) : undefined;
+    const dateStats =
+      dtype === 'date' ? buildDateStats(dateValues) : undefined;
+
+    return {
+      name,
+      dtype,
+      nullCount: data.nullCount,
+      sampleCount,
+      uniqueCount: uniqueStats.uniqueCount,
+      topValues: uniqueStats.topValues,
+      ...(numericStats ?? {}),
+      ...(dateStats ?? {})
+    };
+  });
 }
 
-function inferColumnType(values: unknown[]): string {
+function inferColumnType(values: unknown[]): {
+  dtype: string;
+  numericValues: number[];
+  dateValues: Date[];
+} {
   if (values.length === 0) {
-    return 'unknown';
+    return { dtype: 'unknown', numericValues: [], dateValues: [] };
   }
 
-  if (values.every((value) => isBoolean(value))) {
-    return 'boolean';
+  const numericValues: number[] = [];
+  const booleanValues: boolean[] = [];
+  const dateValues: Date[] = [];
+
+  for (const value of values) {
+    const numeric = coerceNumber(value);
+    if (numeric !== null) {
+      numericValues.push(numeric);
+      continue;
+    }
+
+    const booleanValue = coerceBoolean(value);
+    if (booleanValue !== null) {
+      booleanValues.push(booleanValue);
+      continue;
+    }
+
+    const dateValue = coerceDate(value);
+    if (dateValue) {
+      dateValues.push(dateValue);
+    }
   }
 
-  if (values.every((value) => isNumber(value))) {
-    return 'number';
+  const total = values.length || 1;
+  const numericRatio = numericValues.length / total;
+  const booleanRatio = booleanValues.length / total;
+  const dateRatio = dateValues.length / total;
+
+  if (numericRatio >= 0.9) {
+    return { dtype: 'number', numericValues, dateValues: [] };
+  }
+  if (booleanRatio >= 0.9) {
+    return { dtype: 'boolean', numericValues: [], dateValues: [] };
+  }
+  if (dateRatio >= 0.9) {
+    return { dtype: 'date', numericValues: [], dateValues };
   }
 
-  if (values.every((value) => isDate(value))) {
-    return 'date';
-  }
-
-  return 'string';
+  return { dtype: 'string', numericValues: [], dateValues: [] };
 }
 
-function isBoolean(value: unknown): boolean {
-  if (typeof value === 'boolean') return true;
+function coerceBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const lower = value.trim().toLowerCase();
-    return lower === 'true' || lower === 'false';
+    if (lower === 'true') return true;
+    if (lower === 'false') return false;
   }
-  return false;
+  return null;
 }
 
-function isNumber(value: unknown): boolean {
-  if (typeof value === 'number' && Number.isFinite(value)) return true;
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (trimmed === '') return false;
+    if (trimmed === '') return null;
     const num = Number(trimmed);
-    return Number.isFinite(num);
+    return Number.isFinite(num) ? num : null;
   }
-  return false;
+  return null;
 }
 
-function isDate(value: unknown): boolean {
-  if (value instanceof Date) {
-    return !Number.isNaN(value.getTime());
+function coerceDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
   }
   if (typeof value === 'string') {
-    const timestamp = Date.parse(value);
-    return !Number.isNaN(timestamp);
+    const trimmed = value.trim();
+    if (!trimmed || /^\d+(\.\d+)?$/.test(trimmed)) {
+      return null;
+    }
+    const timestamp = Date.parse(trimmed);
+    if (!Number.isNaN(timestamp)) {
+      return new Date(timestamp);
+    }
   }
-  return false;
+  return null;
+}
+
+function buildUniqueStats(values: unknown[]): {
+  uniqueCount: number;
+  topValues: Array<{ value: string; count: number; percentage: number }>;
+} {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const key = stringifyValue(value);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  const total = values.length || 1;
+  const topValues = entries.slice(0, 5).map(([value, count]) => ({
+    value,
+    count,
+    percentage: Number(((count / total) * 100).toFixed(2))
+  }));
+
+  return { uniqueCount: counts.size, topValues };
+}
+
+function buildNumericStats(values: number[]): {
+  min: number;
+  max: number;
+  mean: number;
+  median: number;
+  stdDev: number;
+  skewness: number;
+  q1: number;
+  q3: number;
+} | undefined {
+  if (values.length === 0) return undefined;
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const n = sorted.length;
+  const min = sorted[0];
+  const max = sorted[n - 1];
+  const mean = sorted.reduce((sum, value) => sum + value, 0) / n;
+  const median = percentile(sorted, 0.5);
+  const q1 = percentile(sorted, 0.25);
+  const q3 = percentile(sorted, 0.75);
+  const variance =
+    n > 1
+      ? sorted.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (n - 1)
+      : 0;
+  const stdDev = Math.sqrt(variance);
+  const skewness =
+    stdDev > 0
+      ? sorted.reduce((sum, value) => sum + (value - mean) ** 3, 0) / n / (stdDev ** 3)
+      : 0;
+
+  return {
+    min,
+    max,
+    mean: Number(mean.toFixed(4)),
+    median: Number(median.toFixed(4)),
+    stdDev: Number(stdDev.toFixed(4)),
+    skewness: Number(skewness.toFixed(4)),
+    q1: Number(q1.toFixed(4)),
+    q3: Number(q3.toFixed(4))
+  };
+}
+
+function buildDateStats(values: Date[]): { minDate: string; maxDate: string } | undefined {
+  if (values.length === 0) return undefined;
+  const timestamps = values.map((value) => value.getTime()).sort((a, b) => a - b);
+  const minDate = new Date(timestamps[0]).toISOString();
+  const maxDate = new Date(timestamps[timestamps.length - 1]).toISOString();
+  return { minDate, maxDate };
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = (sorted.length - 1) * p;
+  const lower = Math.floor(idx);
+  const upper = Math.ceil(idx);
+  if (lower === upper) {
+    return sorted[lower];
+  }
+  const weight = idx - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+function stringifyValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value instanceof Date) return value.toISOString();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

@@ -2,10 +2,12 @@
  * Dataset Loader - Loads uploaded datasets into Postgres tables for querying
  */
 
+import { parse as parseCsv } from 'csv-parse/sync';
+import type { PoolClient } from 'pg';
+import XLSX from 'xlsx';
+
 import { getDbPool } from '../db.js';
 import type { DatasetProfileColumn } from '../types/dataset.js';
-import { parse as parseCsv } from 'csv-parse/sync';
-import XLSX from 'xlsx';
 
 /**
  * Load a dataset into a Postgres table
@@ -16,6 +18,7 @@ export async function loadDatasetIntoPostgres(params: {
   fileType: 'csv' | 'json' | 'xlsx';
   buffer: Buffer;
   columns: DatasetProfileColumn[];
+  rows?: Record<string, unknown>[];
 }): Promise<{ tableName: string; rowsLoaded: number }> {
   const { datasetId, filename, fileType, buffer, columns } = params;
 
@@ -23,7 +26,7 @@ export async function loadDatasetIntoPostgres(params: {
   const tableName = sanitizeTableName(filename, datasetId);
 
   // Parse data based on file type
-  const rows = parseDataFile(buffer, fileType);
+  const rows = params.rows ?? parseDatasetRows(buffer, fileType);
 
   if (rows.length === 0) {
     throw new Error('No data rows to load');
@@ -59,21 +62,37 @@ export async function loadDatasetIntoPostgres(params: {
   }
 }
 
-function sanitizeTableName(filename: string, datasetId: string): string {
+export function sanitizeTableName(filename: string, datasetId: string, forceUnique = false): string {
   // Remove extension and sanitize to create clean, user-friendly table name
   const baseName = filename.replace(/\.[^/.]+$/, '');
-  const sanitized = baseName
+  let sanitized = baseName
     .replace(/[^a-zA-Z0-9_]/g, '_') // Replace invalid chars with underscore
     .replace(/^[^a-zA-Z]/, 'table_') // Ensure starts with letter
-    .toLowerCase()
-    .slice(0, 63); // Postgres max identifier length
+    .replace(/_+/g, '_') // Collapse multiple underscores
+    .replace(/_$/, '') // Remove trailing underscore
+    .toLowerCase();
 
-  // Return clean name matching original filename (e.g., "checkpoints_eoc")
-  // Conflicts handled by DROP TABLE IF EXISTS on re-upload
-  return sanitized;
+  if (!sanitized) {
+    sanitized = 'table_data';
+  }
+
+  // Only add suffix if forceUnique is requested (for collision handling)
+  if (forceUnique) {
+    const suffix = datasetId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+    const separator = suffix ? `_${suffix}` : '';
+    const maxBaseLength = 63 - separator.length;
+    const trimmed = sanitized.slice(0, maxBaseLength);
+    return `${trimmed || 'table_data'}${separator}`;
+  }
+
+  // Return clean name without suffix (max 63 chars for Postgres identifier)
+  return sanitized.slice(0, 63) || 'table_data';
 }
 
-function parseDataFile(buffer: Buffer, fileType: 'csv' | 'json' | 'xlsx'): Record<string, unknown>[] {
+export function parseDatasetRows(
+  buffer: Buffer,
+  fileType: 'csv' | 'json' | 'xlsx'
+): Record<string, unknown>[] {
   switch (fileType) {
     case 'csv': {
       const text = buffer.toString('utf8');
@@ -85,8 +104,37 @@ function parseDataFile(buffer: Buffer, fileType: 'csv' | 'json' | 'xlsx'): Recor
     }
     case 'json': {
       const text = buffer.toString('utf8');
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : [parsed];
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item) => typeof item === 'object' && item !== null) as Record<string, unknown>[];
+        }
+        if (typeof parsed === 'object' && parsed !== null) {
+          return [parsed as Record<string, unknown>];
+        }
+        throw new Error('JSON dataset must be an object or array of objects');
+      } catch (error) {
+        // Attempt to parse as NDJSON
+        const lines = text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const rows: Record<string, unknown>[] = [];
+        for (const line of lines) {
+          try {
+            const value = JSON.parse(line);
+            if (typeof value === 'object' && value !== null) {
+              rows.push(value as Record<string, unknown>);
+            }
+          } catch {
+            console.warn('[datasetLoader] Skipping invalid JSON line');
+          }
+        }
+        if (rows.length > 0) {
+          return rows;
+        }
+        throw error;
+      }
     }
     case 'xlsx': {
       const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -124,7 +172,7 @@ function inferPostgresType(dtype: string): string {
 }
 
 async function insertRows(
-  client: any,
+  client: PoolClient,
   tableName: string,
   columns: DatasetProfileColumn[],
   rows: Record<string, unknown>[]

@@ -38,7 +38,11 @@ export async function ingestDocument(options: IngestOptions): Promise<IngestedDo
       options.filename,
       options.mimeType,
       options.buffer.byteLength,
-      JSON.stringify({ type: options.document.type }),
+      JSON.stringify({
+        type: options.document.type,
+        parseError: options.document.parseError ?? null,
+        textLength: options.document.text.length
+      }),
       storagePath
     ]
   );

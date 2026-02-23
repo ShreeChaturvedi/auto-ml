@@ -22,7 +22,6 @@ import type {
 const MAX_SCATTER_POINTS = 200;
 const HISTOGRAM_BUCKETS = 15;
 const MAX_TOP_VALUES = 10;
-const CATEGORICAL_CARDINALITY_THRESHOLD = 50; // Columns with more unique values treated as high-cardinality
 
 /**
  * Build comprehensive EDA summary from query results

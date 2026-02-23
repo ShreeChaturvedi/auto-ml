@@ -12,6 +12,7 @@
 import { create } from 'zustand';
 import type { UploadedFile, DataPreview, QueryArtifact, QueryMode, FileMetadata } from '@/types/file';
 import { listDatasets, deleteDataset } from '@/lib/api/datasets';
+import { listDocuments, deleteDocument } from '@/lib/api/documents';
 import { getFileType } from '@/types/file';
 
 interface DataState {
@@ -27,6 +28,7 @@ interface DataState {
   // File tab management (for Data Viewer phase)
   activeFileTabId: string | null; // Can be fileId or artifactId
   fileTabType: 'file' | 'artifact' | null; // Track what type of tab is active
+  openFileTabs: string[];
 
   // Hydration state (per project)
   hydratedProjects: Set<string>;
@@ -46,7 +48,7 @@ interface DataState {
   setFileMetadata: (fileId: string, metadata: Partial<FileMetadata>) => void;
 
   // Hydration actions
-  hydrateFromBackend: (projectId: string) => Promise<void>;
+  hydrateFromBackend: (projectId: string, options?: { force?: boolean }) => Promise<void>;
 
   // Query artifact actions
   createArtifact: (
@@ -71,6 +73,27 @@ interface DataState {
 
   // File tab actions
   setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | null) => void;
+  openFileTab: (id: string) => void;
+  closeFileTab: (id: string) => void;
+}
+
+function sanitizeTableName(filename: string, datasetId: string): string {
+  const baseName = filename.replace(/\.[^/.]+$/, '');
+  let safe = baseName
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^[^a-zA-Z]/, 'table_')
+    .toLowerCase();
+
+  if (!safe) {
+    safe = 'table_data';
+  }
+
+  const suffix = datasetId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+  const separator = suffix ? `_${suffix}` : '';
+  const maxBaseLength = 63 - separator.length;
+  const trimmed = safe.slice(0, maxBaseLength);
+
+  return `${trimmed || 'table_data'}${separator}`;
 }
 
 export const useDataStore = create<DataState>((set, get) => ({
@@ -82,6 +105,7 @@ export const useDataStore = create<DataState>((set, get) => ({
   queryCounter: 0,
   activeFileTabId: null,
   fileTabType: null,
+  openFileTabs: [],
   hydratedProjects: new Set<string>(),
   isHydrating: false,
   hydrationError: null,
@@ -89,14 +113,32 @@ export const useDataStore = create<DataState>((set, get) => ({
   // File actions
   addFile: (file: UploadedFile) => {
     set((state) => ({
-      files: [...state.files, file]
+      files: [...state.files, file],
+      openFileTabs:
+        ['csv', 'json', 'excel'].includes(file.type) && !state.openFileTabs.includes(file.id)
+          ? [...state.openFileTabs, file.id]
+          : state.openFileTabs
     }));
   },
 
   removeFile: (id: string) => {
     set((state) => ({
       files: state.files.filter((f) => f.id !== id),
-      previews: state.previews.filter((p) => p.fileId !== id)
+      previews: state.previews.filter((p) => p.fileId !== id),
+      openFileTabs: state.openFileTabs.filter((tabId) => tabId !== id),
+      ...(() => {
+        if (state.activeFileTabId !== id || state.fileTabType !== 'file') {
+          return {};
+        }
+        const remainingTabs = state.openFileTabs.filter((tabId) => tabId !== id);
+        if (remainingTabs.length > 0) {
+          return { activeFileTabId: remainingTabs[0], fileTabType: 'file' as const };
+        }
+        if (state.queryArtifacts.length > 0) {
+          return { activeFileTabId: state.queryArtifacts[0].id, fileTabType: 'artifact' as const };
+        }
+        return { activeFileTabId: null, fileTabType: null };
+      })()
     }));
   },
 
@@ -111,6 +153,14 @@ export const useDataStore = create<DataState>((set, get) => ({
       } catch (error) {
         console.error('[dataStore] Failed to delete dataset from backend:', error);
         throw error; // Re-throw so UI can handle it
+      }
+    }
+    if (file.metadata?.documentId) {
+      try {
+        await deleteDocument(file.metadata.documentId);
+      } catch (error) {
+        console.error('[dataStore] Failed to delete document from backend:', error);
+        throw error;
       }
     }
 
@@ -148,7 +198,14 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     set((state) => ({
       files: state.files.filter((f) => f.projectId !== projectId),
-      previews: state.previews.filter((p) => !fileIdsToRemove.includes(p.fileId))
+      previews: state.previews.filter((p) => !fileIdsToRemove.includes(p.fileId)),
+      openFileTabs: state.openFileTabs.filter((tabId) => !fileIdsToRemove.includes(tabId)),
+      ...(() => {
+        if (!state.activeFileTabId || !fileIdsToRemove.includes(state.activeFileTabId)) {
+          return {};
+        }
+        return { activeFileTabId: null, fileTabType: null };
+      })()
     }));
   },
 
@@ -244,13 +301,50 @@ export const useDataStore = create<DataState>((set, get) => ({
   setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | null) => {
     set({ activeFileTabId: id, fileTabType: type });
   },
+  openFileTab: (id: string) => {
+    set((state) => ({
+      openFileTabs: state.openFileTabs.includes(id)
+        ? state.openFileTabs
+        : [...state.openFileTabs, id],
+      activeFileTabId: id,
+      fileTabType: 'file'
+    }));
+  },
+  closeFileTab: (id: string) => {
+    set((state) => {
+      const remainingTabs = state.openFileTabs.filter((tabId) => tabId !== id);
+      if (state.activeFileTabId !== id || state.fileTabType !== 'file') {
+        return { openFileTabs: remainingTabs };
+      }
+      if (remainingTabs.length > 0) {
+        return {
+          openFileTabs: remainingTabs,
+          activeFileTabId: remainingTabs[0],
+          fileTabType: 'file'
+        };
+      }
+      if (state.queryArtifacts.length > 0) {
+        return {
+          openFileTabs: remainingTabs,
+          activeFileTabId: state.queryArtifacts[0].id,
+          fileTabType: 'artifact'
+        };
+      }
+      return {
+        openFileTabs: remainingTabs,
+        activeFileTabId: null,
+        fileTabType: null
+      };
+    });
+  },
 
   // Hydration - Load persisted datasets from backend
-  async hydrateFromBackend(projectId: string) {
+  async hydrateFromBackend(projectId: string, options) {
     const state = get();
+    const force = options?.force ?? false;
 
     // Skip if already hydrated for this project or currently hydrating
-    if (state.hydratedProjects.has(projectId) || state.isHydrating) {
+    if ((!force && state.hydratedProjects.has(projectId)) || state.isHydrating) {
       return;
     }
 
@@ -258,9 +352,22 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     try {
       const { datasets } = await listDatasets(projectId);
+      const { documents } = await listDocuments(projectId).catch((error) => {
+        console.warn('[dataStore] Failed to list documents:', error);
+        return { documents: [] };
+      });
 
       const hydratedFiles: UploadedFile[] = [];
       const hydratedPreviews: DataPreview[] = [];
+      const hydratedDocuments: UploadedFile[] = [];
+      const previousProjectFileIds = new Set(
+        state.files.filter((file) => file.projectId === projectId).map((file) => file.id)
+      );
+      const existingDatasetIds = new Set(
+        state.files
+          .filter((file) => file.projectId === projectId && file.metadata?.datasetId)
+          .map((file) => file.id)
+      );
 
       for (const dataset of datasets) {
         const fileId = dataset.datasetId;
@@ -278,6 +385,7 @@ export const useDataStore = create<DataState>((set, get) => ({
             rowCount: dataset.nRows,
             columnCount: dataset.nCols,
             columns: dataset.columns.map(c => c.name),
+            tableName: dataset.tableName ?? dataset.metadata?.tableName ?? sanitizeTableName(dataset.filename, dataset.datasetId),
             datasetProfile: {
               nRows: dataset.nRows,
               nCols: dataset.nCols,
@@ -300,12 +408,47 @@ export const useDataStore = create<DataState>((set, get) => ({
         hydratedPreviews.push(preview);
       }
 
+      for (const document of documents) {
+        hydratedDocuments.push({
+          id: document.documentId,
+          name: document.filename,
+          type: getFileType({ name: document.filename } as File),
+          size: document.byteSize ?? 0,
+          uploadedAt: document.createdAt ? new Date(document.createdAt) : new Date(),
+          projectId: document.projectId ?? projectId,
+          metadata: {
+            documentId: document.documentId,
+            mimeType: document.mimeType,
+            parseWarning:
+              typeof document.metadata?.parseError === 'string'
+                ? document.metadata.parseError
+                : (document.metadata?.parseWarning as string | undefined),
+            ...(document.metadata ?? {})
+          }
+        });
+      }
+
       set((state) => {
         const newHydratedProjects = new Set(state.hydratedProjects);
         newHydratedProjects.add(projectId);
+        const hydratedIds = new Set([...hydratedFiles, ...hydratedDocuments].map((file) => file.id));
+        const nextOpenFileTabs = state.openFileTabs.filter((tabId) => {
+          if (!previousProjectFileIds.has(tabId)) return true;
+          return hydratedIds.has(tabId);
+        });
+        const nextOpenSet = new Set(nextOpenFileTabs);
+        hydratedFiles.forEach((file) => {
+          if (!existingDatasetIds.has(file.id)) {
+            nextOpenSet.add(file.id);
+          }
+        });
 
         return {
-          files: [...state.files.filter(f => f.projectId !== projectId), ...hydratedFiles],
+          files: [
+            ...state.files.filter((file) => file.projectId !== projectId),
+            ...hydratedFiles,
+            ...hydratedDocuments
+          ],
           previews: [
             ...state.previews.filter(p =>
               !hydratedFiles.some(f => f.id === p.fileId)
@@ -313,11 +456,14 @@ export const useDataStore = create<DataState>((set, get) => ({
             ...hydratedPreviews
           ],
           hydratedProjects: newHydratedProjects,
+          openFileTabs: Array.from(nextOpenSet),
           isHydrating: false
         };
       });
 
-      console.log(`[dataStore] Hydrated ${hydratedFiles.length} datasets for project ${projectId}`);
+      console.log(
+        `[dataStore] Hydrated ${hydratedFiles.length} datasets and ${hydratedDocuments.length} documents for project ${projectId}`
+      );
     } catch (error) {
       console.error('[dataStore] Failed to hydrate from backend:', error);
       set((state) => {

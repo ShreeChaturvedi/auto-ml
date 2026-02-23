@@ -10,8 +10,8 @@
     --card-foreground: 222.2 47.4% 11.2%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 47.4% 11.2%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -22,30 +22,32 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 0 0% 45%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    /* Next.js-inspired dark theme: Pure black background, charcoal surfaces */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 98%;
+    /* Neutral primary - white button in dark mode */
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 10%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 0 0% 55%;
   }
 }
 
@@ -54,7 +56,9 @@
     @apply border-border;
   }
 
-  html, body, #root {
+  html,
+  body,
+  #root {
     height: 100%;
     width: 100%;
     margin: 0;
@@ -103,6 +107,7 @@
 
 /* Remove focus outlines from dialogs and forms */
 @layer components {
+
   [role="dialog"] input:focus,
   [role="dialog"] textarea:focus,
   [role="dialog"] select:focus {
@@ -110,7 +115,172 @@
   }
 
   /* Override Radix ScrollArea's inline display: table on children */
-  [data-radix-scroll-area-viewport] > * {
+  [data-radix-scroll-area-viewport]>* {
     display: block !important;
+  }
+}
+
+/* PDF Viewer styling to match our app theme */
+.pdf-viewer-container {
+  --rpv-default-layout__container-border-color: transparent;
+}
+
+.dark .pdf-viewer-container {
+  /* Override react-pdf-viewer dark theme colors to match our design */
+  --rpv-default-layout__body--background-color: hsl(0 0% 0%);
+  --rpv-default-layout__container--background-color: hsl(0 0% 0%);
+  --rpv-default-layout__sidebar--background-color: hsl(0 0% 4%);
+  --rpv-default-layout__toolbar--background-color: hsl(0 0% 4%);
+}
+
+/* Style the PDF page area to match our dark theme */
+.pdf-viewer-container .rpv-core__page-layer {
+  background-color: hsl(0 0% 0%);
+}
+
+.pdf-viewer-container .rpv-core__inner-pages {
+  background-color: hsl(0 0% 0%);
+}
+
+/* Hide the default toolbar since we use custom one */
+.pdf-viewer-container .rpv-toolbar {
+  display: none !important;
+}
+
+/* Markdown rendered content styling */
+.markdown-content {
+  @apply text-sm leading-relaxed text-foreground;
+}
+
+.markdown-content h1 {
+  @apply text-2xl font-bold mt-6 mb-4 pb-2 border-b border-border;
+}
+
+.markdown-content h2 {
+  @apply text-xl font-semibold mt-5 mb-3 pb-1.5 border-b border-border;
+}
+
+.markdown-content h3 {
+  @apply text-lg font-semibold mt-4 mb-2;
+}
+
+.markdown-content h4 {
+  @apply text-base font-semibold mt-3 mb-2;
+}
+
+.markdown-content h5,
+.markdown-content h6 {
+  @apply text-sm font-semibold mt-3 mb-1;
+}
+
+.markdown-content p {
+  @apply my-3;
+}
+
+.markdown-content a {
+  @apply text-primary underline underline-offset-2 hover:text-primary/80;
+}
+
+.markdown-content strong {
+  @apply font-semibold;
+}
+
+.markdown-content em {
+  @apply italic;
+}
+
+.markdown-content ul {
+  @apply my-3 ml-6 list-disc;
+}
+
+.markdown-content ol {
+  @apply my-3 ml-6 list-decimal;
+}
+
+.markdown-content li {
+  @apply my-1;
+}
+
+.markdown-content li>ul,
+.markdown-content li>ol {
+  @apply my-1;
+}
+
+.markdown-content blockquote {
+  @apply my-4 pl-4 border-l-4 border-muted-foreground/30 text-muted-foreground italic;
+}
+
+.markdown-content pre {
+  @apply my-4 p-4 rounded-lg bg-muted overflow-x-auto;
+}
+
+.markdown-content code {
+  @apply font-mono text-[0.85em];
+}
+
+.markdown-content :not(pre)>code {
+  @apply px-1.5 py-0.5 rounded bg-muted text-foreground;
+}
+
+.markdown-content pre code {
+  @apply bg-transparent p-0;
+}
+
+.markdown-content hr {
+  @apply my-6 border-border;
+}
+
+.markdown-content table {
+  @apply my-4 w-full border-collapse;
+}
+
+.markdown-content th {
+  @apply px-3 py-2 text-left font-semibold border border-border bg-muted;
+}
+
+.markdown-content td {
+  @apply px-3 py-2 border border-border;
+}
+
+.markdown-content img {
+  @apply my-4 max-w-full rounded-lg;
+}
+
+.markdown-content input[type="checkbox"] {
+  @apply mr-2;
+}
+
+/* First child should not have top margin */
+.markdown-content>*:first-child {
+  @apply mt-0;
+}
+
+/* Last child should not have bottom margin */
+.markdown-content>*:last-child {
+  @apply mb-0;
+}
+
+/* Loading shimmer text animation for LLM tool indicators */
+.shimmer-text {
+  background: linear-gradient(90deg,
+      currentColor 0%,
+      currentColor 35%,
+      rgba(180, 180, 190, 0.85) 50%,
+      currentColor 65%,
+      currentColor 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-sweep 2s ease-in-out infinite;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
   }
 }

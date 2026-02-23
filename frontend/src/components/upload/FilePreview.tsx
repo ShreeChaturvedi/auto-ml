@@ -2,12 +2,10 @@
  * FilePreview - Modal for previewing uploaded files
  *
  * Supports:
- * - PDF preview (using iframe)
+ * - PDF preview (using react-pdf-viewer)
  * - Image preview (full-size with zoom)
  * - CSV preview (first few rows in table)
  * - JSON preview (formatted JSON)
- *
- * TODO: Add more advanced preview features (PDF.js for better PDF rendering, etc.)
  */
 
 import { useEffect, useState } from 'react';
@@ -22,7 +20,13 @@ import type { UploadedFile } from '@/types/file';
 import { formatFileSize } from '@/types/file';
 import Papa from 'papaparse';
 import { Badge } from '@/components/ui/badge';
+import { Eye } from 'lucide-react';
 import { getDatasetSample } from '@/lib/api/datasets';
+import { downloadDocument } from '@/lib/api/documents';
+import { Worker, Viewer, SpecialZoomLevel } from '@react-pdf-viewer/core';
+import '@react-pdf-viewer/core/lib/styles/index.css';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface FilePreviewProps {
   file: UploadedFile;
@@ -30,9 +34,15 @@ interface FilePreviewProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface RowInfo {
+  shown: number;
+  total: number;
+}
+
 export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
   const [previewContent, setPreviewContent] = useState<React.ReactNode>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [rowInfo, setRowInfo] = useState<RowInfo | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -40,37 +50,34 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
     // For hydrated files from backend (no file object), fetch sample from API
     if (!file.file && file.metadata?.datasetId && (file.type === 'csv' || file.type === 'json' || file.type === 'excel')) {
       setIsLoading(true);
+      setRowInfo(null);
       void getDatasetSample(file.metadata.datasetId)
         .then((data) => {
+          setRowInfo({ shown: data.sample.length, total: data.rowCount });
           setPreviewContent(
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Showing sample from persisted dataset ({data.rowCount.toLocaleString()} total rows)
-              </p>
-              <div className="rounded-lg border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      {data.columns.map((header, i) => (
-                        <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
-                          {header}
-                        </th>
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    {data.columns.map((header, i) => (
+                      <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.sample.map((row, i) => (
+                    <tr key={i} className="border-t">
+                      {data.columns.map((header, j) => (
+                        <td key={j} className="px-3 py-2 font-mono text-xs">
+                          {String(row[header] ?? '')}
+                        </td>
                       ))}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.sample.map((row, i) => (
-                      <tr key={i} className="border-t">
-                        {data.columns.map((header, j) => (
-                          <td key={j} className="px-3 py-2 font-mono text-xs">
-                            {String(row[header] ?? '')}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           );
           setIsLoading(false);
@@ -83,6 +90,72 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
               <p className="text-xs text-muted-foreground">
                 Use the Data Viewer tab to explore this dataset.
               </p>
+            </div>
+          );
+          setIsLoading(false);
+        });
+      return;
+    }
+
+    // For hydrated PDFs (no file object but has documentId), fetch from API
+    if (!file.file && file.type === 'pdf' && file.metadata?.documentId) {
+      setIsLoading(true);
+      void downloadDocument(file.metadata.documentId)
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          setPreviewContent(
+            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+              <div className="h-[600px] rounded-lg border overflow-hidden">
+                <Viewer
+                  fileUrl={url}
+                  defaultScale={SpecialZoomLevel.PageWidth}
+                  theme={{ theme: 'dark' }}
+                />
+              </div>
+            </Worker>
+          );
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          console.error('Failed to load PDF:', error);
+          setPreviewContent(
+            <div className="p-6 text-center space-y-2">
+              <p className="text-sm text-destructive">Failed to load PDF preview</p>
+            </div>
+          );
+          setIsLoading(false);
+        });
+      return;
+    }
+
+    // For hydrated markdown/text files (no file object but has documentId), fetch from API
+    if (!file.file && (file.type === 'markdown' || file.type === 'text') && file.metadata?.documentId) {
+      setIsLoading(true);
+      void downloadDocument(file.metadata.documentId)
+        .then(async (blob) => {
+          const text = await blob.text();
+          if (file.type === 'markdown') {
+            setPreviewContent(
+              <div className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {text}
+                </ReactMarkdown>
+              </div>
+            );
+          } else {
+            setPreviewContent(
+              <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto max-h-[600px] font-mono">
+                {text}
+              </pre>
+            );
+          }
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          console.error('Failed to load document:', error);
+          setPreviewContent(
+            <div className="p-6 text-center space-y-2">
+              <p className="text-sm text-destructive">Failed to load document preview</p>
             </div>
           );
           setIsLoading(false);
@@ -107,19 +180,25 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
 
     // Generate preview based on file type
     switch (file.type) {
-      case 'pdf':
+      case 'pdf': {
         const pdfUrl = URL.createObjectURL(file.file);
         setPreviewContent(
-          <iframe
-            src={pdfUrl}
-            className="w-full h-[600px] rounded-lg border"
-            title={file.name}
-            onLoad={() => setIsLoading(false)}
-          />
+          <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+            <div className="h-[600px] rounded-lg border overflow-hidden">
+              <Viewer
+                fileUrl={pdfUrl}
+                defaultScale={SpecialZoomLevel.PageWidth}
+                theme={{ theme: 'dark' }}
+              />
+            </div>
+          </Worker>
         );
+        setIsLoading(false);
         break;
+      }
 
       case 'csv':
+        setRowInfo(null);
         Papa.parse(file.file, {
           header: true,
           preview: 10, // Only show first 10 rows
@@ -127,33 +206,33 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
             const headers = results.meta.fields || [];
             const rows = results.data as Record<string, unknown>[];
 
+            // For fresh uploads, we only know the sample size (no total count available)
+            setRowInfo({ shown: rows.length, total: rows.length });
+
             setPreviewContent(
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Showing first 10 rows</p>
-                <div className="rounded-lg border overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted">
-                      <tr>
-                        {headers.map((header, i) => (
-                          <th key={i} className="px-4 py-2 text-left font-medium">
-                            {header}
-                          </th>
+              <div className="rounded-lg border overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      {headers.map((header, i) => (
+                        <th key={i} className="px-4 py-2 text-left font-medium">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => (
+                      <tr key={i} className="border-t">
+                        {headers.map((header, j) => (
+                          <td key={j} className="px-4 py-2">
+                            {String(row[header] || '')}
+                          </td>
                         ))}
                       </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, i) => (
-                        <tr key={i} className="border-t">
-                          {headers.map((header, j) => (
-                            <td key={j} className="px-4 py-2">
-                              {String(row[header] || '')}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             );
             setIsLoading(false);
@@ -176,11 +255,45 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
                 {JSON.stringify(json, null, 2)}
               </pre>
             );
-          } catch (error) {
+          } catch {
             setPreviewContent(
               <p className="text-sm text-destructive">Error parsing JSON</p>
             );
           }
+          setIsLoading(false);
+        });
+        break;
+
+      case 'markdown':
+        file.file.text().then((text) => {
+          setPreviewContent(
+            <div className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {text}
+              </ReactMarkdown>
+            </div>
+          );
+          setIsLoading(false);
+        }).catch(() => {
+          setPreviewContent(
+            <p className="text-sm text-destructive">Error loading markdown preview</p>
+          );
+          setIsLoading(false);
+        });
+        break;
+
+      case 'text':
+        file.file.text().then((text) => {
+          setPreviewContent(
+            <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto max-h-[600px] font-mono">
+              {text}
+            </pre>
+          );
+          setIsLoading(false);
+        }).catch(() => {
+          setPreviewContent(
+            <p className="text-sm text-destructive">Error loading text preview</p>
+          );
           setIsLoading(false);
         });
         break;
@@ -199,6 +312,7 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
     // Cleanup
     return () => {
       setPreviewContent(null);
+      setRowInfo(null);
     };
   }, [file, open]);
 
@@ -208,8 +322,20 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
         <DialogHeader>
           <DialogTitle>{file.name}</DialogTitle>
           <DialogDescription className="flex items-center gap-2">
-            <Badge variant="outline">{file.type.toUpperCase()}</Badge>
-            <span>{formatFileSize(file.size)}</span>
+            <Badge variant="outline" className="bg-muted/50">{file.type.charAt(0).toUpperCase() + file.type.slice(1)}</Badge>
+            <Badge variant="outline" className="bg-muted/50">{formatFileSize(file.size)}</Badge>
+            {rowInfo && (
+              <Badge variant="outline" className="gap-1 bg-muted/50">
+                <Eye className="h-3 w-3" />
+                <span>
+                  {rowInfo.shown.toLocaleString()}
+                  {rowInfo.total > rowInfo.shown && (
+                    <span className="text-muted-foreground"> of {rowInfo.total.toLocaleString()}</span>
+                  )}
+                  {' '}rows
+                </span>
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 

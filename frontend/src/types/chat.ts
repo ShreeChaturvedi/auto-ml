@@ -7,5 +7,5 @@ export interface ChatMessage {
   citations?: AnswerCitation[];
   timestamp: Date;
   cached?: boolean;
-  status?: 'ok' | 'no_chunks' | 'error';
+  status?: 'ok' | 'not_found';
 }

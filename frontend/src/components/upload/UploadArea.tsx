@@ -71,14 +71,16 @@ export function UploadArea() {
       <ProjectHeader project={activeProject} />
 
       {/* Split Column Layout - Fills remaining space */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 divide-x divide-border overflow-hidden">
+      {/* On mobile: stack vertically with full width for each section */}
+      {/* On desktop (lg+): side-by-side with divider */}
+      <div className="flex-1 flex flex-col lg:flex-row lg:divide-x divide-border overflow-hidden">
         {/* Left Column: Custom Instructions */}
-        <div className="flex flex-col min-h-0 p-6 pr-4">
+        <div className="flex flex-col min-h-0 p-4 sm:p-6 lg:pr-4 lg:w-1/2 border-b lg:border-b-0">
           <CustomInstructions projectId={activeProject.id} />
         </div>
 
         {/* Right Column: Data Upload */}
-        <div className="flex flex-col min-h-0 p-6 pl-4">
+        <div className="flex flex-col min-h-0 p-4 sm:p-6 lg:pl-4 lg:w-1/2">
           <DataUploadPanel projectId={activeProject.id} />
         </div>
       </div>

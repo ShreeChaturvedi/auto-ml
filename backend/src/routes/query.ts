@@ -14,7 +14,8 @@ const sqlQuerySchema = z.object({
 
 const nlQuerySchema = z.object({
   projectId: z.string().uuid('projectId must be a valid UUID'),
-  query: z.string().min(3, 'query must be at least 3 characters')
+  query: z.string().min(3, 'query must be at least 3 characters'),
+  tableName: z.string().min(1).optional()
 });
 
 export function createQueryRouter() {
@@ -61,10 +62,13 @@ export function createQueryRouter() {
       return res.status(503).json({ error: 'Database is not configured for NL→SQL execution' });
     }
 
-    const { projectId, query } = result.data;
+    const { projectId, query, tableName } = result.data;
 
     try {
-      const generated = generateSqlFromNaturalLanguage({ nlQuery: query });
+      const generated = generateSqlFromNaturalLanguage({
+        nlQuery: query,
+        defaultTable: tableName
+      });
 
       const cached = await getCachedQueryResult({ projectId, sql: generated.sql });
       if (cached) {

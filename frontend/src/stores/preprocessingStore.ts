@@ -16,7 +16,7 @@ interface PreprocessingState {
   // Data
   analysis: PreprocessingAnalysis | null;
   tables: AvailableTable[];
-  selectedTable: string | null;
+  selectedDatasetId: string | null;
   
   // User selections (which suggestions are enabled and their parameters)
   suggestionStates: Record<string, {
@@ -40,8 +40,8 @@ interface PreprocessingState {
 
   // Actions
   loadTables: (projectId: string) => Promise<void>;
-  selectTable: (tableName: string) => void;
-  analyze: (projectId: string, tableName: string) => Promise<void>;
+  selectDataset: (datasetId: string) => void;
+  analyze: (projectId: string, datasetId: string) => Promise<void>;
   
   // Suggestion management
   toggleSuggestion: (suggestionId: string) => void;
@@ -62,7 +62,7 @@ interface PreprocessingState {
 const initialState = {
   analysis: null,
   tables: [],
-  selectedTable: null,
+  selectedDatasetId: null,
   suggestionStates: {},
   isLoadingTables: false,
   isAnalyzing: false,
@@ -87,14 +87,14 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
     }
   },
 
-  selectTable: (tableName: string) => {
-    set({ selectedTable: tableName });
+  selectDataset: (datasetId: string) => {
+    set({ selectedDatasetId: datasetId });
   },
 
-  analyze: async (projectId: string, tableName: string) => {
+  analyze: async (projectId: string, datasetId: string) => {
     set({ isAnalyzing: true, error: null });
     try {
-      const response = await analyzeForPreprocessing({ projectId, tableName });
+      const response = await analyzeForPreprocessing({ projectId, datasetId });
       
       // Initialize suggestion states from analysis
       const suggestionStates: PreprocessingState['suggestionStates'] = {};
@@ -110,7 +110,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         analysis: response.analysis,
         metadata: response.metadata,
         suggestionStates,
-        selectedTable: tableName,
+        selectedDatasetId: datasetId,
         isAnalyzing: false 
       });
     } catch (error) {
@@ -226,5 +226,6 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
     set(initialState);
   }
 }));
+
 
 

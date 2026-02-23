@@ -3,7 +3,7 @@
  *
  * Supports various file types:
  * - Structured data: CSV, JSON, Excel
- * - Documents: PDF, Markdown, Word (for business context via RAG)
+ * - Documents: PDF, Markdown, TXT (Word planned)
  * - Note: Images are NOT supported for upload
  */
 
@@ -50,6 +50,7 @@ export interface FileMetadata {
   documentId?: string;
   chunkCount?: number;
   embeddingDimension?: number;
+  parseWarning?: string;
 
   // PDF specific
   pageCount?: number;

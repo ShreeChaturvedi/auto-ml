@@ -1,30 +1,38 @@
 /**
- * CodeCell - Jupyter-style code cell with Monaco editor syntax highlighting
+ * CodeCell - Compact code cell with Monaco editor and autosave
+ *
+ * Features:
+ * - Autosave on blur/change (no save button)
+ * - Compact header with minimal icons
+ * - Custom Monaco theme (pre-loaded via @/lib/monaco/preloader)
+ * - Always editable (no click-to-edit mode)
+ * - No loading flash due to Monaco pre-loading
  */
 
-import { useState, Suspense, lazy, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
+import { useState, Suspense, lazy, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Play, 
-  Trash2, 
-  Copy, 
-  Check, 
-  Clock, 
-  AlertCircle, 
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Play,
+  Trash2,
+  Copy,
+  Check,
+  Clock,
+  AlertCircle,
   CheckCircle,
   Loader2,
   ChevronDown,
   ChevronUp,
-  Code,
-  MessageSquare
+  ArrowUp,
+  CornerDownLeft
 } from 'lucide-react';
-import type { Cell } from '@/types/training';
+import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
-import type { languages } from 'monaco-editor';
+import { CellOutputRenderer } from './CellOutputRenderer';
+import type { languages, IDisposable } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
+import type { RichOutput } from '@/lib/api/execution';
 
 // Lazy load Monaco Editor
 const Editor = lazy(() =>
@@ -33,29 +41,27 @@ const Editor = lazy(() =>
   }))
 );
 
-// Python keywords and builtins for autocomplete
-const PYTHON_KEYWORDS = [
+// Python autocomplete items
+const PYTHON_COMPLETIONS = [
   // Keywords
-  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
-  'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally',
-  'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal',
-  'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
-  // Common builtins
-  'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set',
-  'tuple', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr',
-  'open', 'input', 'sum', 'min', 'max', 'abs', 'round', 'sorted', 'reversed',
-  'enumerate', 'zip', 'map', 'filter', 'any', 'all', 'iter', 'next',
-  // Common ML/Data Science
-  'numpy', 'pandas', 'sklearn', 'matplotlib', 'plt', 'np', 'pd', 'tf',
-  'torch', 'DataFrame', 'Series', 'array', 'fit', 'predict', 'transform',
-  'train_test_split', 'accuracy_score', 'mean_squared_error', 'cross_val_score',
-  'RandomForestClassifier', 'LogisticRegression', 'LinearRegression',
-  'StandardScaler', 'MinMaxScaler', 'LabelEncoder', 'OneHotEncoder',
-  'GridSearchCV', 'Pipeline', 'ColumnTransformer', 'SimpleImputer'
+  ...['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
+    'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally',
+    'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal',
+    'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'
+  ].map(k => ({ label: k, kind: 'keyword' as const })),
+  // Builtins
+  ...['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set',
+    'tuple', 'bool', 'type', 'isinstance', 'open', 'sum', 'min', 'max', 'abs',
+    'round', 'sorted', 'enumerate', 'zip', 'map', 'filter', 'any', 'all'
+  ].map(b => ({ label: b, kind: 'function' as const })),
+  // ML/DS
+  ...['numpy', 'np', 'pandas', 'pd', 'DataFrame', 'Series', 'read_csv',
+    'sklearn', 'train_test_split', 'fit', 'predict', 'transform',
+    'matplotlib', 'plt', 'pyplot', 'figure', 'plot', 'show'
+  ].map(m => ({ label: m, kind: 'module' as const }))
 ];
 
-// Singleton for Python completion provider registration
-let pythonCompletionRegistered = false;
+let completionProviderDisposable: IDisposable | null = null;
 
 interface CodeCellProps {
   cell: Cell;
@@ -64,53 +70,94 @@ interface CodeCellProps {
   onDelete?: () => void;
   onContentChange?: (content: string) => void;
   isRunning?: boolean;
+  datasetFiles?: string[];
 }
 
-export function CodeCell({ 
-  cell, 
-  cellNumber, 
-  onRun, 
-  onDelete, 
+export function CodeCell({
+  cell,
+  cellNumber,
+  onRun,
+  onDelete,
   onContentChange,
-  isRunning 
+  isRunning,
+  datasetFiles = []
 }: CodeCellProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(cell.content);
+  const [content, setContent] = useState(cell.content);
   const [copied, setCopied] = useState(false);
   const [showOutput, setShowOutput] = useState(true);
-  
-  // Theme for Monaco editor
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const { theme: appTheme } = useTheme();
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
-  
-  // Resolve system theme preference
+  const themeDefinedRef = useRef(false);
+
+  // Resolve theme
   useEffect(() => {
     if (appTheme === 'system') {
       const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       setResolvedTheme(isDark ? 'dark' : 'light');
-      
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = (e: MediaQueryListEvent) => {
-        setResolvedTheme(e.matches ? 'dark' : 'light');
-      };
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const handler = (e: MediaQueryListEvent) => setResolvedTheme(e.matches ? 'dark' : 'light');
+      mq.addEventListener('change', handler);
+      return () => mq.removeEventListener('change', handler);
     } else {
       setResolvedTheme(appTheme as 'light' | 'dark');
     }
   }, [appTheme]);
 
-  // Keep edit content in sync with cell content
+  // Sync with cell content
   useEffect(() => {
-    setEditContent(cell.content);
+    setContent(cell.content);
   }, [cell.content]);
 
-  // Register Python completion provider once
-  const registerPythonCompletions = (monaco: Monaco) => {
-    if (pythonCompletionRegistered) return;
-    
-    monaco.languages.registerCompletionItemProvider('python', {
-      triggerCharacters: ['.', ' '],
+  // Autosave with debounce - don't save placeholder
+  const PLACEHOLDER = '# Enter Python code...';
+
+  const handleContentChange = useCallback((newContent: string) => {
+    // Don't save the placeholder
+    if (newContent === PLACEHOLDER) return;
+
+    setContent(newContent);
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      onContentChange?.(newContent);
+    }, 500);
+  }, [onContentChange]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Cleanup completion provider
+  useEffect(() => {
+    return () => {
+      if (completionProviderDisposable) {
+        completionProviderDisposable.dispose();
+        completionProviderDisposable = null;
+      }
+    };
+  }, []);
+
+  const setupMonaco = (monaco: Monaco) => {
+    // Themes are pre-loaded via @/lib/monaco/preloader - no need to define here
+    // Just mark as ready to avoid any redundant checks
+    themeDefinedRef.current = true;
+
+    if (completionProviderDisposable) {
+      completionProviderDisposable.dispose();
+    }
+
+    completionProviderDisposable = monaco.languages.registerCompletionItemProvider('python', {
+      triggerCharacters: ['.', ' ', '/', '"', "'"],
       provideCompletionItems: (model, position) => {
         const word = model.getWordUntilPosition(position);
         const range = {
@@ -119,276 +166,243 @@ export function CodeCell({
           startColumn: word.startColumn,
           endColumn: word.endColumn
         };
-        
-        const suggestions: languages.CompletionItem[] = PYTHON_KEYWORDS.map((keyword, index) => ({
-          label: keyword,
-          kind: keyword[0] === keyword[0].toUpperCase() 
-            ? monaco.languages.CompletionItemKind.Class 
-            : monaco.languages.CompletionItemKind.Keyword,
-          insertText: keyword,
+
+        const suggestions: languages.CompletionItem[] = PYTHON_COMPLETIONS.map((item, idx) => ({
+          label: item.label,
+          kind: item.kind === 'keyword'
+            ? monaco.languages.CompletionItemKind.Keyword
+            : item.kind === 'function'
+              ? monaco.languages.CompletionItemKind.Function
+              : monaco.languages.CompletionItemKind.Module,
+          insertText: item.label,
           range,
-          sortText: String(index).padStart(4, '0')
+          sortText: String(idx).padStart(4, '0')
         }));
-        
+
+        // Add dataset files
+        datasetFiles.forEach((file, idx) => {
+          suggestions.push({
+            label: file,
+            kind: monaco.languages.CompletionItemKind.File,
+            insertText: `/workspace/datasets/${file}`,
+            range,
+            detail: 'Dataset',
+            sortText: `9${String(idx).padStart(3, '0')}`
+          });
+        });
+
         return { suggestions };
       }
     });
-    
-    pythonCompletionRegistered = true;
   };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(cell.content);
+    await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleSave = () => {
-    onContentChange?.(editContent);
-    setIsEditing(false);
   };
 
   const getStatusIcon = () => {
     switch (cell.status) {
       case 'running':
-        return <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />;
+        return <Loader2 className="h-3 w-3 animate-spin text-blue-500" />;
       case 'success':
-        return <CheckCircle className="h-3.5 w-3.5 text-green-500" />;
+        return <CheckCircle className="h-3 w-3 text-green-500" />;
       case 'error':
-        return <AlertCircle className="h-3.5 w-3.5 text-red-500" />;
+        return <AlertCircle className="h-3 w-3 text-red-500" />;
       default:
         return null;
     }
   };
 
-  const isChat = cell.type === 'chat';
+  const richOutputs: RichOutput[] = cell.output?.data
+    ? (Array.isArray(cell.output.data) ? cell.output.data : [cell.output])
+    : cell.output
+      ? [{ type: cell.output.type as RichOutput['type'], content: cell.output.content }]
+      : [];
+
+  const lineCount = (content || '# Enter Python code...').split('\n').length;
+  const editorHeight = Math.max(60, Math.min(300, lineCount * 18 + 16));
 
   return (
-    <Card className={cn(
-      'overflow-hidden transition-all',
-      cell.status === 'running' && 'ring-2 ring-blue-500/50',
-      cell.status === 'error' && 'border-red-300 dark:border-red-800'
+    <div className={cn(
+      'border rounded-md overflow-hidden transition-all',
+      cell.status === 'running' && 'ring-1 ring-blue-500/50',
+      cell.status === 'error' && 'border-red-500/50'
     )}>
-      {/* Cell header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
-        <div className="flex items-center gap-2">
-          <Badge 
-            variant="outline" 
-            className={cn(
-              'text-xs font-mono',
-              isChat && 'bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-400'
-            )}
-          >
-            {isChat ? <MessageSquare className="h-3 w-3 mr-1" /> : <Code className="h-3 w-3 mr-1" />}
-            {isChat ? 'Chat' : `In [${cellNumber}]`}
-          </Badge>
+      {/* Compact header */}
+      <div className="flex items-center justify-between px-2 py-2 bg-muted/30 border-b">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-mono text-muted-foreground">
+            [{cellNumber}]
+          </span>
           {getStatusIcon()}
           {cell.executionDurationMs && cell.status === 'success' && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock className="h-3 w-3" />
+            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+              <Clock className="h-2.5 w-2.5" />
               {cell.executionDurationMs}ms
             </span>
           )}
         </div>
-        
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={handleCopy}
-          >
-            {copied ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" />
+
+        <div className="flex items-center gap-0.5">
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={handleCopy}
+                >
+                  {copied ? (
+                    <Check className="h-2.5 w-2.5 text-green-500" />
+                  ) : (
+                    <Copy className="h-2.5 w-2.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Copy</TooltipContent>
+            </Tooltip>
+
+            {onRun && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className={cn(
+                      !isRunning && 'hover:bg-green-500/10 hover:text-green-600'
+                    )}
+                    onClick={onRun}
+                    disabled={isRunning}
+                  >
+                    {isRunning ? (
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    ) : (
+                      <Play className="h-2.5 w-2.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="flex items-center gap-2 text-xs">
+                  <span>Run</span>
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <kbd className="inline-flex h-5 w-5 items-center justify-center rounded border bg-muted/50">
+                      <ArrowUp className="h-3 w-3" />
+                      <span className="sr-only">Shift</span>
+                    </kbd>
+                    <span>+</span>
+                    <kbd className="inline-flex h-5 w-5 items-center justify-center rounded border bg-muted/50">
+                      <CornerDownLeft className="h-3 w-3" />
+                      <span className="sr-only">Enter</span>
+                    </kbd>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
             )}
-          </Button>
-          {!isChat && onRun && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onRun}
-              disabled={isRunning}
-            >
-              <Play className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {onDelete && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-destructive hover:text-destructive"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
+
+            {onDelete && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="hover:bg-red-500/10 hover:text-red-500"
+                    onClick={onDelete}
+                  >
+                    <Trash2 className="h-2.5 w-2.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Delete</TooltipContent>
+              </Tooltip>
+            )}
+          </TooltipProvider>
         </div>
       </div>
 
-      {/* Cell content */}
-      <div className="relative">
-        {(() => {
-          // Calculate consistent height based on content (minimum 100px, ~19px per line)
-          const lineCount = (cell.content || '# Click to edit...').split('\n').length;
-          const calculatedHeight = Math.max(100, Math.min(400, (lineCount + 2) * 19));
-          
-          return isEditing ? (
-            <div className="flex flex-col">
-              <div className="border-b" style={{ height: `${calculatedHeight}px` }}>
-                <Suspense
-                  fallback={
-                    <div className="flex items-center justify-center h-full bg-muted/30">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    </div>
-                  }
-                >
-                  <Editor
-                    height="100%"
-                    defaultLanguage={isChat ? 'plaintext' : 'python'}
-                    value={editContent}
-                    onChange={(value) => setEditContent(value || '')}
-                    theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
-                    onMount={(_editor, monaco) => {
-                      if (!isChat) {
-                        registerPythonCompletions(monaco);
-                      }
-                    }}
-                    options={{
-                      minimap: { enabled: false },
-                      lineNumbers: 'on',
-                      roundedSelection: false,
-                      scrollBeyondLastLine: false,
-                      fontSize: 13,
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                      wordWrap: 'on',
-                      automaticLayout: true,
-                      padding: { top: 8, bottom: 8 },
-                      fixedOverflowWidgets: true,
-                      quickSuggestions: true,
-                      suggestOnTriggerCharacters: true,
-                      suggest: {
-                        showKeywords: true,
-                        showSnippets: true,
-                        showClasses: true,
-                        showFunctions: true,
-                        showVariables: true,
-                        insertMode: 'replace',
-                        filterGraceful: true
-                      },
-                      cursorBlinking: 'smooth',
-                      folding: false
-                    }}
-                  />
-                </Suspense>
-              </div>
-              <div className="flex justify-end gap-2 p-2 bg-muted/30">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditContent(cell.content);
-                    setIsEditing(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button size="sm" onClick={handleSave}>
-                  Save
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div 
-              className={cn(
-                'cursor-pointer hover:bg-muted/10 transition-colors',
-                'border-l-2 border-transparent hover:border-primary/50'
-              )}
-              style={{ height: `${calculatedHeight}px` }}
-              onClick={() => setIsEditing(true)}
-            >
-              <Suspense
-                fallback={
-                  <pre className="p-4 text-sm font-mono bg-slate-950 text-slate-50 dark:bg-slate-900 h-full">
-                    <code>{cell.content || '# Click to edit...'}</code>
-                  </pre>
-                }
-              >
-                <Editor
-                  height="100%"
-                  defaultLanguage={isChat ? 'plaintext' : 'python'}
-                  value={cell.content || '# Click to edit...'}
-                  theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
-                  options={{
-                    readOnly: true,
-                    minimap: { enabled: false },
-                    lineNumbers: 'on',
-                    roundedSelection: false,
-                    scrollBeyondLastLine: false,
-                    fontSize: 13,
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                    wordWrap: 'on',
-                    automaticLayout: true,
-                    padding: { top: 8, bottom: 8 },
-                    domReadOnly: true,
-                    cursorStyle: 'line',
-                    renderLineHighlight: 'none',
-                    folding: false,
-                    glyphMargin: false,
-                    lineDecorationsWidth: 0,
-                    overviewRulerBorder: false
-                  }}
-                />
-              </Suspense>
-            </div>
-          );
-        })()}
+      {/* Editor - always editable */}
+      <div style={{ height: editorHeight }} className="transition-opacity duration-150">
+        <Suspense fallback={
+          <div
+            className="h-full animate-pulse"
+            style={{ backgroundColor: resolvedTheme === 'dark' ? '#000000' : '#ffffff' }}
+          />
+        }>
+          <Editor
+            height="100%"
+            defaultLanguage="python"
+            value={content}
+            onChange={(value) => handleContentChange(value || '')}
+            theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+            onMount={(editor, monaco) => {
+              setupMonaco(monaco);
+              monaco.editor.setTheme(resolvedTheme === 'dark' ? 'python-dark' : 'python-light');
+
+              // Shift+Enter to run
+              editor.addCommand(
+                monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+                () => onRun?.()
+              );
+            }}
+            options={{
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              lineNumbersMinChars: 3,
+              glyphMargin: false,
+              folding: false,
+              lineDecorationsWidth: 8,
+              scrollBeyondLastLine: false,
+              fontSize: 12,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              wordWrap: 'on',
+              automaticLayout: true,
+              padding: { top: 6, bottom: 6 },
+              renderLineHighlight: 'none',
+              overviewRulerBorder: false,
+              scrollbar: {
+                vertical: 'hidden',
+                horizontal: 'hidden'
+              },
+              quickSuggestions: true,
+              suggestOnTriggerCharacters: true,
+            }}
+          />
+        </Suspense>
       </div>
 
-      {/* Cell output */}
-      {cell.output && (
+      {/* Output - compact toggle */}
+      {richOutputs.length > 0 && (
         <div className="border-t">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full flex items-center justify-center gap-2 py-1 h-7 rounded-none"
-            onClick={() => setShowOutput(!showOutput)}
-          >
-            {showOutput ? (
-              <>
-                <ChevronUp className="h-3.5 w-3.5" />
-                Hide Output
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-3.5 w-3.5" />
-                Show Output
-              </>
+          <div className="flex min-h-[28px] items-center justify-between px-2 py-2">
+            <button
+              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowOutput(!showOutput)}
+            >
+              {showOutput ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              <span>Out</span>
+            </button>
+            {showOutput && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="h-7 w-7 p-1.5"
+                onClick={async () => {
+                  const text = richOutputs.map(o => o.content).join('\n');
+                  await navigator.clipboard.writeText(text);
+                }}
+                title="Copy output"
+              >
+                <Copy className="h-2.5 w-2.5" />
+              </Button>
             )}
-          </Button>
-          
+          </div>
+
           {showOutput && (
-            <div className={cn(
-              'p-4 text-sm font-mono overflow-x-auto',
-              cell.output.type === 'error' 
-                ? 'bg-red-50 text-red-800 dark:bg-red-950/20 dark:text-red-300'
-                : 'bg-muted/30'
-            )}>
-              {cell.output.type === 'table' && cell.output.data ? (
-                <div className="overflow-auto">
-                  {/* Simple table rendering - would be enhanced with a proper table component */}
-                  <pre>{JSON.stringify(cell.output.data, null, 2)}</pre>
-                </div>
-              ) : (
-                <pre className="whitespace-pre-wrap">{cell.output.content}</pre>
-              )}
+            <div className="px-3 pb-2 text-xs font-mono">
+              <CellOutputRenderer outputs={richOutputs} />
             </div>
           )}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
-

@@ -1,5 +1,7 @@
 # DuckDB Query Engine
 
+Status: Experimental. The app currently uses the backend Postgres query engine; this module is not wired into the UI yet.
+
 ## Quick Start
 
 ### Basic Usage
@@ -351,8 +353,8 @@ ORDER BY year, month;
 - [DuckDB SQL Reference](https://duckdb.org/docs/sql/introduction)
 - [DuckDB-WASM Documentation](https://duckdb.org/docs/api/wasm/overview)
 - [Apache Arrow IPC Format](https://arrow.apache.org/docs/format/Columnar.html)
-- [Architecture Documentation](../documentation/architecture/query-engine-duckdb.md)
-- [ADR-002: DuckDB Selection](../documentation/decisions/ADR-002-duckdb-wasm-query-engine.md)
+- [ARCHITECTURE.md](../../../../ARCHITECTURE.md) for the active query engine design
+- [DECISIONS.md](../../../../DECISIONS.md) for current query engine decisions
 
 ## Support
 

@@ -1,0 +1,25 @@
+.DS_Store
+.shree/
+
+# Serena MCP config
+.serena/
+
+# Node modules (all workspaces)
+node_modules/
+
+# Temp/debug files
+*.check.txt
+index_check.txt
+routes_check.txt
+backend/frontend_dump.json
+
+# Empty shadcn alias structure
+frontend/@/
+
+# Local environment
+frontend/.env
+
+# Handoff docs (not for repo)
+LLM_TRAINING_TAB_CONTEXT.md
+NOTEBOOK_IMPLEMENTATION_HANDOFF.md
+TRAINING_TAB_HANDOFF.md

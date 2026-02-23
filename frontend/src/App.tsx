@@ -13,16 +13,41 @@ import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
+import { Toaster } from '@/components/ui/sonner';
 import { UploadArea } from '@/components/upload/UploadArea';
 import { DataViewerTab } from '@/components/data/DataViewerTab';
 import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPanel';
 import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
 import { TrainingPanel } from '@/components/training/TrainingPanel';
+import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel';
+import { AuthLayout } from '@/components/auth/AuthLayout';
+import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
+import { GoogleOAuthCallback } from '@/components/auth/GoogleOAuthCallback';
+import { LoginForm } from '@/components/auth/LoginForm';
+import { ProfileSettings } from '@/components/auth/ProfileSettings';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
+import { SignupForm } from '@/components/auth/SignupForm';
 import { useProjectStore } from '@/stores/projectStore';
-import { FolderOpen, Sparkles } from 'lucide-react';
+import { useAuthStore } from '@/stores/authStore';
+import { ArrowUpRight, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import type { Phase } from '@/types/phase';
+import { getCurrentUser } from '@/lib/api/auth';
+import { isJwtExpired } from '@/lib/auth/jwt';
+import { initMonaco } from '@/lib/monaco/preloader';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@/components/ui/empty';
+
+// Pre-load Monaco editor in the background to eliminate flash on code cells
+initMonaco().catch(console.error);
 
 // Home page - shown when no project is selected
 function HomePage() {
@@ -66,35 +91,38 @@ function HomePage() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="flex justify-center">
-          <div className="rounded-full bg-primary/10 p-6">
-            <Sparkles className="h-12 w-12 text-primary" />
-          </div>
+    <Empty className="h-full">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="rounded-lg">
+          <FolderOpen />
+        </EmptyMedia>
+        <EmptyTitle>
+          {projects.length === 0 ? 'No Projects Yet' : 'No Project Selected'}
+        </EmptyTitle>
+        <EmptyDescription>
+          {projects.length === 0
+            ? 'Start your first ML workflow by creating a new project or importing one.'
+            : 'Select a project from the sidebar to continue working, or create/import a new one.'}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
+          <Button variant="outline">Import Project</Button>
         </div>
-
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold text-foreground">
-            AI-Augmented AutoML Toolchain
-          </h1>
-          <p className="text-muted-foreground">
-            {projects.length === 0
-              ? 'Create your first project to get started with automated machine learning workflows.'
-              : 'Select a project from the sidebar or create a new one.'}
-          </p>
-        </div>
-
-        {projects.length === 0 && (
-          <Button size="lg" onClick={() => setIsCreateDialogOpen(true)}>
-            <FolderOpen className="h-5 w-5 mr-2" />
-            Create Your First Project
-          </Button>
-        )}
-
-        <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
-      </div>
-    </div>
+      </EmptyContent>
+      <Button
+        variant="link"
+        asChild
+        className="text-muted-foreground"
+        size="sm"
+      >
+        <a href="https://github.com/ShreeChaturvedi/AutoML" target="_blank" rel="noreferrer">
+          Learn More <ArrowUpRight />
+        </a>
+      </Button>
+      <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
+    </Empty>
   );
 }
 
@@ -187,19 +215,7 @@ function ProjectWorkspace() {
       return <TrainingPanel />;
 
     case 'experiments':
-      return (
-        <div className="flex h-full items-center justify-center p-6">
-          <div className="text-center space-y-2">
-            <h3 className="text-lg font-semibold text-foreground">Experiments</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Experiment tracking dashboard with metrics, visualizations, and model comparison.
-            </p>
-            <p className="text-xs text-muted-foreground italic">
-              TODO: Implement experiment tracking UI.
-            </p>
-          </div>
-        </div>
-      );
+      return <ExperimentsPanel />;
 
     case 'deployment':
       return (
@@ -221,7 +237,7 @@ function ProjectWorkspace() {
   }
 }
 
-function App() {
+function MainApp() {
   const isInitialized = useProjectStore((state) => state.isInitialized);
   const isLoading = useProjectStore((state) => state.isLoading);
   const error = useProjectStore((state) => state.error);
@@ -267,9 +283,97 @@ function App() {
   }
 
   return (
+    <AppShell>{content}</AppShell>
+  );
+}
+
+function App() {
+  const [authReady, setAuthReady] = useState(false);
+  const setUser = useAuthStore((state) => state.setUser);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
+  const setLoading = useAuthStore((state) => state.setLoading);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const bootstrapAuth = async () => {
+      const { accessToken, refreshToken } = useAuthStore.getState();
+      if (!accessToken && !refreshToken) {
+        setLoading(false);
+        setAuthReady(true);
+        return;
+      }
+      if (!accessToken || isJwtExpired(accessToken)) {
+        clearAuth();
+        setLoading(false);
+        setAuthReady(true);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await getCurrentUser();
+        if (isMounted) {
+          setUser(response.user);
+        }
+      } catch {
+        if (isMounted) {
+          clearAuth();
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          setAuthReady(true);
+        }
+      }
+    };
+
+    void bootstrapAuth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [setUser, clearAuth, setLoading]);
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen w-full bg-background text-foreground flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Checking session...</p>
+      </div>
+    );
+  }
+
+  return (
     <BrowserRouter>
       <div className="min-h-screen w-full bg-background text-foreground">
-        <AppShell>{content}</AppShell>
+        <Routes>
+          {/* Auth routes share AuthLayout so background persists across navigation */}
+          <Route element={<AuthLayout />}>
+            <Route path="/login" element={<LoginForm />} />
+            <Route path="/signup" element={<SignupForm />} />
+            <Route path="/forgot-password" element={<ForgotPasswordForm />} />
+            <Route path="/reset-password" element={<ResetPasswordForm />} />
+            <Route path="/auth/google/callback" element={<GoogleOAuthCallback />} />
+          </Route>
+          {/* Profile is a dedicated full-page route outside AppShell */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfileSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <MainApp />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+        <Toaster />
       </div>
     </BrowserRouter>
   );

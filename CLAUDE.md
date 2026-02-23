@@ -15,7 +15,7 @@ AI-Augmented AutoML Toolchain: A TypeScript monorepo implementing an automated d
 
 **Data flow**: React SPA → Express REST API → Postgres + file-based storage
 
-See `ARCHITECTURE.md` for detailed system design and `README.md` for getting started.
+See `ARCHITECTURE.md` for detailed system design, `README.md` for getting started, `PROGRESS.md` for feature status, and `DECISIONS.md` for architectural decisions.
 
 ## Common Development Commands
 

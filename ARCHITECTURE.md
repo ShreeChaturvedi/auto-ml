@@ -57,6 +57,10 @@ graph TD
   - `backend/src/routes/answer.ts` – `/api/answer` endpoint composing responses with citations and cache metadata.
   - `backend/src/routes/health.ts` – Liveness diagnostics (`/api/health`).
   - `backend/src/routes/query.ts` – NL→SQL, direct SQL, and cache config endpoints.
+  - `backend/src/routes/preprocessing.ts` – Preprocessing analysis + suggestion endpoints.
+  - `backend/src/routes/featureEngineering.ts` – Applies feature specs and writes derived datasets.
+  - `backend/src/routes/execution.ts` – Python execution sessions, package installs, and runtime health.
+  - `backend/src/routes/models.ts` – Model templates, training runs, and artifact downloads.
 - **Persistence & services**:
   - `backend/src/repositories/projectRepository.ts` – File-backed project store with schema sanitization and in-memory fallback.
   - `backend/src/repositories/datasetRepository.ts` – File-backed dataset metadata store with UUID identities.
@@ -65,6 +69,8 @@ graph TD
   - `backend/src/services/documentIngestion.ts`, `documentSearchService.ts` – Persist documents/chunks/embeddings to Postgres and run cosine + keyword reranking for `/api/docs/search`.
   - `backend/src/services/sqlExecutor.ts`, `queryCache.ts`, `nlToSql.ts` – Sprint 3 query execution stack (read-only enforcement, caching, NL→SQL stubs, EDA summaries).
   - `backend/src/services/answerService.ts` – Retrieves top chunks, composes simple answers with citation metadata, and caches responses in-memory for `/api/answer`.
+  - `backend/src/services/executionService.ts`, `containerManager.ts` – Docker-backed Python execution and package management.
+  - `backend/src/services/featureEngineering.ts` – Applies feature specs to datasets via the runtime container.
 - **Configuration**: `backend/src/config.ts` consolidates environment variables (port, CORS origins, storage paths). Defaults assume local single-node development.
 
 ### 3.3 Automation & Quality Gates
@@ -117,6 +123,13 @@ Upcoming query, caching, and retrieval features persist operational data in Post
 | `SQL_STATEMENT_TIMEOUT_MS`, `SQL_MAX_ROWS`, `SQL_DEFAULT_LIMIT` | `5000`, `1000`, `200` | Query execution guardrails. |
 | `QUERY_CACHE_TTL_MS`, `QUERY_CACHE_MAX_ENTRIES` | `300000`, `500` | Cache configuration for NL→SQL/SQL endpoints. |
 | `DOC_CHUNK_SIZE`, `DOC_CHUNK_OVERLAP` | `500`, `50` | Window/overlap used when chunking uploaded documents. |
+| `DOCKER_ENABLED`, `DOCKER_IMAGE` | `true`, `automl-python-runtime` | Docker runtime toggle + image name for code execution. |
+| `EXECUTION_NETWORK` | `bridge` | Docker network policy for runtime containers. |
+| `EXECUTION_AUTO_BUILD_IMAGE` | `true` | Auto-build the runtime image when missing. |
+| `EXECUTION_TIMEOUT_MS` | `30000` | Max per-cell execution time in ms. |
+| `EXECUTION_MAX_MEMORY_MB` | `2048` | Memory cap for runtime containers. |
+| `EXECUTION_MAX_CPU_PERCENT` | `100` | CPU cap for runtime containers. |
+| `EXECUTION_WORKSPACE_DIR` | `storage/runtime` | Host path for runtime workspaces. |
 
 Configuration is loaded once at process start (see `backend/src/config.ts`); copy `backend/.env.example` to `.env` to customize.
 

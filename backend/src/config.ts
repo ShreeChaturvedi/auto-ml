@@ -1,6 +1,7 @@
-import { config as loadEnv } from 'dotenv';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { config as loadEnv } from 'dotenv';
 
 loadEnv();
 loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
@@ -43,6 +44,7 @@ export const env = {
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
   storagePath: process.env.STORAGE_PATH ?? 'storage/projects.json',
   datasetStorageDir: process.env.DATASET_STORAGE_DIR ?? 'storage/datasets/files',
+  datasetUploadMaxMb: parseInteger(process.env.DATASET_UPLOAD_MAX_MB, 300),
   documentStorageDir: process.env.DOCUMENT_STORAGE_DIR ?? 'storage/documents/files',
   datasetMetadataPath: process.env.DATASET_METADATA_PATH ?? 'storage/datasets/metadata.json',
   modelStorageDir: process.env.MODEL_STORAGE_DIR ?? 'storage/models/artifacts',

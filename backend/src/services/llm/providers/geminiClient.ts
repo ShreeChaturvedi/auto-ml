@@ -433,7 +433,7 @@ function normalizeToolArgs(args: unknown): { args: Record<string, unknown>; rawA
 function mergeToolCalls(target: GeminiToolCall[], incoming: GeminiToolCall[]) {
   for (const call of incoming) {
     const last = target[target.length - 1];
-    if (last && last.name === call.name) {
+    if (last && last.name === call.name && shouldMergeToolCallFragments(last, call)) {
       last.args = deepMerge(last.args, call.args);
       last.rawArgs = mergeRawArgs(last.rawArgs, call.rawArgs);
       // Keep the thoughtSignature if present (don't overwrite with undefined)
@@ -447,6 +447,41 @@ function mergeToolCalls(target: GeminiToolCall[], incoming: GeminiToolCall[]) {
       });
     }
   }
+}
+
+function shouldMergeToolCallFragments(previous: GeminiToolCall, next: GeminiToolCall): boolean {
+  // If any side has raw partial args, this is almost certainly a fragmented stream payload.
+  if (previous.rawArgs || next.rawArgs) {
+    return true;
+  }
+
+  const previousKeys = Object.keys(previous.args);
+  const nextKeys = Object.keys(next.args);
+
+  // Empty-object tool args are commonly emitted incrementally.
+  if (previousKeys.length === 0 || nextKeys.length === 0) {
+    return true;
+  }
+
+  // Merge only when one arg object is a subset of the other (progressive construction).
+  // Distinct calls with the same tool name but different arguments should remain separate.
+  return isSubsetArgs(previous.args, next.args) || isSubsetArgs(next.args, previous.args);
+}
+
+function isSubsetArgs(
+  subset: Record<string, unknown>,
+  superset: Record<string, unknown>
+): boolean {
+  return Object.entries(subset).every(([key, value]) => {
+    if (!(key in superset)) {
+      return false;
+    }
+    return jsonValueEquals(value, superset[key]);
+  });
+}
+
+function jsonValueEquals(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>) {

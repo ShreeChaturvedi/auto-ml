@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, MessageSquare, Code2, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
+import { quoteSqlIdentifier } from './sqlIdentifiers';
 import type { QueryMode } from '@/types/file';
 
 // Animated lightning bolt icon for execute button
@@ -90,11 +91,24 @@ interface QueryPanelProps {
 
 const DEFAULT_SQL = `-- Enter your SQL query
 -- Use the table name from your uploaded dataset
+-- Wrap names with spaces in double quotes (example: "First Name")
 -- Press Ctrl+Space for autocomplete suggestions
 
 SELECT * FROM your_table LIMIT 100`;
 
 const DEFAULT_ENGLISH = '';
+
+function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
+  if (theme !== 'system') {
+    return theme;
+  }
+
+  if (typeof window === 'undefined') {
+    return 'light';
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 
 export function QueryPanel({ 
   onExecute, 
@@ -113,10 +127,14 @@ export function QueryPanel({
 
   // Theme detection for Monaco Editor
   const { theme: appTheme } = useTheme();
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
+    resolveEditorTheme(appTheme)
+  );
+  const monacoRef = useRef<Monaco | null>(null);
   
   // Store completion provider disposable for cleanup
   const completionProviderRef = useRef<IDisposable | null>(null);
+  const monacoTheme = resolvedTheme === 'dark' ? 'custom-dark' : 'custom-light';
   
   // Cleanup completion provider on unmount
   useEffect(() => {
@@ -124,26 +142,34 @@ export function QueryPanel({
       if (completionProviderRef.current) {
         completionProviderRef.current.dispose();
       }
+      monacoRef.current = null;
     };
   }, []);
 
   // Resolve system theme preference
   useEffect(() => {
-    if (appTheme === 'system') {
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setResolvedTheme(isDark ? 'dark' : 'light');
-      
-      // Listen for system theme changes
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = (e: MediaQueryListEvent) => {
-        setResolvedTheme(e.matches ? 'dark' : 'light');
-      };
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
-    } else {
-      setResolvedTheme(appTheme as 'light' | 'dark');
+    setResolvedTheme(resolveEditorTheme(appTheme));
+
+    if (appTheme !== 'system') {
+      return;
     }
+
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => {
+      setResolvedTheme(e.matches ? 'dark' : 'light');
+    };
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
   }, [appTheme]);
+
+  useEffect(() => {
+    if (!monacoRef.current) {
+      return;
+    }
+
+    monacoRef.current.editor.setTheme(monacoTheme);
+  }, [monacoTheme]);
 
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
@@ -186,6 +212,7 @@ export function QueryPanel({
   // Detect if user is on Mac for keyboard shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
+  const primaryTableName = tableNames[0];
 
   // Collapsed state - clickable bar to expand
   if (collapsed) {
@@ -258,6 +285,13 @@ export function QueryPanel({
             <PanelRightClose className="h-4 w-4" />
           </Button>
         </div>
+
+        {primaryTableName && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            SQL table name:{' '}
+            <code className="font-mono text-foreground">{quoteSqlIdentifier(primaryTableName)}</code>
+          </p>
+        )}
       </div>
 
       {/* Query Input */}
@@ -278,6 +312,8 @@ export function QueryPanel({
                 value={sqlQuery}
                 onChange={(value) => handleQueryChange(value || '')}
                 onMount={(editorInstance, monaco: Monaco) => {
+                  monacoRef.current = monaco;
+
                   // Define custom dark theme matching our site
                   monaco.editor.defineTheme('custom-dark', {
                     base: 'vs-dark',
@@ -322,7 +358,7 @@ export function QueryPanel({
                   });
 
                   // Apply the custom theme
-                  monaco.editor.setTheme(resolvedTheme === 'dark' ? 'custom-dark' : 'custom-light');
+                  monaco.editor.setTheme(monacoTheme);
 
                   // Focus editor on mount
                   editorInstance.focus();
@@ -366,13 +402,15 @@ export function QueryPanel({
                       
                       // Add table name suggestions
                       tableNames.forEach((tableName) => {
+                        const safeTableName = quoteSqlIdentifier(tableName);
                         suggestions.push({
                           label: tableName,
                           kind: monaco.languages.CompletionItemKind.Class,
-                          insertText: tableName,
+                          insertText: safeTableName,
                           range,
                           detail: 'Table',
-                          documentation: `Database table: ${tableName}`,
+                          documentation: `Database table: ${safeTableName}`,
+                          filterText: tableName,
                           sortText: '1' + tableName
                         });
                       });
@@ -380,13 +418,15 @@ export function QueryPanel({
                       // Add column suggestions for each table
                       Object.entries(columnsByTable).forEach(([tableName, columns]) => {
                         columns.forEach((col) => {
+                          const safeColumnName = quoteSqlIdentifier(col);
                           suggestions.push({
                             label: col,
                             kind: monaco.languages.CompletionItemKind.Field,
-                            insertText: col,
+                            insertText: safeColumnName,
                             range,
                             detail: `Column in ${tableName}`,
                             documentation: `Column from table ${tableName}`,
+                            filterText: col,
                             sortText: '2' + col
                           });
                         });
@@ -397,7 +437,7 @@ export function QueryPanel({
                   });
                 }}
                 // Use custom themes defined in onMount
-                theme={resolvedTheme === 'dark' ? 'custom-dark' : 'custom-light'}
+                theme={monacoTheme}
                 options={{
                   minimap: { enabled: false },
                   lineNumbers: 'on',

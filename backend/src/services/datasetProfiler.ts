@@ -166,6 +166,11 @@ function coerceDate(value: unknown): Date | null {
     if (!trimmed || /^\d+(\.\d+)?$/.test(trimmed)) {
       return null;
     }
+    // Guard against Date.parse permissiveness for arbitrary expressions (e.g., "1 = 1").
+    const hasDateLikeDelimiters = /[-/:T]/.test(trimmed);
+    if (!hasDateLikeDelimiters) {
+      return null;
+    }
     const timestamp = Date.parse(trimmed);
     if (!Number.isNaN(timestamp)) {
       return new Date(timestamp);

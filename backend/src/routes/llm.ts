@@ -496,6 +496,12 @@ async function streamLlmResponse(
             writeEvent({ type: 'error', message: 'LLM render_ui payload failed validation.' });
             return;
           }
+          const uiHasItems = parsed.data.ui.sections.some((section) => section.items.length > 0);
+          const hasFallbackMessage = Boolean(parsed.data.message?.trim());
+          if (!uiHasItems && !hasFallbackMessage) {
+            writeEvent({ type: 'error', message: 'LLM render_ui returned empty UI content.' });
+            return;
+          }
           uiEnvelope = {
             version: '1',
             kind,

@@ -96,6 +96,10 @@ function sanitizeTableName(filename: string, datasetId: string): string {
   return `${trimmed || 'table_data'}${separator}`;
 }
 
+function buildFileIdentity(file: UploadedFile): string {
+  return `${file.name}::${file.size}::${file.type}`;
+}
+
 export const useDataStore = create<DataState>((set, get) => ({
   files: [],
   previews: [],
@@ -431,10 +435,29 @@ export const useDataStore = create<DataState>((set, get) => ({
       set((state) => {
         const newHydratedProjects = new Set(state.hydratedProjects);
         newHydratedProjects.add(projectId);
+        const hydratedProjectFiles = [...hydratedFiles, ...hydratedDocuments];
+        const hydratedFileIdentity = new Set(hydratedProjectFiles.map((file) => buildFileIdentity(file)));
+
+        // Preserve local in-flight files during hydration to avoid false upload failure states.
+        const pendingLocalFiles = state.files.filter((file) => (
+          file.projectId === projectId
+          && !file.metadata?.datasetId
+          && !file.metadata?.documentId
+        ));
+        const retainedPendingFiles = pendingLocalFiles.filter(
+          (file) => !hydratedFileIdentity.has(buildFileIdentity(file))
+        );
+        const droppedPendingFileIds = new Set(
+          pendingLocalFiles
+            .filter((file) => hydratedFileIdentity.has(buildFileIdentity(file)))
+            .map((file) => file.id)
+        );
+
         const hydratedIds = new Set([...hydratedFiles, ...hydratedDocuments].map((file) => file.id));
+        const retainedProjectIds = new Set([...hydratedIds, ...retainedPendingFiles.map((file) => file.id)]);
         const nextOpenFileTabs = state.openFileTabs.filter((tabId) => {
           if (!previousProjectFileIds.has(tabId)) return true;
-          return hydratedIds.has(tabId);
+          return retainedProjectIds.has(tabId);
         });
         const nextOpenSet = new Set(nextOpenFileTabs);
         hydratedFiles.forEach((file) => {
@@ -447,11 +470,13 @@ export const useDataStore = create<DataState>((set, get) => ({
           files: [
             ...state.files.filter((file) => file.projectId !== projectId),
             ...hydratedFiles,
-            ...hydratedDocuments
+            ...hydratedDocuments,
+            ...retainedPendingFiles
           ],
           previews: [
             ...state.previews.filter(p =>
               !hydratedFiles.some(f => f.id === p.fileId)
+              && !droppedPendingFileIds.has(p.fileId)
             ),
             ...hydratedPreviews
           ],

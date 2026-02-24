@@ -56,6 +56,9 @@ const stripAssistantArtifacts = (text: string) => {
   return cleaned.trim();
 };
 
+const hasUiItems = (ui: UiSchema | null): boolean =>
+  Boolean(ui?.sections.some((section) => section.items.length > 0));
+
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const allFiles = useDataStore((state) => state.files);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
@@ -99,6 +102,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const toolHistoryRef = useRef<{ calls: ToolCall[]; results: ToolResult[] }>({ calls: [], results: [] });
   const toolAttemptRef = useRef(0);
   const cleanedAssistantText = useMemo(() => stripAssistantArtifacts(assistantText), [assistantText]);
+  const hasRenderableAssistantUi = useMemo(() => hasUiItems(assistantUi), [assistantUi]);
 
   const [applyStatus, setApplyStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
@@ -180,6 +184,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     setSuggestions(nextSuggestions);
   }, [assistantUi, featureById]);
 
+  const resetToolHistory = useCallback(() => {
+    toolHistoryRef.current = { calls: [], results: [] };
+    setToolCalls([]);
+    setToolResults([]);
+    toolAttemptRef.current = 0;
+  }, []);
+
   const handleGenerate = useCallback(async (withToolResults?: ToolResult[], withToolCalls?: ToolCall[]) => {
     if (!projectId || !selectedDatasetFile?.metadata?.datasetId) return;
 
@@ -214,6 +225,8 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             setAssistantText((prev) => prev + event.text);
           }
           if (event.type === 'envelope') {
+            const envelopeMessage = typeof event.envelope.message === 'string' ? event.envelope.message : '';
+            const cleanedEnvelopeMessage = stripAssistantArtifacts(envelopeMessage);
             if (event.envelope.tool_calls?.length) {
               setToolCalls(event.envelope.tool_calls);
               toolHistoryRef.current.calls = mergeToolCalls(
@@ -222,11 +235,17 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
               );
               setAssistantUi(null);
             } else {
-              setAssistantUi(event.envelope.ui ?? null);
+              const nextUi = event.envelope.ui ?? null;
+              if (nextUi && !hasUiItems(nextUi) && !cleanedEnvelopeMessage) {
+                setAssistantUi(null);
+                setAssistantError('AI plan finished without visible output. Try again or refine your goal.');
+              } else {
+                setAssistantUi(hasUiItems(nextUi) ? nextUi : null);
+              }
               setToolCalls([]);
             }
-            if (event.envelope.message) {
-              setAssistantText((prev) => (prev.trim() ? prev : event.envelope.message ?? ''));
+            if (envelopeMessage) {
+              setAssistantText((prev) => (prev.trim() ? prev : envelopeMessage));
             }
           }
           if (event.type === 'error') {
@@ -243,7 +262,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       setAssistantError(error instanceof Error ? error.message : 'Failed to generate plan.');
       setIsGenerating(false);
     }
-  }, [projectId, selectedDatasetFile, targetColumn, prompt]);
+  }, [projectId, selectedDatasetFile, targetColumn, prompt, resetToolHistory]);
 
   const handleRunTools = useCallback(async (auto = false) => {
     if (!toolCalls.length) return;
@@ -281,13 +300,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     setIsGenerating(false);
-  }, []);
-
-  const resetToolHistory = useCallback(() => {
-    toolHistoryRef.current = { calls: [], results: [] };
-    setToolCalls([]);
-    setToolResults([]);
-    toolAttemptRef.current = 0;
   }, []);
 
   const mergeToolCalls = (previous: ToolCall[], next: ToolCall[]) => {
@@ -722,9 +734,9 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
               isRunning={isRunningTools}
             />
 
-            {assistantUi ? (
+            {hasRenderableAssistantUi ? (
               <div className="space-y-4">
-                {assistantUi.sections.map((section) => (
+                {assistantUi?.sections.map((section) => (
                   <div key={section.id} className="space-y-3">
                     {section.title && <p className="text-sm font-semibold">{section.title}</p>}
                     <div
@@ -741,7 +753,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                 ))}
               </div>
             ) : (
-              !cleanedAssistantText && (
+              !cleanedAssistantText && !assistantError && (
                 <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
                   Generate an AI plan to see feature ideas and controls.
                 </div>

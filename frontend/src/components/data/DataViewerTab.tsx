@@ -11,6 +11,7 @@ import { FileText, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { QueryPanel } from './QueryPanel';
+import { withSqlIdentifierHint } from './sqlIdentifiers';
 import { FileTabBar } from './FileTabBar';
 import { DataTable } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
@@ -183,7 +184,7 @@ export function DataViewerTab() {
           }
         }
         
-        setQueryError(errorMessage);
+        setQueryError(withSqlIdentifierHint(errorMessage, mode, tableNames[0]));
       } finally {
         setIsExecuting(false);
       }

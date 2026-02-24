@@ -13,6 +13,7 @@ import {
   ClipboardList,
   Plus
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { phaseConfig } from '@/types/phase';
 import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
@@ -128,6 +130,9 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const removeFile = useDataStore((state) => state.removeFile);
 
   const updateProject = useProjectStore((state) => state.updateProject);
+  const isDataViewerUnlocked = useProjectStore((state) =>
+    state.isPhaseUnlocked(projectId, 'data-viewer')
+  );
   const project = useProjectStore((state) =>
     state.projects.find((p) => p.id === projectId)
   );
@@ -169,11 +174,23 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
     return plansArray;
   }, [metadata]);
   const selectedPlanId = activePlanId ?? plans[0]?.id;
+  const currentPhase = project?.currentPhase;
+  const currentPhaseLabel = currentPhase
+    ? phaseConfig[currentPhase].label
+    : 'the current step';
 
   const handleOpenFile = useCallback((fileId: string) => {
+    if (!isDataViewerUnlocked) {
+      const description = currentPhase === 'upload'
+        ? 'Finish the Data Upload workflow to unlock Explorer.'
+        : `Complete ${currentPhaseLabel} to unlock Explorer.`;
+      toast.info('Explorer is still locked', { description });
+      return;
+    }
+
     openFileTab(fileId);
     navigate(`/project/${projectId}/data-viewer`);
-  }, [openFileTab, navigate, projectId]);
+  }, [currentPhase, currentPhaseLabel, isDataViewerUnlocked, openFileTab, navigate, projectId]);
 
   const handleOpenPlan = useCallback((planId: string) => {
     const selectedPlan = plans.find((plan) => plan.id === planId);

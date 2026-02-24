@@ -40,8 +40,13 @@ describe('QuestionCards', () => {
     render(<QuestionCards questions={QUESTIONS} onSubmit={onSubmit} />);
 
     fireEvent.click(screen.getByTestId('single-option-q1-Binary'));
+    fireEvent.click(screen.getByRole('button', { name: 'Next question' }));
+
+    // multi_select uses a label with a checkbox now, we click the input
     fireEvent.click(screen.getByTestId('multi-option-q2-Precision'));
     fireEvent.click(screen.getByTestId('multi-option-q2-Recall'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next question' }));
 
     fireEvent.change(screen.getByTestId('free-text-q3'), {
       target: { value: 'Need <= 50ms latency.' }
@@ -55,6 +60,34 @@ describe('QuestionCards', () => {
       { questionId: 'q2', answer: ['Precision', 'Recall'] },
       { questionId: 'q3', answer: 'Need <= 50ms latency.' }
     ]);
+  });
+
+  it('supports semantic navigation controls and keyboard interaction', () => {
+    const onSubmit = vi.fn();
+    render(<QuestionCards questions={QUESTIONS} onSubmit={onSubmit} />);
+
+    const prevButton = screen.getByRole('button', { name: 'Previous question' });
+    const nextButton = screen.getByRole('button', { name: 'Next question' });
+    const dot1 = screen.getByRole('button', { name: 'Go to question 1' });
+    const dot2 = screen.getByRole('button', { name: 'Go to question 2' });
+
+    // Initially on question 1
+    expect(prevButton).toBeDisabled();
+    expect(nextButton).toBeEnabled();
+    expect(dot1).toHaveAttribute('aria-current', 'step');
+    expect(dot2).not.toHaveAttribute('aria-current');
+
+    // Select an option using semantic radio role
+    const binaryOption = screen.getByRole('radio', { name: /Binary/i });
+    expect(binaryOption).toHaveAttribute('aria-checked', 'false');
+
+    // Use keyboard to navigate to next question using the dot
+    dot2.focus();
+    fireEvent.click(dot2); // Keyboard enter/space triggers click
+
+    // Now on question 2
+    expect(prevButton).toBeEnabled();
+    expect(dot2).toHaveAttribute('aria-current', 'step');
   });
 
   it('accepts custom answers when enabled', () => {

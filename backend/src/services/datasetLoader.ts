@@ -171,6 +171,80 @@ function inferPostgresType(dtype: string): string {
   }
 }
 
+function coerceBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
+  }
+  return null;
+}
+
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function coerceDate(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    // Guard against Date.parse permissiveness for arbitrary expressions (e.g., "1 = 1").
+    const hasDateLikeDelimiters = /[-/:T]/.test(trimmed);
+    if (!hasDateLikeDelimiters) {
+      return null;
+    }
+    const timestamp = Date.parse(trimmed);
+    if (!Number.isNaN(timestamp)) {
+      return new Date(timestamp).toISOString();
+    }
+  }
+
+  return null;
+}
+
+export function normalizeValueForColumn(value: unknown, dtype: string): unknown {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  switch (dtype) {
+    case 'number':
+      return coerceNumber(value);
+    case 'boolean':
+      return coerceBoolean(value);
+    case 'date':
+      return coerceDate(value);
+    case 'string':
+    default:
+      return value;
+  }
+}
+
 async function insertRows(
   client: PoolClient,
   tableName: string,
@@ -188,6 +262,7 @@ async function insertRows(
   const batchSize = Math.floor(maxParams / paramsPerRow);
 
   let totalRowsInserted = 0;
+  const dtypeByColumnName = new Map(columns.map((column) => [column.name, column.dtype]));
 
   // Insert in batches
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -201,7 +276,8 @@ async function insertRows(
     const values: unknown[] = [];
     batch.forEach((row) => {
       columnNames.forEach((colName) => {
-        values.push(row[colName] ?? null);
+        const dtype = dtypeByColumnName.get(colName) ?? 'string';
+        values.push(normalizeValueForColumn(row[colName], dtype));
       });
     });
 

@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-import { Router } from 'express';
+import { type NextFunction, type Request, type Response, Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 
@@ -16,7 +16,7 @@ import type { DatasetFileType } from '../types/dataset.js';
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB
+    fileSize: env.datasetUploadMaxMb * 1024 * 1024
   }
 });
 
@@ -48,6 +48,24 @@ function detectFileType(filename: string, mimetype?: string): DatasetFileType | 
 export function createDatasetUploadRouter(repository?: DatasetRepository) {
   const router = Router();
   const datasetRepository = repository ?? createDatasetRepository(env.datasetMetadataPath);
+
+  const handleDatasetUpload = (req: Request, res: Response, next: NextFunction) => {
+    upload.single('file')(req, res, (error?: unknown) => {
+      if (!error) {
+        next();
+        return;
+      }
+
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({
+          error: `File too large. Maximum dataset size is ${env.datasetUploadMaxMb}MB.`
+        });
+        return;
+      }
+
+      next(error);
+    });
+  };
 
   router.get('/datasets', async (req, res) => {
     const projectId = req.query.projectId as string | undefined;
@@ -128,7 +146,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
   router.post(
     '/upload/dataset',
-    upload.single('file'),
+    handleDatasetUpload,
     async (req, res) => {
       const parseResult = datasetUploadSchema.safeParse(req.body);
       if (!parseResult.success) {

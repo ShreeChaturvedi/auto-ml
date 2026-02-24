@@ -6,6 +6,7 @@ export const ToolNameSchema = z.enum([
   'get_dataset_sample',
   'search_documents',
   'ask_user',
+  'plan_exit',
   'list_cells',
   'read_cell',
   'write_cell',
@@ -173,25 +174,47 @@ export const UiSchema = z.object({
 
 export type UiSchema = z.infer<typeof UiSchema>;
 
-export const AskUserQuestionSchema = z.object({
+const AskUserOptionSchema = z.object({
+  label: z.string(),
+  description: z.string()
+});
+
+const AskUserQuestionBaseSchema = z.object({
   id: z.string(),
   question: z.string(),
   header: z.string(),
-  type: z.enum(['single_select', 'multi_select', 'free_text']),
-  options: z.array(z.object({
-    label: z.string(),
-    description: z.string()
-  })).optional(),
   allowCustom: z.boolean().optional()
 });
+
+const AskUserSelectQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.enum(['single_select', 'multi_select']),
+  options: z.array(AskUserOptionSchema).min(1)
+});
+
+const AskUserFreeTextQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.literal('free_text'),
+  options: z.array(AskUserOptionSchema).optional()
+});
+
+export const AskUserQuestionSchema = z.union([
+  AskUserSelectQuestionSchema,
+  AskUserFreeTextQuestionSchema
+]);
 
 export type AskUserQuestion = z.infer<typeof AskUserQuestionSchema>;
 
 export const AskUserPayloadSchema = z.object({
-  questions: z.array(AskUserQuestionSchema)
+  questions: z.array(AskUserQuestionSchema).min(1)
 });
 
 export type AskUserPayload = z.infer<typeof AskUserPayloadSchema>;
+
+export const PlanExitPayloadSchema = z.object({
+  planName: z.string().min(1).max(120).optional(),
+  planMarkdown: z.string().min(1).max(50000)
+});
+
+export type PlanExitPayload = z.infer<typeof PlanExitPayloadSchema>;
 
 export interface QuestionAnswer {
   questionId: string;
@@ -204,6 +227,7 @@ export const LlmEnvelopeSchema = z.object({
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
   ask_user: AskUserPayloadSchema.optional(),
+  plan_exit: PlanExitPayloadSchema.optional(),
   ui: UiSchema.nullable().optional()
 });
 
@@ -219,4 +243,4 @@ export type ChatMessage =
   | { id: string; type: 'ui'; schema: UiSchema }
   | { id: string; type: 'error'; message: string }
   | { id: string; type: 'ask_user'; questions: AskUserQuestion[]; answered?: boolean }
-  | { id: string; type: 'plan'; content: string; approved?: boolean };
+  | { id: string; type: 'plan'; content: string; planName: string; approved?: boolean; hidden?: boolean };

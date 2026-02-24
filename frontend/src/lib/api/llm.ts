@@ -33,6 +33,7 @@ export type LlmStreamEvent =
   | { type: 'thinking'; text: string }
   | { type: 'envelope'; envelope: LlmEnvelope }
   | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
+  | { type: 'plan_exit'; planName?: string; planMarkdown: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -88,6 +89,7 @@ async function streamLlm(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let sawDone = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -108,10 +110,20 @@ async function streamLlm(
             if (parsed.data.ask_user?.questions?.length) {
               onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
             }
+            if (parsed.data.plan_exit?.planMarkdown) {
+              onEvent({
+                type: 'plan_exit',
+                planName: parsed.data.plan_exit.planName,
+                planMarkdown: parsed.data.plan_exit.planMarkdown
+              });
+            }
           } else {
             onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
           }
           continue;
+        }
+        if (payload.type === 'done') {
+          sawDone = true;
         }
         onEvent(payload);
       } catch {
@@ -130,10 +142,20 @@ async function streamLlm(
           if (parsed.data.ask_user?.questions?.length) {
             onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
           }
+          if (parsed.data.plan_exit?.planMarkdown) {
+            onEvent({
+              type: 'plan_exit',
+              planName: parsed.data.plan_exit.planName,
+              planMarkdown: parsed.data.plan_exit.planMarkdown
+            });
+          }
         } else {
           onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
         }
       } else {
+        if (payload.type === 'done') {
+          sawDone = true;
+        }
         onEvent(payload);
       }
     } catch {
@@ -141,5 +163,7 @@ async function streamLlm(
     }
   }
 
-  onEvent({ type: 'done' });
+  if (!sawDone) {
+    onEvent({ type: 'done' });
+  }
 }

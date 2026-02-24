@@ -122,6 +122,13 @@ describe('UploadArea stage machine', () => {
     renderUploadArea();
     expect(screen.getByTestId('plan-approve')).toBeInTheDocument();
 
+    expect(updateProjectMock).not.toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({
+        metadata: expect.objectContaining({ uploadStage: 'upload' })
+      })
+    );
+
     fireEvent.click(screen.getByTestId('plan-approve'));
 
     await waitFor(() => {

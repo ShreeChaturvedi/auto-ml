@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 
 import { useDataStore } from '@/stores/dataStore';
@@ -28,6 +28,7 @@ function isValidUploadStage(value: unknown): value is UploadFlowStage {
 
 export function UploadArea() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const projects = useProjectStore((state) => state.projects);
@@ -43,6 +44,7 @@ export function UploadArea() {
   const [stage, setStage] = useState<UploadFlowStage>('upload');
   const initializedProjectIdRef = useRef<string | null>(null);
   const persistedMetadataRef = useRef<string>('');
+  const syncingFromMetadataRef = useRef(false);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -51,19 +53,55 @@ export function UploadArea() {
 
   useEffect(() => {
     if (!activeProject) return;
-    if (initializedProjectIdRef.current === activeProject.id) return;
 
     const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     const nextStage = isValidUploadStage(metadata.uploadStage) ? metadata.uploadStage : 'upload';
 
+    const snapshot = JSON.stringify({ uploadStage: nextStage });
+    const hasProjectChanged = initializedProjectIdRef.current !== activeProject.id;
+    const hasMetadataStageChanged = snapshot !== persistedMetadataRef.current;
+
+    if (!hasProjectChanged && !hasMetadataStageChanged) {
+      return;
+    }
+
+    syncingFromMetadataRef.current = true;
     setStage(nextStage);
-    persistedMetadataRef.current = JSON.stringify({ uploadStage: nextStage });
+    persistedMetadataRef.current = snapshot;
     initializedProjectIdRef.current = activeProject.id;
   }, [activeProject]);
 
   useEffect(() => {
     if (!activeProject) return;
+    if (searchParams.get('newPlan') !== '1') return;
+
+    setStage('chat');
+
+    const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+    void updateProject(activeProject.id, {
+      metadata: { ...existingMetadata, uploadStage: 'chat' },
+    }).catch((error) => {
+      console.error('Failed to persist new-plan stage metadata', error);
+    });
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('newPlan');
+    setSearchParams(nextParams, { replace: true });
+  }, [activeProject, searchParams, setSearchParams, updateProject]);
+
+  useEffect(() => {
+    if (!activeProject) return;
     if (initializedProjectIdRef.current !== activeProject.id) return;
+
+    const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+    const metadataStage = isValidUploadStage(metadata.uploadStage) ? metadata.uploadStage : 'upload';
+
+    if (syncingFromMetadataRef.current) {
+      if (stage === metadataStage) {
+        syncingFromMetadataRef.current = false;
+      }
+      return;
+    }
 
     const snapshot = JSON.stringify({ uploadStage: stage });
     if (snapshot === persistedMetadataRef.current) return;
@@ -97,13 +135,16 @@ export function UploadArea() {
     <div className="flex h-full flex-col overflow-hidden" data-testid="upload-area">
       <ProjectHeader
         project={activeProject}
-        editable
+        editable={stage === 'upload'}
+        collapsed={stage !== 'upload'}
+        collapsedCenterLabel={stage === 'chat' ? 'Project Planning' : undefined}
+        onBack={stage === 'chat' ? () => setStage('upload') : undefined}
         onUpdate={(updates) => {
           void updateProject(activeProject.id, updates);
         }}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto bg-background">
         {stage === 'upload' ? (
           <UploadStage
             projectId={activeProject.id}
@@ -114,7 +155,6 @@ export function UploadArea() {
         {stage === 'processing' ? (
           <ProcessingStage
             projectId={activeProject.id}
-            onBack={() => setStage('upload')}
             onComplete={() => setStage('chat')}
           />
         ) : null}
@@ -122,17 +162,27 @@ export function UploadArea() {
         {stage === 'chat' ? (
           <PlanningStage
             projectId={activeProject.id}
-            onBack={() => setStage('upload')}
             onPlanApproved={(plan, planName) => {
               const metadata = { ...((activeProject.metadata ?? {}) as UploadFlowMetadata) };
               delete metadata.customInstructions;
 
+              // Append new plan to metadata
+              const newPlan = { id: `plan-${Date.now()}`, name: planName, content: plan };
+              const existingPlans = Array.isArray(metadata.plans) ? metadata.plans : [];
+              
+              // Maintain backward compat
+              const legacyCompat = {
+                projectPlan: plan,
+                projectPlanName: planName,
+              };
+
               void updateProject(activeProject.id, {
                 metadata: {
                   ...metadata,
-                  uploadStage: 'chat',
-                  projectPlan: plan,
-                  projectPlanName: planName,
+                  ...legacyCompat,
+                  plans: [...existingPlans, newPlan],
+                  activePlanId: newPlan.id,
+                  uploadStage: 'upload',
                 },
               })
                 .then(() => {

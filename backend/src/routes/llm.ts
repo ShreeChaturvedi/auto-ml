@@ -20,7 +20,7 @@ import {
 import { buildFeatureEngineeringRequest, buildOnboardingRequest, buildTrainingRequest } from '../services/llm/prompts.js';
 import { LLM_ALL_TOOLS, LLM_ONBOARDING_TOOLS, LLM_RENDER_UI_TOOL, LLM_TOOL_DEFINITIONS } from '../services/llm/toolRegistry.js';
 import { listMcpToolsForLlm, executeMcpTool } from '../services/mcp/mcpAdapter.js';
-import { AskUserPayloadSchema, ToolCallSchema } from '../types/llm.js';
+import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../types/llm.js';
 import type { LlmEnvelope } from '../types/llm.js';
 import { UiSchema } from '../types/llmUi.js';
 
@@ -379,6 +379,8 @@ async function streamLlmResponse(
   const requestId = randomUUID().slice(0, 8);
   const toolCalls: z.infer<typeof ToolCallSchema>[] = [];
   let askUserPayload: z.infer<typeof AskUserPayloadSchema> | null = null;
+  let planExitPayload: z.infer<typeof PlanExitPayloadSchema> | null = null;
+  let terminalToolConflict = false;
   let uiEnvelope: LlmEnvelope | null = null;
   let tokenChars = 0;
   let tokenPreview = '';
@@ -403,12 +405,41 @@ async function streamLlmResponse(
       },
       onToolCall: (call) => {
         if (call.name === 'ask_user') {
+          if (planExitPayload) {
+            terminalToolConflict = true;
+            writeEvent({ type: 'error', message: 'Model emitted both ask_user and plan_exit in one response.' });
+            return;
+          }
+
           const parsedAskUser = AskUserPayloadSchema.safeParse(call.args);
           if (!parsedAskUser.success) {
             writeEvent({ type: 'error', message: 'ask_user payload failed validation.' });
             return;
           }
           askUserPayload = parsedAskUser.data;
+          return;
+        }
+
+        if (call.name === 'plan_exit') {
+          if (askUserPayload) {
+            terminalToolConflict = true;
+            writeEvent({ type: 'error', message: 'Model emitted both ask_user and plan_exit in one response.' });
+            return;
+          }
+
+          const parsedPlanExit = PlanExitPayloadSchema.safeParse(call.args);
+          if (!parsedPlanExit.success) {
+            writeEvent({ type: 'error', message: 'plan_exit payload failed validation.' });
+            return;
+          }
+
+          const normalizedPlanExit = normalizePlanExitPayload(parsedPlanExit.data);
+          if (!normalizedPlanExit) {
+            writeEvent({ type: 'error', message: 'plan_exit payload does not contain a valid plan.' });
+            return;
+          }
+
+          planExitPayload = normalizedPlanExit;
           return;
         }
 
@@ -502,6 +533,12 @@ async function streamLlmResponse(
       console.log(`[DEBUG][llm.ts] Tool calls to send:`, JSON.stringify(toolCalls, null, 2));
     }
 
+    if (terminalToolConflict) {
+      writeEvent({ type: 'done' });
+      res.end();
+      return;
+    }
+
     if (askUserPayload) {
       writeEvent({
         type: 'envelope',
@@ -510,6 +547,16 @@ async function streamLlmResponse(
           kind,
           ask_user: askUserPayload,
           tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+          ui: null
+        }
+      });
+    } else if (planExitPayload) {
+      writeEvent({
+        type: 'envelope',
+        envelope: {
+          version: '1',
+          kind,
+          plan_exit: planExitPayload,
           ui: null
         }
       });
@@ -551,8 +598,80 @@ async function streamLlmResponse(
       type: 'error',
       message: error instanceof Error ? error.message : 'LLM request failed'
     });
+    writeEvent({ type: 'done' });
     res.end();
   }
+}
+
+const REQUIRED_PLAN_SECTION_PATTERNS = [
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?objective\b[:\s-]*/im,
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:data\s+summary|data\s+overview)\b[:\s-]*/im,
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?approach\b[:\s-]*/im,
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:feature\s+engineering\s+strategy|feature\s+engineering)\b[:\s-]*/im,
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:target\s*(?:&|and)\s*evaluation|evaluation)\b[:\s-]*/im,
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:risks?\s*(?:&|and)\s*assumptions?|assumptions?)\b[:\s-]*/im,
+  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?next\s+steps\b[:\s-]*/im
+];
+
+function normalizePlanFilename(rawName?: string): string {
+  const trimmed = rawName?.trim() ?? '';
+  const withoutExtension = trimmed.replace(/\.md$/i, '');
+  const slug = withoutExtension
+    .toLowerCase()
+    .replace(/[^a-z0-9-\s_]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 100);
+
+  const fallback = `project-plan-${new Date().toISOString().slice(0, 10)}`;
+  return `${slug || fallback}.md`;
+}
+
+function extractNormalizedPlanMarkdown(rawText: string): string | null {
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const markdownFenceMatch = trimmed.match(/```(?:markdown|md)?\s*([\s\S]*?)```/i);
+  const unwrapped = markdownFenceMatch?.[1]?.trim() || trimmed;
+
+  const projectPlanHeading = unwrapped.match(/^#\s+Project Plan\b.*$/m);
+  const firstHeading = unwrapped.match(/^#\s+.+$/m);
+  const headingMatch = projectPlanHeading ?? firstHeading;
+
+  if (!headingMatch || headingMatch.index === undefined) {
+    return null;
+  }
+
+  const candidate = unwrapped.slice(headingMatch.index).trim();
+  if (!candidate.startsWith('#')) {
+    return null;
+  }
+
+  const hasAllRequiredSections = REQUIRED_PLAN_SECTION_PATTERNS.every((pattern) => pattern.test(candidate));
+  if (!hasAllRequiredSections) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function normalizePlanExitPayload(
+  payload: z.infer<typeof PlanExitPayloadSchema>
+): z.infer<typeof PlanExitPayloadSchema> | null {
+  const planMarkdown = extractNormalizedPlanMarkdown(payload.planMarkdown);
+  if (!planMarkdown) {
+    return null;
+  }
+
+  const parsed = PlanExitPayloadSchema.safeParse({
+    planName: normalizePlanFilename(payload.planName),
+    planMarkdown
+  });
+
+  return parsed.success ? parsed.data : null;
 }
 
 function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'training' | 'onboarding') {

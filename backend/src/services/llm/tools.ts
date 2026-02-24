@@ -1,12 +1,12 @@
+import { env } from '../../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../../db.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
-import { env } from '../../config.js';
-import { searchDocuments } from '../documentSearchService.js';
-import * as notebookService from '../notebook/notebookService.js';
-import { executeCell, getOrEnsureContainer } from '../notebook/cellExecutionService.js';
-import { installPackage, uninstallPackage, listPackages } from '../containerManager.js';
 import type { ToolCall, ToolResult } from '../../types/llm.js';
 import type { CellType } from '../../types/notebook.js';
+import { installPackage, listPackages, uninstallPackage } from '../containerManager.js';
+import { searchDocuments } from '../documentSearchService.js';
+import { executeCell, getOrEnsureContainer } from '../notebook/cellExecutionService.js';
+import * as notebookService from '../notebook/notebookService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
@@ -44,6 +44,8 @@ export async function executeToolCall(projectId: string, call: ToolCall): Promis
       // User interaction tools
       case 'ask_user':
         return { id: call.id, tool: call.tool, output: { type: 'user_interaction', message: 'Awaiting user response' } };
+      case 'plan_exit':
+        return { id: call.id, tool: call.tool, output: { type: 'plan_artifact', message: 'Plan finalized by model' } };
 
       // Package management tools
       case 'install_package':

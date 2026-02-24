@@ -6,6 +6,7 @@ export const ToolNameSchema = z.enum([
   'get_dataset_sample',
   'search_documents',
   'ask_user',
+  'plan_exit',
   'list_cells',
   'read_cell',
   'write_cell',
@@ -29,24 +30,40 @@ export const ToolCallSchema = z.object({
 
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 
-export const AskUserQuestionSchema = z.object({
+const AskUserOptionSchema = z.object({
+  label: z.string().min(1),
+  description: z.string().min(1)
+});
+
+const AskUserQuestionBaseSchema = z.object({
   id: z.string().min(1),
   question: z.string().min(1),
   header: z.string().min(1),
-  type: z.enum(['single_select', 'multi_select', 'free_text']),
-  options: z
-    .array(
-      z.object({
-        label: z.string().min(1),
-        description: z.string().min(1)
-      })
-    )
-    .optional(),
   allowCustom: z.boolean().optional()
 });
 
+const AskUserSelectQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.enum(['single_select', 'multi_select']),
+  options: z.array(AskUserOptionSchema).min(1)
+});
+
+const AskUserFreeTextQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.literal('free_text'),
+  options: z.array(AskUserOptionSchema).optional()
+});
+
+export const AskUserQuestionSchema = z.union([
+  AskUserSelectQuestionSchema,
+  AskUserFreeTextQuestionSchema
+]);
+
 export const AskUserPayloadSchema = z.object({
-  questions: z.array(AskUserQuestionSchema)
+  questions: z.array(AskUserQuestionSchema).min(1)
+});
+
+export const PlanExitPayloadSchema = z.object({
+  planName: z.string().min(1).max(120).optional(),
+  planMarkdown: z.string().min(1).max(50000)
 });
 
 export const LlmEnvelopeSchema = z.object({
@@ -55,6 +72,7 @@ export const LlmEnvelopeSchema = z.object({
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
   ask_user: AskUserPayloadSchema.optional(),
+  plan_exit: PlanExitPayloadSchema.optional(),
   ui: z.unknown().optional()
 });
 

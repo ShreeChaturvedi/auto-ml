@@ -233,6 +233,25 @@ export const ASK_USER_TOOL: LlmToolDefinition = {
   }
 };
 
+export const PLAN_EXIT_TOOL: LlmToolDefinition = {
+  name: 'plan_exit',
+  description: 'Finalize onboarding planning and return the complete plan file content. Use this only when you are done asking questions and have enough context.',
+  parameters: {
+    type: 'object',
+    properties: {
+      planName: {
+        type: 'string',
+        description: 'Short filename slug for the plan, without directories. Example: customer-churn-plan.md'
+      },
+      planMarkdown: {
+        type: 'string',
+        description: 'Full markdown content of the final project plan. Include all required sections.'
+      }
+    },
+    required: ['planMarkdown']
+  }
+};
+
 export const LLM_ALL_TOOLS: LlmToolDefinition[] = [
   ...LLM_TOOL_DEFINITIONS,
   LLM_RENDER_UI_TOOL
@@ -243,7 +262,8 @@ export const LLM_ONBOARDING_TOOLS: LlmToolDefinition[] = [
   LLM_TOOL_DEFINITIONS.find(t => t.name === 'get_dataset_profile')!,
   LLM_TOOL_DEFINITIONS.find(t => t.name === 'get_dataset_sample')!,
   LLM_TOOL_DEFINITIONS.find(t => t.name === 'search_documents')!,
-  ASK_USER_TOOL
+  ASK_USER_TOOL,
+  PLAN_EXIT_TOOL
 ];
 
 export function buildToolDescriptionText(tools: LlmToolDefinition[] = LLM_ALL_TOOLS): string {

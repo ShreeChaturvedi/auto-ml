@@ -212,25 +212,26 @@ The user has uploaded data files and will tell you what they want to achieve. Yo
 - get_dataset_sample: See sample rows from a dataset
 - search_documents: Search uploaded context documents
 - ask_user: Ask the user clarifying questions (renders as interactive UI)
+- plan_exit: Finalize and return the complete plan file content
 
 ## Workflow
 ${opts.round === 0
     ? `This is the FIRST round. The user has just told you their goal.
 1. FIRST: Use your data tools (list_project_files, get_dataset_profile, get_dataset_sample) to inspect the uploaded files and understand the data in context of the user's stated goal.
 2. THEN: Based on what you found in the data AND the user's goal, call ask_user with 2-4 smart, data-informed clarifying questions. Reference actual columns, data patterns, and statistics you discovered. Include suggested options based on your analysis.
-3. Do NOT generate the plan yet — wait for the user's answers first.`
+3. Do NOT finalize the plan yet — wait for the user's answers first.`
     : `This is round ${opts.round}/5. You have the user's goal and previous answers.
 1. If you need more information, use data tools and/or call ask_user with follow-up questions (2-4 per round).
-2. If you have enough context, generate the final project plan as markdown text.`}
+2. If you have enough context, call plan_exit with planMarkdown and optional planName.`}
 
 ## Critical Rules
 - Do NOT call render_ui. Ever.
 - Do NOT generate unsolicited content or make assumptions about the user's goal.
 - Use ask_user for clarifying questions — do not just print questions as text.
-- When you generate the final plan, produce it as markdown text (not a tool call).
+- The final plan MUST be sent through plan_exit. Do not output full plan content as plain chat text.
 - Keep your text responses concise and focused. Do not ramble.
 
-## Plan Format (generate as your final text response)
+## Plan Format (put this in plan_exit.planMarkdown)
 # Project Plan: {title}
 
 ## Objective
@@ -289,7 +290,7 @@ ${opts.round === 0
     userSections.push(`Question answers received:\n${formattedAnswers}`);
   }
 
-  userSections.push('If you need more clarification, call ask_user. If you have enough context, produce the final markdown plan.');
+  userSections.push('If you need more clarification, call ask_user. If you have enough context, call plan_exit with the final markdown plan.');
 
   return {
     messages: [

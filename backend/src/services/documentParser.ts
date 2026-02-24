@@ -264,7 +264,7 @@ async function parsePdfWithPdfParse(buffer: Buffer): Promise<{ text: string; par
 async function parsePdfWithPdfjs(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const data = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  const loadingTask = pdfjs.getDocument({ data, disableWorker: true });
+  const loadingTask = pdfjs.getDocument({ data });
   const doc = await loadingTask.promise;
   let text = '';
 
@@ -273,7 +273,7 @@ async function parsePdfWithPdfjs(buffer: Buffer): Promise<{ text: string; parseE
       const page = await doc.getPage(pageNumber);
       const content = await page.getTextContent();
       const pageText = content.items
-        .map((item: { str?: string }) => item.str ?? '')
+        .map((item) => ('str' in item && typeof item.str === 'string' ? item.str : ''))
         .join(' ');
       text += `${pageText}\n`;
       page.cleanup();

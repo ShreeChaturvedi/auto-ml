@@ -3,7 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Brain, Check, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Brain, Check, Loader2 } from 'lucide-react';
 
 import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
 import {
@@ -21,18 +22,24 @@ import { uploadDocument } from '@/lib/api/documents';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { QuestionCards } from './QuestionCards';
 import { streamOnboardingPlan, executeToolCalls } from '@/lib/api/llm';
 import { getFileType, type UploadedFile } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult, QuestionAnswer } from '@/types/llmUi';
+import { projectColorClasses } from '@/types/project';
 
 const MAX_TOOL_PASSES = 3;
-const PLAN_HEADING_RE = /^#\s+Project Plan/m;
 
 interface PlanningStageProps {
   projectId: string;
-  onBack: () => void;
   onPlanApproved: (plan: string, planName: string) => void;
+}
+
+interface SuggestionPill {
+  id: string;
+  label: string;
+  prompt: string;
 }
 
 function generatePlanName(): string {
@@ -47,11 +54,282 @@ function generatePlanName(): string {
   const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
   const noun = nouns[Math.floor(Math.random() * nouns.length)];
   const suffix = Math.floor(Math.random() * 900 + 100);
-  return `${adj}-${noun}-${suffix}`;
+  return `${adj}-${noun}-${suffix}.md`;
 }
 
-export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningStageProps) {
+function normalizePlanFileName(planName?: string): string {
+  const trimmed = planName?.trim() ?? '';
+  const withoutExtension = trimmed.replace(/\.md$/i, '');
+  const slug = withoutExtension
+    .toLowerCase()
+    .replace(/[^a-z0-9-\s_]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 100);
+
+  return `${slug || generatePlanName().replace(/\.md$/i, '')}.md`;
+}
+
+function toPlanPath(planName: string): string {
+  return `plans/${normalizePlanFileName(planName)}`;
+}
+
+function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
+  const seen = new Set<string>();
+  return suggestions.filter((suggestion) => {
+    const key = suggestion.prompt.toLowerCase().trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function truncateSuggestionLabel(label: string, maxLength = 56): string {
+  return label.length > maxLength ? `${label.slice(0, maxLength - 1)}…` : label;
+}
+
+function buildInitialSuggestions(
+  projectFiles: UploadedFile[],
+  projectTitle?: string,
+  projectDescription?: string
+): SuggestionPill[] {
+  const datasetFiles = projectFiles.filter((file) => ['csv', 'json', 'excel'].includes(file.type));
+  const documentFiles = projectFiles.filter((file) => ['pdf', 'markdown', 'word', 'text'].includes(file.type));
+  const firstDatasetName = datasetFiles[0]?.name.replace(/\.[^.]+$/, '') ?? 'this dataset';
+  const firstDocumentName = documentFiles[0]?.name.replace(/\.[^.]+$/, '');
+  const datasetLabel = truncateSuggestionLabel(firstDatasetName, 44);
+
+  const contextText = [
+    projectTitle,
+    projectDescription,
+    ...projectFiles.map((file) => file.name),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  const suggestions: SuggestionPill[] = [];
+
+  if (/\b(forecast|time\s*series|sales|demand|trend|season)\b/.test(contextText)) {
+    suggestions.push({
+      id: 'initial-forecast',
+      label: `Forecast ${datasetLabel}`,
+      prompt: `I want a forecasting plan for ${firstDatasetName}. Focus on horizon design, backtesting, and useful features.`
+    });
+  }
+
+  if (/\b(churn|classif|fraud|default|risk|predict|label|binary)\b/.test(contextText)) {
+    suggestions.push({
+      id: 'initial-classification',
+      label: `Classify ${datasetLabel}`,
+      prompt: `Help me build a classification plan for ${firstDatasetName}, including class imbalance handling and threshold strategy.`
+    });
+  }
+
+  if (/\b(segment|cluster|cohort|persona|group)\b/.test(contextText)) {
+    suggestions.push({
+      id: 'initial-segmentation',
+      label: `Segment ${datasetLabel}`,
+      prompt: `Create a segmentation workflow for ${firstDatasetName} and define how to profile and operationalize each segment.`
+    });
+  }
+
+  if (/\b(anomal|outlier|alert)\b/.test(contextText)) {
+    suggestions.push({
+      id: 'initial-anomaly',
+      label: `Detect anomalies`,
+      prompt: `Plan an anomaly detection approach for ${firstDatasetName}, including validation and investigation workflow.`
+    });
+  }
+
+  if (datasetFiles.length > 0) {
+    suggestions.push(
+      {
+        id: 'initial-baseline',
+        label: `Baseline for ${datasetLabel}`,
+        prompt: `Start with a practical baseline modeling plan for ${firstDatasetName}, then propose high-impact refinements.`
+      },
+      {
+        id: 'initial-quality',
+        label: `Audit ${datasetLabel}`,
+        prompt: `Before modeling, diagnose the main data quality risks in ${firstDatasetName} and then propose the plan.`
+      }
+    );
+  }
+
+  if (documentFiles.length > 0) {
+    suggestions.push({
+      id: 'initial-doc-context',
+      label: firstDocumentName ? `Use ${truncateSuggestionLabel(firstDocumentName, 32)} docs` : 'Ground plan in docs',
+      prompt: 'Use the uploaded context documents to refine assumptions, feature ideas, and success criteria in the plan.'
+    });
+  }
+
+  const fallbackSuggestions: SuggestionPill[] = [
+    {
+      id: 'initial-goal-clarify',
+      label: 'Clarify goal',
+      prompt: 'Help me define the right ML objective for these uploads and convert it into a practical execution plan.'
+    },
+    {
+      id: 'initial-exec-plan',
+      label: 'Execution roadmap',
+      prompt: 'Draft an implementation-ready roadmap with milestones, risks, and validation steps for this project.'
+    },
+    {
+      id: 'initial-metrics',
+      label: 'Define success metrics',
+      prompt: 'Define concrete success metrics, baseline targets, and acceptance criteria before implementation starts.'
+    },
+    {
+      id: 'initial-risks',
+      label: 'Surface top risks',
+      prompt: 'Identify the top project risks and add mitigations directly into the initial plan.'
+    },
+    {
+      id: 'initial-milestones',
+      label: 'Plan milestones',
+      prompt: 'Break the project into milestones with owners, dependencies, and deliverables.'
+    },
+    {
+      id: 'initial-stakeholder',
+      label: 'Stakeholder-ready summary',
+      prompt: 'Prepare a concise stakeholder-facing version of the plan with business impact and timeline.'
+    },
+  ];
+
+  const mergedSuggestions = dedupeSuggestions([...suggestions, ...fallbackSuggestions]);
+  return mergedSuggestions.slice(0, 6);
+}
+
+function buildFollowUpSuggestions(
+  messages: ChatMessage[],
+  projectFiles: UploadedFile[],
+  projectTitle?: string,
+  projectDescription?: string
+): SuggestionPill[] {
+  const latestUserMessage = [...messages].reverse().find((message) => message.type === 'user');
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.type === 'assistant_text');
+  const activeQuestions = [...messages].reverse().find(
+    (message) => message.type === 'ask_user' && !message.answered
+  );
+  const draftPlan = [...messages].reverse().find(
+    (message) => message.type === 'plan' && !message.approved && !message.hidden
+  );
+
+  const suggestions: SuggestionPill[] = [];
+
+  const contextText = [projectTitle, projectDescription]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  const firstDatasetName = projectFiles
+    .find((file) => ['csv', 'json', 'excel'].includes(file.type))
+    ?.name.replace(/\.[^.]+$/, '');
+
+  if (activeQuestions?.type === 'ask_user') {
+    const firstQuestion = activeQuestions.questions[0];
+    if (firstQuestion) {
+      suggestions.push({
+        id: `followup-question-${firstQuestion.id}`,
+        label: `Answer: ${firstQuestion.header}`,
+        prompt: `For ${firstQuestion.header.toLowerCase()}, recommend the best default option and why.`
+      });
+    }
+
+    suggestions.push(
+      {
+        id: 'followup-defaults',
+        label: 'Recommend defaults',
+        prompt: 'I am not sure about those answers. Recommend sensible defaults and explain trade-offs.'
+      },
+      {
+        id: 'followup-prioritize',
+        label: 'Prioritize speed',
+        prompt: 'Prioritize a fast first version and keep complexity low in the plan.'
+      }
+    );
+  }
+
+  if (draftPlan?.type === 'plan') {
+    suggestions.push(
+      {
+        id: 'followup-expand-plan',
+        label: 'Expand evaluation',
+        prompt: 'Expand the plan with explicit validation strategy, baselines, and success criteria.'
+      },
+      {
+        id: 'followup-risk-plan',
+        label: 'Add risk controls',
+        prompt: 'Refine the plan with data leakage checks, monitoring, and rollback considerations.'
+      }
+    );
+  }
+
+  if (latestUserMessage?.type === 'user') {
+    const userText = latestUserMessage.content.toLowerCase();
+    if (userText.includes('forecast')) {
+      suggestions.push({
+        id: 'followup-forecast-metrics',
+        label: 'Forecast metrics',
+        prompt: 'Set up the plan with forecasting metrics, horizon design, and backtesting details.'
+      });
+    }
+    if (userText.includes('classif') || userText.includes('predict')) {
+      suggestions.push({
+        id: 'followup-class-balance',
+        label: 'Handle imbalance',
+        prompt: 'Include class imbalance handling, thresholding strategy, and calibration in the plan.'
+      });
+    }
+    if (userText.includes('explain') || userText.includes('interpret')) {
+      suggestions.push({
+        id: 'followup-interpretability',
+        label: 'Increase explainability',
+        prompt: 'Refine the plan to include model explainability outputs and stakeholder-friendly interpretation steps.'
+      });
+    }
+  }
+
+  if (latestAssistantMessage?.type === 'assistant_text') {
+    suggestions.push({
+      id: 'followup-summary',
+      label: 'Summarize direction',
+      prompt: 'Summarize the current direction in 5 concise bullets before we finalize the plan.'
+    });
+  }
+
+  if (projectFiles.some((file) => ['pdf', 'markdown', 'word', 'text'].includes(file.type))) {
+    suggestions.push({
+      id: 'followup-docs',
+      label: 'Use docs deeply',
+      prompt: 'Incorporate relevant document insights into assumptions, features, and evaluation criteria.'
+    });
+  }
+
+  suggestions.push({
+    id: 'followup-finalize',
+    label: 'Draft final plan',
+    prompt: `Draft the final implementation-ready plan${firstDatasetName ? ` for ${firstDatasetName}` : ''} with milestones and deliverables.`
+  });
+
+  if (/\b(monitor|deploy|production|stakeholder)\b/.test(contextText)) {
+    suggestions.push({
+      id: 'followup-production',
+      label: 'Production readiness',
+      prompt: 'Add production monitoring, model refresh cadence, and stakeholder reporting expectations to the plan.'
+    });
+  }
+
+  return dedupeSuggestions(suggestions).slice(0, 7);
+}
+
+export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps) {
   const files = useDataStore((state) => state.files);
+  const projects = useProjectStore((state) => state.projects);
   const addFile = useDataStore((state) => state.addFile);
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
 
@@ -66,6 +344,8 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
   );
   const [attachmentStatus, setAttachmentStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [planDrafts, setPlanDrafts] = useState<Record<string, string>>({});
 
   const controllerRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
@@ -73,8 +353,10 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
   const answerHistoryRef = useRef<QuestionAnswer[]>([]);
   const toolCallHistoryRef = useRef<ToolCall[]>([]);
   const toolResultHistoryRef = useRef<ToolResult[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const bootstrappedRef = useRef(false);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const project = useMemo(() => projects.find((entry) => entry.id === projectId), [projectId, projects]);
+  const projectColor = project?.color ?? 'blue';
+  const projectColorClass = projectColorClasses[projectColor];
   const projectFiles = useMemo(
     () => files.filter((file) => file.projectId === projectId),
     [files, projectId]
@@ -93,6 +375,25 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
   );
   const shouldIncludeThoughts = selectedModelOption.supportsThinking
     && (selectedModelOption.thinkingAlwaysOn || enableThinking);
+  const hasUserMessages = useMemo(
+    () => messages.some((message) => message.type === 'user'),
+    [messages]
+  );
+  const showCenteredSuggestions = !hasUserMessages && !isStreaming && messages.length === 0;
+  const centeredSuggestions = useMemo(
+    () => (!hasUserMessages
+      ? buildInitialSuggestions(projectFiles, project?.title, project?.description)
+      : []),
+    [hasUserMessages, project?.description, project?.title, projectFiles]
+  );
+  const followUpSuggestions = useMemo(
+    () => (
+      hasUserMessages && !isStreaming
+        ? buildFollowUpSuggestions(messages, projectFiles, project?.title, project?.description)
+        : []
+    ),
+    [hasUserMessages, isStreaming, messages, project?.description, project?.title, projectFiles]
+  );
 
   useEffect(() => {
     const supportsCurrent = reasoningEffortOptions.some((option) => option.value === reasoningEffort);
@@ -103,7 +404,17 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
 
   // Auto-scroll on new messages
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]');
+    if (!viewport) {
+      return;
+    }
+
+    if (typeof viewport.scrollTo === 'function') {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+      return;
+    }
+
+    viewport.scrollTop = viewport.scrollHeight;
   }, [messages, isStreaming]);
 
   const endThinking = useCallback(() => {
@@ -134,19 +445,42 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
       endThinking();
       endText();
 
-      let planMarkdown = '';
       let sawAskUser = false;
+      let sawPlanExit = false;
+      let recoveryAttempted = false;
+      let requestUserIntent = userIntent || undefined;
+
+      const executePendingToolCalls = async (pendingToolCalls: ToolCall[]) => {
+        if (pendingToolCalls.length === 0) {
+          return;
+        }
+
+        const { results } = await executeToolCalls(projectId, pendingToolCalls);
+        toolCallHistoryRef.current = [...toolCallHistoryRef.current, ...pendingToolCalls];
+        toolResultHistoryRef.current = [...toolResultHistoryRef.current, ...results];
+
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.type !== 'tool_call') return m;
+            const result = results.find((r) => r.id === m.call.id);
+            return result ? { ...m, result } : m;
+          })
+        );
+      };
 
       try {
         for (let pass = 0; pass < MAX_TOOL_PASSES; pass++) {
           if (controller.signal.aborted) return;
 
+          let streamedText = '';
           let pendingToolCalls: ToolCall[] = [];
+          let passTextMessageId: string | null = null;
+          let passProducedPlainText = false;
 
           await streamOnboardingPlan(
             {
               projectId,
-              userIntent: userIntent || undefined,
+              userIntent: requestUserIntent,
               questionAnswers: answerHistoryRef.current.length > 0 ? answerHistoryRef.current : undefined,
               toolCalls: toolCallHistoryRef.current.length > 0 ? toolCallHistoryRef.current : undefined,
               toolResults: toolResultHistoryRef.current.length > 0 ? toolResultHistoryRef.current : undefined,
@@ -181,13 +515,16 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
               // Token events (assistant text or plan)
               if (event.type === 'token') {
                 endThinking();
-                planMarkdown += event.text;
+                streamedText += event.text;
+                passProducedPlainText = true;
                 if (!currentTextIdRef.current) {
                   const id = `text-${Date.now()}`;
                   currentTextIdRef.current = id;
+                   passTextMessageId = id;
                   setMessages((prev) => [...prev, { id, type: 'assistant_text', content: event.text }]);
                 } else {
                   const tid = currentTextIdRef.current;
+                  passTextMessageId = tid;
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === tid && m.type === 'assistant_text'
@@ -209,13 +546,45 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
                 ]);
               }
 
+              if (event.type === 'plan_exit') {
+                const streamingTextId = currentTextIdRef.current;
+                endThinking();
+                endText();
+                sawPlanExit = true;
+                setEditingPlanId(null);
+
+                const planContent = event.planMarkdown.trim();
+                const planName = normalizePlanFileName(event.planName);
+                const planMessageId = `plan-${Date.now()}`;
+
+                setPlanDrafts((prev) => ({ ...prev, [planMessageId]: planContent }));
+                setMessages((prev) => {
+                  const withoutPlanText = prev.filter((message) =>
+                    !(streamingTextId && message.type === 'assistant_text' && message.id === streamingTextId)
+                  );
+                  const next = withoutPlanText.map((message) =>
+                    message.type === 'plan' && !message.approved ? { ...message, hidden: true } : message
+                  );
+
+                  return [
+                    ...next,
+                    { id: planMessageId, type: 'plan', content: planContent, planName, hidden: false }
+                  ];
+                });
+              }
+
               // Envelope with tool calls
               if (event.type === 'envelope') {
                 if (event.envelope.tool_calls?.length) {
                   endThinking();
                   endText();
-                  pendingToolCalls = event.envelope.tool_calls;
-                  for (const call of event.envelope.tool_calls) {
+
+                  const nextCalls = event.envelope.tool_calls.filter(
+                    (call) => !pendingToolCalls.some((pending) => pending.id === call.id)
+                  );
+                  pendingToolCalls = [...pendingToolCalls, ...nextCalls];
+
+                  for (const call of nextCalls) {
                     setMessages((prev) => [
                       ...prev,
                       { id: `tool-${call.id}`, type: 'tool_call', call },
@@ -224,9 +593,20 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
                 }
                 // Fallback message if no tokens were streamed
                 const fallback = event.envelope.message?.trim();
-                if (fallback && fallback !== 'Done.' && !planMarkdown && !sawAskUser && pendingToolCalls.length === 0) {
-                  planMarkdown = fallback;
+                if (
+                  fallback
+                  && fallback !== 'Done.'
+                  && !streamedText
+                  && !sawAskUser
+                  && !sawPlanExit
+                  && !event.envelope.ask_user
+                  && !event.envelope.plan_exit
+                  && pendingToolCalls.length === 0
+                ) {
+                  streamedText = fallback;
+                  passProducedPlainText = true;
                   const id = `text-fallback-${Date.now()}`;
+                  passTextMessageId = id;
                   setMessages((prev) => [...prev, { id, type: 'assistant_text', content: fallback }]);
                 }
               }
@@ -246,85 +626,95 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
             controller.signal
           );
 
-          // If no tool calls, break out of the loop
-          if (pendingToolCalls.length === 0) break;
+          requestUserIntent = undefined;
 
-          // Execute tool calls and feed results back
-          const { results } = await executeToolCalls(projectId, pendingToolCalls);
-          toolCallHistoryRef.current = [...toolCallHistoryRef.current, ...pendingToolCalls];
-          toolResultHistoryRef.current = [...toolResultHistoryRef.current, ...results];
+          if (sawPlanExit) {
+            break;
+          }
 
-          // Patch tool_call messages with results
-          setMessages((prev) =>
-            prev.map((m) => {
-              if (m.type !== 'tool_call') return m;
-              const result = results.find((r) => r.id === m.call.id);
-              return result ? { ...m, result } : m;
-            })
-          );
+          await executePendingToolCalls(pendingToolCalls);
+
+          if (
+            !sawAskUser
+            && !sawPlanExit
+            && pendingToolCalls.length === 0
+            && passProducedPlainText
+            && !recoveryAttempted
+            && pass < MAX_TOOL_PASSES - 1
+          ) {
+            recoveryAttempted = true;
+
+            if (passTextMessageId) {
+              setMessages((prev) =>
+                prev.filter((message) => !(message.type === 'assistant_text' && message.id === passTextMessageId))
+              );
+            }
+
+            requestUserIntent = [
+              userIntent,
+              'Continue now by using exactly one structured tool call. Use ask_user if clarification is needed, otherwise use plan_exit with complete markdown.'
+            ]
+              .filter(Boolean)
+              .join('\n\n');
+
+            continue;
+          }
+
+          if (sawAskUser || pendingToolCalls.length === 0) {
+            break;
+          }
         }
 
-        // After streaming, check if we got a plan
-        if (!sawAskUser && planMarkdown.trim() && PLAN_HEADING_RE.test(planMarkdown)) {
-          endText();
-          // Replace the assistant_text with a plan message
-          setMessages((prev) => {
-            const withoutPlanText = prev.filter(
-              (m) => !(m.type === 'assistant_text' && PLAN_HEADING_RE.test(m.content))
-            );
-            return [
-              ...withoutPlanText,
-              { id: `plan-${Date.now()}`, type: 'plan', content: planMarkdown.trim() },
-            ];
-          });
-        }
       } catch (err) {
         if (!controller.signal.aborted) {
           const msg = err instanceof Error ? err.message : 'Stream failed';
           setMessages((prev) => [...prev, { id: `error-${Date.now()}`, type: 'error', message: msg }]);
         }
       } finally {
+        endThinking();
+        endText();
         setIsStreaming(false);
       }
     },
     [projectId, currentRound, selectedModel, shouldIncludeThoughts, reasoningEffort, endThinking, endText]
   );
 
-  // Bootstrap: show a static welcome message — do NOT auto-stream.
-  // The LLM is only invoked after the user sends their first message.
   useEffect(() => {
-    if (bootstrappedRef.current) return;
-    bootstrappedRef.current = true;
-
-    setMessages([
-      {
-        id: 'welcome',
-        type: 'assistant_text',
-        content:
-          "I've processed your uploaded files. What are you trying to achieve with this project?\n\nDescribe your goal — for example, *predict customer churn*, *classify images*, *forecast sales*, or *cluster user segments*.",
-      },
-    ]);
-
     return () => {
       controllerRef.current?.abort();
     };
   }, []);
 
-  const handleSend = useCallback(() => {
-    const text = inputValue.trim();
+  const submitUserMessage = useCallback((rawText: string) => {
+    const text = rawText.trim();
     if (!text || isStreaming) return;
 
     setInputValue('');
-    setMessages((prev) => [
-      ...prev,
-      { id: `user-${Date.now()}`, type: 'user', content: text, timestamp: Date.now() },
-    ]);
+    setEditingPlanId(null);
+    setMessages((prev) => {
+      const next = prev.map((message) =>
+        message.type === 'plan' && !message.approved ? { ...message, hidden: true } : message
+      );
+
+      return [
+        ...next,
+        { id: `user-${Date.now()}`, type: 'user', content: text, timestamp: Date.now() }
+      ];
+    });
 
     // Use current round for the request, then advance for next interaction.
     // Round 0 = first user message (triggers data inspection + first questions).
     void requestStream(text, currentRound);
     setCurrentRound((prev) => Math.min(prev + 1, 5));
-  }, [inputValue, isStreaming, currentRound, requestStream]);
+  }, [isStreaming, currentRound, requestStream]);
+
+  const handleSend = useCallback(() => {
+    submitUserMessage(inputValue);
+  }, [inputValue, submitUserMessage]);
+
+  const handleSuggestionClick = useCallback((prompt: string) => {
+    submitUserMessage(prompt);
+  }, [submitUserMessage]);
 
   const handleQuestionAnswer = useCallback(
     (msgId: string, answers: QuestionAnswer[]) => {
@@ -351,15 +741,50 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
   );
 
   const handleApprove = useCallback(
-    (planContent: string) => {
-      const name = generatePlanName();
+    (planContent: string, planName: string, planId: string) => {
       setMessages((prev) =>
-        prev.map((m) => (m.type === 'plan' ? { ...m, approved: true } : m))
+        prev.map((m) => {
+          if (m.type !== 'plan') {
+            return m;
+          }
+
+          if (m.id !== planId) {
+            return { ...m, hidden: true };
+          }
+
+          return { ...m, approved: true, hidden: false, content: planContent, planName };
+        })
       );
-      onPlanApproved(planContent, name);
+      onPlanApproved(planContent, normalizePlanFileName(planName));
     },
     [onPlanApproved]
   );
+
+  const handleStartPlanEdit = useCallback((planId: string, currentContent: string) => {
+    setEditingPlanId(planId);
+    setPlanDrafts((prev) => ({ ...prev, [planId]: prev[planId] ?? currentContent }));
+  }, []);
+
+  const handleCancelPlanEdit = useCallback((planId: string, currentContent: string) => {
+    setEditingPlanId(null);
+    setPlanDrafts((prev) => ({ ...prev, [planId]: currentContent }));
+  }, []);
+
+  const handleSavePlanEdit = useCallback((planId: string) => {
+    const draft = planDrafts[planId];
+    if (!draft?.trim()) {
+      return;
+    }
+
+    const nextContent = draft.trim();
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.type === 'plan' && message.id === planId ? { ...message, content: nextContent } : message
+      )
+    );
+    setPlanDrafts((prev) => ({ ...prev, [planId]: nextContent }));
+    setEditingPlanId(null);
+  }, [planDrafts]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -411,11 +836,31 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
   }, [projectId, addFile, setFileMetadata]);
 
   return (
-    <div className="flex h-full flex-col" data-testid="planning-stage">
+    <div className="flex h-full flex-col bg-background" data-testid="planning-stage">
       {/* Messages area */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="mx-auto max-w-3xl space-y-4 p-6">
-          {messages.map((msg) => {
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0">
+        {showCenteredSuggestions && centeredSuggestions.length > 0 ? (
+          <div className="mx-auto flex min-h-[55vh] w-full max-w-5xl flex-col items-center justify-center gap-5 px-6 py-10 text-center">
+            <p className="text-base font-medium text-foreground">What are you trying to do today?</p>
+            <div className="flex max-w-[40rem] flex-wrap items-center justify-center gap-2">
+              {centeredSuggestions.map((suggestion) => (
+                <Button
+                  key={suggestion.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 max-w-full whitespace-nowrap rounded-full px-3 text-xs"
+                  disabled={isStreaming}
+                  onClick={() => handleSuggestionClick(suggestion.prompt)}
+                >
+                  {suggestion.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="w-full space-y-6 p-6 pb-12">
+            {messages.map((msg) => {
             if (msg.type === 'user') {
               return (
                 <div key={msg.id} className="flex flex-col items-end">
@@ -428,10 +873,12 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
 
             if (msg.type === 'assistant_text') {
               return (
-                <div key={msg.id} className="rounded-md border border-muted/40 bg-muted/20 p-4 text-sm prose prose-sm dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                    {msg.content}
-                  </ReactMarkdown>
+                <div key={msg.id} className="text-sm text-foreground">
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               );
             }
@@ -476,25 +923,100 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
             }
 
             if (msg.type === 'plan') {
+              if (msg.hidden && !msg.approved) {
+                return null;
+              }
+
+              const planPath = toPlanPath(msg.planName);
+              const isEditing = editingPlanId === msg.id;
+              const draftValue = planDrafts[msg.id] ?? msg.content;
+
               return (
-                <div key={msg.id} className="space-y-3">
-                  <div className="rounded-md border border-primary/30 bg-primary/5 p-4 text-sm prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {msg.content}
-                    </ReactMarkdown>
+                <div key={msg.id} className="space-y-3 animate-in fade-in zoom-in-95 duration-300">
+                  <div className={cn(
+                    "overflow-hidden rounded-lg transition-all",
+                    isEditing 
+                      ? "border border-primary/50 shadow-sm ring-1 ring-primary/20 bg-background" 
+                      : "border border-primary/30 bg-primary/5 hover:border-primary/50"
+                  )}>
+                    <div className={cn(
+                      "flex items-center justify-between border-b px-3 py-1.5",
+                      isEditing ? "bg-muted/30 border-primary/20" : "border-primary/20 bg-muted/40"
+                    )}>
+                      <div className="font-mono text-[11px] text-muted-foreground" title={planPath}>
+                        <span className="block truncate">{planPath}</span>
+                      </div>
+                      {isEditing && (
+                        <div className="text-[10px] uppercase tracking-wider text-primary font-medium">
+                          Editing Mode
+                        </div>
+                      )}
+                    </div>
+                    {isEditing ? (
+                      <textarea
+                        value={draftValue}
+                        onChange={(event) => {
+                          setPlanDrafts((prev) => ({ ...prev, [msg.id]: event.target.value }));
+                        }}
+                        aria-label={`Edit plan ${planPath}`}
+                        className="min-h-[350px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed outline-none"
+                        placeholder="Edit the proposed plan here..."
+                        data-testid={`plan-editor-${msg.id}`}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleStartPlanEdit(msg.id, msg.content)}
+                        className="w-full text-left p-4 outline-none focus-visible:bg-primary/10 transition-colors"
+                        data-testid={`plan-view-${msg.id}`}
+                        title="Click to edit this plan manually"
+                      >
+                        <div className="prose prose-sm max-w-none dark:prose-invert">
+                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                      </button>
+                    )}
                   </div>
                   {!msg.approved ? (
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={() => handleApprove(msg.content)}>
-                        <Check className="mr-1.5 h-3.5 w-3.5" />
-                        Approve Plan
-                      </Button>
-                      <span className="text-xs text-muted-foreground">
-                        or type below to request changes
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-4 mt-2">
+                      <div className="flex items-center gap-2">
+                        {isEditing ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => handleCancelPlanEdit(msg.id, msg.content)}>
+                              Cancel
+                            </Button>
+                            <Button size="sm" variant="default" onClick={() => handleSavePlanEdit(msg.id)}>
+                              Save Edit
+                            </Button>
+                          </>
+                        ) : null}
+                        {!isEditing ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={cn('gap-1.5', projectColorClass.bg, projectColorClass.border, projectColorClass.hover, projectColorClass.text)}
+                            onClick={() => handleApprove(msg.content, msg.planName, msg.id)}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Approve Plan
+                          </Button>
+                        ) : null}
+                      </div>
+                      {!isEditing && (
+                        <span className="text-xs text-muted-foreground italic">
+                          Click the plan above to edit, or ask for changes below
+                        </span>
+                      )}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                    <div className={cn(
+                      'flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium',
+                      projectColorClass.bg,
+                      projectColorClass.border,
+                      projectColorClass.text,
+                    )}>
                       <Check className="h-4 w-4" />
                       Plan approved
                     </div>
@@ -521,46 +1043,63 @@ export function PlanningStage({ projectId, onBack, onPlanApproved }: PlanningSta
             </div>
           )}
 
-          <div ref={scrollRef} />
-        </div>
+          </div>
+        )}
       </ScrollArea>
 
-      <div className="border-t bg-background p-4 shrink-0">
-        <LlmChatComposer
-          value={inputValue}
-          onValueChange={setInputValue}
-          onKeyDown={handleKeyDown}
-          placeholder="Describe your goal or request changes..."
-          disabled={isStreaming}
-          isStreaming={isStreaming}
-          onSend={handleSend}
-          onStop={() => controllerRef.current?.abort()}
-          model={selectedModel}
-          onModelChange={setSelectedModel}
-          modelOptions={ASSISTANT_MODEL_OPTIONS}
-          reasoningEffort={reasoningEffort}
-          onReasoningEffortChange={setReasoningEffort}
-          reasoningOptions={reasoningEffortOptions}
-          enableThinking={enableThinking}
-          onToggleThinking={() => setEnableThinking((prev) => !prev)}
-          leftSlot={(
-            <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2 shrink-0">
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          metaSlot={(
-            <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-              <Brain className="mr-1 h-3 w-3" />
-              {documentFiles.length} docs
-            </Badge>
-          )}
-          attachment={{
-            onAttachFile: handleAttachFile,
-            status: attachmentStatus,
-            message: attachmentMessage
-          }}
-          maxWidthClassName="max-w-3xl"
-        />
+      <div className="shrink-0 border-t bg-background">
+        {hasUserMessages && followUpSuggestions.length > 0 ? (
+          <div className="px-4 pt-2 pb-1">
+            <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {followUpSuggestions.map((suggestion) => (
+                <Button
+                  key={suggestion.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 whitespace-nowrap rounded-full px-3 text-xs"
+                  disabled={isStreaming}
+                  onClick={() => handleSuggestionClick(suggestion.prompt)}
+                >
+                  {suggestion.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="px-4 pt-2 pb-4">
+          <LlmChatComposer
+            value={inputValue}
+            onValueChange={setInputValue}
+            onKeyDown={handleKeyDown}
+            placeholder="Describe your goal or request changes..."
+            disabled={isStreaming}
+            isStreaming={isStreaming}
+            onSend={handleSend}
+            onStop={() => controllerRef.current?.abort()}
+            model={selectedModel}
+            onModelChange={setSelectedModel}
+            modelOptions={ASSISTANT_MODEL_OPTIONS}
+            reasoningEffort={reasoningEffort}
+            onReasoningEffortChange={setReasoningEffort}
+            reasoningOptions={reasoningEffortOptions}
+            enableThinking={enableThinking}
+            onToggleThinking={() => setEnableThinking((prev) => !prev)}
+            metaSlot={(
+              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                <Brain className="mr-1 h-3 w-3" />
+                {documentFiles.length} docs
+              </Badge>
+            )}
+            attachment={{
+              onAttachFile: handleAttachFile,
+              status: attachmentStatus,
+              message: attachmentMessage
+            }}
+            maxWidthClassName="max-w-5xl"
+          />
+        </div>
       </div>
     </div>
   );

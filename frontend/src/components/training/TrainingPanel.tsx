@@ -97,6 +97,132 @@ const stripAssistantArtifacts = (text: string) => {
   return cleaned.trim();
 };
 
+interface TrainingSuggestion {
+  id: string;
+  label: string;
+  prompt: string;
+}
+
+function dedupeTrainingSuggestions(suggestions: TrainingSuggestion[]): TrainingSuggestion[] {
+  const seen = new Set<string>();
+  return suggestions.filter((suggestion) => {
+    const key = suggestion.prompt.toLowerCase().trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildTrainingSuggestions(
+  messages: ChatMessage[],
+  datasetFiles: UploadedFile[],
+  documentFiles: UploadedFile[],
+  isAiThinking: boolean,
+): TrainingSuggestion[] {
+  if (isAiThinking) {
+    return [];
+  }
+
+  const hasUserMessages = messages.some((message) => message.type === 'user');
+  const latestUserMessage = [...messages].reverse().find((message) => message.type === 'user');
+  const latestError = [...messages].reverse().find((message) => message.type === 'error');
+  const latestAssistantText = [...messages].reverse().find((message) => message.type === 'assistant_text');
+
+  const suggestions: TrainingSuggestion[] = [];
+
+  if (!hasUserMessages) {
+    if (datasetFiles.length > 0) {
+      suggestions.push(
+        {
+          id: 'train-initial-baseline',
+          label: 'Baseline model',
+          prompt: 'Suggest a strong baseline training plan for this dataset with sensible defaults.'
+        },
+        {
+          id: 'train-initial-target',
+          label: 'Pick target + metric',
+          prompt: 'Help me choose the right target column and evaluation metrics for this project.'
+        }
+      );
+    }
+
+    if (documentFiles.length > 0) {
+      suggestions.push({
+        id: 'train-initial-docs',
+        label: 'Use docs in training',
+        prompt: 'Use the uploaded documents to suggest useful feature hypotheses and validation checks.'
+      });
+    }
+
+    suggestions.push({
+      id: 'train-initial-sanity',
+      label: 'Data sanity checks',
+      prompt: 'Before modeling, propose a concise data sanity-check checklist for this training workflow.'
+    });
+
+    return dedupeTrainingSuggestions(suggestions).slice(0, 6);
+  }
+
+  if (latestError?.type === 'error') {
+    suggestions.push(
+      {
+        id: 'train-error-debug',
+        label: 'Debug latest error',
+        prompt: 'Debug the latest training error step by step and suggest the minimum safe fix.'
+      },
+      {
+        id: 'train-error-robust',
+        label: 'Harden pipeline',
+        prompt: 'Refactor this training flow to be more robust to schema and data edge cases.'
+      }
+    );
+  }
+
+  if (latestUserMessage?.type === 'user') {
+    const text = latestUserMessage.content.toLowerCase();
+    if (text.includes('overfit') || text.includes('generaliz')) {
+      suggestions.push({
+        id: 'train-overfit',
+        label: 'Reduce overfitting',
+        prompt: 'Propose targeted changes to reduce overfitting while keeping accuracy strong.'
+      });
+    }
+    if (text.includes('speed') || text.includes('slow')) {
+      suggestions.push({
+        id: 'train-speed',
+        label: 'Faster training',
+        prompt: 'Optimize this training workflow for speed and explain the performance trade-offs.'
+      });
+    }
+  }
+
+  if (latestAssistantText?.type === 'assistant_text') {
+    suggestions.push({
+      id: 'train-summary',
+      label: 'Summarize next steps',
+      prompt: 'Summarize the next 5 concrete training steps from our current context.'
+    });
+  }
+
+  if (datasetFiles.length > 0) {
+    suggestions.push({
+      id: 'train-validation',
+      label: 'Validation strategy',
+      prompt: 'Refine the validation strategy with leakage checks, folds, and metric thresholds.'
+    });
+  }
+
+  suggestions.push({
+    id: 'train-compare',
+    label: 'Compare models',
+    prompt: 'Recommend two additional model families to compare and explain why they are good fits.'
+  });
+
+  return dedupeTrainingSuggestions(suggestions).slice(0, 7);
+}
+
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
 
@@ -167,7 +293,6 @@ export function TrainingPanel() {
 
   // Notebook store for backend-managed cells
   const {
-    cells: notebookCells,
     initializeNotebook,
     disconnect: disconnectNotebook,
     createCell: createNotebookCell
@@ -222,6 +347,15 @@ export function TrainingPanel() {
     () => projectFiles.filter((file) => file.metadata?.documentId),
     [projectFiles]
   );
+  const hasUserMessages = useMemo(
+    () => messages.some((message) => message.type === 'user'),
+    [messages]
+  );
+  const trainingSuggestions = useMemo(
+    () => buildTrainingSuggestions(messages, datasetFiles, documentFiles, isAiThinking),
+    [messages, datasetFiles, documentFiles, isAiThinking]
+  );
+  const showCenteredTrainingSuggestions = !hasUserMessages && !isAiThinking && messages.length === 0 && trainingSuggestions.length > 0;
   const reasoningEffortOptions = useMemo(
     () => getReasoningEffortOptions(assistantModel),
     [assistantModel]
@@ -404,6 +538,12 @@ export function TrainingPanel() {
     const suffix = projectFeatures.length > 6 ? ` +${projectFeatures.length - 6} more` : '';
     return `${projectFeatures.length} enabled features: ${names.join(', ')}${suffix}`;
   }, [projectFeatures]);
+
+  const resetTrainingToolHistory = useCallback(() => {
+    trainingToolHistoryRef.current = { calls: [], results: [] };
+    setTrainingToolCalls([]);
+    setTrainingToolResults([]);
+  }, []);
 
   const handleGenerateTrainingPlan = useCallback(async (
     promptOverride?: string,
@@ -663,6 +803,7 @@ export function TrainingPanel() {
     trainingTargetColumn,
     trainingPrompt,
     buildFeatureSummary,
+    resetTrainingToolHistory,
     assistantModel,
     shouldIncludeThoughts,
     reasoningEffort
@@ -685,12 +826,6 @@ export function TrainingPanel() {
     ));
     currentThinkingIdRef.current = null;
     currentTextIdRef.current = null;
-  }, []);
-
-  const resetTrainingToolHistory = useCallback(() => {
-    trainingToolHistoryRef.current = { calls: [], results: [] };
-    setTrainingToolCalls([]);
-    setTrainingToolResults([]);
   }, []);
 
   const mergeToolCalls = (previous: ToolCall[], next: ToolCall[]) => {
@@ -1041,9 +1176,10 @@ export function TrainingPanel() {
     setMessages(messages.slice(0, idx));
   }, [messages]);
 
-  const handleChatSubmit = useCallback(async () => {
-    if (!chatInput.trim() || !projectId || isAiThinking) return;
-    const userMessage = chatInput.trim();
+  const submitChatPrompt = useCallback(async (rawPrompt: string) => {
+    const userMessage = rawPrompt.trim();
+    if (!userMessage || !projectId || isAiThinking) return;
+
     setChatInput('');
     setTrainingPrompt(userMessage);
     setIsAiThinking(true);
@@ -1063,7 +1199,15 @@ export function TrainingPanel() {
       setIsAiThinking(false);
       textareaRef.current?.focus();
     }
-  }, [chatInput, projectId, isAiThinking, handleGenerateTrainingPlan]);
+  }, [projectId, isAiThinking, handleGenerateTrainingPlan]);
+
+  const handleChatSubmit = useCallback(async () => {
+    await submitChatPrompt(chatInput);
+  }, [chatInput, submitChatPrompt]);
+
+  const handleSuggestionClick = useCallback((prompt: string) => {
+    void submitChatPrompt(prompt);
+  }, [submitChatPrompt]);
 
   const handleChatKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1144,8 +1288,26 @@ export function TrainingPanel() {
           <div className="flex flex-col h-full min-h-0">
             <ScrollArea className="flex-1 min-h-0">
               <div className="p-6 space-y-4">
-                {/* Training conversation area */}
-                {projectId && (
+                {showCenteredTrainingSuggestions ? (
+                  <div className="mx-auto flex min-h-[55vh] w-full max-w-5xl flex-col items-center justify-center gap-5 text-center">
+                    <p className="text-base font-medium text-foreground">What are you trying to do today?</p>
+                    <div className="flex max-w-3xl flex-wrap items-center justify-center gap-2">
+                      {trainingSuggestions.map((suggestion) => (
+                        <Button
+                          key={suggestion.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full px-3 text-xs"
+                          disabled={isAiThinking}
+                          onClick={() => handleSuggestionClick(suggestion.prompt)}
+                        >
+                          {suggestion.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : projectId ? (
                   <>
                     {/* Conversation content - no controls, model uses tools */}
                     <div className="space-y-4">
@@ -1247,7 +1409,7 @@ export function TrainingPanel() {
                             );
                           case 'assistant_text':
                             return msg.content.trim() ? (
-                              <div key={msg.id} className="rounded-md border border-muted/40 bg-muted/20 p-4 text-sm text-foreground max-w-none [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1">
+                              <div key={msg.id} className="text-sm text-foreground max-w-none [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1">
                                 <ReactMarkdown
                                   remarkPlugins={[remarkGfm, remarkMath]}
                                   rehypePlugins={[rehypeKatex]}
@@ -1344,7 +1506,7 @@ export function TrainingPanel() {
                       )}
                     </div>
                   </>
-                )}
+                ) : null}
 
                 {/* AI thinking indicator */}
                 {isAiThinking && (
@@ -1363,38 +1525,60 @@ export function TrainingPanel() {
             </ScrollArea>
 
             {/* AI Chat Input */}
-            <div className="border-t bg-background p-4 shrink-0">
-              <LlmChatComposer
-                value={chatInput}
-                onValueChange={setChatInput}
-                onKeyDown={handleChatKeyDown}
-                placeholder="Ask AI for help with training, tuning, or debugging..."
-                disabled={isAiThinking}
-                isStreaming={isAiThinking}
-                onSend={handleChatSubmit}
-                onStop={handleStopTraining}
-                model={assistantModel}
-                onModelChange={setAssistantModel}
-                modelOptions={ASSISTANT_MODEL_OPTIONS}
-                reasoningEffort={reasoningEffort}
-                onReasoningEffortChange={setReasoningEffort}
-                reasoningOptions={reasoningEffortOptions}
-                enableThinking={enableThinking}
-                onToggleThinking={() => setEnableThinking((prev) => !prev)}
-                metaSlot={(
-                  <Badge variant="outline" className="text-[11px] gap-1 shrink-0">
-                    <Brain className="h-3 w-3" />
-                    {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
-                  </Badge>
-                )}
-                attachment={{
-                  onAttachFile: handleAttachFile,
-                  status: attachmentStatus,
-                  message: attachmentMessage
-                }}
-                maxWidthClassName="max-w-5xl"
-                textareaRef={textareaRef}
-              />
+            <div className="shrink-0 border-t bg-background">
+              {hasUserMessages && trainingSuggestions.length > 0 ? (
+                <div className="border-b border-border/60 px-4 py-3">
+                  <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                    {trainingSuggestions.map((suggestion) => (
+                      <Button
+                        key={suggestion.id}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 shrink-0 rounded-full px-3 text-xs"
+                        disabled={isAiThinking}
+                        onClick={() => handleSuggestionClick(suggestion.prompt)}
+                      >
+                        {suggestion.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="p-4">
+                <LlmChatComposer
+                  value={chatInput}
+                  onValueChange={setChatInput}
+                  onKeyDown={handleChatKeyDown}
+                  placeholder="Ask AI for help with training, tuning, or debugging..."
+                  disabled={isAiThinking}
+                  isStreaming={isAiThinking}
+                  onSend={handleChatSubmit}
+                  onStop={handleStopTraining}
+                  model={assistantModel}
+                  onModelChange={setAssistantModel}
+                  modelOptions={ASSISTANT_MODEL_OPTIONS}
+                  reasoningEffort={reasoningEffort}
+                  onReasoningEffortChange={setReasoningEffort}
+                  reasoningOptions={reasoningEffortOptions}
+                  enableThinking={enableThinking}
+                  onToggleThinking={() => setEnableThinking((prev) => !prev)}
+                  metaSlot={(
+                    <Badge variant="outline" className="text-[11px] gap-1 shrink-0">
+                      <Brain className="h-3 w-3" />
+                      {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
+                    </Badge>
+                  )}
+                  attachment={{
+                    onAttachFile: handleAttachFile,
+                    status: attachmentStatus,
+                    message: attachmentMessage
+                  }}
+                  maxWidthClassName="max-w-5xl"
+                  textareaRef={textareaRef}
+                />
+              </div>
             </div>
           </div>
         </ResizablePanel>

@@ -200,26 +200,14 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
   return (
     <div className="h-full flex flex-col" data-testid="data-upload-panel">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg bg-primary/10 p-2">
-            <FileStack className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold">Data Upload</h2>
-            <p className="text-xs text-muted-foreground">
-              Datasets and documentation for your project
-            </p>
-          </div>
-        </div>
-        {isUploading && (
-          <Badge variant="secondary" className="text-xs gap-1.5">
+      {isUploading ? (
+        <div className="mb-3 flex justify-end">
+          <Badge variant="secondary" className="gap-1.5 text-xs">
             <Loader2 className="h-3 w-3 animate-spin" />
             Uploading...
           </Badge>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       {/* Drop Zone + File List Container */}
       <div className="flex-1 flex flex-col min-h-0">

@@ -102,6 +102,7 @@ export function LlmChatComposer({
           onChange={(event) => onValueChange(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
+          aria-label="Message input"
           disabled={disabled}
           className="min-h-[60px]"
         />
@@ -161,6 +162,7 @@ export function LlmChatComposer({
                         size="sm"
                         onClick={isThinkingAlwaysOn ? undefined : onToggleThinking}
                         aria-disabled={isThinkingAlwaysOn}
+                        aria-label={isThinkingAlwaysOn ? 'Extended thinking always on' : effectiveThinkingEnabled ? 'Disable extended thinking' : 'Enable extended thinking'}
                         className={cn(
                           'h-7 px-2 text-xs transition-colors shrink-0',
                           effectiveThinkingEnabled && 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300 dark:hover:bg-yellow-900/60',
@@ -198,6 +200,7 @@ export function LlmChatComposer({
                           size="sm"
                           onClick={() => attachmentInputRef.current?.click()}
                           disabled={attachment.status === 'uploading'}
+                          aria-label="Attach file"
                           className="h-7 px-2 text-xs shrink-0"
                         >
                           {attachment.status === 'uploading'
@@ -223,6 +226,7 @@ export function LlmChatComposer({
                 size="sm"
                 onClick={isStreaming ? onStop : onSend}
                 disabled={isStreaming ? false : !canSend}
+                aria-label={isStreaming ? 'Stop generating' : 'Send message'}
                 variant="ghost"
                 className="h-9 w-9 rounded-full border border-foreground/30 bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-muted/30 disabled:text-muted-foreground shrink-0"
               >
@@ -239,7 +243,10 @@ export function LlmChatComposer({
           attachment.status === 'success' && 'text-green-600',
           attachment.status === 'error' && 'text-red-600',
           attachment.status === 'uploading' && 'text-blue-600',
-        )}>
+        )}
+          role={attachment.status === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
           {attachment.message}
         </div>
       ) : null}

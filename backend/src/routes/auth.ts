@@ -24,6 +24,7 @@ import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
 import type { AuthRequest } from '../types/auth.js';
+import type { SafeUser } from '../types/user.js';
 
 // Validation schemas
 const registerSchema = z.object({
@@ -407,18 +408,19 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       };
 
       // Check if user exists by email
-      let user = await userRepository.findByEmail(googleUser.email);
+      const existingUser = await userRepository.findByEmail(googleUser.email);
+      let safeUser: SafeUser;
 
-      if (user) {
+      if (existingUser) {
         // User exists, update last login
-        await userRepository.updateLastLogin(user.user_id);
-        user = userRepository.toSafeUser(user);
+        await userRepository.updateLastLogin(existingUser.user_id);
+        safeUser = userRepository.toSafeUser(existingUser);
       } else {
         // Create new user (no password for OAuth users)
         const randomPassword = authService.generatePasswordResetToken();
         const password_hash = await authService.hashPassword(randomPassword);
 
-        user = await userRepository.create({
+        const createdUser = await userRepository.create({
           email: googleUser.email,
           name: googleUser.name,
           password: randomPassword,
@@ -426,16 +428,22 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         });
 
         // Mark email as verified for Google OAuth users
-        await userRepository.update(user.user_id, { email_verified: true });
+        await userRepository.markEmailVerified(createdUser.user_id);
+
+        const verifiedUser = await userRepository.findById(createdUser.user_id);
+        if (!verifiedUser) {
+          return res.status(500).json({ error: 'Failed to load newly created OAuth user' });
+        }
+        safeUser = verifiedUser;
       }
 
       // Generate tokens
-      const jwtTokens = authService.generateTokens(user);
+      const jwtTokens = authService.generateTokens(safeUser);
       const refreshTokenHash = authService.hashRefreshToken(jwtTokens.refreshToken);
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days for OAuth
 
       await userRepository.storeRefreshToken(
-        user.user_id,
+        safeUser.user_id,
         refreshTokenHash,
         expiresAt,
         req.ip,
@@ -443,7 +451,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       );
 
       console.log(`[auth] Google OAuth login for ${googleUser.email}`);
-      return res.json({ user, ...jwtTokens });
+      return res.json({ user: safeUser, ...jwtTokens });
 
     } catch (error) {
       console.error('[auth] Google OAuth error:', error);

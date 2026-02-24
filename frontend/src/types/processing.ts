@@ -43,6 +43,8 @@ export interface ComputeAnimationProps {
   results: ProcessingResult[];
   /** When true, the mesh settles and a completion indicator appears */
   isComplete: boolean;
+  /** Accent text color class used for animated atom/pulses/checkmark */
+  accentClassName?: string;
   /** Fired once all entrance + completion animations have finished */
   onSettled?: () => void;
 }

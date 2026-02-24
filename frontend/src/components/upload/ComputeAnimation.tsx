@@ -1,99 +1,81 @@
-/**
- * ComputeAnimation — Animated inline SVG data-pipeline visualization
- *
- * Layout:
- *   [Left: Input Files] ──flowing lines──▸ [Center: Compute Mesh] ──flowing lines──▸ [Right: Result Cards]
- *
- * Uses pure CSS @keyframes for flowing dash-offset animations (GPU-composited)
- * and CSS transitions for staggered entrance/exit of file icons and result cards.
- * Includes `prefers-reduced-motion` fallback that disables all motion.
- *
- * Color palette: grayscale + subtle blue-gray accent (#94a3b8)
- */
-
 import { useEffect, useState, useId, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import {
+  FileText,
+  FileCode,
+  Table,
+  File,
+  BarChart3,
+  Layers,
+  Database,
+  CheckCircle,
+  AlertTriangle,
+  Type,
+  Activity,
+  Box
+} from 'lucide-react';
 import type { ComputeAnimationProps } from '@/types/processing';
 
-// ── Mesh geometry ────────────────────────────────────────────────
-// Hexagonal-ish mesh of interconnected nodes in the center.
-// Coordinates are in the SVG viewBox (0 0 900 460) space.
+// ── Dynamic Icon Helpers ──────────────────────────────────────────
 
-interface MeshNode { x: number; y: number }
+const commonIcons: Record<string, React.ElementType> = {
+  'dataset_stats': BarChart3,
+  'document_chunks': Layers,
+  'schema_analysis': Database,
+  'quality_check': CheckCircle,
+  'bar-chart': BarChart3,
+  'table': Database,
+  'file-text': FileText,
+  'check': CheckCircle,
+  'alert-triangle': AlertTriangle,
+  'type': Type,
+  'activity': Activity,
+  'box': Box,
+  'file-code': FileCode,
+};
 
-const MESH_NODES: MeshNode[] = [
-  // outer ring
-  { x: 450, y: 130 },
-  { x: 510, y: 155 },
-  { x: 530, y: 220 },
-  { x: 510, y: 285 },
-  { x: 450, y: 310 },
-  { x: 390, y: 285 },
-  { x: 370, y: 220 },
-  { x: 390, y: 155 },
-  // inner ring
-  { x: 450, y: 175 },
-  { x: 485, y: 195 },
-  { x: 485, y: 245 },
-  { x: 450, y: 265 },
-  { x: 415, y: 245 },
-  { x: 415, y: 195 },
-  // center
-  { x: 450, y: 220 },
-];
-
-// Edges as [fromIdx, toIdx] pairs
-const MESH_EDGES: [number, number][] = [
-  // outer ring
-  [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 0],
-  // outer → inner
-  [0, 8], [1, 9], [2, 10], [3, 11], [4, 11], [5, 12], [6, 13], [7, 13],
-  // inner ring
-  [8, 9], [9, 10], [10, 11], [11, 12], [12, 13], [13, 8],
-  // inner → center
-  [8, 14], [9, 14], [10, 14], [11, 14], [12, 14], [13, 14],
-];
-
-// ── File type to icon SVG path snippets ─────────────────────────
-function fileTypeIcon(type: string): { path: string; color: string } {
-  switch (type) {
-    case 'csv':
-    case 'json':
-    case 'excel':
-      return {
-        // table/grid icon
-        path: 'M3 3h18v18H3V3zm2 4h14M3 11h18M9 7v14M15 7v14',
-        color: '#6b7280',
-      };
-    case 'pdf':
-      return {
-        // document icon
-        path: 'M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2zm8 0v6h6M8 13h8M8 17h5',
-        color: '#9ca3af',
-      };
-    default:
-      return {
-        // generic file
-        path: 'M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2zm8 0v6h6',
-        color: '#9ca3af',
-      };
+function DynamicIcon({ name, className }: { name: string; className?: string }) {
+  const t = name.toLowerCase();
+  if (commonIcons[t]) {
+    const Icon = commonIcons[t];
+    return <Icon className={className} />;
   }
+  
+  if (t.includes('chart') || t.includes('stat')) return <BarChart3 className={className} />;
+  if (t.includes('chunk') || t.includes('layer')) return <Layers className={className} />;
+  if (t.includes('schema') || t.includes('data')) return <Database className={className} />;
+  if (t.includes('check') || t.includes('quality')) return <CheckCircle className={className} />;
+  
+  if (!name.match(/^[a-zA-Z-]+$/) && name.length <= 4) {
+    return <span className={cn("flex items-center justify-center text-lg leading-none", className)}>{name}</span>;
+  }
+  
+  return <FileText className={className} />;
 }
 
-// ── Truncate filenames ──────────────────────────────────────────
-function truncate(str: string, max: number): string {
-  if (str.length <= max) return str;
-  const ext = str.lastIndexOf('.');
-  if (ext > 0 && str.length - ext <= 5) {
-    const keep = max - (str.length - ext) - 1;
-    return `${str.slice(0, Math.max(keep, 4))}…${str.slice(ext)}`;
+function FileIcon({ type, className }: { type: string; className?: string }) {
+  const t = type.toLowerCase();
+  if (t.includes('csv') || t.includes('excel') || t.includes('xls')) {
+    return <Table className={cn("w-6 h-6 text-emerald-600", className)} />;
   }
-  return `${str.slice(0, max - 1)}…`;
+  if (t.includes('json')) {
+    return <FileCode className={cn("w-6 h-6 text-blue-600", className)} />;
+  }
+  if (t.includes('pdf')) {
+    return <FileText className={cn("w-6 h-6 text-red-500", className)} />;
+  }
+  return <File className={cn("w-6 h-6 text-slate-500", className)} />;
 }
 
 // ── Main Component ──────────────────────────────────────────────
 
-export function ComputeAnimation({ files, results, isComplete, onSettled }: ComputeAnimationProps) {
+export function ComputeAnimation({
+  files,
+  results,
+  isComplete,
+  accentClassName,
+  onSettled,
+}: ComputeAnimationProps) {
   const uid = useId().replace(/:/g, '');
   const [visibleFiles, setVisibleFiles] = useState(0);
   const [visibleResults, setVisibleResults] = useState(0);
@@ -136,24 +118,23 @@ export function ComputeAnimation({ files, results, isComplete, onSettled }: Comp
   // Positions for up to 6 file slots on the left
   const maxSlots = Math.min(files.length, 6);
   const fileSlotY = (i: number) => {
-    const totalHeight = 300;
-    const gap = maxSlots > 1 ? totalHeight / (maxSlots - 1) : 0;
-    const startY = maxSlots > 1 ? 80 : 200;
-    return startY + i * gap;
+    const count = Math.max(maxSlots, 1);
+    if (count === 1) return 230;
+    const gap = 300 / (count - 1);
+    return 80 + i * gap;
   };
 
   // Positions for result card slots on the right
   const resultSlotY = (i: number) => {
-    const totalHeight = 280;
     const count = Math.max(results.length, 1);
-    const gap = count > 1 ? totalHeight / (count - 1) : 0;
-    const startY = count > 1 ? 90 : 220;
-    return startY + i * gap;
+    if (count === 1) return 230;
+    const gap = 300 / (count - 1);
+    return 80 + i * gap;
   };
 
   return (
     <div
-      className="w-full max-w-[56rem] mx-auto px-4"
+      className={cn('mx-auto w-full max-w-[56rem] px-4', accentClassName)}
       role="img"
       aria-label={
         isComplete
@@ -161,30 +142,152 @@ export function ComputeAnimation({ files, results, isComplete, onSettled }: Comp
           : 'Analyzing your uploaded files…'
       }
     >
-      {/* CSS keyframes — scoped by unique id */}
       <style>{`
-        @keyframes ca-dash-${uid} {
-          to { stroke-dashoffset: -40; }
+        @keyframes ca-particle-${uid} {
+          0%   { stroke-dashoffset: 440; }
+          100% { stroke-dashoffset: -300; }
         }
-        @keyframes ca-pulse-${uid} {
-          0%, 100% { opacity: 0.5; r: 3.5; }
-          50%      { opacity: 1;   r: 5; }
+        @keyframes ca-rotate-cube-${uid} {
+          0%   { transform: rotateX(-20deg) rotateY(0deg); }
+          100% { transform: rotateX(-20deg) rotateY(360deg); }
         }
-        @keyframes ca-glow-${uid} {
-          0%, 100% { filter: drop-shadow(0 0 2px rgba(148,163,184,0.3)); }
-          50%      { filter: drop-shadow(0 0 6px rgba(148,163,184,0.55)); }
+
+        .ca-cube-wrapper-${uid} {
+          perspective: 1000px;
+          width: 100px;
+          height: 100px;
+          transform-style: preserve-3d;
+          transition: transform 0.5s ease;
         }
-        @keyframes ca-spin-${uid} {
-          to { transform: rotate(360deg); }
+        .ca-cube-${uid} {
+          width: 100%;
+          height: 100%;
+          position: relative;
+          transform-style: preserve-3d;
+          animation: ca-rotate-cube-${uid} 12s infinite linear;
         }
-        @keyframes ca-settle-${uid} {
-          0%   { stroke-dashoffset: -40; }
+        .ca-face-${uid} {
+          position: absolute;
+          width: 100px;
+          height: 100px;
+          background: hsl(var(--muted-foreground) / 0.05);
+          border: 1px solid hsl(var(--muted-foreground) / 0.2);
+          box-shadow: inset 0 0 20px hsl(var(--muted-foreground) / 0.1);
+          backdrop-filter: blur(2px);
+          -webkit-backdrop-filter: blur(2px);
+        }
+        .ca-face-${uid}.front  { transform: rotateY(  0deg) translateZ(50px); }
+        .ca-face-${uid}.back   { transform: rotateY(180deg) translateZ(50px); }
+        .ca-face-${uid}.left   { transform: rotateY(-90deg) translateZ(50px); }
+        .ca-face-${uid}.right  { transform: rotateY( 90deg) translateZ(50px); }
+        .ca-face-${uid}.top    { transform: rotateX( 90deg) translateZ(50px); }
+        .ca-face-${uid}.bottom { transform: rotateX(-90deg) translateZ(50px); }
+        
+        .ca-core-${uid} {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 48px;
+          height: 48px;
+          transform: translate(-50%, -50%) scale(1);
+          transform-style: preserve-3d;
+          transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        .ca-core-${uid}.settled {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.2);
+        }
+
+        .ca-nucleus-${uid} {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 14px;
+          height: 14px;
+          background: radial-gradient(
+            circle at 30% 30%,
+            hsl(var(--background) / 0.95) 0%,
+            hsl(var(--background) / 0.4) 18%,
+            currentColor 55%,
+            hsl(var(--foreground) / 0.35) 100%
+          );
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+          box-shadow:
+            0 0 12px currentColor,
+            inset 2px 2px 3px hsl(var(--background) / 0.55),
+            inset -2px -2px 4px hsl(var(--foreground) / 0.22);
+        }
+
+        .ca-orbit-${uid} {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          border: 1.5px solid currentColor;
+          opacity: 0.35;
+          border-radius: 50%;
+          transform-style: preserve-3d;
+        }
+
+        @keyframes ca-precess-1-${uid} {
+          0% { transform: rotateX(65deg) rotateY(0deg) rotateZ(0deg); }
+          100% { transform: rotateX(65deg) rotateY(0deg) rotateZ(360deg); }
+        }
+        @keyframes ca-precess-2-${uid} {
+          0% { transform: rotateX(65deg) rotateY(60deg) rotateZ(0deg); }
+          100% { transform: rotateX(65deg) rotateY(60deg) rotateZ(-360deg); }
+        }
+        @keyframes ca-precess-3-${uid} {
+          0% { transform: rotateX(65deg) rotateY(120deg) rotateZ(0deg); }
+          100% { transform: rotateX(65deg) rotateY(120deg) rotateZ(360deg); }
+        }
+
+        .ca-orbit-1-${uid} { animation: ca-precess-1-${uid} 6.4s linear infinite; }
+        .ca-orbit-2-${uid} { animation: ca-precess-2-${uid} 7.2s linear infinite; }
+        .ca-orbit-3-${uid} { animation: ca-precess-3-${uid} 8s linear infinite; }
+
+        .ca-electron-container-${uid} {
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          border-radius: 50%;
+          transform-style: preserve-3d;
+        }
+
+        .ca-spin-1-${uid} { animation: ca-spin-z-${uid} 1.25s linear infinite; }
+        .ca-spin-2-${uid} { animation: ca-spin-z-${uid} 1.5s linear infinite; }
+        .ca-spin-3-${uid} { animation: ca-spin-z-${uid} 1.75s linear infinite; }
+
+        @keyframes ca-spin-z-${uid} {
+          0%   { transform: rotateZ(0deg); }
+          100% { transform: rotateZ(360deg); }
+        }
+
+        .ca-electron-${uid} {
+          position: absolute;
+          top: -3px;
+          left: 50%;
+          width: 6px;
+          height: 6px;
+          background: currentColor;
+          border-radius: 50%;
+          transform: translateX(-50%);
+          box-shadow: 0 0 8px currentColor;
+        }
+
+        .ca-electron-secondary-${uid} {
+          top: calc(100% - 3px);
+          opacity: 0.9;
+          box-shadow: 0 0 6px currentColor;
+        }
+
+        .ca-edge-pulse-${uid} {
+          animation: ca-cube-edge-${uid} 4s linear infinite;
+        }
+        @keyframes ca-cube-edge-${uid} {
+          0%   { stroke-dashoffset: 400; }
           100% { stroke-dashoffset: 0; }
-        }
-        @keyframes ca-checkmark-${uid} {
-          0%   { stroke-dashoffset: 30; opacity: 0; }
-          50%  { opacity: 1; }
-          100% { stroke-dashoffset: 0; opacity: 1; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -203,274 +306,190 @@ export function ComputeAnimation({ files, results, isComplete, onSettled }: Comp
         aria-hidden="true"
       >
         <defs>
-          {/* Gradient for mesh edges */}
-          <linearGradient id={`mesh-grad-${uid}`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#e5e7eb" />
-            <stop offset="50%" stopColor="#9ca3af" />
-            <stop offset="100%" stopColor="#374151" />
+          <linearGradient id={`particle-grad-${uid}`} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style={{ stopColor: 'currentColor', stopOpacity: 0 }} />
+            <stop offset="50%" style={{ stopColor: 'currentColor', stopOpacity: 1 }} />
+            <stop offset="100%" style={{ stopColor: 'currentColor', stopOpacity: 0 }} />
           </linearGradient>
 
-          {/* Subtle radial glow behind mesh */}
-          <radialGradient id={`mesh-bg-${uid}`} cx="50%" cy="48%" r="28%">
-            <stop offset="0%" stopColor="#e5e7eb" stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#e5e7eb" stopOpacity="0" />
+          {/* Subtle neutral glow behind cube */}
+          <radialGradient id={`cube-bg-${uid}`} cx="50%" cy="50%" r="35%">
+            <stop offset="0%" style={{ stopColor: 'hsl(var(--muted-foreground))', stopOpacity: 0.12 }} />
+            <stop offset="100%" style={{ stopColor: 'hsl(var(--muted-foreground))', stopOpacity: 0 }} />
           </radialGradient>
-
-          {/* Accent gradient for flowing particles */}
-          <linearGradient id={`accent-${uid}`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#94a3b8" stopOpacity="0" />
-            <stop offset="50%" stopColor="#94a3b8" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="#94a3b8" stopOpacity="0" />
-          </linearGradient>
         </defs>
 
-        {/* ─── Background glow behind mesh ─── */}
-        <circle cx="450" cy="220" r="130" fill={`url(#mesh-bg-${uid})`} />
+        {/* ─── Background glow ─── */}
+        <circle cx="450" cy="230" r="140" fill={`url(#cube-bg-${uid})`} />
 
-        {/* ─── Left: flowing connector lines from files → mesh ─── */}
+        {/* ─── Left: Base paths ─── */}
         {files.slice(0, 6).map((_, i) => {
           const y = fileSlotY(i);
           const visible = i < visibleFiles;
           return (
             <path
-              key={`flow-l-${i}`}
-              d={`M 170 ${y} C 270 ${y}, 310 220, 370 220`}
+              key={`base-l-${i}`}
+              d={`M 200 ${y} C 280 ${y}, 270 230, 350 230`}
               fill="none"
-              stroke="#d1d5db"
               strokeWidth="1.5"
-              strokeDasharray="6 4"
-              opacity={visible ? 1 : 0}
-              style={{
-                transition: 'opacity 0.5s ease',
-                animation: visible && !isComplete
-                  ? `ca-dash-${uid} 1.2s linear infinite`
-                  : 'none',
-              }}
+              style={{ stroke: 'hsl(var(--border))', opacity: visible ? 1 : 0, transition: 'opacity 0.5s ease' }}
             />
           );
         })}
 
-        {/* Accent flow overlay — left */}
+        {/* ─── Left: Flying particles ─── */}
         {files.slice(0, 6).map((_, i) => {
           const y = fileSlotY(i);
           const visible = i < visibleFiles;
           return (
             <path
-              key={`accent-l-${i}`}
-              d={`M 170 ${y} C 270 ${y}, 310 220, 370 220`}
+              key={`particle-l-${i}`}
+              d={`M 200 ${y} C 280 ${y}, 270 230, 350 230`}
               fill="none"
-              stroke={`url(#accent-${uid})`}
+              stroke={`url(#particle-grad-${uid})`}
               strokeWidth="2.5"
-              strokeDasharray="20 80"
-              opacity={visible && !isComplete ? 0.6 : 0}
+              strokeLinecap="round"
+              strokeDasharray="40 400"
+              opacity={visible && !isComplete ? 1 : 0}
               style={{
                 transition: 'opacity 0.5s ease',
-                animation: visible && !isComplete
-                  ? `ca-dash-${uid} 2s linear infinite`
-                  : 'none',
+                animation: `ca-particle-${uid} 1.5s linear infinite`,
+                animationDelay: `${i * 0.2}s`,
               }}
             />
           );
         })}
 
-        {/* ─── Right: flowing connector lines from mesh → result cards ─── */}
+        {/* ─── Right: Base paths ─── */}
         {results.map((_, i) => {
           const y = resultSlotY(i);
           const visible = i < visibleResults;
           return (
             <path
-              key={`flow-r-${i}`}
-              d={`M 530 220 C 590 220, 620 ${y}, 680 ${y}`}
+              key={`base-r-${i}`}
+              d={`M 550 230 C 630 230, 620 ${y}, 700 ${y}`}
               fill="none"
-              stroke="#d1d5db"
               strokeWidth="1.5"
-              strokeDasharray="6 4"
+              style={{ stroke: 'hsl(var(--border))', opacity: visible ? 1 : 0, transition: 'opacity 0.5s ease' }}
+            />
+          );
+        })}
+
+        {/* ─── Right: Flying particles ─── */}
+        {results.map((_, i) => {
+          const y = resultSlotY(i);
+          const visible = i < visibleResults;
+          return (
+            <path
+              key={`particle-r-${i}`}
+              d={`M 550 230 C 630 230, 620 ${y}, 700 ${y}`}
+              fill="none"
+              stroke={`url(#particle-grad-${uid})`}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray="40 400"
               opacity={visible ? 1 : 0}
               style={{
                 transition: 'opacity 0.5s ease',
-                animation: visible && !isComplete
-                  ? `ca-dash-${uid} 1.2s linear infinite`
-                  : isComplete
-                    ? `ca-settle-${uid} 0.8s ease forwards`
-                    : 'none',
+                animation: `ca-particle-${uid} 1.5s linear infinite`,
+                animationDelay: `${i * 0.3}s`,
               }}
             />
           );
         })}
 
-        {/* ─── Center: Compute Mesh ─── */}
+        {/* ─── Center: 3D Compute Cube ─── */}
+        <foreignObject x="350" y="130" width="200" height="200" className="pointer-events-none">
+          <div className="w-full h-full flex items-center justify-center">
+            <div className={`ca-cube-wrapper-${uid}`}>
+              <div className={`ca-cube-${uid}`}>
+                {['front', 'back', 'left', 'right', 'top', 'bottom'].map((face) => (
+                  <div key={face} className={`ca-face-${uid} ${face}`}>
+                    <svg width="100" height="100" viewBox="0 0 100 100" className="absolute top-0 left-0 pointer-events-none">
+                      <rect x="0" y="0" width="100" height="100" fill="none" stroke="hsl(var(--muted-foreground) / 0.6)" strokeWidth="1" strokeDasharray="50 350" className={`ca-edge-pulse-${uid}`} />
+                    </svg>
+                  </div>
+                ))}
+                <div className={cn(`ca-core-${uid}`, isComplete && "settled")}>
+                  <div className={`ca-nucleus-${uid}`}></div>
+                  
+                  <div className={`ca-orbit-${uid} ca-orbit-1-${uid}`}>
+                    <div className={`ca-electron-container-${uid} ca-spin-1-${uid}`}>
+                      <div className={`ca-electron-${uid}`}></div>
+                      <div className={`ca-electron-${uid} ca-electron-secondary-${uid}`}></div>
+                    </div>
+                  </div>
+                  
+                  <div className={`ca-orbit-${uid} ca-orbit-2-${uid}`}>
+                    <div className={`ca-electron-container-${uid} ca-spin-2-${uid}`}>
+                      <div className={`ca-electron-${uid}`}></div>
+                      <div className={`ca-electron-${uid} ca-electron-secondary-${uid}`}></div>
+                    </div>
+                  </div>
+
+                  <div className={`ca-orbit-${uid} ca-orbit-3-${uid}`}>
+                    <div className={`ca-electron-container-${uid} ca-spin-3-${uid}`}>
+                      <div className={`ca-electron-${uid}`}></div>
+                      <div className={`ca-electron-${uid} ca-electron-secondary-${uid}`}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </foreignObject>
+
+        {/* ─── Completion checkmark (visible when complete) ─── */}
         <g
           style={{
-            animation: !isComplete
-              ? `ca-glow-${uid} 3s ease-in-out infinite`
-              : 'none',
-            transition: 'filter 1s ease',
+            opacity: isComplete ? 1 : 0,
+            transform: isComplete ? 'translate(450px, 230px) scale(1)' : 'translate(450px, 230px) scale(0.5)',
+            transition: 'opacity 0.4s ease 0.2s, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s',
           }}
         >
-          {/* Mesh edges */}
-          {MESH_EDGES.map(([a, b], i) => (
-            <line
-              key={`edge-${i}`}
-              x1={MESH_NODES[a].x}
-              y1={MESH_NODES[a].y}
-              x2={MESH_NODES[b].x}
-              y2={MESH_NODES[b].y}
-              stroke={`url(#mesh-grad-${uid})`}
-              strokeWidth="1.2"
-              opacity={isComplete ? 0.4 : 0.7}
-              style={{ transition: 'opacity 1s ease' }}
-            />
-          ))}
-
-          {/* Animated dash overlay on edges */}
-          {MESH_EDGES.map(([a, b], i) => (
-            <line
-              key={`edge-anim-${i}`}
-              x1={MESH_NODES[a].x}
-              y1={MESH_NODES[a].y}
-              x2={MESH_NODES[b].x}
-              y2={MESH_NODES[b].y}
-              stroke="#94a3b8"
-              strokeWidth="1"
-              strokeDasharray="4 8"
-              opacity={isComplete ? 0 : 0.5}
-              style={{
-                transition: 'opacity 1s ease',
-                animation: !isComplete
-                  ? `ca-dash-${uid} ${1.5 + (i % 3) * 0.3}s linear infinite`
-                  : 'none',
-                animationDelay: `${(i % 5) * 0.15}s`,
-              }}
-            />
-          ))}
-
-          {/* Mesh nodes */}
-          {MESH_NODES.map((node, i) => (
-            <circle
-              key={`node-${i}`}
-              cx={node.x}
-              cy={node.y}
-              r={i === 14 ? 5 : 3.5}
-              fill="#e5e7eb"
-              stroke="#6b7280"
-              strokeWidth={i === 14 ? 2 : 1.2}
-              style={{
-                animation: !isComplete
-                  ? `ca-pulse-${uid} ${2 + (i % 4) * 0.5}s ease-in-out infinite`
-                  : 'none',
-                animationDelay: `${(i % 7) * 0.25}s`,
-                transition: 'r 0.6s ease, opacity 0.6s ease',
-              }}
-            />
-          ))}
-
-          {/* Center processing spinner (hidden when complete) */}
-          <g
+          <circle cx="0" cy="0" r="28" style={{ fill: 'currentColor' }} />
+          <path
+            d="M -9 1 l 6 6 l 12 -12"
+            fill="none"
             style={{
-              transformOrigin: '450px 220px',
-              animation: !isComplete
-                ? `ca-spin-${uid} 4s linear infinite`
-                : 'none',
-              opacity: isComplete ? 0 : 0.35,
-              transition: 'opacity 0.6s ease',
+              stroke: 'hsl(var(--primary-foreground))',
+              strokeWidth: 3.5,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              strokeDasharray: 40,
+              strokeDashoffset: isComplete ? 0 : 40,
+              transition: 'stroke-dashoffset 0.5s ease 0.5s',
             }}
-          >
-            <circle
-              cx="450"
-              cy="220"
-              r="18"
-              fill="none"
-              stroke="#94a3b8"
-              strokeWidth="1.5"
-              strokeDasharray="28 85"
-            />
-          </g>
-
-          {/* Completion checkmark (visible when complete) */}
-          <g
-            style={{
-              opacity: isComplete ? 1 : 0,
-              transition: 'opacity 0.5s ease 0.3s',
-            }}
-          >
-            <circle cx="450" cy="220" r="16" fill="#e5e7eb" stroke="#4b5563" strokeWidth="1.5" />
-            <path
-              d="M441 220 l6 6 l12 -12"
-              fill="none"
-              stroke="#374151"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="30"
-              style={{
-                animation: isComplete
-                  ? `ca-checkmark-${uid} 0.5s ease forwards 0.5s`
-                  : 'none',
-                strokeDashoffset: isComplete ? undefined : 30,
-                opacity: isComplete ? undefined : 0,
-              }}
-            />
-          </g>
+          />
         </g>
 
         {/* ─── Left: File icons with labels ─── */}
         {files.slice(0, 6).map((file, i) => {
           const y = fileSlotY(i);
           const visible = i < visibleFiles;
-          const icon = fileTypeIcon(file.type);
           return (
-            <g
+            <foreignObject
               key={`file-${i}`}
+              x="20"
+              y={y - 24}
+              width="180"
+              height="48"
               style={{
                 opacity: visible ? 1 : 0,
                 transform: visible ? 'translateX(0)' : 'translateX(-16px)',
                 transition: 'opacity 0.5s ease, transform 0.5s ease',
               }}
             >
-              {/* File card background */}
-              <rect
-                x="30"
-                y={y - 22}
-                width="130"
-                height="44"
-                rx="8"
-                fill="white"
-                stroke="#e5e7eb"
-                strokeWidth="1"
-              />
-              {/* Mini file icon */}
-              <g transform={`translate(42, ${y - 10}) scale(0.8)`}>
-                <path
-                  d={icon.path}
-                  fill="none"
-                  stroke={icon.color}
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </g>
-              {/* Filename */}
-              <text
-                x="68"
-                y={y - 3}
-                fontSize="10"
-                fontFamily="system-ui, sans-serif"
-                fill="#374151"
-                fontWeight="500"
-              >
-                {truncate(file.name, 14)}
-              </text>
-              {/* File type badge */}
-              <text
-                x="68"
-                y={y + 11}
-                fontSize="8"
-                fontFamily="system-ui, sans-serif"
-                fill="#9ca3af"
-              >
-                {file.type.toUpperCase()}
-              </text>
-            </g>
+              <div className="flex items-center w-full h-full px-3 bg-card text-card-foreground rounded-lg border border-border shadow-sm overflow-hidden">
+                <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border">
+                   <FileIcon type={file.type} />
+                </div>
+                <div className="ml-3 flex-1 min-w-0 flex flex-col justify-center">
+                  <div className="text-sm font-medium text-foreground truncate">{file.name}</div>
+                  <div className="text-[10px] leading-tight text-muted-foreground font-mono uppercase tracking-wider">{file.type}</div>
+                </div>
+              </div>
+            </foreignObject>
           );
         })}
 
@@ -478,93 +497,56 @@ export function ComputeAnimation({ files, results, isComplete, onSettled }: Comp
         {results.map((result, i) => {
           const y = resultSlotY(i);
           const visible = i < visibleResults;
-          // Clamp label length for SVG rendering
-          const displayLabel = truncate(result.label, 32);
           return (
-            <g
+            <foreignObject
               key={`result-${i}`}
+              x="700"
+              y={y - 24}
+              width="180"
+              height="48"
               style={{
                 opacity: visible ? 1 : 0,
                 transform: visible ? 'translateX(0)' : 'translateX(16px)',
                 transition: 'opacity 0.6s ease, transform 0.6s ease',
               }}
             >
-              {/* Card background */}
-              <rect
-                x="690"
-                y={y - 18}
-                width="190"
-                height="36"
-                rx="8"
-                fill="white"
-                stroke="#e5e7eb"
-                strokeWidth="1"
-                filter={isComplete ? undefined : 'none'}
-              />
-              <rect
-                x="700"
-                y={y - 9}
-                width="24"
-                height="18"
-                rx="4"
-                fill="#e5e7eb"
-                stroke="#9ca3af"
-                strokeWidth="1"
-              />
-              <text
-                x="712"
-                y={y + 3}
-                textAnchor="middle"
-                fontSize="7"
-                fontFamily="system-ui, sans-serif"
-                fill="#4b5563"
-                fontWeight="600"
-              >
-                {result.icon}
-              </text>
-              {/* Label */}
-              <text
-                x="730"
-                y={y + 3}
-                fontSize="9.5"
-                fontFamily="system-ui, sans-serif"
-                fill="#374151"
-                fontWeight="500"
-              >
-                {displayLabel}
-              </text>
-            </g>
+              <div className="flex items-center w-full h-full px-3 bg-card text-card-foreground rounded-lg border border-border shadow-sm overflow-hidden">
+                <div className="flex-shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center border border-primary/20">
+                   <DynamicIcon name={result.icon || result.type} className="w-4 h-4 text-primary" />
+                </div>
+                <div className="ml-3 flex-1 min-w-0 flex flex-col justify-center">
+                  <div className="text-sm font-medium text-foreground truncate">{result.label}</div>
+                  {result.detail && (
+                    <div className="text-xs text-muted-foreground truncate">{result.detail}</div>
+                  )}
+                </div>
+              </div>
+            </foreignObject>
           );
         })}
 
-        {/* ─── "Analyzing…" / "Complete" label below mesh ─── */}
+        {/* ─── "Analyzing…" / "Complete" label below center ─── */}
         <text
           x="450"
-          y="360"
+          y="410"
           textAnchor="middle"
-          fontSize="13"
+          fontSize="14"
           fontFamily="system-ui, sans-serif"
-          fill="#6b7280"
           fontWeight="500"
-          style={{
-            transition: 'opacity 0.4s ease',
-          }}
+          style={{ fill: 'hsl(var(--muted-foreground))', transition: 'opacity 0.4s ease' }}
         >
           {isComplete ? 'Analysis complete' : 'Analyzing your data…'}
         </text>
 
         {/* Subtle quality bar beneath the label */}
-        <rect x="375" y="375" width="150" height="3" rx="1.5" fill="#d1d5db" />
+        <rect x="375" y="425" width="150" height="4" rx="2" style={{ fill: 'hsl(var(--muted))' }} />
         <rect
           x="375"
-          y="375"
+          y="425"
           width={isComplete ? '150' : '0'}
-          height="3"
-          rx="1.5"
-          fill="#94a3b8"
-          style={{
-            transition: 'width 0.8s ease',
-          }}
+          height="4"
+          rx="2"
+          style={{ fill: 'currentColor', transition: 'width 0.8s ease' }}
         />
       </svg>
     </div>

@@ -36,7 +36,7 @@ export function gatherProcessingResults(files: UploadedFile[]): ProcessingResult
     if (rows != null && cols != null) {
       results.push({
         type: 'dataset_stats',
-        icon: 'DS',
+        icon: 'Database',
         label: `${file.name}: ${rows.toLocaleString()} rows × ${cols} columns`,
       });
     }
@@ -49,11 +49,11 @@ export function gatherProcessingResults(files: UploadedFile[]): ProcessingResult
       0,
     );
     const suffix = docFiles.length > 1 ? 's' : '';
-    results.push({
-      type: 'document_chunks',
-      icon: 'DOC',
-      label: `${docFiles.length} document${suffix} → ${totalChunks} chunks`,
-    });
+      results.push({
+        type: 'document_chunks',
+        icon: 'FileText',
+        label: `${docFiles.length} document${suffix} → ${totalChunks} chunks`,
+      });
   }
 
   // ── Schema analysis (from dataset profile dtypes) ─────────────
@@ -74,7 +74,7 @@ export function gatherProcessingResults(files: UploadedFile[]): ProcessingResult
     if (parts.length > 0) {
       results.push({
         type: 'schema_analysis',
-        icon: 'SCH',
+        icon: 'Network',
         label: `Schema: ${parts.join(', ')}`,
       });
     }
@@ -84,7 +84,7 @@ export function gatherProcessingResults(files: UploadedFile[]): ProcessingResult
   const qualityIssues = analyzeQuality(dataFiles);
   results.push({
     type: 'quality_check',
-    icon: qualityIssues.length > 0 ? 'WARN' : 'OK',
+    icon: qualityIssues.length > 0 ? 'AlertTriangle' : 'CheckCircle2',
     label:
       qualityIssues.length > 0
         ? qualityIssues.join('; ')

@@ -12,15 +12,14 @@
  *   <ProcessingStage
  *     projectId={activeProject.id}
  *     onComplete={() => setStage('chat')}
- *     onBack={() => setStage('upload')}
  *   />
  */
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { ArrowLeft } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import { ComputeAnimation } from './ComputeAnimation';
 import { gatherProcessingResults } from './processingUtils';
 import type { ProcessingResult, ProcessingStageProps } from '@/types/processing';
@@ -28,19 +27,26 @@ import type { ProcessingResult, ProcessingStageProps } from '@/types/processing'
 /** Minimum time (ms) the animation plays before results appear */
 const MIN_ANIMATION_MS = 4500;
 
-export function ProcessingStage({ projectId, onComplete, onBack }: ProcessingStageProps) {
+export function ProcessingStage({ projectId, onComplete }: Omit<ProcessingStageProps, 'onBack'>) {
   const [results, setResults] = useState<ProcessingResult[]>([]);
   const [isComplete, setIsComplete] = useState(false);
 
   // Prevent double-fire of onComplete in strict mode
   const hasFired = useRef(false);
+  const runIdRef = useRef(0);
 
   // Pull files for this project from the data store
   const allFiles = useDataStore((state) => state.files);
+  const projects = useProjectStore((state) => state.projects);
   const projectFiles = useMemo(
     () => allFiles.filter((f) => f.projectId === projectId),
     [allFiles, projectId],
   );
+  const projectColorClass = useMemo(() => {
+    const project = projects.find((entry) => entry.id === projectId);
+    const color = project?.color ?? 'blue';
+    return projectColorClasses[color].text;
+  }, [projectId, projects]);
 
   // Simplified file descriptors for the animation (name + type)
   const fileDescriptors = useMemo(
@@ -53,10 +59,20 @@ export function ProcessingStage({ projectId, onComplete, onBack }: ProcessingSta
   onCompleteRef.current = onComplete;
 
   const runProcessing = useCallback(async () => {
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+
+    hasFired.current = false;
+    setIsComplete(false);
+
     const minDelay = new Promise<void>((r) => setTimeout(r, MIN_ANIMATION_MS));
     const dataPromise = Promise.resolve(gatherProcessingResults(projectFiles));
 
     const [data] = await Promise.all([dataPromise, minDelay]);
+
+    if (runIdRef.current !== runId) {
+      return;
+    }
 
     setResults(data);
     setIsComplete(true);
@@ -66,6 +82,9 @@ export function ProcessingStage({ projectId, onComplete, onBack }: ProcessingSta
 
   useEffect(() => {
     void runProcessing();
+    return () => {
+      runIdRef.current += 1;
+    };
   }, [runProcessing]);
 
   // Called by ComputeAnimation once all result cards have staggered in
@@ -86,22 +105,9 @@ export function ProcessingStage({ projectId, onComplete, onBack }: ProcessingSta
         files={fileDescriptors}
         results={results}
         isComplete={isComplete}
+        accentClassName={projectColorClass}
         onSettled={handleSettled}
       />
-
-      {onBack && (
-        <div className="mt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            className="text-muted-foreground hover:text-foreground gap-1.5"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to uploads
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

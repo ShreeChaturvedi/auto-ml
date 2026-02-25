@@ -1,8 +1,10 @@
 export type DatasetFileType = 'csv' | 'json' | 'xlsx';
 
+export type ColumnDataType = 'string' | 'integer' | 'float' | 'boolean' | 'date' | 'unknown';
+
 export interface DatasetProfileColumn {
   name: string;
-  dtype: string;
+  dtype: ColumnDataType;
   nullCount: number;
   uniqueCount?: number;
   sampleCount?: number;

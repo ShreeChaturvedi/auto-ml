@@ -110,8 +110,8 @@ describe('dataStore hydrateFromBackend', () => {
           nRows: 2,
           nCols: 2,
           columns: [
-            { name: 'id', dtype: 'int64', nullCount: 0 },
-            { name: 'name', dtype: 'text', nullCount: 0 }
+            { name: 'id', dtype: 'integer', nullCount: 0 },
+            { name: 'name', dtype: 'string', nullCount: 0 }
           ],
           sample: [
             { id: 1, name: 'A' },

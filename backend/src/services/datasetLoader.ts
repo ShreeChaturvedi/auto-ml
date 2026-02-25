@@ -7,7 +7,15 @@ import type { PoolClient } from 'pg';
 import XLSX from 'xlsx';
 
 import { getDbPool } from '../db.js';
-import type { DatasetProfileColumn } from '../types/dataset.js';
+import type { ColumnDataType, DatasetProfileColumn } from '../types/dataset.js';
+
+import {
+  coerceBoolean,
+  coerceDate,
+  coerceFloat,
+  coerceInteger,
+  isMissingValue
+} from './valueCoercion.js';
 
 /**
  * Load a dataset into a Postgres table
@@ -19,8 +27,18 @@ export async function loadDatasetIntoPostgres(params: {
   buffer: Buffer;
   columns: DatasetProfileColumn[];
   rows?: Record<string, unknown>[];
+  strictMode?: boolean;
+  strictColumnNames?: string[];
 }): Promise<{ tableName: string; rowsLoaded: number }> {
-  const { datasetId, filename, fileType, buffer, columns } = params;
+  const {
+    datasetId,
+    filename,
+    fileType,
+    buffer,
+    columns,
+    strictMode = false,
+    strictColumnNames
+  } = params;
 
   // Sanitize filename to create valid table name
   const tableName = sanitizeTableName(filename, datasetId);
@@ -46,7 +64,14 @@ export async function loadDatasetIntoPostgres(params: {
     await client.query(createTableSql);
 
     // Insert data
-    const rowsLoaded = await insertRows(client, tableName, columns, rows);
+    const rowsLoaded = await insertRows(
+      client,
+      tableName,
+      columns,
+      rows,
+      strictMode,
+      strictColumnNames
+    );
 
     await client.query('COMMIT');
 
@@ -157,99 +182,89 @@ function generateCreateTableSql(tableName: string, columns: DatasetProfileColumn
   return `CREATE TABLE "${tableName}" (${columnDefs.join(', ')})`;
 }
 
-function inferPostgresType(dtype: string): string {
+function inferPostgresType(dtype: ColumnDataType): string {
   switch (dtype) {
-    case 'number':
+    case 'integer':
+      return 'BIGINT';
+    case 'float':
       return 'DOUBLE PRECISION';
     case 'boolean':
       return 'BOOLEAN';
     case 'date':
       return 'TIMESTAMP';
+    case 'unknown':
     case 'string':
     default:
       return 'TEXT';
   }
 }
 
-function coerceBoolean(value: unknown): boolean | null {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') {
-    if (value === 1) return true;
-    if (value === 0) return false;
-    return null;
-  }
+function stringifyValueForError(value: unknown): string {
   if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
-    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
-  }
-  return null;
-}
-
-function coerceNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const numeric = Number(trimmed);
-    if (Number.isFinite(numeric)) {
-      return numeric;
-    }
-  }
-  return null;
-}
-
-function coerceDate(value: unknown): string | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+  if (value instanceof Date) {
     return value.toISOString();
   }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    // Guard against Date.parse permissiveness for arbitrary expressions (e.g., "1 = 1").
-    const hasDateLikeDelimiters = /[-/:T]/.test(trimmed);
-    if (!hasDateLikeDelimiters) {
-      return null;
-    }
-    const timestamp = Date.parse(trimmed);
-    if (!Number.isNaN(timestamp)) {
-      return new Date(timestamp).toISOString();
-    }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
   }
-
-  return null;
 }
 
-export function normalizeValueForColumn(value: unknown, dtype: string): unknown {
-  if (value === null || value === undefined || value === '') {
+export function normalizeValueForColumn(
+  value: unknown,
+  dtype: ColumnDataType,
+  options: { strictMode?: boolean; columnName?: string } = {}
+): unknown {
+  if (isMissingValue(value)) {
     return null;
   }
 
+  let normalized: unknown;
+
   switch (dtype) {
-    case 'number':
-      return coerceNumber(value);
+    case 'integer':
+      normalized = coerceInteger(value);
+      break;
+    case 'float':
+      normalized = coerceFloat(value);
+      break;
     case 'boolean':
-      return coerceBoolean(value);
+      normalized = coerceBoolean(value);
+      break;
     case 'date':
-      return coerceDate(value);
+      normalized = coerceDate(value)?.toISOString() ?? null;
+      break;
+    case 'unknown':
     case 'string':
-    default:
       return value;
+    default:
+      normalized = null;
+      break;
   }
+
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  if (options.strictMode) {
+    const renderedValue = stringifyValueForError(value);
+    const columnContext = options.columnName ? ` for column "${options.columnName}"` : '';
+    throw new Error(`Value "${renderedValue}" cannot be coerced to ${dtype}${columnContext}`);
+  }
+
+  return null;
 }
 
 async function insertRows(
   client: PoolClient,
   tableName: string,
   columns: DatasetProfileColumn[],
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
+  strictMode: boolean,
+  strictColumnNames?: string[]
 ): Promise<number> {
   if (rows.length === 0) return 0;
 
@@ -258,11 +273,15 @@ async function insertRows(
   // Postgres has a parameter limit of ~32k parameters
   // Calculate batch size to stay under this limit
   const maxParams = 30000; // Leave some buffer
-  const paramsPerRow = columnNames.length;
-  const batchSize = Math.floor(maxParams / paramsPerRow);
+  const paramsPerRow = Math.max(columnNames.length, 1);
+  const batchSize = Math.max(1, Math.floor(maxParams / paramsPerRow));
 
   let totalRowsInserted = 0;
   const dtypeByColumnName = new Map(columns.map((column) => [column.name, column.dtype]));
+  const strictColumnSet =
+    strictMode && strictColumnNames && strictColumnNames.length > 0
+      ? new Set(strictColumnNames)
+      : undefined;
 
   // Insert in batches
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -274,10 +293,22 @@ async function insertRows(
     });
 
     const values: unknown[] = [];
-    batch.forEach((row) => {
+    batch.forEach((row, batchRowIdx) => {
       columnNames.forEach((colName) => {
         const dtype = dtypeByColumnName.get(colName) ?? 'string';
-        values.push(normalizeValueForColumn(row[colName], dtype));
+        try {
+          const strictForColumn = strictMode && (!strictColumnSet || strictColumnSet.has(colName));
+          values.push(
+            normalizeValueForColumn(row[colName], dtype, {
+              strictMode: strictForColumn,
+              columnName: colName
+            })
+          );
+        } catch (error) {
+          const rowNumber = i + batchRowIdx + 1;
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Row ${rowNumber}: ${message}`);
+        }
       });
     });
 

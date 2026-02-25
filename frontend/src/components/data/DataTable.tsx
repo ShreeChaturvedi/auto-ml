@@ -24,7 +24,14 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Info
+  Info,
+  Type,
+  Hash,
+  Calculator,
+  ToggleLeft,
+  Calendar,
+  CircleHelp,
+  Check
 } from 'lucide-react';
 import {
   Table,
@@ -40,6 +47,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -47,15 +60,56 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { DataPreview, QueryMode, EdaSummary } from '@/types/file';
+import type { ColumnDataType, DataPreview, QueryMode, EdaSummary } from '@/types/file';
 import { EDAPanel } from './EDAPanel';
 import Papa from 'papaparse';
 
 interface DataTableProps {
   preview: DataPreview;
   onSave?: () => void;
+  columnTypes?: Record<string, ColumnDataType>;
+  onColumnTypeChange?: (columnName: string, nextType: ColumnDataType) => Promise<void> | void;
+  typeColorClassName?: string;
   queryInfo?: QueryInfo;
   className?: string;
+}
+
+const TYPE_OPTIONS: ColumnDataType[] = ['string', 'integer', 'float', 'boolean', 'date'];
+
+function getTypeLabel(type: ColumnDataType): string {
+  switch (type) {
+    case 'string':
+      return 'String';
+    case 'integer':
+      return 'Integer';
+    case 'float':
+      return 'Float';
+    case 'boolean':
+      return 'Boolean';
+    case 'date':
+      return 'Date';
+    case 'unknown':
+    default:
+      return 'Unknown';
+  }
+}
+
+function TypeIcon({ type, className }: { type: ColumnDataType; className?: string }) {
+  switch (type) {
+    case 'string':
+      return <Type className={className} />;
+    case 'integer':
+      return <Hash className={className} />;
+    case 'float':
+      return <Calculator className={className} />;
+    case 'boolean':
+      return <ToggleLeft className={className} />;
+    case 'date':
+      return <Calendar className={className} />;
+    case 'unknown':
+    default:
+      return <CircleHelp className={className} />;
+  }
 }
 
 interface QueryInfo {
@@ -70,9 +124,18 @@ interface QueryInfo {
   rationale?: string;
 }
 
-export function DataTable({ preview, onSave, queryInfo, className }: DataTableProps) {
+export function DataTable({
+  preview,
+  onSave,
+  columnTypes,
+  onColumnTypeChange,
+  typeColorClassName,
+  queryInfo,
+  className
+}: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [updatingColumnName, setUpdatingColumnName] = useState<string | null>(null);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 25
@@ -80,28 +143,110 @@ export function DataTable({ preview, onSave, queryInfo, className }: DataTablePr
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
 
+  const handleColumnTypeSelect = useCallback(
+    async (columnName: string, nextType: ColumnDataType) => {
+      if (!onColumnTypeChange) {
+        return;
+      }
+      setUpdatingColumnName(columnName);
+      try {
+        await onColumnTypeChange(columnName, nextType);
+      } finally {
+        setUpdatingColumnName((current) => (current === columnName ? null : current));
+      }
+    },
+    [onColumnTypeChange]
+  );
+
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(
     () =>
       preview.headers.map((header) => ({
         accessorKey: header,
         header: ({ column }) => {
           const isSorted = column.getIsSorted();
+          const currentType = columnTypes?.[header] ?? 'unknown';
+          const isUpdatingType = updatingColumnName === header;
           return (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-3 h-8 font-medium"
-              onClick={() => column.toggleSorting()}
-            >
-              {header}
-              {isSorted === 'asc' ? (
-                <ArrowUp className="ml-2 h-3 w-3" />
-              ) : isSorted === 'desc' ? (
-                <ArrowDown className="ml-2 h-3 w-3" />
+            <div className="-ml-3 flex items-center gap-1">
+              {onColumnTypeChange ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-7 w-7 bg-transparent transition-colors',
+                        typeColorClassName ?? 'text-primary',
+                        'hover:bg-accent/70 focus-visible:bg-accent/70 data-[state=open]:bg-accent/70 active:bg-accent/70'
+                      )}
+                      disabled={isUpdatingType}
+                      title={`Column type: ${getTypeLabel(currentType)}`}
+                    >
+                      <TypeIcon type={currentType} className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-44">
+                    {TYPE_OPTIONS.map((typeOption) => {
+                      const selected = currentType === typeOption;
+                      return (
+                        <DropdownMenuItem
+                          key={`${header}-${typeOption}`}
+                          onClick={() => {
+                            if (!selected) {
+                              void handleColumnTypeSelect(header, typeOption);
+                            }
+                          }}
+                          className={cn(
+                            'flex items-center justify-between gap-2'
+                          )}
+                        >
+                          <span className="flex items-center gap-2">
+                            <TypeIcon
+                              type={typeOption}
+                              className={cn(
+                                'h-3.5 w-3.5',
+                                selected
+                                  ? (typeColorClassName ?? 'text-primary')
+                                  : 'text-muted-foreground'
+                              )}
+                            />
+                            {getTypeLabel(typeOption)}
+                          </span>
+                          {selected ? (
+                            <Check
+                              className={cn('h-3.5 w-3.5', typeColorClassName ?? 'text-primary')}
+                            />
+                          ) : null}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : (
-                <ArrowUpDown className="ml-2 h-3 w-3 opacity-50" />
+                <span
+                  className={cn(typeColorClassName ?? 'text-primary')}
+                  title={`Column type: ${getTypeLabel(currentType)}`}
+                >
+                  <TypeIcon type={currentType} className="h-3.5 w-3.5" />
+                </span>
               )}
-            </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 font-medium"
+                onClick={() => column.toggleSorting()}
+              >
+                {header}
+                {isSorted === 'asc' ? (
+                  <ArrowUp className="ml-2 h-3 w-3" />
+                ) : isSorted === 'desc' ? (
+                  <ArrowDown className="ml-2 h-3 w-3" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-3 w-3 opacity-50" />
+                )}
+              </Button>
+            </div>
           );
         },
         cell: ({ getValue }) => {
@@ -109,7 +254,14 @@ export function DataTable({ preview, onSave, queryInfo, className }: DataTablePr
           return <span className="font-mono text-sm">{String(value ?? '')}</span>;
         }
       })),
-    [preview.headers]
+    [
+      columnTypes,
+      handleColumnTypeSelect,
+      onColumnTypeChange,
+      preview.headers,
+      typeColorClassName,
+      updatingColumnName
+    ]
   );
 
   const table = useReactTable({

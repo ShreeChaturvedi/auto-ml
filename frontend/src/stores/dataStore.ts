@@ -10,8 +10,15 @@
  */
 
 import { create } from 'zustand';
-import type { UploadedFile, DataPreview, QueryArtifact, QueryMode, FileMetadata } from '@/types/file';
-import { listDatasets, deleteDataset } from '@/lib/api/datasets';
+import type {
+  UploadedFile,
+  DataPreview,
+  QueryArtifact,
+  QueryMode,
+  FileMetadata,
+  ColumnDataType
+} from '@/types/file';
+import { listDatasets, deleteDataset, updateDatasetColumnType } from '@/lib/api/datasets';
 import { listDocuments, deleteDocument } from '@/lib/api/documents';
 import { getFileType } from '@/types/file';
 
@@ -46,6 +53,7 @@ interface DataState {
   setProcessing: (processing: boolean) => void;
   clearProjectData: (projectId: string) => void;
   setFileMetadata: (fileId: string, metadata: Partial<FileMetadata>) => void;
+  updateColumnType: (datasetId: string, columnName: string, newType: ColumnDataType) => Promise<void>;
 
   // Hydration actions
   hydrateFromBackend: (projectId: string, options?: { force?: boolean }) => Promise<void>;
@@ -227,6 +235,16 @@ export const useDataStore = create<DataState>((set, get) => ({
           : file
       )
     }));
+  },
+
+  updateColumnType: async (datasetId: string, columnName: string, newType: ColumnDataType) => {
+    const file = get().files.find((candidate) => candidate.metadata?.datasetId === datasetId);
+    if (!file) {
+      throw new Error(`Dataset ${datasetId} is not loaded in the data store`);
+    }
+
+    await updateDatasetColumnType(datasetId, columnName, newType);
+    await get().hydrateFromBackend(file.projectId, { force: true });
   },
 
   // Query artifact actions

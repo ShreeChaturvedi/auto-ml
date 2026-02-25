@@ -10,6 +10,7 @@ import { useParams } from 'react-router-dom';
 import { FileText, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
 import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
 import { FileTabBar } from './FileTabBar';
@@ -17,8 +18,52 @@ import { DataTable } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { ApiError } from '@/lib/api/client';
 import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
-import type { QueryMode, DataPreview } from '@/types/file';
+import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
+import { projectColorClasses } from '@/types/project';
+
+function extractApiErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  if (!(error instanceof ApiError)) {
+    return error.message;
+  }
+
+  if (error.payload && typeof error.payload === 'object') {
+    const payload = error.payload as Record<string, unknown>;
+
+    if (typeof payload.details === 'string' && payload.details.trim()) {
+      return payload.details;
+    }
+
+    if (payload.errors && typeof payload.errors === 'object') {
+      const errors = payload.errors as {
+        fieldErrors?: Record<string, string[]>;
+        formErrors?: string[];
+      };
+
+      const fieldErrors = errors.fieldErrors
+        ? Object.entries(errors.fieldErrors)
+            .map(([key, values]) => `${key}: ${values.join(', ')}`)
+            .join('; ')
+        : '';
+      const formErrors = errors.formErrors?.join('; ') ?? '';
+      const combined = [fieldErrors, formErrors].filter(Boolean).join(' | ');
+      if (combined) {
+        return combined;
+      }
+    }
+
+    if (typeof payload.error === 'string' && payload.error.trim()) {
+      return payload.error;
+    }
+  }
+
+  return error.message;
+}
 
 export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
@@ -27,6 +72,9 @@ export function DataViewerTab() {
   const { projectId } = useParams();
   const projects = useProjectStore((state) => state.projects);
   const activeProject = projects.find((p) => p.id === projectId);
+  const projectTypeColorClassName = activeProject
+    ? projectColorClasses[activeProject.color].text
+    : undefined;
 
   const allPreviews = useDataStore((state) => state.previews);
   const allFiles = useDataStore((state) => state.files);
@@ -37,6 +85,7 @@ export function DataViewerTab() {
   const openFileTabs = useDataStore((state) => state.openFileTabs);
   const setActiveFileTab = useDataStore((state) => state.setActiveFileTab);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
+  const updateColumnType = useDataStore((state) => state.updateColumnType);
 
   const files = useMemo(
     () => allFiles.filter((file) => file.projectId === projectId),
@@ -161,29 +210,8 @@ export function DataViewerTab() {
         setActiveFileTab(artifactId, 'artifact');
       } catch (error) {
         console.error('Query execution failed:', error);
-        let errorMessage = 'Unknown error occurred';
-        
-        if (error instanceof Error) {
-          // Check if it's an ApiError with payload containing detailed error info
-          const apiError = error as Error & { payload?: unknown };
-          if (apiError.payload && typeof apiError.payload === 'object') {
-            const payload = apiError.payload as Record<string, unknown>;
-            // Handle Zod validation errors
-            if (payload.errors && typeof payload.errors === 'object') {
-              const errors = payload.errors as { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
-              const fieldErrors = errors.fieldErrors ? Object.entries(errors.fieldErrors).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ') : '';
-              const formErrors = errors.formErrors?.join('; ') || '';
-              errorMessage = [fieldErrors, formErrors].filter(Boolean).join(' | ') || error.message;
-            } else if (payload.error && typeof payload.error === 'string') {
-              errorMessage = payload.error;
-            } else {
-              errorMessage = error.message;
-            }
-          } else {
-            errorMessage = error.message;
-          }
-        }
-        
+        const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
+
         setQueryError(withSqlIdentifierHint(errorMessage, mode, tableNames[0]));
       } finally {
         setIsExecuting(false);
@@ -219,7 +247,30 @@ export function DataViewerTab() {
       if (['csv', 'json', 'excel'].includes(file.type)) {
         const preview = previews.find((p) => p.fileId === activeFileTabId);
         if (preview) {
-          return <DataTable preview={preview} />;
+          const columnTypes = file.metadata?.datasetProfile?.dtypes;
+          const datasetId = file.metadata?.datasetId;
+          return (
+            <DataTable
+              preview={preview}
+              columnTypes={columnTypes}
+              typeColorClassName={projectTypeColorClassName}
+              onColumnTypeChange={
+                datasetId
+                  ? async (columnName: string, nextType: ColumnDataType) => {
+                      try {
+                        await updateColumnType(datasetId, columnName, nextType);
+                        toast.success(`Updated ${columnName} to ${nextType}`);
+                      } catch (error) {
+                        const message = extractApiErrorMessage(error);
+                        toast.error('Failed to update column type', {
+                          description: message
+                        });
+                      }
+                    }
+                  : undefined
+              }
+            />
+          );
         }
         return (
           <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
@@ -233,11 +284,12 @@ export function DataViewerTab() {
       const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
       if (artifact) {
         return (
-          <DataTable
-            preview={artifact.result}
-            queryInfo={{
-              query: artifact.query,
-              mode: artifact.mode,
+            <DataTable
+              preview={artifact.result}
+              typeColorClassName={projectTypeColorClassName}
+              queryInfo={{
+                query: artifact.query,
+                mode: artifact.mode,
               timestamp: artifact.timestamp,
               eda: artifact.eda,
               cached: artifact.cached,

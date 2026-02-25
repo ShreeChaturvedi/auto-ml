@@ -17,6 +17,8 @@ export type FileType =
   | 'text'
   | 'other';
 
+export type ColumnDataType = 'string' | 'integer' | 'float' | 'boolean' | 'date' | 'unknown';
+
 export interface UploadedFile {
   id: string;
   name: string;
@@ -42,7 +44,7 @@ export interface FileMetadata {
   datasetProfile?: {
     nRows: number;
     nCols: number;
-    dtypes: Record<string, string>;
+    dtypes: Record<string, ColumnDataType>;
     nullCounts: Record<string, number>;
   };
 

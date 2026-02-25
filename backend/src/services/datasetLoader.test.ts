@@ -70,9 +70,32 @@ describe('datasetLoader', () => {
     });
 
     it('coerces numeric and boolean strings for typed columns', () => {
-      expect(normalizeValueForColumn('42.5', 'number')).toBe(42.5);
+      expect(normalizeValueForColumn('42.5', 'float')).toBe(42.5);
+      expect(normalizeValueForColumn('42', 'integer')).toBe(42);
+      expect(normalizeValueForColumn('42.0', 'integer')).toBe(42);
+      expect(normalizeValueForColumn('2e3', 'integer')).toBe(2000);
+      expect(normalizeValueForColumn('1,234', 'integer')).toBe(1234);
       expect(normalizeValueForColumn('yes', 'boolean')).toBe(true);
-      expect(normalizeValueForColumn('not-a-number', 'number')).toBeNull();
+      expect(normalizeValueForColumn('not-a-number', 'float')).toBeNull();
+      expect(normalizeValueForColumn('42.1', 'integer')).toBeNull();
+    });
+
+    it('treats null-like tokens as null', () => {
+      expect(normalizeValueForColumn('N/A', 'integer')).toBeNull();
+      expect(normalizeValueForColumn('null', 'float')).toBeNull();
+      expect(normalizeValueForColumn(' -- ', 'date')).toBeNull();
+    });
+
+    it('throws in strict mode when coercion fails', () => {
+      expect(() =>
+        normalizeValueForColumn('not-a-number', 'float', { strictMode: true, columnName: 'amount' })
+      ).toThrow(/cannot be coerced to float/);
+    });
+
+    it('does not throw in strict mode for null-like tokens', () => {
+      expect(() =>
+        normalizeValueForColumn('N/A', 'integer', { strictMode: true, columnName: 'position' })
+      ).not.toThrow();
     });
   });
 });

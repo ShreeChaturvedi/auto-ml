@@ -9,9 +9,14 @@ import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../services/datasetLoader.js';
+import {
+  loadDatasetIntoPostgres,
+  normalizeValueForColumn,
+  parseDatasetRows,
+  sanitizeTableName
+} from '../services/datasetLoader.js';
 import { profileDatasetRows } from '../services/datasetProfiler.js';
-import type { DatasetFileType } from '../types/dataset.js';
+import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -22,6 +27,19 @@ const upload = multer({
 
 const datasetUploadSchema = z.object({
   projectId: z.string().optional()
+});
+
+const COLUMN_DATA_TYPES: [ColumnDataType, ...ColumnDataType[]] = [
+  'string',
+  'integer',
+  'float',
+  'boolean',
+  'date',
+  'unknown'
+];
+
+const updateColumnTypeSchema = z.object({
+  dtype: z.enum(COLUMN_DATA_TYPES)
 });
 
 const SUPPORTED_EXTENSIONS: Record<string, DatasetFileType> = {
@@ -105,6 +123,159 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     } catch (error) {
       console.error(`[datasets] Failed to get sample for ${datasetId}`, error);
       return res.status(500).json({ error: 'Failed to retrieve dataset sample' });
+    }
+  });
+
+  router.put('/datasets/:datasetId/columns/:columnName', async (req, res) => {
+    const { datasetId } = req.params;
+    const columnName = req.params.columnName;
+    const parseResult = updateColumnTypeSchema.safeParse(req.body);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ errors: parseResult.error.flatten() });
+    }
+
+    const { dtype } = parseResult.data;
+
+    try {
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        return res.status(404).json({ error: 'Dataset not found' });
+      }
+
+      const existingColumn = dataset.columns.find((column) => column.name === columnName);
+      if (!existingColumn) {
+        return res.status(404).json({ error: `Column not found: ${columnName}` });
+      }
+
+      if (existingColumn.dtype === dtype) {
+        return res.json({
+          dataset: {
+            datasetId: dataset.datasetId,
+            filename: dataset.filename,
+            fileType: dataset.fileType,
+            size: dataset.size,
+            n_rows: dataset.nRows,
+            n_cols: dataset.nCols,
+            columns: dataset.columns.map((column) => column.name),
+            dtypes: Object.fromEntries(dataset.columns.map((column) => [column.name, column.dtype])),
+            null_counts: Object.fromEntries(dataset.columns.map((column) => [column.name, column.nullCount])),
+            sample: dataset.sample,
+            createdAt: dataset.createdAt,
+            updatedAt: dataset.updatedAt,
+            tableName:
+              typeof dataset.metadata?.tableName === 'string'
+                ? dataset.metadata.tableName
+                : sanitizeTableName(dataset.filename, dataset.datasetId)
+          }
+        });
+      }
+
+      const updatedColumns = dataset.columns.map((column) =>
+        column.name === columnName ? { ...column, dtype } : column
+      );
+
+      const datasetDir = join(env.datasetStorageDir, datasetId);
+      const filePath = join(datasetDir, dataset.filename);
+
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ error: 'Dataset file not found on disk' });
+      }
+
+      const buffer = readFileSync(filePath);
+      const rows = parseDatasetRows(buffer, dataset.fileType);
+
+      if (rows.length === 0) {
+        return res.status(400).json({ error: 'Dataset has no rows to validate' });
+      }
+
+      for (let index = 0; index < rows.length; index += 1) {
+        try {
+          normalizeValueForColumn(rows[index][columnName], dtype, {
+            strictMode: true,
+            columnName
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return res.status(400).json({
+            error: 'Type override failed due to incompatible values',
+            details: `Row ${index + 1}: ${message}`
+          });
+        }
+      }
+
+      let tableName =
+        typeof dataset.metadata?.tableName === 'string'
+          ? dataset.metadata.tableName
+          : sanitizeTableName(dataset.filename, dataset.datasetId);
+      let rowsLoaded = dataset.nRows;
+
+      if (hasDatabaseConfiguration()) {
+        try {
+          const loadResult = await loadDatasetIntoPostgres({
+            datasetId: dataset.datasetId,
+            filename: dataset.filename,
+            fileType: dataset.fileType,
+            buffer,
+            columns: updatedColumns,
+            rows,
+            strictMode: true,
+            strictColumnNames: [columnName]
+          });
+          tableName = loadResult.tableName;
+          rowsLoaded = loadResult.rowsLoaded;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return res.status(400).json({
+            error: 'Type override failed during table reload',
+            details: message
+          });
+        }
+      }
+
+      const updatedDataset = await datasetRepository.update(dataset.datasetId, (current) => ({
+        ...current,
+        columns: updatedColumns,
+        nRows: rowsLoaded,
+        metadata: {
+          ...(current.metadata ?? {}),
+          tableName,
+          rowsLoaded
+        }
+      }));
+
+      if (!updatedDataset) {
+        return res.status(404).json({ error: 'Dataset not found' });
+      }
+
+      return res.json({
+        dataset: {
+          datasetId: updatedDataset.datasetId,
+          filename: updatedDataset.filename,
+          fileType: updatedDataset.fileType,
+          size: updatedDataset.size,
+          n_rows: updatedDataset.nRows,
+          n_cols: updatedDataset.nCols,
+          columns: updatedDataset.columns.map((column) => column.name),
+          dtypes: Object.fromEntries(updatedDataset.columns.map((column) => [column.name, column.dtype])),
+          null_counts: Object.fromEntries(
+            updatedDataset.columns.map((column) => [column.name, column.nullCount])
+          ),
+          sample: updatedDataset.sample,
+          createdAt: updatedDataset.createdAt,
+          updatedAt: updatedDataset.updatedAt,
+          tableName
+        }
+      });
+    } catch (error) {
+      console.error(
+        `[datasets] Failed to update column type for dataset ${datasetId}, column ${columnName}`,
+        error
+      );
+      return res.status(500).json({
+        error: 'Failed to update column type',
+        details: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 

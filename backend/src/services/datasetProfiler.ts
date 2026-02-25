@@ -1,6 +1,7 @@
-import type { DatasetFileType, DatasetProfileColumn } from '../types/dataset.js';
+import type { ColumnDataType, DatasetFileType, DatasetProfileColumn } from '../types/dataset.js';
 
 import { parseDatasetRows } from './datasetLoader.js';
+import { coerceBoolean, coerceDate, coerceFloat, isMissingValue } from './valueCoercion.js';
 
 interface ProfileOptions {
   sampleSize?: number;
@@ -49,7 +50,7 @@ function buildColumns(rows: Record<string, unknown>[]): DatasetProfileColumn[] {
       }
       const entry = columns.get(key)!;
       const value = row[key];
-      if (value === null || value === undefined || value === '') {
+      if (isMissingValue(value)) {
         entry.nullCount += 1;
       } else {
         entry.values.push(value);
@@ -69,7 +70,7 @@ function buildColumns(rows: Record<string, unknown>[]): DatasetProfileColumn[] {
     const { dtype, numericValues, dateValues } = inferColumnType(data.values);
     const uniqueStats = buildUniqueStats(data.values);
     const numericStats =
-      dtype === 'number' ? buildNumericStats(numericValues) : undefined;
+      dtype === 'integer' || dtype === 'float' ? buildNumericStats(numericValues) : undefined;
     const dateStats =
       dtype === 'date' ? buildDateStats(dateValues) : undefined;
 
@@ -87,7 +88,7 @@ function buildColumns(rows: Record<string, unknown>[]): DatasetProfileColumn[] {
 }
 
 function inferColumnType(values: unknown[]): {
-  dtype: string;
+  dtype: ColumnDataType;
   numericValues: number[];
   dateValues: Date[];
 } {
@@ -100,7 +101,7 @@ function inferColumnType(values: unknown[]): {
   const dateValues: Date[] = [];
 
   for (const value of values) {
-    const numeric = coerceNumber(value);
+    const numeric = coerceFloat(value);
     if (numeric !== null) {
       numericValues.push(numeric);
       continue;
@@ -113,7 +114,7 @@ function inferColumnType(values: unknown[]): {
     }
 
     const dateValue = coerceDate(value);
-    if (dateValue) {
+    if (dateValue !== null) {
       dateValues.push(dateValue);
     }
   }
@@ -124,7 +125,8 @@ function inferColumnType(values: unknown[]): {
   const dateRatio = dateValues.length / total;
 
   if (numericRatio >= 0.9) {
-    return { dtype: 'number', numericValues, dateValues: [] };
+    const isIntegerColumn = numericValues.every((value) => Number.isInteger(value));
+    return { dtype: isIntegerColumn ? 'integer' : 'float', numericValues, dateValues: [] };
   }
   if (booleanRatio >= 0.9) {
     return { dtype: 'boolean', numericValues: [], dateValues: [] };
@@ -135,50 +137,6 @@ function inferColumnType(values: unknown[]): {
 
   return { dtype: 'string', numericValues: [], dateValues: [] };
 }
-
-function coerceBoolean(value: unknown): boolean | null {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const lower = value.trim().toLowerCase();
-    if (lower === 'true') return true;
-    if (lower === 'false') return false;
-  }
-  return null;
-}
-
-function coerceNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed === '') return null;
-    const num = Number(trimmed);
-    return Number.isFinite(num) ? num : null;
-  }
-  return null;
-}
-
-function coerceDate(value: unknown): Date | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed || /^\d+(\.\d+)?$/.test(trimmed)) {
-      return null;
-    }
-    // Guard against Date.parse permissiveness for arbitrary expressions (e.g., "1 = 1").
-    const hasDateLikeDelimiters = /[-/:T]/.test(trimmed);
-    if (!hasDateLikeDelimiters) {
-      return null;
-    }
-    const timestamp = Date.parse(trimmed);
-    if (!Number.isNaN(timestamp)) {
-      return new Date(timestamp);
-    }
-  }
-  return null;
-}
-
 function buildUniqueStats(values: unknown[]): {
   uniqueCount: number;
   topValues: Array<{ value: string; count: number; percentage: number }>;

@@ -97,7 +97,7 @@ export const UiSectionSchema = z.object({
 
 export const UiSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training', 'onboarding']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding', 'preprocessing']),
   title: z.string().optional(),
   summary: z.string().optional(),
   sections: z.array(UiSectionSchema)

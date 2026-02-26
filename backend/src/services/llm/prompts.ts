@@ -187,6 +187,86 @@ export function buildTrainingRequest(params: {
   };
 }
 
+export function buildPreprocessingRequest(params: {
+  dataset: DatasetProfile;
+  prompt?: string;
+  projectPlan?: string;
+  ragSnippets?: Array<{ filename: string; snippet: string }>;
+  toolResults?: ToolResult[];
+  toolCallHistory?: LlmToolCallHistory[];
+  toolResultHistory?: LlmToolResultHistory[];
+  toolDefinitions?: LlmToolDefinition[];
+  enableThinking?: boolean;
+  thinkingLevel?: LlmThinkingLevel;
+}): LlmRequest {
+  const {
+    dataset,
+    prompt,
+    projectPlan,
+    ragSnippets,
+    toolResults,
+    toolCallHistory,
+    toolResultHistory,
+    toolDefinitions,
+    enableThinking,
+    thinkingLevel
+  } = params;
+
+  const tools = toolDefinitions ?? LLM_ALL_TOOLS;
+  const systemPrompt = `${projectPlan?.trim()
+    ? `${buildSystemPrompt()}\n\n## Project Plan (approved by user)\n${projectPlan}\n\nFollow this plan closely while adapting transformations to observed data issues.`
+    : buildSystemPrompt()}
+
+PREPROCESSING CONTRACT:
+- Notebook code and execution are the source of truth.
+- Always use semantic stage tools for each step lifecycle:
+  1) propose_transformation_step
+  2) materialize_step_code
+  3) write_cell / run_cell (or edit_cell / run_cell)
+  4) execute_transformation_step
+  5) validate_step_result
+  6) commit_transformation_step
+- Keep stable step_id across the full lifecycle.
+- Prefer one transformation step per response cycle unless steps are tightly coupled.
+- For risky operations (dropping columns, outlier removal, custom code), set validate_step_result.requiresApproval=true.
+- If notebook execution fails, surface precise errors and revise code before committing.
+- Never claim a step is committed without a successful execute + validate path.`;
+
+  const userContent = [
+    `Goal: perform deterministic preprocessing for dataset "${dataset.filename}".`,
+    prompt ? `User instruction: ${prompt}` : 'User instruction: suggest a safe next preprocessing step.',
+    `Dataset summary: ${dataset.nRows} rows, ${dataset.nCols} columns.`,
+    `Columns: ${dataset.columns.map((column) => `${column.name} (${column.dtype})`).join(', ')}`,
+    dataset.sample?.length
+      ? `Sample rows: ${JSON.stringify(dataset.sample.slice(0, 5))}`
+      : 'Sample rows: (none)',
+    ragSnippets?.length
+      ? `RAG snippets:\n${ragSnippets.map((doc, index) => `${index + 1}. ${doc.filename}: ${doc.snippet}`).join('\n')}`
+      : 'RAG snippets: (none)',
+    toolResults?.length
+      ? `Recent tool results: ${toolResults.map((result) => `${result.tool}: ${result.error ?? 'ok'}`).join(', ')}`
+      : 'Recent tool results: (none)',
+    'Use set_active_dataset when dataset context is not established in this run.',
+    'Use checkpoint_dataset after committed high-impact changes.'
+  ].join('\n');
+
+  return {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent }
+    ],
+    temperature: 0.25,
+    maxOutputTokens: 4096,
+    tools,
+    toolChoice: 'auto',
+    toolCallHistory,
+    toolResultHistory,
+    enableThinking,
+    thinkingLevel,
+    contextId: dataset.projectId ?? dataset.datasetId
+  };
+}
+
 export function buildOnboardingRequest(opts: {
   projectTitle: string;
   projectDescription: string;

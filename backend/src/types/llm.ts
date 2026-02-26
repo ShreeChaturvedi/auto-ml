@@ -2,9 +2,21 @@ import { z } from 'zod';
 
 export const ToolNameSchema = z.enum([
   'list_project_files',
+  'list_project_datasets',
+  'set_active_dataset',
+  'profile_active_dataset',
   'get_dataset_profile',
   'get_dataset_sample',
   'search_documents',
+  'checkpoint_dataset',
+  'register_derived_dataset',
+  'list_checkpoints',
+  'restore_checkpoint',
+  'propose_transformation_step',
+  'materialize_step_code',
+  'execute_transformation_step',
+  'validate_step_result',
+  'commit_transformation_step',
   'ask_user',
   'plan_exit',
   'list_cells',
@@ -68,7 +80,7 @@ export const PlanExitPayloadSchema = z.object({
 
 export const LlmEnvelopeSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training', 'onboarding']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding', 'preprocessing']),
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
   ask_user: AskUserPayloadSchema.optional(),

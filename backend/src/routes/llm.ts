@@ -17,8 +17,20 @@ import {
   type LlmRequest,
   type LlmThinkingLevel
 } from '../services/llm/llmClient.js';
-import { buildFeatureEngineeringRequest, buildOnboardingRequest, buildTrainingRequest } from '../services/llm/prompts.js';
-import { LLM_ALL_TOOLS, LLM_ONBOARDING_TOOLS, LLM_RENDER_UI_TOOL, LLM_TOOL_DEFINITIONS } from '../services/llm/toolRegistry.js';
+import { executePreprocessingTool, isPreprocessingToolName } from '../services/llm/preprocessingGraph.js';
+import {
+  buildFeatureEngineeringRequest,
+  buildOnboardingRequest,
+  buildPreprocessingRequest,
+  buildTrainingRequest
+} from '../services/llm/prompts.js';
+import {
+  LLM_ALL_TOOLS,
+  LLM_ONBOARDING_TOOLS,
+  LLM_PREPROCESSING_TOOLS,
+  LLM_RENDER_UI_TOOL,
+  LLM_TOOL_DEFINITIONS
+} from '../services/llm/toolRegistry.js';
 import { listMcpToolsForLlm, executeMcpTool } from '../services/mcp/mcpAdapter.js';
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../types/llm.js';
 import type { LlmEnvelope } from '../types/llm.js';
@@ -95,18 +107,18 @@ export function createLlmRouter() {
 
     const { projectId, toolCalls } = parsed.data;
 
-    // Execute tools via MCP protocol
-    const results = await Promise.all(
-      toolCalls.map(async (call) => {
-        const result = await executeMcpTool(projectId, call.tool, call.args ?? {});
-        return {
-          id: call.id,
-          tool: call.tool,
-          output: result.output,
-          error: result.error
-        };
-      })
-    );
+    const results = [];
+    for (const call of toolCalls) {
+      const result = isPreprocessingToolName(call.tool)
+        ? await executePreprocessingTool(projectId, call.tool, call.args ?? {})
+        : await executeMcpTool(projectId, call.tool, call.args ?? {});
+      results.push({
+        id: call.id,
+        tool: call.tool,
+        output: result.output,
+        error: result.error
+      });
+    }
 
     return res.json({ results });
   });
@@ -275,6 +287,14 @@ export function createLlmRouter() {
 
     const ragSnippets = await loadRagSnippets(parsed.data.projectId, parsed.data.prompt ?? dataset.filename);
     const project = await projectRepository.getById(parsed.data.projectId);
+    const feGate = getFeatureEngineeringGateState(project?.metadata);
+    if (feGate.requiresApproval && !feGate.hasApprovedVersion) {
+      return res.status(409).json({
+        code: 'FE_PIPELINE_APPROVAL_REQUIRED',
+        error: 'Training is blocked until an approved feature engineering pipeline is available.'
+      });
+    }
+
     const projectPlan = typeof project?.metadata?.projectPlan === 'string'
       ? project.metadata.projectPlan
       : undefined;
@@ -312,6 +332,59 @@ export function createLlmRouter() {
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'training');
+  });
+
+  router.post('/llm/preprocessing/stream', async (req, res) => {
+    const parsed = planSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+
+    if (!parsed.data.datasetId) {
+      return res.status(400).json({ error: 'datasetId is required' });
+    }
+
+    const dataset = await datasetRepository.getById(parsed.data.datasetId);
+    if (!dataset) {
+      return res.status(404).json({ error: 'Dataset not found' });
+    }
+
+    const ragSnippets = await loadRagSnippets(parsed.data.projectId, parsed.data.prompt ?? dataset.filename);
+    const project = await projectRepository.getById(parsed.data.projectId);
+    const projectPlan = typeof project?.metadata?.projectPlan === 'string'
+      ? project.metadata.projectPlan
+      : undefined;
+
+    const toolCallHistory = parsed.data.toolCalls?.map((call) => ({
+      name: call.tool,
+      args: call.args ?? {},
+      thoughtSignature: call.thoughtSignature
+    }));
+    const toolResultHistory = parsed.data.toolResults?.map((result) => ({
+      name: result.tool,
+      response: result.error ? { error: result.error } : { output: result.output }
+    }));
+
+    const request = buildPreprocessingRequest({
+      dataset,
+      prompt: parsed.data.prompt,
+      projectPlan,
+      ragSnippets,
+      toolResults: parsed.data.toolResults,
+      toolCallHistory,
+      toolResultHistory,
+      toolDefinitions: LLM_PREPROCESSING_TOOLS,
+      enableThinking: parsed.data.enableThinking,
+      thinkingLevel: parsed.data.thinkingLevel
+    });
+
+    const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
+      ? parsed.data.model
+      : undefined;
+    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
+      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
+    await streamLlmResponse(res, client, request, 'preprocessing');
   });
 
   // DEBUG ENDPOINT
@@ -366,11 +439,37 @@ async function loadRagSnippets(projectId: string, query: string) {
   }));
 }
 
+function getFeatureEngineeringGateState(metadata: unknown): {
+  requiresApproval: boolean;
+  hasApprovedVersion: boolean;
+} {
+  if (!metadata || typeof metadata !== 'object') {
+    return { requiresApproval: false, hasApprovedVersion: false };
+  }
+
+  const record = metadata as Record<string, unknown>;
+  const requiresApproval = record.feWorkflowVersion === 2;
+  if (!requiresApproval) {
+    return { requiresApproval: false, hasApprovedVersion: false };
+  }
+
+  const versions = Array.isArray(record.pipelineVersions) ? record.pipelineVersions : [];
+  const hasApprovedVersion = versions.some((version) => {
+    if (!version || typeof version !== 'object') {
+      return false;
+    }
+
+    return (version as Record<string, unknown>).status === 'approved';
+  });
+
+  return { requiresApproval, hasApprovedVersion };
+}
+
 async function streamLlmResponse(
   res: Response,
   client: LlmClient,
   request: LlmRequest,
-  kind: 'feature_engineering' | 'training' | 'onboarding'
+  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing'
 ) {
   res.setHeader('Content-Type', 'application/x-ndjson');
   res.setHeader('Cache-Control', 'no-cache');
@@ -680,14 +779,17 @@ function normalizePlanExitPayload(
   return parsed.success ? parsed.data : null;
 }
 
-function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'training' | 'onboarding') {
+function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing') {
   if (!payload || typeof payload !== 'object') {
     return { version: '1', kind, sections: [] };
   }
   const candidate = payload as Record<string, unknown>;
   const normalized = {
     version: candidate.version === '1' ? '1' : '1',
-    kind: candidate.kind === 'feature_engineering' || candidate.kind === 'training' || candidate.kind === 'onboarding'
+    kind: candidate.kind === 'feature_engineering'
+      || candidate.kind === 'training'
+      || candidate.kind === 'onboarding'
+      || candidate.kind === 'preprocessing'
       ? candidate.kind
       : kind,
     title: typeof candidate.title === 'string' ? candidate.title : undefined,

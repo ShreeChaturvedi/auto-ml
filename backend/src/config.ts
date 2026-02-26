@@ -43,6 +43,7 @@ export const env = {
   port: parsePort(process.env.PORT),
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
   storagePath: process.env.STORAGE_PATH ?? 'storage/projects.json',
+  preprocessingRunsPath: process.env.PREPROCESSING_RUNS_PATH ?? 'storage/preprocessing/runs.json',
   datasetStorageDir: process.env.DATASET_STORAGE_DIR ?? 'storage/datasets/files',
   datasetUploadMaxMb: parseInteger(process.env.DATASET_UPLOAD_MAX_MB, 300),
   documentStorageDir: process.env.DOCUMENT_STORAGE_DIR ?? 'storage/documents/files',

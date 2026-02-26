@@ -84,7 +84,7 @@ function sanitizeDescription(text: string): string {
 
   // Remove badge images (common in READMEs) - lines with multiple [![...](...)]
   cleaned = cleaned.replace(/^\[!\[.*?\]\(.*?\)\]\(.*?\)\s*$/gm, '');
-  cleaned = cleaned.replace(/!\[.*?\]\(https:\/\/[^\)]+\)/g, '');
+  cleaned = cleaned.replace(/!\[.*?\]\(https:\/\/[^)]+\)/g, '');
 
   // Convert RST-style headers to markdown
   // Pattern: line of text followed by a line of only = or - chars
@@ -113,8 +113,8 @@ function sanitizeDescription(text: string): string {
   cleaned = processedLines.join('\n');
 
   // Convert RST code blocks (:: at end of line followed by indented block)
-  cleaned = cleaned.replace(/::\s*\n\n((?:    .+\n?)+)/g, (_, code) => {
-    const unindented = code.split('\n').map((l: string) => l.replace(/^    /, '')).join('\n');
+  cleaned = cleaned.replace(/::\s*\n\n((?: {4}.+\n?)+)/g, (_, code) => {
+    const unindented = code.split('\n').map((l: string) => l.replace(/^ {4}/, '')).join('\n');
     return '\n```\n' + unindented.trim() + '\n```\n';
   });
 

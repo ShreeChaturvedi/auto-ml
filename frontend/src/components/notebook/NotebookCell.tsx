@@ -42,7 +42,7 @@ import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { initMonaco } from '@/lib/monaco/preloader';
 import { getPythonCompletions, type PythonCompletion } from '@/lib/api/notebooks';
-import type { languages, IDisposable, editor, CancellationToken, Position } from 'monaco-editor';
+import type { languages, IDisposable, editor, Position } from 'monaco-editor';
 
 // Python completion items for basic autocomplete
 const PYTHON_COMPLETIONS: Array<{ label: string; kind: 'keyword' | 'function' | 'module' }> = [
@@ -384,9 +384,7 @@ export function NotebookCellComponent({
                     triggerCharacters: ['.', ' ', '/', '"', "'", '('],
                     provideCompletionItems: async (
                       model: editor.ITextModel,
-                      position: Position,
-                      _context: languages.CompletionContext,
-                      _token: CancellationToken
+                      position: Position
                     ): Promise<languages.CompletionList> => {
                       const word = model.getWordUntilPosition(position);
                       const range = {

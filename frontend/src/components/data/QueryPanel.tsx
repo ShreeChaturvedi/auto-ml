@@ -212,7 +212,6 @@ export function QueryPanel({
   // Detect if user is on Mac for keyboard shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
-  const primaryTableName = tableNames[0];
 
   // Collapsed state - clickable bar to expand
   if (collapsed) {
@@ -286,12 +285,6 @@ export function QueryPanel({
           </Button>
         </div>
 
-        {primaryTableName && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            SQL table name:{' '}
-            <code className="font-mono text-foreground">{quoteSqlIdentifier(primaryTableName)}</code>
-          </p>
-        )}
       </div>
 
       {/* Query Input */}

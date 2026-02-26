@@ -9,17 +9,18 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
 import { executeToolCalls, streamFeaturePlan } from '@/lib/api/llm';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
-import type { FeatureSpec, FeatureMethod, FeatureCategory } from '@/types/feature';
+import type { FeatureSpec, FeatureMethod, FeatureCategory, ReadinessReport, TransformationStep } from '@/types/feature';
 import { FEATURE_TEMPLATES } from '@/types/feature';
 import type { ToolCall, ToolResult, UiItem, UiSchema } from '@/types/llmUi';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { cn } from '@/lib/utils';
-import { Loader2, Play, Sparkles, Code, AlertTriangle } from 'lucide-react';
+import { Loader2, Play, Sparkles, Code, AlertTriangle, CheckCircle2, History, Info, Plus, Beaker, FileText } from 'lucide-react';
 
 interface FeatureEngineeringPanelProps {
   projectId: string;
@@ -59,6 +60,57 @@ const stripAssistantArtifacts = (text: string) => {
 const hasUiItems = (ui: UiSchema | null): boolean =>
   Boolean(ui?.sections.some((section) => section.items.length > 0));
 
+function buildReadinessReport(features: FeatureSpec[], sourceColumns: string[]): ReadinessReport {
+  const addedColumns = features
+    .map((feature) => feature.featureName)
+    .filter((name): name is string => Boolean(name?.trim()));
+  const uniqueAddedColumns = Array.from(new Set(addedColumns));
+
+  const steps: TransformationStep[] = features.map((feature, index) => ({
+    id: feature.id,
+    name: feature.featureName || `${feature.sourceColumn}_${feature.method}`,
+    rationale: feature.description || `Apply ${feature.method} to ${feature.sourceColumn}`,
+    codeReference: `pipeline.step.${index + 1}:${feature.id}`,
+    method: feature.method,
+    columns: [feature.sourceColumn, feature.secondaryColumn].filter(
+      (column): column is string => Boolean(column)
+    )
+  }));
+
+  const missingSourceColumns = features
+    .filter((feature) => !sourceColumns.includes(feature.sourceColumn))
+    .map((feature) => feature.sourceColumn);
+
+  const warnings: string[] = [];
+  if (features.some((feature) => feature.method === 'target_encode')) {
+    warnings.push('Target encoding requires split-aware fitting to avoid leakage.');
+  }
+  if (missingSourceColumns.length > 0) {
+    warnings.push(`Some source columns are missing in the selected dataset: ${Array.from(new Set(missingSourceColumns)).join(', ')}`);
+  }
+  if (features.length === 0) {
+    warnings.push('No transformations enabled. Pipeline currently preserves raw inputs.');
+  }
+
+  return {
+    dataSummary: {
+      addedColumns: uniqueAddedColumns,
+      removedColumns: [],
+      renamedColumns: [],
+      typeChanges: [],
+      nullDeltas: [],
+      warnings
+    },
+    steps
+  };
+}
+
+function hasRequiredReadinessEvidence(report: ReadinessReport): boolean {
+  return report.steps.length > 0
+    && report.dataSummary.addedColumns.length > 0
+    && Array.isArray(report.dataSummary.warnings);
+}
+
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const allFiles = useDataStore((state) => state.files);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
@@ -67,6 +119,16 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const upsertFeature = useFeatureStore((state) => state.upsertFeature);
   const removeFeature = useFeatureStore((state) => state.removeFeature);
   const hydrateFeatures = useFeatureStore((state) => state.hydrateFromProject);
+  const versions = useFeatureStore((state) => state.versions[projectId] || []);
+  const currentVersionId = useFeatureStore((state) => state.currentVersionId[projectId]);
+  const createDraftVersion = useFeatureStore((state) => state.createDraftVersion);
+  const approveVersion = useFeatureStore((state) => state.approveVersion);
+  const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
+  const updateReadinessReport = useFeatureStore((state) => state.updateReadinessReport);
+
+  const currentVersion = useMemo(() => {
+    return versions.find(v => v.id === currentVersionId) || versions[0];
+  }, [versions, currentVersionId]);
 
   const files = useMemo(
     () => allFiles.filter((file) => file.projectId === projectId),
@@ -81,6 +143,10 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     () => features.filter((feature) => feature.projectId === projectId),
     [features, projectId]
   );
+
+  const activeFeatures = useMemo(() => projectFeatures.filter((f) => f.enabled), [projectFeatures]);
+
+  const isApproved = currentVersion?.status === 'approved';
 
   const featureById = useMemo(() => {
     return new Map(projectFeatures.map((feature) => [feature.id, feature]));
@@ -120,10 +186,30 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     [selectedDatasetFile]
   );
 
+  const computedReadinessReport = useMemo(
+    () => buildReadinessReport(activeFeatures, datasetColumns),
+    [activeFeatures, datasetColumns]
+  );
+  const readinessReport = currentVersion?.readinessReport ?? computedReadinessReport;
+  const isReadyForApproval = Boolean(currentVersion)
+    && activeFeatures.length > 0
+    && hasRequiredReadinessEvidence(readinessReport);
+
   useEffect(() => {
     hydrateFromBackend(projectId);
     hydrateFeatures(projectId);
   }, [projectId, hydrateFromBackend, hydrateFeatures]);
+
+  useEffect(() => {
+    if (versions.length === 0) {
+      createDraftVersion(projectId, 'Draft Pipeline v1');
+      return;
+    }
+
+    if (!currentVersion && versions[0]) {
+      setCurrentVersion(projectId, versions[0].id);
+    }
+  }, [createDraftVersion, currentVersion, projectId, setCurrentVersion, versions]);
 
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
@@ -183,6 +269,18 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
     setSuggestions(nextSuggestions);
   }, [assistantUi, featureById]);
+
+  useEffect(() => {
+    if (!currentVersion) return;
+
+    const nextSerialized = JSON.stringify(computedReadinessReport);
+    const currentSerialized = JSON.stringify(currentVersion.readinessReport);
+    if (nextSerialized === currentSerialized) {
+      return;
+    }
+
+    updateReadinessReport(projectId, currentVersion.id, computedReadinessReport);
+  }, [computedReadinessReport, currentVersion, projectId, updateReadinessReport]);
 
   const resetToolHistory = useCallback(() => {
     toolHistoryRef.current = { calls: [], results: [] };
@@ -591,189 +689,371 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   };
 
   return (
-    <div className="flex h-full border rounded-lg overflow-hidden bg-card">
-      <div className="w-[320px] border-r bg-muted/20 flex flex-col">
-        <div className="p-4 space-y-4">
-          <div className="space-y-2">
-            <Label className="text-workflow-label uppercase tracking-wide">Dataset</Label>
-            <Select
-              value={selectedDataset ?? ''}
-              onValueChange={(value) => setSelectedDataset(value)}
-              disabled={datasetFiles.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose dataset..." />
-              </SelectTrigger>
-              <SelectContent>
-                {datasetFiles.map((file) => (
-                  <SelectItem key={file.id} value={file.id}>
-                    {file.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {datasetFiles.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Upload a dataset to start planning features.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-workflow-label uppercase tracking-wide">Target</Label>
-            <Select
-              value={targetColumn ?? ''}
-              onValueChange={(value) => setTargetColumn(value)}
-              disabled={datasetColumns.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select target column" />
-              </SelectTrigger>
-              <SelectContent>
-                {datasetColumns.map((column) => (
-                  <SelectItem key={column} value={column}>
-                    {column}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-2">
-            <Label className="text-workflow-label uppercase tracking-wide">Goal</Label>
-            <Textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="What should the model learn? Any constraints?"
-              className="min-h-[120px] text-xs"
-            />
-          </div>
-
-          <Button
-            onClick={() => handleGenerate()}
-            disabled={!selectedDatasetFile?.metadata?.datasetId || isGenerating}
-            className="w-full gap-2"
-            variant="outline"
-          >
-            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {isGenerating ? 'Generating plan...' : 'Generate AI plan'}
-          </Button>
-          {isGenerating && (
-            <Button variant="ghost" size="sm" onClick={handleStop} className="w-full">
-              Stop generation
-            </Button>
+    <div className="flex h-full border rounded-lg overflow-hidden bg-card flex-col">
+      {/* Approval Gate Banner */}
+      <div className={cn("px-6 py-3 border-b flex items-center justify-between", 
+        isApproved ? "bg-emerald-500/10 border-emerald-500/20" : "bg-muted/40"
+      )}>
+        <div className="flex items-center gap-3">
+          {isApproved ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+          ) : (
+            <Info className="h-5 w-5 text-muted-foreground" />
           )}
-
-          <Separator />
-
-          <div className="space-y-2">
-            <Label className="text-workflow-label uppercase tracking-wide">Output</Label>
-            <Input
-              value={outputName}
-              onChange={(event) => setOutputName(event.target.value)}
-              placeholder="Optional output filename"
-              className="text-xs"
-            />
-            <Select value={outputFormat} onValueChange={(value) => setOutputFormat(value as typeof outputFormat)}>
-              <SelectTrigger className="h-8">
-                <SelectValue placeholder="Output format" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="csv">CSV</SelectItem>
-                <SelectItem value="json">JSON</SelectItem>
-                <SelectItem value="xlsx">Excel</SelectItem>
-              </SelectContent>
-            </Select>
+          <div>
+            <h3 className="font-semibold text-sm">
+              {isApproved ? 'Pipeline Approved' : 'Approval Gate: Readiness Review'}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {isApproved 
+                ? "This feature engineering pipeline is locked and ready for model training." 
+                : "Review the unified readiness report below and explicitly approve before training can proceed."}
+            </p>
           </div>
-
-          <Button
-            variant="outline"
-            className="w-full gap-2 border-foreground/40 bg-foreground/10 text-foreground hover:bg-foreground/15"
-            onClick={handleApplyFeatures}
-            disabled={applyStatus === 'loading'}
-          >
-            {applyStatus === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Apply features
-          </Button>
-          {applyMessage && (
-            <div className={cn('text-xs', applyStatus === 'error' && 'text-destructive', applyStatus === 'success' && 'text-emerald-600')}>
-              {applyMessage}
-            </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {isApproved ? (
+             <Button variant="outline" size="sm" onClick={() => createDraftVersion(projectId, 'New Draft Pipeline')}>
+               <Plus className="h-4 w-4 mr-2" /> Start New Draft
+             </Button>
+          ) : (
+             <Button 
+               size="sm" 
+               className={cn("gap-2", isReadyForApproval ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "")}
+               disabled={!isReadyForApproval}
+                onClick={() => currentVersion && approveVersion(projectId, currentVersion.id)}
+              >
+                <CheckCircle2 className="h-4 w-4" /> Approve Pipeline
+             </Button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <ScrollArea className="flex-1">
-          <div className="p-6 space-y-4">
-            {cleanedAssistantText && (
-              <Card className="border-muted/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">AI Notes</CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {cleanedAssistantText}
-                </CardContent>
-              </Card>
-            )}
-
-            {assistantError && (
-              <Card className="border-destructive/40 bg-destructive/10">
-                <CardContent className="py-3 text-xs text-destructive flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  {assistantError}
-                </CardContent>
-              </Card>
-            )}
-
-            <ToolIndicator
-              toolCalls={toolCalls}
-              results={toolResults}
-              isRunning={isRunningTools}
-            />
-
-            {hasRenderableAssistantUi ? (
-              <div className="space-y-4">
-                {assistantUi?.sections.map((section) => (
-                  <div key={section.id} className="space-y-3">
-                    {section.title && <p className="text-sm font-semibold">{section.title}</p>}
-                    <div
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left pane: Dataset & Controls */}
+        <div className="w-[300px] border-r bg-muted/10 flex flex-col">
+          <ScrollArea className="flex-1">
+            <div className="p-4 space-y-6">
+              
+              {/* Version Timeline */}
+              <div className="space-y-3">
+                <Label className="text-workflow-label uppercase tracking-wide flex items-center gap-2">
+                  <History className="h-3 w-3" /> Versions
+                </Label>
+                <div className="space-y-2">
+                  {versions.map(v => (
+                    <div 
+                      key={v.id}
+                      onClick={() => setCurrentVersion(projectId, v.id)}
                       className={cn(
-                        section.layout === 'grid' && 'grid gap-3',
-                        section.layout === 'grid' && section.columns === 2 && 'md:grid-cols-2',
-                        section.layout === 'grid' && section.columns === 3 && 'md:grid-cols-3',
-                        (!section.layout || section.layout === 'column') && 'space-y-3'
+                        "text-xs p-2 rounded-md border cursor-pointer transition-colors flex items-center justify-between",
+                        currentVersion?.id === v.id ? "bg-primary/10 border-primary/30" : "bg-card hover:bg-muted"
                       )}
                     >
-                      {section.items.map(renderItem)}
+                      <div className="flex flex-col gap-1">
+                        <span className="font-medium">{v.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{new Date(v.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <Badge variant={v.status === 'approved' ? 'default' : v.status === 'deprecated' ? 'secondary' : 'outline'} className="text-[9px]">
+                        {v.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Data Settings */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-workflow-label uppercase tracking-wide">Dataset</Label>
+                  <Select value={selectedDataset ?? ''} onValueChange={setSelectedDataset} disabled={datasetFiles.length === 0 || isApproved}>
+                    <SelectTrigger className="text-xs h-8"><SelectValue placeholder="Choose dataset..." /></SelectTrigger>
+                    <SelectContent>
+                      {datasetFiles.map((file) => <SelectItem key={file.id} value={file.id}>{file.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-workflow-label uppercase tracking-wide">Target</Label>
+                  <Select value={targetColumn ?? ''} onValueChange={setTargetColumn} disabled={datasetColumns.length === 0 || isApproved}>
+                    <SelectTrigger className="text-xs h-8"><SelectValue placeholder="Select target column" /></SelectTrigger>
+                    <SelectContent>
+                      {datasetColumns.map((column) => <SelectItem key={column} value={column}>{column}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <Separator />
+              
+              {/* Generation Goal */}
+              <div className="space-y-2">
+                <Label className="text-workflow-label uppercase tracking-wide">Goal</Label>
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="What should the model learn? Any constraints?"
+                  className="min-h-[100px] text-xs"
+                  disabled={isApproved}
+                />
+              </div>
+
+              <Button
+                onClick={() => handleGenerate()}
+                disabled={!selectedDatasetFile?.metadata?.datasetId || isGenerating || isApproved}
+                className="w-full gap-2 text-xs h-8"
+                variant="outline"
+              >
+                {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                {isGenerating ? 'Generating...' : 'Generate Plan'}
+              </Button>
+              {isGenerating && (
+                <Button variant="ghost" size="sm" onClick={handleStop} className="w-full h-8 text-xs">
+                  Stop
+                </Button>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-card">
+          <Tabs defaultValue="notebook" className="flex-1 flex flex-col">
+            <div className="border-b px-4 py-2 bg-muted/20">
+              <TabsList className="h-8">
+                <TabsTrigger value="notebook" className="text-xs h-6 px-3"><Beaker className="h-3 w-3 mr-2"/> Notebook</TabsTrigger>
+                <TabsTrigger value="readiness" className="text-xs h-6 px-3 relative">
+                  <FileText className="h-3 w-3 mr-2"/> Readiness Report
+                  {isReadyForApproval && !isApproved && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* NOTEBOOK TAB */}
+            <TabsContent value="notebook" className="flex-1 m-0 overflow-hidden outline-none data-[state=inactive]:hidden flex flex-col">
+              <ScrollArea className="flex-1">
+                <div className="p-6 max-w-4xl mx-auto space-y-6">
+                  {/* Chat / Plan output */}
+                  {cleanedAssistantText && (
+                    <Card className="border-muted/40 shadow-sm">
+                      <CardHeader className="pb-2 bg-muted/20">
+                        <CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary"/> AI Engineer Notes</CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-sm text-muted-foreground whitespace-pre-wrap pt-4">
+                        {cleanedAssistantText}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {assistantError && (
+                    <Card className="border-destructive/40 bg-destructive/10">
+                      <CardContent className="py-3 text-xs text-destructive flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        {assistantError}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <ToolIndicator toolCalls={toolCalls} results={toolResults} isRunning={isRunningTools} />
+
+                  {hasRenderableAssistantUi ? (
+                    <div className="space-y-6">
+                      {assistantUi?.sections.map((section) => (
+                        <div key={section.id} className="space-y-3">
+                          {section.title && <h3 className="text-sm font-semibold">{section.title}</h3>}
+                          <div
+                            className={cn(
+                              section.layout === 'grid' && 'grid gap-3',
+                              section.layout === 'grid' && section.columns === 2 && 'md:grid-cols-2',
+                              section.layout === 'grid' && section.columns === 3 && 'md:grid-cols-3',
+                              (!section.layout || section.layout === 'column') && 'space-y-3'
+                            )}
+                          >
+                            {section.items.map(renderItem)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    !cleanedAssistantText && !assistantError && (
+                      <div className="rounded-lg border border-dashed p-10 flex flex-col items-center justify-center text-center text-sm text-muted-foreground bg-muted/10">
+                        <Beaker className="h-8 w-8 mb-3 opacity-20" />
+                        <p className="font-medium text-foreground">No feature pipeline generated yet</p>
+                        <p className="mt-1">Use the panel on the left to set a goal and generate a plan.</p>
+                      </div>
+                    )
+                  )}
+                </div>
+              </ScrollArea>
+              
+              {/* Optional: Code Preview / Output block (moved to bottom) */}
+              <div className="border-t bg-muted/10 p-4">
+                <div className="max-w-4xl mx-auto flex items-end gap-4">
+                  <div className="flex-1 space-y-2">
+                    <Label className="text-xs">Output Table Name (optional)</Label>
+                    <div className="flex gap-2">
+                      <Input 
+                        value={outputName} 
+                        onChange={(e) => setOutputName(e.target.value)} 
+                        placeholder="e.g. features_v1" 
+                        className="h-8 text-xs bg-card" 
+                        disabled={isApproved}
+                      />
+                      <Select value={outputFormat} onValueChange={(v) => setOutputFormat(v as 'csv' | 'json' | 'xlsx')} disabled={isApproved}>
+                        <SelectTrigger className="w-[100px] h-8 text-xs bg-card"><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectItem value="csv">CSV</SelectItem><SelectItem value="json">JSON</SelectItem></SelectContent>
+                      </Select>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              !cleanedAssistantText && !assistantError && (
-                <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
-                  Generate an AI plan to see feature ideas and controls.
+                  <Button
+                    className="h-8 text-xs gap-2"
+                    onClick={handleApplyFeatures}
+                    disabled={applyStatus === 'loading' || isApproved || activeFeatures.length === 0}
+                  >
+                    {applyStatus === 'loading' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                    Test Run Pipeline
+                  </Button>
                 </div>
-              )
-            )}
+                {applyMessage && (
+                  <div className={cn('text-xs mt-2 max-w-4xl mx-auto', applyStatus === 'error' ? 'text-destructive' : 'text-emerald-600')}>
+                    {applyMessage}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
 
-            {codePreview && (
-              <Card className="border-muted/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Code preview</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <pre className="text-xs rounded-md bg-muted p-3 overflow-x-auto">
-                    {codePreview}
-                  </pre>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </ScrollArea>
+            {/* READINESS REPORT TAB */}
+            <TabsContent value="readiness" className="flex-1 m-0 overflow-hidden outline-none data-[state=inactive]:hidden flex flex-col bg-muted/5">
+              <ScrollArea className="flex-1">
+                <div className="p-6 max-w-3xl mx-auto space-y-8">
+                  <div>
+                    <h2 className="text-lg font-semibold tracking-tight">Unified Readiness Report</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Comprehensive view of pipeline transformations and resulting schema changes.
+                    </p>
+                  </div>
+
+                    {/* Transformation Steps */}
+                    <div className="space-y-4">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <History className="h-4 w-4" /> Transformation Steps
+                    </h3>
+                    {readinessReport.steps.length === 0 ? (
+                       <p className="text-sm text-muted-foreground italic border rounded-md p-4 bg-card">No transformations enabled.</p>
+                     ) : (
+                       <div className="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
+                        {readinessReport.steps.map((step, i) => (
+                          <div key={step.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                            <div className="flex items-center justify-center w-10 h-10 rounded-full border-2 border-background bg-muted shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 text-xs font-semibold">
+                              {i + 1}
+                            </div>
+                            <Card className="w-[calc(100%-3rem)] md:w-[calc(50%-2.5rem)] hover:shadow-md transition-shadow">
+                              <CardContent className="p-4 space-y-2">
+                                <div className="flex justify-between items-start">
+                                  <h4 className="text-sm font-semibold">{step.name}</h4>
+                                  <Badge variant="outline" className="text-[10px] bg-background">{step.method ?? 'custom'}</Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground">{step.rationale}</p>
+                                {step.columns?.length ? (
+                                  <div className="pt-2 flex flex-wrap gap-1">
+                                    {step.columns.map((column) => (
+                                      <span key={column} className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border">
+                                        {column}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                {step.codeReference ? (
+                                  <p className="text-[10px] text-muted-foreground/80 font-mono">ref: {step.codeReference}</p>
+                                ) : null}
+                              </CardContent>
+                            </Card>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Data Change Summary */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <FileText className="h-4 w-4" /> Data Change Summary
+                    </h3>
+                    <Card>
+                      <CardContent className="p-0 divide-y text-sm">
+                        <div className="grid grid-cols-3 divide-x">
+                          <div className="p-4 space-y-1 bg-emerald-500/5">
+                            <p className="text-xs font-medium text-emerald-700">Added Columns</p>
+                            <p className="text-xl font-semibold text-emerald-700">{readinessReport.dataSummary.addedColumns.length}</p>
+                            <p className="text-[10px] text-emerald-600/70 truncate">
+                              {readinessReport.dataSummary.addedColumns.slice(0, 2).join(', ')}
+                              {readinessReport.dataSummary.addedColumns.length > 2 && '...'}
+                            </p>
+                          </div>
+                          <div className="p-4 space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Removed/Renamed</p>
+                            <p className="text-xl font-semibold">
+                              {readinessReport.dataSummary.removedColumns.length + readinessReport.dataSummary.renamedColumns.length}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {readinessReport.dataSummary.removedColumns.length === 0 && readinessReport.dataSummary.renamedColumns.length === 0
+                                ? 'No columns dropped or renamed'
+                                : 'Columns removed/renamed detected'}
+                            </p>
+                          </div>
+                          <div className="p-4 space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Null/NaN Deltas</p>
+                            <p className="text-xl font-semibold">{readinessReport.dataSummary.nullDeltas.length}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {readinessReport.dataSummary.nullDeltas.length > 0 ? 'Null changes captured' : 'No null-change data yet'}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Placeholder Warnings */}
+                        <div className="p-4 bg-amber-500/5">
+                          <p className="text-xs font-medium text-amber-700 flex items-center gap-1 mb-2">
+                            <AlertTriangle className="h-3 w-3" /> Pre-Flight Checks
+                          </p>
+                          <ul className="text-xs text-amber-700 space-y-1 list-disc pl-4">
+                            {readinessReport.dataSummary.warnings.map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {codePreview && (
+                    <div className="space-y-4">
+                       <h3 className="text-sm font-semibold flex items-center gap-2">
+                         <Code className="h-4 w-4" /> Code Reference
+                       </h3>
+                       <Card className="border-muted/40">
+                         <CardContent className="p-0">
+                           <pre className="text-xs bg-muted/50 p-4 overflow-x-auto text-muted-foreground border-b">
+                             {codePreview}
+                           </pre>
+                         </CardContent>
+                       </Card>
+                    </div>
+                  )}
+
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );

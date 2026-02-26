@@ -53,6 +53,14 @@ export async function streamTrainingPlan(
   return streamLlm('/llm/training/stream', request, onEvent, signal);
 }
 
+export async function streamPreprocessingPlan(
+  request: LlmPlanRequest,
+  onEvent: (event: LlmStreamEvent) => void,
+  signal?: AbortSignal
+) {
+  return streamLlm('/llm/preprocessing/stream', request, onEvent, signal);
+}
+
 export async function streamOnboardingPlan(
   request: OnboardingStreamRequest,
   onEvent: (event: LlmStreamEvent) => void,
@@ -82,7 +90,19 @@ async function streamLlm(
   });
 
   if (!response.ok || !response.body) {
-    const message = await response.text().catch(() => '');
+    const rawMessage = await response.text().catch(() => '');
+    let message = rawMessage;
+
+    if (rawMessage) {
+      try {
+        const payload = JSON.parse(rawMessage) as { error?: string; message?: string; code?: string };
+        const baseMessage = payload.error || payload.message || rawMessage;
+        message = payload.code ? `${baseMessage} (${payload.code})` : baseMessage;
+      } catch {
+        message = rawMessage;
+      }
+    }
+
     throw new Error(message || `LLM request failed (${response.status})`);
   }
 

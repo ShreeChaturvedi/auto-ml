@@ -1,17 +1,23 @@
-/**
- * PreprocessingPanel - Main preprocessing control panel
- * 
- * Features:
- * - Table selection from uploaded datasets
- * - Data quality overview
- * - AI-generated preprocessing suggestions as interactive cards
- * - "Express Lane" to apply all recommended settings
- */
-
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+import { AgenticShell } from '@/components/agentic/AgenticShell';
+import { createPreprocessingAdapter } from './PreprocessingAdapter';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -19,309 +25,468 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Loader2,
-  Sparkles,
-  Zap,
-  RotateCcw,
-  Database,
-  AlertTriangle,
-  CheckCircle2,
-  Settings2
-} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
-import { SuggestionCard } from './SuggestionCard';
-import { DataQualityOverview } from './DataQualityOverview';
-import type { Severity } from '@/types/preprocessing';
+import type { TransformationEvent } from '@/types/preprocessing';
+import {
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  Database,
+  Edit3,
+  GitBranch,
+  Loader2,
+  PlayCircle,
+  RefreshCw,
+  ShieldAlert,
+  WandSparkles,
+  XCircle
+} from 'lucide-react';
+
+const STATUS_LABELS: Record<TransformationEvent['status'], string> = {
+  pending: 'Pending',
+  running: 'Running',
+  awaiting_approval: 'Awaiting approval',
+  applied: 'Applied',
+  failed: 'Failed',
+  diverged: 'Diverged'
+};
+
+function statusClassName(status: TransformationEvent['status']): string {
+  if (status === 'applied') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
+  if (status === 'failed') return 'border-red-300 bg-red-50 text-red-700';
+  if (status === 'awaiting_approval') return 'border-amber-300 bg-amber-50 text-amber-700';
+  if (status === 'diverged') return 'border-purple-300 bg-purple-50 text-purple-700';
+  if (status === 'running') return 'border-sky-300 bg-sky-50 text-sky-700';
+  return 'border-muted bg-muted/50 text-muted-foreground';
+}
+
+function summarizeValidation(event: TransformationEvent): string | null {
+  if (!event.validation) {
+    return null;
+  }
+  const { rowCountBefore, rowCountAfter, schemaDrift, notes } = event.validation;
+  if (typeof rowCountBefore === 'number' && typeof rowCountAfter === 'number') {
+    return `Rows ${rowCountBefore} -> ${rowCountAfter}${schemaDrift ? ', schema drift flagged' : ''}`;
+  }
+  if (typeof notes === 'string' && notes.trim()) {
+    return notes;
+  }
+  if (schemaDrift) {
+    return 'Validation flagged schema drift.';
+  }
+  return null;
+}
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
+  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
+  const notebookCells = useNotebookStore((state) => state.cells);
 
-  // Preprocessing store
   const {
-    analysis,
-    metadata,
     tables,
     selectedDatasetId,
+    runId,
+    timeline,
+    replayReport,
     isLoadingTables,
-    isAnalyzing,
-    error,
-    suggestionStates,
+    error: storeError,
     loadTables,
     selectDataset,
-    analyze,
-    enableAllSuggestions,
-    disableAllSuggestions,
-    resetToDefaults
+    approveStep,
+    rejectStep,
+    editStepCode,
+    syncDivergence,
+    evaluateReplayCompatibility,
+    clearRun
   } = usePreprocessingStore();
 
-  // Get tables that correspond to uploaded datasets
-  const availableTables = useMemo(() => tables, [tables]);
+  const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
+  const [datasetSearch, setDatasetSearch] = useState('');
+  const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const [editingCode, setEditingCode] = useState('');
 
-  // Load tables on mount
   useEffect(() => {
     if (projectId) {
       void loadTables(projectId);
     }
   }, [projectId, loadTables]);
 
-  // Group suggestions by severity
-  const groupedSuggestions = useMemo(() => {
-    if (!analysis) return null;
+  useEffect(() => {
+    if (!projectId) return;
+    void initializeNotebook(projectId);
+    return () => disconnectNotebook();
+  }, [disconnectNotebook, initializeNotebook, projectId]);
 
-    const groups: Record<Severity, typeof analysis.suggestions> = {
-      critical: [],
-      high: [],
-      medium: [],
-      low: [],
-      info: []
-    };
-
-    for (const suggestion of analysis.suggestions) {
-      groups[suggestion.severity].push(suggestion);
+  useEffect(() => {
+    if (!selectedDatasetId && tables.length > 0) {
+      setDatasetModalOpen(true);
+      if (!candidateDatasetId) {
+        setCandidateDatasetId(tables[0].datasetId);
+      }
     }
+  }, [candidateDatasetId, selectedDatasetId, tables]);
 
-    return groups;
-  }, [analysis]);
+  useEffect(() => {
+    syncDivergence(notebookCells);
+  }, [notebookCells, syncDivergence]);
 
-  // Count enabled suggestions
-  const enabledCount = useMemo(() => {
-    return Object.values(suggestionStates).filter(s => s.enabled).length;
-  }, [suggestionStates]);
+  const selectedTable = useMemo(
+    () => tables.find((table) => table.datasetId === selectedDatasetId),
+    [tables, selectedDatasetId]
+  );
 
-  const totalCount = analysis?.suggestions.length ?? 0;
+  const filteredTables = useMemo(() => {
+    const query = datasetSearch.trim().toLowerCase();
+    if (!query) return tables;
+    return tables.filter((table) => {
+      return table.filename.toLowerCase().includes(query)
+        || table.name.toLowerCase().includes(query)
+        || table.datasetId.toLowerCase().includes(query);
+    });
+  }, [datasetSearch, tables]);
 
-  // Handle table selection and auto-analyze
-  const handleDatasetSelect = async (datasetId: string) => {
-    selectDataset(datasetId);
-    if (projectId) {
-      await analyze(projectId, datasetId);
-    }
+  const sortedTimeline = useMemo(
+    () => [...timeline].sort((a, b) => a.createdAt - b.createdAt),
+    [timeline]
+  );
+
+  const handleDatasetStart = () => {
+    if (!candidateDatasetId) return;
+    selectDataset(candidateDatasetId);
+    setDatasetModalOpen(false);
   };
 
+  const handleDatasetSelect = (datasetId: string) => {
+    selectDataset(datasetId);
+    clearRun();
+    setCandidateDatasetId(datasetId);
+  };
+
+  const domainAdapter = useMemo(() => {
+    return createPreprocessingAdapter(projectId ?? '', selectedDatasetId, tables);
+  }, [projectId, selectedDatasetId, tables]);
+
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Header - h-14 to align with sidebar */}
-      <div className="flex h-14 items-center justify-between gap-4 px-4 border-b shrink-0">
-        <div className="flex items-center gap-2">
-          <Settings2 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Data Preprocessing</span>
-        </div>
+    <>
+      <AgenticShell
+        projectId={projectId ?? ''}
+        domainAdapter={domainAdapter}
+        storageKey="preprocessing-messages"
+        toolbarLeft={
+          <>
+            <WandSparkles className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-semibold">Agentic Preprocessing</span>
+            {runId ? (
+              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                Run {runId.slice(0, 10)}
+              </Badge>
+            ) : null}
+          </>
+        }
+        toolbarRight={
+          <>
+            <Select
+              value={selectedDatasetId ?? ''}
+              onValueChange={handleDatasetSelect}
+              disabled={isLoadingTables || tables.length === 0}
+            >
+              <SelectTrigger className="h-9 w-[320px]">
+                <Database className="mr-2 h-4 w-4 text-muted-foreground" />
+                <SelectValue placeholder="Select dataset" />
+              </SelectTrigger>
+              <SelectContent>
+                {tables.map((table) => (
+                  <SelectItem key={table.datasetId} value={table.datasetId}>
+                    {table.filename}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        {/* Table selector */}
-        <Select
-          value={selectedDatasetId ?? ''}
-          onValueChange={handleDatasetSelect}
-          disabled={isLoadingTables || availableTables.length === 0}
-        >
-          <SelectTrigger className="w-[250px] h-9">
-            <Database className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Select a dataset..." />
-          </SelectTrigger>
-          <SelectContent>
-            {availableTables.map(table => (
-              <SelectItem key={table.datasetId} value={table.datasetId}>
-                <div className="flex items-center gap-2">
-                  <span>{table.filename}</span>
-                  {table.nRows ? (
-                    <Badge variant="secondary" className="text-xs">
-                      {table.nRows.toLocaleString()} rows
-                    </Badge>
-                  ) : null}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Loading state */}
-      {isAnalyzing && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-            <div>
-              <p className="font-medium">Analyzing dataset...</p>
-              <p className="text-sm text-muted-foreground">
-                Detecting data quality issues and generating suggestions
-              </p>
-            </div>
+            <Button variant="outline" size="sm" onClick={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Replay Check
+            </Button>
+          </>
+        }
+        chatMetaSlot={
+          <div className="hidden items-center gap-2 sm:flex">
+            {selectedTable ? (
+              <Badge variant="outline" className="h-6 max-w-[210px] px-2 text-[11px] font-normal">
+                <span className="truncate" title={selectedTable.filename}>{selectedTable.filename}</span>
+              </Badge>
+            ) : null}
+            {runId ? (
+              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                Active run
+              </Badge>
+            ) : null}
           </div>
-        </div>
-      )}
+        }
+        LeftPaneComponent={({ messages, isGenerating, error: shellError }) => (
+          <div className="mx-auto w-full max-w-5xl space-y-4 p-6 pb-28">
+            {storeError || shellError ? (
+              <Card className="border-red-300 bg-red-50/80">
+                <CardContent className="flex items-center gap-2 p-3 text-sm text-red-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  {storeError || shellError}
+                </CardContent>
+              </Card>
+            ) : null}
 
-      {/* Error state */}
-      {error && !isAnalyzing && (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <Card className="max-w-md border-destructive/50">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
-                <div>
-                  <p className="font-medium">Analysis Failed</p>
-                  <p className="text-sm text-muted-foreground mt-1">{error}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={() =>
-                      selectedDatasetId && projectId && analyze(projectId, selectedDatasetId)
-                    }
-                  >
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Retry
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Empty state - no table selected */}
-      {!selectedDatasetId && !isAnalyzing && !error && (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center space-y-4 max-w-md">
-            <div className="rounded-full bg-muted p-6 w-fit mx-auto">
-              <Sparkles className="h-10 w-10 text-muted-foreground" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold">Select a Dataset</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Choose a dataset from the dropdown above to analyze it for preprocessing recommendations.
-              </p>
-            </div>
-            {availableTables.length === 0 && !isLoadingTables && (
-              <p className="text-sm text-amber-600 dark:text-amber-400">
-                No datasets found. Upload a CSV or JSON file first.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Analysis results */}
-      {analysis && !isAnalyzing && (
-        <ScrollArea className="flex-1">
-          <div className="p-6 space-y-6">
-            {/* Data Quality Overview */}
-            <DataQualityOverview analysis={analysis} metadata={metadata ?? undefined} />
-
-            <Separator />
-
-            {/* Express Lane and controls */}
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Preprocessing Suggestions
-                  <Badge variant="secondary">
-                    {enabledCount} of {totalCount} enabled
-                  </Badge>
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Toggle suggestions on/off and customize methods to prepare your data
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={resetToDefaults}
-                  className="gap-2"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Reset
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={disableAllSuggestions}
-                >
-                  Disable All
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={enableAllSuggestions}
-                  className="gap-2 bg-gradient-to-r from-primary to-primary/80"
-                >
-                  <Zap className="h-4 w-4" />
-                  Express Lane
-                </Button>
-              </div>
-            </div>
-
-            {/* Suggestions grouped by severity */}
-            {groupedSuggestions && (
-              <div className="space-y-6">
-                {/* Critical & High */}
-                {(groupedSuggestions.critical.length > 0 || groupedSuggestions.high.length > 0) && (
+            {!selectedDatasetId ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                  <Database className="h-8 w-8 text-muted-foreground" />
                   <div>
-                    <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-orange-500" />
-                      High Priority Issues
-                    </h4>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {[...groupedSuggestions.critical, ...groupedSuggestions.high].map(s => (
-                        <SuggestionCard key={s.id} suggestion={s} />
-                      ))}
-                    </div>
+                    <p className="text-sm font-medium">Choose a dataset to start preprocessing</p>
+                    <p className="text-xs text-muted-foreground">A first-time modal opens automatically for explicit context selection.</p>
                   </div>
-                )}
+                  <Button variant="outline" onClick={() => setDatasetModalOpen(true)}>Open dataset chooser</Button>
+                </CardContent>
+              </Card>
+            ) : null}
 
-                {/* Medium */}
-                {groupedSuggestions.medium.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-yellow-500" />
-                      Recommended Improvements
-                    </h4>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {groupedSuggestions.medium.map(s => (
-                        <SuggestionCard key={s.id} suggestion={s} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+            {sortedTimeline.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold">Transformation Timeline</h2>
+                  <p className="text-xs text-muted-foreground">Cards are projected from structured tool events.</p>
+                </div>
+                {sortedTimeline.map((event) => {
+                  const validationSummary = summarizeValidation(event);
+                  const isEditing = editingStepId === event.stepId;
 
-                {/* Low & Info */}
-                {(groupedSuggestions.low.length > 0 || groupedSuggestions.info.length > 0) && (
-                  <details className="group">
-                    <summary className="text-sm font-medium cursor-pointer flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
-                      <span className="h-4 w-4 rounded border flex items-center justify-center text-xs group-open:rotate-90 transition-transform">
-                        ▶
-                      </span>
-                      Optional Enhancements ({groupedSuggestions.low.length + groupedSuggestions.info.length})
-                    </summary>
-                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {[...groupedSuggestions.low, ...groupedSuggestions.info].map(s => (
-                        <SuggestionCard key={s.id} suggestion={s} />
-                      ))}
-                    </div>
-                  </details>
-                )}
+                  return (
+                    <Card key={event.id} className={cn('border', event.status === 'diverged' ? 'border-purple-300' : '')}>
+                      <CardHeader className="space-y-2 pb-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <CardTitle className="text-sm font-semibold">{event.title}</CardTitle>
+                            <p className="text-xs text-muted-foreground">{event.toolName} · step {event.stepId.slice(0, 8)}</p>
+                          </div>
+                          <Badge className={cn('border', statusClassName(event.status))}>{STATUS_LABELS[event.status]}</Badge>
+                        </div>
+                        {event.rationale ? <p className="text-xs text-muted-foreground">{event.rationale}</p> : null}
+                      </CardHeader>
 
-                {/* No suggestions */}
-                {totalCount === 0 && (
-                  <Card className="border-dashed">
-                    <CardContent className="py-12 text-center">
-                      <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium">Data Looks Great!</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        No preprocessing issues detected. Your data is ready for feature engineering.
-                      </p>
-                    </CardContent>
-                  </Card>
-                )}
+                      <CardContent className="space-y-3 text-xs">
+                        {event.code ? (
+                          <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">Bound code</span>
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => {
+                                setEditingStepId(event.stepId);
+                                setEditingCode(event.code ?? '');
+                              }}>
+                                <Edit3 className="mr-1 h-3 w-3" />
+                                Edit
+                              </Button>
+                            </div>
+                            {isEditing ? (
+                              <div className="space-y-2">
+                                <textarea
+                                  className="h-32 w-full rounded-md border bg-background p-2 font-mono text-[11px]"
+                                  value={editingCode}
+                                  onChange={(inputEvent) => setEditingCode(inputEvent.target.value)}
+                                />
+                                <div className="flex justify-end gap-2">
+                                  <Button size="sm" variant="outline" onClick={() => setEditingStepId(null)}>Cancel</Button>
+                                  <Button size="sm" onClick={() => {
+                                    editStepCode(event.stepId, editingCode);
+                                    setEditingStepId(null);
+                                    setEditingCode('');
+                                  }}>Save code</Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-background p-2 font-mono text-[11px]">
+                                {event.code}
+                              </pre>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {event.cellIds.length > 0 ? (
+                          <div className="rounded-md border bg-muted/20 p-2">
+                            <p className="mb-1 font-medium">Notebook bindings</p>
+                            <div className="flex flex-wrap gap-1">
+                              {event.cellIds.map((cellId) => (
+                                <Badge key={cellId} variant="outline" className="h-5 px-2 text-[10px]">
+                                  {cellId.slice(0, 8)}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {validationSummary ? (
+                          <div className="rounded-md border bg-muted/20 p-2">
+                            <p className="font-medium">Validation</p>
+                            <p className="text-muted-foreground">{validationSummary}</p>
+                          </div>
+                        ) : null}
+
+                        {event.status === 'awaiting_approval' ? (
+                          <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2">
+                            <ShieldAlert className="h-4 w-4 text-amber-600" />
+                            <span className="text-amber-700">This step requires explicit approval.</span>
+                            <div className="ml-auto flex gap-2">
+                              <Button size="sm" variant="outline" onClick={() => rejectStep(event.stepId, 'Rejected by user')}>
+                                <XCircle className="mr-1 h-3.5 w-3.5" />
+                                Reject
+                              </Button>
+                              <Button size="sm" onClick={() => approveStep(event.stepId)}>
+                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                                Approve
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {event.status === 'diverged' ? (
+                          <div className="rounded-md border border-purple-300 bg-purple-50 p-2 text-purple-700">
+                            Notebook content diverged from the stored step code hash. Edit and re-run to reconcile.
+                          </div>
+                        ) : null}
+
+                        {event.error ? (
+                          <div className="rounded-md border border-red-300 bg-red-50 p-2 text-red-700">
+                            {event.error}
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
-            )}
+            ) : null}
+
+            {messages.length > 0 ? (
+              <div className="space-y-2 mt-6">
+                <h2 className="text-sm font-semibold">Assistant Notes</h2>
+                {messages.map((message) => {
+                  if (message.type !== 'assistant_text' && message.type !== 'user') return null;
+                  return (
+                    <Card key={message.id}>
+                      <CardContent className={cn('p-3 text-sm', message.type === 'user' ? 'bg-primary/5' : '')}>
+                        {message.type === 'assistant_text' ? (
+                          <div className="max-w-none [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-1">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2">
+                            <Bot className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                            <span>{message.content}</span>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {replayReport ? (
+              <Card className={cn(replayReport.compatible ? 'border-emerald-300' : 'border-amber-300')}>
+                <CardContent className="space-y-2 p-3 text-sm">
+                  <div className="flex items-center gap-2 font-medium">
+                    <GitBranch className="h-4 w-4" />
+                    Replay compatibility {replayReport.compatible ? 'passed' : 'needs attention'}
+                  </div>
+                  {!replayReport.compatible ? (
+                    <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                      {replayReport.issues.map((issue, index) => (
+                        <li key={`${issue}-${index}`}>{issue}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No replay blockers detected against current dataset schema.</p>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {isGenerating ? (
+              <div className="inline-flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Streaming preprocessing graph events...
+              </div>
+            ) : null}
           </div>
-        </ScrollArea>
-      )}
-    </div>
+        )}
+      />
+
+      <Dialog open={isDatasetModalOpen} onOpenChange={setDatasetModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Select a dataset to start preprocessing</DialogTitle>
+            <DialogDescription>
+              Pick the exact dataset context for this run. We avoid implicit defaults to keep lineage deterministic.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              value={datasetSearch}
+              onChange={(event) => setDatasetSearch(event.target.value)}
+              placeholder="Search datasets by filename or id..."
+            />
+
+            <ScrollArea className="h-64 rounded-md border">
+              <div className="space-y-2 p-2">
+                {filteredTables.map((table) => {
+                  const selected = candidateDatasetId === table.datasetId;
+                  return (
+                    <button
+                      type="button"
+                      key={table.datasetId}
+                      onClick={() => setCandidateDatasetId(table.datasetId)}
+                      className={cn(
+                        'w-full rounded-md border p-3 text-left transition-colors',
+                        selected ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40'
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-medium">{table.filename}</p>
+                        <Badge variant="outline" className="text-[10px]">{table.nRows ?? 0} x {table.nCols ?? 0}</Badge>
+                      </div>
+                      {table.columns?.length ? (
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          Columns: {table.columns.slice(0, 4).map((column) => column.name).join(', ')}
+                        </p>
+                      ) : null}
+                      {table.previewRows?.length ? (
+                        <pre className="mt-2 overflow-x-auto rounded bg-muted/40 p-2 text-[10px]">
+                          {JSON.stringify(table.previewRows[0], null, 2)}
+                        </pre>
+                      ) : null}
+                    </button>
+                  );
+                })}
+
+                {filteredTables.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
+                    No datasets match your search.
+                  </div>
+                ) : null}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDatasetModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleDatasetStart} disabled={!candidateDatasetId}>
+              Start with this dataset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

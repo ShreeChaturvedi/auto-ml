@@ -175,9 +175,8 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   }, [metadata]);
   const selectedPlanId = activePlanId ?? plans[0]?.id;
   const currentPhase = project?.currentPhase;
-  const currentPhaseLabel = currentPhase
-    ? phaseConfig[currentPhase].label
-    : 'the current step';
+  const currentPhaseConfig = currentPhase ? phaseConfig[currentPhase] : undefined;
+  const currentPhaseLabel = currentPhaseConfig?.label ?? 'the current step';
 
   const handleOpenFile = useCallback((fileId: string) => {
     if (!isDataViewerUnlocked) {

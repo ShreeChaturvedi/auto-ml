@@ -21,9 +21,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
 import { NotebookCellComponent } from './NotebookCell';
 import { useNotebookStore } from '@/stores/notebookStore';
-import { Loader2, Code, Type, MoreHorizontal, Plus } from 'lucide-react';
+import { Loader2, Code, Type, MoreHorizontal, Plus, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCellType } from '@/types/notebook';
 
@@ -113,6 +120,26 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
 
   const canDeleteNotebook = useMemo(() => notebooks.length > 1, [notebooks.length]);
 
+  // Calculate the next notebook number for auto-fill
+  const nextNotebookNumber = useMemo(() => {
+    const maxNum = notebooks.reduce((max, nb) => {
+      const match = nb.name.match(/^Notebook (\d+)$/);
+      if (match) {
+        return Math.max(max, parseInt(match[1], 10));
+      }
+      return max;
+    }, 0);
+    return maxNum + 1;
+  }, [notebooks]);
+
+  // Reset create name when dialog opens
+  const handleCreateDialogOpen = useCallback((open: boolean) => {
+    setCreateDialogOpen(open);
+    if (open) {
+      setCreateName(`Notebook ${nextNotebookNumber}`);
+    }
+  }, [nextNotebookNumber]);
+
   const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
     await createCell({
       content: '',
@@ -181,63 +208,75 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
   return (
     <div className={cn('flex h-full flex-col', className)}>
       <div className="border-b">
-        <div className="flex items-center gap-2 px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-            {notebooks.map((entry) => (
-              <Button
-                key={entry.notebookId}
-                variant={entry.notebookId === activeNotebookId ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 max-w-[190px] shrink-0 px-2 text-xs"
-                onClick={() => void setActiveNotebook(entry.notebookId)}
-              >
-                <span className="truncate">{entry.name}</span>
-              </Button>
-            ))}
+        {/* Single merged row: notebook selector + add cell buttons */}
+        <div className="flex h-10 items-center justify-between px-3">
+          <div className="flex items-center gap-2">
+            {/* Notebook selector dropdown */}
+            <Select
+              value={activeNotebookId ?? ''}
+              onValueChange={(value) => {
+                if (value) {
+                  void setActiveNotebook(value);
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 w-[180px] text-xs">
+                <SelectValue placeholder="Select notebook" />
+              </SelectTrigger>
+              <SelectContent>
+                {notebooks.map((entry) => (
+                  <SelectItem key={entry.notebookId} value={entry.notebookId}>
+                    {entry.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* + button to create new notebook */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setCreateDialogOpen(true)}
+              disabled={isSaving}
+              title="Create new notebook"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+
+            {/* More options dropdown (Rename/Delete) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!notebook}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={openRenameDialog}>
+                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={handleDeleteNotebook}
+                  className="text-destructive focus:text-destructive"
+                  disabled={!canDeleteNotebook}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={() => setCreateDialogOpen(true)}
-            disabled={isSaving}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Notebook
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!notebook}>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={openRenameDialog}>
-                Rename notebook
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={handleDeleteNotebook}
-                className="text-destructive focus:text-destructive"
-                disabled={!canDeleteNotebook}
-              >
-                Delete notebook
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="flex h-10 items-center justify-between px-4">
-          <span className="truncate text-sm font-medium">{notebook?.name ?? 'Notebook'}</span>
+          {/* Add cell buttons (Code and Text) */}
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => handleAddCell('code')}
               disabled={isSaving || !notebook}
-              className="h-7 gap-1 px-2 text-xs"
+              className="h-7 px-2"
               title="Add code cell"
             >
               {isSaving ? (
@@ -245,18 +284,16 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
               ) : (
                 <Code className="h-3.5 w-3.5" />
               )}
-              Code
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => handleAddCell('markdown')}
               disabled={isSaving || !notebook}
-              className="h-7 gap-1 px-2 text-xs"
+              className="h-7 px-2"
               title="Add text cell"
             >
               <Type className="h-3.5 w-3.5" />
-              Text
             </Button>
           </div>
         </div>
@@ -322,7 +359,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
         </div>
       </ScrollArea>
 
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+      <Dialog open={createDialogOpen} onOpenChange={handleCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create notebook</DialogTitle>
@@ -333,7 +370,12 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
           <Input
             value={createName}
             onChange={(event) => setCreateName(event.target.value)}
-            placeholder="Notebook name (optional)"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                void handleCreateNotebook();
+              }
+            }}
+            placeholder="Notebook name"
             autoFocus
           />
           <DialogFooter>

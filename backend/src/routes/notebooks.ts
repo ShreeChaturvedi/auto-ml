@@ -1,11 +1,12 @@
-import { Router, type Request, type Response } from 'express';
-import { z } from 'zod';
 import { existsSync } from 'node:fs';
 
-import * as notebookService from '../services/notebook/notebookService.js';
-import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
-import { getCompletions } from '../services/containerManager.js';
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+
 import { hasDatabaseConfiguration } from '../db.js';
+import { getCompletions } from '../services/containerManager.js';
+import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
+import * as notebookService from '../services/notebook/notebookService.js';
 import type { CellType } from '../types/notebook.js';
 
 const router = Router();
@@ -77,6 +78,112 @@ router.use(requireDatabase);
 // ============================================================
 // Notebook Endpoints
 // ============================================================
+
+const createNotebookSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional()
+});
+
+const renameNotebookSchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
+/**
+ * GET /api/projects/:projectId/notebooks
+ * List notebooks for a project.
+ */
+router.get('/projects/:projectId/notebooks', async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const notebooks = await notebookService.listProjectNotebooks(projectId);
+    res.json(notebooks);
+  } catch (error) {
+    console.error('[notebooks] Error listing notebooks:', error);
+    res.status(500).json({
+      error: 'Failed to list notebooks',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/projects/:projectId/notebooks
+ * Create a notebook for a project.
+ */
+router.post('/projects/:projectId/notebooks', async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const parsed = createNotebookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid request body',
+        details: parsed.error.issues
+      });
+      return;
+    }
+
+    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name);
+    res.status(201).json(notebook);
+  } catch (error) {
+    console.error('[notebooks] Error creating notebook:', error);
+    res.status(500).json({
+      error: 'Failed to create notebook',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * PATCH /api/notebooks/:notebookId
+ * Rename a notebook.
+ */
+router.patch('/notebooks/:notebookId', async (req: Request, res: Response) => {
+  try {
+    const { notebookId } = req.params;
+    const parsed = renameNotebookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid request body',
+        details: parsed.error.issues
+      });
+      return;
+    }
+
+    const notebook = await notebookService.renameProjectNotebook(notebookId, parsed.data.name);
+    res.json(notebook);
+  } catch (error) {
+    console.error('[notebooks] Error renaming notebook:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const status = message.includes('not found') ? 404 : 500;
+    res.status(status).json({
+      error: 'Failed to rename notebook',
+      message
+    });
+  }
+});
+
+/**
+ * DELETE /api/projects/:projectId/notebooks/:notebookId
+ * Delete a notebook from a project.
+ */
+router.delete('/projects/:projectId/notebooks/:notebookId', async (req: Request, res: Response) => {
+  try {
+    const { projectId, notebookId } = req.params;
+    const result = await notebookService.deleteProjectNotebook(projectId, notebookId);
+    res.json(result);
+  } catch (error) {
+    console.error('[notebooks] Error deleting notebook:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const status = message.includes('last notebook')
+      ? 409
+      : message.includes('not found')
+        ? 404
+        : 500;
+    res.status(status).json({
+      error: 'Failed to delete notebook',
+      message
+    });
+  }
+});
 
 /**
  * GET /api/projects/:projectId/notebook

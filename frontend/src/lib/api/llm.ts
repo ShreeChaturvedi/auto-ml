@@ -69,10 +69,14 @@ export async function streamOnboardingPlan(
   return streamLlm('/llm/onboarding/stream', request, onEvent, signal);
 }
 
-export async function executeToolCalls(projectId: string, toolCalls: ToolCall[]) {
+export async function executeToolCalls(
+  projectId: string,
+  toolCalls: ToolCall[],
+  notebookId?: string
+) {
   return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
     method: 'POST',
-    body: JSON.stringify({ projectId, toolCalls })
+    body: JSON.stringify({ projectId, toolCalls, notebookId })
   });
 }
 

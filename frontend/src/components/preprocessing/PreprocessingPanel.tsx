@@ -30,14 +30,17 @@ import {
 import { cn } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
-import type { TransformationEvent } from '@/types/preprocessing';
+import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
+import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
 import {
   AlertTriangle,
   CheckCircle2,
   Database,
   GitBranch,
   Loader2,
+  Plus,
   PlayCircle,
+  RotateCcw,
   RefreshCw,
   ShieldAlert,
   Wand2,
@@ -59,6 +62,42 @@ const HIDDEN_ACTIVITY_TOOLS = new Set([
   'list_project_datasets',
   'profile_active_dataset'
 ]);
+
+const TAB_ACTION_NEW = '__new_processing_tab__';
+const TAB_ACTION_DELETE = '__delete_processing_tab__';
+
+interface PreprocessingTabSnapshot {
+  selectedDatasetId: string | null;
+  runId: string | null;
+  timeline: TransformationEvent[];
+  stepBindings: Record<string, StepCellBinding>;
+  replayReport: ReplayCompatibilityReport | null;
+}
+
+interface PreprocessingTab {
+  id: string;
+  name: string;
+  snapshot: PreprocessingTabSnapshot;
+  storageVersion: number;
+}
+
+function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
+  return {
+    selectedDatasetId: null,
+    runId: null,
+    timeline: [],
+    stepBindings: {},
+    replayReport: null
+  };
+}
+
+function createTabId(): string {
+  return `proc-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildProcessingStorageKey(tabId: string, storageVersion: number): string {
+  return `preprocessing-messages-v5-${tabId}-${storageVersion}`;
+}
 
 function statusClassName(status: TransformationEvent['status']): string {
   if (status === 'applied') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
@@ -97,6 +136,7 @@ export function PreprocessingPanel() {
     selectedDatasetId,
     runId,
     timeline,
+    stepBindings,
     replayReport,
     isLoadingTables,
     error: storeError,
@@ -112,6 +152,15 @@ export function PreprocessingPanel() {
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<PreprocessingTab[]>([
+    {
+      id: 'processing-tab-1',
+      name: 'Processing 1',
+      snapshot: createEmptyTabSnapshot(),
+      storageVersion: 0
+    }
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>('processing-tab-1');
 
   useEffect(() => {
     if (projectId) {
@@ -140,6 +189,29 @@ export function PreprocessingPanel() {
   useEffect(() => {
     syncDivergence(notebookCells);
   }, [notebookCells, syncDivergence]);
+
+  useEffect(() => {
+    setTabs((previous) => previous.map((tab) => {
+      if (tab.id !== activeTabId) {
+        return tab;
+      }
+      return {
+        ...tab,
+        snapshot: {
+          selectedDatasetId,
+          runId,
+          timeline,
+          stepBindings,
+          replayReport
+        }
+      };
+    }));
+  }, [activeTabId, replayReport, runId, selectedDatasetId, stepBindings, timeline]);
+
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0],
+    [activeTabId, tabs]
+  );
 
   const selectedTable = useMemo(
     () => tables.find((table) => table.datasetId === selectedDatasetId),
@@ -173,6 +245,118 @@ export function PreprocessingPanel() {
     setCandidateDatasetId(datasetId);
   };
 
+  const applyTabSnapshot = (snapshot: PreprocessingTabSnapshot) => {
+    usePreprocessingStore.setState({
+      selectedDatasetId: snapshot.selectedDatasetId,
+      runId: snapshot.runId,
+      timeline: snapshot.timeline,
+      stepBindings: snapshot.stepBindings,
+      replayReport: snapshot.replayReport,
+      error: null
+    });
+    if (!snapshot.selectedDatasetId && tables.length > 0) {
+      setCandidateDatasetId(tables[0].datasetId);
+      setDatasetModalOpen(true);
+    }
+  };
+
+  const handleTabSelect = (value: string) => {
+    if (!activeTab) return;
+
+    if (value === TAB_ACTION_NEW) {
+      const nextIndex = tabs.length + 1;
+      const newTab: PreprocessingTab = {
+        id: createTabId(),
+        name: `Processing ${nextIndex}`,
+        snapshot: createEmptyTabSnapshot(),
+        storageVersion: 0
+      };
+      setTabs((previous) => previous.map((tab) => (
+        tab.id === activeTab.id
+          ? {
+              ...tab,
+              snapshot: {
+                selectedDatasetId,
+                runId,
+                timeline,
+                stepBindings,
+                replayReport
+              }
+            }
+          : tab
+      )).concat(newTab));
+      setActiveTabId(newTab.id);
+      applyTabSnapshot(newTab.snapshot);
+      return;
+    }
+
+    if (value === TAB_ACTION_DELETE) {
+      if (tabs.length <= 1) {
+        return;
+      }
+      const targetIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
+      const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
+      if (!fallbackTab) {
+        return;
+      }
+
+      if (projectId) {
+        const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
+        localStorage.removeItem(`${currentStorageKey}-${projectId}`);
+      }
+
+      setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
+      setActiveTabId(fallbackTab.id);
+      applyTabSnapshot(fallbackTab.snapshot);
+      return;
+    }
+
+    const targetTab = tabs.find((tab) => tab.id === value);
+    if (!targetTab || targetTab.id === activeTab.id) {
+      return;
+    }
+
+    setTabs((previous) => previous.map((tab) => (
+      tab.id === activeTab.id
+        ? {
+            ...tab,
+            snapshot: {
+              selectedDatasetId,
+              runId,
+              timeline,
+              stepBindings,
+              replayReport
+            }
+          }
+        : tab
+    )));
+
+    setActiveTabId(targetTab.id);
+    applyTabSnapshot(targetTab.snapshot);
+  };
+
+  const resetActiveTab = () => {
+    if (!activeTab) return;
+
+    if (projectId) {
+      const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
+      localStorage.removeItem(`${currentStorageKey}-${projectId}`);
+    }
+
+    const nextSnapshot = createEmptyTabSnapshot();
+    setTabs((previous) => previous.map((tab) => (
+      tab.id === activeTab.id
+        ? {
+            ...tab,
+            snapshot: nextSnapshot,
+            storageVersion: tab.storageVersion + 1
+          }
+        : tab
+    )));
+    applyTabSnapshot(nextSnapshot);
+    setDatasetModalOpen(true);
+  };
+
   const domainAdapter = useMemo(() => {
     return createPreprocessingAdapter(projectId ?? '', selectedDatasetId, tables);
   }, [projectId, selectedDatasetId, tables]);
@@ -180,13 +364,33 @@ export function PreprocessingPanel() {
   return (
     <>
       <AgenticShell
+        key={`${activeTab?.id ?? 'processing-tab-1'}-${activeTab?.storageVersion ?? 0}`}
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
-        storageKey="preprocessing-messages"
+        storageKey={buildProcessingStorageKey(
+          activeTab?.id ?? 'processing-tab-1',
+          activeTab?.storageVersion ?? 0
+        )}
         toolbarLeft={
           <>
             <WandSparkles className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-semibold">Agentic Preprocessing</span>
+            <Select value={activeTab?.id ?? ''} onValueChange={handleTabSelect}>
+              <SelectTrigger className="h-8 w-[190px]">
+                <SelectValue placeholder="Processing tab" />
+              </SelectTrigger>
+              <SelectContent>
+                {tabs.map((tab) => (
+                  <SelectItem key={tab.id} value={tab.id}>
+                    {tab.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value={TAB_ACTION_NEW}>+ New Processing Tab</SelectItem>
+                <SelectItem value={TAB_ACTION_DELETE} disabled={tabs.length <= 1}>
+                  Delete Current Tab
+                </SelectItem>
+              </SelectContent>
+            </Select>
             {runId ? (
               <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
                 Run {runId.slice(0, 10)}
@@ -217,6 +421,24 @@ export function PreprocessingPanel() {
             <Button variant="outline" size="sm" onClick={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Replay Check
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={resetActiveTab}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset Tab
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleTabSelect(TAB_ACTION_NEW)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Tab
             </Button>
           </>
         }

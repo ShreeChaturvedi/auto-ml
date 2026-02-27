@@ -56,18 +56,34 @@ const mockState = vi.hoisted(() => ({
   updateReadinessReportMock: vi.fn(),
   initializeNotebookMock: vi.fn(),
   disconnectNotebookMock: vi.fn(),
+  notebookCells: [] as Array<{
+    cellId: string;
+    notebookId: string;
+    cellType: 'code' | 'markdown';
+    title?: string | null;
+    content: string;
+    position: number;
+    executionCount: number;
+    executionStatus: 'idle' | 'running' | 'success' | 'error';
+    createdAt: string;
+    updatedAt: string;
+  }>,
+  createNotebookCellMock: vi.fn(),
+  updateNotebookCellMock: vi.fn(),
   applyFeatureEngineeringMock: vi.fn()
 }));
 
 vi.mock('@/components/agentic/AgenticShell', () => ({
   AgenticShell: ({
     LeftPaneComponent,
+    renderLeftPane,
     toolbarLeft,
     toolbarRight,
     chatMetaSlot,
     domainLockReason
   }: {
-    LeftPaneComponent: React.ComponentType<{ messages: unknown[]; isGenerating: boolean; error: string | null }>;
+    LeftPaneComponent?: React.ComponentType<{ messages: unknown[]; isGenerating: boolean; error: string | null }>;
+    renderLeftPane?: (props: { messages: unknown[]; isGenerating: boolean; error: string | null }) => React.ReactNode;
     toolbarLeft?: React.ReactNode;
     toolbarRight?: React.ReactNode;
     chatMetaSlot?: React.ReactNode;
@@ -78,7 +94,11 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
       <div data-testid="toolbar-right">{toolbarRight}</div>
       <div data-testid="chat-meta">{chatMetaSlot}</div>
       {domainLockReason ? <div data-testid="domain-lock">{domainLockReason}</div> : null}
-      <LeftPaneComponent messages={[]} isGenerating={false} error={null} />
+      {renderLeftPane
+        ? renderLeftPane({ messages: [], isGenerating: false, error: null })
+        : LeftPaneComponent
+          ? <LeftPaneComponent messages={[]} isGenerating={false} error={null} />
+          : null}
     </div>
   )
 }));
@@ -114,7 +134,10 @@ vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: (selector: (state: unknown) => unknown) =>
     selector({
       initializeNotebook: mockState.initializeNotebookMock,
-      disconnect: mockState.disconnectNotebookMock
+      disconnect: mockState.disconnectNotebookMock,
+      cells: mockState.notebookCells,
+      createCell: mockState.createNotebookCellMock,
+      updateCell: mockState.updateNotebookCellMock
     })
 }));
 
@@ -177,6 +200,9 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.updateReadinessReportMock.mockReset();
     mockState.initializeNotebookMock.mockReset();
     mockState.disconnectNotebookMock.mockReset();
+    mockState.notebookCells = [];
+    mockState.createNotebookCellMock.mockReset();
+    mockState.updateNotebookCellMock.mockReset();
     mockState.applyFeatureEngineeringMock.mockReset();
   });
 

@@ -91,6 +91,7 @@ function shouldUseThinkingClient(enableThinking?: boolean, thinkingLevel?: LlmTh
 
 const executeToolsSchema = z.object({
   projectId: z.string().min(1),
+  notebookId: z.string().optional(),
   toolCalls: z.array(ToolCallSchema)
 });
 
@@ -106,13 +107,16 @@ export function createLlmRouter() {
       return res.status(400).json({ error: 'Invalid tool payload', details: parsed.error.issues });
     }
 
-    const { projectId, toolCalls } = parsed.data;
+    const { projectId, notebookId, toolCalls } = parsed.data;
 
     const results = [];
     for (const call of toolCalls) {
       const result = isPreprocessingToolName(call.tool)
         ? await executePreprocessingTool(projectId, call.tool, call.args ?? {})
-        : await executeMcpTool(projectId, call.tool, call.args ?? {});
+        : await executeMcpTool(projectId, call.tool, {
+            ...(call.args ?? {}),
+            ...(notebookId ? { notebookId } : {})
+          });
       results.push({
         id: call.id,
         tool: call.tool,

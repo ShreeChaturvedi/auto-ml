@@ -1,5 +1,5 @@
 import { useMemo, useRef, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
-import { ArrowUp, Brain, Flame, Gauge, Lightbulb, Loader2, Paperclip, Square, Wand2, Zap } from 'lucide-react';
+import { ArrowUp, Brain, Flame, Gauge, Lightbulb, Loader2, Paperclip, RefreshCw, Square, Wand2, X, Zap } from 'lucide-react';
 
 import { GeminiIcon } from '@/components/icons/GeminiIcon';
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,23 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { getModelOption, type AssistantModelOption, type ReasoningEffort, type ReasoningEffortOption, type ReasoningIcon } from './modelOptions';
 
-type AttachmentStatus = 'idle' | 'uploading' | 'success' | 'error';
+export type AttachmentStatus = 'idle' | 'queued' | 'uploading' | 'success' | 'error';
+
+export interface ComposerAttachmentItem {
+  id: string;
+  name: string;
+  status: Exclude<AttachmentStatus, 'idle'>;
+  message?: string | null;
+}
 
 interface AttachmentConfig {
   onAttachFile: (event: ChangeEvent<HTMLInputElement>) => void;
   status: AttachmentStatus;
   message: string | null;
   accept?: string;
+  items?: ComposerAttachmentItem[];
+  onRemoveItem?: (itemId: string) => void;
+  onRetryItem?: (itemId: string) => void;
 }
 
 interface LlmChatComposerProps {
@@ -85,6 +95,10 @@ export function LlmChatComposer({
 }: LlmChatComposerProps) {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const canSend = value.trim().length > 0;
+  const attachmentItems = attachment?.items ?? [];
+  const attachmentSupportLabel = attachment?.accept
+    ? `Supported: ${attachment.accept}`
+    : 'Add document to context';
 
   const currentModelOption = useMemo(() => getModelOption(model), [model]);
   const showThinkingControls = currentModelOption.supportsThinking;
@@ -94,7 +108,54 @@ export function LlmChatComposer({
   const effectiveThinkingEnabled = isThinkingAlwaysOn || enableThinking;
 
   return (
-    <div className={cn('mx-auto space-y-2', maxWidthClassName)}>
+    <div className={cn('mx-auto w-full space-y-2', maxWidthClassName)}>
+      {attachmentItems.length > 0 ? (
+        <div className="flex flex-wrap gap-2 px-1" aria-label="Attachment queue">
+          {attachmentItems.map((item) => (
+            <div
+              key={item.id}
+              className={cn(
+                'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs',
+                item.status === 'queued' && 'border-muted-foreground/30 bg-muted/40 text-foreground',
+                item.status === 'uploading' && 'border-blue-500/30 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+                item.status === 'success' && 'border-green-500/30 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+                item.status === 'error' && 'border-destructive/30 bg-destructive/10 text-destructive',
+              )}
+            >
+              <span className="truncate max-w-[220px]" title={item.name}>
+                {item.name}
+              </span>
+              {item.status === 'uploading' ? (
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              ) : null}
+              {item.status === 'error' && attachment?.onRetryItem ? (
+                <button
+                  type="button"
+                  onClick={() => attachment.onRetryItem?.(item.id)}
+                  className="rounded p-0.5 transition-colors hover:bg-destructive/10"
+                  aria-label={`Retry ${item.name}`}
+                  title="Retry upload"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              ) : null}
+              {attachment?.onRemoveItem ? (
+                <button
+                  type="button"
+                  onClick={() => attachment.onRemoveItem?.(item.id)}
+                  className="rounded p-0.5 transition-colors hover:bg-foreground/10"
+                  aria-label={`Remove ${item.name}`}
+                  title="Remove attachment"
+                  disabled={item.status === 'uploading'}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <InputGroup>
         <InputGroupTextarea
           ref={textareaRef}
@@ -107,8 +168,8 @@ export function LlmChatComposer({
           className="min-h-[60px]"
         />
         <InputGroupAddon align="block-end">
-          <div className="flex items-center justify-between w-full gap-2">
-            <div className="flex items-center gap-2 shrink-0">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               {leftSlot}
               <div className="hidden lg:flex items-center gap-2">
                 <Select value={model} onValueChange={onModelChange}>
@@ -147,11 +208,13 @@ export function LlmChatComposer({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 ml-auto shrink-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
               <span className="hidden sm:inline text-[10px] text-muted-foreground/60">
                 ⇧ + ⏎ for newline
               </span>
-              {metaSlot}
+              <div className="min-w-0 max-w-full overflow-hidden">
+                {metaSlot}
+              </div>
 
               {showThinkingControls && (
                 <TooltipProvider>
@@ -208,7 +271,7 @@ export function LlmChatComposer({
                             : <Paperclip className="h-3.5 w-3.5" />}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="top"><p>Add document to context</p></TooltipContent>
+                      <TooltipContent side="top"><p>{attachmentSupportLabel}</p></TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
 
@@ -240,6 +303,7 @@ export function LlmChatComposer({
       {attachment?.message ? (
         <div className={cn(
           'text-xs px-1',
+          attachment.status === 'queued' && 'text-muted-foreground',
           attachment.status === 'success' && 'text-green-600',
           attachment.status === 'error' && 'text-red-600',
           attachment.status === 'uploading' && 'text-blue-600',

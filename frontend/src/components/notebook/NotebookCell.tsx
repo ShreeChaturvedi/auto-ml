@@ -493,7 +493,8 @@ export function NotebookCellComponent({
                 hideCursorInOverviewRuler: true,
                 scrollbar: {
                   vertical: 'hidden',
-                  horizontal: 'hidden'
+                  horizontal: 'hidden',
+                  alwaysConsumeMouseWheel: false
                 },
                 automaticLayout: true,
                 padding: { top: 8, bottom: 8 },

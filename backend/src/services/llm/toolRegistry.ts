@@ -432,8 +432,23 @@ const NOTEBOOK_EXECUTION_TOOLS = [
   'insert_cell'
 ];
 
+const FEATURE_DISCOVERY_TOOLS = [
+  'list_project_files',
+  'get_dataset_profile',
+  'get_dataset_sample',
+  'search_documents'
+];
+
 export const LLM_ALL_TOOLS: LlmToolDefinition[] = [
   ...LLM_TOOL_DEFINITIONS,
+  LLM_RENDER_UI_TOOL
+];
+
+export const LLM_FEATURE_ENGINEERING_TOOLS: LlmToolDefinition[] = [
+  ...LLM_TOOL_DEFINITIONS.filter((tool) =>
+    FEATURE_DISCOVERY_TOOLS.includes(tool.name) || NOTEBOOK_EXECUTION_TOOLS.includes(tool.name)
+  ),
+  ASK_USER_TOOL,
   LLM_RENDER_UI_TOOL
 ];
 

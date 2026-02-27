@@ -3,7 +3,7 @@
  *
  * Supports various file types:
  * - Structured data: CSV, JSON, Excel
- * - Documents: PDF, Markdown, TXT (Word planned)
+ * - Documents: PDF, Markdown, TXT, DOCX, and common text formats
  * - Note: Images are NOT supported for upload
  */
 
@@ -234,7 +234,19 @@ export const getFileType = (file: File): FileType => {
   if (extension === 'pdf') return 'pdf';
   if (extension === 'md') return 'markdown';
   if (extension === 'docx' || extension === 'doc') return 'word';
-  if (extension === 'txt') return 'text';
+  if (
+    extension === 'txt'
+    || extension === 'text'
+    || extension === 'log'
+    || extension === 'html'
+    || extension === 'htm'
+    || extension === 'xml'
+    || extension === 'yml'
+    || extension === 'yaml'
+    || extension === 'rtf'
+  ) {
+    return 'text';
+  }
 
   return 'other';
 };

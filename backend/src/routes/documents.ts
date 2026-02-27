@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from 'fs';
 import { rm } from 'fs/promises';
 import { dirname } from 'path';
+
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -39,7 +40,7 @@ export function createDocumentRouter() {
     }
 
     try {
-      const parsed = await parseDocument(req.file.buffer, req.file.mimetype);
+      const parsed = await parseDocument(req.file.buffer, req.file.mimetype, req.file.originalname);
       const ingested = await ingestDocument({
         projectId: result.data.projectId,
         filename: req.file.originalname,

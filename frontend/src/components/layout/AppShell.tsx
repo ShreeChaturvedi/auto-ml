@@ -14,7 +14,6 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { ContinueButton } from './ContinueButton';
-import { PlanSelector } from './PlanSelector';
 import { useProjectStore } from '@/stores/projectStore';
 import type { Phase } from '@/types/phase';
 import { cn } from '@/lib/utils';
@@ -56,12 +55,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main Content Area - no top bar, phase content fills entire area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-auto relative">
-          <div className="absolute top-4 right-4 z-50">
-            <PlanSelector />
-          </div>
-          {children}
-        </div>
+        <div className="flex-1 overflow-auto relative">{children}</div>
       </div>
 
       {/* Fixed Continue Button at bottom-right - only shows for uncompleted phases */}

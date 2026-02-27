@@ -29,6 +29,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { X, FileText, FileJson, FileSpreadsheet, Database, FileCode, FileType, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PlanSelector } from '@/components/layout/PlanSelector';
 import { useDataStore } from '@/stores/dataStore';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect } from 'react';
@@ -257,36 +258,56 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
 
   if (orderedTabs.length === 0) {
     return (
-      <div className="flex h-14 items-center border-b border-border bg-card px-4 text-sm text-muted-foreground">
-        No files or queries to display
+      <div className="flex h-14 items-center justify-between gap-3 border-b border-border bg-card px-4">
+        <span className="text-sm text-muted-foreground">No files or queries to display</span>
+        <div className="hidden shrink-0 items-center md:flex">
+          <PlanSelector
+            className="h-8 w-[320px] justify-start bg-background/50 opacity-90 backdrop-blur-sm hover:bg-background hover:opacity-100"
+            menuAlign="end"
+            nameMaxWidthClass="max-w-[250px]"
+            menuContentClassName="w-[320px]"
+          />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="h-14 border-b border-border bg-card">
-      <div className="flex h-full items-center overflow-x-auto scrollbar-thin">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-          modifiers={[restrictToHorizontalAxis]}
-        >
-          <SortableContext items={orderedTabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
-            {orderedTabs.map((tab) => (
-              <SortableTab
-                key={tab.id}
-                id={tab.id}
-                name={tab.name}
-                isActive={tab.id === activeFileTabId}
-                fileType={tab.fileType}
-                queryMode={tab.queryMode}
-                onClose={() => handleCloseTab(tab)}
-                onClick={() => handleTabClick(tab)}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+      <div className="flex h-full items-center">
+        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-thin">
+          <div className="flex h-full items-center">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              modifiers={[restrictToHorizontalAxis]}
+            >
+              <SortableContext items={orderedTabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
+                {orderedTabs.map((tab) => (
+                  <SortableTab
+                    key={tab.id}
+                    id={tab.id}
+                    name={tab.name}
+                    isActive={tab.id === activeFileTabId}
+                    fileType={tab.fileType}
+                    queryMode={tab.queryMode}
+                    onClose={() => handleCloseTab(tab)}
+                    onClick={() => handleTabClick(tab)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </div>
+        </div>
+        <div className="hidden h-full shrink-0 items-center border-l border-border px-3 md:flex">
+          <PlanSelector
+            className="h-8 w-[320px] justify-start bg-background/50 opacity-90 backdrop-blur-sm hover:bg-background hover:opacity-100"
+            menuAlign="end"
+            nameMaxWidthClass="max-w-[250px]"
+            menuContentClassName="w-[320px]"
+          />
+        </div>
       </div>
     </div>
   );

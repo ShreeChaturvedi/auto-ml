@@ -197,9 +197,13 @@ export function CodeCell({
   };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be denied by browser privacy settings.
+    }
   };
 
   const getStatusIcon = () => {
@@ -360,7 +364,8 @@ export function CodeCell({
               overviewRulerBorder: false,
               scrollbar: {
                 vertical: 'hidden',
-                horizontal: 'hidden'
+                horizontal: 'hidden',
+                alwaysConsumeMouseWheel: false
               },
               quickSuggestions: true,
               suggestOnTriggerCharacters: true,
@@ -387,7 +392,11 @@ export function CodeCell({
                 className="h-7 w-7 p-1.5"
                 onClick={async () => {
                   const text = richOutputs.map(o => o.content).join('\n');
-                  await navigator.clipboard.writeText(text);
+                  try {
+                    await navigator.clipboard.writeText(text);
+                  } catch {
+                    // Clipboard access can be denied by browser privacy settings.
+                  }
                 }}
                 title="Copy output"
               >

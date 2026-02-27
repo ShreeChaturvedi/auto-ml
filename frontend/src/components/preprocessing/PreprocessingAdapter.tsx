@@ -32,11 +32,14 @@ export function createPreprocessingAdapter(
 
   return {
     buildRequest: async (prompt, toolCalls, toolResults, onEvent, signal, options) => {
-      if (!selectedDatasetId) return;
+      const selectedTable = tables.find((table) => table.datasetId === selectedDatasetId);
+      if (!selectedDatasetId || !selectedTable) {
+        throw new Error('Please select a valid dataset for this project before running preprocessing.');
+      }
       await streamPreprocessingPlan(
         {
           projectId,
-          datasetId: selectedDatasetId,
+          datasetId: selectedTable.datasetId,
           prompt,
           toolCalls,
           toolResults,

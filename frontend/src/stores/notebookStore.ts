@@ -90,6 +90,8 @@ const initialState = {
   error: null
 };
 
+let wsListenersCleanup: (() => void) | null = null;
+
 // ============================================================
 // Store
 // ============================================================
@@ -116,42 +118,52 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       const notebook = await notebooksApi.getNotebook(projectId);
       set({ notebook });
 
+      if (
+        existingClient?.isConnected
+        && existingNotebook?.notebookId
+        && existingNotebook.notebookId !== notebook.notebookId
+      ) {
+        existingClient.unsubscribe(existingNotebook.notebookId);
+      }
+
       // Set up WebSocket connection
       const wsClient = getNotebookWSClient();
       set({ wsClient });
 
+      wsListenersCleanup?.();
+
       // Set up WebSocket event handlers
-      wsClient.on<WSServerMessage>('cell:created', (msg) => {
+      const unsubscribeCellCreated = wsClient.on<WSServerMessage>('cell:created', (msg) => {
         if (msg.type === 'cell:created') {
           get().updateCellLocally(msg.cell);
         }
       });
 
-      wsClient.on<WSServerMessage>('cell:updated', (msg) => {
+      const unsubscribeCellUpdated = wsClient.on<WSServerMessage>('cell:updated', (msg) => {
         if (msg.type === 'cell:updated') {
           get().updateCellLocally(msg.cell);
         }
       });
 
-      wsClient.on<WSServerMessage>('cell:deleted', (msg) => {
+      const unsubscribeCellDeleted = wsClient.on<WSServerMessage>('cell:deleted', (msg) => {
         if (msg.type === 'cell:deleted') {
           get().removeCellLocally(msg.cellId);
         }
       });
 
-      wsClient.on<WSServerMessage>('cell:locked', (msg) => {
+      const unsubscribeCellLocked = wsClient.on<WSServerMessage>('cell:locked', (msg) => {
         if (msg.type === 'cell:locked') {
           get().setCellLock(msg.cellId, msg.lockedBy as LockOwner);
         }
       });
 
-      wsClient.on<WSServerMessage>('cell:unlocked', (msg) => {
+      const unsubscribeCellUnlocked = wsClient.on<WSServerMessage>('cell:unlocked', (msg) => {
         if (msg.type === 'cell:unlocked') {
           get().clearCellLock(msg.cellId);
         }
       });
 
-      wsClient.on<WSServerMessage>('cell:executing', (msg) => {
+      const unsubscribeCellExecuting = wsClient.on<WSServerMessage>('cell:executing', (msg) => {
         if (msg.type === 'cell:executing') {
           // Update cell status to running
           set((state) => ({
@@ -164,35 +176,47 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
         }
       });
 
-      wsClient.on<WSServerMessage>('cell:executed', (msg) => {
+      const unsubscribeCellExecuted = wsClient.on<WSServerMessage>('cell:executed', (msg) => {
         if (msg.type === 'cell:executed') {
           get().updateCellLocally(msg.cell);
         }
       });
 
-      wsClient.on<WSServerMessage>('error', (msg) => {
+      const unsubscribeError = wsClient.on<WSServerMessage>('error', (msg) => {
         if (msg.type === 'error') {
           set({ error: msg.message });
         }
       });
 
-      wsClient.on('connected', () => {
+      const unsubscribeConnected = wsClient.on('connected', () => {
         set({ isConnected: true, isConnecting: false });
-        // Subscribe to notebook
-        wsClient.subscribe(notebook.notebookId);
       });
 
-      wsClient.on('disconnected', () => {
+      const unsubscribeDisconnected = wsClient.on('disconnected', () => {
         set({ isConnected: false });
       });
 
+      wsListenersCleanup = () => {
+        unsubscribeCellCreated();
+        unsubscribeCellUpdated();
+        unsubscribeCellDeleted();
+        unsubscribeCellLocked();
+        unsubscribeCellUnlocked();
+        unsubscribeCellExecuting();
+        unsubscribeCellExecuted();
+        unsubscribeError();
+        unsubscribeConnected();
+        unsubscribeDisconnected();
+      };
+
       // Connect WebSocket
       await wsClient.connect();
+      wsClient.subscribe(notebook.notebookId);
 
       // Load cells
       await get().loadCells();
 
-      set({ isLoading: false });
+      set({ isLoading: false, isConnecting: false, isConnected: wsClient.isConnected });
     } catch (error) {
       console.error('[notebookStore] Failed to initialize:', error);
       set({
@@ -209,6 +233,9 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
     if (wsClient && notebook) {
       wsClient.unsubscribe(notebook.notebookId);
     }
+
+    wsListenersCleanup?.();
+    wsListenersCleanup = null;
 
     // Don't disconnect the shared WebSocket client, just unsubscribe
     set({

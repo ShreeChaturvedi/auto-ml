@@ -39,7 +39,7 @@ export class GeminiClient implements LlmClient {
     return extractGeminiText(payload);
   }
 
-  async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
+  async stream(request: LlmRequest, handlers: LlmStreamHandlers, retryAttempt = 0): Promise<string> {
     const body = buildGeminiBody(request);
 
     // DEBUG: Log the full request body
@@ -145,6 +145,17 @@ export class GeminiClient implements LlmClient {
       if (debugInfo.finishReason === 'MALFORMED_FUNCTION_CALL') {
         throw new Error('Gemini failed to generate valid function call. Try simplifying your request.');
       }
+
+      if (debugInfo.finishReason === 'MAX_TOKENS' && retryAttempt < 1) {
+        const retryRequest: LlmRequest = {
+          ...request,
+          maxOutputTokens: Math.max(request.maxOutputTokens ?? 2048, 4096),
+          thinkingLevel: 'low',
+          enableThinking: false
+        };
+        console.warn('[llm][gemini] Retrying after MAX_TOKENS with reduced reasoning profile.');
+        return this.stream(retryRequest, handlers, retryAttempt + 1);
+      }
     }
 
     return fullText;
@@ -167,6 +178,9 @@ export class GeminiClient implements LlmClient {
 
 function buildGeminiBody(request: LlmRequest) {
   const system = request.messages.find((msg) => msg.role === 'system');
+  const MAX_HISTORY_ITEMS = 8;
+  const toolCallHistory = request.toolCallHistory?.slice(-MAX_HISTORY_ITEMS);
+  const toolResultHistory = request.toolResultHistory?.slice(-MAX_HISTORY_ITEMS);
 
   // Type the parts to support text, functionCall, and functionResponse
   type GeminiPart =
@@ -182,10 +196,10 @@ function buildGeminiBody(request: LlmRequest) {
     }));
 
   // Interleave tool calls and results to support sequential history
-  const historyLen = Math.max(request.toolCallHistory?.length ?? 0, request.toolResultHistory?.length ?? 0);
+  const historyLen = Math.max(toolCallHistory?.length ?? 0, toolResultHistory?.length ?? 0);
   for (let i = 0; i < historyLen; i++) {
-    if (request.toolCallHistory?.[i]) {
-      const call = request.toolCallHistory[i];
+    if (toolCallHistory?.[i]) {
+      const call = toolCallHistory[i];
       contents.push({
         role: 'model',
         parts: [{
@@ -204,14 +218,14 @@ function buildGeminiBody(request: LlmRequest) {
       });
     }
 
-    if (request.toolResultHistory?.[i]) {
-      const result = request.toolResultHistory[i];
+    if (toolResultHistory?.[i]) {
+      const result = toolResultHistory[i];
       contents.push({
         role: 'user',
         parts: [{
           functionResponse: {
             name: result.name,
-            response: result.response
+            response: compactFunctionResponse(result.response)
           }
         }] as GeminiPart[]
       });
@@ -261,11 +275,29 @@ function buildGeminiBody(request: LlmRequest) {
   return body;
 }
 
+function compactFunctionResponse(response: Record<string, unknown>): Record<string, unknown> {
+  const MAX_RESPONSE_CHARS = 2500;
+  try {
+    const serialized = JSON.stringify(response);
+    if (serialized.length <= MAX_RESPONSE_CHARS) {
+      return response;
+    }
+
+    return {
+      truncated: true,
+      preview: `${serialized.slice(0, MAX_RESPONSE_CHARS)}…`,
+      originalSize: serialized.length
+    };
+  } catch {
+    return response;
+  }
+}
+
 function buildThinkingConfig(request: LlmRequest) {
   if (request.thinkingLevel === 'dynamic') {
     return request.enableThinking
       ? { includeThoughts: true }
-      : undefined;
+      : { includeThoughts: false };
   }
 
   const explicitLevel = toGeminiThinkingLevel(request.thinkingLevel);

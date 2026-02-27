@@ -43,6 +43,13 @@ export const ModelTemplateSchema = z.object({
 
 export const UiItemSchema = z.discriminatedUnion('type', [
   z.object({
+    type: z.literal('report'),
+    id: z.string(),
+    title: z.string(),
+    content: z.string(),
+    format: z.enum(['text', 'markdown', 'json']).optional()
+  }),
+  z.object({
     type: z.literal('dataset_summary'),
     datasetId: z.string(),
     filename: z.string(),

@@ -28,7 +28,7 @@ const mockState = vi.hoisted(() => ({
     createdAt: Date;
     updatedAt: Date;
     unlockedPhases: string[];
-    currentPhase: 'upload' | 'data-viewer';
+    currentPhase: string;
     completedPhases: string[];
     metadata: Record<string, unknown>;
   }>
@@ -132,5 +132,23 @@ describe('FileExplorer phase lock behavior', () => {
       expect(screen.getByTestId('data-viewer-route')).toBeInTheDocument();
     });
     expect(mockState.toastInfoMock).not.toHaveBeenCalled();
+  });
+
+  it('does not crash when project currentPhase is stale or unknown', () => {
+    mockState.projects = [{
+      ...mockState.projects[0],
+      currentPhase: 'feature'
+    }];
+
+    expect(() => renderFileExplorer()).not.toThrow();
+
+    fireEvent.click(screen.getByText('employees.csv'));
+
+    expect(mockState.toastInfoMock).toHaveBeenCalledWith(
+      'Explorer is still locked',
+      expect.objectContaining({
+        description: 'Complete the current step to unlock Explorer.'
+      })
+    );
   });
 });

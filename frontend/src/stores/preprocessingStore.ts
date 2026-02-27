@@ -97,6 +97,7 @@ export interface ReplayCompatibilityReport {
 }
 
 interface PreprocessingState {
+  activeProjectId: string | null;
   tables: AvailableTable[];
   selectedDatasetId: string | null;
   runId: string | null;
@@ -122,6 +123,7 @@ interface PreprocessingState {
 
 
 const initialState = {
+  activeProjectId: null,
   tables: [],
   selectedDatasetId: null,
   runId: null,
@@ -238,10 +240,49 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   ...initialState,
 
   loadTables: async (projectId: string) => {
-    set({ isLoadingTables: true, error: null });
+    const previousProjectId = get().activeProjectId;
+    const switchedProject = previousProjectId !== projectId;
+
+    if (switchedProject) {
+      set({
+        activeProjectId: projectId,
+        tables: [],
+        selectedDatasetId: null,
+        runId: null,
+        assistantMessages: [],
+        timeline: [],
+        stepBindings: {},
+        replayReport: null,
+        isLoadingTables: true,
+        error: null
+      });
+    } else {
+      set({ isLoadingTables: true, error: null });
+    }
+
     try {
       const { tables } = await listAvailableTables(projectId);
-      set({ tables, isLoadingTables: false });
+      set((state) => {
+        const hasSelectedDataset = Boolean(
+          state.selectedDatasetId && tables.some((table) => table.datasetId === state.selectedDatasetId)
+        );
+
+        if (hasSelectedDataset) {
+          return { tables, isLoadingTables: false, error: null };
+        }
+
+        return {
+          tables,
+          selectedDatasetId: null,
+          runId: null,
+          assistantMessages: [],
+          timeline: [],
+          stepBindings: {},
+          replayReport: null,
+          isLoadingTables: false,
+          error: null
+        };
+      });
     } catch (error) {
       console.error('[preprocessingStore] Failed to load tables:', error);
       set({
@@ -252,14 +293,23 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   },
 
   selectDataset: (datasetId: string) => {
-    set({
-      selectedDatasetId: datasetId,
-      runId: null,
-      assistantMessages: [],
-      timeline: [],
-      stepBindings: {},
-      replayReport: null,
-      error: null
+    set((state) => {
+      const exists = state.tables.some((table) => table.datasetId === datasetId);
+      if (!exists) {
+        return {
+          error: 'Selected dataset is unavailable in this project. Please choose another dataset.'
+        };
+      }
+
+      return {
+        selectedDatasetId: datasetId,
+        runId: null,
+        assistantMessages: [],
+        timeline: [],
+        stepBindings: {},
+        replayReport: null,
+        error: null
+      };
     });
   },
 

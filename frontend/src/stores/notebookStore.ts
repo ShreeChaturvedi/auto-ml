@@ -2,7 +2,7 @@
  * Notebook Store
  *
  * Zustand store for managing notebook state with WebSocket real-time sync.
- * Handles cell CRUD operations, execution, and AI-initiated changes.
+ * Handles notebook switching and cell CRUD operations.
  */
 
 import { create } from 'zustand';
@@ -25,6 +25,9 @@ import { getNotebookWSClient, type NotebookWSClient } from '@/lib/websocket/note
 
 interface NotebookState {
   // Core state
+  currentProjectId: string | null;
+  notebooks: Notebook[];
+  activeNotebookId: string | null;
   notebook: Notebook | null;
   cells: NotebookCell[];
   cellSummaries: CellSummary[];
@@ -45,6 +48,13 @@ interface NotebookState {
   // Actions - Initialization
   initializeNotebook: (projectId: string) => Promise<void>;
   disconnect: () => void;
+
+  // Actions - Notebook management
+  loadNotebooks: (projectId?: string) => Promise<void>;
+  setActiveNotebook: (notebookId: string) => Promise<void>;
+  createNotebook: (name?: string) => Promise<Notebook | null>;
+  renameNotebook: (notebookId: string, name: string) => Promise<Notebook | null>;
+  deleteNotebook: (notebookId: string) => Promise<boolean>;
 
   // Actions - Cell CRUD
   loadCells: () => Promise<void>;
@@ -78,6 +88,9 @@ interface NotebookState {
 // ============================================================
 
 const initialState = {
+  currentProjectId: null,
+  notebooks: [],
+  activeNotebookId: null,
   notebook: null,
   cells: [],
   cellSummaries: [],
@@ -104,43 +117,68 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
   // ============================================================
 
   initializeNotebook: async (projectId: string) => {
-    const { wsClient: existingClient, notebook: existingNotebook } = get();
+    const {
+      wsClient: existingClient,
+      notebook: existingNotebook,
+      currentProjectId,
+      activeNotebookId
+    } = get();
 
-    // If already connected to this notebook, skip
-    if (existingNotebook?.projectId === projectId && existingClient?.isConnected) {
+    if (
+      currentProjectId === projectId
+      && existingNotebook
+      && existingClient?.isConnected
+    ) {
       return;
     }
 
-    set({ isLoading: true, isConnecting: true, error: null });
+    set({ isLoading: true, isConnecting: true, error: null, currentProjectId: projectId });
 
     try {
-      // Get or create notebook for project
-      const notebook = await notebooksApi.getNotebook(projectId);
-      set({ notebook });
+      const notebooks = await notebooksApi.listNotebooks(projectId);
+      const preferredNotebookId =
+        currentProjectId === projectId
+          ? activeNotebookId
+          : null;
+      const resolvedNotebookId =
+        preferredNotebookId && notebooks.some((entry) => entry.notebookId === preferredNotebookId)
+          ? preferredNotebookId
+          : notebooks[0]?.notebookId ?? null;
+      const resolvedNotebook =
+        notebooks.find((entry) => entry.notebookId === resolvedNotebookId) ?? null;
 
       if (
         existingClient?.isConnected
         && existingNotebook?.notebookId
-        && existingNotebook.notebookId !== notebook.notebookId
+        && existingNotebook.notebookId !== resolvedNotebookId
       ) {
         existingClient.unsubscribe(existingNotebook.notebookId);
       }
 
-      // Set up WebSocket connection
-      const wsClient = getNotebookWSClient();
-      set({ wsClient });
+      const wsClient = existingClient ?? getNotebookWSClient();
+
+      set({
+        wsClient,
+        notebooks,
+        activeNotebookId: resolvedNotebookId,
+        notebook: resolvedNotebook,
+        cells: [],
+        cellSummaries: [],
+        lockedCells: new Map(),
+        error: null
+      });
 
       wsListenersCleanup?.();
 
       // Set up WebSocket event handlers
       const unsubscribeCellCreated = wsClient.on<WSServerMessage>('cell:created', (msg) => {
-        if (msg.type === 'cell:created') {
+        if (msg.type === 'cell:created' && msg.cell.notebookId === get().activeNotebookId) {
           get().updateCellLocally(msg.cell);
         }
       });
 
       const unsubscribeCellUpdated = wsClient.on<WSServerMessage>('cell:updated', (msg) => {
-        if (msg.type === 'cell:updated') {
+        if (msg.type === 'cell:updated' && msg.cell.notebookId === get().activeNotebookId) {
           get().updateCellLocally(msg.cell);
         }
       });
@@ -165,7 +203,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
 
       const unsubscribeCellExecuting = wsClient.on<WSServerMessage>('cell:executing', (msg) => {
         if (msg.type === 'cell:executing') {
-          // Update cell status to running
           set((state) => ({
             cells: state.cells.map((cell) =>
               cell.cellId === msg.cellId
@@ -177,7 +214,7 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       });
 
       const unsubscribeCellExecuted = wsClient.on<WSServerMessage>('cell:executed', (msg) => {
-        if (msg.type === 'cell:executed') {
+        if (msg.type === 'cell:executed' && msg.cell.notebookId === get().activeNotebookId) {
           get().updateCellLocally(msg.cell);
         }
       });
@@ -209,14 +246,17 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
         unsubscribeDisconnected();
       };
 
-      // Connect WebSocket
       await wsClient.connect();
-      wsClient.subscribe(notebook.notebookId);
+      if (resolvedNotebookId) {
+        wsClient.subscribe(resolvedNotebookId);
+        await get().loadCells();
+      }
 
-      // Load cells
-      await get().loadCells();
-
-      set({ isLoading: false, isConnecting: false, isConnected: wsClient.isConnected });
+      set({
+        isLoading: false,
+        isConnecting: false,
+        isConnected: wsClient.isConnected
+      });
     } catch (error) {
       console.error('[notebookStore] Failed to initialize:', error);
       set({
@@ -237,8 +277,10 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
     wsListenersCleanup?.();
     wsListenersCleanup = null;
 
-    // Don't disconnect the shared WebSocket client, just unsubscribe
     set({
+      currentProjectId: null,
+      notebooks: [],
+      activeNotebookId: null,
       notebook: null,
       cells: [],
       cellSummaries: [],
@@ -249,19 +291,171 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
   },
 
   // ============================================================
+  // Notebook Management
+  // ============================================================
+
+  loadNotebooks: async (projectId?: string) => {
+    const resolvedProjectId = projectId ?? get().currentProjectId;
+    if (!resolvedProjectId) return;
+
+    try {
+      const notebooks = await notebooksApi.listNotebooks(resolvedProjectId);
+      set((state) => {
+        const nextActiveNotebookId =
+          state.activeNotebookId && notebooks.some((entry) => entry.notebookId === state.activeNotebookId)
+            ? state.activeNotebookId
+            : notebooks[0]?.notebookId ?? null;
+
+        const nextNotebook =
+          notebooks.find((entry) => entry.notebookId === nextActiveNotebookId) ?? null;
+
+        return {
+          notebooks,
+          activeNotebookId: nextActiveNotebookId,
+          notebook: nextNotebook
+        };
+      });
+    } catch (error) {
+      console.error('[notebookStore] Failed to load notebooks:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to load notebooks' });
+    }
+  },
+
+  setActiveNotebook: async (notebookId: string) => {
+    const { notebooks, notebook: currentNotebook, wsClient } = get();
+
+    if (currentNotebook?.notebookId === notebookId) {
+      return;
+    }
+
+    const targetNotebook = notebooks.find((entry) => entry.notebookId === notebookId);
+    if (!targetNotebook) {
+      set({ error: 'Notebook not found' });
+      return;
+    }
+
+    if (wsClient && currentNotebook) {
+      wsClient.unsubscribe(currentNotebook.notebookId);
+    }
+
+    set({
+      activeNotebookId: notebookId,
+      notebook: targetNotebook,
+      cells: [],
+      cellSummaries: [],
+      lockedCells: new Map(),
+      isLoading: true,
+      error: null
+    });
+
+    if (wsClient) {
+      wsClient.subscribe(notebookId);
+    }
+
+    await get().loadCells();
+    set({ isLoading: false });
+  },
+
+  createNotebook: async (name?: string) => {
+    const projectId = get().currentProjectId;
+    if (!projectId) return null;
+
+    set({ isSaving: true, error: null });
+
+    try {
+      const notebook = await notebooksApi.createNotebook(projectId, { name });
+
+      set((state) => ({
+        notebooks: [...state.notebooks, notebook],
+        isSaving: false
+      }));
+
+      await get().setActiveNotebook(notebook.notebookId);
+      return notebook;
+    } catch (error) {
+      console.error('[notebookStore] Failed to create notebook:', error);
+      set({
+        isSaving: false,
+        error: error instanceof Error ? error.message : 'Failed to create notebook'
+      });
+      return null;
+    }
+  },
+
+  renameNotebook: async (notebookId: string, name: string) => {
+    set({ isSaving: true, error: null });
+
+    try {
+      const notebook = await notebooksApi.updateNotebook(notebookId, { name });
+
+      set((state) => {
+        const notebooks = state.notebooks.map((entry) =>
+          entry.notebookId === notebookId ? notebook : entry
+        );
+
+        const activeNotebook = state.notebook?.notebookId === notebookId
+          ? notebook
+          : state.notebook;
+
+        return {
+          notebooks,
+          notebook: activeNotebook,
+          isSaving: false
+        };
+      });
+
+      return notebook;
+    } catch (error) {
+      console.error('[notebookStore] Failed to rename notebook:', error);
+      set({
+        isSaving: false,
+        error: error instanceof Error ? error.message : 'Failed to rename notebook'
+      });
+      return null;
+    }
+  },
+
+  deleteNotebook: async (notebookId: string) => {
+    const projectId = get().currentProjectId;
+    if (!projectId) return false;
+
+    set({ isSaving: true, error: null });
+
+    try {
+      const result = await notebooksApi.deleteNotebook(projectId, notebookId);
+
+      set((state) => ({
+        notebooks: state.notebooks.filter((entry) => entry.notebookId !== notebookId),
+        isSaving: false
+      }));
+
+      if (get().activeNotebookId === notebookId) {
+        await get().setActiveNotebook(result.fallbackNotebookId);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[notebookStore] Failed to delete notebook:', error);
+      set({
+        isSaving: false,
+        error: error instanceof Error ? error.message : 'Failed to delete notebook'
+      });
+      return false;
+    }
+  },
+
+  // ============================================================
   // Cell CRUD
   // ============================================================
 
   loadCells: async () => {
-    const { notebook } = get();
-    if (!notebook) return;
+    const { activeNotebookId } = get();
+    if (!activeNotebookId) return;
 
     try {
-      // First load summaries
-      const summaries = await notebooksApi.listCells(notebook.notebookId);
+      const summaries = await notebooksApi.listCells(activeNotebookId);
       set({ cellSummaries: summaries });
 
-      // Then load full cells
       const cells = await Promise.all(
         summaries.map((summary) => notebooksApi.getCell(summary.cellId))
       );
@@ -293,8 +487,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
     try {
       const cell = await notebooksApi.createCell(notebook.notebookId, request);
 
-      // If position was specified, reload all cells to get correct positions
-      // (backend shifts other cells' positions which WebSocket doesn't broadcast)
       if (request.position !== undefined) {
         await get().loadCells();
       }
@@ -316,7 +508,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
 
     try {
       const cell = await notebooksApi.updateCell(cellId, request);
-      // The WebSocket will handle updating the local state
       set({ isSaving: false });
       return cell;
     } catch (error) {
@@ -334,7 +525,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
 
     try {
       await notebooksApi.deleteCell(cellId);
-      // The WebSocket will handle updating the local state
       set({ isSaving: false });
       return true;
     } catch (error) {
@@ -356,7 +546,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
     try {
       await notebooksApi.reorderCells(notebook.notebookId, { cellIds });
 
-      // Update local positions
       set((state) => ({
         cells: state.cells.map((cell) => {
           const newPosition = cellIds.indexOf(cell.cellId);
@@ -382,7 +571,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
   // ============================================================
 
   runCell: async (cellId: string, projectId: string) => {
-    // Update local status to running
     set((state) => ({
       cells: state.cells.map((cell) =>
         cell.cellId === cellId
@@ -392,12 +580,10 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
     }));
 
     try {
-      // The WebSocket will broadcast the result
       await notebooksApi.runCell(cellId, projectId);
     } catch (error) {
       console.error('[notebookStore] Failed to run cell:', error);
 
-      // Update local status to error
       set((state) => ({
         cells: state.cells.map((cell) =>
           cell.cellId === cellId
@@ -457,27 +643,22 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       const existingIndex = state.cells.findIndex((c) => c.cellId === cell.cellId);
 
       if (existingIndex >= 0) {
-        // Update existing cell
         const newCells = [...state.cells];
         newCells[existingIndex] = cell;
         return { cells: newCells.sort((a, b) => a.position - b.position) };
-      } else {
-        // Add new cell - need to shift positions of cells at or after this position
-        // This handles the case where backend inserts at a specific position and shifts others,
-        // but only broadcasts the new cell (not the shifted ones)
-        const newPosition = cell.position;
-        const adjustedCells = state.cells.map((existingCell) => {
-          if (existingCell.position >= newPosition) {
-            // Shift this cell's position by 1 to make room for the new cell
-            return { ...existingCell, position: existingCell.position + 1 };
-          }
-          return existingCell;
-        });
-
-        return {
-          cells: [...adjustedCells, cell].sort((a, b) => a.position - b.position)
-        };
       }
+
+      const newPosition = cell.position;
+      const adjustedCells = state.cells.map((existingCell) => {
+        if (existingCell.position >= newPosition) {
+          return { ...existingCell, position: existingCell.position + 1 };
+        }
+        return existingCell;
+      });
+
+      return {
+        cells: [...adjustedCells, cell].sort((a, b) => a.position - b.position)
+      };
     });
   },
 
@@ -493,7 +674,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
 
       const removedPosition = cellToRemove.position;
 
-      // Remove the cell and adjust positions of cells that were after it
       const remainingCells = state.cells
         .filter((c) => c.cellId !== cellId)
         .map((c) => {
@@ -509,7 +689,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       };
     });
 
-    // Also remove any lock
     get().clearCellLock(cellId);
   },
 
@@ -557,6 +736,8 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
 // ============================================================
 
 export const selectNotebook = (state: NotebookState) => state.notebook;
+export const selectNotebooks = (state: NotebookState) => state.notebooks;
+export const selectActiveNotebookId = (state: NotebookState) => state.activeNotebookId;
 export const selectCells = (state: NotebookState) => state.cells;
 export const selectCodeCells = (state: NotebookState) =>
   state.cells.filter((c) => c.cellType === 'code');
@@ -567,7 +748,6 @@ export const selectIsConnected = (state: NotebookState) => state.isConnected;
 export const selectError = (state: NotebookState) => state.error;
 export const selectLockedCells = (state: NotebookState) => state.lockedCells;
 
-// Check if any cells are locked by AI
 export const selectHasAiLockedCells = (state: NotebookState) => {
   for (const lock of state.lockedCells.values()) {
     if (lock.lockedBy === 'ai') return true;
@@ -575,6 +755,5 @@ export const selectHasAiLockedCells = (state: NotebookState) => {
   return false;
 };
 
-// Get cell by ID
 export const selectCellById = (cellId: string) => (state: NotebookState) =>
   state.cells.find((c) => c.cellId === cellId);

@@ -22,7 +22,9 @@ interface AgenticShellProps {
   chatMetaSlot?: React.ReactNode;
   storageKey: string;
   domainLockReason?: string;
-  LeftPaneComponent: React.ComponentType<{ messages: ChatMessage[], isGenerating: boolean, error: string | null }>;
+  leftPaneScrollable?: boolean;
+  LeftPaneComponent?: React.ComponentType<{ messages: ChatMessage[], isGenerating: boolean, error: string | null }>;
+  renderLeftPane?: (props: { messages: ChatMessage[]; isGenerating: boolean; error: string | null }) => React.ReactNode;
 }
 
 export function AgenticShell({
@@ -33,7 +35,9 @@ export function AgenticShell({
   chatMetaSlot,
   storageKey,
   domainLockReason,
-  LeftPaneComponent
+  leftPaneScrollable = true,
+  LeftPaneComponent,
+  renderLeftPane
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const [assistantModel, setAssistantModel] = useState(ASSISTANT_MODEL_OPTIONS[0].value);
@@ -74,6 +78,12 @@ export function AgenticShell({
     setChatInput('');
   };
 
+  const leftPaneContent = renderLeftPane
+    ? renderLeftPane({ messages, isGenerating, error })
+    : LeftPaneComponent
+      ? <LeftPaneComponent messages={messages} isGenerating={isGenerating} error={error} />
+      : null;
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <div className="flex h-14 items-center justify-between gap-4 border-b px-4 shrink-0">
@@ -88,9 +98,15 @@ export function AgenticShell({
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize={48} minSize={30}>
           <div className="flex h-full min-h-0 flex-col">
-            <ScrollArea className="flex-1">
-              {<LeftPaneComponent messages={messages} isGenerating={isGenerating} error={error} />}
-            </ScrollArea>
+            {leftPaneScrollable ? (
+              <ScrollArea className="flex-1">
+                {leftPaneContent}
+              </ScrollArea>
+            ) : (
+              <div className="min-h-0 flex-1">
+                {leftPaneContent}
+              </div>
+            )}
             
             <div className="border-t bg-background">
               {suggestions.length > 0 && !domainLockReason ? (

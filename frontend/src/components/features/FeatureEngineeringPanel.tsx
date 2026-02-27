@@ -37,6 +37,8 @@ import {
   AlertTriangle,
   Beaker,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Database,
   FileOutput,
@@ -63,6 +65,7 @@ const HIDDEN_ACTIVITY_TOOLS = new Set(['set_active_dataset', 'list_project_datas
 const VERSION_ACTION_NEW_DRAFT = '__new_draft__';
 const VERSION_ACTION_DELETE_DRAFT = '__delete_draft__';
 const VERSION_ACTION_RENAME_DRAFT = '__rename_draft__';
+const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';
 const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
   'LLM render_ui returned empty UI content.',
   'LLM returned empty response.',
@@ -160,6 +163,9 @@ function buildSuggestionDefaults(item: FeatureSuggestionItem): Record<string, un
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
   const disconnectNotebook = useNotebookStore((state) => state.disconnect);
+  const notebookCells = useNotebookStore((state) => state.cells);
+  const createNotebookCell = useNotebookStore((state) => state.createCell);
+  const updateNotebookCell = useNotebookStore((state) => state.updateCell);
 
   const allFiles = useDataStore((state) => state.files);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
@@ -192,11 +198,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const [applyStatus, setApplyStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [isReadinessExpanded, setIsReadinessExpanded] = useState(false);
 
   const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>({});
 
   const hydratedProjectRef = useRef<string | null>(null);
   const lastPersistedReadinessRef = useRef(new Map<string, string>());
+  const lastSyncedCodePreviewRef = useRef('');
 
   useEffect(() => {
     if (!projectId) return;
@@ -301,6 +309,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
   const isCurrentVersionDraft = currentVersion?.status === 'draft';
   const canDeleteCurrentDraft = Boolean(isCurrentVersionDraft);
+  const readinessReportUnlocked = activeFeatures.length > 0;
+
+  useEffect(() => {
+    if (!readinessReportUnlocked && isReadinessExpanded) {
+      setIsReadinessExpanded(false);
+    }
+  }, [isReadinessExpanded, readinessReportUnlocked]);
 
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
@@ -496,6 +511,46 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     });
   }, [activeFeatures, selectedDatasetFile]);
 
+  useEffect(() => {
+    if (!codePreview.trim()) return;
+    if (lastSyncedCodePreviewRef.current === codePreview) return;
+
+    const existingPreviewCell = notebookCells.find((cell) =>
+      cell.cellType === 'code' && cell.title === FEATURE_PREVIEW_CELL_TITLE
+    );
+
+    const syncCodePreview = async () => {
+      if (existingPreviewCell) {
+        if (existingPreviewCell.content === codePreview) {
+          lastSyncedCodePreviewRef.current = codePreview;
+          return;
+        }
+
+        const updated = await updateNotebookCell(existingPreviewCell.cellId, {
+          title: FEATURE_PREVIEW_CELL_TITLE,
+          content: codePreview
+        });
+
+        if (updated) {
+          lastSyncedCodePreviewRef.current = codePreview;
+        }
+        return;
+      }
+
+      const created = await createNotebookCell({
+        cellType: 'code',
+        title: FEATURE_PREVIEW_CELL_TITLE,
+        content: codePreview
+      });
+
+      if (created) {
+        lastSyncedCodePreviewRef.current = codePreview;
+      }
+    };
+
+    void syncCodePreview();
+  }, [codePreview, createNotebookCell, notebookCells, updateNotebookCell]);
+
   const adapter = useMemo(() => {
     return createFeatureEngineeringAdapter({
       projectId,
@@ -607,12 +662,14 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
               <CardTitle className="text-sm">{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              {item.format === 'markdown' ? (
+              {item.format === 'json' ? (
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2 font-mono text-[11px]">
+                  {item.content}
+                </pre>
+              ) : (
                 <div className="prose prose-sm max-w-none dark:prose-invert">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown>
                 </div>
-              ) : (
-                <p className="whitespace-pre-wrap">{item.content}</p>
               )}
             </CardContent>
           </Card>
@@ -757,7 +814,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     }
   }, [datasetColumns, featureById, isApproved, suggestionDrafts, toggleSuggestion, updateSuggestionControl]);
 
-  const LeftPaneComponent = ({
+  const renderLeftPane = ({
     messages,
     isGenerating,
     error
@@ -766,92 +823,89 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     isGenerating: boolean;
     error: string | null;
   }) => {
-    const toolMessages = useMemo(
-      () => messages.filter((message): message is Extract<ChatMessage, { type: 'tool_call' }> => {
-        return message.type === 'tool_call' && !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool);
-      }),
-      [messages]
-    );
+    const toolMessages = messages.filter((message): message is Extract<ChatMessage, { type: 'tool_call' }> => {
+      return message.type === 'tool_call' && !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool);
+    });
 
-    const toolCalls = useMemo(() => toolMessages.map((message) => message.call), [toolMessages]);
-    const toolResults = useMemo(
-      () => toolMessages.flatMap((message) => (message.result ? [message.result] : [])),
-      [toolMessages]
-    );
+    const toolCalls = toolMessages.map((message) => message.call);
+    const toolResults = toolMessages.flatMap((message) => (message.result ? [message.result] : []));
 
     const hasUserMessage = messages.some((message) => message.type === 'user');
 
     return (
-      <div className="mx-auto w-full max-w-5xl space-y-4 p-6 pb-28">
-        <Card className={cn(
-          'border',
-          isApproved ? 'border-emerald-300 bg-emerald-50/70' : 'border-muted bg-muted/30'
-        )}>
-          <CardContent className="flex items-start justify-between gap-4 p-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                {isApproved ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                )}
-                <p className="text-sm font-semibold">
-                  {isApproved ? 'Pipeline Approved' : 'Approval Gate: Readiness Review'}
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {isApproved
-                  ? 'This feature engineering pipeline is locked and ready for training.'
-                  : 'Enable features and review readiness evidence before approval.'}
-              </p>
-            </div>
-            <div className="shrink-0">
-              {isApproved ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => createDraftVersion(projectId, 'New Draft Pipeline')}
-                >
-                  Start New Draft
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  disabled={!isReadyForApproval}
-                  onClick={() => currentVersion && approveVersion(projectId, currentVersion.id)}
-                >
-                  Approve Pipeline
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {panelError || error ? (
-          <Card className="border-destructive/40 bg-destructive/10">
-            <CardContent className="flex items-center gap-2 py-3 text-xs text-destructive">
-              <AlertTriangle className="h-4 w-4" />
-              {panelError || error}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {!hasUserMessage ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-              <Beaker className="h-8 w-8 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Feature Engineering is ready</p>
+      <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
+        <div className="space-y-4 pb-4">
+          <Card className={cn(
+            'border',
+            isApproved ? 'border-emerald-300 bg-emerald-50/70' : 'border-muted bg-muted/30'
+          )}>
+            <CardContent className="flex items-start justify-between gap-4 p-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  {isApproved ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <Info className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <p className="text-sm font-semibold">
+                    {isApproved ? 'Pipeline Approved' : 'Approval Gate: Readiness Review'}
+                  </p>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Ask the agent to propose candidate features, validate risks, and produce executable notebook steps.
+                  {isApproved
+                    ? 'This feature engineering pipeline is locked and ready for training.'
+                    : 'Enable features and review readiness evidence before approval.'}
                 </p>
+              </div>
+              <div className="shrink-0">
+                {isApproved ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => createDraftVersion(projectId, 'New Draft Pipeline')}
+                  >
+                    Start New Draft
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={!isReadyForApproval}
+                    onClick={() => currentVersion && approveVersion(projectId, currentVersion.id)}
+                  >
+                    Approve Pipeline
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
-        ) : null}
 
-        <div className="space-y-4">
-          {messages.map((message) => {
+          {panelError || error ? (
+            <Card className="border-destructive/40 bg-destructive/10">
+              <CardContent className="flex items-center gap-2 py-3 text-xs text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {panelError || error}
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          {!hasUserMessage ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                <Beaker className="h-8 w-8 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Feature Engineering is ready</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ask the agent to propose candidate features, validate risks, and produce executable notebook steps.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <div className="space-y-4 py-4">
+            {messages.map((message) => {
             if (message.type === 'user') {
               return (
                 <div key={message.id} className="flex justify-end">
@@ -939,136 +993,163 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             }
 
             return null;
-          })}
+            })}
 
-          <ToolIndicator toolCalls={toolCalls} results={toolResults} isRunning={isGenerating} />
+            <ToolIndicator toolCalls={toolCalls} results={toolResults} isRunning={isGenerating} />
 
-          {isGenerating ? (
-            <div className="ml-9 flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Generating feature plan...
-            </div>
-          ) : null}
+            {isGenerating ? (
+              <div className="ml-9 flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Generating feature plan...
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <Card className="border-muted/60">
-          <CardHeader className="space-y-1 pb-3">
-            <CardTitle className="text-sm">Unified Readiness Report</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Tracks enabled transformations and pre-training quality checks.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded border bg-muted/30 p-3">
-                <p className="text-muted-foreground">Added columns</p>
-                <p className="text-lg font-semibold">{readinessReport.dataSummary.addedColumns.length}</p>
-              </div>
-              <div className="rounded border bg-muted/30 p-3">
-                <p className="text-muted-foreground">Steps</p>
-                <p className="text-lg font-semibold">{readinessReport.steps.length}</p>
-              </div>
-              <div className="rounded border bg-muted/30 p-3">
-                <p className="text-muted-foreground">Warnings</p>
-                <p className="text-lg font-semibold">{readinessReport.dataSummary.warnings.length}</p>
-              </div>
-            </div>
-
-            {readinessReport.steps.length > 0 ? (
-              <div className="space-y-2">
-                {readinessReport.steps.map((step, index) => (
-                  <div key={step.id} className="rounded border p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium">{index + 1}. {step.name}</p>
-                      <Badge variant="outline" className="text-[10px]">{step.method ?? 'custom'}</Badge>
-                    </div>
-                    <p className="mt-1 text-muted-foreground">{step.rationale}</p>
-                    {step.columns?.length ? (
-                      <p className="mt-1 text-muted-foreground">Columns: {step.columns.join(', ')}</p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="rounded border border-dashed p-3 text-muted-foreground">No transformations enabled yet.</p>
-            )}
-
-            {readinessReport.dataSummary.warnings.length > 0 ? (
-              <div className="space-y-1 rounded border border-amber-300/50 bg-amber-50/50 p-3 text-amber-700">
-                <p className="font-medium">Pre-flight checks</p>
-                <ul className="list-disc space-y-1 pl-4">
-                  {readinessReport.dataSummary.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {codePreview ? (
-              <div className="space-y-2">
-                <p className="font-medium">Code preview</p>
-                <pre className="overflow-x-auto rounded border bg-muted/40 p-3 font-mono text-[11px]">
-                  {codePreview}
-                </pre>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted/60">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Apply Feature Pipeline</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end">
-              <div className="space-y-1">
-                <Label className="text-xs">Output name (optional)</Label>
-                <Input
-                  value={outputName}
-                  onChange={(event) => setOutputName(event.currentTarget.value)}
-                  placeholder="e.g. features_v1"
-                  className="h-8 text-xs"
-                  disabled={isApproved}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Format</Label>
-                <Select
-                  value={outputFormat}
-                  onValueChange={(value) => setOutputFormat(value as 'csv' | 'json' | 'xlsx')}
-                  disabled={isApproved}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="csv">CSV</SelectItem>
-                    <SelectItem value="json">JSON</SelectItem>
-                    <SelectItem value="xlsx">XLSX</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                className="h-8 text-xs"
-                onClick={handleApplyFeatures}
-                disabled={applyStatus === 'loading' || isApproved || activeFeatures.length === 0}
-              >
-                {applyStatus === 'loading' ? (
-                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <FileOutput className="mr-2 h-3.5 w-3.5" />
-                )}
-                Apply
-              </Button>
-            </div>
-
-            {applyMessage ? (
-              <p className={cn('text-xs', applyStatus === 'error' ? 'text-destructive' : 'text-emerald-600')}>
-                {applyMessage}
+        <div className="space-y-3 border-t bg-background py-4">
+          <div className="flex items-center justify-between gap-3 rounded border bg-muted/30 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Unified Readiness Report</p>
+              <p className="text-xs text-muted-foreground">
+                {readinessReportUnlocked
+                  ? 'Review enabled transformations and quality checks before approval.'
+                  : 'Enable at least one feature to unlock the readiness report.'}
               </p>
-            ) : null}
-          </CardContent>
-        </Card>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 text-xs"
+              onClick={() => setIsReadinessExpanded((previous) => !previous)}
+              disabled={!readinessReportUnlocked}
+            >
+              {isReadinessExpanded ? (
+                <>
+                  <ChevronUp className="mr-1 h-3.5 w-3.5" />
+                  Hide Report
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="mr-1 h-3.5 w-3.5" />
+                  Show Report
+                </>
+              )}
+            </Button>
+          </div>
+
+          {readinessReportUnlocked && isReadinessExpanded ? (
+            <Card className="border-muted/60">
+              <CardHeader className="space-y-1 pb-3">
+                <CardTitle className="text-sm">Unified Readiness Report</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Tracks enabled transformations and pre-training quality checks.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3 text-xs">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded border bg-muted/30 p-3">
+                    <p className="text-muted-foreground">Added columns</p>
+                    <p className="text-lg font-semibold">{readinessReport.dataSummary.addedColumns.length}</p>
+                  </div>
+                  <div className="rounded border bg-muted/30 p-3">
+                    <p className="text-muted-foreground">Steps</p>
+                    <p className="text-lg font-semibold">{readinessReport.steps.length}</p>
+                  </div>
+                  <div className="rounded border bg-muted/30 p-3">
+                    <p className="text-muted-foreground">Warnings</p>
+                    <p className="text-lg font-semibold">{readinessReport.dataSummary.warnings.length}</p>
+                  </div>
+                </div>
+
+                {readinessReport.steps.length > 0 ? (
+                  <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                    {readinessReport.steps.map((step, index) => (
+                      <div key={step.id} className="rounded border p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium">{index + 1}. {step.name}</p>
+                          <Badge variant="outline" className="text-[10px]">{step.method ?? 'custom'}</Badge>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{step.rationale}</p>
+                        {step.columns?.length ? (
+                          <p className="mt-1 text-muted-foreground">Columns: {step.columns.join(', ')}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded border border-dashed p-3 text-muted-foreground">No transformations enabled yet.</p>
+                )}
+
+                {readinessReport.dataSummary.warnings.length > 0 ? (
+                  <div className="space-y-1 rounded border border-amber-300/50 bg-amber-50/50 p-3 text-amber-700">
+                    <p className="font-medium">Pre-flight checks</p>
+                    <ul className="list-disc space-y-1 pl-4">
+                      {readinessReport.dataSummary.warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card className="border-muted/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Apply Feature Pipeline</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end">
+                <div className="space-y-1">
+                  <Label className="text-xs">Output name (optional)</Label>
+                  <Input
+                    value={outputName}
+                    onChange={(event) => setOutputName(event.currentTarget.value)}
+                    placeholder="e.g. features_v1"
+                    className="h-8 text-xs"
+                    disabled={isApproved}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Format</Label>
+                  <Select
+                    value={outputFormat}
+                    onValueChange={(value) => setOutputFormat(value as 'csv' | 'json' | 'xlsx')}
+                    disabled={isApproved}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="csv">CSV</SelectItem>
+                      <SelectItem value="json">JSON</SelectItem>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  className="h-8 text-xs"
+                  onClick={handleApplyFeatures}
+                  disabled={applyStatus === 'loading' || isApproved || activeFeatures.length === 0}
+                >
+                  {applyStatus === 'loading' ? (
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileOutput className="mr-2 h-3.5 w-3.5" />
+                  )}
+                  Apply
+                </Button>
+              </div>
+
+              {applyMessage ? (
+                <p className={cn('text-xs', applyStatus === 'error' ? 'text-destructive' : 'text-emerald-600')}>
+                  {applyMessage}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   };
@@ -1084,7 +1165,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           ? 'This feature pipeline is approved and locked. Start a new draft to continue editing.'
           : undefined
       }
-      LeftPaneComponent={LeftPaneComponent}
+      renderLeftPane={renderLeftPane}
       toolbarLeft={
         <>
           <WandSparkles className="h-4 w-4 text-muted-foreground" />
@@ -1176,6 +1257,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           </Badge>
         </div>
       }
+      leftPaneScrollable={false}
     />
   );
 }

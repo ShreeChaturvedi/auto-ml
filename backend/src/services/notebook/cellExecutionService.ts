@@ -83,7 +83,9 @@ export async function executeCell(
     await copyDatasetsToWorkspace(projectId);
 
     // Execute the code
-    const result = await executeInContainer(container, cell.content, env.executionTimeoutMs);
+    const result = await executeInContainer(container, cell.content, env.executionTimeoutMs, {
+      sessionKey: cell.notebookId
+    });
 
     // Calculate execution time
     const executionMs = Date.now() - startTime;

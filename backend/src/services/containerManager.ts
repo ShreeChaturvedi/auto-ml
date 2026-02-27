@@ -242,13 +242,18 @@ export async function executeInContainer(
     container: Container,
     code: string,
     timeoutMs: number = env.executionTimeoutMs,
-    options: { executionId?: string } = {}
+    options: { executionId?: string; sessionKey?: string } = {}
 ): Promise<ExecutionResult> {
     const startTime = Date.now();
     const safeId = options.executionId
         ? options.executionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
         : '';
+    const safeSessionKey = options.sessionKey
+        ? options.sessionKey.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
+        : '';
     const suffix = safeId ? `_${safeId}` : '';
+    const sessionStateEnabled = safeSessionKey ? 'True' : 'False';
+    const sessionStateFilename = safeSessionKey ? `_state_${safeSessionKey}.pkl` : '';
 
     // Write code to a temporary file in the workspace
     const codePath = join(container.workspacePath, `_exec_code${suffix}.py`);
@@ -259,10 +264,12 @@ export async function executeInContainer(
 import sys
 import json
 import traceback
+import pickle
 from pathlib import Path
 
 # Capture outputs
 _outputs = []
+_capture_outputs = True
 
 # Override print to capture output
 _original_print = print
@@ -271,13 +278,14 @@ def print(*args, **kwargs):
     output = io.StringIO()
     _original_print(*args, file=output, **kwargs)
     value = output.getvalue()
-    _outputs.append({"type": "text", "content": value})
+    if _capture_outputs:
+        _outputs.append({"type": "text", "content": value})
     _original_print(*args, **kwargs)
 
 # Helper to display dataframes nicely
 def _display_df(df, max_rows=20):
     """Display DataFrame as table output"""
-    if hasattr(df, 'to_dict'):
+    if _capture_outputs and hasattr(df, 'to_dict'):
         data = df.head(max_rows).to_dict('records')
         cols = list(df.columns)
         _outputs.append({
@@ -291,6 +299,45 @@ import os
 os.chdir('/workspace')
 if '/workspace/.python' not in sys.path:
     sys.path.insert(0, '/workspace/.python')
+
+_SESSION_STATE_PATH = Path('/workspace/${sessionStateFilename}') if ${sessionStateEnabled} else None
+
+def _restore_state():
+    if _SESSION_STATE_PATH is None or not _SESSION_STATE_PATH.exists():
+        return
+    try:
+        with _SESSION_STATE_PATH.open('rb') as _state_file:
+            _state = pickle.load(_state_file)
+        if isinstance(_state, dict):
+            for _name, _value in _state.items():
+                globals()[_name] = _value
+    except Exception:
+        # Ignore state restore failures and continue with a clean namespace.
+        pass
+
+def _persist_state():
+    if _SESSION_STATE_PATH is None:
+        return
+    _skip_names = {
+        'sys', 'json', 'traceback', 'pickle', 'Path', 'os',
+        '_outputs', '_capture_outputs', '_original_print', 'print', '_display_df',
+        '_SESSION_STATE_PATH', '_restore_state', '_persist_state', 'resolve_dataset_path'
+    }
+    _state = {}
+    for _name, _value in globals().items():
+        if _name.startswith('__') or _name.startswith('_') or _name in _skip_names:
+            continue
+        try:
+            pickle.dumps(_value)
+        except Exception:
+            continue
+        _state[_name] = _value
+    try:
+        with _SESSION_STATE_PATH.open('wb') as _state_file:
+            pickle.dump(_state, _state_file)
+    except Exception:
+        # Ignore state persistence failures to avoid masking user code results.
+        pass
 
 def resolve_dataset_path(filename, dataset_id=None):
     """Resolve dataset path across cloud and browser mounts.
@@ -344,6 +391,8 @@ def resolve_dataset_path(filename, dataset_id=None):
     # Return first candidate as fallback (will fail with clear error)
     return str(candidates[0])
 
+_restore_state()
+
 try:
 ${code.split('\n').map(line => '    ' + line).join('\n')}
 except Exception as e:
@@ -351,6 +400,8 @@ except Exception as e:
         "type": "error",
         "content": traceback.format_exc()
     })
+finally:
+    _persist_state()
 
 # Write outputs to file
 with open('/workspace/${outputFilename}', 'w') as f:

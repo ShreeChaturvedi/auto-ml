@@ -130,6 +130,56 @@ describe('preprocessingGraph', () => {
     });
   });
 
+  it('resolves dataset references by filename for active dataset and commit', async () => {
+    const projectId = 'project-1';
+    const { execute, sourceDataset } = await createExecutor(projectId);
+
+    const active = await execute(projectId, 'set_active_dataset', {
+      datasetId: sourceDataset.filename
+    });
+    const runId = (active.output as { runId: string }).runId;
+
+    expect(active.output).toMatchObject({
+      isError: false,
+      datasetId: sourceDataset.datasetId
+    });
+
+    const proposed = await execute(projectId, 'propose_transformation_step', {
+      runId,
+      title: 'Impute missing values',
+      intentType: 'impute_missing'
+    });
+    const stepId = (proposed.output as { step?: { stepId: string } }).step?.stepId;
+
+    await execute(projectId, 'materialize_step_code', {
+      runId,
+      stepId,
+      code: 'df["income"] = df["income"].fillna(df["income"].median())'
+    });
+    await execute(projectId, 'execute_transformation_step', {
+      runId,
+      stepId,
+      succeeded: true,
+      cellId: 'cell-1'
+    });
+    await execute(projectId, 'validate_step_result', {
+      runId,
+      stepId,
+      requiresApproval: false
+    });
+
+    const committed = await execute(projectId, 'commit_transformation_step', {
+      runId,
+      stepId,
+      datasetId: sourceDataset.filename
+    });
+
+    expect(committed.output).toMatchObject({
+      isError: false,
+      status: 'applied'
+    });
+  });
+
   it('prevents applied status when no cell ids are bound', async () => {
     const projectId = 'project-1';
     const { execute } = await createExecutor(projectId);

@@ -218,6 +218,19 @@ export interface ReorderCellsRequest {
   cellIds: string[];
 }
 
+export interface CreateNotebookRequest {
+  name?: string;
+}
+
+export interface UpdateNotebookRequest {
+  name: string;
+}
+
+export interface DeleteNotebookResponse {
+  deletedNotebookId: string;
+  fallbackNotebookId: string;
+}
+
 export interface RunCellRequest {
   projectId: string;
 }

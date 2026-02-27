@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi';
 import { executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
+import { useNotebookStore } from '@/stores/notebookStore';
 
 export interface UseAgenticLoopOptions {
   projectId?: string;
@@ -169,7 +170,8 @@ export function useAgenticLoop({
 
               const toolCalls = event.envelope.tool_calls;
               if (projectId) {
-                executeToolCalls(projectId, toolCalls)
+                const activeNotebookId = useNotebookStore.getState().activeNotebookId ?? undefined;
+                executeToolCalls(projectId, toolCalls, activeNotebookId)
                   .then(({ results }) => {
                     if (requestId !== activeRequestIdRef.current) return;
 

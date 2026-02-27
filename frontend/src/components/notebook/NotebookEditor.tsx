@@ -140,10 +140,11 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
     }
   }, [nextNotebookNumber]);
 
-  const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
+  const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code', atTop = false) => {
     await createCell({
       content: '',
-      cellType
+      cellType,
+      position: atTop ? 0 : undefined
     });
   }, [createCell]);
 
@@ -234,7 +235,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
 
             {/* + button to create new notebook */}
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
               className="h-7 w-7"
               onClick={() => setCreateDialogOpen(true)}
@@ -253,7 +254,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={openRenameDialog}>
-                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                  <Pencil className="h-4 w-4 mr-2" />
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -262,22 +263,22 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                   className="text-destructive focus:text-destructive"
                   disabled={!canDeleteNotebook}
                 >
-                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  <Trash2 className="h-4 w-4 mr-2" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
 
-          {/* Add cell buttons (Code and Text) */}
+          {/* Add cell buttons (Code and Text) - adds at top */}
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => handleAddCell('code')}
+              onClick={() => handleAddCell('code', true)}
               disabled={isSaving || !notebook}
               className="h-7 px-2"
-              title="Add code cell"
+              title="Add code cell at top"
             >
               {isSaving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -288,10 +289,10 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => handleAddCell('markdown')}
+              onClick={() => handleAddCell('markdown', true)}
               disabled={isSaving || !notebook}
               className="h-7 px-2"
-              title="Add text cell"
+              title="Add text cell at top"
             >
               <Type className="h-3.5 w-3.5" />
             </Button>
@@ -335,10 +336,6 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                 </Button>
               </div>
             </div>
-          )}
-
-          {cells.length > 0 && (
-            <InsertCellRow position={0} onInsert={handleInsertCell} disabled={isSaving || !notebook} />
           )}
 
           {cells.map((cell, index) => (

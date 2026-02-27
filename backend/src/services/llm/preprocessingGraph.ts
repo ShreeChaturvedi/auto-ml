@@ -70,6 +70,8 @@ interface PreprocessingGraphDependencies {
   runRepository: PreprocessingRunRepository;
 }
 
+type ProjectDataset = Awaited<ReturnType<DatasetRepository['list']>>[number];
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -156,6 +158,31 @@ function formatDatasetSummary(dataset: {
     columns: dataset.columns.map((column) => ({ name: column.name, dtype: column.dtype })),
     sample: dataset.sample?.slice(0, 5) ?? []
   };
+}
+
+function normalizeDatasetRef(value: string): { raw: string; noExt: string } {
+  const raw = value.trim().toLowerCase();
+  const lastDot = raw.lastIndexOf('.');
+  const noExt = lastDot > 0 ? raw.slice(0, lastDot) : raw;
+  return { raw, noExt };
+}
+
+async function resolveProjectDataset(
+  datasetRepository: DatasetRepository,
+  projectId: string,
+  datasetRef: string
+): Promise<ProjectDataset | undefined> {
+  const allDatasets = await datasetRepository.list();
+  const projectDatasets = allDatasets.filter((dataset) => dataset.projectId === projectId);
+  const { raw, noExt } = normalizeDatasetRef(datasetRef);
+
+  return projectDatasets.find((dataset) => {
+    if (dataset.datasetId === datasetRef) {
+      return true;
+    }
+    const normalizedFilename = normalizeDatasetRef(dataset.filename);
+    return normalizedFilename.raw === raw || normalizedFilename.noExt === noExt;
+  });
 }
 
 function appendEvent(
@@ -329,67 +356,73 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'set_active_dataset': {
-          const datasetId = toStringValue(args.datasetId);
-          if (!datasetId) {
+          const datasetRef = toStringValue(args.datasetId);
+          if (!datasetRef) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'set_active_dataset requires datasetId');
           }
-          const dataset = await deps.datasetRepository.getById(datasetId);
-          if (!dataset || dataset.projectId !== projectId) {
+          const dataset = await resolveProjectDataset(deps.datasetRepository, projectId, datasetRef);
+          if (!dataset) {
             return fail(run.runId, 'DATASET_NOT_FOUND', 'Dataset not found in project context.', {
-              datasetId
+              datasetId: datasetRef
             });
           }
 
-          run.activeDatasetId = datasetId;
+          run.activeDatasetId = dataset.datasetId;
           appendEvent(run, {
             eventId: randomUUID(),
             runId: run.runId,
             type: 'active_dataset_set',
-            datasetId
+            datasetId: dataset.datasetId
           });
           await deps.runRepository.save(run);
 
           return ok(run.runId, {
-            datasetId,
+            datasetId: dataset.datasetId,
             dataset: formatDatasetSummary(dataset)
           });
         }
 
         case 'profile_active_dataset': {
-          const datasetId = toStringValue(args.datasetId) ?? run.activeDatasetId;
-          if (!datasetId) {
+          const datasetRef = toStringValue(args.datasetId) ?? run.activeDatasetId;
+          if (!datasetRef) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'No active dataset set for this preprocessing run.');
           }
-          const dataset = await deps.datasetRepository.getById(datasetId);
-          if (!dataset || dataset.projectId !== projectId) {
+          const dataset = await resolveProjectDataset(deps.datasetRepository, projectId, datasetRef);
+          if (!dataset) {
             return fail(run.runId, 'DATASET_NOT_FOUND', 'Dataset not found in project context.', {
-              datasetId
+              datasetId: datasetRef
             });
           }
 
           run.activeDatasetId = dataset.datasetId;
           await deps.runRepository.save(run);
           return ok(run.runId, {
-            datasetId,
+            datasetId: dataset.datasetId,
             dataset: formatDatasetSummary(dataset)
           });
         }
 
         case 'checkpoint_dataset': {
-          const datasetId = toStringValue(args.datasetId) ?? run.activeDatasetId;
-          if (!datasetId) {
+          const datasetRef = toStringValue(args.datasetId) ?? run.activeDatasetId;
+          if (!datasetRef) {
             return fail(
               run.runId,
               'MISSING_REQUIRED_ARG',
               'checkpoint_dataset requires datasetId or active dataset context.'
             );
           }
+          const dataset = await resolveProjectDataset(deps.datasetRepository, projectId, datasetRef);
+          if (!dataset) {
+            return fail(run.runId, 'DATASET_NOT_FOUND', 'Dataset not found in project context.', {
+              datasetId: datasetRef
+            });
+          }
 
           const checkpointId = `ckpt-${randomUUID()}`;
           const checkpoint = {
             checkpointId,
             label: toStringValue(args.label) ?? `Checkpoint ${run.checkpoints.length + 1}`,
-            datasetId,
+            datasetId: dataset.datasetId,
             stepIds: toStringArray(args.stepIds),
             createdAt: nowIso(),
             replayUntilEventSequence: run.events.length
@@ -401,7 +434,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             runId: run.runId,
             type: 'checkpoint_created',
             checkpointId,
-            datasetId,
+            datasetId: dataset.datasetId,
             payload: {
               label: checkpoint.label,
               stepIds: checkpoint.stepIds,
@@ -417,14 +450,20 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'register_derived_dataset': {
-          const datasetId = toStringValue(args.datasetId);
-          if (!datasetId) {
+          const datasetRef = toStringValue(args.datasetId);
+          if (!datasetRef) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'register_derived_dataset requires datasetId');
           }
-          run.derivedDatasetIds = mergeUniqueStrings(run.derivedDatasetIds, [datasetId]);
+          const dataset = await resolveProjectDataset(deps.datasetRepository, projectId, datasetRef);
+          if (!dataset) {
+            return fail(run.runId, 'DATASET_NOT_FOUND', 'Dataset not found in project context.', {
+              datasetId: datasetRef
+            });
+          }
+          run.derivedDatasetIds = mergeUniqueStrings(run.derivedDatasetIds, [dataset.datasetId]);
           await deps.runRepository.save(run);
           return ok(run.runId, {
-            datasetId,
+            datasetId: dataset.datasetId,
             derivedDatasetIds: run.derivedDatasetIds
           });
         }
@@ -460,8 +499,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           const replayEvents = collectReplayEvents(run, checkpoint.replayUntilEventSequence);
-          const targetDatasetId = toStringValue(args.replayDatasetId) ?? run.activeDatasetId;
-          if (operation !== 'restore' && !targetDatasetId) {
+          const targetDatasetRef = toStringValue(args.replayDatasetId) ?? run.activeDatasetId;
+          if (operation !== 'restore' && !targetDatasetRef) {
             return fail(
               run.runId,
               'REPLAY_TARGET_DATASET_REQUIRED',
@@ -492,11 +531,11 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             });
           }
 
-          const targetDataset = await deps.datasetRepository.getById(targetDatasetId!);
-          if (!targetDataset || targetDataset.projectId !== projectId) {
+          const targetDataset = await resolveProjectDataset(deps.datasetRepository, projectId, targetDatasetRef!);
+          if (!targetDataset) {
             return fail(run.runId, 'DATASET_NOT_FOUND', 'Replay target dataset not found in project context.', {
               checkpointId,
-              datasetId: targetDatasetId
+              datasetId: targetDatasetRef
             });
           }
 
@@ -803,8 +842,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             });
           }
 
-          const datasetId = toStringValue(args.datasetId) ?? run.activeDatasetId;
-          if (!datasetId) {
+          const datasetRef = toStringValue(args.datasetId) ?? run.activeDatasetId;
+          if (!datasetRef) {
             return fail(
               run.runId,
               'MISSING_REQUIRED_ARG',
@@ -813,11 +852,11 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             );
           }
 
-          const dataset = await deps.datasetRepository.getById(datasetId);
-          if (!dataset || dataset.projectId !== projectId) {
+          const dataset = await resolveProjectDataset(deps.datasetRepository, projectId, datasetRef);
+          if (!dataset) {
             return fail(run.runId, 'DATASET_NOT_FOUND', 'Dataset not found in project context.', {
               stepId: step.stepId,
-              datasetId
+              datasetId: datasetRef
             });
           }
 

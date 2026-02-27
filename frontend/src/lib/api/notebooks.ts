@@ -2,6 +2,9 @@ import type {
   Notebook,
   NotebookCell,
   CellSummary,
+  CreateNotebookRequest,
+  UpdateNotebookRequest,
+  DeleteNotebookResponse,
   CreateCellRequest,
   UpdateCellRequest,
   ReorderCellsRequest,
@@ -46,10 +49,55 @@ async function apiRequest<T>(
 // ============================================================
 
 /**
- * Get or create the notebook for a project.
+ * Get the default notebook for a project (legacy endpoint).
  */
 export async function getNotebook(projectId: string): Promise<Notebook> {
   return apiRequest<Notebook>(`/projects/${projectId}/notebook`);
+}
+
+/**
+ * List notebooks for a project.
+ */
+export async function listNotebooks(projectId: string): Promise<Notebook[]> {
+  return apiRequest<Notebook[]>(`/projects/${projectId}/notebooks`);
+}
+
+/**
+ * Create a notebook in a project.
+ */
+export async function createNotebook(
+  projectId: string,
+  request: CreateNotebookRequest
+): Promise<Notebook> {
+  return apiRequest<Notebook>(`/projects/${projectId}/notebooks`, {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
+}
+
+/**
+ * Rename a notebook.
+ */
+export async function updateNotebook(
+  notebookId: string,
+  request: UpdateNotebookRequest
+): Promise<Notebook> {
+  return apiRequest<Notebook>(`/notebooks/${notebookId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(request)
+  });
+}
+
+/**
+ * Delete a notebook from a project.
+ */
+export async function deleteNotebook(
+  projectId: string,
+  notebookId: string
+): Promise<DeleteNotebookResponse> {
+  return apiRequest<DeleteNotebookResponse>(`/projects/${projectId}/notebooks/${notebookId}`, {
+    method: 'DELETE'
+  });
 }
 
 // ============================================================

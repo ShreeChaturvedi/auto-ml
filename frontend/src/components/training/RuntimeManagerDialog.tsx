@@ -466,16 +466,14 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
   const blurTimeoutRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
 
-  const {
-    pythonVersion,
-    setPythonVersion,
-    cloudAvailable,
-    cloudInitializing,
-    sessionId,
-    installedPackages,
-    refreshPackages,
-    initializeCloud
-  } = useExecutionStore();
+  const pythonVersion = useExecutionStore((state) => state.pythonVersion);
+  const setPythonVersion = useExecutionStore((state) => state.setPythonVersion);
+  const cloudAvailable = useExecutionStore((state) => state.cloudAvailable);
+  const cloudInitializing = useExecutionStore((state) => state.cloudInitializing);
+  const sessionId = useExecutionStore((state) => state.sessionId);
+  const installedPackages = useExecutionStore((state) => state.installedPackages);
+  const refreshPackages = useExecutionStore((state) => state.refreshPackages);
+  const initializeCloud = useExecutionStore((state) => state.initializeCloud);
 
   const files = useDataStore((state) => state.files);
   const projectFiles = useMemo(

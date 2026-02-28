@@ -18,7 +18,8 @@ import { AuthCard, AuthPageWrapper } from './AuthCard';
 export function GoogleOAuthCallback() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { setUser, setTokens } = useAuthStore();
+  const setUser = useAuthStore((state) => state.setUser);
+  const setTokens = useAuthStore((state) => state.setTokens);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

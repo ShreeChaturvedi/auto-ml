@@ -74,18 +74,16 @@ interface NotebookEditorProps {
 }
 
 export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
-  const {
-    notebook,
-    cells,
-    isLoading,
-    isSaving,
-    createCell,
-    updateCell,
-    deleteCell,
-    runCell,
-    isCellLocked,
-    getCellLockOwner
-  } = useNotebookStore();
+  const notebook = useNotebookStore((state) => state.notebook);
+  const cells = useNotebookStore((state) => state.cells);
+  const isLoading = useNotebookStore((state) => state.isLoading);
+  const isSaving = useNotebookStore((state) => state.isSaving);
+  const createCell = useNotebookStore((state) => state.createCell);
+  const updateCell = useNotebookStore((state) => state.updateCell);
+  const deleteCell = useNotebookStore((state) => state.deleteCell);
+  const runCell = useNotebookStore((state) => state.runCell);
+  const isCellLocked = useNotebookStore((state) => state.isCellLocked);
+  const getCellLockOwner = useNotebookStore((state) => state.getCellLockOwner);
 
   const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
     await createCell({ content: '', cellType });

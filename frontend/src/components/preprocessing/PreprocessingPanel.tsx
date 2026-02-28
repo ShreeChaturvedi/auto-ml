@@ -23,6 +23,7 @@ import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing
 import {
   AlertTriangle,
   CheckCircle2,
+  Database,
   GitBranch,
   Loader2,
   PlayCircle,
@@ -110,23 +111,21 @@ export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
   const notebookCells = useNotebookStore((state) => state.cells);
 
-  const {
-    tables,
-    selectedDatasetId,
-    runId,
-    timeline,
-    stepBindings,
-    replayReport,
-    isLoadingTables,
-    error: storeError,
-    loadTables,
-    selectDataset,
-    approveStep,
-    rejectStep,
-    syncDivergence,
-    evaluateReplayCompatibility,
-    clearRun
-  } = usePreprocessingStore();
+  const tables = usePreprocessingStore((state) => state.tables);
+  const selectedDatasetId = usePreprocessingStore((state) => state.selectedDatasetId);
+  const runId = usePreprocessingStore((state) => state.runId);
+  const timeline = usePreprocessingStore((state) => state.timeline);
+  const stepBindings = usePreprocessingStore((state) => state.stepBindings);
+  const replayReport = usePreprocessingStore((state) => state.replayReport);
+  const isLoadingTables = usePreprocessingStore((state) => state.isLoadingTables);
+  const storeError = usePreprocessingStore((state) => state.error);
+  const loadTables = usePreprocessingStore((state) => state.loadTables);
+  const selectDataset = usePreprocessingStore((state) => state.selectDataset);
+  const approveStep = usePreprocessingStore((state) => state.approveStep);
+  const rejectStep = usePreprocessingStore((state) => state.rejectStep);
+  const syncDivergence = usePreprocessingStore((state) => state.syncDivergence);
+  const evaluateReplayCompatibility = usePreprocessingStore((state) => state.evaluateReplayCompatibility);
+  const clearRun = usePreprocessingStore((state) => state.clearRun);
 
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');

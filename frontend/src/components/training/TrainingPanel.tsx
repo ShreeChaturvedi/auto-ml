@@ -27,6 +27,7 @@ import remarkGfm from 'remark-gfm';
 import 'katex/dist/katex.min.css';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
+const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -60,7 +61,9 @@ export function TrainingPanel() {
 
   // Features
   const features = useFeatureStore((s) => s.features);
-  const pipelineVersions = useFeatureStore((s) => (projectId ? s.versions[projectId] ?? [] : []));
+  const pipelineVersions = useFeatureStore((s) => (
+    projectId ? s.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS : EMPTY_PIPELINE_VERSIONS
+  ));
   const hydrateFeatures = useFeatureStore((s) => s.hydrateFromProject);
   const projectMetadata = useProjectStore((state) => projectId ? state.getProjectById(projectId)?.metadata : undefined);
   const projectFeatures = useMemo(() => projectId ? features.filter(f => f.projectId === projectId && f.enabled) : [], [features, projectId]);

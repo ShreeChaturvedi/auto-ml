@@ -45,25 +45,21 @@ interface NotebookToolbarProps {
 }
 
 export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) {
-  const {
-    notebook,
-    notebooks,
-    activeNotebookId,
-    isSaving,
-    createNotebook,
-    renameNotebook,
-    deleteNotebook,
-    setActiveNotebook,
-    createCell
-  } = useNotebookStore();
+  const notebook = useNotebookStore((state) => state.notebook);
+  const notebooks = useNotebookStore((state) => state.notebooks);
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
+  const isSaving = useNotebookStore((state) => state.isSaving);
+  const createNotebook = useNotebookStore((state) => state.createNotebook);
+  const renameNotebook = useNotebookStore((state) => state.renameNotebook);
+  const deleteNotebook = useNotebookStore((state) => state.deleteNotebook);
+  const setActiveNotebook = useNotebookStore((state) => state.setActiveNotebook);
+  const createCell = useNotebookStore((state) => state.createCell);
 
-  const {
-    cloudAvailable,
-    cloudInitializing,
-    sessionId,
-    checkCloudHealth,
-    initializeCloud
-  } = useExecutionStore();
+  const cloudAvailable = useExecutionStore((state) => state.cloudAvailable);
+  const cloudInitializing = useExecutionStore((state) => state.cloudInitializing);
+  const sessionId = useExecutionStore((state) => state.sessionId);
+  const checkCloudHealth = useExecutionStore((state) => state.checkCloudHealth);
+  const initializeCloud = useExecutionStore((state) => state.initializeCloud);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createName, setCreateName] = useState('');

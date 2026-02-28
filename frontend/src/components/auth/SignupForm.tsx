@@ -39,7 +39,9 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 
 export function SignupForm() {
   const navigate = useNavigate();
-  const { setUser, setTokens, isAuthenticated } = useAuthStore();
+  const setUser = useAuthStore((state) => state.setUser);
+  const setTokens = useAuthStore((state) => state.setTokens);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [formError, setFormError] = useState<string | null>(null);
   const [buttonState, setButtonState] = useState<AuthButtonState>('idle');
   const [googleLoading, setGoogleLoading] = useState(false);

@@ -7,6 +7,7 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
+import { DatasetChooserDialog, RenameTabDialog } from './PreprocessingDialogs';
 import {
   PreprocessingToolbarLeft,
   PreprocessingToolbarRight
@@ -14,16 +15,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
@@ -585,122 +576,24 @@ export function PreprocessingPanel() {
         }}
       />
 
-      <Dialog open={isDatasetModalOpen} onOpenChange={setDatasetModalOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Select a dataset to start preprocessing</DialogTitle>
-            <DialogDescription>
-              Choose which dataset you'd like to preprocess. You can search by filename or ID.
-            </DialogDescription>
-          </DialogHeader>
+      <DatasetChooserDialog
+        open={isDatasetModalOpen}
+        onOpenChange={setDatasetModalOpen}
+        datasetSearch={datasetSearch}
+        onDatasetSearchChange={setDatasetSearch}
+        filteredTables={filteredTables}
+        candidateDatasetId={candidateDatasetId}
+        onCandidateDatasetChange={setCandidateDatasetId}
+        onStart={handleDatasetStart}
+      />
 
-          <div className="space-y-3">
-            <Input
-              value={datasetSearch}
-              onChange={(event) => setDatasetSearch(event.target.value)}
-              placeholder="Search datasets by filename or id..."
-            />
-
-            <ScrollArea className="h-64 rounded-md border">
-              <div className="space-y-2 p-2">
-                {filteredTables.map((table) => {
-                  const selected = candidateDatasetId === table.datasetId;
-                  const previewRows = table.previewRows ?? [];
-                  const previewColumns = Object.keys(previewRows[0] ?? {}).slice(0, 4);
-                  return (
-                    <button
-                      type="button"
-                      key={table.datasetId}
-                      onClick={() => setCandidateDatasetId(table.datasetId)}
-                      className={cn(
-                        'w-full rounded-md border p-3 text-left transition-colors',
-                        selected ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40'
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-medium">{table.filename}</p>
-                        <Badge variant="outline" className="text-[10px]">{table.nRows ?? 0} x {table.nCols ?? 0}</Badge>
-                      </div>
-                      {table.columns?.length ? (
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          Columns: {table.columns.slice(0, 4).map((column) => column.name).join(', ')}
-                        </p>
-                      ) : null}
-                      {previewRows.length > 0 ? (
-                        <div className="mt-2 overflow-x-auto rounded-md border bg-background/70">
-                          <table className="w-full text-[10px]">
-                            <thead>
-                              <tr className="border-b border-border/40 text-muted-foreground">
-                                {previewColumns.map((columnName) => (
-                                  <th key={columnName} className="px-2 py-1 text-left font-medium">
-                                    {columnName}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {previewRows.slice(0, 3).map((previewRow, rowIndex) => (
-                                <tr key={rowIndex} className="border-b border-border/20 last:border-0">
-                                  {previewColumns.map((columnName) => (
-                                    <td key={`${rowIndex}-${columnName}`} className="px-2 py-1 font-mono text-muted-foreground">
-                                      {previewRow[columnName] == null ? 'null' : String(previewRow[columnName])}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
-
-                {filteredTables.length === 0 ? (
-                  <div className="rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
-                    No datasets match your search.
-                  </div>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDatasetModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleDatasetStart} disabled={!candidateDatasetId}>
-              Start with this dataset
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={renameTabDialogOpen} onOpenChange={setRenameTabDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename processing tab</DialogTitle>
-            <DialogDescription>
-              Update the name of the current processing tab.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={renameTabName}
-            onChange={(event) => setRenameTabName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') handleRenameTab();
-            }}
-            placeholder="Tab name"
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameTabDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleRenameTab} disabled={!renameTabName.trim()}>
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameTabDialog
+        open={renameTabDialogOpen}
+        onOpenChange={setRenameTabDialogOpen}
+        value={renameTabName}
+        onValueChange={setRenameTabName}
+        onSave={handleRenameTab}
+      />
     </>
   );
 }

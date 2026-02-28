@@ -22,6 +22,7 @@ import { ApiError } from '@/lib/api/client';
 import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
 import { projectColorClasses } from '@/types/project';
+import { extractColumnTypesFromQuery } from './sqlColumnTypes';
 
 function extractApiErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
@@ -169,7 +170,8 @@ export function DataViewerTab() {
             rows: queryResult.rows,
             totalRows: queryResult.rowCount,
             previewRows: queryResult.rowCount,
-            eda: queryResult.eda
+            eda: queryResult.eda,
+            columnTypes: extractColumnTypesFromQuery(queryResult.columns)
           };
 
           const artifactId = createArtifact(query, mode, dataPreview, activeProject.id, {
@@ -195,7 +197,8 @@ export function DataViewerTab() {
           rows: result.query.rows,
           totalRows: result.query.rowCount,
           previewRows: result.query.rowCount,
-          eda: result.query.eda // Include EDA metadata for Analysis tab
+          eda: result.query.eda, // Include EDA metadata for Analysis tab
+          columnTypes: extractColumnTypesFromQuery(result.query.columns)
         };
 
         // Create artifact with result, including EDA metadata
@@ -283,9 +286,12 @@ export function DataViewerTab() {
     } else if (fileTabType === 'artifact') {
       const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
       if (artifact) {
+        // Extract column types from the query result metadata
+        const columnTypes = artifact.result.columnTypes;
         return (
             <DataTable
               preview={artifact.result}
+              columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
               queryInfo={{
                 query: artifact.query,

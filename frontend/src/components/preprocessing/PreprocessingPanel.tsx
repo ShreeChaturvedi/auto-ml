@@ -668,7 +668,7 @@ export function PreprocessingPanel() {
           <DialogHeader>
             <DialogTitle>Select a dataset to start preprocessing</DialogTitle>
             <DialogDescription>
-              Pick the exact dataset context for this run. We avoid implicit defaults to keep lineage deterministic.
+              Choose which dataset you'd like to preprocess. You can search by filename or ID.
             </DialogDescription>
           </DialogHeader>
 

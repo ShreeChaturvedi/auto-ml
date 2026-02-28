@@ -4,9 +4,10 @@
  * Provides PyPI-backed package search with caching and fallbacks.
  */
 
-import { mkdir, readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { resolve } from 'path';
+
 import type { PackageInfo } from '../types/execution.js';
 
 const PYPI_INDEX_URL = 'https://pypi.org/simple/';

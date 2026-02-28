@@ -6,12 +6,13 @@
  */
 
 import { spawn, exec, execFile, type ExecFileOptions } from 'child_process';
-import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
+
 import { env } from '../config.js';
 import type { PythonVersion, ExecutionResult, RichOutput, PackageInfo } from '../types/execution.js';
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,6 +7,7 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
+import { buildDatasetContinuityPrompt } from './continuityPrompt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +33,13 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
+import {
+  buildProcessingStorageKey,
+  buildProcessingTabsStateKey,
+  discoverProcessingTabIds,
+  extractRunIdFromStoredMessages,
+  parseStoredPreprocessingTabsState
+} from './storagePersistence';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -65,6 +73,7 @@ const HIDDEN_ACTIVITY_TOOLS = new Set([
 
 const TAB_ACTION_NEW = '__new_processing_tab__';
 const TAB_ACTION_DELETE = '__delete_processing_tab__';
+const DEFAULT_TAB_ID = 'processing-tab-1';
 
 interface PreprocessingTabSnapshot {
   selectedDatasetId: string | null;
@@ -91,12 +100,17 @@ function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
   };
 }
 
-function createTabId(): string {
-  return `proc-${Math.random().toString(36).slice(2, 10)}`;
+function createDefaultTab(): PreprocessingTab {
+  return {
+    id: DEFAULT_TAB_ID,
+    name: 'Processing 1',
+    snapshot: createEmptyTabSnapshot(),
+    storageVersion: 0
+  };
 }
 
-function buildProcessingStorageKey(tabId: string, storageVersion: number): string {
-  return `preprocessing-messages-v5-${tabId}-${storageVersion}`;
+function createTabId(): string {
+  return `proc-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function statusClassName(status: TransformationEvent['status']): string {
@@ -142,25 +156,37 @@ export function PreprocessingPanel() {
     error: storeError,
     loadTables,
     selectDataset,
+    setRunId,
+    setNextRunCellMode,
+    hydrateRunById,
     approveStep,
     rejectStep,
     syncDivergence,
     evaluateReplayCompatibility,
     clearRun
   } = usePreprocessingStore();
+  const lastHydratedRunIdRef = useRef<string | null>(null);
+  const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
+  const suppressStoredRunHydrationRef = useRef(false);
+  const hydratedTabsProjectRef = useRef<string | null>(null);
 
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
-  const [tabs, setTabs] = useState<PreprocessingTab[]>([
-    {
-      id: 'processing-tab-1',
-      name: 'Processing 1',
-      snapshot: createEmptyTabSnapshot(),
-      storageVersion: 0
-    }
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>('processing-tab-1');
+  const [tabs, setTabs] = useState<PreprocessingTab[]>([createDefaultTab()]);
+  const [activeTabId, setActiveTabId] = useState<string>(DEFAULT_TAB_ID);
+  const [tabsReady, setTabsReady] = useState(false);
+  const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
+  const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
+  const [pendingDecision, setPendingDecision] = useState<{
+    stepId: string;
+    action: 'approve' | 'reject';
+  } | null>(null);
+  const [latestDecision, setLatestDecision] = useState<{
+    stepId: string;
+    action: 'approved' | 'rejected';
+    at: number;
+  } | null>(null);
 
   useEffect(() => {
     if (projectId) {
@@ -175,6 +201,72 @@ export function PreprocessingPanel() {
   }, [disconnectNotebook, initializeNotebook, projectId]);
 
   useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+    if (hydratedTabsProjectRef.current === projectId) {
+      return;
+    }
+
+    setTabsReady(false);
+    hydratedTabsProjectRef.current = projectId;
+    const defaultTab = createDefaultTab();
+    const persistedTabsState = parseStoredPreprocessingTabsState(
+      localStorage.getItem(buildProcessingTabsStateKey(projectId))
+    );
+
+    const recoveredTabs: PreprocessingTab[] = [];
+    const knownTabIds = new Set<string>();
+    const appendRecoveredTab = (id: string, name: string, storageVersion: number) => {
+      if (knownTabIds.has(id)) {
+        return;
+      }
+      knownTabIds.add(id);
+      const storageKey = `${buildProcessingStorageKey(id)}-${projectId}`;
+      const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
+      recoveredTabs.push({
+        id,
+        name,
+        storageVersion,
+        snapshot: {
+          ...createEmptyTabSnapshot(),
+          runId: inferredRunId
+        }
+      });
+    };
+
+    persistedTabsState?.tabs.forEach((tab) => {
+      appendRecoveredTab(tab.id, tab.name, tab.storageVersion);
+    });
+
+    discoverProcessingTabIds(projectId).forEach((tabId) => {
+      appendRecoveredTab(tabId, `Processing ${recoveredTabs.length + 1}`, 0);
+    });
+
+    if (recoveredTabs.length === 0) {
+      recoveredTabs.push(defaultTab);
+    }
+
+    const persistedActiveTabId = persistedTabsState?.activeTabId ?? recoveredTabs[0].id;
+    const recoveredActiveTabId = recoveredTabs.some((tab) => tab.id === persistedActiveTabId)
+      ? persistedActiveTabId
+      : recoveredTabs[0].id;
+    const activeRecoveredTab = recoveredTabs.find((tab) => tab.id === recoveredActiveTabId) ?? recoveredTabs[0];
+
+    setTabs(recoveredTabs);
+    setActiveTabId(recoveredActiveTabId);
+    usePreprocessingStore.setState({
+      selectedDatasetId: activeRecoveredTab.snapshot.selectedDatasetId,
+      runId: activeRecoveredTab.snapshot.runId,
+      timeline: activeRecoveredTab.snapshot.timeline,
+      stepBindings: activeRecoveredTab.snapshot.stepBindings,
+      replayReport: activeRecoveredTab.snapshot.replayReport,
+      error: null
+    });
+    setTabsReady(true);
+  }, [projectId]);
+
+  useEffect(() => {
     if (!selectedDatasetId && tables.length > 0) {
       setDatasetModalOpen(true);
       const candidateStillExists = candidateDatasetId
@@ -187,8 +279,37 @@ export function PreprocessingPanel() {
   }, [candidateDatasetId, selectedDatasetId, tables]);
 
   useEffect(() => {
-    syncDivergence(notebookCells);
+    void syncDivergence(notebookCells);
   }, [notebookCells, syncDivergence]);
+
+  useEffect(() => {
+    if (tabs.length === 0) {
+      return;
+    }
+    if (!tabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabs[0].id);
+    }
+  }, [activeTabId, tabs]);
+
+  useEffect(() => {
+    if (!tabsReady || !projectId || tabs.length === 0) {
+      return;
+    }
+    const persistedActiveTabId = tabs.some((tab) => tab.id === activeTabId)
+      ? activeTabId
+      : tabs[0].id;
+    localStorage.setItem(
+      buildProcessingTabsStateKey(projectId),
+      JSON.stringify({
+        activeTabId: persistedActiveTabId,
+        tabs: tabs.map((tab) => ({
+          id: tab.id,
+          name: tab.name,
+          storageVersion: tab.storageVersion
+        }))
+      })
+    );
+  }, [activeTabId, projectId, tabs, tabsReady]);
 
   useEffect(() => {
     setTabs((previous) => previous.map((tab) => {
@@ -213,10 +334,97 @@ export function PreprocessingPanel() {
     [activeTabId, tabs]
   );
 
+  useEffect(() => {
+    if (!projectId || runId || !activeTab) {
+      return;
+    }
+    if (suppressStoredRunHydrationRef.current) {
+      return;
+    }
+    const storageKey = `${buildProcessingStorageKey(activeTab.id)}-${projectId}`;
+    const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
+    if (inferredRunId) {
+      setRunId(inferredRunId);
+    }
+  }, [activeTab, projectId, runId, setRunId]);
+
+  useEffect(() => {
+    if (runId) {
+      suppressStoredRunHydrationRef.current = false;
+    }
+  }, [runId]);
+
+  useEffect(() => {
+    if (!projectId || !runId) {
+      return;
+    }
+
+    if (lastHydratedRunIdRef.current === runId) {
+      return;
+    }
+
+    let cancelled = false;
+    void hydrateRunById(projectId, runId).then(() => {
+      if (!cancelled) {
+        lastHydratedRunIdRef.current = runId;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateRunById, projectId, runId]);
+
   const selectedTable = useMemo(
     () => tables.find((table) => table.datasetId === selectedDatasetId),
     [tables, selectedDatasetId]
   );
+
+  const resolvePendingSubmitPrompt = (nextPrompt: string | null) => {
+    const resolver = submitPromptResolverRef.current;
+    submitPromptResolverRef.current = null;
+    setSubmitChoiceOpen(false);
+    setPendingSubmitPrompt('');
+    resolver?.(nextPrompt);
+  };
+
+  const requestDatasetContinuityChoice = (prompt: string): Promise<string | null> => {
+    if (!selectedDatasetId) {
+      setDatasetModalOpen(true);
+      return Promise.resolve(null);
+    }
+    return new Promise<string | null>((resolve) => {
+      submitPromptResolverRef.current = resolve;
+      setPendingSubmitPrompt(prompt);
+      setSubmitChoiceOpen(true);
+    });
+  };
+
+  const handleUseCurrentDataset = () => {
+    setNextRunCellMode('continue');
+    resolvePendingSubmitPrompt(buildDatasetContinuityPrompt(
+      pendingSubmitPrompt,
+      'continue',
+      {
+        datasetId: selectedDatasetId,
+        datasetLabel: selectedTable?.filename
+      }
+    ));
+  };
+
+  const handleUseOriginalDataset = () => {
+    setNextRunCellMode('restart_from_original');
+    suppressStoredRunHydrationRef.current = true;
+    clearRun();
+    resolvePendingSubmitPrompt(buildDatasetContinuityPrompt(
+      pendingSubmitPrompt,
+      'restart_from_original',
+      {
+        datasetId: selectedDatasetId,
+        datasetLabel: selectedTable?.filename
+      }
+    ));
+  };
 
   const filteredTables = useMemo(() => {
     const query = datasetSearch.trim().toLowerCase();
@@ -301,7 +509,7 @@ export function PreprocessingPanel() {
       }
 
       if (projectId) {
-        const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
+        const currentStorageKey = buildProcessingStorageKey(activeTab.id);
         localStorage.removeItem(`${currentStorageKey}-${projectId}`);
       }
 
@@ -339,7 +547,7 @@ export function PreprocessingPanel() {
     if (!activeTab) return;
 
     if (projectId) {
-      const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
+      const currentStorageKey = buildProcessingStorageKey(activeTab.id);
       localStorage.removeItem(`${currentStorageKey}-${projectId}`);
     }
 
@@ -367,9 +575,9 @@ export function PreprocessingPanel() {
         key={`${activeTab?.id ?? 'processing-tab-1'}-${activeTab?.storageVersion ?? 0}`}
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
+        beforeSubmit={requestDatasetContinuityChoice}
         storageKey={buildProcessingStorageKey(
-          activeTab?.id ?? 'processing-tab-1',
-          activeTab?.storageVersion ?? 0
+          activeTab?.id ?? 'processing-tab-1'
         )}
         toolbarLeft={
           <>
@@ -396,6 +604,13 @@ export function PreprocessingPanel() {
                 Run {runId.slice(0, 10)}
               </Badge>
             ) : null}
+            <Badge
+              variant="outline"
+              className="h-6 px-2 text-[11px] font-normal"
+              title="Hybrid mode: steps chain inside the active run; switching dataset or resetting tab starts a fresh run."
+            >
+              Mode: Hybrid
+            </Badge>
           </>
         }
         toolbarRight={
@@ -418,7 +633,16 @@ export function PreprocessingPanel() {
               </SelectContent>
             </Select>
 
-            <Button variant="outline" size="sm" onClick={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (projectId) {
+                  void evaluateReplayCompatibility(projectId);
+                }
+              }}
+              disabled={!selectedDatasetId || !projectId}
+            >
               <RefreshCw className="mr-2 h-4 w-4" />
               Replay Check
             </Button>
@@ -548,15 +772,74 @@ export function PreprocessingPanel() {
                             <ShieldAlert className="h-4 w-4 text-amber-600" />
                             <span className="text-amber-700">This step requires explicit approval.</span>
                             <div className="ml-auto flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => rejectStep(event.stepId, 'Rejected by user')}>
-                                <XCircle className="mr-1 h-3.5 w-3.5" />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={pendingDecision?.stepId === event.stepId}
+                                onClick={async () => {
+                                  if (!projectId) {
+                                    return;
+                                  }
+                                  setPendingDecision({ stepId: event.stepId, action: 'reject' });
+                                  try {
+                                    await rejectStep(projectId, event.stepId, 'Rejected by user');
+                                    setLatestDecision({
+                                      stepId: event.stepId,
+                                      action: 'rejected',
+                                      at: Date.now()
+                                    });
+                                  } finally {
+                                    setPendingDecision((current) => (
+                                      current?.stepId === event.stepId ? null : current
+                                    ));
+                                  }
+                                }}
+                              >
+                                {pendingDecision?.stepId === event.stepId && pendingDecision.action === 'reject' ? (
+                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <XCircle className="mr-1 h-3.5 w-3.5" />
+                                )}
                                 Reject
                               </Button>
-                              <Button size="sm" onClick={() => approveStep(event.stepId)}>
-                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                              <Button
+                                size="sm"
+                                disabled={pendingDecision?.stepId === event.stepId}
+                                onClick={async () => {
+                                  if (!projectId) {
+                                    return;
+                                  }
+                                  setPendingDecision({ stepId: event.stepId, action: 'approve' });
+                                  try {
+                                    await approveStep(projectId, event.stepId);
+                                    setLatestDecision({
+                                      stepId: event.stepId,
+                                      action: 'approved',
+                                      at: Date.now()
+                                    });
+                                  } finally {
+                                    setPendingDecision((current) => (
+                                      current?.stepId === event.stepId ? null : current
+                                    ));
+                                  }
+                                }}
+                              >
+                                {pendingDecision?.stepId === event.stepId && pendingDecision.action === 'approve' ? (
+                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                                )}
                                 Approve
                               </Button>
                             </div>
+                          </div>
+                        ) : null}
+
+                        {latestDecision?.stepId === event.stepId ? (
+                          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-2 text-emerald-700">
+                            {latestDecision.action === 'approved'
+                              ? 'Approval synced to backend run state.'
+                              : 'Rejection synced to backend run state.'}
                           </div>
                         ) : null}
 
@@ -639,6 +922,11 @@ export function PreprocessingPanel() {
                     <GitBranch className="h-4 w-4" />
                     Replay compatibility {replayReport.compatible ? 'passed' : 'needs attention'}
                   </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {replayReport.source === 'backend_authoritative'
+                      ? 'Backend-authoritative result'
+                      : 'Local pre-check (non-authoritative)'}
+                  </p>
                   {!replayReport.compatible ? (
                     <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                       {replayReport.issues.map((issue, index) => (
@@ -648,6 +936,16 @@ export function PreprocessingPanel() {
                   ) : (
                     <p className="text-xs text-muted-foreground">No replay blockers detected against current dataset schema.</p>
                   )}
+                  {replayReport.source === 'backend_authoritative' && (replayReport.precheckIssues?.length ?? 0) > 0 ? (
+                    <div className="rounded-md border bg-muted/20 p-2">
+                      <p className="text-[11px] font-medium">Local pre-check warnings (informational)</p>
+                      <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                        {replayReport.precheckIssues?.map((issue, index) => (
+                          <li key={`${issue}-${index}`}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             ) : null}
@@ -747,6 +1045,50 @@ export function PreprocessingPanel() {
             <Button variant="outline" onClick={() => setDatasetModalOpen(false)}>Cancel</Button>
             <Button onClick={handleDatasetStart} disabled={!candidateDatasetId}>
               Start with this dataset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isSubmitChoiceOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolvePendingSubmitPrompt(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Choose Dataset Source For This Action</DialogTitle>
+            <DialogDescription>
+              For this prompt, should preprocessing continue from the current edited working dataset, or restart from the original dataset source?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Card className="border-muted">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Current selection</CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                {selectedTable?.filename ?? 'No dataset selected'}
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button variant="outline" onClick={handleUseOriginalDataset}>
+                Start From Original
+              </Button>
+              <Button onClick={handleUseCurrentDataset}>
+                Continue Current Working
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => resolvePendingSubmitPrompt(null)}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

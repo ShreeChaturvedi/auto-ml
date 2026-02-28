@@ -1,19 +1,29 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { env } from '../../config.js';
+import { hasDatabaseConfiguration } from '../../db.js';
 import { createDatasetRepository, type DatasetRepository } from '../../repositories/datasetRepository.js';
+import { getCell as getNotebookCell, updateCell as updateNotebookCell } from '../../repositories/notebookRepository.js';
 import {
   createFilePreprocessingRunRepository,
   type DatasetSchemaSnapshot,
+  type PreprocessingCellBinding,
   type PreprocessingRunEvent,
   type PreprocessingRunRepository,
   type PreprocessingRunState,
   type StepState,
   type ValidationMetrics
 } from '../../repositories/preprocessingRunRepository.js';
+import {
+  createPreprocessingLangGraphRuntime,
+  type PreprocessingGraphState,
+  type PreprocessingLangGraphRuntime
+} from './langgraph/preprocessingRuntime.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+const langGraphRuntime = createPreprocessingLangGraphRuntime();
+const PREPROCESSING_STATE_MODEL = 'hybrid' as const;
 
 const PREPROCESSING_TOOL_NAMES = [
   'list_project_datasets',
@@ -27,12 +37,17 @@ const PREPROCESSING_TOOL_NAMES = [
   'materialize_step_code',
   'execute_transformation_step',
   'validate_step_result',
-  'commit_transformation_step'
+  'commit_transformation_step',
+  'detect_step_divergence',
+  'reconcile_diverged_step'
 ] as const;
 
 type PreprocessingToolName = (typeof PREPROCESSING_TOOL_NAMES)[number];
 
 type ReasonCode =
+  | 'RUN_NOT_FOUND'
+  | 'RUN_PROJECT_MISMATCH'
+  | 'RUN_HAS_INCOMPLETE_STEP'
   | 'MISSING_REQUIRED_ARG'
   | 'DATASET_NOT_FOUND'
   | 'CHECKPOINT_NOT_FOUND'
@@ -42,6 +57,8 @@ type ReasonCode =
   | 'STEP_APPLIED_REQUIRES_CELL_BINDINGS'
   | 'STEP_COMMIT_REQUIRES_EXECUTE_VALIDATE'
   | 'STEP_APPROVAL_REQUIRED'
+  | 'STEP_RECONCILE_REQUIRES_DIVERGED'
+  | 'STEP_RECONCILE_REQUIRES_BOUND_CELL'
   | 'REPLAY_TARGET_DATASET_REQUIRED'
   | 'REPLAY_INCOMPATIBLE_DATASET'
   | 'INVALID_OPERATION'
@@ -68,9 +85,51 @@ interface ToolEnvelope {
 interface PreprocessingGraphDependencies {
   datasetRepository: DatasetRepository;
   runRepository: PreprocessingRunRepository;
+  cellMetadataStore?: PreprocessingCellMetadataStore;
+  cellInspector?: PreprocessingCellInspector;
+}
+
+interface PreprocessingLangGraphSyncDependencies {
+  runRepository: PreprocessingRunRepository;
+  runtime: PreprocessingLangGraphRuntime;
+}
+
+interface PreprocessingCellMetadataStore {
+  apply(cellIds: string[], binding: PreprocessingCellBinding): Promise<void>;
+}
+
+interface PreprocessingCellInspector {
+  read(cellId: string): Promise<{ cellId: string; content: string; metadata: Record<string, unknown> } | undefined>;
+}
+
+interface StepDivergenceDetail {
+  stepId: string;
+  cellId: string;
+  issue: 'missing_cell' | 'binding_mismatch' | 'code_hash_mismatch';
+  expectedCodeHash?: string;
+  actualCodeHash?: string;
 }
 
 type ProjectDataset = Awaited<ReturnType<DatasetRepository['list']>>[number];
+
+const LANGGRAPH_STAGE_TOOLS = new Set<PreprocessingToolName>([
+  'set_active_dataset',
+  'profile_active_dataset',
+  'propose_transformation_step',
+  'materialize_step_code',
+  'execute_transformation_step',
+  'validate_step_result',
+  'commit_transformation_step',
+  'detect_step_divergence',
+  'reconcile_diverged_step'
+]);
+
+const NON_TERMINAL_STEP_STATUSES = new Set<StepState['status']>([
+  'pending',
+  'running',
+  'awaiting_approval',
+  'diverged'
+]);
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -101,8 +160,43 @@ function toStringArray(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function hashCode(content: string): string {
   return createHash('sha256').update(content).digest('hex').slice(0, 24);
+}
+
+function toCellBinding(runId: string, step: StepState, updatedAt: string, toolCallId?: string): PreprocessingCellBinding {
+  return {
+    runId,
+    stepId: step.stepId,
+    toolCallId: toolCallId ?? step.toolCallId,
+    version: step.version,
+    codeHash: step.codeHash,
+    updatedAt
+  };
+}
+
+function toCellBindings(
+  runId: string,
+  step: StepState,
+  updatedAt: string,
+  toolCallId?: string
+): Array<PreprocessingCellBinding & { cellId: string }> {
+  const binding = toCellBinding(runId, step, updatedAt, toolCallId);
+  return step.cellIds.map((cellId) => ({
+    cellId,
+    ...binding
+  }));
 }
 
 function mergeUniqueStrings(...groups: string[][]): string[] {
@@ -129,6 +223,10 @@ function serializeStep(step: StepState) {
     rationale: step.rationale,
     intentType: step.intentType,
     status: step.status,
+    approvalDecision: step.approvalDecision,
+    decisionReason: step.decisionReason,
+    toolCallId: step.toolCallId,
+    linkedFromStepId: step.linkedFromStepId,
     code: step.code,
     codeHash: step.codeHash,
     version: step.version,
@@ -139,6 +237,67 @@ function serializeStep(step: StepState) {
     lastValidateSucceeded: step.lastValidateSucceeded,
     createdAt: step.createdAt,
     updatedAt: step.updatedAt
+  };
+}
+
+export interface PreprocessingRunSnapshot {
+  runId: string;
+  projectId: string;
+  stateModel: typeof PREPROCESSING_STATE_MODEL;
+  activeDatasetId?: string;
+  derivedDatasetIds: string[];
+  langGraphRuntime?: 'langgraph';
+  langGraphState?: Record<string, unknown>;
+  steps: ReturnType<typeof serializeStep>[];
+  checkpoints: PreprocessingRunState['checkpoints'];
+  events: PreprocessingRunState['events'];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PreprocessingRunSummary {
+  runId: string;
+  projectId: string;
+  activeDatasetId?: string;
+  stepCount: number;
+  eventCount: number;
+  latestEventType?: PreprocessingRunEvent['type'];
+  latestEventAt?: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export function toPreprocessingRunSnapshot(run: PreprocessingRunState): PreprocessingRunSnapshot {
+  return {
+    runId: run.runId,
+    projectId: run.projectId,
+    stateModel: PREPROCESSING_STATE_MODEL,
+    activeDatasetId: run.activeDatasetId,
+    derivedDatasetIds: run.derivedDatasetIds,
+    langGraphRuntime: run.langGraphRuntime,
+    langGraphState: run.langGraphState,
+    steps: Object.values(run.steps)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map((step) => serializeStep(step)),
+    checkpoints: run.checkpoints,
+    events: run.events,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt
+  };
+}
+
+function summarizeRun(run: PreprocessingRunState): PreprocessingRunSummary {
+  const latestEvent = run.events.at(-1);
+  return {
+    runId: run.runId,
+    projectId: run.projectId,
+    activeDatasetId: run.activeDatasetId,
+    stepCount: Object.keys(run.steps).length,
+    eventCount: run.events.length,
+    latestEventType: latestEvent?.type,
+    latestEventAt: latestEvent?.createdAt,
+    updatedAt: run.updatedAt,
+    createdAt: run.createdAt
   };
 }
 
@@ -206,6 +365,7 @@ function createStep(stepId: string): StepState {
     title: 'Untitled transformation',
     intentType: 'transformation',
     status: 'pending',
+    approvalDecision: 'approved',
     version: 1,
     cellIds: [],
     requiresApproval: false,
@@ -330,18 +490,416 @@ function ensureStepExists(run: PreprocessingRunState, runId: string, stepId: str
   return step;
 }
 
+function findIncompleteBlockingStep(run: PreprocessingRunState, requestedStepId?: string): StepState | undefined {
+  return Object.values(run.steps).find((step) => {
+    if (!NON_TERMINAL_STEP_STATUSES.has(step.status)) {
+      return false;
+    }
+    if (requestedStepId && step.stepId === requestedStepId) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function enforceLangGraphCompletionConsistency(
+  run: PreprocessingRunState,
+  graphState: PreprocessingGraphState
+): PreprocessingGraphState {
+  const hasIncompleteStep = Object.values(run.steps).some((step) => NON_TERMINAL_STEP_STATUSES.has(step.status));
+  if (!hasIncompleteStep) {
+    return graphState;
+  }
+
+  return {
+    ...graphState,
+    currentStage: 'commit_or_revise',
+    nextStage: 'commit_or_revise',
+    isCompleted: false,
+    updatedAt: nowIso()
+  };
+}
+
+async function resolveExecutionRun(
+  runRepository: PreprocessingRunRepository,
+  projectId: string,
+  explicitRunId?: string
+): Promise<
+  | { run: PreprocessingRunState }
+  | { output: ToolEnvelope; error: string }
+> {
+  if (!explicitRunId) {
+    const run = await runRepository.getOrCreate(projectId);
+    return { run };
+  }
+
+  const existing = await runRepository.getById(explicitRunId);
+  if (!existing) {
+    return fail(
+      explicitRunId,
+      'RUN_NOT_FOUND',
+      `Run ${explicitRunId} was not found. Start a preprocessing run without runId first.`,
+      {
+        runId: explicitRunId
+      }
+    );
+  }
+
+  if (existing.projectId !== projectId) {
+    return fail(
+      explicitRunId,
+      'RUN_PROJECT_MISMATCH',
+      `Run ${explicitRunId} belongs to another project and cannot be used here.`,
+      {
+        projectId,
+        runProjectId: existing.projectId
+      }
+    );
+  }
+
+  return { run: existing };
+}
+
+function toPreprocessingGraphState(value: unknown): PreprocessingGraphState | undefined {
+  const candidate = toRecord(value);
+  if (!candidate) {
+    return undefined;
+  }
+  if (
+    typeof candidate.runId !== 'string'
+    || typeof candidate.projectId !== 'string'
+    || typeof candidate.currentStage !== 'string'
+    || typeof candidate.nextStage !== 'string'
+  ) {
+    return undefined;
+  }
+
+  return candidate as unknown as PreprocessingGraphState;
+}
+
+function buildLangGraphPatch(
+  toolName: PreprocessingToolName,
+  args: Record<string, unknown>,
+  result: { output?: unknown; error?: string }
+): Partial<PreprocessingGraphState> | undefined {
+  const output = toRecord(result.output);
+  const step = toRecord(output?.step);
+  const stepId = toStringValue(step?.stepId) ?? toStringValue(args.stepId);
+  const failed = Boolean(result.error);
+
+  switch (toolName) {
+    case 'set_active_dataset':
+    case 'profile_active_dataset': {
+      const datasetId = toStringValue(output?.datasetId) ?? toStringValue(args.datasetId);
+      return {
+        currentStage: 'context_ready',
+        nextStage: 'context_ready',
+        contextReady: !failed,
+        activeDatasetId: datasetId
+      };
+    }
+    case 'propose_transformation_step':
+      return {
+        currentStage: 'plan_step',
+        nextStage: 'plan_step',
+        planReady: !failed,
+        currentStepId: stepId
+      };
+    case 'materialize_step_code':
+      return {
+        currentStage: 'generate_code',
+        nextStage: 'generate_code',
+        codeReady: !failed,
+        currentStepId: stepId
+      };
+    case 'execute_transformation_step': {
+      const executeSucceeded = !failed && (toBooleanValue(step?.lastExecuteSucceeded) ?? toBooleanValue(args.succeeded) ?? true);
+      return {
+        currentStage: 'execute_code',
+        nextStage: 'execute_code',
+        executeSucceeded,
+        currentStepId: stepId
+      };
+    }
+    case 'validate_step_result': {
+      const requiresApproval = toBooleanValue(step?.requiresApproval) ?? toBooleanValue(args.requiresApproval) ?? false;
+      const validationPassed = !failed && (toBooleanValue(step?.lastValidateSucceeded) ?? true);
+      return {
+        currentStage: 'validate_outcome',
+        nextStage: 'validate_outcome',
+        validationPassed,
+        requiresApproval,
+        approvalDecision: requiresApproval ? 'pending' : 'approved',
+        currentStepId: stepId
+      };
+    }
+    case 'commit_transformation_step': {
+      const approvedArg = toBooleanValue(args.approved);
+      const reasonCode = toStringValue(output?.reasonCode);
+      return {
+        currentStage: 'commit_or_revise',
+        nextStage: 'commit_or_revise',
+        approvalDecision: reasonCode === 'STEP_APPROVAL_REQUIRED'
+          ? 'pending'
+          : approvedArg === false
+            ? 'rejected'
+            : 'approved',
+        currentStepId: stepId
+      };
+    }
+    case 'detect_step_divergence': {
+      const divergedStepIds = Array.isArray(output?.divergedStepIds) ? output.divergedStepIds : [];
+      const hasDivergence = divergedStepIds.length > 0;
+      return {
+        currentStage: hasDivergence ? 'commit_or_revise' : 'validate_outcome',
+        nextStage: hasDivergence ? 'commit_or_revise' : 'validate_outcome',
+        currentStepId: stepId
+      };
+    }
+    case 'reconcile_diverged_step':
+      return {
+        currentStage: 'commit_or_revise',
+        nextStage: 'generate_code',
+        currentStepId: stepId
+      };
+    default:
+      return undefined;
+  }
+}
+
+function summarizeLangGraphState(state: PreprocessingGraphState) {
+  return {
+    runtime: 'langgraph',
+    currentStage: state.currentStage,
+    nextStage: state.nextStage,
+    currentStepId: state.currentStepId,
+    autoRepairAttempts: state.autoRepairAttempts,
+    isCompleted: state.isCompleted,
+    updatedAt: state.updatedAt
+  };
+}
+
+function buildPreprocessingCellMetadata(
+  existing: Record<string, unknown> | undefined,
+  binding: PreprocessingCellBinding
+): Record<string, unknown> {
+  return {
+    ...(existing ?? {}),
+    preprocessing: {
+      source: 'preprocessing',
+      runId: binding.runId,
+      stepId: binding.stepId,
+      toolCallId: binding.toolCallId,
+      version: binding.version,
+      codeHash: binding.codeHash,
+      updatedAt: binding.updatedAt
+    }
+  };
+}
+
+function createPreprocessingCellMetadataStore(): PreprocessingCellMetadataStore {
+  return {
+    async apply(cellIds, binding) {
+      if (!hasDatabaseConfiguration() || cellIds.length === 0) {
+        return;
+      }
+
+      const uniqueCellIds = [...new Set(cellIds)].filter(isUuidLike);
+      for (const cellId of uniqueCellIds) {
+        const existing = await getNotebookCell(cellId);
+        if (!existing) {
+          continue;
+        }
+
+        await updateNotebookCell(cellId, {
+          metadata: buildPreprocessingCellMetadata(toRecord(existing.metadata), binding)
+        });
+      }
+    }
+  };
+}
+
+function createPreprocessingCellInspector(): PreprocessingCellInspector {
+  return {
+    async read(cellId) {
+      if (!hasDatabaseConfiguration() || !isUuidLike(cellId)) {
+        return undefined;
+      }
+      const cell = await getNotebookCell(cellId);
+      if (!cell) {
+        return undefined;
+      }
+      return {
+        cellId: cell.cellId,
+        content: cell.content,
+        metadata: toRecord(cell.metadata) ?? {}
+      };
+    }
+  };
+}
+
+function detectStepTargets(run: PreprocessingRunState, stepId?: string, cellId?: string): StepState[] {
+  const scopedSteps = stepId ? [run.steps[stepId]].filter(Boolean) as StepState[] : Object.values(run.steps);
+  if (!cellId) {
+    return scopedSteps;
+  }
+  return scopedSteps.filter((step) => step.cellIds.includes(cellId));
+}
+
+async function computeStepDivergence(
+  run: PreprocessingRunState,
+  step: StepState,
+  inspector: PreprocessingCellInspector
+): Promise<{
+  isDiverged: boolean;
+  details: StepDivergenceDetail[];
+  reconciledCode?: string;
+  reconciledCodeHash?: string;
+}> {
+  const details: StepDivergenceDetail[] = [];
+  let reconciledCode: string | undefined;
+
+  for (const cellId of step.cellIds) {
+    const inspected = await inspector.read(cellId);
+    if (!inspected) {
+      details.push({
+        stepId: step.stepId,
+        cellId,
+        issue: 'missing_cell',
+        expectedCodeHash: step.codeHash
+      });
+      continue;
+    }
+
+    if (!reconciledCode) {
+      reconciledCode = inspected.content;
+    }
+
+    const preprocessingMetadata = toRecord(inspected.metadata.preprocessing);
+    const metadataStepId = toStringValue(preprocessingMetadata?.stepId);
+    const metadataRunId = toStringValue(preprocessingMetadata?.runId);
+    if (metadataStepId !== step.stepId || metadataRunId !== run.runId) {
+      details.push({
+        stepId: step.stepId,
+        cellId,
+        issue: 'binding_mismatch',
+        expectedCodeHash: step.codeHash,
+        actualCodeHash: toStringValue(preprocessingMetadata?.codeHash)
+      });
+      continue;
+    }
+
+    const actualCodeHash = hashCode(inspected.content);
+    if (step.codeHash && step.codeHash !== actualCodeHash) {
+      details.push({
+        stepId: step.stepId,
+        cellId,
+        issue: 'code_hash_mismatch',
+        expectedCodeHash: step.codeHash,
+        actualCodeHash
+      });
+    }
+  }
+
+  return {
+    isDiverged: details.length > 0,
+    details,
+    reconciledCode,
+    reconciledCodeHash: reconciledCode ? hashCode(reconciledCode) : undefined
+  };
+}
+
+export function createPreprocessingLangGraphSynchronizer(deps: PreprocessingLangGraphSyncDependencies) {
+  return async function syncPreprocessingLangGraphState(
+    projectId: string,
+    toolName: PreprocessingToolName,
+    args: Record<string, unknown>,
+    result: { output?: unknown; error?: string }
+  ): Promise<{ output?: unknown; error?: string }> {
+    const output = toRecord(result.output);
+    if (!output) {
+      return result;
+    }
+
+    const runId = toStringValue(output.runId) ?? toStringValue(args.runId);
+    if (!runId) {
+      return result;
+    }
+
+    const run = await deps.runRepository.getById(runId);
+    if (!run || run.projectId !== projectId) {
+      return result;
+    }
+    let graphState = toPreprocessingGraphState(run.langGraphState);
+    if (!graphState) {
+      graphState = await deps.runtime.bootstrapRun({
+        runId: run.runId,
+        projectId,
+        activeDatasetId: run.activeDatasetId
+      });
+    }
+
+    if (LANGGRAPH_STAGE_TOOLS.has(toolName)) {
+      const patch = buildLangGraphPatch(toolName, args, result);
+      if (patch) {
+        graphState = await deps.runtime.advanceRun(graphState, patch);
+        graphState = enforceLangGraphCompletionConsistency(run, graphState);
+        run.langGraphRuntime = 'langgraph';
+        run.langGraphState = graphState as unknown as Record<string, unknown>;
+        await deps.runRepository.save(run);
+      }
+    }
+
+    output.langGraph = summarizeLangGraphState(graphState);
+    return {
+      ...result,
+      output
+    };
+  };
+}
+
+export const syncPreprocessingLangGraphState = createPreprocessingLangGraphSynchronizer({
+  runRepository,
+  runtime: langGraphRuntime
+});
+
+export async function getPreprocessingRunSnapshot(runId: string): Promise<PreprocessingRunSnapshot | undefined> {
+  const run = await runRepository.getById(runId);
+  if (!run) {
+    return undefined;
+  }
+  return toPreprocessingRunSnapshot(run);
+}
+
+export async function listPreprocessingRunSnapshots(
+  projectId: string,
+  limit?: number
+): Promise<PreprocessingRunSummary[]> {
+  const runs = await runRepository.listByProjectId(projectId);
+  const clipped = typeof limit === 'number' && Number.isFinite(limit) ? runs.slice(0, Math.max(1, limit)) : runs;
+  return clipped.map((run) => summarizeRun(run));
+}
+
 export function isPreprocessingToolName(toolName: string): toolName is PreprocessingToolName {
   return PREPROCESSING_TOOL_NAMES.includes(toolName as PreprocessingToolName);
 }
 
 export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependencies) {
+  const cellMetadataStore = deps.cellMetadataStore ?? createPreprocessingCellMetadataStore();
+  const cellInspector = deps.cellInspector ?? createPreprocessingCellInspector();
+
   return async function executePreprocessingTool(
     projectId: string,
     toolName: PreprocessingToolName,
     args: Record<string, unknown>
   ): Promise<{ output?: unknown; error?: string }> {
     const explicitRunId = toStringValue(args.runId);
-    const run = await deps.runRepository.getOrCreate(projectId, explicitRunId);
+    const toolCallId = toStringValue(args.toolCallId);
+    const resolvedRun = await resolveExecutionRun(deps.runRepository, projectId, explicitRunId);
+    if ('error' in resolvedRun) {
+      return resolvedRun;
+    }
+    const run = resolvedRun.run;
 
     try {
       switch (toolName) {
@@ -610,10 +1168,26 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'propose_transformation_step': {
-          const step = getOrCreateStep(run, toStringValue(args.stepId));
+          const requestedStepId = toStringValue(args.stepId);
+          const blockingStep = findIncompleteBlockingStep(run, requestedStepId);
+          if (blockingStep) {
+            return fail(
+              run.runId,
+              'RUN_HAS_INCOMPLETE_STEP',
+              `Run ${run.runId} already has incomplete step ${blockingStep.stepId} (${blockingStep.status}). Finish it before starting a new step.`,
+              {
+                stepId: blockingStep.stepId,
+                blockingStepId: blockingStep.stepId,
+                blockingStatus: blockingStep.status
+              }
+            );
+          }
+
+          const step = getOrCreateStep(run, requestedStepId);
           step.title = toStringValue(args.title) ?? step.title;
           step.rationale = toStringValue(args.rationale) ?? step.rationale;
           step.intentType = toStringValue(args.intentType) ?? step.intentType;
+          step.toolCallId = toolCallId ?? step.toolCallId;
           step.status = 'pending';
           step.requiresApproval = toBooleanValue(args.requiresApproval) ?? inferRiskyIntent(step.intentType);
           step.updatedAt = nowIso();
@@ -624,6 +1198,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             type: 'step_proposed',
             stepId: step.stepId,
             payload: {
+              toolCallId: step.toolCallId,
               title: step.title,
               intentType: step.intentType,
               requiresApproval: step.requiresApproval
@@ -655,8 +1230,16 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           const step = maybeStep;
           step.code = code;
           step.codeHash = hashCode(code);
+          step.toolCallId = toolCallId ?? step.toolCallId;
           step.version += 1;
-          step.status = 'running';
+          // Materialization prepares executable code; execution/validation must happen afterwards.
+          // Reset lifecycle flags so stale success state cannot leak across code revisions.
+          step.status = 'pending';
+          step.lastExecuteSucceeded = false;
+          step.lastValidateSucceeded = false;
+          step.validation = undefined;
+          step.approvalDecision = 'pending';
+          step.decisionReason = undefined;
           step.updatedAt = nowIso();
 
           appendEvent(run, {
@@ -665,6 +1248,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             type: 'step_code_materialized',
             stepId: step.stepId,
             payload: {
+              toolCallId: step.toolCallId,
               codeHash: step.codeHash,
               version: step.version
             }
@@ -696,10 +1280,16 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           const providedCells = mergeUniqueStrings(step.cellIds, toStringArray(args.cellIds), singleCellId ? [singleCellId] : []);
           const succeeded = toBooleanValue(args.succeeded) ?? true;
           step.cellIds = providedCells;
+          step.toolCallId = toolCallId ?? step.toolCallId;
           step.lastExecuteSucceeded = succeeded;
           step.lastValidateSucceeded = false;
           step.status = succeeded ? 'running' : 'failed';
-          step.updatedAt = nowIso();
+          const bindingUpdatedAt = nowIso();
+          step.updatedAt = bindingUpdatedAt;
+
+          const cellBinding = toCellBinding(run.runId, step, bindingUpdatedAt, toolCallId);
+          await cellMetadataStore.apply(step.cellIds, cellBinding);
+          const cellBindings = toCellBindings(run.runId, step, bindingUpdatedAt, toolCallId);
 
           appendEvent(run, {
             eventId: randomUUID(),
@@ -707,7 +1297,9 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             type: 'step_executed',
             stepId: step.stepId,
             payload: {
+              toolCallId: step.toolCallId,
               succeeded,
+              cellBindings,
               cellIds: step.cellIds,
               stdout: args.stdout,
               stderr: args.stderr
@@ -720,6 +1312,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             status: step.status,
             stdout: args.stdout,
             stderr: args.stderr,
+            cellBindings,
             step: serializeStep(step)
           });
         }
@@ -762,9 +1355,13 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
 
           step.requiresApproval = requiresApproval;
           step.validation = validation;
+          step.approvalDecision = requiresApproval ? 'pending' : 'approved';
+          step.decisionReason = undefined;
+          step.toolCallId = toolCallId ?? step.toolCallId;
           step.lastValidateSucceeded = true;
           step.status = requiresApproval ? 'awaiting_approval' : 'applied';
           step.updatedAt = nowIso();
+          const cellBindings = toCellBindings(run.runId, step, step.updatedAt, toolCallId);
 
           appendEvent(run, {
             eventId: randomUUID(),
@@ -772,6 +1369,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             type: 'step_validated',
             stepId: step.stepId,
             payload: {
+              toolCallId: step.toolCallId,
+              cellBindings,
               requiresApproval,
               validation
             }
@@ -781,6 +1380,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           return ok(run.runId, {
             stepId: step.stepId,
             status: step.status,
+            cellBindings,
             step: serializeStep(step)
           });
         }
@@ -812,7 +1412,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           const approved = toBooleanValue(args.approved);
-          if (step.status === 'awaiting_approval' && approved !== true) {
+          if (step.status === 'awaiting_approval' && typeof approved === 'undefined') {
             return fail(
               run.runId,
               'STEP_APPROVAL_REQUIRED',
@@ -822,15 +1422,23 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           if (approved === false) {
+            const decisionReason = toStringValue(args.rejectionReason) ?? 'Rejected by user';
             step.status = 'failed';
+            step.approvalDecision = 'rejected';
+            step.decisionReason = decisionReason;
+            step.toolCallId = toolCallId ?? step.toolCallId;
             step.updatedAt = nowIso();
+            const cellBindings = toCellBindings(run.runId, step, step.updatedAt, toolCallId);
             appendEvent(run, {
               eventId: randomUUID(),
               runId: run.runId,
               type: 'step_committed',
               stepId: step.stepId,
               payload: {
+                toolCallId: step.toolCallId,
+                cellBindings,
                 approved,
+                decisionReason,
                 status: step.status
               }
             });
@@ -838,6 +1446,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             return ok(run.runId, {
               stepId: step.stepId,
               status: step.status,
+              cellBindings,
               step: serializeStep(step)
             });
           }
@@ -861,8 +1470,12 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           step.status = 'applied';
+          step.approvalDecision = 'approved';
+          step.decisionReason = undefined;
+          step.toolCallId = toolCallId ?? step.toolCallId;
           step.updatedAt = nowIso();
           run.activeDatasetId = dataset.datasetId;
+          const cellBindings = toCellBindings(run.runId, step, step.updatedAt, toolCallId);
 
           appendEvent(run, {
             eventId: randomUUID(),
@@ -871,8 +1484,10 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             stepId: step.stepId,
             datasetId: dataset.datasetId,
             payload: {
+              toolCallId: step.toolCallId,
               approved: approved ?? true,
               requiredInputSchema: toSchemaSnapshot(dataset),
+              cellBindings,
               cellIds: step.cellIds,
               status: step.status
             }
@@ -907,7 +1522,202 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             checkpointId,
             status: step.status,
             checkpoint,
+            cellBindings,
             step: serializeStep(step)
+          });
+        }
+
+        case 'detect_step_divergence': {
+          const scopedStepId = toStringValue(args.stepId);
+          const scopedCellId = toStringValue(args.cellId);
+          if (scopedStepId && !run.steps[scopedStepId]) {
+            return fail(run.runId, 'STEP_NOT_FOUND', `Step ${scopedStepId} not found for run ${run.runId}`, {
+              stepId: scopedStepId
+            });
+          }
+          const targetSteps = detectStepTargets(run, scopedStepId, scopedCellId);
+
+          const results: Array<{
+            stepId: string;
+            diverged: boolean;
+            status: StepState['status'];
+            details: StepDivergenceDetail[];
+          }> = [];
+          const divergedStepIds: string[] = [];
+          let hasUpdates = false;
+
+          for (const step of targetSteps) {
+            const divergence = await computeStepDivergence(run, step, cellInspector);
+            if (divergence.isDiverged) {
+              divergedStepIds.push(step.stepId);
+              if (step.status !== 'diverged') {
+                step.status = 'diverged';
+                step.updatedAt = nowIso();
+                hasUpdates = true;
+              }
+
+              appendEvent(run, {
+                eventId: randomUUID(),
+                runId: run.runId,
+                type: 'step_diverged',
+                stepId: step.stepId,
+                payload: {
+                  toolCallId,
+                  details: divergence.details
+                }
+              });
+              hasUpdates = true;
+            }
+
+            results.push({
+              stepId: step.stepId,
+              diverged: divergence.isDiverged,
+              status: step.status,
+              details: divergence.details
+            });
+          }
+
+          if (hasUpdates) {
+            await deps.runRepository.save(run);
+          }
+
+          return ok(run.runId, {
+            checkedStepIds: targetSteps.map((step) => step.stepId),
+            divergedStepIds,
+            results
+          });
+        }
+
+        case 'reconcile_diverged_step': {
+          const stepId = toStringValue(args.stepId);
+          const maybeStep = ensureStepExists(run, run.runId, stepId);
+          if ('error' in maybeStep) {
+            return maybeStep;
+          }
+          const step = maybeStep;
+
+          const divergence = await computeStepDivergence(run, step, cellInspector);
+          if (!divergence.isDiverged && step.status !== 'diverged') {
+            return fail(
+              run.runId,
+              'STEP_RECONCILE_REQUIRES_DIVERGED',
+              `Step ${step.stepId} is not diverged; reconciliation is not required.`,
+              { stepId: step.stepId }
+            );
+          }
+
+          if (!divergence.reconciledCode || !divergence.reconciledCodeHash) {
+            return fail(
+              run.runId,
+              'STEP_RECONCILE_REQUIRES_BOUND_CELL',
+              `Step ${step.stepId} has no readable bound cell content to reconcile.`,
+              { stepId: step.stepId }
+            );
+          }
+
+          const strategy = toStringValue(args.strategy) ?? 'absorb_edit';
+          if (!['absorb_edit', 'create_linked_step'].includes(strategy)) {
+            return fail(
+              run.runId,
+              'INVALID_OPERATION',
+              `Unsupported reconcile_diverged_step strategy: ${strategy}`,
+              { stepId: step.stepId }
+            );
+          }
+
+          const previousCodeHash = step.codeHash;
+          const timestamp = nowIso();
+
+          if (strategy === 'absorb_edit') {
+            step.code = divergence.reconciledCode;
+            step.codeHash = divergence.reconciledCodeHash;
+            step.version += 1;
+            step.toolCallId = toolCallId ?? step.toolCallId;
+            step.lastExecuteSucceeded = false;
+            step.lastValidateSucceeded = false;
+            step.status = 'pending';
+            step.updatedAt = timestamp;
+
+            await cellMetadataStore.apply(step.cellIds, toCellBinding(run.runId, step, timestamp, toolCallId));
+            const cellBindings = toCellBindings(run.runId, step, timestamp, toolCallId);
+
+            appendEvent(run, {
+              eventId: randomUUID(),
+              runId: run.runId,
+              type: 'step_reconciled',
+              stepId: step.stepId,
+              payload: {
+                toolCallId,
+                strategy,
+                fromStepId: step.stepId,
+                toStepId: step.stepId,
+                previousCodeHash,
+                nextCodeHash: step.codeHash,
+                version: step.version,
+                cellBindings
+              }
+            });
+
+            await deps.runRepository.save(run);
+            return ok(run.runId, {
+              stepId: step.stepId,
+              strategy,
+              reconciled: true,
+              cellBindings,
+              step: serializeStep(step)
+            });
+          }
+
+          const linkedStepId = `step-${randomUUID()}`;
+          const linkedStep = createStep(linkedStepId);
+          linkedStep.linkedFromStepId = step.stepId;
+          linkedStep.title = toStringValue(args.title) ?? `${step.title} (reconciled)`;
+          linkedStep.rationale = step.rationale;
+          linkedStep.intentType = step.intentType;
+          linkedStep.requiresApproval = step.requiresApproval;
+          linkedStep.code = divergence.reconciledCode;
+          linkedStep.codeHash = divergence.reconciledCodeHash;
+          linkedStep.version = 1;
+          linkedStep.cellIds = [...step.cellIds];
+          linkedStep.toolCallId = toolCallId;
+          linkedStep.lastExecuteSucceeded = false;
+          linkedStep.lastValidateSucceeded = false;
+          linkedStep.status = 'pending';
+          linkedStep.updatedAt = timestamp;
+
+          step.status = 'diverged';
+          step.updatedAt = timestamp;
+          run.steps[linkedStep.stepId] = linkedStep;
+
+          await cellMetadataStore.apply(linkedStep.cellIds, toCellBinding(run.runId, linkedStep, timestamp, toolCallId));
+          const cellBindings = toCellBindings(run.runId, linkedStep, timestamp, toolCallId);
+
+          appendEvent(run, {
+            eventId: randomUUID(),
+            runId: run.runId,
+            type: 'step_reconciled',
+            stepId: step.stepId,
+            payload: {
+              toolCallId,
+              strategy,
+              fromStepId: step.stepId,
+              toStepId: linkedStep.stepId,
+              previousCodeHash,
+              nextCodeHash: linkedStep.codeHash,
+              version: linkedStep.version,
+              cellBindings
+            }
+          });
+
+          await deps.runRepository.save(run);
+          return ok(run.runId, {
+            stepId: linkedStep.stepId,
+            strategy,
+            reconciled: true,
+            previousStepId: step.stepId,
+            cellBindings,
+            step: serializeStep(linkedStep),
+            previousStep: serializeStep(step)
           });
         }
 

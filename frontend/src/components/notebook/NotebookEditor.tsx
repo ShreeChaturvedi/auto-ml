@@ -274,10 +274,10 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
+              className="h-7 w-7"
               onClick={() => handleAddCell('code', true)}
               disabled={isSaving || !notebook}
-              className="h-7 px-2"
               title="Add code cell at top"
             >
               {isSaving ? (
@@ -288,10 +288,10 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
+              className="h-7 w-7"
               onClick={() => handleAddCell('markdown', true)}
               disabled={isSaving || !notebook}
-              className="h-7 px-2"
               title="Add text cell at top"
             >
               <Type className="h-3.5 w-3.5" />

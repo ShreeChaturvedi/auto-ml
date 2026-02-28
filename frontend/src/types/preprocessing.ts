@@ -115,6 +115,8 @@ export interface TransformationEvent {
   cellIds: string[];
   validation?: TransformationValidation;
   requiresApproval: boolean;
+  approvalDecision?: 'pending' | 'approved' | 'rejected';
+  decisionReason?: string;
   output?: unknown;
   error?: string;
   createdAt: number;
@@ -127,6 +129,49 @@ export interface StepCellBinding {
   codeHash?: string;
   version?: number;
   lastSyncedAt: number;
+}
+
+export interface PreprocessingSnapshotStep {
+  stepId: string;
+  title: string;
+  rationale?: string;
+  intentType: string;
+  status: TransformationStatus;
+  approvalDecision?: 'pending' | 'approved' | 'rejected';
+  decisionReason?: string;
+  code?: string;
+  codeHash?: string;
+  version: number;
+  cellIds: string[];
+  validation?: TransformationValidation;
+  requiresApproval: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PreprocessingRunSnapshot {
+  runId: string;
+  projectId: string;
+  stateModel?: 'hybrid';
+  activeDatasetId?: string;
+  derivedDatasetIds: string[];
+  steps: PreprocessingSnapshotStep[];
+  checkpoints: Array<Record<string, unknown>>;
+  events: Array<Record<string, unknown>>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PreprocessingRunSummary {
+  runId: string;
+  projectId: string;
+  activeDatasetId?: string;
+  stepCount: number;
+  eventCount: number;
+  latestEventType?: string;
+  latestEventAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export const PREPROCESSING_ACTION_LABELS: Record<string, string> = {

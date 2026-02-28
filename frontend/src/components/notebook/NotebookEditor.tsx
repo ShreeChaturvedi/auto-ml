@@ -249,12 +249,12 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!notebook}>
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={openRenameDialog}>
-                  <Pencil className="h-4 w-4 mr-2" />
+                  <Pencil className="h-3.5 w-3.5 mr-2" />
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -263,7 +263,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                   className="text-destructive focus:text-destructive"
                   disabled={!canDeleteNotebook}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>

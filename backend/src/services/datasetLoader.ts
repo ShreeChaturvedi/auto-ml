@@ -121,21 +121,23 @@ export function parseDatasetRows(
   switch (fileType) {
     case 'csv': {
       const text = buffer.toString('utf8');
-      return parseCsv(text, {
+      const rows = parseCsv(text, {
         columns: true,
         skip_empty_lines: true,
         trim: true
       }) as Record<string, unknown>[];
+      return sanitizeDatasetRows(rows);
     }
     case 'json': {
       const text = buffer.toString('utf8');
       try {
         const parsed = JSON.parse(text);
         if (Array.isArray(parsed)) {
-          return parsed.filter((item) => typeof item === 'object' && item !== null) as Record<string, unknown>[];
+          const rows = parsed.filter((item) => typeof item === 'object' && item !== null) as Record<string, unknown>[];
+          return sanitizeDatasetRows(rows);
         }
         if (typeof parsed === 'object' && parsed !== null) {
-          return [parsed as Record<string, unknown>];
+          return sanitizeDatasetRows([parsed as Record<string, unknown>]);
         }
         throw new Error('JSON dataset must be an object or array of objects');
       } catch (error) {
@@ -156,7 +158,7 @@ export function parseDatasetRows(
           }
         }
         if (rows.length > 0) {
-          return rows;
+          return sanitizeDatasetRows(rows);
         }
         throw error;
       }
@@ -166,11 +168,76 @@ export function parseDatasetRows(
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) return [];
       const sheet = workbook.Sheets[sheetName];
-      return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
+      return sanitizeDatasetRows(rows);
     }
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
   }
+}
+
+function sanitizeDatasetRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) => sanitizeObjectValue(row) as Record<string, unknown>);
+}
+
+function sanitizeObjectValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return sanitizeStringValue(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeObjectValue(item));
+  }
+
+  if (value instanceof Date || value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    const sanitized: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, nestedValue]) => {
+      sanitized[sanitizeStringValue(key)] = sanitizeObjectValue(nestedValue);
+    });
+    return sanitized;
+  }
+
+  return value;
+}
+
+function sanitizeStringValue(input: string): string {
+  let output = '';
+
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+
+    // Postgres text/jsonb cannot store NUL bytes.
+    if (code === 0x0000) {
+      continue;
+    }
+
+    // High surrogate must be followed by a low surrogate.
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const nextCode = i + 1 < input.length ? input.charCodeAt(i + 1) : undefined;
+      if (nextCode !== undefined && nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+        output += input[i];
+        output += input[i + 1];
+        i += 1;
+      } else {
+        output += '\uFFFD';
+      }
+      continue;
+    }
+
+    // Unpaired low surrogate.
+    if (code >= 0xDC00 && code <= 0xDFFF) {
+      output += '\uFFFD';
+      continue;
+    }
+
+    output += input[i];
+  }
+
+  return output;
 }
 
 function generateCreateTableSql(tableName: string, columns: DatasetProfileColumn[]): string {
@@ -239,7 +306,7 @@ export function normalizeValueForColumn(
       break;
     case 'unknown':
     case 'string':
-      return value;
+      return typeof value === 'string' ? sanitizeStringValue(value) : value;
     default:
       normalized = null;
       break;

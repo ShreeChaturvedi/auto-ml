@@ -7,6 +7,10 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
+import {
+  PreprocessingToolbarLeft,
+  PreprocessingToolbarRight
+} from './PreprocessingToolbar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,22 +22,8 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
@@ -42,17 +32,10 @@ import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing
 import {
   AlertTriangle,
   CheckCircle2,
-  Database,
   GitBranch,
   Loader2,
-  MoreHorizontal,
-  Pencil,
   PlayCircle,
-  Plus,
-  RefreshCw,
-  RotateCcw,
   ShieldAlert,
-  Trash2,
   Wand2,
   XCircle
 } from 'lucide-react';
@@ -360,80 +343,26 @@ export function PreprocessingPanel() {
           activeTab?.storageVersion ?? 0
         )}
         toolbarLeft={
-          <>
-            <Select value={activeTab?.id ?? ''} onValueChange={handleTabSwitch}>
-              <SelectTrigger className="h-7 w-[180px] text-xs">
-                <SelectValue placeholder="Processing tab" />
-              </SelectTrigger>
-              <SelectContent>
-                {tabs.map((tab) => (
-                  <SelectItem key={tab.id} value={tab.id}>
-                    {tab.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={handleNewTab}
-              title="New processing tab"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!activeTab}>
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={openRenameTabDialog}>
-                  <Pencil className="h-3.5 w-3.5 mr-2" />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
-                  <RefreshCw className="h-3.5 w-3.5 mr-2" />
-                  Replay Check
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={resetActiveTab}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-2" />
-                  Reset Tab
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={handleDeleteTab}
-                  className="text-destructive focus:text-destructive"
-                  disabled={tabs.length <= 1}
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
+          <PreprocessingToolbarLeft
+            tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
+            activeTabId={activeTab?.id ?? ''}
+            onTabSwitch={handleTabSwitch}
+            onNewTab={handleNewTab}
+            onRenameTab={openRenameTabDialog}
+            onReplayCheck={evaluateReplayCompatibility}
+            onResetTab={resetActiveTab}
+            onDeleteTab={handleDeleteTab}
+            canDeleteTab={tabs.length > 1}
+            selectedDatasetId={selectedDatasetId ?? ''}
+          />
         }
         toolbarRight={
-          <Select
-            value={selectedDatasetId ?? ''}
-            onValueChange={handleDatasetSelect}
-            disabled={isLoadingTables || tables.length === 0}
-          >
-            <SelectTrigger className="h-7 w-[200px] text-xs">
-              <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-              <SelectValue placeholder="Select dataset" />
-            </SelectTrigger>
-            <SelectContent>
-              {tables.map((table) => (
-                <SelectItem key={table.datasetId} value={table.datasetId}>
-                  {table.filename}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PreprocessingToolbarRight
+            selectedDatasetId={selectedDatasetId ?? ''}
+            tables={tables}
+            onDatasetSelect={handleDatasetSelect}
+            isLoadingTables={isLoadingTables}
+          />
         }
         chatMetaSlot={
           <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">

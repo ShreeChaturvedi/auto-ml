@@ -1,0 +1,141 @@
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Database, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+
+interface FeatureVersionOption {
+  id: string;
+  name: string;
+}
+
+interface DatasetOption {
+  id: string;
+  name: string;
+}
+
+interface FeatureEngineeringToolbarLeftProps {
+  currentVersionId: string;
+  versions: FeatureVersionOption[];
+  onVersionSwitch: (value: string) => void;
+  onNewDraft: () => void;
+  onRenameDraft: () => void;
+  onDeleteDraft: () => void;
+  canRenameDraft: boolean;
+  canDeleteDraft: boolean;
+}
+
+interface FeatureEngineeringToolbarRightProps {
+  selectedDatasetId: string;
+  datasetOptions: DatasetOption[];
+  onDatasetSelect: (value: string) => void;
+  selectedTargetColumn: string;
+  targetColumns: string[];
+  onTargetColumnSelect: (value: string) => void;
+}
+
+export function FeatureEngineeringToolbarLeft({
+  currentVersionId,
+  versions,
+  onVersionSwitch,
+  onNewDraft,
+  onRenameDraft,
+  onDeleteDraft,
+  canRenameDraft,
+  canDeleteDraft
+}: FeatureEngineeringToolbarLeftProps) {
+  return (
+    <>
+      <Select value={currentVersionId} onValueChange={onVersionSwitch} disabled={versions.length === 0}>
+        <SelectTrigger className="h-7 w-[180px] text-xs">
+          <SelectValue placeholder="Pipeline" />
+        </SelectTrigger>
+        <SelectContent>
+          {versions.map((version) => (
+            <SelectItem key={version.id} value={version.id}>
+              {version.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        onClick={onNewDraft}
+        title="New draft pipeline"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </Button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!currentVersionId}>
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onSelect={onRenameDraft} disabled={!canRenameDraft}>
+            <Pencil className="h-3.5 w-3.5 mr-2" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={onDeleteDraft}
+            className="text-destructive focus:text-destructive"
+            disabled={!canDeleteDraft}
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+}
+
+export function FeatureEngineeringToolbarRight({
+  selectedDatasetId,
+  datasetOptions,
+  onDatasetSelect,
+  selectedTargetColumn,
+  targetColumns,
+  onTargetColumnSelect
+}: FeatureEngineeringToolbarRightProps) {
+  return (
+    <>
+      <Select value={selectedDatasetId} onValueChange={onDatasetSelect} disabled={datasetOptions.length === 0}>
+        <SelectTrigger className="h-7 w-[180px] text-xs">
+          <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+          <SelectValue placeholder="Dataset" />
+        </SelectTrigger>
+        <SelectContent>
+          {datasetOptions.map((file) => (
+            <SelectItem key={file.id} value={file.id}>
+              {file.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={selectedTargetColumn} onValueChange={onTargetColumnSelect} disabled={targetColumns.length === 0}>
+        <SelectTrigger className="h-7 w-[150px] text-xs">
+          <SelectValue placeholder="Target column" />
+        </SelectTrigger>
+        <SelectContent>
+          {targetColumns.map((column) => (
+            <SelectItem key={column} value={column}>
+              {column}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+}

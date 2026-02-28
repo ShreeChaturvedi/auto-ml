@@ -5,17 +5,24 @@ import remarkGfm from 'remark-gfm';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
+import {
+  FeatureEngineeringToolbarLeft,
+  FeatureEngineeringToolbarRight
+} from './FeatureEngineeringToolbar';
+import {
+  buildReadinessReport,
+  buildSuggestionDefaults,
+  hasRequiredReadinessEvidence,
+  hasUiItems,
+  HIDDEN_ACTIVITY_TOOLS,
+  HIDDEN_LEGACY_ERROR_MESSAGES,
+  stripAssistantArtifacts,
+  type FeatureSuggestionItem
+} from './featureEngineeringUtils';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -34,11 +41,9 @@ import type {
   FeatureCategory,
   FeatureMethod,
   FeatureSpec,
-  PipelineVersion,
-  ReadinessReport,
-  TransformationStep
+  PipelineVersion
 } from '@/types/feature';
-import type { ChatMessage, UiItem, UiSchema } from '@/types/llmUi';
+import type { ChatMessage, UiItem } from '@/types/llmUi';
 
 import {
   AlertTriangle,
@@ -47,22 +52,15 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  Database,
   FileOutput,
   Info,
   Loader2,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Sparkles,
-  Trash2
+  Sparkles
 } from 'lucide-react';
 
 interface FeatureEngineeringPanelProps {
   projectId: string;
 }
-
-type FeatureSuggestionItem = Extract<UiItem, { type: 'feature_suggestion' }>;
 
 type SuggestionDraft = {
   enabled: boolean;
@@ -70,101 +68,12 @@ type SuggestionDraft = {
 };
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
-const HIDDEN_ACTIVITY_TOOLS = new Set(['set_active_dataset', 'list_project_datasets', 'profile_active_dataset']);
 const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';
-const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
-  'LLM render_ui returned empty UI content.',
-  'LLM returned empty response.',
-  'This operation was aborted'
-]);
 
 const methodCategoryMap = new Map<FeatureMethod, FeatureCategory>(
   FEATURE_TEMPLATES.map((template) => [template.method, template.category])
 );
 
-const stripAssistantArtifacts = (text: string): string => {
-  if (!text) return '';
-  let cleaned = text.replace(/```(?:json)?/g, '').replace(/```/g, '');
-  const markerIndex = cleaned.indexOf('<<<JSON>>>');
-  if (markerIndex !== -1) {
-    cleaned = cleaned.slice(0, markerIndex);
-  }
-  const endIndex = cleaned.indexOf('<<<END>>>');
-  if (endIndex !== -1) {
-    cleaned = cleaned.slice(0, endIndex);
-  }
-  const jsonIndex = cleaned.search(/{\s*"version"\s*:\s*"1"/);
-  if (jsonIndex !== -1) {
-    cleaned = cleaned.slice(0, jsonIndex);
-  }
-  return cleaned.trim();
-};
-
-const hasUiItems = (ui: UiSchema | null): boolean =>
-  Boolean(ui?.sections.some((section) => section.items.length > 0));
-
-function buildReadinessReport(features: FeatureSpec[], sourceColumns: string[]): ReadinessReport {
-  const addedColumns = features
-    .map((feature) => feature.featureName)
-    .filter((name): name is string => Boolean(name?.trim()));
-  const uniqueAddedColumns = Array.from(new Set(addedColumns));
-
-  const steps: TransformationStep[] = features.map((feature, index) => ({
-    id: feature.id,
-    name: feature.featureName || `${feature.sourceColumn}_${feature.method}`,
-    rationale: feature.description || `Apply ${feature.method} to ${feature.sourceColumn}`,
-    codeReference: `pipeline.step.${index + 1}:${feature.id}`,
-    method: feature.method,
-    columns: [feature.sourceColumn, feature.secondaryColumn].filter(
-      (column): column is string => Boolean(column)
-    )
-  }));
-
-  const missingSourceColumns = features
-    .filter((feature) => !sourceColumns.includes(feature.sourceColumn))
-    .map((feature) => feature.sourceColumn);
-
-  const warnings: string[] = [];
-  if (features.some((feature) => feature.method === 'target_encode')) {
-    warnings.push('Target encoding requires split-aware fitting to avoid leakage.');
-  }
-  if (missingSourceColumns.length > 0) {
-    warnings.push(`Some source columns are missing in the selected dataset: ${Array.from(new Set(missingSourceColumns)).join(', ')}`);
-  }
-  if (features.length === 0) {
-    warnings.push('No transformations enabled. Pipeline currently preserves raw inputs.');
-  }
-
-  return {
-    dataSummary: {
-      addedColumns: uniqueAddedColumns,
-      removedColumns: [],
-      renamedColumns: [],
-      typeChanges: [],
-      nullDeltas: [],
-      warnings
-    },
-    steps
-  };
-}
-
-function hasRequiredReadinessEvidence(report: ReadinessReport): boolean {
-  return report.steps.length > 0
-    && report.dataSummary.addedColumns.length > 0
-    && Array.isArray(report.dataSummary.warnings);
-}
-
-function buildSuggestionDefaults(item: FeatureSuggestionItem): Record<string, unknown> {
-  const controlDefaults = (item.controls ?? []).reduce<Record<string, unknown>>((acc, control) => {
-    acc[control.key] = control.value;
-    return acc;
-  }, {});
-
-  return {
-    ...(item.feature.params ?? {}),
-    ...controlDefaults
-  };
-}
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const notebookCells = useNotebookStore((state) => state.cells);
@@ -1142,95 +1051,26 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       }
       renderLeftPane={renderLeftPane}
       toolbarLeft={
-        <>
-          <Select
-            value={currentVersion?.id ?? ''}
-            onValueChange={handleVersionSwitch}
-            disabled={versions.length === 0}
-          >
-            <SelectTrigger className="h-7 w-[180px] text-xs">
-              <SelectValue placeholder="Pipeline" />
-            </SelectTrigger>
-            <SelectContent>
-              {versions.map((version) => (
-                <SelectItem key={version.id} value={version.id}>
-                  {version.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={handleNewDraft}
-            title="New draft pipeline"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!currentVersion}>
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={handleRenameDraft} disabled={!isCurrentVersionDraft}>
-                <Pencil className="h-3.5 w-3.5 mr-2" />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={handleDeleteDraft}
-                className="text-destructive focus:text-destructive"
-                disabled={!canDeleteCurrentDraft}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </>
+        <FeatureEngineeringToolbarLeft
+          currentVersionId={currentVersion?.id ?? ''}
+          versions={versions.map((version) => ({ id: version.id, name: version.name }))}
+          onVersionSwitch={handleVersionSwitch}
+          onNewDraft={handleNewDraft}
+          onRenameDraft={handleRenameDraft}
+          onDeleteDraft={handleDeleteDraft}
+          canRenameDraft={isCurrentVersionDraft}
+          canDeleteDraft={canDeleteCurrentDraft}
+        />
       }
       toolbarRight={
-        <>
-          <Select
-            value={selectedDataset ?? ''}
-            onValueChange={setSelectedDataset}
-            disabled={datasetFiles.length === 0}
-          >
-            <SelectTrigger className="h-7 w-[180px] text-xs">
-              <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-              <SelectValue placeholder="Dataset" />
-            </SelectTrigger>
-            <SelectContent>
-              {datasetFiles.map((file) => (
-                <SelectItem key={file.id} value={file.id}>
-                  {file.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={targetColumn ?? ''}
-            onValueChange={setTargetColumn}
-            disabled={datasetColumns.length === 0}
-          >
-            <SelectTrigger className="h-7 w-[150px] text-xs">
-              <SelectValue placeholder="Target column" />
-            </SelectTrigger>
-            <SelectContent>
-              {datasetColumns.map((column) => (
-                <SelectItem key={column} value={column}>
-                  {column}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
+        <FeatureEngineeringToolbarRight
+          selectedDatasetId={selectedDataset ?? ''}
+          datasetOptions={datasetFiles.map((file) => ({ id: file.id, name: file.name }))}
+          onDatasetSelect={setSelectedDataset}
+          selectedTargetColumn={targetColumn ?? ''}
+          targetColumns={datasetColumns}
+          onTargetColumnSelect={setTargetColumn}
+        />
       }
       chatMetaSlot={
         <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">

@@ -85,6 +85,12 @@ Key invariant:
 - Avoids blocked empty-state anti-pattern.
 - Preserves user agency and clear context provenance.
 
+### Processing state model decision
+- Adopt **Hybrid mode**.
+- Inside one active preprocessing run/thread, transformations chain statefully through notebook/runtime execution.
+- Switching dataset context or using **Reset Tab** starts a fresh run context explicitly.
+- Replay/checkpoint lineage remains explicit and backend-authoritative.
+
 ---
 
 ## 4. Stage-Wise Tool Design Methodology (Bloat Prevention)

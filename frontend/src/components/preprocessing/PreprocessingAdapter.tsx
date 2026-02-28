@@ -20,6 +20,8 @@ export function createPreprocessingAdapter(
     'execute_transformation_step',
     'validate_step_result',
     'commit_transformation_step',
+    'detect_step_divergence',
+    'reconcile_diverged_step',
     // also capture run tracking tools if desired
     'set_active_dataset',
     'checkpoint_dataset'
@@ -51,6 +53,38 @@ export function createPreprocessingAdapter(
         signal
       );
     },
+    prepareToolCalls: (toolCalls) => toolCalls.map((call) => {
+      if (call.tool !== 'run_cell') {
+        return call;
+      }
+
+      const mode = usePreprocessingStore.getState().consumeRunCellMode();
+      const args = call.args ?? {};
+      const metadata = (
+        args.metadata && typeof args.metadata === 'object' && !Array.isArray(args.metadata)
+          ? args.metadata
+          : {}
+      ) as Record<string, unknown>;
+      const preprocessing = (
+        metadata.preprocessing && typeof metadata.preprocessing === 'object' && !Array.isArray(metadata.preprocessing)
+          ? metadata.preprocessing
+          : {}
+      ) as Record<string, unknown>;
+
+      return {
+        ...call,
+        args: {
+          ...args,
+          metadata: {
+            ...metadata,
+            preprocessing: {
+              ...preprocessing,
+              datasetContinuityMode: mode
+            }
+          }
+        }
+      };
+    }),
     toolRegistry,
 
     toolUiRegistry: {},

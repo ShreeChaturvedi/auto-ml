@@ -3,6 +3,11 @@ import * as repo from '../../repositories/notebookRepository.js';
 import { env } from '../../config.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
+import {
+  resolveDatasetSyncMode,
+  shouldOverwriteDatasetWorkspace,
+  type DatasetSyncMode
+} from './datasetSyncMode.js';
 
 /**
  * Get or ensure a container exists for a project.
@@ -43,7 +48,10 @@ function broadcast(notebookId: string, type: string, data: Record<string, unknow
  */
 export async function executeCell(
   cellId: string,
-  projectId: string
+  projectId: string,
+  options?: {
+    datasetSyncMode?: DatasetSyncMode;
+  }
 ): Promise<ExecutionResult> {
   // Get the cell
   const cell = await repo.getCell(cellId);
@@ -79,8 +87,11 @@ export async function executeCell(
       datasetPaths
     });
 
-    // Copy dataset files to workspace so filenames work directly
-    await copyDatasetsToWorkspace(projectId);
+    const datasetSyncMode = resolveDatasetSyncMode(options?.datasetSyncMode, cell.metadata);
+
+    // Copy dataset files to workspace so filenames work directly.
+    // In continue mode, preserve edited working files across actions.
+    await copyDatasetsToWorkspace(projectId, datasetSyncMode);
 
     // Execute the code
     const result = await executeInContainer(container, cell.content, env.executionTimeoutMs, {
@@ -230,7 +241,7 @@ async function getDatasetPaths(projectId: string): Promise<string[]> {
  * - /workspace/datasets/{datasetId}/{filename}
  * - /workspace/{filename}
  */
-async function copyDatasetsToWorkspace(projectId: string): Promise<void> {
+async function copyDatasetsToWorkspace(projectId: string, mode: DatasetSyncMode): Promise<void> {
   const { createDatasetRepository } = await import('../../repositories/datasetRepository.js');
   const { copyFile, unlink, stat, mkdir } = await import('fs/promises');
   const { join } = await import('path');
@@ -241,6 +252,7 @@ async function copyDatasetsToWorkspace(projectId: string): Promise<void> {
 
   const workspacePath = `${env.executionWorkspaceDir}/${projectId}`;
   const datasetsPath = join(workspacePath, 'datasets');
+  const shouldOverwrite = shouldOverwriteDatasetWorkspace(mode);
 
   // Ensure datasets directory exists
   await mkdir(datasetsPath, { recursive: true });
@@ -267,11 +279,21 @@ async function copyDatasetsToWorkspace(projectId: string): Promise<void> {
       await stat(sourceFile);
 
       for (const destFile of destinations) {
-        // Remove existing file if it exists
-        try {
-          await unlink(destFile);
-        } catch {
-          // File doesn't exist, that's fine
+        if (!shouldOverwrite) {
+          try {
+            await stat(destFile);
+            // Preserve edited working copy in continue mode.
+            continue;
+          } catch {
+            // Destination missing; copy source below.
+          }
+        } else {
+          // Remove existing file if it exists before source refresh.
+          try {
+            await unlink(destFile);
+          } catch {
+            // File doesn't exist, that's fine
+          }
         }
 
         // Copy the file

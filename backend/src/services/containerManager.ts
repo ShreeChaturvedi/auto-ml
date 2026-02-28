@@ -666,6 +666,9 @@ export type PackageInstallEvent = {
     message?: string;
 };
 
+const PIP_INSTALL_TIMEOUT_MS = 8 * 60 * 1000;
+const INSTALL_TIMEOUT_MESSAGE = 'Install timed out while waiting for pip process to finish.';
+
 export async function installPackageStream(
     container: Container,
     packageName: string,
@@ -690,13 +693,17 @@ export async function installPackageStream(
     ];
 
     onEvent({ type: 'progress', progress: 8, stage: 'Checking wheels' });
+    console.info(`[containerManager] pip install phase -> checking-wheels (${requirements.join(', ')})`);
 
     const binaryAttempt = await runPipInstallStream(
         [...baseArgs, '--only-binary', ':all:', ...requirements],
-        onEvent
+        onEvent,
+        'binary-attempt'
     );
 
     if (binaryAttempt.success) {
+        onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
+        console.info(`[containerManager] pip install phase -> completed (binary-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`
@@ -711,11 +718,26 @@ export async function installPackageStream(
         };
     }
 
-    onEvent({ type: 'progress', progress: 35, stage: 'Building from source' });
+    if (isInstallTimeoutError(binaryAttempt.details)) {
+        return {
+            success: false,
+            message: `${aliasNotice}Install timed out while resolving wheel dependencies.`
+                + ' Please retry or try a lighter package spec.'
+        };
+    }
 
-    const sourceAttempt = await runPipInstallStream([...baseArgs, ...requirements], onEvent);
+    onEvent({ type: 'progress', progress: 35, stage: 'Building from source' });
+    console.info(`[containerManager] pip install phase -> building-from-source (${requirements.join(', ')})`);
+
+    const sourceAttempt = await runPipInstallStream(
+        [...baseArgs, ...requirements],
+        onEvent,
+        'source-attempt'
+    );
 
     if (sourceAttempt.success) {
+        onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
+        console.info(`[containerManager] pip install phase -> completed (source-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`
@@ -745,7 +767,8 @@ async function runPipInstall(args: string[]): Promise<{
 
 async function runPipInstallStream(
     args: string[],
-    onEvent: (event: PackageInstallEvent) => void
+    onEvent: (event: PackageInstallEvent) => void,
+    attemptLabel: 'binary-attempt' | 'source-attempt'
 ): Promise<{
     success: boolean;
     message?: string;
@@ -753,9 +776,13 @@ async function runPipInstallStream(
 }> {
     const progressMarkers = [
         { match: /Collecting/i, progress: 15, stage: 'Collecting' },
+        { match: /Installing build dependencies/i, progress: 45, stage: 'Installing build dependencies' },
+        { match: /Preparing metadata/i, progress: 55, stage: 'Preparing metadata' },
         { match: /Downloading/i, progress: 35, stage: 'Downloading' },
         { match: /Building wheels?/i, progress: 60, stage: 'Building wheels' },
         { match: /Installing collected packages/i, progress: 85, stage: 'Installing' },
+        { match: /Requirement already satisfied/i, progress: 92, stage: 'Already satisfied' },
+        { match: /Successfully built/i, progress: 95, stage: 'Built' },
         { match: /Successfully installed/i, progress: 100, stage: 'Completed' }
     ];
 
@@ -763,6 +790,21 @@ async function runPipInstallStream(
         const proc = spawn('docker', args);
         const outputLines: string[] = [];
         let currentProgress = 0;
+        let settled = false;
+        let timedOut = false;
+        const installTimeout = setTimeout(() => {
+            timedOut = true;
+            onEvent({ type: 'log', message: INSTALL_TIMEOUT_MESSAGE });
+            console.warn(`[containerManager] pip install timed out (${attemptLabel})`);
+            proc.kill('SIGKILL');
+        }, PIP_INSTALL_TIMEOUT_MS);
+
+        const finish = (result: { success: boolean; message?: string; details: string }) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(installTimeout);
+            resolve(result);
+        };
 
         const handleLine = (line: string) => {
             const trimmed = line.trim();
@@ -774,6 +816,7 @@ async function runPipInstallStream(
                 if (marker.match.test(trimmed) && marker.progress > currentProgress) {
                     currentProgress = marker.progress;
                     onEvent({ type: 'progress', progress: currentProgress, stage: marker.stage });
+                    console.info(`[containerManager] pip install phase -> ${marker.stage} (${attemptLabel}, ${currentProgress}%)`);
                 }
             }
         };
@@ -798,14 +841,27 @@ async function runPipInstallStream(
 
         proc.on('close', (code) => {
             const details = outputLines.join('\n');
-            resolve({
+            if (code === 0 && currentProgress < 100) {
+                // pip can finish successfully without emitting a "Successfully installed"
+                // line in some scenarios (already satisfied / quiet tails). Ensure the UI
+                // always leaves the 85% plateau and proceeds to completion.
+                const finalizingProgress = currentProgress < 95 ? 95 : 100;
+                const finalizingStage = finalizingProgress === 100 ? 'Completed' : 'Finalizing';
+                onEvent({ type: 'progress', progress: finalizingProgress, stage: finalizingStage });
+                currentProgress = finalizingProgress;
+                console.info(`[containerManager] pip install phase -> ${finalizingStage} (${attemptLabel}, ${finalizingProgress}%)`);
+            }
+
+            finish({
                 success: code === 0,
                 message: outputLines.slice(-2).join(' '),
-                details
+                details: timedOut
+                    ? `${details}\n${INSTALL_TIMEOUT_MESSAGE}`
+                    : details
             });
         });
         proc.on('error', (error) => {
-            resolve({
+            finish({
                 success: false,
                 details: error instanceof Error ? error.message : 'Failed to start pip install process'
             });
@@ -821,6 +877,10 @@ function isMissingBinaryError(details: string): boolean {
     );
 }
 
+function isInstallTimeoutError(details: string): boolean {
+    return details.includes(INSTALL_TIMEOUT_MESSAGE);
+}
+
 function formatInstallError(details: string, requirements: string[]): string {
     if (!details) {
         return `Failed to install ${requirements.join(', ')}.`;
@@ -831,6 +891,10 @@ function formatInstallError(details: string, requirements: string[]): string {
     ) {
         return 'Install ran out of disk space in the runtime.'
             + ' Increase `EXECUTION_TMPFS_MB` or clean up runtime storage and try again.';
+    }
+    if (isInstallTimeoutError(details)) {
+        return 'Install timed out while waiting for pip to finish.'
+            + ' Retry, or use a narrower version spec / lighter dependency set.';
     }
     if (details.includes('subprocess-exited-with-error') || details.includes('Failed building wheel')) {
         return 'Package requires a native build step that failed in this runtime.'

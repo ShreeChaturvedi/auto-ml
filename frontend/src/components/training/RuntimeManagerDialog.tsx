@@ -163,6 +163,7 @@ function PackageDialog({
   const [completed, setCompleted] = useState(false);
   const installPackage = useExecutionStore((state) => state.installPackage);
   const installRef = useRef(false);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   // Fetch package details when dialog opens
   useEffect(() => {
@@ -179,56 +180,88 @@ function PackageDialog({
 
   // Reset install state when dialog opens
   useEffect(() => {
-    if (open) {
-      setInstalling(false);
-      setProgress(0);
-      setStage(null);
-      setCompleted(false);
-      installRef.current = false;
+    if (!open) {
+      if (closeTimeoutRef.current !== null) {
+        window.clearTimeout(closeTimeoutRef.current);
+        closeTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    setInstalling(false);
+    setProgress(0);
+    setStage(null);
+    setCompleted(false);
+    installRef.current = false;
+    if (closeTimeoutRef.current !== null) {
+      window.clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current !== null) {
+        window.clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleInstall = async () => {
     if (!pkg || installing || installRef.current) return;
     installRef.current = true;
 
     setInstalling(true);
+    setCompleted(false);
     setProgress(5);
     setStage('Preparing');
 
-    const result = await installPackage(pkg.name, projectId, {
-      onEvent: (event) => {
-        if (event.type === 'progress') {
-          if (typeof event.progress === 'number') {
-            setProgress((prev) => Math.max(prev, event.progress ?? prev));
+    try {
+      const result = await installPackage(pkg.name, projectId, {
+        onEvent: (event) => {
+          if (event.type === 'progress') {
+            if (typeof event.progress === 'number') {
+              setProgress((prev) => Math.max(prev, event.progress ?? prev));
+            }
+            if (event.stage) {
+              setStage(event.stage);
+              console.info(`[runtime-manager] install phase -> ${event.stage}${typeof event.progress === 'number' ? ` (${event.progress}%)` : ''}`);
+            }
           }
-          if (event.stage) {
-            setStage(event.stage);
-            console.info(`[runtime-manager] install phase -> ${event.stage}${typeof event.progress === 'number' ? ` (${event.progress}%)` : ''}`);
+          if (event.type === 'done') {
+            setStage(event.success ? 'Completed' : 'Failed');
+            setProgress((prev) => (event.success ? 100 : prev));
+            console.info(`[runtime-manager] install done -> ${event.success ? 'success' : 'failure'} (${pkg.name})`);
           }
         }
-        if (event.type === 'done') {
-          setStage(event.success ? 'Completed' : 'Failed');
-          setProgress((prev) => (event.success ? 100 : prev));
-          console.info(`[runtime-manager] install done -> ${event.success ? 'success' : 'failure'} (${pkg.name})`);
-        }
+      });
+
+      if (result.success) {
+        setCompleted(true);
+        // Fallback in case the stream misses a terminal progress event.
+        setStage('Completed');
+        setProgress(100);
+        toast.success(`Installed ${pkg.name}`);
+        closeTimeoutRef.current = window.setTimeout(() => {
+          onOpenChange(false);
+          onInstallComplete?.();
+          closeTimeoutRef.current = null;
+        }, 600);
+      } else {
+        setCompleted(false);
+        setStage('Failed');
+        installRef.current = false;
+        toast.error(`Failed to install ${pkg.name}`, { description: result.message });
       }
-    });
-
-    setInstalling(false);
-    setCompleted(true);
-
-    if (result.success) {
-      // Fallback in case the stream misses a terminal progress event.
-      setStage('Completed');
-      setProgress(100);
-      toast.success(`Installed ${pkg.name}`);
-      setTimeout(() => {
-        onOpenChange(false);
-        onInstallComplete?.();
-      }, 600);
-    } else {
-      toast.error(`Failed to install ${pkg.name}`, { description: result.message });
+    } catch (error) {
+      setCompleted(false);
+      setStage('Failed');
+      installRef.current = false;
+      toast.error(`Failed to install ${pkg.name}`, {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setInstalling(false);
     }
   };
 

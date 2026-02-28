@@ -271,7 +271,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
           </div>
 
           {/* Add cell buttons (Code and Text) - adds at top */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"

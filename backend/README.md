@@ -117,8 +117,13 @@ AUTOML_BENCH_PIPELINING=1
 - `POST /api/answer`
 
 ### Preprocessing (Postgres required)
-- `POST /api/preprocessing/analyze`
 - `GET /api/preprocessing/tables`
+- `POST /api/llm/preprocessing/stream` (authoritative orchestration path)
+
+Legacy preprocessing endpoints remain mounted only as deprecated guards and return `410 Gone`:
+- `POST /api/preprocessing/analyze`
+- `POST /api/preprocessing/refine`
+- `POST /api/preprocessing/execute`
 
 ### Feature Engineering
 - `POST /api/feature-engineering/apply`

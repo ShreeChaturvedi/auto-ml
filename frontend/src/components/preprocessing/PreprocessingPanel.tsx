@@ -18,6 +18,13 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -38,13 +45,15 @@ import {
   Database,
   GitBranch,
   Loader2,
-  Plus,
+  MoreHorizontal,
+  Pencil,
   PlayCircle,
-  RotateCcw,
+  Plus,
   RefreshCw,
+  RotateCcw,
   ShieldAlert,
+  Trash2,
   Wand2,
-  WandSparkles,
   XCircle
 } from 'lucide-react';
 
@@ -63,8 +72,6 @@ const HIDDEN_ACTIVITY_TOOLS = new Set([
   'profile_active_dataset'
 ]);
 
-const TAB_ACTION_NEW = '__new_processing_tab__';
-const TAB_ACTION_DELETE = '__delete_processing_tab__';
 
 interface PreprocessingTabSnapshot {
   selectedDatasetId: string | null;
@@ -127,8 +134,6 @@ function summarizeValidation(event: TransformationEvent): string | null {
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
-  const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
-  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
   const notebookCells = useNotebookStore((state) => state.cells);
 
   const {
@@ -152,6 +157,8 @@ export function PreprocessingPanel() {
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
+  const [renameTabDialogOpen, setRenameTabDialogOpen] = useState(false);
+  const [renameTabName, setRenameTabName] = useState('');
   const [tabs, setTabs] = useState<PreprocessingTab[]>([
     {
       id: 'processing-tab-1',
@@ -167,12 +174,6 @@ export function PreprocessingPanel() {
       void loadTables(projectId);
     }
   }, [projectId, loadTables]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    void initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [disconnectNotebook, initializeNotebook, projectId]);
 
   useEffect(() => {
     if (!selectedDatasetId && tables.length > 0) {
@@ -260,79 +261,66 @@ export function PreprocessingPanel() {
     }
   };
 
-  const handleTabSelect = (value: string) => {
+  const saveActiveSnapshot = () => {
     if (!activeTab) return;
-
-    if (value === TAB_ACTION_NEW) {
-      const nextIndex = tabs.length + 1;
-      const newTab: PreprocessingTab = {
-        id: createTabId(),
-        name: `Processing ${nextIndex}`,
-        snapshot: createEmptyTabSnapshot(),
-        storageVersion: 0
-      };
-      setTabs((previous) => previous.map((tab) => (
-        tab.id === activeTab.id
-          ? {
-              ...tab,
-              snapshot: {
-                selectedDatasetId,
-                runId,
-                timeline,
-                stepBindings,
-                replayReport
-              }
-            }
-          : tab
-      )).concat(newTab));
-      setActiveTabId(newTab.id);
-      applyTabSnapshot(newTab.snapshot);
-      return;
-    }
-
-    if (value === TAB_ACTION_DELETE) {
-      if (tabs.length <= 1) {
-        return;
-      }
-      const targetIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
-      const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
-      if (!fallbackTab) {
-        return;
-      }
-
-      if (projectId) {
-        const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
-        localStorage.removeItem(`${currentStorageKey}-${projectId}`);
-      }
-
-      setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
-      setActiveTabId(fallbackTab.id);
-      applyTabSnapshot(fallbackTab.snapshot);
-      return;
-    }
-
-    const targetTab = tabs.find((tab) => tab.id === value);
-    if (!targetTab || targetTab.id === activeTab.id) {
-      return;
-    }
-
     setTabs((previous) => previous.map((tab) => (
       tab.id === activeTab.id
-        ? {
-            ...tab,
-            snapshot: {
-              selectedDatasetId,
-              runId,
-              timeline,
-              stepBindings,
-              replayReport
-            }
-          }
+        ? { ...tab, snapshot: { selectedDatasetId, runId, timeline, stepBindings, replayReport } }
         : tab
     )));
+  };
 
+  const handleTabSwitch = (value: string) => {
+    if (!activeTab) return;
+    const targetTab = tabs.find((tab) => tab.id === value);
+    if (!targetTab || targetTab.id === activeTab.id) return;
+    saveActiveSnapshot();
     setActiveTabId(targetTab.id);
     applyTabSnapshot(targetTab.snapshot);
+  };
+
+  const handleNewTab = () => {
+    if (!activeTab) return;
+    const nextIndex = tabs.length + 1;
+    const newTab: PreprocessingTab = {
+      id: createTabId(),
+      name: `Processing ${nextIndex}`,
+      snapshot: createEmptyTabSnapshot(),
+      storageVersion: 0
+    };
+    saveActiveSnapshot();
+    setTabs((previous) => [...previous, newTab]);
+    setActiveTabId(newTab.id);
+    applyTabSnapshot(newTab.snapshot);
+  };
+
+  const handleDeleteTab = () => {
+    if (!activeTab || tabs.length <= 1) return;
+    const targetIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
+    const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
+    if (!fallbackTab) return;
+    if (projectId) {
+      localStorage.removeItem(`${buildProcessingStorageKey(activeTab.id, activeTab.storageVersion)}-${projectId}`);
+    }
+    setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
+    setActiveTabId(fallbackTab.id);
+    applyTabSnapshot(fallbackTab.snapshot);
+  };
+
+  const openRenameTabDialog = () => {
+    if (!activeTab) return;
+    setRenameTabName(activeTab.name);
+    setRenameTabDialogOpen(true);
+  };
+
+  const handleRenameTab = () => {
+    if (!activeTab) return;
+    const trimmed = renameTabName.trim();
+    if (!trimmed) return;
+    setTabs((previous) => previous.map((tab) =>
+      tab.id === activeTab.id ? { ...tab, name: trimmed } : tab
+    ));
+    setRenameTabDialogOpen(false);
   };
 
   const resetActiveTab = () => {
@@ -373,10 +361,8 @@ export function PreprocessingPanel() {
         )}
         toolbarLeft={
           <>
-            <WandSparkles className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-semibold">Agentic Preprocessing</span>
-            <Select value={activeTab?.id ?? ''} onValueChange={handleTabSelect}>
-              <SelectTrigger className="h-8 w-[190px]">
+            <Select value={activeTab?.id ?? ''} onValueChange={handleTabSwitch}>
+              <SelectTrigger className="h-7 w-[180px] text-xs">
                 <SelectValue placeholder="Processing tab" />
               </SelectTrigger>
               <SelectContent>
@@ -385,62 +371,69 @@ export function PreprocessingPanel() {
                     {tab.name}
                   </SelectItem>
                 ))}
-                <SelectItem value={TAB_ACTION_NEW}>+ New Processing Tab</SelectItem>
-                <SelectItem value={TAB_ACTION_DELETE} disabled={tabs.length <= 1}>
-                  Delete Current Tab
-                </SelectItem>
               </SelectContent>
             </Select>
-            {runId ? (
-              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-                Run {runId.slice(0, 10)}
-              </Badge>
-            ) : null}
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleNewTab}
+              title="New processing tab"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!activeTab}>
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={openRenameTabDialog}>
+                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
+                  <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                  Replay Check
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={resetActiveTab}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                  Reset Tab
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={handleDeleteTab}
+                  className="text-destructive focus:text-destructive"
+                  disabled={tabs.length <= 1}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
         toolbarRight={
-          <>
-            <Select
-              value={selectedDatasetId ?? ''}
-              onValueChange={handleDatasetSelect}
-              disabled={isLoadingTables || tables.length === 0}
-            >
-              <SelectTrigger className="h-9 w-[320px]">
-                <Database className="mr-2 h-4 w-4 text-muted-foreground" />
-                <SelectValue placeholder="Select dataset" />
-              </SelectTrigger>
-              <SelectContent>
-                {tables.map((table) => (
-                  <SelectItem key={table.datasetId} value={table.datasetId}>
-                    {table.filename}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button variant="outline" size="sm" onClick={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Replay Check
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={resetActiveTab}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset Tab
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleTabSelect(TAB_ACTION_NEW)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Tab
-            </Button>
-          </>
+          <Select
+            value={selectedDatasetId ?? ''}
+            onValueChange={handleDatasetSelect}
+            disabled={isLoadingTables || tables.length === 0}
+          >
+            <SelectTrigger className="h-7 w-[200px] text-xs">
+              <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="Select dataset" />
+            </SelectTrigger>
+            <SelectContent>
+              {tables.map((table) => (
+                <SelectItem key={table.datasetId} value={table.datasetId}>
+                  {table.filename}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         }
         chatMetaSlot={
           <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">
@@ -747,6 +740,34 @@ export function PreprocessingPanel() {
             <Button variant="outline" onClick={() => setDatasetModalOpen(false)}>Cancel</Button>
             <Button onClick={handleDatasetStart} disabled={!candidateDatasetId}>
               Start with this dataset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameTabDialogOpen} onOpenChange={setRenameTabDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename processing tab</DialogTitle>
+            <DialogDescription>
+              Update the name of the current processing tab.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={renameTabName}
+            onChange={(event) => setRenameTabName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleRenameTab();
+            }}
+            placeholder="Tab name"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameTabDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameTab} disabled={!renameTabName.trim()}>
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

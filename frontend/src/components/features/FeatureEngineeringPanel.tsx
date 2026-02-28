@@ -9,6 +9,13 @@ import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -42,11 +49,13 @@ import {
   Copy,
   Database,
   FileOutput,
-  History,
   Info,
   Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
   Sparkles,
-  WandSparkles
+  Trash2
 } from 'lucide-react';
 
 interface FeatureEngineeringPanelProps {
@@ -62,9 +71,6 @@ type SuggestionDraft = {
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
 const HIDDEN_ACTIVITY_TOOLS = new Set(['set_active_dataset', 'list_project_datasets', 'profile_active_dataset']);
-const VERSION_ACTION_NEW_DRAFT = '__new_draft__';
-const VERSION_ACTION_DELETE_DRAFT = '__delete_draft__';
-const VERSION_ACTION_RENAME_DRAFT = '__rename_draft__';
 const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';
 const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
   'LLM render_ui returned empty UI content.',
@@ -161,8 +167,6 @@ function buildSuggestionDefaults(item: FeatureSuggestionItem): Record<string, un
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
-  const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
-  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
   const notebookCells = useNotebookStore((state) => state.cells);
   const createNotebookCell = useNotebookStore((state) => state.createCell);
   const updateNotebookCell = useNotebookStore((state) => state.updateCell);
@@ -205,12 +209,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const hydratedProjectRef = useRef<string | null>(null);
   const lastPersistedReadinessRef = useRef(new Map<string, string>());
   const lastSyncedCodePreviewRef = useRef('');
-
-  useEffect(() => {
-    if (!projectId) return;
-    void initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [disconnectNotebook, initializeNotebook, projectId]);
 
   useEffect(() => {
     if (hydratedProjectRef.current === projectId) return;
@@ -561,79 +559,56 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     });
   }, [datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
-  const handleVersionSelect = useCallback((value: string) => {
-    if (value === VERSION_ACTION_NEW_DRAFT) {
-      createDraftVersion(projectId);
-      clearProjectFeatures(projectId);
-      setSuggestionDrafts({});
-      setPanelError(null);
-      setApplyStatus('idle');
-      setApplyMessage(null);
-      return;
-    }
-
-    if (value === VERSION_ACTION_DELETE_DRAFT) {
-      if (!currentVersion || currentVersion.status !== 'draft') {
-        return;
-      }
-
-      const shouldDelete = window.confirm(
-        versions.length <= 1
-          ? `Delete draft "${currentVersion.name}"? Since this is the only version, a fresh blank draft will be created.`
-          : `Delete draft "${currentVersion.name}"? This removes this draft version.`
-      );
-      if (!shouldDelete) {
-        return;
-      }
-
-      if (versions.length <= 1) {
-        const deletedVersionId = currentVersion.id;
-        createDraftVersion(projectId, 'Draft Pipeline v1');
-        removeVersion(projectId, deletedVersionId);
-      } else {
-        removeVersion(projectId, currentVersion.id);
-      }
-      clearProjectFeatures(projectId);
-      setSuggestionDrafts({});
-      setApplyStatus('idle');
-      setApplyMessage(null);
-      setPanelError(null);
-      return;
-    }
-
-    if (value === VERSION_ACTION_RENAME_DRAFT) {
-      if (!currentVersion || currentVersion.status !== 'draft') {
-        return;
-      }
-
-      const nextName = window.prompt('Rename current draft pipeline:', currentVersion.name);
-      if (!nextName) {
-        return;
-      }
-
-      const trimmed = nextName.trim();
-      if (!trimmed) {
-        setPanelError('Draft name cannot be empty.');
-        return;
-      }
-
-      renameVersion(projectId, currentVersion.id, trimmed);
-      setPanelError(null);
-      return;
-    }
-
+  const handleVersionSwitch = useCallback((value: string) => {
     setPanelError(null);
     setCurrentVersion(projectId, value);
-  }, [
-    clearProjectFeatures,
-    createDraftVersion,
-    currentVersion,
-    projectId,
-    renameVersion,
-    removeVersion,
-    setCurrentVersion,
-    versions.length
-  ]);
+  }, [projectId, setCurrentVersion]);
+
+  const handleNewDraft = useCallback(() => {
+    createDraftVersion(projectId, 'New Draft Pipeline');
+    clearProjectFeatures(projectId);
+    setSuggestionDrafts({});
+    setPanelError(null);
+    setApplyStatus('idle');
+    setApplyMessage(null);
+  }, [clearProjectFeatures, createDraftVersion, projectId]);
+
+  const handleDeleteDraft = useCallback(() => {
+    if (!currentVersion || currentVersion.status !== 'draft') return;
+
+    const shouldDelete = window.confirm(
+      versions.length <= 1
+        ? `Delete draft "${currentVersion.name}"? A fresh blank draft will be created.`
+        : `Delete draft "${currentVersion.name}"?`
+    );
+    if (!shouldDelete) return;
+
+    if (versions.length <= 1) {
+      const deletedVersionId = currentVersion.id;
+      createDraftVersion(projectId, 'Draft Pipeline v1');
+      removeVersion(projectId, deletedVersionId);
+    } else {
+      removeVersion(projectId, currentVersion.id);
+    }
+    clearProjectFeatures(projectId);
+    setSuggestionDrafts({});
+    setApplyStatus('idle');
+    setApplyMessage(null);
+    setPanelError(null);
+  }, [clearProjectFeatures, createDraftVersion, currentVersion, projectId, removeVersion, versions.length]);
+
+  const handleRenameDraft = useCallback(() => {
+    if (!currentVersion || currentVersion.status !== 'draft') return;
+    const nextName = window.prompt('Rename current draft pipeline:', currentVersion.name);
+    if (!nextName) return;
+    const trimmed = nextName.trim();
+    if (!trimmed) {
+      setPanelError('Draft name cannot be empty.');
+      return;
+    }
+    renameVersion(projectId, currentVersion.id, trimmed);
+    setPanelError(null);
+  }, [currentVersion, projectId, renameVersion]);
 
   const renderUiItem = useCallback((item: UiItem) => {
     switch (item.type) {
@@ -862,7 +837,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => createDraftVersion(projectId, 'New Draft Pipeline')}
+                    onClick={handleNewDraft}
                   >
                     Start New Draft
                   </Button>
@@ -1168,25 +1143,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       renderLeftPane={renderLeftPane}
       toolbarLeft={
         <>
-          <WandSparkles className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Feature Engineering</span>
-          {currentVersion ? (
-            <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-              {currentVersion.name}
-            </Badge>
-          ) : null}
-        </>
-      }
-      toolbarRight={
-        <>
           <Select
             value={currentVersion?.id ?? ''}
-            onValueChange={handleVersionSelect}
+            onValueChange={handleVersionSwitch}
             disabled={versions.length === 0}
           >
-            <SelectTrigger className="h-9 w-[190px]">
-              <History className="mr-2 h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="Version" />
+            <SelectTrigger className="h-7 w-[180px] text-xs">
+              <SelectValue placeholder="Pipeline" />
             </SelectTrigger>
             <SelectContent>
               {versions.map((version) => (
@@ -1194,24 +1157,53 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   {version.name}
                 </SelectItem>
               ))}
-              <SelectItem value={VERSION_ACTION_NEW_DRAFT}>+ New Draft Pipeline</SelectItem>
-              <SelectItem value={VERSION_ACTION_RENAME_DRAFT} disabled={!isCurrentVersionDraft}>
-                Rename Current Draft
-              </SelectItem>
-              <SelectItem value={VERSION_ACTION_DELETE_DRAFT} disabled={!canDeleteCurrentDraft}>
-                Delete Current Draft
-              </SelectItem>
             </SelectContent>
           </Select>
 
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={handleNewDraft}
+            title="New draft pipeline"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!currentVersion}>
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={handleRenameDraft} disabled={!isCurrentVersionDraft}>
+                <Pencil className="h-3.5 w-3.5 mr-2" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={handleDeleteDraft}
+                className="text-destructive focus:text-destructive"
+                disabled={!canDeleteCurrentDraft}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      }
+      toolbarRight={
+        <>
           <Select
             value={selectedDataset ?? ''}
             onValueChange={setSelectedDataset}
             disabled={datasetFiles.length === 0}
           >
-            <SelectTrigger className="h-9 w-[240px]">
-              <Database className="mr-2 h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="Select dataset" />
+            <SelectTrigger className="h-7 w-[180px] text-xs">
+              <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="Dataset" />
             </SelectTrigger>
             <SelectContent>
               {datasetFiles.map((file) => (
@@ -1227,7 +1219,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             onValueChange={setTargetColumn}
             disabled={datasetColumns.length === 0}
           >
-            <SelectTrigger className="h-9 w-[220px]">
+            <SelectTrigger className="h-7 w-[150px] text-xs">
               <SelectValue placeholder="Target column" />
             </SelectTrigger>
             <SelectContent>

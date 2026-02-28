@@ -2,7 +2,7 @@
  * RuntimeManagerDialog - Configure Python runtime, packages, and datasets
  */
 
-import {
+import React, {
   useCallback,
   useEffect,
   useId,
@@ -132,6 +132,7 @@ function sanitizeDescription(text: string): string {
 
 interface RuntimeManagerDialogProps {
   projectId: string;
+  trigger?: React.ReactNode;
 }
 
 /**
@@ -450,7 +451,7 @@ function PackageDialog({
   );
 }
 
-export function RuntimeManagerDialog({ projectId }: RuntimeManagerDialogProps) {
+export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialogProps) {
   const [open, setOpen] = useState(false);
   const [packageInput, setPackageInput] = useState('');
   const [packageSuggestions, setPackageSuggestions] = useState<PackageInfo[]>([]);
@@ -632,9 +633,11 @@ export function RuntimeManagerDialog({ projectId }: RuntimeManagerDialogProps) {
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon-sm" title="Runtime settings">
-            <Settings2 className="h-4 w-4" />
-          </Button>
+          {trigger ?? (
+            <Button variant="ghost" size="icon-sm" title="Runtime settings">
+              <Settings2 className="h-4 w-4" />
+            </Button>
+          )}
         </DialogTrigger>
         <DialogContent className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col">
           <DialogHeader>

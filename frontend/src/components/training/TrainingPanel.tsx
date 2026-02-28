@@ -8,12 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Plus,
   Loader2,
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
-import { RuntimeManagerDialog } from './RuntimeManagerDialog';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
@@ -22,7 +20,6 @@ import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
-import { useNotebookStore } from '@/stores/notebookStore';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createTrainingAdapter } from './TrainingAdapter';
 import ReactMarkdown from 'react-markdown';
@@ -41,26 +38,8 @@ export function TrainingPanel() {
   
   const autoRunIdsRef = useRef(new Set<string>());
 
-  // Execution store
-  const {
-    cloudAvailable,
-    cloudInitializing,
-    sessionId,
-    initializeCloud,
-    checkCloudHealth,
-    executeCode: executeWithStore
-  } = useExecutionStore();
+  const { executeCode: executeWithStore } = useExecutionStore();
 
-  const {
-    initializeNotebook,
-    disconnect: disconnectNotebook,
-    createCell: createNotebookCell
-  } = useNotebookStore();
-
-  useEffect(() => {
-    if (projectId) initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [projectId, initializeNotebook, disconnectNotebook]);
 
   // Files
   const files = useDataStore((s) => s.files);
@@ -108,16 +87,6 @@ export function TrainingPanel() {
       setTrainingTargetColumn(selected.columns[0]);
     }
   }, [trainingDatasetOptions, trainingDatasetId, trainingTargetColumn]);
-
-  useEffect(() => {
-    checkCloudHealth().catch(() => undefined);
-  }, [checkCloudHealth]);
-
-  useEffect(() => {
-    if (projectId && cloudAvailable && !sessionId && !cloudInitializing) {
-      initializeCloud(projectId).catch(console.error);
-    }
-  }, [projectId, cloudAvailable, sessionId, cloudInitializing, initializeCloud]);
 
   useEffect(() => {
     cellsRef.current = cells;
@@ -374,36 +343,20 @@ export function TrainingPanel() {
         documentFiles
       })}
       LeftPaneComponent={LeftPaneComponent}
-      toolbarLeft={
-        <>
-          <Badge
-            variant={cloudAvailable ? 'default' : 'secondary'}
-            className={cn('text-xs gap-1.5', cloudInitializing && 'animate-pulse')}
-          >
-            {cloudInitializing ? <Loader2 className="h-3 w-3 animate-spin" /> : cloudAvailable ? <span className="h-2 w-2 rounded-full bg-emerald-500" /> : <span className="h-2 w-2 rounded-full bg-destructive" />}
-            {cloudInitializing ? 'Connecting...' : cloudAvailable ? 'Cloud' : 'Unavailable'}
-          </Badge>
-          {projectId && <RuntimeManagerDialog projectId={projectId} />}
-        </>
-      }
+      toolbarLeft={undefined}
       toolbarRight={
-        <>
-          {projectFeatures.length > 0 && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
-                    <Wand2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          <Button variant="ghost" size="icon-sm" onClick={() => createNotebookCell({ content: '', cellType: 'code' })} title="Add notebook cell">
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </>
+        projectFeatures.length > 0 ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
+                  <Wand2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : undefined
       }
     />
   );

@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectHeader } from '../ProjectHeader';
@@ -20,8 +22,12 @@ const mockProject: Project = {
 };
 
 describe('ProjectHeader', () => {
+  const renderWithRouter = (node: ReactNode) => {
+    return render(<MemoryRouter>{node}</MemoryRouter>);
+  };
+
   it('shows only a single-line description field in upload header', () => {
-    render(<ProjectHeader project={mockProject} editable />);
+    renderWithRouter(<ProjectHeader project={mockProject} editable />);
 
     const descriptionInput = screen.getByPlaceholderText('Add a description');
     expect(descriptionInput).toBeInTheDocument();
@@ -31,7 +37,7 @@ describe('ProjectHeader', () => {
 
   it('persists description edits on blur', () => {
     const onUpdate = vi.fn();
-    render(<ProjectHeader project={mockProject} editable onUpdate={onUpdate} />);
+    renderWithRouter(<ProjectHeader project={mockProject} editable onUpdate={onUpdate} />);
 
     const descriptionInput = screen.getByPlaceholderText('Add a description');
     fireEvent.change(descriptionInput, { target: { value: 'Updated description' } });

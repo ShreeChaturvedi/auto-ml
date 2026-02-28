@@ -17,7 +17,13 @@ import {
   type LlmRequest,
   type LlmThinkingLevel
 } from '../services/llm/llmClient.js';
-import { executePreprocessingTool, isPreprocessingToolName } from '../services/llm/preprocessingGraph.js';
+import {
+  executePreprocessingTool,
+  getPreprocessingRunSnapshot,
+  isPreprocessingToolName,
+  listPreprocessingRunSnapshots,
+  syncPreprocessingLangGraphState
+} from '../services/llm/preprocessingGraph.js';
 import {
   buildFeatureEngineeringRequest,
   buildOnboardingRequest,
@@ -95,6 +101,15 @@ const executeToolsSchema = z.object({
   toolCalls: z.array(ToolCallSchema)
 });
 
+const preprocessingRunParamsSchema = z.object({
+  runId: z.string().min(1)
+});
+
+const preprocessingRunQuerySchema = z.object({
+  projectId: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
 export function createLlmRouter() {
   const router = Router();
   console.log('[DEBUG] createLlmRouter called, router created');
@@ -111,8 +126,17 @@ export function createLlmRouter() {
 
     const results = [];
     for (const call of toolCalls) {
+      const preprocessingArgs = {
+        ...(call.args ?? {}),
+        toolCallId: call.id
+      };
       const result = isPreprocessingToolName(call.tool)
-        ? await executePreprocessingTool(projectId, call.tool, call.args ?? {})
+        ? await syncPreprocessingLangGraphState(
+            projectId,
+            call.tool,
+            preprocessingArgs,
+            await executePreprocessingTool(projectId, call.tool, preprocessingArgs)
+          )
         : await executeMcpTool(projectId, call.tool, {
             ...(call.args ?? {}),
             ...(notebookId ? { notebookId } : {})
@@ -130,6 +154,39 @@ export function createLlmRouter() {
 
   router.get('/llm/tools', (_req, res) => {
     return res.json({ tools: LLM_TOOL_DEFINITIONS });
+  });
+
+  router.get('/llm/preprocessing/runs', async (req, res) => {
+    const parsed = preprocessingRunQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+
+    const runs = await listPreprocessingRunSnapshots(parsed.data.projectId, parsed.data.limit);
+    return res.json({
+      projectId: parsed.data.projectId,
+      count: runs.length,
+      runs
+    });
+  });
+
+  router.get('/llm/preprocessing/runs/:runId', async (req, res) => {
+    const parsedParams = preprocessingRunParamsSchema.safeParse(req.params);
+    if (!parsedParams.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsedParams.error.issues });
+    }
+
+    const run = await getPreprocessingRunSnapshot(parsedParams.data.runId);
+    if (!run) {
+      return res.status(404).json({ error: 'Preprocessing run not found' });
+    }
+
+    const projectIdQuery = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+    if (projectIdQuery && run.projectId !== projectIdQuery) {
+      return res.status(404).json({ error: 'Preprocessing run not found' });
+    }
+
+    return res.json({ run });
   });
 
   router.post('/llm/onboarding/stream', async (req, res) => {

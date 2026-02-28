@@ -364,6 +364,22 @@ describeIf('dataset routes', () => {
       const datasets = await repository.list();
       expect(datasets[0].projectId).toBe(projectId);
     });
+
+    it('prioritizes file extension over conflicting MIME type', async () => {
+      const csvContent = 'id,raw\n1,foo\\u12ZZ';
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/upload/dataset')
+        .field('projectId', randomUUID())
+        .attach('file', Buffer.from(csvContent), {
+          filename: 'conflicting.csv',
+          contentType: 'application/json'
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.dataset.fileType).toBe('csv');
+      expect(response.body.dataset.filename).toBe('conflicting.csv');
+    });
   });
 
   describe('POST /api/datasets/migrate', () => {

@@ -36,7 +36,6 @@ import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useNotebookStore } from '@/stores/notebookStore';
-import { useProjectStore } from '@/stores/projectStore';
 
 import { FEATURE_TEMPLATES } from '@/types/feature';
 import type {
@@ -45,7 +44,6 @@ import type {
   FeatureSpec,
   PipelineVersion
 } from '@/types/feature';
-import { projectColorClasses } from '@/types/project';
 import type { ChatMessage, UiItem } from '@/types/llmUi';
 
 import {
@@ -79,7 +77,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const notebookCells = useNotebookStore((state) => state.cells);
   const createNotebookCell = useNotebookStore((state) => state.createCell);
   const updateNotebookCell = useNotebookStore((state) => state.updateCell);
-  const projects = useProjectStore((state) => state.projects);
 
   const allFiles = useDataStore((state) => state.files);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
@@ -201,11 +198,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     if (!currentVersionId) return versions[0];
     return versions.find((version) => version.id === currentVersionId) ?? versions[0];
   }, [currentVersionId, versions]);
-
-  const toolCallTextClass = useMemo(() => {
-    const project = projects.find((entry) => entry.id === projectId);
-    return project ? projectColorClasses[project.color].text : 'text-primary';
-  }, [projects, projectId]);
 
   const isApproved = currentVersion?.status === 'approved';
 
@@ -863,7 +855,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
               return (
                 <div key={message.id} className="ml-9 text-xs text-muted-foreground">
-                  <span className={cn('font-mono', toolCallTextClass)}>{message.call.tool}</span>
+                  <span className="font-mono">{message.call.tool}</span>
                   {message.result?.error ? (
                     <span className="ml-2 text-destructive">{message.result.error}</span>
                   ) : null}

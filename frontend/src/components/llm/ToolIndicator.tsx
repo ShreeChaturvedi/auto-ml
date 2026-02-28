@@ -15,6 +15,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import {
     Globe,
     Eye,
@@ -59,12 +61,12 @@ const AUTO_EXPAND_TOOLS = new Set<ToolCall['tool']>([
 ]);
 
 // Get the static icon for a tool (shown when done/pending)
-function getToolIcon(tool: ToolCall['tool'], status: ToolStatus) {
+function getToolIcon(tool: ToolCall['tool'], status: ToolStatus, accentTextClass: string) {
     const iconClass = cn(
         'h-4 w-4 flex-shrink-0',
-        status === 'done' && 'text-emerald-600',
+        status === 'done' && accentTextClass,
         status === 'error' && 'text-destructive',
-        (status === 'pending' || status === 'running') && 'text-muted-foreground'
+        (status === 'pending' || status === 'running') && accentTextClass
     );
 
     switch (tool) {
@@ -249,10 +251,14 @@ function getResultHint(call: ToolCall, result?: ToolResult): string | null {
 // Single tool row component
 function ToolRow({
     display,
-    autoExpandPreviewTools
+    autoExpandPreviewTools,
+    accentTextClass,
+    accentBorderClass
 }: {
     display: ToolDisplay;
     autoExpandPreviewTools: boolean;
+    accentTextClass: string;
+    accentBorderClass: string;
 }) {
     const [expanded, setExpanded] = useState(false);
     const { call, status, result, label, hasDropdown } = display;
@@ -282,17 +288,17 @@ function ToolRow({
                     showDropdown && 'hover:bg-muted/50 cursor-pointer',
                     !showDropdown && 'cursor-default',
                     status === 'error' && 'text-destructive',
-                    status === 'done' && 'text-muted-foreground',
-                    isLoading && 'text-muted-foreground'
+                    status === 'done' && accentTextClass,
+                    isLoading && accentTextClass
                 )}
             >
                 {/* Icon or spinner */}
                 {isLoading ? (
-                    <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-muted-foreground" />
+                    <Loader2 className={cn('h-4 w-4 flex-shrink-0 animate-spin', accentTextClass)} />
                 ) : status === 'error' ? (
                     <AlertCircle className="h-4 w-4 flex-shrink-0 text-destructive" />
                 ) : (
-                    getToolIcon(call.tool, status)
+                    getToolIcon(call.tool, status, accentTextClass)
                 )}
 
                 {/* Label with shimmer effect when loading */}
@@ -302,7 +308,7 @@ function ToolRow({
 
                 {/* Inline result count hint */}
                 {hint && status === 'done' && (
-                    <span className="text-[10px] font-mono text-muted-foreground/60 tabular-nums flex-shrink-0">
+                    <span className={cn('text-[10px] font-mono tabular-nums flex-shrink-0', accentTextClass, 'opacity-70')}>
                         {hint}
                     </span>
                 )}
@@ -317,7 +323,7 @@ function ToolRow({
 
             {/* Expandable content — rendered by ToolResultRenderer */}
             {expanded && showDropdown && (
-                <div className="ml-6 mt-1 p-3 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
+                <div className={cn('ml-6 mt-1 p-3 bg-muted/30 rounded-md border max-h-[300px] overflow-y-auto', accentBorderClass)}>
                     <ToolResultRenderer call={call} result={result!} />
                 </div>
             )}
@@ -331,6 +337,19 @@ export function ToolIndicator({
     isRunning,
     autoExpandPreviewTools = false
 }: ToolIndicatorProps) {
+    const activeProjectId = useProjectStore((state) => state.activeProjectId);
+    const projects = useProjectStore((state) => state.projects);
+    const activeProject = useMemo(
+        () => projects.find((project) => project.id === activeProjectId),
+        [projects, activeProjectId]
+    );
+    const accentTextClass = activeProject
+        ? projectColorClasses[activeProject.color].text
+        : 'text-primary';
+    const accentBorderClass = activeProject
+        ? projectColorClasses[activeProject.color].border
+        : 'border-primary/30';
+
     const displayItems = useMemo<ToolDisplay[]>(() => {
         return toolCalls.map((call) => {
             const result = results.find((r) => r.id === call.id);
@@ -361,6 +380,8 @@ export function ToolIndicator({
                     key={display.call.id}
                     display={display}
                     autoExpandPreviewTools={autoExpandPreviewTools}
+                    accentTextClass={accentTextClass}
+                    accentBorderClass={accentBorderClass}
                 />
             ))}
         </div>

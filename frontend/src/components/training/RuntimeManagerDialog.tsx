@@ -199,12 +199,18 @@ function PackageDialog({
     const result = await installPackage(pkg.name, projectId, {
       onEvent: (event) => {
         if (event.type === 'progress') {
-          if (typeof event.progress === 'number') setProgress(event.progress);
-          if (event.stage) setStage(event.stage);
+          if (typeof event.progress === 'number') {
+            setProgress((prev) => Math.max(prev, event.progress ?? prev));
+          }
+          if (event.stage) {
+            setStage(event.stage);
+            console.info(`[runtime-manager] install phase -> ${event.stage}${typeof event.progress === 'number' ? ` (${event.progress}%)` : ''}`);
+          }
         }
         if (event.type === 'done') {
           setStage(event.success ? 'Completed' : 'Failed');
-          setProgress(event.success ? 100 : progress);
+          setProgress((prev) => (event.success ? 100 : prev));
+          console.info(`[runtime-manager] install done -> ${event.success ? 'success' : 'failure'} (${pkg.name})`);
         }
       }
     });
@@ -213,6 +219,9 @@ function PackageDialog({
     setCompleted(true);
 
     if (result.success) {
+      // Fallback in case the stream misses a terminal progress event.
+      setStage('Completed');
+      setProgress(100);
       toast.success(`Installed ${pkg.name}`);
       setTimeout(() => {
         onOpenChange(false);
@@ -465,6 +474,14 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
   const suggestionsListId = useId();
   const blurTimeoutRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const pythonVersion = useExecutionStore((state) => state.pythonVersion);
   const setPythonVersion = useExecutionStore((state) => state.setPythonVersion);
@@ -732,7 +749,7 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
             <TabsContent value="packages" className="flex-1 flex flex-col min-h-0 space-y-4 mt-4">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10" />
                   <AnimatedPlaceholderInput
                     placeholders={PACKAGE_PLACEHOLDERS}
                     interval={2500}

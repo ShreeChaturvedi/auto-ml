@@ -40,6 +40,7 @@ export const CellSchema = z.object({
   title: z.string().nullable().optional(),
   content: z.string(),
   position: z.number().int().min(0),
+  metadata: z.record(z.unknown()).default({}),
   executionCount: z.number().int().min(0).default(0),
   executionStatus: CellStatusSchema.default('idle'),
   executionDurationMs: z.number().int().nullable().optional(),
@@ -153,12 +154,14 @@ export interface WriteCellOptions {
   title?: string;
   content: string;
   cellType?: CellType;
+  metadata?: Record<string, unknown>;
 }
 
 export interface EditCellOptions {
   startLine: number;
   endLine: number;
   newContent: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface EditCellResult {
@@ -198,6 +201,7 @@ export interface CellRow {
   title: string | null;
   content: string;
   position: number;
+  metadata: Record<string, unknown>;
   execution_count: number;
   execution_status: string;
   execution_duration_ms: number | null;
@@ -242,6 +246,7 @@ export function cellRowToCell(row: CellRow): Cell {
     title: row.title,
     content: row.content,
     position: row.position,
+    metadata: row.metadata ?? {},
     executionCount: row.execution_count,
     executionStatus: row.execution_status as CellStatus,
     executionDurationMs: row.execution_duration_ms,

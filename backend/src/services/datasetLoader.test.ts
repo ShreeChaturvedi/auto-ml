@@ -61,6 +61,27 @@ describe('datasetLoader', () => {
       expect(rows).toHaveLength(2);
       expect(rows[0]).toEqual({ id: 1 });
     });
+
+    it('sanitizes null bytes from parsed string fields', () => {
+      const rows = parseDatasetRows(
+        Buffer.from('id,name\n1,bad\u0000name'),
+        'csv'
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual({ id: '1', name: 'badname' });
+    });
+
+    it('sanitizes unsupported unicode escapes from JSON payloads', () => {
+      const rows = parseDatasetRows(
+        Buffer.from('{"id": 1, "name": "\\ud800"}'),
+        'json'
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(1);
+      expect(rows[0].name).toBe('\uFFFD');
+    });
   });
 
   describe('normalizeValueForColumn', () => {
@@ -96,6 +117,10 @@ describe('datasetLoader', () => {
       expect(() =>
         normalizeValueForColumn('N/A', 'integer', { strictMode: true, columnName: 'position' })
       ).not.toThrow();
+    });
+
+    it('removes null bytes for string columns', () => {
+      expect(normalizeValueForColumn('a\u0000b', 'string')).toBe('ab');
     });
   });
 });

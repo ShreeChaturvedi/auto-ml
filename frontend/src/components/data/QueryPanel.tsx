@@ -434,6 +434,7 @@ export function QueryPanel({
     ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
     : 'text-primary';
   const monacoRef = useRef<Monaco | null>(null);
+  const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   
   // Store completion provider disposable for cleanup
   const completionProviderRef = useRef<IDisposable | null>(null);
@@ -449,9 +450,36 @@ export function QueryPanel({
       if (validationSubscriptionRef.current) {
         validationSubscriptionRef.current.dispose();
       }
+      editorInstanceRef.current = null;
       monacoRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (collapsed || isExpanding || mode !== 'sql') {
+      return;
+    }
+
+    const editorInstance = editorInstanceRef.current;
+    if (!editorInstance) {
+      return;
+    }
+
+    let firstFrame = 0;
+    let secondFrame = 0;
+
+    firstFrame = window.requestAnimationFrame(() => {
+      editorInstance.layout();
+      secondFrame = window.requestAnimationFrame(() => {
+        editorInstance.layout();
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [collapsed, isExpanding, mode]);
 
   // Resolve system theme preference
   useEffect(() => {
@@ -516,7 +544,7 @@ export function QueryPanel({
   const modKey = isMac ? '⌘' : '⌃';
 
   return (
-    <div className={cn('relative flex flex-col h-full bg-card border-l [contain:layout_paint]', className)}>
+    <div className={cn('relative flex flex-col h-full bg-card border-l', className)}>
       {/* Unified Header — collapse button stays at the right edge */}
       <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
         <div
@@ -605,20 +633,20 @@ export function QueryPanel({
         )}
         style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
       >
-      <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
-        {mode === 'sql' ? (
-          // SQL Mode: Monaco Editor with syntax highlighting
-          <div
-            className={cn(
-              'relative flex-1 border rounded-md overflow-hidden bg-background [contain:layout_paint]',
+        <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
+          {mode === 'sql' ? (
+            // SQL Mode: Monaco Editor with syntax highlighting
+            <div
+              className={cn(
+                'relative flex-1 border rounded-md overflow-hidden bg-background',
               '[&_.view-lines]:transition-opacity [&_.view-lines]:duration-200 [&_.view-lines]:ease-out',
               '[&_.line-numbers]:transition-opacity [&_.line-numbers]:duration-200 [&_.line-numbers]:ease-out',
               '[&_.margin-view-overlays]:transition-opacity [&_.margin-view-overlays]:duration-200 [&_.margin-view-overlays]:ease-out',
               isExpanding &&
                 '[&_.view-lines]:opacity-0 [&_.line-numbers]:opacity-0 [&_.margin-view-overlays]:opacity-0'
-            )}
-          >
-            <Suspense
+              )}
+            >
+              <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -631,6 +659,7 @@ export function QueryPanel({
                 value={sqlQuery}
                 onChange={(value) => handleQueryChange(value || '')}
                 onMount={(editorInstance, monaco: Monaco) => {
+                  editorInstanceRef.current = editorInstance;
                   monacoRef.current = monaco;
 
                   // Define custom dark theme matching our site

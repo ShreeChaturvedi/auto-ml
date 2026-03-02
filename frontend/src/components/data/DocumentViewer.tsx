@@ -7,7 +7,8 @@
  * - Plain text display with monospace font
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -21,10 +22,14 @@ import {
   Minus,
   Plus,
   RotateCw,
+  Search,
+  X,
 } from 'lucide-react';
 import { Worker, Viewer, SpecialZoomLevel, RotateDirection } from '@react-pdf-viewer/core';
 import { toolbarPlugin } from '@react-pdf-viewer/toolbar';
 import type { ToolbarSlot } from '@react-pdf-viewer/toolbar';
+import { searchPlugin } from '@react-pdf-viewer/search';
+import type { SearchPlugin } from '@react-pdf-viewer/search';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -33,6 +38,7 @@ import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/toolbar/lib/styles/index.css';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -45,6 +51,7 @@ type MarkdownViewMode = 'source' | 'preview';
 
 interface DocumentViewerProps {
   file: UploadedFile;
+  controlsPortalTarget?: HTMLElement | null;
 }
 
 // PDF.js worker URL - must match installed pdfjs-dist version
@@ -55,10 +62,14 @@ function PdfToolbar({
   slots,
   fileName,
   fileSize,
+  controlsPortalTarget,
+  PdfSearch
 }: {
   slots: ToolbarSlot;
   fileName: string;
   fileSize: number;
+  controlsPortalTarget?: HTMLElement | null;
+  PdfSearch: SearchPlugin['Search'];
 }) {
   const {
     CurrentPageLabel,
@@ -71,139 +82,235 @@ function PdfToolbar({
     ZoomIn,
     ZoomOut,
   } = slots;
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (searchExpanded) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchExpanded]);
+
+  const controlsContent = (
+    <div className="flex items-center gap-1 min-w-0">
+      <PdfSearch>
+        {(searchProps) => (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (searchExpanded && !searchProps.keyword) {
+                  setSearchExpanded(false);
+                  searchProps.clearKeyword();
+                  return;
+                }
+                setSearchExpanded(true);
+              }}
+              className="h-7 w-7"
+              title="Search PDF"
+              aria-label="Search PDF"
+              disabled={!searchProps.isDocumentLoaded}
+            >
+              <Search className="h-3.5 w-3.5" />
+            </Button>
+            {(searchExpanded || Boolean(searchProps.keyword)) && (
+              <div className="relative">
+                <Input
+                  ref={searchInputRef}
+                  value={searchProps.keyword}
+                  placeholder="Search PDF..."
+                  onChange={(e) => {
+                    searchProps.setKeyword(e.target.value);
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      await searchProps.search();
+                      searchProps.jumpToNextMatch();
+                      return;
+                    }
+                    if (e.key === 'Escape' && !searchProps.keyword) {
+                      setSearchExpanded(false);
+                    }
+                  }}
+                  className="h-7 w-[170px] pr-7 text-xs"
+                  disabled={!searchProps.isDocumentLoaded}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    searchProps.clearKeyword();
+                    setSearchExpanded(false);
+                  }}
+                  className="absolute right-0 top-0 h-7 w-7"
+                  title="Clear search"
+                  aria-label="Clear search"
+                  disabled={!searchProps.isDocumentLoaded}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </PdfSearch>
+
+      <DownloadSlot>
+        {(props) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={props.onClick}
+            title="Export"
+            aria-label="Export"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </DownloadSlot>
+    </div>
+  );
 
   return (
-    <div className="flex items-center justify-between w-full px-4 py-2 border-b bg-card">
-      {/* Left section: File info */}
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="rounded-md bg-muted p-1.5">
-          <FileText className="h-4 w-4 text-red-500" />
+    <>
+      {controlsPortalTarget && createPortal(controlsContent, controlsPortalTarget)}
+      <div className="flex items-center justify-between w-full px-4 py-2 border-b bg-card h-14">
+        {/* Left section: File info */}
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="rounded-md bg-muted p-1.5">
+            <FileText className="h-4 w-4 text-red-500" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatFileSize(fileSize)} · PDF
+            </p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
-          <p className="text-xs text-muted-foreground">
-            {formatFileSize(fileSize)} · PDF
-          </p>
-        </div>
-      </div>
 
-      {/* Center section: Page navigation */}
-      <div className="flex items-center gap-1">
-        <GoToPreviousPage>
-          {(props) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={props.isDisabled}
-              onClick={props.onClick}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          )}
-        </GoToPreviousPage>
-
-        {/* Page display - simple text, no input */}
-        <div className="flex items-center gap-1.5 text-sm px-2">
-          <CurrentPageLabel>
+        {/* Center section: Page navigation */}
+        <div className="flex items-center gap-1">
+          <GoToPreviousPage>
             {(props) => (
-              <span className="text-foreground tabular-nums">{props.currentPage + 1}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={props.isDisabled}
+                onClick={props.onClick}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
             )}
-          </CurrentPageLabel>
-          <span className="text-muted-foreground">/</span>
-          <NumberOfPages>
+          </GoToPreviousPage>
+
+          {/* Page display */}
+          <div className="flex items-center gap-1.5 text-sm px-2">
+            <CurrentPageLabel>
+              {(props) => (
+                <span className="text-foreground tabular-nums">{props.currentPage + 1}</span>
+              )}
+            </CurrentPageLabel>
+            <span className="text-muted-foreground">/</span>
+            <NumberOfPages>
+              {(props) => (
+                <span className="text-muted-foreground tabular-nums">{props.numberOfPages}</span>
+              )}
+            </NumberOfPages>
+          </div>
+
+          <GoToNextPage>
             {(props) => (
-              <span className="text-muted-foreground tabular-nums">{props.numberOfPages}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={props.isDisabled}
+                onClick={props.onClick}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             )}
-          </NumberOfPages>
+          </GoToNextPage>
+
+          <Separator orientation="vertical" className="mx-2 h-6" />
+
+          {/* Zoom controls */}
+          <ZoomOut>
+            {(props) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={props.onClick}
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+            )}
+          </ZoomOut>
+
+          <CurrentScale>
+            {(props) => (
+              <span className="text-sm text-muted-foreground min-w-[52px] text-center tabular-nums">
+                {Math.round(props.scale * 100)}%
+              </span>
+            )}
+          </CurrentScale>
+
+          <ZoomIn>
+            {(props) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={props.onClick}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+          </ZoomIn>
         </div>
 
-        <GoToNextPage>
-          {(props) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={props.isDisabled}
-              onClick={props.onClick}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
-        </GoToNextPage>
+        <div className="flex items-center gap-2">
+          <Rotate direction={RotateDirection.Forward}>
+            {(props) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={props.onClick}
+                title="Rotate"
+                aria-label="Rotate"
+              >
+                <RotateCw className="h-4 w-4" />
+              </Button>
+            )}
+          </Rotate>
 
-        <Separator orientation="vertical" className="mx-2 h-6" />
-
-        {/* Zoom controls */}
-        <ZoomOut>
-          {(props) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={props.onClick}
-            >
-              <Minus className="h-4 w-4" />
-            </Button>
+          {!controlsPortalTarget && (
+            <DownloadSlot>
+              {(props) => (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={props.onClick}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Download
+                </Button>
+              )}
+            </DownloadSlot>
           )}
-        </ZoomOut>
-
-        <CurrentScale>
-          {(props) => (
-            <span className="text-sm text-muted-foreground min-w-[52px] text-center tabular-nums">
-              {Math.round(props.scale * 100)}%
-            </span>
-          )}
-        </CurrentScale>
-
-        <ZoomIn>
-          {(props) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={props.onClick}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          )}
-        </ZoomIn>
+        </div>
       </div>
-
-      {/* Right section: Actions - matches DataTable Export button */}
-      <div className="flex items-center gap-2">
-        <Rotate direction={RotateDirection.Forward}>
-          {(props) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={props.onClick}
-            >
-              <RotateCw className="h-4 w-4" />
-            </Button>
-          )}
-        </Rotate>
-
-        <DownloadSlot>
-          {(props) => (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={props.onClick}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download
-            </Button>
-          )}
-        </DownloadSlot>
-      </div>
-    </div>
+    </>
   );
 }
 
-export function DocumentViewer({ file }: DocumentViewerProps) {
+export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerProps) {
   const [status, setStatus] = useState<ViewerStatus>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -218,9 +325,11 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
   const isTextBased = isMarkdown || isText;
   const isBinary = !isPdf && !isTextBased;
 
-  // Initialize toolbar plugin
-  const toolbarPluginInstance = toolbarPlugin();
+  // Initialize viewer plugins
+  const toolbarPluginInstance = useMemo(() => toolbarPlugin(), []);
+  const searchPluginInstance = useMemo(() => searchPlugin(), []);
   const { Toolbar } = toolbarPluginInstance;
+  const { Search: PdfSearch } = searchPluginInstance;
 
   useEffect(() => {
     let isMounted = true;
@@ -270,11 +379,31 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
     };
   }, [blobUrl]);
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Header for non-PDF files */}
-      {!isPdf && (
-        <div className="flex items-center justify-between border-b px-4 py-2">
+  const renderNonPdfControls = () => {
+    if (isPdf) return null;
+
+    const controlsContent = (
+      <div className="flex items-center gap-1">
+        {documentId && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => blobUrl && window.open(blobUrl, '_blank')}
+            disabled={!blobUrl}
+            className="h-7 w-7"
+            title="Download"
+            aria-label="Download"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    );
+
+    return (
+      <>
+        {controlsPortalTarget && createPortal(controlsContent, controlsPortalTarget)}
+        <div className="flex items-center justify-between border-b px-4 py-2 bg-card h-14 shrink-0">
           <div className="flex min-w-0 items-center gap-3">
             <div className="rounded-md bg-muted p-1.5">
               {isMarkdown ? (
@@ -319,7 +448,8 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
               </ToggleGroup>
             )}
 
-            {documentId && (
+            {/* If no controls target, show the download button here too */}
+            {!controlsPortalTarget && documentId && (
               <Button
                 variant="outline"
                 size="sm"
@@ -327,13 +457,20 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
                 disabled={!blobUrl}
                 className="h-8"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3.5 w-3.5 mr-1" />
                 Download
               </Button>
             )}
           </div>
         </div>
-      )}
+      </>
+    );
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header/Controls for non-PDF files */}
+      {renderNonPdfControls()}
 
       <div className="flex-1 overflow-hidden">
         {status === 'loading' && (
@@ -359,13 +496,19 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
             <div className="h-full flex flex-col pdf-viewer-container">
               <Toolbar>
                 {(slots: ToolbarSlot) => (
-                  <PdfToolbar slots={slots} fileName={file.name} fileSize={file.size} />
+                  <PdfToolbar
+                    slots={slots}
+                    fileName={file.name}
+                    fileSize={file.size}
+                    controlsPortalTarget={controlsPortalTarget}
+                    PdfSearch={PdfSearch}
+                  />
                 )}
               </Toolbar>
               <div className="flex-1 overflow-hidden">
                 <Viewer
                   fileUrl={blobUrl}
-                  plugins={[toolbarPluginInstance]}
+                  plugins={[toolbarPluginInstance, searchPluginInstance]}
                   defaultScale={SpecialZoomLevel.PageWidth}
                   theme={{
                     theme: 'dark',

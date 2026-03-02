@@ -13,10 +13,10 @@
  */
 
 import { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, MessageSquare, Code2, PanelRightClose } from 'lucide-react';
+import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
@@ -317,6 +317,14 @@ interface QueryPanelProps {
   collapsed?: boolean;
   /** Callback when collapse state changes */
   onCollapsedChange?: (collapsed: boolean) => void;
+  /** Current query mode (english/sql) - managed by parent */
+  mode?: QueryMode;
+  /** Callback when mode changes */
+  onModeChange?: (mode: QueryMode) => void;
+  /** Ref to the controls portal target element */
+  controlsPortalTarget?: HTMLElement | null;
+  /** Callback when the portal target element is mounted */
+  onMountPortalTarget?: (target: HTMLElement | null) => void;
 }
 
 const DEFAULT_SQL = `-- Enter your SQL query
@@ -347,13 +355,52 @@ export function QueryPanel({
   tableNames = [],
   columnsByTable = {},
   collapsed = false,
-  onCollapsedChange
+  onCollapsedChange,
+  mode: externalMode,
+  onModeChange,
+  controlsPortalTarget,
+  onMountPortalTarget
 }: QueryPanelProps) {
-  const [mode, setMode] = useState<QueryMode>('sql');
+  // Use external mode if provided, otherwise use internal state
+  const [internalMode, setInternalMode] = useState<QueryMode>('sql');
+  const mode = externalMode ?? internalMode;
 
   // Separate state for each mode to preserve inputs when switching
   const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
+
+  // Ref for the controls portal target div
+  const controlsMountRef = useRef<HTMLDivElement>(null);
+
+  // Set the portal target ref when the div is available
+  useEffect(() => {
+    if (!onMountPortalTarget) {
+      return;
+    }
+
+    if (collapsed) {
+      if (controlsPortalTarget !== null) {
+        onMountPortalTarget(null);
+      }
+      return;
+    }
+
+    if (controlsMountRef.current && controlsMountRef.current !== controlsPortalTarget) {
+      onMountPortalTarget(controlsMountRef.current);
+    }
+  }, [collapsed, onMountPortalTarget, controlsPortalTarget]);
+
+  const handleModeChange = useCallback(
+    (nextMode: QueryMode) => {
+      if (externalMode !== undefined) {
+        onModeChange?.(nextMode);
+        return;
+      }
+      setInternalMode(nextMode);
+      onModeChange?.(nextMode);
+    },
+    [externalMode, onModeChange]
+  );
 
   // Theme detection for Monaco Editor
   const { theme: appTheme } = useTheme();
@@ -408,13 +455,6 @@ export function QueryPanel({
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
 
-  // Handle mode toggle
-  const handleModeChange = useCallback((value: string) => {
-    if (value === 'sql' || value === 'english') {
-      setMode(value as QueryMode);
-    }
-  }, []);
-
   // Handle query text change
   const handleQueryChange = useCallback((value: string) => {
     if (mode === 'sql') {
@@ -447,30 +487,40 @@ export function QueryPanel({
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
 
-  // Collapsed state - clickable bar to expand
   if (collapsed) {
     return (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => onCollapsedChange?.(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onCollapsedChange?.(false);
-          }
-        }}
-        className={cn(
-          'flex flex-col h-full bg-card border-l items-center py-4 transition-all duration-300 ease-in-out',
-          'cursor-[w-resize] hover:bg-muted/50',
-          className
-        )}
-        title="Expand Query Panel"
-      >
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180">
-            Query Builder
-          </span>
+      <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
+        {/* Collapsed Header */}
+        <div className="flex items-center justify-center h-14 border-b border-border bg-card shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onCollapsedChange?.(false)}
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            title="Expand Query Panel"
+          >
+            <PanelRight className="h-4 w-4" />
+          </Button>
+        </div>
+        
+        {/* Body placeholder for collapsed state */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onCollapsedChange?.(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onCollapsedChange?.(false);
+            }
+          }}
+          className="flex-1 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50"
+        >
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180 select-none">
+              Query Builder
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -478,47 +528,49 @@ export function QueryPanel({
 
   return (
     <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
-      {/* Header - single row with title, mode toggle, and collapse button */}
-      <div className="p-3 border-b">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-foreground whitespace-nowrap">Query Builder</h3>
-
-          {/* Compact Mode Toggle */}
+      {/* Header - aligns with FileTabBar at h-14 */}
+      <div className="flex items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <ToggleGroup
             type="single"
             value={mode}
-            onValueChange={handleModeChange}
-            className="flex-1 bg-muted/50 p-0.5 rounded-md h-7"
+            onValueChange={(val) => {
+              if (val === 'sql' || val === 'english') {
+                handleModeChange(val);
+              }
+            }}
+            className="bg-muted/50 p-0.5 rounded-md h-7"
           >
             <ToggleGroupItem
               value="english"
               aria-label="Natural language mode"
-              className="flex-1 h-6 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm px-2"
+              title="Natural language mode"
+              className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
             >
               <MessageSquare className="h-3 w-3" />
-              <span className="ml-1.5">English</span>
             </ToggleGroupItem>
             <ToggleGroupItem
               value="sql"
               aria-label="SQL mode"
-              className="flex-1 h-6 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm font-mono px-2"
+              title="SQL mode"
+              className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
             >
               <Code2 className="h-3 w-3" />
-              <span className="ml-1.5">SQL</span>
             </ToggleGroupItem>
           </ToggleGroup>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onCollapsedChange?.(true)}
-            className="h-7 w-7 shrink-0"
-            title="Collapse Query Panel"
-          >
-            <PanelRightClose className="h-4 w-4" />
-          </Button>
+          <div ref={controlsMountRef} className="flex min-w-0 items-center gap-1" />
         </div>
 
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onCollapsedChange?.(true)}
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground ml-2"
+          title="Collapse Query Panel"
+        >
+          <PanelRight className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Query Input */}

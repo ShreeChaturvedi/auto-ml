@@ -549,12 +549,11 @@ export function QueryPanel({
       <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
         <div
           className={cn(
-            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-[opacity,transform,filter] duration-200 ease-out',
+            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-opacity duration-150 ease-out',
             showExpandedContent
-              ? 'opacity-100 translate-x-0 blur-0'
-              : 'opacity-0 translate-x-1 blur-[1px] pointer-events-none'
+              ? 'opacity-100'
+              : 'opacity-0 pointer-events-none'
           )}
-          style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
         >
             <IconModeToggle
               value={mode}
@@ -626,26 +625,16 @@ export function QueryPanel({
       {/* Query Input + Execute (kept mounted for smooth expand/collapse) */}
       <div
         className={cn(
-          'flex flex-1 min-h-0 flex-col transition-[opacity,transform,filter] duration-200 ease-out',
+          'flex flex-1 min-h-0 flex-col transition-opacity duration-150 ease-out',
           showExpandedContent
-            ? 'opacity-100 translate-y-0 blur-0'
-            : 'pointer-events-none opacity-0 translate-y-1 blur-[1px] select-none'
+            ? 'opacity-100'
+            : 'pointer-events-none opacity-0 select-none'
         )}
-        style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
       >
         <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
           {mode === 'sql' ? (
             // SQL Mode: Monaco Editor with syntax highlighting
-            <div
-              className={cn(
-                'relative flex-1 border rounded-md overflow-hidden bg-background',
-              '[&_.view-lines]:transition-opacity [&_.view-lines]:duration-200 [&_.view-lines]:ease-out',
-              '[&_.line-numbers]:transition-opacity [&_.line-numbers]:duration-200 [&_.line-numbers]:ease-out',
-              '[&_.margin-view-overlays]:transition-opacity [&_.margin-view-overlays]:duration-200 [&_.margin-view-overlays]:ease-out',
-              isExpanding &&
-                '[&_.view-lines]:opacity-0 [&_.line-numbers]:opacity-0 [&_.margin-view-overlays]:opacity-0'
-              )}
-            >
+            <div className="relative flex-1 border rounded-md overflow-hidden bg-background">
               <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">

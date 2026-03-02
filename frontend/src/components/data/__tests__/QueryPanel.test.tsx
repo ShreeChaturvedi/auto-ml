@@ -63,7 +63,7 @@ describe('QueryPanel theme handling', () => {
     expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-language', 'sql');
     expect(mockState.renderedQuickSuggestions.at(-1)).toBe(true);
     expect(mockState.renderedTriggerSuggestions.at(-1)).toBe(true);
-    expect(mockState.renderedFixedOverflowWidgets.at(-1)).toBe(false);
+    expect(mockState.renderedFixedOverflowWidgets.at(-1)).toBe(true);
 
     firstRender.unmount();
 

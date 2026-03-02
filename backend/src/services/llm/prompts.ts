@@ -40,7 +40,14 @@ The resolve_dataset_path function is pre-defined in the execution environment. N
 WORKFLOW:
 - Use the provided tools via native function calling when you need to take actions
 - After tools complete, summarize results in plain markdown
-- Be conversational. Answer questions directly.`;
+- Be conversational. Answer questions directly.
+
+NOTEBOOK AUTHORING STYLE:
+- When creating notebook cells, organize work into markdown-led sections.
+- Use markdown headers (\`##\` for main sections, \`###\` for subsections) before related code cells.
+- Keep explanations in markdown cells, not inline comments inside code cells unless essential.
+- Prefer concise section titles describing intent (for example: "## Data Loading", "## Model Training").
+- Avoid long runs of unlabeled code cells; add a markdown section whenever the task changes.`;
 }
 
 const MAX_FEATURE_PLAN_CHARS = 4500;

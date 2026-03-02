@@ -1,5 +1,10 @@
 import { Button } from '@/components/ui/button';
 import {
+  COMPACT_TOOLBAR_GROUP_CLASS,
+  COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
+  compactToolbarSelectClass
+} from '@/components/agentic/toolbarStyles';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -50,9 +55,9 @@ export function FeatureEngineeringToolbarLeft({
   canDeleteDraft
 }: FeatureEngineeringToolbarLeftProps) {
   return (
-    <>
+    <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
       <Select value={currentVersionId} onValueChange={onVersionSwitch} disabled={versions.length === 0}>
-        <SelectTrigger className="h-7 w-[180px] text-xs">
+        <SelectTrigger className={compactToolbarSelectClass('w-[180px]')}>
           <SelectValue placeholder="Pipeline" />
         </SelectTrigger>
         <SelectContent>
@@ -67,7 +72,7 @@ export function FeatureEngineeringToolbarLeft({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7"
+        className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
         onClick={onNewDraft}
         title="New draft pipeline"
       >
@@ -76,7 +81,12 @@ export function FeatureEngineeringToolbarLeft({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!currentVersionId}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+            disabled={!currentVersionId}
+          >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
         </DropdownMenuTrigger>
@@ -96,7 +106,7 @@ export function FeatureEngineeringToolbarLeft({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </>
+    </div>
   );
 }
 

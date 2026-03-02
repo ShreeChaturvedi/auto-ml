@@ -108,9 +108,8 @@ export async function executeCell(
     // Determine final status
     const executionStatus = result.status === 'success' ? 'success' : 'error';
 
-    // Update cell with results
-    const updatedCell = await repo.updateCell(cellId, {
-      executionCount: (cell.executionCount ?? 0) + 1,
+    // Update cell with results and assign notebook-global execution order.
+    const updatedCell = await repo.markCellExecuted(cellId, {
       executionStatus,
       executionDurationMs: executionMs,
       output: inlineOutputs,
@@ -122,27 +121,24 @@ export async function executeCell(
 
     return {
       ...result,
-      executionMs
+      executionMs,
+      executionOrder: updatedCell.executionOrder ?? null
     };
   } catch (error) {
     // Update cell with error status
     const errorMessage = error instanceof Error ? error.message : 'Execution failed';
     const executionMs = Date.now() - startTime;
 
-    await repo.updateCell(cellId, {
-      executionCount: (cell.executionCount ?? 0) + 1,
+    const updatedCell = await repo.markCellExecuted(cellId, {
       executionStatus: 'error',
       executionDurationMs: executionMs,
       output: [{
         type: 'error',
         content: errorMessage
-      }]
+      }],
+      outputRefs: []
     });
-
-    const updatedCell = await repo.getCell(cellId);
-    if (updatedCell) {
-      broadcast(cell.notebookId, 'cell:executed', { cell: updatedCell });
-    }
+    broadcast(cell.notebookId, 'cell:executed', { cell: updatedCell });
 
     return {
       status: 'error',
@@ -150,7 +146,8 @@ export async function executeCell(
       stderr: errorMessage,
       outputs: [{ type: 'error', content: errorMessage }],
       executionMs,
-      error: errorMessage
+      error: errorMessage,
+      executionOrder: updatedCell.executionOrder ?? null
     };
   } finally {
     // Always release lock

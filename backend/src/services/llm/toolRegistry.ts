@@ -64,13 +64,14 @@ export const LLM_TOOL_DEFINITIONS: LlmToolDefinition[] = [
   },
   {
     name: 'write_cell',
-    description: 'Create a new code cell or update an existing cell with Python code.',
+    description: 'Create a new notebook cell or update an existing cell. Use markdown cells for section headers and narrative, and code cells for executable Python.',
     parameters: {
       type: 'object',
       properties: {
         cellId: { type: 'string', description: 'Optional UUID of existing cell to update. If omitted, creates a new cell.' },
         title: { type: 'string', description: 'Optional title for the cell.' },
         content: { type: 'string', description: 'The Python code content for the cell.' },
+        cellType: { type: 'string', enum: ['code', 'markdown'], description: 'Cell type. Defaults to code.' },
         metadata: {
           type: 'object',
           description: 'Optional cell metadata. For preprocessing lineage use metadata.preprocessing with runId, stepId, toolCallId, version, codeHash.'

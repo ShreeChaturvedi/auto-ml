@@ -470,6 +470,9 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
   loadCell: async (cellId: string) => {
     try {
       const cell = await notebooksApi.getCell(cellId);
+      // #region agent log
+      fetch('http://127.0.0.1:7423/ingest/1dd837bd-53e8-4d18-a531-7744aff0778c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6ee5c'},body:JSON.stringify({sessionId:'a6ee5c',location:'notebookStore.ts:loadCell',message:'loadCell GET result',data:{cellId,executionOrder:cell.executionOrder},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       get().updateCellLocally(cell);
       return cell;
     } catch (error) {
@@ -574,13 +577,45 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
     set((state) => ({
       cells: state.cells.map((cell) =>
         cell.cellId === cellId
-          ? { ...cell, executionStatus: 'running' as const }
+          ? { ...cell, executionStatus: 'running' as const, executionDurationMs: null }
           : cell
       )
     }));
 
     try {
-      await notebooksApi.runCell(cellId, projectId);
+      const result = await notebooksApi.runCell(cellId, projectId);
+      // #region agent log
+      fetch('http://127.0.0.1:7423/ingest/1dd837bd-53e8-4d18-a531-7744aff0778c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6ee5c'},body:JSON.stringify({sessionId:'a6ee5c',location:'notebookStore.ts:runCell',message:'runCell API result',data:{executionOrder:result.executionOrder,status:result.status,inResult:'executionOrder' in result},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+
+      const executionOrder = result.executionOrder ?? undefined;
+
+      // Keep local state accurate (include executionOrder so [n] shows immediately).
+      set((state) => ({
+        cells: state.cells.map((cell) =>
+          cell.cellId === cellId
+            ? {
+                ...cell,
+                executionStatus: result.status === 'success' ? 'success' : 'error',
+                executionDurationMs: result.executionMs,
+                executionOrder: executionOrder ?? cell.executionOrder ?? undefined,
+                isDirty: false,
+                output: result.outputs
+              }
+            : cell
+        )
+      }));
+
+      // Refresh authoritative server cell state (persisted outputs, refs).
+      await get().loadCell(cellId);
+      // Ensure executionOrder is set (run response is source of truth; loadCell may not have it).
+      if (executionOrder != null) {
+        set((state) => ({
+          cells: state.cells.map((cell) =>
+            cell.cellId === cellId ? { ...cell, executionOrder } : cell
+          )
+        }));
+      }
     } catch (error) {
       console.error('[notebookStore] Failed to run cell:', error);
 
@@ -643,8 +678,16 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       const existingIndex = state.cells.findIndex((c) => c.cellId === cell.cellId);
 
       if (existingIndex >= 0) {
+        const existing = state.cells[existingIndex];
+        // Preserve executionOrder if incoming cell lacks it but we have it (e.g. from run response).
+        const merged =
+          cell.executionOrder != null
+            ? cell
+            : existing.executionOrder != null
+              ? { ...cell, executionOrder: existing.executionOrder }
+              : cell;
         const newCells = [...state.cells];
-        newCells[existingIndex] = cell;
+        newCells[existingIndex] = merged;
         return { cells: newCells.sort((a, b) => a.position - b.position) };
       }
 

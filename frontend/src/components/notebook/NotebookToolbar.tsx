@@ -35,6 +35,11 @@ import {
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { RuntimeManagerDialog } from '@/components/training/RuntimeManagerDialog';
+import {
+  COMPACT_TOOLBAR_GROUP_CLASS,
+  COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
+  compactToolbarSelectClass
+} from '@/components/agentic/toolbarStyles';
 import { Code, Loader2, MoreHorizontal, Pencil, Plus, Trash2, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCellType } from '@/types/notebook';
@@ -126,14 +131,14 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
     <>
       <div className={cn('flex h-14 items-center justify-between border-b px-3 shrink-0', className)}>
         {/* Left group: selector + add buttons + menu */}
-        <div className="flex items-center gap-1.5">
+        <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
           <Select
             value={activeNotebookId ?? ''}
             onValueChange={(value) => {
               if (value) void setActiveNotebook(value);
             }}
           >
-            <SelectTrigger className="h-7 w-[160px] text-xs">
+            <SelectTrigger className={compactToolbarSelectClass('w-[160px]')}>
               <SelectValue placeholder="Select notebook" />
             </SelectTrigger>
             <SelectContent>
@@ -148,7 +153,7 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
             onClick={() => setCreateDialogOpen(true)}
             disabled={isSaving}
             title="Create new notebook"
@@ -159,7 +164,7 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
             onClick={() => handleAddCell('markdown')}
             disabled={isSaving || !notebook}
             title="Add text cell"
@@ -170,7 +175,7 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
             onClick={() => handleAddCell('code')}
             disabled={isSaving || !notebook}
             title="Add code cell"
@@ -184,7 +189,12 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!notebook}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+                disabled={!notebook}
+              >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>

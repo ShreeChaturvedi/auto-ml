@@ -5,27 +5,29 @@
  * Toolbar and notebook management are handled by NotebookToolbar.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
+import { NotebookMarkdownCell } from './NotebookMarkdownCell';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { NotebookCellType } from '@/types/notebook';
+import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
 
 interface InsertCellRowProps {
   position: number;
   onInsert: (position: number, cellType: NotebookCellType) => void;
   disabled?: boolean;
+  className?: string;
 }
 
-function InsertCellRow({ position, onInsert, disabled }: InsertCellRowProps) {
+function InsertCellRow({ position, onInsert, disabled, className }: InsertCellRowProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
     <div
-      className="group relative flex h-6 items-center justify-center"
+      className={cn('group relative flex h-6 items-center justify-center', className)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -73,6 +75,27 @@ interface NotebookEditorProps {
   className?: string;
 }
 
+interface RenderItem {
+  cell: NotebookCellModel;
+  kind: 'code' | 'markdown';
+  nestedUnderMarkdown: boolean;
+  isSectionCollapsed: boolean;
+  hiddenCodeCount: number;
+}
+
+function countCodeChildren(cells: NotebookCellModel[], markdownIndex: number): number {
+  let count = 0;
+  for (let index = markdownIndex + 1; index < cells.length; index += 1) {
+    if (cells[index].cellType === 'markdown') {
+      break;
+    }
+    if (cells[index].cellType === 'code') {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
   const notebook = useNotebookStore((state) => state.notebook);
   const cells = useNotebookStore((state) => state.cells);
@@ -84,6 +107,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
   const runCell = useNotebookStore((state) => state.runCell);
   const isCellLocked = useNotebookStore((state) => state.isCellLocked);
   const getCellLockOwner = useNotebookStore((state) => state.getCellLockOwner);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
     await createCell({ content: '', cellType });
@@ -113,6 +137,67 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
     },
     [runCell, projectId]
   );
+
+  useEffect(() => {
+    const markdownIds = new Set(
+      cells
+        .filter((cell) => cell.cellType === 'markdown')
+        .map((cell) => cell.cellId)
+    );
+
+    setCollapsedSections((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([cellId]) => markdownIds.has(cellId))
+      );
+      const hasChanged = Object.keys(prev).length !== Object.keys(next).length;
+      return hasChanged ? next : prev;
+    });
+  }, [cells]);
+
+  const renderItems = useMemo<RenderItem[]>(() => {
+    const items: RenderItem[] = [];
+    let activeMarkdownId: string | null = null;
+    let activeSectionCollapsed = false;
+
+    for (let index = 0; index < cells.length; index += 1) {
+      const cell = cells[index];
+      if (cell.cellType === 'markdown') {
+        const collapsed = Boolean(collapsedSections[cell.cellId]);
+        const hiddenCodeCount = collapsed ? countCodeChildren(cells, index) : 0;
+        activeMarkdownId = cell.cellId;
+        activeSectionCollapsed = collapsed;
+        items.push({
+          cell,
+          kind: 'markdown',
+          nestedUnderMarkdown: false,
+          isSectionCollapsed: collapsed,
+          hiddenCodeCount
+        });
+        continue;
+      }
+
+      if (activeSectionCollapsed) {
+        continue;
+      }
+
+      items.push({
+        cell,
+        kind: 'code',
+        nestedUnderMarkdown: activeMarkdownId !== null,
+        isSectionCollapsed: false,
+        hiddenCodeCount: 0
+      });
+    }
+
+    return items;
+  }, [cells, collapsedSections]);
+
+  const toggleSectionCollapse = useCallback((cellId: string) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [cellId]: !prev[cellId]
+    }));
+  }, []);
 
   return (
     <div className={cn('flex h-full flex-col', className)}>
@@ -154,19 +239,38 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
             </div>
           )}
 
-          {cells.map((cell, index) => (
-            <div key={cell.cellId}>
-              <NotebookCellComponent
-                cell={cell}
-                cellNumber={index + 1}
-                isLocked={isCellLocked(cell.cellId)}
-                lockOwner={getCellLockOwner(cell.cellId)}
-                projectId={projectId}
-                onContentChange={(content) => handleCellContentChange(cell.cellId, content)}
-                onDelete={() => handleCellDelete(cell.cellId)}
-                onRun={() => handleCellRun(cell.cellId)}
+          {renderItems.map((item) => (
+            <div key={item.cell.cellId}>
+              {item.kind === 'markdown' ? (
+                <NotebookMarkdownCell
+                  cell={item.cell}
+                  isLocked={isCellLocked(item.cell.cellId)}
+                  lockOwner={getCellLockOwner(item.cell.cellId)}
+                  isCollapsed={item.isSectionCollapsed}
+                  hiddenCodeCount={item.hiddenCodeCount}
+                  onToggleCollapsed={() => toggleSectionCollapse(item.cell.cellId)}
+                  onContentChange={(content) => handleCellContentChange(item.cell.cellId, content)}
+                  onDelete={() => handleCellDelete(item.cell.cellId)}
+                />
+              ) : (
+                <div className={cn(item.nestedUnderMarkdown && 'ml-6 border-l border-border/50 pl-4')}>
+                  <NotebookCellComponent
+                    cell={item.cell}
+                    isLocked={isCellLocked(item.cell.cellId)}
+                    lockOwner={getCellLockOwner(item.cell.cellId)}
+                    projectId={projectId}
+                    onContentChange={(content) => handleCellContentChange(item.cell.cellId, content)}
+                    onDelete={() => handleCellDelete(item.cell.cellId)}
+                    onRun={() => handleCellRun(item.cell.cellId)}
+                  />
+                </div>
+              )}
+              <InsertCellRow
+                position={item.cell.position + 1}
+                onInsert={handleInsertCell}
+                disabled={isSaving || !notebook}
+                className={cn(item.nestedUnderMarkdown && item.kind === 'code' && 'ml-6 pl-4')}
               />
-              <InsertCellRow position={index + 1} onInsert={handleInsertCell} disabled={isSaving || !notebook} />
             </div>
           ))}
         </div>

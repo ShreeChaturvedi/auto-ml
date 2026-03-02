@@ -39,3 +39,6 @@ Senior Design Project Proposal.pdf
 
 # OpenCode AI planning files
 .opencode/
+
+# Local agent/debug logs
+.cursor/*.log

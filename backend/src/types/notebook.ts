@@ -42,8 +42,11 @@ export const CellSchema = z.object({
   position: z.number().int().min(0),
   metadata: z.record(z.unknown()).default({}),
   executionCount: z.number().int().min(0).default(0),
+  executionOrder: z.number().int().min(1).nullable().optional(),
   executionStatus: CellStatusSchema.default('idle'),
   executionDurationMs: z.number().int().nullable().optional(),
+  executedAt: z.date().nullable().optional(),
+  isDirty: z.boolean().default(false),
   output: z.array(CellOutputSchema).default([]),
   outputRefs: z.array(OutputRefSchema).default([]),
   lockedBy: z.string().nullable().optional(),
@@ -61,6 +64,8 @@ export const CellSummarySchema = z.object({
   position: z.number().int(),
   executionStatus: CellStatusSchema,
   executionCount: z.number().int(),
+  executionOrder: z.number().int().min(1).nullable().optional(),
+  isDirty: z.boolean().default(false),
   lockedBy: z.string().nullable().optional(),
   contentPreview: z.string().optional() // First 100 chars
 });
@@ -190,6 +195,7 @@ export interface NotebookRow {
   project_id: string;
   name: string;
   metadata: Record<string, unknown>;
+  execution_counter?: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -203,8 +209,11 @@ export interface CellRow {
   position: number;
   metadata: Record<string, unknown>;
   execution_count: number;
+  execution_order: number | null;
   execution_status: string;
   execution_duration_ms: number | null;
+  executed_at: Date | null;
+  is_dirty: boolean;
   output: CellOutput[];
   output_refs: OutputRef[];
   locked_by: string | null;
@@ -248,8 +257,11 @@ export function cellRowToCell(row: CellRow): Cell {
     position: row.position,
     metadata: row.metadata ?? {},
     executionCount: row.execution_count,
+    executionOrder: row.execution_order,
     executionStatus: row.execution_status as CellStatus,
     executionDurationMs: row.execution_duration_ms,
+    executedAt: row.executed_at,
+    isDirty: row.is_dirty,
     output: row.output,
     outputRefs: row.output_refs,
     lockedBy: row.locked_by,

@@ -1,5 +1,10 @@
 import { Button } from '@/components/ui/button';
 import {
+  COMPACT_TOOLBAR_GROUP_CLASS,
+  COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
+  compactToolbarSelectClass
+} from '@/components/agentic/toolbarStyles';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -48,9 +53,9 @@ export function PreprocessingToolbarLeft({
   selectedDatasetId
 }: PreprocessingToolbarLeftProps) {
   return (
-    <>
+    <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
       <Select value={activeTabId} onValueChange={onTabSwitch}>
-        <SelectTrigger className="h-7 w-[180px] text-xs">
+        <SelectTrigger className={compactToolbarSelectClass('w-[180px]')}>
           <SelectValue placeholder="Processing tab" />
         </SelectTrigger>
         <SelectContent>
@@ -65,7 +70,7 @@ export function PreprocessingToolbarLeft({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7"
+        className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
         onClick={onNewTab}
         title="New processing tab"
       >
@@ -74,7 +79,12 @@ export function PreprocessingToolbarLeft({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!activeTabId}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+            disabled={!activeTabId}
+          >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
         </DropdownMenuTrigger>
@@ -102,7 +112,7 @@ export function PreprocessingToolbarLeft({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </>
+    </div>
   );
 }
 

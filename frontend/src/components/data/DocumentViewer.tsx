@@ -95,23 +95,61 @@ function PdfToolbar({
 
   const controlsContent = (
     <TooltipProvider delayDuration={300}>
-      <div className="flex items-center gap-1 min-w-0">
-        <PdfSearch>
-          {(searchProps) => (
-            <div className="flex items-center gap-1">
+      <PdfSearch>
+        {(searchProps) => {
+          if (searchExpanded) {
+            return (
+              <div className="flex items-center gap-1 flex-1 min-w-0">
+                <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <Input
+                  ref={searchInputRef}
+                  value={searchProps.keyword}
+                  placeholder="Search PDF..."
+                  onChange={(e) => {
+                    searchProps.setKeyword(e.target.value);
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      await searchProps.search();
+                      searchProps.jumpToNextMatch();
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      if (!searchProps.keyword) {
+                        setSearchExpanded(false);
+                      } else {
+                        searchProps.clearKeyword();
+                      }
+                    }
+                  }}
+                  className="h-7 flex-1 text-xs"
+                  disabled={!searchProps.isDocumentLoaded}
+                  autoFocus
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    searchProps.clearKeyword();
+                    setSearchExpanded(false);
+                  }}
+                  className="h-7 w-7 shrink-0"
+                  aria-label="Close search"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            );
+          }
+
+          return (
+            <div className="flex items-center gap-1 min-w-0">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => {
-                      if (searchExpanded && !searchProps.keyword) {
-                        setSearchExpanded(false);
-                        searchProps.clearKeyword();
-                        return;
-                      }
-                      setSearchExpanded(true);
-                    }}
+                    onClick={() => setSearchExpanded(true)}
                     className="h-7 w-7"
                     aria-label="Search PDF"
                     disabled={!searchProps.isDocumentLoaded}
@@ -121,65 +159,29 @@ function PdfToolbar({
                 </TooltipTrigger>
                 <TooltipContent side="bottom">Search</TooltipContent>
               </Tooltip>
-              {(searchExpanded || Boolean(searchProps.keyword)) && (
-                <div className="relative">
-                  <Input
-                    ref={searchInputRef}
-                    value={searchProps.keyword}
-                    placeholder="Search PDF..."
-                    onChange={(e) => {
-                      searchProps.setKeyword(e.target.value);
-                    }}
-                    onKeyDown={async (e) => {
-                      if (e.key === 'Enter') {
-                        await searchProps.search();
-                        searchProps.jumpToNextMatch();
-                        return;
-                      }
-                      if (e.key === 'Escape' && !searchProps.keyword) {
-                        setSearchExpanded(false);
-                      }
-                    }}
-                    className="h-7 w-[170px] pr-7 text-xs"
-                    disabled={!searchProps.isDocumentLoaded}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      searchProps.clearKeyword();
-                      setSearchExpanded(false);
-                    }}
-                    className="absolute right-0 top-0 h-7 w-7"
-                    aria-label="Clear search"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </PdfSearch>
 
-        <DownloadSlot>
-          {(props) => (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={props.onClick}
-                  aria-label="Export"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Export</TooltipContent>
-            </Tooltip>
-          )}
-        </DownloadSlot>
-      </div>
+              <DownloadSlot>
+                {(props) => (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={props.onClick}
+                        aria-label="Export"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Export</TooltipContent>
+                  </Tooltip>
+                )}
+              </DownloadSlot>
+            </div>
+          );
+        }}
+      </PdfSearch>
     </TooltipProvider>
   );
 

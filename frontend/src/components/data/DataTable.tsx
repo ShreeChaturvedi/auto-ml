@@ -502,64 +502,43 @@ export function DataTable({
       </Dialog>
     ) : null;
 
-    const compactSearchControl = (
-      <div className="flex items-center gap-1">
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (searchExpanded && !globalFilter) {
-                    setSearchExpanded(false);
-                    return;
-                  }
-                  setSearchExpanded(true);
-                }}
-                className="h-7 w-7"
-                aria-label="Search"
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Search</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        {(searchExpanded || Boolean(globalFilter)) && (
-          <div className="relative">
+    if (controlsPortalTarget) {
+      // When search is active, replace all controls with full-width search input
+      if (searchExpanded) {
+        return createPortal(
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <Input
               ref={searchInputRef}
               placeholder="Search..."
               value={globalFilter}
               onChange={(e) => setGlobalFilter(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Escape' && !globalFilter) {
-                  setSearchExpanded(false);
+                if (e.key === 'Escape') {
+                  if (!globalFilter) setSearchExpanded(false);
+                  else setGlobalFilter('');
                 }
               }}
-              className="h-7 w-[170px] pr-7 text-xs"
+              className="h-7 flex-1 text-xs"
+              autoFocus
             />
-            {(globalFilter || searchExpanded) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setGlobalFilter('');
-                  setSearchExpanded(false);
-                }}
-                className="absolute right-0 top-0 h-7 w-7"
-                aria-label="Clear search"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    );
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setGlobalFilter('');
+                setSearchExpanded(false);
+              }}
+              className="h-7 w-7 shrink-0"
+              aria-label="Close search"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>,
+          controlsPortalTarget
+        );
+      }
 
-    if (controlsPortalTarget) {
       return createPortal(
         <TooltipProvider delayDuration={300}>
           <div className="flex items-center gap-1 min-w-0">
@@ -598,7 +577,20 @@ export function DataTable({
                 </Tooltip>
               </ToggleGroup>
             )}
-            {compactSearchControl}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSearchExpanded(true)}
+                  className="h-7 w-7"
+                  aria-label="Search"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Search</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

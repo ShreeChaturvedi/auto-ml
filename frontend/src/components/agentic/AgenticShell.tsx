@@ -34,6 +34,7 @@ interface AgenticShellProps {
   chatMetaSlot?: React.ReactNode;
   storageKey: string;
   domainLockReason?: string;
+  beforeSubmit?: (prompt: string) => Promise<string | null>;
   leftPaneScrollable?: boolean;
   LeftPaneComponent?: React.ComponentType<{ messages: ChatMessage[], isGenerating: boolean, error: string | null }>;
   renderLeftPane?: (props: { messages: ChatMessage[]; isGenerating: boolean; error: string | null }) => React.ReactNode;
@@ -47,6 +48,7 @@ export function AgenticShell({
   chatMetaSlot,
   storageKey,
   domainLockReason,
+  beforeSubmit,
   leftPaneScrollable = true,
   LeftPaneComponent,
   renderLeftPane
@@ -89,13 +91,30 @@ export function AgenticShell({
   const submitPrompt = (prompt: string) => {
     const trimmed = prompt.trim();
     if (!trimmed || !projectId || isGenerating || domainLockReason) return;
-    
-    void runLoop(trimmed, {
-      model: assistantModel,
-      enableThinking,
-      thinkingLevel: reasoningEffort
-    });
-    setChatInput('');
+
+    const startRun = async () => {
+      let preparedPrompt = trimmed;
+      if (beforeSubmit) {
+        const nextPrompt = await beforeSubmit(trimmed);
+        if (!nextPrompt?.trim()) {
+          return;
+        }
+        preparedPrompt = nextPrompt.trim();
+      }
+
+      if (!projectId || isGenerating || domainLockReason) {
+        return;
+      }
+
+      void runLoop(preparedPrompt, {
+        model: assistantModel,
+        enableThinking,
+        thinkingLevel: reasoningEffort
+      });
+      setChatInput('');
+    };
+
+    void startRun();
   };
 
   const leftPaneContent = renderLeftPane

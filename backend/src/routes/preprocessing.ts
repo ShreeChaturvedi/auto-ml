@@ -1,90 +1,32 @@
 import { Router } from 'express';
-import { z } from 'zod';
 
 import { env } from '../config.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { sanitizeTableName } from '../services/datasetLoader.js';
-import {
-  analyzePreprocessingPipeline,
-  executePreprocessingPipeline,
-  preprocessingStepSchema,
-  refinePreprocessingPipeline
-} from '../services/preprocessingPipeline.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
-
-const analyzeSchema = z.object({
-  projectId: z.string().uuid('projectId must be a valid UUID'),
-  datasetId: z.string().min(1),
-  sampleSize: z.number().int().min(10).max(100).optional().default(20)
-});
-
-const refineSchema = z.object({
-  projectId: z.string().uuid('projectId must be a valid UUID'),
-  datasetId: z.string().min(1),
-  message: z.string().min(1).max(2000),
-  draftSteps: z.array(preprocessingStepSchema).max(50),
-  model: z.string().min(1).optional(),
-  enableThinking: z.boolean().optional(),
-  thinkingLevel: z.enum(['dynamic', 'low', 'medium', 'high']).optional()
-});
-
-const executeSchema = z.object({
-  projectId: z.string().uuid('projectId must be a valid UUID'),
-  datasetId: z.string().min(1),
-  draftSteps: z.array(preprocessingStepSchema).max(50),
-  outputName: z.string().min(1).max(128).optional()
-});
 
 export function createPreprocessingRouter() {
   const router = Router();
 
-  router.post('/preprocessing/analyze', async (req, res) => {
-    const result = analyzeSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ errors: result.error.flatten() });
-    }
+  const deprecatedResponse = {
+    error: 'Legacy preprocessing endpoint is deprecated.',
+    code: 'PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED',
+    migrationPath: '/api/llm/preprocessing/stream',
+    message:
+      'Use the tool-orchestrated preprocessing flow via /api/llm/preprocessing/stream and /api/llm/tools/execute.'
+  };
 
-    try {
-      const response = await analyzePreprocessingPipeline(result.data);
-      return res.json(response);
-    } catch (error) {
-      console.error('[preprocessing] Analysis failed:', error);
-      const message = error instanceof Error ? error.message : 'Failed to analyze dataset';
-      return res.status(400).json({ error: message });
-    }
+  router.post('/preprocessing/analyze', (_req, res) => {
+    return res.status(410).json(deprecatedResponse);
   });
 
-  router.post('/preprocessing/refine', async (req, res) => {
-    const result = refineSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ errors: result.error.flatten() });
-    }
-
-    try {
-      const response = await refinePreprocessingPipeline(result.data);
-      return res.json(response);
-    } catch (error) {
-      console.error('[preprocessing] Refine failed:', error);
-      const message = error instanceof Error ? error.message : 'Failed to refine pipeline';
-      return res.status(400).json({ error: message });
-    }
+  router.post('/preprocessing/refine', (_req, res) => {
+    return res.status(410).json(deprecatedResponse);
   });
 
-  router.post('/preprocessing/execute', async (req, res) => {
-    const result = executeSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ errors: result.error.flatten() });
-    }
-
-    try {
-      const response = await executePreprocessingPipeline(result.data);
-      return res.json(response);
-    } catch (error) {
-      console.error('[preprocessing] Execution failed:', error);
-      const message = error instanceof Error ? error.message : 'Failed to execute preprocessing pipeline';
-      return res.status(400).json({ error: message });
-    }
+  router.post('/preprocessing/execute', (_req, res) => {
+    return res.status(410).json(deprecatedResponse);
   });
 
   router.get('/preprocessing/tables', async (req, res) => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import type { ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectHeader } from '../ProjectHeader';
@@ -22,8 +22,9 @@ const mockProject: Project = {
 };
 
 describe('ProjectHeader', () => {
-  const renderWithRouter = (ui: ReactElement) =>
-    render(<MemoryRouter>{ui}</MemoryRouter>);
+  const renderWithRouter = (node: ReactNode) => {
+    return render(<MemoryRouter>{node}</MemoryRouter>);
+  };
 
   it('shows only a single-line description field in upload header', () => {
     renderWithRouter(<ProjectHeader project={mockProject} editable />);

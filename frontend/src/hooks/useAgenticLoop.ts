@@ -157,18 +157,21 @@ export function useAgenticLoop({
             }
             if (event.envelope.tool_calls?.length) {
               currentTextIdRef.current = null;
+              const preparedToolCalls = domainAdapter.prepareToolCalls
+                ? domainAdapter.prepareToolCalls(event.envelope.tool_calls)
+                : event.envelope.tool_calls;
               
               toolHistoryRef.current.calls = mergeToolCalls(
                 toolHistoryRef.current.calls,
-                event.envelope.tool_calls
+                preparedToolCalls
               );
               
-              for (const call of event.envelope.tool_calls) {
+              for (const call of preparedToolCalls) {
                 setMessages((prev) => [...prev, { id: `tool-${call.id}`, type: 'tool_call', call }]);
                 domainAdapter.toolRegistry[call.tool]?.onCall?.(call);
               }
 
-              const toolCalls = event.envelope.tool_calls;
+              const toolCalls = preparedToolCalls;
               if (projectId) {
                 const activeNotebookId = useNotebookStore.getState().activeNotebookId ?? undefined;
                 executeToolCalls(projectId, toolCalls, activeNotebookId)

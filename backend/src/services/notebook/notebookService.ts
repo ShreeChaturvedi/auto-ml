@@ -175,7 +175,8 @@ export async function writeCell(
     cell = await repo.updateCell(options.cellId, {
       content: options.content,
       title: options.title,
-      cellType: options.cellType
+      cellType: options.cellType,
+      metadata: options.metadata
     });
 
     broadcast(cell.notebookId, 'cell:updated', { cell });
@@ -184,7 +185,8 @@ export async function writeCell(
     cell = await repo.createCell(notebookId, {
       content: options.content,
       title: options.title,
-      cellType: options.cellType ?? 'code'
+      cellType: options.cellType ?? 'code',
+      metadata: options.metadata
     });
 
     broadcast(notebookId, 'cell:created', { cell });
@@ -245,7 +247,10 @@ export async function editCell(
   const newContent = newLines.join('\n');
 
   // Update the cell
-  const updatedCell = await repo.updateCell(cellId, { content: newContent });
+  const updatedCell = await repo.updateCell(cellId, {
+    content: newContent,
+    metadata: options.metadata
+  });
 
   broadcast(updatedCell.notebookId, 'cell:updated', { cell: updatedCell });
 
@@ -364,6 +369,12 @@ export async function releaseLock(cellId: string): Promise<void> {
   if (cell) {
     broadcast(cell.notebookId, 'cell:unlocked', { cellId });
   }
+}
+
+export async function updateCellMetadata(cellId: string, metadata: Record<string, unknown>): Promise<Cell> {
+  const updatedCell = await repo.updateCell(cellId, { metadata });
+  broadcast(updatedCell.notebookId, 'cell:updated', { cell: updatedCell });
+  return updatedCell;
 }
 
 /**

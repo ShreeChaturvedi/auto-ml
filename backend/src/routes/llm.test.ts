@@ -140,4 +140,83 @@ describeIf('llm routes', () => {
       expect(response.body.error).toContain('approved feature engineering pipeline');
     });
   });
+
+  describe('GET /api/llm/preprocessing/runs*', () => {
+    it('returns run snapshot for an existing run id', async () => {
+      const app = createTestApp();
+      const executeResponse = await request(app)
+        .post('/api/llm/tools/execute')
+        .send({
+          projectId: 'project-1',
+          toolCalls: [
+            {
+              id: 'tool-1',
+              tool: 'propose_transformation_step',
+              args: {
+                title: 'Normalize values',
+                intentType: 'scale_numeric'
+              }
+            }
+          ]
+        });
+
+      expect(executeResponse.status).toBe(200);
+      const runId = executeResponse.body.results?.[0]?.output?.runId as string | undefined;
+      expect(runId).toBeTruthy();
+
+      const snapshotResponse = await request(app).get(`/api/llm/preprocessing/runs/${runId}`);
+      expect(snapshotResponse.status).toBe(200);
+      expect(snapshotResponse.body.run).toMatchObject({
+        runId,
+        projectId: 'project-1'
+      });
+
+      const listResponse = await request(app).get('/api/llm/preprocessing/runs').query({ projectId: 'project-1' });
+      expect(listResponse.status).toBe(200);
+      expect(Array.isArray(listResponse.body.runs)).toBe(true);
+      expect(listResponse.body.runs.some((run: { runId: string }) => run.runId === runId)).toBe(true);
+    });
+
+    it('returns 404 for missing run id', async () => {
+      const app = createTestApp();
+      const response = await request(app).get('/api/llm/preprocessing/runs/non-existent-run');
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe('Preprocessing run not found');
+    });
+
+    it('returns 400 for malformed list request', async () => {
+      const app = createTestApp();
+      const response = await request(app).get('/api/llm/preprocessing/runs');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid request');
+    });
+
+    it('returns typed run error for unknown explicit preprocessing runId', async () => {
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/tools/execute')
+        .send({
+          projectId: 'project-1',
+          toolCalls: [
+            {
+              id: 'tool-unknown-run',
+              tool: 'list_project_datasets',
+              args: {
+                runId: 'run_001'
+              }
+            }
+          ]
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.results?.[0]?.output).toMatchObject({
+        isError: true,
+        runId: 'run_001'
+      });
+      const reasonCode = response.body.results?.[0]?.output?.reasonCode as string | undefined;
+      expect(['RUN_NOT_FOUND', 'RUN_PROJECT_MISMATCH']).toContain(reasonCode);
+    });
+  });
 });

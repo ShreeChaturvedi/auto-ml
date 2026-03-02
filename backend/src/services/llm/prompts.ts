@@ -291,8 +291,12 @@ PREPROCESSING CONTRACT:
   5) validate_step_result
   6) commit_transformation_step
 - Keep stable step_id across the full lifecycle.
+- When writing/editing/running cells for a preprocessing step, persist canonical lineage metadata in metadata.preprocessing:
+  { runId, stepId, toolCallId, version, codeHash }.
+- If user manually edits bound step code, call detect_step_divergence before further commits; if diverged, call reconcile_diverged_step.
 - Prefer one transformation step per response cycle unless steps are tightly coupled.
 - For risky operations (dropping columns, outlier removal, custom code), set validate_step_result.requiresApproval=true.
+- If user rejects an awaiting step, call commit_transformation_step with approved=false and rejectionReason.
 - If notebook execution fails, surface precise errors and revise code before committing.
 - Never claim a step is committed without a successful execute + validate path.`;
 

@@ -52,6 +52,7 @@ function rowToCell(row: CellRow): Cell {
     title: row.title,
     content: row.content,
     position: row.position,
+    metadata: row.metadata ?? {},
     executionCount: row.execution_count ?? 0,
     executionStatus: (row.execution_status ?? 'idle') as CellStatus,
     executionDurationMs: row.execution_duration_ms,
@@ -248,6 +249,7 @@ export async function createCell(
     cellType?: CellType;
     title?: string;
     position?: number;
+    metadata?: Record<string, unknown>;
   }
 ): Promise<Cell> {
   if (!hasDatabaseConfiguration()) {
@@ -275,10 +277,10 @@ export async function createCell(
   }
 
   const result = await pool.query<CellRow>(
-    `INSERT INTO cells (cell_id, notebook_id, cell_type, title, content, position)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO cells (cell_id, notebook_id, cell_type, title, content, position, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [cellId, notebookId, cellType, options.title ?? null, options.content, position]
+    [cellId, notebookId, cellType, options.title ?? null, options.content, position, options.metadata ?? {}]
   );
 
   return rowToCell(result.rows[0]);
@@ -358,6 +360,7 @@ export async function updateCell(
     content?: string;
     title?: string;
     cellType?: CellType;
+    metadata?: Record<string, unknown>;
     executionStatus?: CellStatus;
     executionCount?: number;
     executionDurationMs?: number;
@@ -387,6 +390,11 @@ export async function updateCell(
   if (updates.cellType !== undefined) {
     setClauses.push(`cell_type = $${paramIndex++}`);
     values.push(updates.cellType);
+  }
+
+  if (updates.metadata !== undefined) {
+    setClauses.push(`metadata = $${paramIndex++}`);
+    values.push(JSON.stringify(updates.metadata));
   }
 
   if (updates.executionStatus !== undefined) {

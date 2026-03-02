@@ -29,6 +29,8 @@ export interface DomainAdapter {
     options: BuildRequestOptions
   ) => Promise<void>;
 
+  prepareToolCalls?: (toolCalls: ToolCall[]) => ToolCall[];
+
   toolRegistry: Record<string, ToolHandlers>;
   toolUiRegistry: Record<string, ComponentType<{ call: ToolCall; result?: ToolResult }>>;
 

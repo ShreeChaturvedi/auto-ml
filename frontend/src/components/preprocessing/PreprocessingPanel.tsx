@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,6 +7,7 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
+import { buildDatasetContinuityPrompt } from './continuityPrompt';
 import { DatasetChooserDialog, RenameTabDialog } from './PreprocessingDialogs';
 import {
   PreprocessingToolbarLeft,
@@ -15,11 +16,20 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
+import { extractRunIdFromStoredMessages } from './storagePersistence';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -121,11 +131,17 @@ export function PreprocessingPanel() {
   const storeError = usePreprocessingStore((state) => state.error);
   const loadTables = usePreprocessingStore((state) => state.loadTables);
   const selectDataset = usePreprocessingStore((state) => state.selectDataset);
+  const setRunId = usePreprocessingStore((state) => state.setRunId);
+  const setNextRunCellMode = usePreprocessingStore((state) => state.setNextRunCellMode);
+  const hydrateRunById = usePreprocessingStore((state) => state.hydrateRunById);
   const approveStep = usePreprocessingStore((state) => state.approveStep);
   const rejectStep = usePreprocessingStore((state) => state.rejectStep);
   const syncDivergence = usePreprocessingStore((state) => state.syncDivergence);
   const evaluateReplayCompatibility = usePreprocessingStore((state) => state.evaluateReplayCompatibility);
   const clearRun = usePreprocessingStore((state) => state.clearRun);
+  const lastHydratedRunIdRef = useRef<string | null>(null);
+  const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
+  const suppressStoredRunHydrationRef = useRef(false);
 
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
@@ -141,6 +157,8 @@ export function PreprocessingPanel() {
     }
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('processing-tab-1');
+  const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
+  const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
 
   useEffect(() => {
     if (projectId) {
@@ -192,6 +210,93 @@ export function PreprocessingPanel() {
     [tables, selectedDatasetId]
   );
 
+  useEffect(() => {
+    if (!projectId || runId || !activeTab) {
+      return;
+    }
+    if (suppressStoredRunHydrationRef.current) {
+      return;
+    }
+    const storageKey = `${buildProcessingStorageKey(activeTab.id, activeTab.storageVersion)}-${projectId}`;
+    const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
+    if (inferredRunId) {
+      setRunId(inferredRunId);
+    }
+  }, [activeTab, projectId, runId, setRunId]);
+
+  useEffect(() => {
+    if (runId) {
+      suppressStoredRunHydrationRef.current = false;
+    }
+  }, [runId]);
+
+  useEffect(() => {
+    if (!projectId || !runId) {
+      return;
+    }
+
+    if (lastHydratedRunIdRef.current === runId) {
+      return;
+    }
+
+    let cancelled = false;
+    void hydrateRunById(projectId, runId).then(() => {
+      if (!cancelled) {
+        lastHydratedRunIdRef.current = runId;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateRunById, projectId, runId]);
+
+  const resolvePendingSubmitPrompt = (nextPrompt: string | null) => {
+    const resolver = submitPromptResolverRef.current;
+    submitPromptResolverRef.current = null;
+    setSubmitChoiceOpen(false);
+    setPendingSubmitPrompt('');
+    resolver?.(nextPrompt);
+  };
+
+  const requestDatasetContinuityChoice = (prompt: string): Promise<string | null> => {
+    if (!selectedDatasetId) {
+      setDatasetModalOpen(true);
+      return Promise.resolve(null);
+    }
+    return new Promise<string | null>((resolve) => {
+      submitPromptResolverRef.current = resolve;
+      setPendingSubmitPrompt(prompt);
+      setSubmitChoiceOpen(true);
+    });
+  };
+
+  const handleUseCurrentDataset = () => {
+    setNextRunCellMode('continue');
+    resolvePendingSubmitPrompt(buildDatasetContinuityPrompt(
+      pendingSubmitPrompt,
+      'continue',
+      {
+        datasetId: selectedDatasetId,
+        datasetLabel: selectedTable?.filename
+      }
+    ));
+  };
+
+  const handleUseOriginalDataset = () => {
+    setNextRunCellMode('restart_from_original');
+    suppressStoredRunHydrationRef.current = true;
+    clearRun();
+    resolvePendingSubmitPrompt(buildDatasetContinuityPrompt(
+      pendingSubmitPrompt,
+      'restart_from_original',
+      {
+        datasetId: selectedDatasetId,
+        datasetLabel: selectedTable?.filename
+      }
+    ));
+  };
+
   const filteredTables = useMemo(() => {
     const query = datasetSearch.trim().toLowerCase();
     if (!query) return tables;
@@ -215,6 +320,7 @@ export function PreprocessingPanel() {
 
   const handleDatasetSelect = (datasetId: string) => {
     selectDataset(datasetId);
+    suppressStoredRunHydrationRef.current = true;
     clearRun();
     setCandidateDatasetId(datasetId);
   };
@@ -328,6 +434,7 @@ export function PreprocessingPanel() {
         key={`${activeTab?.id ?? 'processing-tab-1'}-${activeTab?.storageVersion ?? 0}`}
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
+        beforeSubmit={requestDatasetContinuityChoice}
         storageKey={buildProcessingStorageKey(
           activeTab?.id ?? 'processing-tab-1',
           activeTab?.storageVersion ?? 0
@@ -593,6 +700,51 @@ export function PreprocessingPanel() {
         onValueChange={setRenameTabName}
         onSave={handleRenameTab}
       />
+
+      <Dialog
+        open={isSubmitChoiceOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolvePendingSubmitPrompt(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Choose Dataset Source For This Action</DialogTitle>
+            <DialogDescription>
+              For this prompt, should preprocessing continue from the current edited working dataset,
+              or restart from the original dataset source?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Card className="border-muted">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Current selection</CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                {selectedTable?.filename ?? 'No dataset selected'}
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button variant="outline" onClick={handleUseOriginalDataset}>
+                Start From Original
+              </Button>
+              <Button onClick={handleUseCurrentDataset}>
+                Continue Current Working
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => resolvePendingSubmitPrompt(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

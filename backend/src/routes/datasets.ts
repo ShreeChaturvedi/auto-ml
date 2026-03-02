@@ -51,16 +51,22 @@ const SUPPORTED_EXTENSIONS: Record<string, DatasetFileType> = {
 
 const SUPPORTED_MIME_TYPES: Partial<Record<string, DatasetFileType>> = {
   'text/csv': 'csv',
+  'application/vnd.ms-excel': 'csv',
+  'application/csv': 'csv',
   'application/json': 'json',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
 };
 
 function detectFileType(filename: string, mimetype?: string): DatasetFileType | undefined {
+  const extension = extname(filename).toLowerCase();
+  const extensionType = SUPPORTED_EXTENSIONS[extension];
+  if (extensionType) {
+    return extensionType;
+  }
   if (mimetype && SUPPORTED_MIME_TYPES[mimetype]) {
     return SUPPORTED_MIME_TYPES[mimetype];
   }
-  const extension = extname(filename).toLowerCase();
-  return SUPPORTED_EXTENSIONS[extension];
+  return undefined;
 }
 
 export function createDatasetUploadRouter(repository?: DatasetRepository) {

@@ -34,7 +34,6 @@ import {
   ChartPie
 } from 'lucide-react';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -333,7 +332,7 @@ export function DataTable({
         ref={tableContainerRef}
         className="flex-1 min-h-0 overflow-auto"
       >
-        <Table>
+        <table className="w-full caption-bottom text-sm">
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -352,7 +351,7 @@ export function DataTable({
               <>
                 {paddingTop > 0 && (
                   <tr>
-                    <td style={{ height: `${paddingTop}px` }} />
+                    <td colSpan={columns.length} style={{ height: `${paddingTop}px` }} />
                   </tr>
                 )}
                 {virtualItems.map((virtualRow) => {
@@ -373,7 +372,7 @@ export function DataTable({
                 })}
                 {paddingBottom > 0 && (
                   <tr>
-                    <td style={{ height: `${paddingBottom}px` }} />
+                    <td colSpan={columns.length} style={{ height: `${paddingBottom}px` }} />
                   </tr>
                 )}
               </>
@@ -388,7 +387,7 @@ export function DataTable({
               </TableRow>
             )}
           </TableBody>
-        </Table>
+        </table>
       </div>
 
       <div className="border-t bg-muted/30 shrink-0">

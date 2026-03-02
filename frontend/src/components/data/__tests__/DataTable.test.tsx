@@ -1,9 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import type { DataPreview } from '@/types/file';
 
 import { DataTable } from '../DataTable';
-import type { DataPreview } from '@/types/file';
 
 describe('DataTable query details', () => {
   it('opens query details dialog when info button is clicked', async () => {
@@ -101,5 +101,68 @@ describe('DataTable query details', () => {
 
     expect(portal.getByPlaceholderText(/search rows/i)).toBeInTheDocument();
     document.body.removeChild(portalTarget);
+  });
+});
+
+describe('DataTable virtual scrolling', () => {
+  it('renders <table> directly inside the scroll container without an extra overflow wrapper', () => {
+    const preview: DataPreview = {
+      fileId: 'test.csv',
+      headers: ['id', 'value'],
+      rows: [{ id: 1, value: 'a' }],
+      totalRows: 1,
+      previewRows: 1
+    };
+
+    render(<DataTable preview={preview} />);
+
+    const tableEl = document.querySelector('table');
+    expect(tableEl).toBeTruthy();
+
+    // Walk up from <table> and count ancestors that have the overflow-auto class.
+    // With the fix there should be exactly one (tableContainerRef).
+    // The old shadcn <Table> wrapper would have inserted a second overflow-auto
+    // div immediately above <table>, breaking sticky headers and scroll observation.
+    let overflowAutoCount = 0;
+    let node: HTMLElement | null = tableEl!.parentElement;
+    while (node && node !== document.body) {
+      if (node.classList.contains('overflow-auto')) overflowAutoCount++;
+      node = node.parentElement;
+    }
+
+    expect(overflowAutoCount).toBe(1);
+  });
+
+  it('does not render all rows for a large dataset (virtual scrolling is active)', () => {
+    const rows = Array.from({ length: 500 }, (_, i) => ({ id: i + 1, name: `Row ${i + 1}` }));
+    const preview: DataPreview = {
+      fileId: 'large.csv',
+      headers: ['id', 'name'],
+      rows,
+      totalRows: 500,
+      previewRows: 500
+    };
+
+    render(<DataTable preview={preview} />);
+
+    // The virtualizer only renders a small window of rows into the DOM.
+    // data-index is set exclusively on virtual <tr> elements.
+    const renderedDataRows = document.querySelectorAll('[data-index]');
+    expect(renderedDataRows.length).toBeLessThan(500);
+  });
+
+  it('shows the total row count in the status ribbon for a large dataset', () => {
+    const rows = Array.from({ length: 500 }, (_, i) => ({ id: i + 1, name: `Row ${i + 1}` }));
+    const preview: DataPreview = {
+      fileId: 'large.csv',
+      headers: ['id', 'name'],
+      rows,
+      totalRows: 500,
+      previewRows: 500
+    };
+
+    render(<DataTable preview={preview} />);
+
+    expect(screen.getByText(/\b500\b/)).toBeInTheDocument();
   });
 });

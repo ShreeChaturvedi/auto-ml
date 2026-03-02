@@ -511,8 +511,8 @@ export function DataTable({
           <div className="relative flex h-7 flex-1 min-w-0 items-center overflow-hidden">
             <div
               className={cn(
-                'flex max-w-full min-w-0 items-center gap-1 overflow-hidden transition-all duration-200 ease-out',
-                searchExpanded ? 'opacity-0 blur-[1px] pointer-events-none' : 'opacity-100'
+                'flex max-w-full min-w-0 items-center gap-1 overflow-hidden transition-opacity duration-150 ease-out',
+                searchExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
               )}
             >
               <div className="flex min-w-0 items-center gap-1 overflow-hidden">
@@ -593,14 +593,12 @@ export function DataTable({
 
             <div
               className={cn(
-                'absolute inset-0 flex items-center transition-all duration-200 ease-out',
-                searchExpanded
-                  ? 'opacity-100 translate-y-0'
-                  : 'opacity-0 translate-y-1 pointer-events-none'
+                'absolute inset-0 flex items-center transition-opacity duration-150 ease-out',
+                searchExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
               )}
             >
               <div
-                className="flex h-7 w-full items-center gap-2 rounded-md bg-muted/50 px-2"
+                className="flex h-7 w-full items-center gap-1 rounded-md bg-muted/50 pl-0 pr-1"
                 onBlur={(event) => {
                   const relatedTarget = event.relatedTarget as Node | null;
                   if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
@@ -608,7 +606,9 @@ export function DataTable({
                   }
                 }}
               >
-                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="grid h-7 w-7 shrink-0 place-items-center">
+                  <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
                 <input
                   ref={searchInputRef}
                   placeholder="Search rows..."

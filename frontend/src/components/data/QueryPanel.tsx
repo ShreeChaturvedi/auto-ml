@@ -623,7 +623,7 @@ export function QueryPanel({
             >
               <Editor
                 height="100%"
-                defaultLanguage="sql"
+                language="sql"
                 value={sqlQuery}
                 onChange={(value) => handleQueryChange(value || '')}
                 onMount={(editorInstance, monaco: Monaco) => {
@@ -683,6 +683,11 @@ export function QueryPanel({
                     (window.navigator.platform.toLowerCase().includes('mac') ? 2048 : 2176) | 3,
                     handleExecute
                   );
+
+                  const model = editorInstance.getModel();
+                  if (model && model.getLanguageId() !== 'sql') {
+                    monaco.editor.setModelLanguage(model, 'sql');
+                  }
 
                   // Clean up previous completion provider if it exists
                   if (completionProviderRef.current) {
@@ -822,7 +827,6 @@ export function QueryPanel({
                     }
                   });
 
-                  const model = editorInstance.getModel();
                   if (!model) {
                     return;
                   }
@@ -853,6 +857,8 @@ export function QueryPanel({
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                   wordWrap: 'on',
                   automaticLayout: true,
+                  quickSuggestions: true,
+                  suggestOnTriggerCharacters: true,
                   padding: { top: 8, bottom: 8 },
                   fixedOverflowWidgets: true,
                   suggest: {

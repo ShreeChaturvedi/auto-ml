@@ -515,12 +515,64 @@ export function DataTable({
                 searchExpanded ? 'opacity-0 blur-[1px] pointer-events-none' : 'opacity-100'
               )}
             >
+              <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setSearchExpanded(true)}
+                      className="h-7 w-7 shrink-0"
+                      aria-label="Search"
+                    >
+                      <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Search</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleExport}
+                      className="h-7 w-7 shrink-0"
+                      aria-label="Export"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Export</TooltipContent>
+                </Tooltip>
+
+                {onSave && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onSave}
+                        className="h-7 w-7 shrink-0"
+                        aria-label="Save"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Save</TooltipContent>
+                  </Tooltip>
+                )}
+
+                {queryInfoDialog}
+              </div>
+
               {hasEda && (
                 <IconModeToggle
                   value={edaView}
                   onValueChange={(val) => {
                     if (val === 'table' || val === 'eda') setEdaView(val);
                   }}
+                  className="ml-auto shrink-0"
                   options={[
                     {
                       value: 'table',
@@ -537,51 +589,6 @@ export function DataTable({
                   ]}
                 />
               )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setSearchExpanded(true)}
-                    className="h-7 w-7 shrink-0"
-                    aria-label="Search"
-                  >
-                    <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Search</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleExport}
-                    className="h-7 w-7 shrink-0"
-                    aria-label="Export"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Export</TooltipContent>
-              </Tooltip>
-              {onSave && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={onSave}
-                      className="h-7 w-7 shrink-0"
-                      aria-label="Save"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Save</TooltipContent>
-                </Tooltip>
-              )}
-              {queryInfoDialog}
             </div>
 
             <div
@@ -593,7 +600,7 @@ export function DataTable({
               )}
             >
               <div
-                className="flex h-7 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm"
+                className="flex h-7 w-full items-center gap-2 rounded-md bg-muted/50 px-2"
                 onBlur={(event) => {
                   const relatedTarget = event.relatedTarget as Node | null;
                   if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {

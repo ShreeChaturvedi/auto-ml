@@ -7,7 +7,7 @@
  * - Plain text display with monospace font
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -36,6 +36,7 @@ import remarkGfm from 'remark-gfm';
 // Import required styles
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/toolbar/lib/styles/index.css';
+import '@react-pdf-viewer/search/lib/styles/index.css';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -325,11 +326,12 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
   const isTextBased = isMarkdown || isText;
   const isBinary = !isPdf && !isTextBased;
 
-  // Initialize viewer plugins
-  const toolbarPluginInstance = useMemo(() => toolbarPlugin(), []);
-  const searchPluginInstance = useMemo(() => searchPlugin(), []);
+  // Initialize viewer plugins (only meaningful for PDF files, but must be
+  // called unconditionally to satisfy the rules-of-hooks)
+  const toolbarPluginInstance = toolbarPlugin();
+  const searchPluginInstance = searchPlugin();
   const { Toolbar } = toolbarPluginInstance;
-  const { Search: PdfSearch } = searchPluginInstance;
+  const PdfSearch = searchPluginInstance.Search;
 
   useEffect(() => {
     let isMounted = true;

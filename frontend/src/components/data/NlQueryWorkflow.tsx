@@ -44,6 +44,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
   forwardRef,
   useImperativeHandle,
   type Ref,
@@ -51,60 +52,59 @@ import {
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { NlFlowConnector } from './NlFlowConnector';
-import { SqlRevealBlock } from './SqlRevealBlock';
+import { SqlRevealBlock, tokenizeSql } from './SqlRevealBlock';
 import type { NlGenerationResult } from '@/types/nlQuery';
 
-// ─── Typewriter hook ──────────────────────────────────────────────────────────
+// ─── Typewriter hook (token-based) ────────────────────────────────────────────
 
-const CHARS_PER_FRAME = 3;
+/** Tokens to advance per animation frame.  1 keeps the word-by-word effect
+ *  readable; whitespace tokens are "free" (counted but visually instantaneous)
+ *  so the perceived speed is faster than 1 word/frame. */
+const TOKENS_PER_FRAME = 1;
 const TYPEWRITER_START_DELAY_MS = 150;
 
 interface TypewriterState {
-  visibleText: string;
+  visibleTokenCount: number;
   isComplete: boolean;
 }
 
 function useTypewriter(
-  fullText: string,
+  totalTokens: number,
   isActive: boolean
 ): TypewriterState {
-  const stateRef = useRef<TypewriterState>({ visibleText: '', isComplete: false });
-  // We use a stable ref-driven loop and only flush to React state
-  // via a forceUpdate to keep the render count low.
+  const stateRef = useRef<TypewriterState>({ visibleTokenCount: 0, isComplete: false });
   const forceUpdate = useReducer((n: number) => n + 1, 0)[1];
   const rafRef = useRef<number | null>(null);
   const startDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const charIndexRef = useRef(0);
-  const targetRef = useRef(fullText);
+  const tokenIndexRef = useRef(0);
+  const targetRef = useRef(totalTokens);
 
   useEffect(() => {
-    targetRef.current = fullText;
-  }, [fullText]);
+    targetRef.current = totalTokens;
+  }, [totalTokens]);
 
   useEffect(() => {
-    // Reset when deactivated or target text changes.
     if (!isActive) {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       if (startDelayRef.current !== null) clearTimeout(startDelayRef.current);
-      stateRef.current = { visibleText: '', isComplete: false };
-      charIndexRef.current = 0;
+      stateRef.current = { visibleTokenCount: 0, isComplete: false };
+      tokenIndexRef.current = 0;
       forceUpdate();
       return;
     }
 
-    charIndexRef.current = 0;
-    stateRef.current = { visibleText: '', isComplete: false };
+    tokenIndexRef.current = 0;
+    stateRef.current = { visibleTokenCount: 0, isComplete: false };
     forceUpdate();
 
     const tick = () => {
-      const t = targetRef.current;
-      charIndexRef.current = Math.min(
-        charIndexRef.current + CHARS_PER_FRAME,
-        t.length
+      const total = targetRef.current;
+      tokenIndexRef.current = Math.min(
+        tokenIndexRef.current + TOKENS_PER_FRAME,
+        total
       );
-      const visible = t.slice(0, charIndexRef.current);
-      const done = charIndexRef.current >= t.length;
-      stateRef.current = { visibleText: visible, isComplete: done };
+      const done = tokenIndexRef.current >= total;
+      stateRef.current = { visibleTokenCount: tokenIndexRef.current, isComplete: done };
       forceUpdate();
 
       if (!done) {
@@ -255,9 +255,15 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     onPhaseChange?.(phase);
   }, [phase, onPhaseChange]);
 
+  // Tokenize the result SQL so the typewriter can advance by token count.
+  const resultTokens = useMemo(
+    () => (result?.sql ? tokenizeSql(result.sql) : []),
+    [result?.sql]
+  );
+
   // Typewriter: active while in the 'revealing' phase.
-  const { visibleText, isComplete: typewriterComplete } = useTypewriter(
-    result?.sql ?? '',
+  const { visibleTokenCount, isComplete: typewriterComplete } = useTypewriter(
+    resultTokens.length,
     phase === 'revealing'
   );
 
@@ -379,7 +385,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             sql={result?.sql ?? ''}
             rationale={result?.rationale}
             isRevealing={phase === 'revealing'}
-            visibleText={visibleText}
+            visibleTokenCount={visibleTokenCount}
             isRevealComplete={phase === 'reviewing'}
             editedSql={editedSql}
             onSqlChange={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}

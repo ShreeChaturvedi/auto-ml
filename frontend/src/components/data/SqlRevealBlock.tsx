@@ -5,10 +5,11 @@
  *
  * Revealing phase
  * ───────────────
- * A <pre> element shows the growing `visibleText` string as it is typed
- * character-by-character by the useTypewriter hook in NlQueryWorkflow.
- * A blinking cursor is appended via the `.nl-typewriter-cursor` pseudo-element
- * class (defined in index.css) once the cursor holder span is rendered.
+ * A <pre> element renders syntax-highlighted SQL tokens one-by-one as the
+ * `visibleTokenCount` advances (driven by the useTypewriter hook in
+ * NlQueryWorkflow).  Each non-whitespace token enters with the
+ * `.sql-word-enter` CSS animation — a subtle brightness flash + fade-in
+ * inspired by the animated-placeholder character entrance.
  *
  * Reviewing phase (isRevealComplete = true)
  * ──────────────────────────────────────────
@@ -26,19 +27,169 @@
  * SQL reveal but is easy to read once the typing is done.
  */
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
+// ─── SQL tokenizer ────────────────────────────────────────────────────────────
+
+export type SqlTokenType =
+  | 'keyword'
+  | 'function'
+  | 'string'
+  | 'number'
+  | 'operator'
+  | 'punctuation'
+  | 'identifier'
+  | 'whitespace';
+
+export interface SqlToken {
+  text: string;
+  type: SqlTokenType;
+}
+
+const SQL_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL',
+  'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ON',
+  'AS', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'DISTINCT',
+  'UNION', 'ALL', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+  'CREATE', 'TABLE', 'ALTER', 'DROP', 'INDEX', 'VIEW', 'EXISTS',
+  'BETWEEN', 'LIKE', 'ILIKE', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'ASC', 'DESC', 'TRUE', 'FALSE', 'WITH', 'RECURSIVE', 'OVER', 'PARTITION',
+  'WINDOW', 'ROWS', 'RANGE', 'PRECEDING', 'FOLLOWING', 'CURRENT', 'ROW',
+  'FETCH', 'NEXT', 'ONLY', 'FIRST', 'LAST', 'NULLS',
+]);
+
+const SQL_FUNCTIONS = new Set([
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF',
+  'CAST', 'CONVERT', 'EXTRACT', 'DATE_PART', 'DATE_TRUNC',
+  'UPPER', 'LOWER', 'TRIM', 'LENGTH', 'SUBSTRING', 'REPLACE',
+  'CONCAT', 'STRING_AGG', 'ARRAY_AGG', 'ROW_NUMBER', 'RANK',
+  'DENSE_RANK', 'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE',
+  'ROUND', 'CEIL', 'FLOOR', 'ABS', 'NOW', 'CURRENT_TIMESTAMP',
+]);
+
+/**
+ * Split a SQL string into a flat list of tokens suitable for syntax
+ * highlighting and word-by-word reveal animation.
+ *
+ * The tokenizer is intentionally simple — it covers the common Postgres
+ * subset used by the NL query generator.  It will never fail or throw;
+ * unrecognised characters are emitted as `'identifier'` tokens.
+ */
+export function tokenizeSql(sql: string): SqlToken[] {
+  const tokens: SqlToken[] = [];
+  let i = 0;
+
+  while (i < sql.length) {
+    // ── Whitespace ──────────────────────────────────────────────────────
+    if (/\s/.test(sql[i])) {
+      let j = i;
+      while (j < sql.length && /\s/.test(sql[j])) j++;
+      tokens.push({ text: sql.slice(i, j), type: 'whitespace' });
+      i = j;
+      continue;
+    }
+
+    // ── Single-line comment (-- ...) ────────────────────────────────────
+    if (sql[i] === '-' && i + 1 < sql.length && sql[i + 1] === '-') {
+      let j = i + 2;
+      while (j < sql.length && sql[j] !== '\n') j++;
+      tokens.push({ text: sql.slice(i, j), type: 'identifier' });
+      i = j;
+      continue;
+    }
+
+    // ── String literal ('...' or "...") ─────────────────────────────────
+    if (sql[i] === "'" || sql[i] === '"') {
+      const quote = sql[i];
+      let j = i + 1;
+      while (j < sql.length && sql[j] !== quote) {
+        if (sql[j] === '\\') j++; // skip escaped char
+        j++;
+      }
+      if (j < sql.length) j++; // closing quote
+      tokens.push({ text: sql.slice(i, j), type: 'string' });
+      i = j;
+      continue;
+    }
+
+    // ── Number ──────────────────────────────────────────────────────────
+    if (/\d/.test(sql[i]) || (sql[i] === '.' && i + 1 < sql.length && /\d/.test(sql[i + 1]))) {
+      let j = i;
+      while (j < sql.length && /[\d.]/.test(sql[j])) j++;
+      tokens.push({ text: sql.slice(i, j), type: 'number' });
+      i = j;
+      continue;
+    }
+
+    // ── Operator (=, <, >, !=, <=, >=, <>, ||, +, -, *, /, %) ─────────
+    if (/[=<>!+\-*/%|]/.test(sql[i])) {
+      let j = i + 1;
+      if (j < sql.length && /[=<>|]/.test(sql[j])) j++;
+      tokens.push({ text: sql.slice(i, j), type: 'operator' });
+      i = j;
+      continue;
+    }
+
+    // ── Punctuation (parens, commas, semicolons, dots) ──────────────────
+    if (/[(),;.]/.test(sql[i])) {
+      tokens.push({ text: sql[i], type: 'punctuation' });
+      i++;
+      continue;
+    }
+
+    // ── Word (keyword, function, or identifier) ─────────────────────────
+    if (/[a-zA-Z_]/.test(sql[i])) {
+      let j = i;
+      while (j < sql.length && /[a-zA-Z0-9_]/.test(sql[j])) j++;
+      const word = sql.slice(i, j);
+      const upper = word.toUpperCase();
+      if (SQL_KEYWORDS.has(upper)) {
+        tokens.push({ text: word, type: 'keyword' });
+      } else if (SQL_FUNCTIONS.has(upper)) {
+        tokens.push({ text: word, type: 'function' });
+      } else {
+        tokens.push({ text: word, type: 'identifier' });
+      }
+      i = j;
+      continue;
+    }
+
+    // ── Fallback (backticks, special chars, etc.) ───────────────────────
+    tokens.push({ text: sql[i], type: 'identifier' });
+    i++;
+  }
+
+  return tokens;
+}
+
+// ─── Token → CSS class mapping ────────────────────────────────────────────────
+
+function tokenClassName(type: SqlTokenType): string {
+  switch (type) {
+    case 'keyword':     return 'sql-tk-kw';
+    case 'function':    return 'sql-tk-fn';
+    case 'string':      return 'sql-tk-str';
+    case 'number':      return 'sql-tk-num';
+    case 'operator':    return 'sql-tk-op';
+    case 'punctuation': return 'sql-tk-punc';
+    case 'identifier':  return 'sql-tk-id';
+    case 'whitespace':  return '';
+    default:            return '';
+  }
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 interface SqlRevealBlockProps {
-  /** SQL text that should currently be rendered (full string for review mode,
-   *  partial during typewriter reveal). */
+  /** Full generated SQL string (used for tokenization and as fallback). */
   sql: string;
   /** Optional AI rationale shown below the SQL block once reveal is complete. */
   rationale?: string;
   /** True while the typewriter animation is in progress. */
   isRevealing: boolean;
-  /** The slice of `sql` that should be shown in the typewriter <pre>. */
-  visibleText: string;
+  /** Number of tokens currently visible during the typewriter reveal. */
+  visibleTokenCount: number;
   /** True once the typewriter has finished and the full SQL is shown. */
   isRevealComplete: boolean;
   /** Current value of the editable textarea (may diverge from `sql` after user
@@ -56,7 +207,7 @@ function SqlRevealBlock({
   sql,
   rationale,
   isRevealing,
-  visibleText,
+  visibleTokenCount,
   isRevealComplete,
   editedSql,
   onSqlChange,
@@ -77,6 +228,9 @@ function SqlRevealBlock({
     }
   }, [isRevealComplete]);
 
+  // Tokenize the SQL once (memoized on the sql string).
+  const tokens = useMemo(() => tokenizeSql(sql), [sql]);
+
   const sharedClassName = cn(
     'w-full min-h-[8rem] resize-none rounded-md border p-3 font-mono text-sm leading-relaxed',
     'focus-visible:outline-none',
@@ -87,10 +241,10 @@ function SqlRevealBlock({
       <div className="relative">
         {!isRevealComplete ? (
           /*
-           * Typewriter pre
-           * The text grows character-by-character via `visibleText`.
-           * The `nl-typewriter-cursor` class injects a blinking ○ via ::after
-           * on this element only while the animation is running.
+           * Typewriter pre — syntax highlighted, word-by-word reveal
+           * Each token enters with the `sql-word-enter` animation:
+           * a brightness flash + fade-in that settles to the token's
+           * natural syntax color.
            */
           <pre
             className={cn(
@@ -102,7 +256,19 @@ function SqlRevealBlock({
             aria-live="polite"
             aria-label="Generated SQL (being typed)"
           >
-            {visibleText}
+            {tokens.slice(0, visibleTokenCount).map((token, i) => (
+              <span
+                key={i}
+                className={cn(
+                  tokenClassName(token.type),
+                  // Only animate non-whitespace tokens so spaces/newlines
+                  // don't get an awkward brightness flash.
+                  token.type !== 'whitespace' && 'sql-word-enter',
+                )}
+              >
+                {token.text}
+              </span>
+            ))}
           </pre>
         ) : (
           /*

@@ -329,6 +329,57 @@
   animation: execute-icon-trace 700ms ease-out 1;
 }
 
+/* ─── SQL reveal highlighting + token entry animation ────────────────────── */
+
+@keyframes sql-word-in {
+  0% {
+    opacity: 0;
+    color: hsl(var(--foreground));
+    filter: brightness(1.25);
+  }
+
+  60% {
+    opacity: 1;
+    color: hsl(var(--foreground));
+    filter: brightness(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.sql-word-enter {
+  animation: sql-word-in 230ms ease-out both;
+}
+
+.sql-tk-kw {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+
+.sql-tk-fn {
+  color: hsl(var(--chart-2));
+}
+
+.sql-tk-str {
+  color: hsl(var(--chart-3));
+}
+
+.sql-tk-num {
+  color: hsl(var(--chart-4));
+}
+
+.sql-tk-op,
+.sql-tk-punc {
+  color: hsl(var(--muted-foreground));
+}
+
+.sql-tk-id {
+  color: hsl(var(--foreground));
+}
+
 /* ─── NL query typewriter cursor ─────────────────────────────────────────── */
 
 @keyframes nl-cursor-blink {
@@ -351,6 +402,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .sql-word-enter {
+    animation: none;
+  }
+
   .nl-typewriter-cursor::after {
     animation: none;
     opacity: 0.7;

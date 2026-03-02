@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { SqlRevealBlock } from '../SqlRevealBlock';
+import { SqlRevealBlock, tokenizeSql } from '../SqlRevealBlock';
 
 const SAMPLE_SQL = 'SELECT id, name FROM users WHERE active = true;';
 const SAMPLE_RATIONALE = 'Fetches all active users with their identifiers.';
@@ -10,7 +10,7 @@ function buildProps(overrides: Partial<Parameters<typeof SqlRevealBlock>[0]> = {
     sql: SAMPLE_SQL,
     rationale: undefined,
     isRevealing: false,
-    visibleText: '',
+    visibleTokenCount: 0,
     isRevealComplete: false,
     editedSql: SAMPLE_SQL,
     onSqlChange: vi.fn(),
@@ -20,6 +20,36 @@ function buildProps(overrides: Partial<Parameters<typeof SqlRevealBlock>[0]> = {
 }
 
 describe('SqlRevealBlock', () => {
+  describe('tokenization + syntax highlighting', () => {
+    it('classifies common SQL token types', () => {
+      const tokens = tokenizeSql("SELECT COUNT(id), 'x' FROM users WHERE score >= 10;");
+      expect(tokens.some((t) => t.type === 'keyword' && t.text.toUpperCase() === 'SELECT')).toBe(true);
+      expect(tokens.some((t) => t.type === 'function' && t.text.toUpperCase() === 'COUNT')).toBe(true);
+      expect(tokens.some((t) => t.type === 'string' && t.text === "'x'")).toBe(true);
+      expect(tokens.some((t) => t.type === 'number' && t.text === '10')).toBe(true);
+      expect(tokens.some((t) => t.type === 'operator' && t.text === '>=')).toBe(true);
+      expect(tokens.some((t) => t.type === 'punctuation' && t.text === ';')).toBe(true);
+    });
+
+    it('applies sql-tk-* classes during revealing', () => {
+      const { container } = render(
+        <SqlRevealBlock
+          {...buildProps({
+            sql: "SELECT COUNT(id) FROM users WHERE score >= 10;",
+            isRevealing: true,
+            visibleTokenCount: 30,
+          })}
+        />
+      );
+
+      expect(container.querySelector('.sql-tk-kw')).toBeInTheDocument();
+      expect(container.querySelector('.sql-tk-fn')).toBeInTheDocument();
+      expect(container.querySelector('.sql-tk-num')).toBeInTheDocument();
+      expect(container.querySelector('.sql-tk-op')).toBeInTheDocument();
+      expect(container.querySelector('.sql-tk-punc')).toBeInTheDocument();
+    });
+  });
+
   describe('shimmer / pre-reveal placeholder', () => {
     it('shows a shimmer placeholder when nothing is set and sql is empty', () => {
       render(<SqlRevealBlock {...buildProps({ sql: '', editedSql: '', originalSql: '' })} />);
@@ -33,7 +63,7 @@ describe('SqlRevealBlock', () => {
         <SqlRevealBlock
           {...buildProps({
             isRevealing: true,
-            visibleText: 'SELECT id',
+            visibleTokenCount: 3,
             isRevealComplete: false,
           })}
         />
@@ -41,17 +71,17 @@ describe('SqlRevealBlock', () => {
       expect(container.querySelector('pre')).toBeInTheDocument();
     });
 
-    it('shows the current visibleText in the pre element', () => {
+    it('shows tokens up to visibleTokenCount in the pre element', () => {
       render(
         <SqlRevealBlock
           {...buildProps({
             isRevealing: true,
-            visibleText: 'SELECT id FROM',
+            visibleTokenCount: 5,
             isRevealComplete: false,
           })}
         />
       );
-      expect(screen.getByLabelText(/being typed/i)).toHaveTextContent('SELECT id FROM');
+      expect(screen.getByLabelText(/being typed/i)).toHaveTextContent('SELECT id,');
     });
 
     it('adds nl-typewriter-cursor class while revealing', () => {
@@ -59,7 +89,7 @@ describe('SqlRevealBlock', () => {
         <SqlRevealBlock
           {...buildProps({
             isRevealing: true,
-            visibleText: 'SELECT',
+            visibleTokenCount: 1,
             isRevealComplete: false,
           })}
         />
@@ -72,7 +102,7 @@ describe('SqlRevealBlock', () => {
         <SqlRevealBlock
           {...buildProps({
             isRevealing: false,
-            visibleText: 'SELECT',
+            visibleTokenCount: 1,
             isRevealComplete: false,
           })}
         />
@@ -196,7 +226,7 @@ describe('SqlRevealBlock', () => {
         <SqlRevealBlock
           {...buildProps({
             isRevealing: true,
-            visibleText: 'SELECT',
+            visibleTokenCount: 1,
             isRevealComplete: false,
             rationale: SAMPLE_RATIONALE,
           })}

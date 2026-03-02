@@ -855,7 +855,7 @@ export function QueryPanel({
                   quickSuggestions: true,
                   suggestOnTriggerCharacters: true,
                   padding: { top: 8, bottom: 8 },
-                  fixedOverflowWidgets: true,
+                  fixedOverflowWidgets: false,
                   suggest: {
                     showKeywords: true,
                     showSnippets: true,

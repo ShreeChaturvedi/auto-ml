@@ -31,7 +31,7 @@ import {
   CircleHelp,
   Check,
   TableIcon,
-  ChartLine
+  ChartPie
 } from 'lucide-react';
 import {
   Table,
@@ -508,7 +508,7 @@ export function DataTable({
     if (controlsPortalTarget) {
       return createPortal(
         <TooltipProvider delayDuration={300}>
-          <div className="relative flex h-10 flex-1 min-w-0 items-center overflow-hidden">
+          <div className="relative flex h-7 flex-1 min-w-0 items-center overflow-hidden">
             <div
               className={cn(
                 'flex max-w-full min-w-0 items-center gap-1 overflow-hidden transition-all duration-200 ease-out',
@@ -531,7 +531,7 @@ export function DataTable({
                     {
                       value: 'eda',
                       ariaLabel: 'Analysis view',
-                      icon: ChartLine,
+                      icon: ChartPie,
                       tooltip: 'Analysis'
                     }
                   ]}
@@ -593,7 +593,7 @@ export function DataTable({
               )}
             >
               <div
-                className="flex h-10 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm"
+                className="flex h-7 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm"
                 onBlur={(event) => {
                   const relatedTarget = event.relatedTarget as Node | null;
                   if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
@@ -622,7 +622,7 @@ export function DataTable({
                     setGlobalFilter('');
                     setSearchExpanded(false);
                   }}
-                  className="h-8 w-8 shrink-0"
+                  className="h-7 w-7 shrink-0"
                   aria-label="Close search"
                 >
                   <X className="h-3.5 w-3.5" />

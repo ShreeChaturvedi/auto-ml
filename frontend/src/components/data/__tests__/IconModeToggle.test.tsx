@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { ChartLine, TableIcon } from 'lucide-react';
+import { ChartPie, TableIcon } from 'lucide-react';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { IconModeToggle } from '../IconModeToggle';
@@ -17,7 +17,7 @@ function ToggleHarness() {
         onValueChange={setValue}
         options={[
           { value: 'table', ariaLabel: 'Table view', icon: TableIcon, tooltip: 'Table' },
-          { value: 'eda', ariaLabel: 'Analysis view', icon: ChartLine, tooltip: 'Analysis' }
+          { value: 'eda', ariaLabel: 'Analysis view', icon: ChartPie, tooltip: 'Analysis' }
         ]}
       />
     </TooltipProvider>

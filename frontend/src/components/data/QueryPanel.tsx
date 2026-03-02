@@ -540,7 +540,7 @@ export function QueryPanel({
               ]}
             />
 
-            <div ref={controlsMountRef} className="relative flex h-10 flex-1 min-w-0 items-center" />
+            <div ref={controlsMountRef} className="relative flex h-7 flex-1 min-w-0 items-center" />
         </div>
 
         <TooltipProvider delayDuration={300}>

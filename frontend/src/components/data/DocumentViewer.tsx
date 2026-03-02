@@ -43,6 +43,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { downloadDocument } from '@/lib/api/documents';
 import type { UploadedFile } from '@/types/file';
 import { formatFileSize } from '@/types/file';
@@ -93,85 +94,93 @@ function PdfToolbar({
   }, [searchExpanded]);
 
   const controlsContent = (
-    <div className="flex items-center gap-1 min-w-0">
-      <PdfSearch>
-        {(searchProps) => (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (searchExpanded && !searchProps.keyword) {
-                  setSearchExpanded(false);
-                  searchProps.clearKeyword();
-                  return;
-                }
-                setSearchExpanded(true);
-              }}
-              className="h-7 w-7"
-              title="Search PDF"
-              aria-label="Search PDF"
-              disabled={!searchProps.isDocumentLoaded}
-            >
-              <Search className="h-3.5 w-3.5" />
-            </Button>
-            {(searchExpanded || Boolean(searchProps.keyword)) && (
-              <div className="relative">
-                <Input
-                  ref={searchInputRef}
-                  value={searchProps.keyword}
-                  placeholder="Search PDF..."
-                  onChange={(e) => {
-                    searchProps.setKeyword(e.target.value);
-                  }}
-                  onKeyDown={async (e) => {
-                    if (e.key === 'Enter') {
-                      await searchProps.search();
-                      searchProps.jumpToNextMatch();
-                      return;
-                    }
-                    if (e.key === 'Escape' && !searchProps.keyword) {
+    <TooltipProvider delayDuration={300}>
+      <div className="flex items-center gap-1 min-w-0">
+        <PdfSearch>
+          {(searchProps) => (
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      if (searchExpanded && !searchProps.keyword) {
+                        setSearchExpanded(false);
+                        searchProps.clearKeyword();
+                        return;
+                      }
+                      setSearchExpanded(true);
+                    }}
+                    className="h-7 w-7"
+                    aria-label="Search PDF"
+                    disabled={!searchProps.isDocumentLoaded}
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Search</TooltipContent>
+              </Tooltip>
+              {(searchExpanded || Boolean(searchProps.keyword)) && (
+                <div className="relative">
+                  <Input
+                    ref={searchInputRef}
+                    value={searchProps.keyword}
+                    placeholder="Search PDF..."
+                    onChange={(e) => {
+                      searchProps.setKeyword(e.target.value);
+                    }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        await searchProps.search();
+                        searchProps.jumpToNextMatch();
+                        return;
+                      }
+                      if (e.key === 'Escape' && !searchProps.keyword) {
+                        setSearchExpanded(false);
+                      }
+                    }}
+                    className="h-7 w-[170px] pr-7 text-xs"
+                    disabled={!searchProps.isDocumentLoaded}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      searchProps.clearKeyword();
                       setSearchExpanded(false);
-                    }
-                  }}
-                  className="h-7 w-[170px] pr-7 text-xs"
-                  disabled={!searchProps.isDocumentLoaded}
-                />
+                    }}
+                    className="absolute right-0 top-0 h-7 w-7"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </PdfSearch>
+
+        <DownloadSlot>
+          {(props) => (
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => {
-                    searchProps.clearKeyword();
-                    setSearchExpanded(false);
-                  }}
-                  className="absolute right-0 top-0 h-7 w-7"
-                  title="Clear search"
-                  aria-label="Clear search"
-                  disabled={!searchProps.isDocumentLoaded}
+                  className="h-7 w-7"
+                  onClick={props.onClick}
+                  aria-label="Export"
                 >
-                  <X className="h-3 w-3" />
+                  <Download className="h-3.5 w-3.5" />
                 </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </PdfSearch>
-
-      <DownloadSlot>
-        {(props) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={props.onClick}
-            title="Export"
-            aria-label="Export"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </DownloadSlot>
-    </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Export</TooltipContent>
+            </Tooltip>
+          )}
+        </DownloadSlot>
+      </div>
+    </TooltipProvider>
   );
 
   return (
@@ -275,20 +284,26 @@ function PdfToolbar({
         </div>
 
         <div className="flex items-center gap-2">
-          <Rotate direction={RotateDirection.Forward}>
-            {(props) => (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={props.onClick}
-                title="Rotate"
-                aria-label="Rotate"
-              >
-                <RotateCw className="h-4 w-4" />
-              </Button>
-            )}
-          </Rotate>
+          <TooltipProvider delayDuration={300}>
+            <Rotate direction={RotateDirection.Forward}>
+              {(props) => (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={props.onClick}
+                      aria-label="Rotate"
+                    >
+                      <RotateCw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Rotate</TooltipContent>
+                </Tooltip>
+              )}
+            </Rotate>
+          </TooltipProvider>
 
           {!controlsPortalTarget && (
             <DownloadSlot>
@@ -387,17 +402,23 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
     const controlsContent = (
       <div className="flex items-center gap-1">
         {documentId && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => blobUrl && window.open(blobUrl, '_blank')}
-            disabled={!blobUrl}
-            className="h-7 w-7"
-            title="Download"
-            aria-label="Download"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </Button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => blobUrl && window.open(blobUrl, '_blank')}
+                  disabled={!blobUrl}
+                  className="h-7 w-7"
+                  aria-label="Download"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Download</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
     );

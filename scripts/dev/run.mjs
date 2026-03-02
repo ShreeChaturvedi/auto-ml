@@ -113,6 +113,11 @@ function runCommand(command, args, options = {}) {
   }
 }
 
+function ensureBackendDependencies() {
+  log('Ensuring backend dependencies are installed.');
+  runCommand('npm', ['--prefix', 'backend', 'install', '--no-audit', '--no-fund']);
+}
+
 function isDockerAvailable() {
   const result = spawnSync('docker', ['info'], { stdio: 'ignore' });
   return result.status === 0;
@@ -267,6 +272,7 @@ function startDevServers() {
 
 async function main() {
   const dbConfig = ensureBackendEnv();
+  ensureBackendDependencies();
   ensureDatabaseContainer(dbConfig);
   await runMigrationsWithRetry();
   startDevServers();

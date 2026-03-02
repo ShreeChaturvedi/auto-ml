@@ -155,6 +155,15 @@ function normalizeSqlIdentifier(raw: string): string {
   return trimmed.replace(/^"(.*)"$/, '$1').replace(/""/g, '"');
 }
 
+function sanitizeSuggestionToken(raw: unknown): string | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
+}
+
 function resolveColumnsForTable(
   tableName: string,
   columnsByTable: Record<string, string[]>
@@ -696,15 +705,6 @@ export function QueryPanel({
                   completionProviderRef.current = monaco.languages.registerCompletionItemProvider('sql', {
                     triggerCharacters: [' ', '.', ',', '"', '('],
                     provideCompletionItems: (model, position) => {
-                      const textUntilPosition = model.getValueInRange({
-                        startLineNumber: 1,
-                        startColumn: 1,
-                        endLineNumber: position.lineNumber,
-                        endColumn: position.column
-                      });
-                      const suggestionContext = inferSqlSuggestionContext(textUntilPosition);
-                      const aliasToTableMap = buildAliasToTableMap(model.getValue(), tableNames);
-                      const activeAlias = getAliasBeforeDot(textUntilPosition);
                       const word = model.getWordUntilPosition(position);
                       const range = {
                         startLineNumber: position.lineNumber,
@@ -713,6 +713,9 @@ export function QueryPanel({
                         endColumn: word.endColumn
                       };
                       const suggestions: languages.CompletionItem[] = [];
+                      const safeTableNames = tableNames
+                        .map((tableName) => sanitizeSuggestionToken(tableName))
+                        .filter((tableName): tableName is string => Boolean(tableName));
 
                       const addKeywordSuggestions = (priority: string) => {
                         SQL_KEYWORDS.forEach((keyword) => {
@@ -744,7 +747,7 @@ export function QueryPanel({
                       };
 
                       const addTableSuggestions = (priority: string) => {
-                        tableNames.forEach((tableName) => {
+                        safeTableNames.forEach((tableName) => {
                           const safeTableName = quoteSqlIdentifier(tableName);
                           suggestions.push({
                             label: tableName,
@@ -764,7 +767,12 @@ export function QueryPanel({
                         priority: string
                       ) => {
                         const columns = resolveColumnsForTable(tableName, columnsByTable);
-                        columns.forEach((columnName) => {
+                        columns.forEach((rawColumnName) => {
+                          const columnName = sanitizeSuggestionToken(rawColumnName);
+                          if (!columnName) {
+                            return;
+                          }
+
                           suggestions.push({
                             label: columnName,
                             kind: monaco.languages.CompletionItemKind.Field,
@@ -793,30 +801,54 @@ export function QueryPanel({
                         });
                       };
 
-                      if (suggestionContext === 'table') {
-                        addTableSuggestions('0');
-                        addKeywordSuggestions('3');
-                        addFunctionSuggestions('4');
-                        return { suggestions };
-                      }
+                      const addBaselineSuggestions = () => {
+                        addSnippetSuggestions('0');
+                        addKeywordSuggestions('1');
+                        addFunctionSuggestions('2');
+                        addTableSuggestions('3');
+                        Object.keys(columnsByTable).forEach((tableName) => {
+                          const safeTableName = sanitizeSuggestionToken(tableName);
+                          if (!safeTableName) {
+                            return;
+                          }
+                          addColumnSuggestionsForTable(safeTableName, '4');
+                        });
+                      };
 
-                      if (suggestionContext === 'alias-column' && activeAlias) {
-                        const tableFromAlias = aliasToTableMap[activeAlias];
-                        if (tableFromAlias) {
-                          addColumnSuggestionsForTable(tableFromAlias, '0');
+                      try {
+                        const textUntilPosition = model.getValueInRange({
+                          startLineNumber: 1,
+                          startColumn: 1,
+                          endLineNumber: position.lineNumber,
+                          endColumn: position.column
+                        });
+                        const suggestionContext = inferSqlSuggestionContext(textUntilPosition);
+                        const aliasToTableMap = buildAliasToTableMap(model.getValue(), safeTableNames);
+                        const activeAlias = getAliasBeforeDot(textUntilPosition);
+
+                        if (suggestionContext === 'table') {
+                          addTableSuggestions('0');
+                          addKeywordSuggestions('1');
+                          addFunctionSuggestions('2');
+                          addSnippetSuggestions('3');
+                        } else if (suggestionContext === 'alias-column' && activeAlias) {
+                          const tableFromAlias = aliasToTableMap[activeAlias];
+                          if (tableFromAlias) {
+                            addColumnSuggestionsForTable(tableFromAlias, '0');
+                          }
+                          addFunctionSuggestions('1');
+                          addKeywordSuggestions('2');
+                          addTableSuggestions('3');
+                        } else {
+                          addBaselineSuggestions();
                         }
-                        addFunctionSuggestions('1');
-                        addKeywordSuggestions('4');
-                        return { suggestions };
+                      } catch (error) {
+                        console.error('SQL autocomplete suggestion generation failed:', error);
                       }
 
-                      addSnippetSuggestions('0');
-                      addKeywordSuggestions('1');
-                      addFunctionSuggestions('2');
-                      addTableSuggestions('3');
-                      Object.keys(columnsByTable).forEach((tableName) => {
-                        addColumnSuggestionsForTable(tableName, '4');
-                      });
+                      if (suggestions.length === 0) {
+                        addBaselineSuggestions();
+                      }
 
                       return { suggestions };
                     }

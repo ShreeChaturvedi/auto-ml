@@ -295,10 +295,31 @@ function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let unsubscribeHydration: (() => void) | null = null;
+
+    const waitForAuthHydration = async () => {
+      if (useAuthStore.persist.hasHydrated()) {
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        unsubscribeHydration = useAuthStore.persist.onFinishHydration(() => {
+          unsubscribeHydration?.();
+          unsubscribeHydration = null;
+          resolve();
+        });
+      });
+    };
 
     const bootstrapAuth = async () => {
+      await waitForAuthHydration();
+      if (!isMounted) return;
+
       const { accessToken, refreshToken } = useAuthStore.getState();
       if (!accessToken && !refreshToken) {
+        if (useAuthStore.getState().user) {
+          clearAuth();
+        }
         setLoading(false);
         setAuthReady(true);
         return;
@@ -332,6 +353,8 @@ function App() {
 
     return () => {
       isMounted = false;
+      unsubscribeHydration?.();
+      unsubscribeHydration = null;
     };
   }, [setUser, clearAuth, setLoading]);
 

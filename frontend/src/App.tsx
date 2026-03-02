@@ -45,6 +45,8 @@ import {
   EmptyMedia,
   EmptyTitle
 } from '@/components/ui/empty';
+import { ShootingStars } from '@/components/ui/shooting-stars';
+import { StarsBackground } from '@/components/ui/stars-background';
 
 // Pre-load Monaco editor in the background to eliminate flash on code cells
 initMonaco().catch(console.error);
@@ -91,38 +93,45 @@ function HomePage() {
   }
 
   return (
-    <Empty className="h-full">
-      <EmptyHeader>
-        <EmptyMedia variant="icon" className="rounded-lg">
-          <FolderOpen />
-        </EmptyMedia>
-        <EmptyTitle>
-          {projects.length === 0 ? 'No Projects Yet' : 'No Project Selected'}
-        </EmptyTitle>
-        <EmptyDescription>
-          {projects.length === 0
-            ? 'Start your first ML workflow by creating a new project or importing one.'
-            : 'Select a project from the sidebar to continue working, or create/import a new one.'}
-        </EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <div className="flex gap-2">
-          <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
-          <Button variant="outline">Import Project</Button>
-        </div>
-      </EmptyContent>
-      <Button
-        variant="link"
-        asChild
-        className="text-muted-foreground"
-        size="sm"
-      >
-        <a href="https://github.com/ShreeChaturvedi/AutoML" target="_blank" rel="noreferrer">
-          Learn More <ArrowUpRight />
-        </a>
-      </Button>
-      <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
-    </Empty>
+    <div className="relative h-full overflow-hidden">
+      {/* Background visual effects — absolutely positioned, pointer-events disabled */}
+      <StarsBackground />
+      <ShootingStars />
+
+      {/* Page content — sits above background layers via z-index stacking context */}
+      <Empty className="relative z-10 h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="rounded-lg">
+            <FolderOpen />
+          </EmptyMedia>
+          <EmptyTitle>
+            {projects.length === 0 ? 'No Projects Yet' : 'No Project Selected'}
+          </EmptyTitle>
+          <EmptyDescription>
+            {projects.length === 0
+              ? 'Start your first ML workflow by creating a new project or importing one.'
+              : 'Select a project from the sidebar to continue working, or create/import a new one.'}
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <div className="flex gap-2">
+            <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
+            <Button variant="outline">Import Project</Button>
+          </div>
+        </EmptyContent>
+        <Button
+          variant="link"
+          asChild
+          className="text-muted-foreground"
+          size="sm"
+        >
+          <a href="https://github.com/ShreeChaturvedi/AutoML" target="_blank" rel="noreferrer">
+            Learn More <ArrowUpRight />
+          </a>
+        </Button>
+        <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
+      </Empty>
+    </div>
   );
 }
 

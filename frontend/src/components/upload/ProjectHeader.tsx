@@ -11,7 +11,6 @@ interface ProjectHeaderProps {
   project: Project;
   editable?: boolean;
   collapsed?: boolean;
-  collapsedCenterLabel?: string;
   onBack?: () => void;
   onUpdate?: (updates: Partial<Pick<Project, 'title' | 'description'>>) => void;
 }
@@ -22,7 +21,6 @@ export function ProjectHeader({
   project,
   editable = false,
   collapsed = false,
-  collapsedCenterLabel,
   onBack,
   onUpdate
 }: ProjectHeaderProps) {
@@ -68,28 +66,19 @@ export function ProjectHeader({
     return (
       <div className="h-14 shrink-0 border-b border-border bg-card/50 px-4 backdrop-blur-sm transition-all duration-300 sm:px-8">
         <div className="relative flex h-full items-center gap-3 overflow-hidden">
+          <div className="min-w-0 flex-1 text-left">
+            {compactDescription ? <p className="truncate text-sm text-muted-foreground">{compactDescription}</p> : null}
+          </div>
+
           {onBack ? (
             <Button
               variant="ghost"
               size="sm"
               onClick={onBack}
-              className="h-8 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Exit Planning
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-          ) : null}
-
-          <div className="min-w-0 flex-1 text-right md:text-left">
-            {compactDescription ? <p className="truncate text-sm text-muted-foreground">{compactDescription}</p> : null}
-          </div>
-
-          {collapsedCenterLabel ? (
-            <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:block">
-              <p className="text-xs font-semibold tracking-[0.02em] text-muted-foreground">
-                {collapsedCenterLabel}
-              </p>
-            </div>
           ) : null}
         </div>
       </div>
@@ -104,10 +93,9 @@ export function ProjectHeader({
             variant="ghost"
             size="sm"
             onClick={onBack}
-            className="h-8 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Exit Planning
+            <ArrowLeft className="h-4 w-4" />
           </Button>
         ) : null}
         <div className="min-w-0 flex-1">

@@ -7,6 +7,17 @@ import { generateSqlFromNaturalLanguage } from '../services/nlToSql.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 
+function hasResolvedColumnTypes(payload: { columns?: Array<{ dataType?: string }> } | null): boolean {
+  if (!payload || !Array.isArray(payload.columns) || payload.columns.length === 0) {
+    return false;
+  }
+  return payload.columns.every((column) => {
+    if (typeof column.dataType !== 'string') return false;
+    const normalized = column.dataType.trim().toLowerCase();
+    return normalized.length > 0 && normalized !== 'unknown';
+  });
+}
+
 const sqlQuerySchema = z.object({
   projectId: z.string().uuid('projectId must be a valid UUID'),
   sql: z.string().min(1, 'sql is required')
@@ -37,7 +48,7 @@ export function createQueryRouter() {
 
     try {
       const cached = await getCachedQueryResult({ projectId, sql });
-      if (cached) {
+      if (cached && hasResolvedColumnTypes(cached)) {
         return res.json({ query: cached });
       }
 
@@ -71,7 +82,7 @@ export function createQueryRouter() {
       });
 
       const cached = await getCachedQueryResult({ projectId, sql: generated.sql });
-      if (cached) {
+      if (cached && hasResolvedColumnTypes(cached)) {
         return res.json({
           nl: {
             ...generated,

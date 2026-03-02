@@ -27,17 +27,15 @@ export function ExperimentsPanel() {
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const files = useDataStore((state) => state.files);
 
-  const {
-    templates,
-    models,
-    isLoadingModels,
-    isLoadingTemplates,
-    isTraining,
-    error,
-    fetchTemplates,
-    refreshModels,
-    trainModel
-  } = useModelStore();
+  const templates = useModelStore((state) => state.templates);
+  const models = useModelStore((state) => state.models);
+  const isLoadingModels = useModelStore((state) => state.isLoadingModels);
+  const isLoadingTemplates = useModelStore((state) => state.isLoadingTemplates);
+  const isTraining = useModelStore((state) => state.isTraining);
+  const error = useModelStore((state) => state.error);
+  const fetchTemplates = useModelStore((state) => state.fetchTemplates);
+  const refreshModels = useModelStore((state) => state.refreshModels);
+  const trainModel = useModelStore((state) => state.trainModel);
 
   const datasetFiles = useMemo(
     () => files.filter((file) => file.projectId === projectId && file.metadata?.datasetId),

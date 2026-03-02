@@ -284,3 +284,13 @@
     background-position: -100% 0;
   }
 }
+
+/* Per-character stagger animation for AnimatedPlaceholderInput.
+   No per-character transform — the parent container slide provides all motion.
+   Each character quickly fades in at full foreground color (the "shine"), then
+   slowly settles to muted-foreground, creating a left-to-right brightness wave. */
+@keyframes placeholder-char-in {
+  0%   { opacity: 0; color: hsl(var(--foreground)); }
+  18%  { opacity: 1; color: hsl(var(--foreground)); }
+  100% { opacity: 1; color: hsl(var(--muted-foreground)); }
+}

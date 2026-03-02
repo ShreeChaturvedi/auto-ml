@@ -3,10 +3,10 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { env } from './config.js';
 import { verifyDatabaseConnection } from './db.js';
-import { initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
-import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
-import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
+import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
+import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
+import { initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
 
 const app = createApp();
 

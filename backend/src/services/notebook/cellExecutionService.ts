@@ -1,8 +1,8 @@
-import { getOrCreateContainer, executeInContainer, type Container } from '../containerManager.js';
-import * as repo from '../../repositories/notebookRepository.js';
 import { env } from '../../config.js';
+import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
+import { getOrCreateContainer, executeInContainer, type Container } from '../containerManager.js';
 
 /**
  * Get or ensure a container exists for a project.

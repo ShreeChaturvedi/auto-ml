@@ -209,7 +209,6 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
   it('renders agentic shell layout and keeps approval gated with no active features', () => {
     render(<FeatureEngineeringPanel projectId="p1" />);
 
-    expect(screen.getByText('Feature Engineering')).toBeInTheDocument();
     expect(screen.getByText('Approval Gate: Readiness Review')).toBeInTheDocument();
 
     const approveButton = screen.getByRole('button', { name: /Approve Pipeline/i });

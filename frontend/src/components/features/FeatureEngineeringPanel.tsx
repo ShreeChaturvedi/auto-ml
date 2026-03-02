@@ -5,6 +5,21 @@ import remarkGfm from 'remark-gfm';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
+import { FeatureEngineeringFooter } from './FeatureEngineeringFooter';
+import {
+  FeatureEngineeringToolbarLeft,
+  FeatureEngineeringToolbarRight
+} from './FeatureEngineeringToolbar';
+import {
+  buildReadinessReport,
+  buildSuggestionDefaults,
+  hasRequiredReadinessEvidence,
+  hasUiItems,
+  HIDDEN_ACTIVITY_TOOLS,
+  HIDDEN_LEGACY_ERROR_MESSAGES,
+  stripAssistantArtifacts,
+  type FeatureSuggestionItem
+} from './featureEngineeringUtils';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,33 +42,23 @@ import type {
   FeatureCategory,
   FeatureMethod,
   FeatureSpec,
-  PipelineVersion,
-  ReadinessReport,
-  TransformationStep
+  PipelineVersion
 } from '@/types/feature';
-import type { ChatMessage, UiItem, UiSchema } from '@/types/llmUi';
+import type { ChatMessage, UiItem } from '@/types/llmUi';
 
 import {
   AlertTriangle,
   Beaker,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Copy,
-  Database,
-  FileOutput,
-  History,
   Info,
   Loader2,
-  Sparkles,
-  WandSparkles
+  Sparkles
 } from 'lucide-react';
 
 interface FeatureEngineeringPanelProps {
   projectId: string;
 }
-
-type FeatureSuggestionItem = Extract<UiItem, { type: 'feature_suggestion' }>;
 
 type SuggestionDraft = {
   enabled: boolean;
@@ -61,108 +66,14 @@ type SuggestionDraft = {
 };
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
-const HIDDEN_ACTIVITY_TOOLS = new Set(['set_active_dataset', 'list_project_datasets', 'profile_active_dataset']);
-const VERSION_ACTION_NEW_DRAFT = '__new_draft__';
-const VERSION_ACTION_DELETE_DRAFT = '__delete_draft__';
-const VERSION_ACTION_RENAME_DRAFT = '__rename_draft__';
 const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';
-const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
-  'LLM render_ui returned empty UI content.',
-  'LLM returned empty response.',
-  'This operation was aborted'
-]);
 
 const methodCategoryMap = new Map<FeatureMethod, FeatureCategory>(
   FEATURE_TEMPLATES.map((template) => [template.method, template.category])
 );
 
-const stripAssistantArtifacts = (text: string): string => {
-  if (!text) return '';
-  let cleaned = text.replace(/```(?:json)?/g, '').replace(/```/g, '');
-  const markerIndex = cleaned.indexOf('<<<JSON>>>');
-  if (markerIndex !== -1) {
-    cleaned = cleaned.slice(0, markerIndex);
-  }
-  const endIndex = cleaned.indexOf('<<<END>>>');
-  if (endIndex !== -1) {
-    cleaned = cleaned.slice(0, endIndex);
-  }
-  const jsonIndex = cleaned.search(/{\s*"version"\s*:\s*"1"/);
-  if (jsonIndex !== -1) {
-    cleaned = cleaned.slice(0, jsonIndex);
-  }
-  return cleaned.trim();
-};
-
-const hasUiItems = (ui: UiSchema | null): boolean =>
-  Boolean(ui?.sections.some((section) => section.items.length > 0));
-
-function buildReadinessReport(features: FeatureSpec[], sourceColumns: string[]): ReadinessReport {
-  const addedColumns = features
-    .map((feature) => feature.featureName)
-    .filter((name): name is string => Boolean(name?.trim()));
-  const uniqueAddedColumns = Array.from(new Set(addedColumns));
-
-  const steps: TransformationStep[] = features.map((feature, index) => ({
-    id: feature.id,
-    name: feature.featureName || `${feature.sourceColumn}_${feature.method}`,
-    rationale: feature.description || `Apply ${feature.method} to ${feature.sourceColumn}`,
-    codeReference: `pipeline.step.${index + 1}:${feature.id}`,
-    method: feature.method,
-    columns: [feature.sourceColumn, feature.secondaryColumn].filter(
-      (column): column is string => Boolean(column)
-    )
-  }));
-
-  const missingSourceColumns = features
-    .filter((feature) => !sourceColumns.includes(feature.sourceColumn))
-    .map((feature) => feature.sourceColumn);
-
-  const warnings: string[] = [];
-  if (features.some((feature) => feature.method === 'target_encode')) {
-    warnings.push('Target encoding requires split-aware fitting to avoid leakage.');
-  }
-  if (missingSourceColumns.length > 0) {
-    warnings.push(`Some source columns are missing in the selected dataset: ${Array.from(new Set(missingSourceColumns)).join(', ')}`);
-  }
-  if (features.length === 0) {
-    warnings.push('No transformations enabled. Pipeline currently preserves raw inputs.');
-  }
-
-  return {
-    dataSummary: {
-      addedColumns: uniqueAddedColumns,
-      removedColumns: [],
-      renamedColumns: [],
-      typeChanges: [],
-      nullDeltas: [],
-      warnings
-    },
-    steps
-  };
-}
-
-function hasRequiredReadinessEvidence(report: ReadinessReport): boolean {
-  return report.steps.length > 0
-    && report.dataSummary.addedColumns.length > 0
-    && Array.isArray(report.dataSummary.warnings);
-}
-
-function buildSuggestionDefaults(item: FeatureSuggestionItem): Record<string, unknown> {
-  const controlDefaults = (item.controls ?? []).reduce<Record<string, unknown>>((acc, control) => {
-    acc[control.key] = control.value;
-    return acc;
-  }, {});
-
-  return {
-    ...(item.feature.params ?? {}),
-    ...controlDefaults
-  };
-}
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
-  const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
-  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
   const notebookCells = useNotebookStore((state) => state.cells);
   const createNotebookCell = useNotebookStore((state) => state.createCell);
   const updateNotebookCell = useNotebookStore((state) => state.updateCell);
@@ -205,12 +116,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const hydratedProjectRef = useRef<string | null>(null);
   const lastPersistedReadinessRef = useRef(new Map<string, string>());
   const lastSyncedCodePreviewRef = useRef('');
-
-  useEffect(() => {
-    if (!projectId) return;
-    void initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [disconnectNotebook, initializeNotebook, projectId]);
 
   useEffect(() => {
     if (hydratedProjectRef.current === projectId) return;
@@ -561,79 +466,56 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     });
   }, [datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
-  const handleVersionSelect = useCallback((value: string) => {
-    if (value === VERSION_ACTION_NEW_DRAFT) {
-      createDraftVersion(projectId);
-      clearProjectFeatures(projectId);
-      setSuggestionDrafts({});
-      setPanelError(null);
-      setApplyStatus('idle');
-      setApplyMessage(null);
-      return;
-    }
-
-    if (value === VERSION_ACTION_DELETE_DRAFT) {
-      if (!currentVersion || currentVersion.status !== 'draft') {
-        return;
-      }
-
-      const shouldDelete = window.confirm(
-        versions.length <= 1
-          ? `Delete draft "${currentVersion.name}"? Since this is the only version, a fresh blank draft will be created.`
-          : `Delete draft "${currentVersion.name}"? This removes this draft version.`
-      );
-      if (!shouldDelete) {
-        return;
-      }
-
-      if (versions.length <= 1) {
-        const deletedVersionId = currentVersion.id;
-        createDraftVersion(projectId, 'Draft Pipeline v1');
-        removeVersion(projectId, deletedVersionId);
-      } else {
-        removeVersion(projectId, currentVersion.id);
-      }
-      clearProjectFeatures(projectId);
-      setSuggestionDrafts({});
-      setApplyStatus('idle');
-      setApplyMessage(null);
-      setPanelError(null);
-      return;
-    }
-
-    if (value === VERSION_ACTION_RENAME_DRAFT) {
-      if (!currentVersion || currentVersion.status !== 'draft') {
-        return;
-      }
-
-      const nextName = window.prompt('Rename current draft pipeline:', currentVersion.name);
-      if (!nextName) {
-        return;
-      }
-
-      const trimmed = nextName.trim();
-      if (!trimmed) {
-        setPanelError('Draft name cannot be empty.');
-        return;
-      }
-
-      renameVersion(projectId, currentVersion.id, trimmed);
-      setPanelError(null);
-      return;
-    }
-
+  const handleVersionSwitch = useCallback((value: string) => {
     setPanelError(null);
     setCurrentVersion(projectId, value);
-  }, [
-    clearProjectFeatures,
-    createDraftVersion,
-    currentVersion,
-    projectId,
-    renameVersion,
-    removeVersion,
-    setCurrentVersion,
-    versions.length
-  ]);
+  }, [projectId, setCurrentVersion]);
+
+  const handleNewDraft = useCallback(() => {
+    createDraftVersion(projectId, 'New Draft Pipeline');
+    clearProjectFeatures(projectId);
+    setSuggestionDrafts({});
+    setPanelError(null);
+    setApplyStatus('idle');
+    setApplyMessage(null);
+  }, [clearProjectFeatures, createDraftVersion, projectId]);
+
+  const handleDeleteDraft = useCallback(() => {
+    if (!currentVersion || currentVersion.status !== 'draft') return;
+
+    const shouldDelete = window.confirm(
+      versions.length <= 1
+        ? `Delete draft "${currentVersion.name}"? A fresh blank draft will be created.`
+        : `Delete draft "${currentVersion.name}"?`
+    );
+    if (!shouldDelete) return;
+
+    if (versions.length <= 1) {
+      const deletedVersionId = currentVersion.id;
+      createDraftVersion(projectId, 'Draft Pipeline v1');
+      removeVersion(projectId, deletedVersionId);
+    } else {
+      removeVersion(projectId, currentVersion.id);
+    }
+    clearProjectFeatures(projectId);
+    setSuggestionDrafts({});
+    setApplyStatus('idle');
+    setApplyMessage(null);
+    setPanelError(null);
+  }, [clearProjectFeatures, createDraftVersion, currentVersion, projectId, removeVersion, versions.length]);
+
+  const handleRenameDraft = useCallback(() => {
+    if (!currentVersion || currentVersion.status !== 'draft') return;
+    const nextName = window.prompt('Rename current draft pipeline:', currentVersion.name);
+    if (!nextName) return;
+    const trimmed = nextName.trim();
+    if (!trimmed) {
+      setPanelError('Draft name cannot be empty.');
+      return;
+    }
+    renameVersion(projectId, currentVersion.id, trimmed);
+    setPanelError(null);
+  }, [currentVersion, projectId, renameVersion]);
 
   const renderUiItem = useCallback((item: UiItem) => {
     switch (item.type) {
@@ -862,7 +744,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => createDraftVersion(projectId, 'New Draft Pipeline')}
+                    onClick={handleNewDraft}
                   >
                     Start New Draft
                   </Button>
@@ -1006,150 +888,21 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           </div>
         </div>
 
-        <div className="space-y-3 border-t bg-background py-4">
-          <div className="flex items-center justify-between gap-3 rounded border bg-muted/30 px-3 py-2">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Unified Readiness Report</p>
-              <p className="text-xs text-muted-foreground">
-                {readinessReportUnlocked
-                  ? 'Review enabled transformations and quality checks before approval.'
-                  : 'Enable at least one feature to unlock the readiness report.'}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0 text-xs"
-              onClick={() => setIsReadinessExpanded((previous) => !previous)}
-              disabled={!readinessReportUnlocked}
-            >
-              {isReadinessExpanded ? (
-                <>
-                  <ChevronUp className="mr-1 h-3.5 w-3.5" />
-                  Hide Report
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="mr-1 h-3.5 w-3.5" />
-                  Show Report
-                </>
-              )}
-            </Button>
-          </div>
-
-          {readinessReportUnlocked && isReadinessExpanded ? (
-            <Card className="border-muted/60">
-              <CardHeader className="space-y-1 pb-3">
-                <CardTitle className="text-sm">Unified Readiness Report</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Tracks enabled transformations and pre-training quality checks.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3 text-xs">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded border bg-muted/30 p-3">
-                    <p className="text-muted-foreground">Added columns</p>
-                    <p className="text-lg font-semibold">{readinessReport.dataSummary.addedColumns.length}</p>
-                  </div>
-                  <div className="rounded border bg-muted/30 p-3">
-                    <p className="text-muted-foreground">Steps</p>
-                    <p className="text-lg font-semibold">{readinessReport.steps.length}</p>
-                  </div>
-                  <div className="rounded border bg-muted/30 p-3">
-                    <p className="text-muted-foreground">Warnings</p>
-                    <p className="text-lg font-semibold">{readinessReport.dataSummary.warnings.length}</p>
-                  </div>
-                </div>
-
-                {readinessReport.steps.length > 0 ? (
-                  <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                    {readinessReport.steps.map((step, index) => (
-                      <div key={step.id} className="rounded border p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="font-medium">{index + 1}. {step.name}</p>
-                          <Badge variant="outline" className="text-[10px]">{step.method ?? 'custom'}</Badge>
-                        </div>
-                        <p className="mt-1 text-muted-foreground">{step.rationale}</p>
-                        {step.columns?.length ? (
-                          <p className="mt-1 text-muted-foreground">Columns: {step.columns.join(', ')}</p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="rounded border border-dashed p-3 text-muted-foreground">No transformations enabled yet.</p>
-                )}
-
-                {readinessReport.dataSummary.warnings.length > 0 ? (
-                  <div className="space-y-1 rounded border border-amber-300/50 bg-amber-50/50 p-3 text-amber-700">
-                    <p className="font-medium">Pre-flight checks</p>
-                    <ul className="list-disc space-y-1 pl-4">
-                      {readinessReport.dataSummary.warnings.map((warning) => (
-                        <li key={warning}>{warning}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          <Card className="border-muted/60">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Apply Feature Pipeline</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end">
-                <div className="space-y-1">
-                  <Label className="text-xs">Output name (optional)</Label>
-                  <Input
-                    value={outputName}
-                    onChange={(event) => setOutputName(event.currentTarget.value)}
-                    placeholder="e.g. features_v1"
-                    className="h-8 text-xs"
-                    disabled={isApproved}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Format</Label>
-                  <Select
-                    value={outputFormat}
-                    onValueChange={(value) => setOutputFormat(value as 'csv' | 'json' | 'xlsx')}
-                    disabled={isApproved}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="csv">CSV</SelectItem>
-                      <SelectItem value="json">JSON</SelectItem>
-                      <SelectItem value="xlsx">XLSX</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  className="h-8 text-xs"
-                  onClick={handleApplyFeatures}
-                  disabled={applyStatus === 'loading' || isApproved || activeFeatures.length === 0}
-                >
-                  {applyStatus === 'loading' ? (
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <FileOutput className="mr-2 h-3.5 w-3.5" />
-                  )}
-                  Apply
-                </Button>
-              </div>
-
-              {applyMessage ? (
-                <p className={cn('text-xs', applyStatus === 'error' ? 'text-destructive' : 'text-emerald-600')}>
-                  {applyMessage}
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-        </div>
+        <FeatureEngineeringFooter
+          readinessReportUnlocked={readinessReportUnlocked}
+          isReadinessExpanded={isReadinessExpanded}
+          onToggleReadiness={() => setIsReadinessExpanded((previous) => !previous)}
+          readinessReport={readinessReport}
+          outputName={outputName}
+          onOutputNameChange={setOutputName}
+          outputFormat={outputFormat}
+          onOutputFormatChange={setOutputFormat}
+          onApplyFeatures={handleApplyFeatures}
+          applyStatus={applyStatus}
+          applyMessage={applyMessage}
+          isApproved={isApproved}
+          activeFeaturesCount={activeFeatures.length}
+        />
       </div>
     );
   };
@@ -1167,78 +920,26 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       }
       renderLeftPane={renderLeftPane}
       toolbarLeft={
-        <>
-          <WandSparkles className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Feature Engineering</span>
-          {currentVersion ? (
-            <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-              {currentVersion.name}
-            </Badge>
-          ) : null}
-        </>
+        <FeatureEngineeringToolbarLeft
+          currentVersionId={currentVersion?.id ?? ''}
+          versions={versions.map((version) => ({ id: version.id, name: version.name }))}
+          onVersionSwitch={handleVersionSwitch}
+          onNewDraft={handleNewDraft}
+          onRenameDraft={handleRenameDraft}
+          onDeleteDraft={handleDeleteDraft}
+          canRenameDraft={isCurrentVersionDraft}
+          canDeleteDraft={canDeleteCurrentDraft}
+        />
       }
       toolbarRight={
-        <>
-          <Select
-            value={currentVersion?.id ?? ''}
-            onValueChange={handleVersionSelect}
-            disabled={versions.length === 0}
-          >
-            <SelectTrigger className="h-9 w-[190px]">
-              <History className="mr-2 h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="Version" />
-            </SelectTrigger>
-            <SelectContent>
-              {versions.map((version) => (
-                <SelectItem key={version.id} value={version.id}>
-                  {version.name}
-                </SelectItem>
-              ))}
-              <SelectItem value={VERSION_ACTION_NEW_DRAFT}>+ New Draft Pipeline</SelectItem>
-              <SelectItem value={VERSION_ACTION_RENAME_DRAFT} disabled={!isCurrentVersionDraft}>
-                Rename Current Draft
-              </SelectItem>
-              <SelectItem value={VERSION_ACTION_DELETE_DRAFT} disabled={!canDeleteCurrentDraft}>
-                Delete Current Draft
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={selectedDataset ?? ''}
-            onValueChange={setSelectedDataset}
-            disabled={datasetFiles.length === 0}
-          >
-            <SelectTrigger className="h-9 w-[240px]">
-              <Database className="mr-2 h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="Select dataset" />
-            </SelectTrigger>
-            <SelectContent>
-              {datasetFiles.map((file) => (
-                <SelectItem key={file.id} value={file.id}>
-                  {file.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={targetColumn ?? ''}
-            onValueChange={setTargetColumn}
-            disabled={datasetColumns.length === 0}
-          >
-            <SelectTrigger className="h-9 w-[220px]">
-              <SelectValue placeholder="Target column" />
-            </SelectTrigger>
-            <SelectContent>
-              {datasetColumns.map((column) => (
-                <SelectItem key={column} value={column}>
-                  {column}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
+        <FeatureEngineeringToolbarRight
+          selectedDatasetId={selectedDataset ?? ''}
+          datasetOptions={datasetFiles.map((file) => ({ id: file.id, name: file.name }))}
+          onDatasetSelect={setSelectedDataset}
+          selectedTargetColumn={targetColumn ?? ''}
+          targetColumns={datasetColumns}
+          onTargetColumnSelect={setTargetColumn}
+        />
       }
       chatMetaSlot={
         <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">

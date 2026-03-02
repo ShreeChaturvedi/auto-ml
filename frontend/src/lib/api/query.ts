@@ -18,7 +18,7 @@ export interface NlQueryRequest {
 export interface QueryResultPayload {
   queryId: string;
   sql: string;
-  columns: Array<{ name: string; dataTypeID?: number }>;
+  columns: Array<{ name: string; dataTypeID?: number; dataType?: string }>;
   rows: Array<Record<string, unknown>>;
   rowCount: number;
   executionMs: number;

@@ -1,4 +1,14 @@
-import React, { useState } from 'react';
+/**
+ * AgenticShell - Split-pane layout with per-panel ribbons.
+ *
+ * Left panel:  domain toolbar ribbon + scrollable content + chat composer
+ * Right panel: notebook toolbar ribbon + notebook cell editor
+ *
+ * Both ribbons sit at the same vertical position so they appear as a
+ * single ribbon split by the resizable divider.
+ */
+
+import React, { useEffect, useState } from 'react';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -6,9 +16,11 @@ import {
 } from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
 import { NotebookEditor } from '@/components/notebook/NotebookEditor';
 import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
+import { useNotebookStore } from '@/stores/notebookStore';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
 import { ASSISTANT_MODEL_OPTIONS, getDefaultReasoningEffort, getReasoningEffortOptions, type ReasoningEffort } from '@/components/llm/modelOptions';
@@ -45,6 +57,14 @@ export function AgenticShell({
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     getDefaultReasoningEffort(ASSISTANT_MODEL_OPTIONS[0].value)
   );
+
+  const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
+  const disconnectNotebook = useNotebookStore((s) => s.disconnect);
+
+  useEffect(() => {
+    if (projectId) initializeNotebook(projectId);
+    return () => disconnectNotebook();
+  }, [projectId, initializeNotebook, disconnectNotebook]);
 
   const {
     messages,
@@ -86,18 +106,20 @@ export function AgenticShell({
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex h-14 items-center justify-between gap-4 border-b px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          {toolbarLeft}
-        </div>
-        <div className="flex items-center gap-2">
-          {toolbarRight}
-        </div>
-      </div>
-
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+        {/* ── Left panel: domain ribbon + content + chat ── */}
         <ResizablePanel defaultSize={48} minSize={30}>
           <div className="flex h-full min-h-0 flex-col">
+            {/* Left ribbon */}
+            <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
+              <div className="flex min-w-0 items-center gap-3">
+                {toolbarLeft}
+              </div>
+              <div className="flex items-center gap-2">
+                {toolbarRight}
+              </div>
+            </div>
+
             {leftPaneScrollable ? (
               <ScrollArea className="flex-1">
                 {leftPaneContent}
@@ -163,8 +185,12 @@ export function AgenticShell({
 
         <ResizableHandle withHandle />
 
+        {/* ── Right panel: notebook ribbon + cells ── */}
         <ResizablePanel defaultSize={52} minSize={30}>
-          <NotebookEditor projectId={projectId} className="h-full" />
+          <div className="flex h-full flex-col">
+            <NotebookToolbar projectId={projectId} />
+            <NotebookEditor projectId={projectId} className="min-h-0 flex-1" />
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

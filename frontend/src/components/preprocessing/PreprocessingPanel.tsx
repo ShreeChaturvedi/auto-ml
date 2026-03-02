@@ -7,26 +7,14 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
+import { DatasetChooserDialog, RenameTabDialog } from './PreprocessingDialogs';
+import {
+  PreprocessingToolbarLeft,
+  PreprocessingToolbarRight
+} from './PreprocessingToolbar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
@@ -38,13 +26,9 @@ import {
   Database,
   GitBranch,
   Loader2,
-  Plus,
   PlayCircle,
-  RotateCcw,
-  RefreshCw,
   ShieldAlert,
   Wand2,
-  WandSparkles,
   XCircle
 } from 'lucide-react';
 
@@ -63,8 +47,6 @@ const HIDDEN_ACTIVITY_TOOLS = new Set([
   'profile_active_dataset'
 ]);
 
-const TAB_ACTION_NEW = '__new_processing_tab__';
-const TAB_ACTION_DELETE = '__delete_processing_tab__';
 
 interface PreprocessingTabSnapshot {
   selectedDatasetId: string | null;
@@ -127,31 +109,29 @@ function summarizeValidation(event: TransformationEvent): string | null {
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
-  const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
-  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
   const notebookCells = useNotebookStore((state) => state.cells);
 
-  const {
-    tables,
-    selectedDatasetId,
-    runId,
-    timeline,
-    stepBindings,
-    replayReport,
-    isLoadingTables,
-    error: storeError,
-    loadTables,
-    selectDataset,
-    approveStep,
-    rejectStep,
-    syncDivergence,
-    evaluateReplayCompatibility,
-    clearRun
-  } = usePreprocessingStore();
+  const tables = usePreprocessingStore((state) => state.tables);
+  const selectedDatasetId = usePreprocessingStore((state) => state.selectedDatasetId);
+  const runId = usePreprocessingStore((state) => state.runId);
+  const timeline = usePreprocessingStore((state) => state.timeline);
+  const stepBindings = usePreprocessingStore((state) => state.stepBindings);
+  const replayReport = usePreprocessingStore((state) => state.replayReport);
+  const isLoadingTables = usePreprocessingStore((state) => state.isLoadingTables);
+  const storeError = usePreprocessingStore((state) => state.error);
+  const loadTables = usePreprocessingStore((state) => state.loadTables);
+  const selectDataset = usePreprocessingStore((state) => state.selectDataset);
+  const approveStep = usePreprocessingStore((state) => state.approveStep);
+  const rejectStep = usePreprocessingStore((state) => state.rejectStep);
+  const syncDivergence = usePreprocessingStore((state) => state.syncDivergence);
+  const evaluateReplayCompatibility = usePreprocessingStore((state) => state.evaluateReplayCompatibility);
+  const clearRun = usePreprocessingStore((state) => state.clearRun);
 
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
+  const [renameTabDialogOpen, setRenameTabDialogOpen] = useState(false);
+  const [renameTabName, setRenameTabName] = useState('');
   const [tabs, setTabs] = useState<PreprocessingTab[]>([
     {
       id: 'processing-tab-1',
@@ -167,12 +147,6 @@ export function PreprocessingPanel() {
       void loadTables(projectId);
     }
   }, [projectId, loadTables]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    void initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [disconnectNotebook, initializeNotebook, projectId]);
 
   useEffect(() => {
     if (!selectedDatasetId && tables.length > 0) {
@@ -260,79 +234,66 @@ export function PreprocessingPanel() {
     }
   };
 
-  const handleTabSelect = (value: string) => {
+  const saveActiveSnapshot = () => {
     if (!activeTab) return;
-
-    if (value === TAB_ACTION_NEW) {
-      const nextIndex = tabs.length + 1;
-      const newTab: PreprocessingTab = {
-        id: createTabId(),
-        name: `Processing ${nextIndex}`,
-        snapshot: createEmptyTabSnapshot(),
-        storageVersion: 0
-      };
-      setTabs((previous) => previous.map((tab) => (
-        tab.id === activeTab.id
-          ? {
-              ...tab,
-              snapshot: {
-                selectedDatasetId,
-                runId,
-                timeline,
-                stepBindings,
-                replayReport
-              }
-            }
-          : tab
-      )).concat(newTab));
-      setActiveTabId(newTab.id);
-      applyTabSnapshot(newTab.snapshot);
-      return;
-    }
-
-    if (value === TAB_ACTION_DELETE) {
-      if (tabs.length <= 1) {
-        return;
-      }
-      const targetIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
-      const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
-      if (!fallbackTab) {
-        return;
-      }
-
-      if (projectId) {
-        const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
-        localStorage.removeItem(`${currentStorageKey}-${projectId}`);
-      }
-
-      setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
-      setActiveTabId(fallbackTab.id);
-      applyTabSnapshot(fallbackTab.snapshot);
-      return;
-    }
-
-    const targetTab = tabs.find((tab) => tab.id === value);
-    if (!targetTab || targetTab.id === activeTab.id) {
-      return;
-    }
-
     setTabs((previous) => previous.map((tab) => (
       tab.id === activeTab.id
-        ? {
-            ...tab,
-            snapshot: {
-              selectedDatasetId,
-              runId,
-              timeline,
-              stepBindings,
-              replayReport
-            }
-          }
+        ? { ...tab, snapshot: { selectedDatasetId, runId, timeline, stepBindings, replayReport } }
         : tab
     )));
+  };
 
+  const handleTabSwitch = (value: string) => {
+    if (!activeTab) return;
+    const targetTab = tabs.find((tab) => tab.id === value);
+    if (!targetTab || targetTab.id === activeTab.id) return;
+    saveActiveSnapshot();
     setActiveTabId(targetTab.id);
     applyTabSnapshot(targetTab.snapshot);
+  };
+
+  const handleNewTab = () => {
+    if (!activeTab) return;
+    const nextIndex = tabs.length + 1;
+    const newTab: PreprocessingTab = {
+      id: createTabId(),
+      name: `Processing ${nextIndex}`,
+      snapshot: createEmptyTabSnapshot(),
+      storageVersion: 0
+    };
+    saveActiveSnapshot();
+    setTabs((previous) => [...previous, newTab]);
+    setActiveTabId(newTab.id);
+    applyTabSnapshot(newTab.snapshot);
+  };
+
+  const handleDeleteTab = () => {
+    if (!activeTab || tabs.length <= 1) return;
+    const targetIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
+    const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
+    if (!fallbackTab) return;
+    if (projectId) {
+      localStorage.removeItem(`${buildProcessingStorageKey(activeTab.id, activeTab.storageVersion)}-${projectId}`);
+    }
+    setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
+    setActiveTabId(fallbackTab.id);
+    applyTabSnapshot(fallbackTab.snapshot);
+  };
+
+  const openRenameTabDialog = () => {
+    if (!activeTab) return;
+    setRenameTabName(activeTab.name);
+    setRenameTabDialogOpen(true);
+  };
+
+  const handleRenameTab = () => {
+    if (!activeTab) return;
+    const trimmed = renameTabName.trim();
+    if (!trimmed) return;
+    setTabs((previous) => previous.map((tab) =>
+      tab.id === activeTab.id ? { ...tab, name: trimmed } : tab
+    ));
+    setRenameTabDialogOpen(false);
   };
 
   const resetActiveTab = () => {
@@ -372,75 +333,26 @@ export function PreprocessingPanel() {
           activeTab?.storageVersion ?? 0
         )}
         toolbarLeft={
-          <>
-            <WandSparkles className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-semibold">Agentic Preprocessing</span>
-            <Select value={activeTab?.id ?? ''} onValueChange={handleTabSelect}>
-              <SelectTrigger className="h-8 w-[190px]">
-                <SelectValue placeholder="Processing tab" />
-              </SelectTrigger>
-              <SelectContent>
-                {tabs.map((tab) => (
-                  <SelectItem key={tab.id} value={tab.id}>
-                    {tab.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value={TAB_ACTION_NEW}>+ New Processing Tab</SelectItem>
-                <SelectItem value={TAB_ACTION_DELETE} disabled={tabs.length <= 1}>
-                  Delete Current Tab
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {runId ? (
-              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-                Run {runId.slice(0, 10)}
-              </Badge>
-            ) : null}
-          </>
+          <PreprocessingToolbarLeft
+            tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
+            activeTabId={activeTab?.id ?? ''}
+            onTabSwitch={handleTabSwitch}
+            onNewTab={handleNewTab}
+            onRenameTab={openRenameTabDialog}
+            onReplayCheck={evaluateReplayCompatibility}
+            onResetTab={resetActiveTab}
+            onDeleteTab={handleDeleteTab}
+            canDeleteTab={tabs.length > 1}
+            selectedDatasetId={selectedDatasetId ?? ''}
+          />
         }
         toolbarRight={
-          <>
-            <Select
-              value={selectedDatasetId ?? ''}
-              onValueChange={handleDatasetSelect}
-              disabled={isLoadingTables || tables.length === 0}
-            >
-              <SelectTrigger className="h-9 w-[320px]">
-                <Database className="mr-2 h-4 w-4 text-muted-foreground" />
-                <SelectValue placeholder="Select dataset" />
-              </SelectTrigger>
-              <SelectContent>
-                {tables.map((table) => (
-                  <SelectItem key={table.datasetId} value={table.datasetId}>
-                    {table.filename}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button variant="outline" size="sm" onClick={evaluateReplayCompatibility} disabled={!selectedDatasetId}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Replay Check
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={resetActiveTab}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset Tab
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleTabSelect(TAB_ACTION_NEW)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Tab
-            </Button>
-          </>
+          <PreprocessingToolbarRight
+            selectedDatasetId={selectedDatasetId ?? ''}
+            tables={tables}
+            onDatasetSelect={handleDatasetSelect}
+            isLoadingTables={isLoadingTables}
+          />
         }
         chatMetaSlot={
           <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">
@@ -663,94 +575,24 @@ export function PreprocessingPanel() {
         }}
       />
 
-      <Dialog open={isDatasetModalOpen} onOpenChange={setDatasetModalOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Select a dataset to start preprocessing</DialogTitle>
-            <DialogDescription>
-              Pick the exact dataset context for this run. We avoid implicit defaults to keep lineage deterministic.
-            </DialogDescription>
-          </DialogHeader>
+      <DatasetChooserDialog
+        open={isDatasetModalOpen}
+        onOpenChange={setDatasetModalOpen}
+        datasetSearch={datasetSearch}
+        onDatasetSearchChange={setDatasetSearch}
+        filteredTables={filteredTables}
+        candidateDatasetId={candidateDatasetId}
+        onCandidateDatasetChange={setCandidateDatasetId}
+        onStart={handleDatasetStart}
+      />
 
-          <div className="space-y-3">
-            <Input
-              value={datasetSearch}
-              onChange={(event) => setDatasetSearch(event.target.value)}
-              placeholder="Search datasets by filename or id..."
-            />
-
-            <ScrollArea className="h-64 rounded-md border">
-              <div className="space-y-2 p-2">
-                {filteredTables.map((table) => {
-                  const selected = candidateDatasetId === table.datasetId;
-                  const previewRows = table.previewRows ?? [];
-                  const previewColumns = Object.keys(previewRows[0] ?? {}).slice(0, 4);
-                  return (
-                    <button
-                      type="button"
-                      key={table.datasetId}
-                      onClick={() => setCandidateDatasetId(table.datasetId)}
-                      className={cn(
-                        'w-full rounded-md border p-3 text-left transition-colors',
-                        selected ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40'
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-medium">{table.filename}</p>
-                        <Badge variant="outline" className="text-[10px]">{table.nRows ?? 0} x {table.nCols ?? 0}</Badge>
-                      </div>
-                      {table.columns?.length ? (
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          Columns: {table.columns.slice(0, 4).map((column) => column.name).join(', ')}
-                        </p>
-                      ) : null}
-                      {previewRows.length > 0 ? (
-                        <div className="mt-2 overflow-x-auto rounded-md border bg-background/70">
-                          <table className="w-full text-[10px]">
-                            <thead>
-                              <tr className="border-b border-border/40 text-muted-foreground">
-                                {previewColumns.map((columnName) => (
-                                  <th key={columnName} className="px-2 py-1 text-left font-medium">
-                                    {columnName}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {previewRows.slice(0, 3).map((previewRow, rowIndex) => (
-                                <tr key={rowIndex} className="border-b border-border/20 last:border-0">
-                                  {previewColumns.map((columnName) => (
-                                    <td key={`${rowIndex}-${columnName}`} className="px-2 py-1 font-mono text-muted-foreground">
-                                      {previewRow[columnName] == null ? 'null' : String(previewRow[columnName])}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
-
-                {filteredTables.length === 0 ? (
-                  <div className="rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
-                    No datasets match your search.
-                  </div>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDatasetModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleDatasetStart} disabled={!candidateDatasetId}>
-              Start with this dataset
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameTabDialog
+        open={renameTabDialogOpen}
+        onOpenChange={setRenameTabDialogOpen}
+        value={renameTabName}
+        onValueChange={setRenameTabName}
+        onSave={handleRenameTab}
+      />
     </>
   );
 }

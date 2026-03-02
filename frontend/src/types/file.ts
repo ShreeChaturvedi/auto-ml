@@ -79,6 +79,7 @@ export interface DataPreview {
   previewRows: number; // Number of rows in preview
   statistics?: ColumnStatistics[];
   eda?: EdaSummary;
+  columnTypes?: Record<string, ColumnDataType>; // Column types from query results
 }
 
 /**

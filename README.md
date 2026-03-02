@@ -1,6 +1,5 @@
 <p align="center">
-  <img src="docs/branding/readme-light.svg?v=7#gh-light-mode-only" width="800" alt="AutoML">
-  <img src="docs/branding/readme-dark.svg?v=7#gh-dark-mode-only" width="800" alt="AutoML">
+  <img src="docs/branding/readme.svg?v=1" width="800" alt="AutoML">
 </p>
 
 ---
@@ -43,7 +42,7 @@ npm run install:all
 npm run dev
 ```
 
-The `npm run dev` flow boots a local Postgres container, applies migrations, and starts the frontend + backend.
+The `npm run dev` flow boots the frontend + backend. Requires a local Postgres instance (see `backend/.env.example`).
 
 ## Repository Layout
 
@@ -51,15 +50,14 @@ The `npm run dev` flow boots a local Postgres container, applies migrations, and
 backend/   Express + TypeScript API
 frontend/  Vite + React UI
 testing/   Playwright benchmark + eval runner
+scripts/   Dev and build scripts
 ```
 
 ## Documentation
 
 - `ARCHITECTURE.md` -- system topology and data flow
-- `PROGRESS.md` -- verified feature status and known gaps
-- `DECISIONS.md` -- architectural decision records
-- `docs/api-contracts.md` -- request/response contracts
-- `docs/design-system.md` -- UI guidelines
+- `docs/api-contracts.md` -- API request/response contracts
+- `docs/design-system.md` -- UI guidelines and component specs
 
 ## License
 

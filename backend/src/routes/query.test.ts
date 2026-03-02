@@ -104,7 +104,7 @@ describeIf('query routes', () => {
         queryId: 'cached-query-id',
         sql: 'SELECT * FROM users',
         rows: [{ id: 1, name: 'cached' }],
-        columns: [{ name: 'id' }, { name: 'name' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }, { name: 'name', dataTypeID: 25, dataType: 'text' }],
         rowCount: 1,
         executionMs: 10,
         cached: true
@@ -122,6 +122,80 @@ describeIf('query routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.query).toEqual(cachedResult);
       expect(mockExecuteReadOnlyQuery).not.toHaveBeenCalled();
+    });
+
+    it('re-executes query when cached result is missing resolved column types', async () => {
+      const staleCachedResult = {
+        queryId: 'cached-query-id',
+        sql: 'SELECT * FROM users',
+        rows: [{ id: 1, name: 'cached' }],
+        columns: [{ name: 'id', dataTypeID: 23 }, { name: 'name', dataTypeID: 25 }],
+        rowCount: 1,
+        executionMs: 10,
+        cached: true
+      };
+      const freshResult = {
+        queryId: 'fresh-query-id',
+        sql: 'SELECT * FROM users',
+        rows: [{ id: 1, name: 'fresh' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }, { name: 'name', dataTypeID: 25, dataType: 'text' }],
+        rowCount: 1,
+        executionMs: 15,
+        cached: false
+      };
+      mockGetCachedQueryResult.mockResolvedValue(staleCachedResult);
+      mockExecuteReadOnlyQuery.mockResolvedValue(freshResult);
+      mockStoreCachedQueryResult.mockResolvedValue(undefined);
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/sql')
+        .send({
+          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          sql: 'SELECT * FROM users'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.query).toEqual(freshResult);
+      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users' });
+      expect(mockStoreCachedQueryResult).toHaveBeenCalled();
+    });
+
+    it('re-executes query when cached result has unknown data types', async () => {
+      const staleCachedResult = {
+        queryId: 'cached-query-id',
+        sql: 'SELECT * FROM users',
+        rows: [{ id: 1, name: 'cached' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'unknown' }],
+        rowCount: 1,
+        executionMs: 10,
+        cached: true
+      };
+      const freshResult = {
+        queryId: 'fresh-query-id',
+        sql: 'SELECT * FROM users',
+        rows: [{ id: 1, name: 'fresh' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }],
+        rowCount: 1,
+        executionMs: 15,
+        cached: false
+      };
+      mockGetCachedQueryResult.mockResolvedValue(staleCachedResult);
+      mockExecuteReadOnlyQuery.mockResolvedValue(freshResult);
+      mockStoreCachedQueryResult.mockResolvedValue(undefined);
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/sql')
+        .send({
+          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          sql: 'SELECT * FROM users'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.query).toEqual(freshResult);
+      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users' });
+      expect(mockStoreCachedQueryResult).toHaveBeenCalled();
     });
 
     it('executes query and caches result when not cached', async () => {
@@ -279,7 +353,7 @@ describeIf('query routes', () => {
         queryId: 'cached-nl-query-id',
         sql: 'SELECT * FROM users',
         rows: [{ id: 1 }],
-        columns: [{ name: 'id' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }],
         rowCount: 1,
         executionMs: 5,
         cached: true

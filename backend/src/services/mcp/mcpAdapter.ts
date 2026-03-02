@@ -1,9 +1,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
-import { createMcpServer } from './mcpServer.js';
 import type { LlmToolDefinition } from '../llm/llmClient.js';
 import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
+
+import { createMcpServer } from './mcpServer.js';
 
 type JsonSchema = {
   type?: string;

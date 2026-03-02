@@ -84,7 +84,9 @@ function SaveButton({
 
 export function ProfileSettings() {
   const navigate = useNavigate();
-  const { user, setUser, clearAuth } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
   const [profileState, setProfileState] = useState<ButtonState>('idle');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [passwordState, setPasswordState] = useState<ButtonState>('idle');

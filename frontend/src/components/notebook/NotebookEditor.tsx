@@ -1,29 +1,16 @@
 /**
- * NotebookEditor - Notebook cell editor with real-time sync
+ * NotebookEditor - Notebook cell list with real-time sync.
+ *
+ * Renders cells in a scrollable area with inline insert-cell controls.
+ * Toolbar and notebook management are handled by NotebookToolbar.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
 import { NotebookCellComponent } from './NotebookCell';
 import { useNotebookStore } from '@/stores/notebookStore';
-import { Loader2, Code, Type, MoreHorizontal, Plus } from 'lucide-react';
+import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCellType } from '@/types/notebook';
 
@@ -87,45 +74,23 @@ interface NotebookEditorProps {
 }
 
 export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
-  const {
-    notebook,
-    notebooks,
-    activeNotebookId,
-    cells,
-    isLoading,
-    isSaving,
-    createNotebook,
-    renameNotebook,
-    deleteNotebook,
-    setActiveNotebook,
-    createCell,
-    updateCell,
-    deleteCell,
-    runCell,
-    isCellLocked,
-    getCellLockOwner
-  } = useNotebookStore();
-
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createName, setCreateName] = useState('');
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [renameName, setRenameName] = useState('');
-
-  const canDeleteNotebook = useMemo(() => notebooks.length > 1, [notebooks.length]);
+  const notebook = useNotebookStore((state) => state.notebook);
+  const cells = useNotebookStore((state) => state.cells);
+  const isLoading = useNotebookStore((state) => state.isLoading);
+  const isSaving = useNotebookStore((state) => state.isSaving);
+  const createCell = useNotebookStore((state) => state.createCell);
+  const updateCell = useNotebookStore((state) => state.updateCell);
+  const deleteCell = useNotebookStore((state) => state.deleteCell);
+  const runCell = useNotebookStore((state) => state.runCell);
+  const isCellLocked = useNotebookStore((state) => state.isCellLocked);
+  const getCellLockOwner = useNotebookStore((state) => state.getCellLockOwner);
 
   const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
-    await createCell({
-      content: '',
-      cellType
-    });
+    await createCell({ content: '', cellType });
   }, [createCell]);
 
   const handleInsertCell = useCallback(async (position: number, cellType: NotebookCellType) => {
-    await createCell({
-      content: '',
-      cellType,
-      position
-    });
+    await createCell({ content: '', cellType, position });
   }, [createCell]);
 
   const handleCellContentChange = useCallback(
@@ -149,119 +114,8 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
     [runCell, projectId]
   );
 
-  const handleCreateNotebook = useCallback(async () => {
-    const created = await createNotebook(createName.trim() || undefined);
-    if (created) {
-      setCreateDialogOpen(false);
-      setCreateName('');
-    }
-  }, [createName, createNotebook]);
-
-  const openRenameDialog = useCallback(() => {
-    if (!notebook) return;
-    setRenameName(notebook.name);
-    setRenameDialogOpen(true);
-  }, [notebook]);
-
-  const handleRenameNotebook = useCallback(async () => {
-    if (!notebook) return;
-    const updated = await renameNotebook(notebook.notebookId, renameName.trim());
-    if (updated) {
-      setRenameDialogOpen(false);
-    }
-  }, [notebook, renameName, renameNotebook]);
-
-  const handleDeleteNotebook = useCallback(async () => {
-    if (!notebook || !canDeleteNotebook) return;
-    const confirmed = window.confirm(`Delete notebook "${notebook.name}"?`);
-    if (!confirmed) return;
-    await deleteNotebook(notebook.notebookId);
-  }, [canDeleteNotebook, deleteNotebook, notebook]);
-
   return (
     <div className={cn('flex h-full flex-col', className)}>
-      <div className="border-b">
-        <div className="flex items-center gap-2 px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-            {notebooks.map((entry) => (
-              <Button
-                key={entry.notebookId}
-                variant={entry.notebookId === activeNotebookId ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 max-w-[190px] shrink-0 px-2 text-xs"
-                onClick={() => void setActiveNotebook(entry.notebookId)}
-              >
-                <span className="truncate">{entry.name}</span>
-              </Button>
-            ))}
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={() => setCreateDialogOpen(true)}
-            disabled={isSaving}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Notebook
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!notebook}>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={openRenameDialog}>
-                Rename notebook
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={handleDeleteNotebook}
-                className="text-destructive focus:text-destructive"
-                disabled={!canDeleteNotebook}
-              >
-                Delete notebook
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="flex h-10 items-center justify-between px-4">
-          <span className="truncate text-sm font-medium">{notebook?.name ?? 'Notebook'}</span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleAddCell('code')}
-              disabled={isSaving || !notebook}
-              className="h-7 gap-1 px-2 text-xs"
-              title="Add code cell"
-            >
-              {isSaving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Code className="h-3.5 w-3.5" />
-              )}
-              Code
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleAddCell('markdown')}
-              disabled={isSaving || !notebook}
-              className="h-7 gap-1 px-2 text-xs"
-              title="Add text cell"
-            >
-              <Type className="h-3.5 w-3.5" />
-              Text
-            </Button>
-          </div>
-        </div>
-      </div>
-
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-3">
           {isLoading && cells.length === 0 && (
@@ -300,10 +154,6 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
             </div>
           )}
 
-          {cells.length > 0 && (
-            <InsertCellRow position={0} onInsert={handleInsertCell} disabled={isSaving || !notebook} />
-          )}
-
           {cells.map((cell, index) => (
             <div key={cell.cellId}>
               <NotebookCellComponent
@@ -321,56 +171,6 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
           ))}
         </div>
       </ScrollArea>
-
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create notebook</DialogTitle>
-            <DialogDescription>
-              Create a new notebook tab for independent experimentation.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={createName}
-            onChange={(event) => setCreateName(event.target.value)}
-            placeholder="Notebook name (optional)"
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void handleCreateNotebook()} disabled={isSaving}>
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename notebook</DialogTitle>
-            <DialogDescription>
-              Update the active notebook name.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={renameName}
-            onChange={(event) => setRenameName(event.target.value)}
-            placeholder="Notebook name"
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void handleRenameNotebook()} disabled={isSaving || !renameName.trim()}>
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

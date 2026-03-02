@@ -20,95 +20,20 @@ import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
 import type { QueryMode } from '@/types/file';
-
-interface HslColorChannels {
-  hue: number;
-  saturation: number;
-  lightness: number;
-}
-
-interface ExecuteGradientStops {
-  dark: string;
-  light: string;
-}
-
-function clampColorChannel(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function parseHslChannels(rawColor: string): HslColorChannels | null {
-  const normalized = rawColor
-    .trim()
-    .replace(/\s*\/.*$/, '')
-    .replace(/,/g, ' ')
-    .replace(/%/g, '');
-
-  const channelValues = normalized
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => Number(part));
-
-  if (channelValues.length < 3 || channelValues.some(Number.isNaN)) {
-    return null;
-  }
-
-  return {
-    hue: channelValues[0],
-    saturation: channelValues[1],
-    lightness: channelValues[2]
-  };
-}
-
-function toHslColor(channels: HslColorChannels): string {
-  const hue = ((channels.hue % 360) + 360) % 360;
-  const saturation = clampColorChannel(channels.saturation, 0, 100);
-  const lightness = clampColorChannel(channels.lightness, 0, 100);
-  return `hsl(${hue} ${saturation}% ${lightness}%)`;
-}
-
-function resolveExecuteGradientStops(): ExecuteGradientStops {
-  if (typeof window === 'undefined') {
-    return {
-      dark: 'hsl(var(--primary))',
-      light: 'hsl(var(--primary))'
-    };
-  }
-
-  const primaryValue = getComputedStyle(document.documentElement)
-    .getPropertyValue('--primary')
-    .trim();
-  const primaryChannels = parseHslChannels(primaryValue);
-
-  if (!primaryChannels) {
-    return {
-      dark: 'hsl(var(--primary))',
-      light: 'hsl(var(--primary))'
-    };
-  }
-
-  return {
-    dark: toHslColor({
-      ...primaryChannels,
-      lightness: primaryChannels.lightness - 24
-    }),
-    light: toHslColor({
-      ...primaryChannels,
-      lightness: primaryChannels.lightness + 18
-    })
-  };
-}
 
 // Animated lightning bolt icon for execute button
 function AnimatedExecuteIcon({
   isExecuting,
   gradientId,
-  gradientStops
+  colorClassName
 }: {
   isExecuting: boolean;
   gradientId: string;
-  gradientStops: ExecuteGradientStops;
+  colorClassName: string;
 }) {
   if (isExecuting) {
     return <Loader2 className="h-4 w-4 animate-spin" />;
@@ -118,27 +43,25 @@ function AnimatedExecuteIcon({
 
   return (
     <svg
-      className="h-4 w-4 execute-icon"
+      className={cn('h-4 w-4 execute-icon', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <defs>
         <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={gradientStops.dark} />
-          <stop offset="50%" stopColor={gradientStops.light} />
-          <stop offset="100%" stopColor={gradientStops.dark} />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.62" />
+          <stop offset="50%" stopColor="currentColor" stopOpacity="1" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
         </linearGradient>
       </defs>
-      <path d={boltPath} stroke={`url(#${gradientId})`} className="execute-icon-base" />
       <path
         d={boltPath}
         stroke={`url(#${gradientId})`}
-        pathLength={1}
-        className="execute-icon-trace opacity-0 [stroke-dasharray:1] [stroke-dashoffset:1] transition-[stroke-dashoffset,opacity] duration-500 ease-out group-hover/execute:[stroke-dashoffset:0] group-hover/execute:opacity-100 motion-reduce:transition-none"
+        pathLength={100}
+        className="execute-icon-path motion-reduce:!animate-none"
       />
     </svg>
   );
@@ -500,7 +423,11 @@ export function QueryPanel({
   );
   const iconGradientIdSeed = useId();
   const iconGradientId = `executeGradient-${iconGradientIdSeed.replace(/:/g, '')}`;
-  const executeGradientStops = resolveExecuteGradientStops();
+  const { activeProjectId, projects } = useProjectStore();
+  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const executeIconColorClass = activeProject
+    ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
+    : 'text-primary';
   const monacoRef = useRef<Monaco | null>(null);
   
   // Store completion provider disposable for cleanup
@@ -582,7 +509,7 @@ export function QueryPanel({
   const modKey = isMac ? '⌘' : '⌃';
 
   return (
-    <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
+    <div className={cn('relative flex flex-col h-full bg-card border-l', className)}>
       {/* Unified Header — collapse button stays at the right edge */}
       <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
         {!collapsed && (
@@ -651,7 +578,7 @@ export function QueryPanel({
               onCollapsedChange?.(false);
             }
           }}
-          className="flex-1 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50"
+          className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50"
         >
           <div className="flex-1 flex items-center justify-center">
             <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180 select-none">
@@ -661,9 +588,13 @@ export function QueryPanel({
         </div>
       )}
 
-      {/* Query Input + Execute (hidden when collapsed) */}
-      {!collapsed && (
-      <>
+      {/* Query Input + Execute (kept mounted for smooth expand/collapse) */}
+      <div
+        className={cn(
+          'flex flex-1 min-h-0 flex-col transition-opacity duration-200 ease-out',
+          collapsed ? 'pointer-events-none opacity-0 select-none' : 'opacity-100'
+        )}
+      >
       <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
         {mode === 'sql' ? (
           // SQL Mode: Monaco Editor with syntax highlighting
@@ -957,13 +888,12 @@ export function QueryPanel({
           <AnimatedExecuteIcon
             isExecuting={isExecuting}
             gradientId={iconGradientId}
-            gradientStops={executeGradientStops}
+            colorClassName={executeIconColorClass}
           />
           {isExecuting ? 'Executing...' : 'Execute'}
         </Button>
       </div>
-      </>
-      )}
+      </div>
     </div>
   );
 }

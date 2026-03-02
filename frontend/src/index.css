@@ -294,3 +294,27 @@
   18%  { opacity: 1; color: hsl(var(--foreground)); }
   100% { opacity: 1; color: hsl(var(--muted-foreground)); }
 }
+
+@keyframes execute-icon-trace {
+  0% {
+    stroke-dashoffset: 0;
+  }
+
+  35% {
+    stroke-dashoffset: 100;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.execute-icon-path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 220ms ease-out;
+}
+
+.group\/execute:hover .execute-icon-path {
+  animation: execute-icon-trace 700ms ease-out 1;
+}

@@ -40,17 +40,17 @@ interface ShootingStar {
 }
 
 export interface ShootingStarsProps {
-  /** Minimum travel speed in pixels per frame. @default 10 */
+  /** Minimum travel speed in pixels per frame. @default 4 */
   minSpeed?: number;
-  /** Maximum travel speed in pixels per frame. @default 30 */
+  /** Maximum travel speed in pixels per frame. @default 15 */
   maxSpeed?: number;
   /** Minimum delay between consecutive star spawns in milliseconds. @default 1200 */
   minDelay?: number;
   /** Maximum delay between consecutive star spawns in milliseconds. @default 4200 */
   maxDelay?: number;
-  /** CSS color of the star head. @default '#9E00FF' */
+  /** CSS color of the star head. @default 'currentColor' */
   starColor?: string;
-  /** CSS color at the start of the trailing gradient. @default '#2EB9DF' */
+  /** CSS color at the start of the trailing gradient. @default 'currentColor' */
   trailColor?: string;
   /** Rendered width of the star element in pixels (scales up during travel). @default 10 */
   starWidth?: number;
@@ -91,12 +91,12 @@ function randomEdgeOrigin(
 // ---------------------------------------------------------------------------
 
 export function ShootingStars({
-  minSpeed = 10,
-  maxSpeed = 30,
+  minSpeed = 4,
+  maxSpeed = 15,
   minDelay = 1200,
   maxDelay = 4200,
-  starColor = '#9E00FF',
-  trailColor = '#2EB9DF',
+  starColor = 'currentColor',
+  trailColor = 'currentColor',
   starWidth = 10,
   starHeight = 1,
   className,
@@ -244,6 +244,15 @@ export function ShootingStars({
       )}
       xmlns="http://www.w3.org/2000/svg"
     >
+      <defs>
+        <filter id="shooting-star-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
       {star !== null && (
         <>
           <defs>
@@ -259,6 +268,7 @@ export function ShootingStars({
             width={starWidth * star.scale}
             height={starHeight}
             fill={`url(#${gradientId})`}
+            filter="url(#shooting-star-glow)"
             transform={`rotate(${star.angle}, ${star.x + (starWidth * star.scale) / 2}, ${
               star.y + starHeight / 2
             })`}

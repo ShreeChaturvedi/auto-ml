@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/components/theme-provider';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +35,10 @@ interface Star {
    * Drives the sin() modulation in the render loop.
    */
   twinkleSpeed: number | null;
+  /** Horizontal drift velocity. */
+  vx: number;
+  /** Vertical drift velocity. */
+  vy: number;
 }
 
 export interface StarsBackgroundProps {
@@ -70,6 +75,26 @@ export function StarsBackground({
 }: StarsBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stars, setStars] = useState<Star[]>([]);
+  const { theme } = useTheme();
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
+
+  // ---------------------------------------------------------------------------
+  // Resolve active theme logic
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (theme === 'system') {
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      setResolvedTheme(media.matches ? 'dark' : 'light');
+
+      const listener = (e: MediaQueryListEvent) => {
+        setResolvedTheme(e.matches ? 'dark' : 'light');
+      };
+      media.addEventListener('change', listener);
+      return () => media.removeEventListener('change', listener);
+    } else {
+      setResolvedTheme(theme);
+    }
+  }, [theme]);
 
   // ---------------------------------------------------------------------------
   // generateStars — memoised so ResizeObserver can call it without stale closures
@@ -85,12 +110,14 @@ export function StarsBackground({
         return {
           x: Math.random() * width,
           y: Math.random() * height,
-          // Subtle size variation — most stars are near-single-pixel dots.
-          radius: Math.random() * 0.05 + 0.5,
+          // Slightly bigger radius for better visibility
+          radius: Math.random() * 0.8 + 0.8,
           opacity: Math.random() * 0.5 + 0.5,
           twinkleSpeed: shouldTwinkle
             ? Math.random() * (maxTwinkleSpeed - minTwinkleSpeed) + minTwinkleSpeed
             : null,
+          vx: (Math.random() - 0.5) * 0.15, // horizontal drift
+          vy: (Math.random() - 0.5) * 0.15, // vertical drift
         };
       });
     },
@@ -143,16 +170,37 @@ export function StarsBackground({
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      const rgbPrefix = resolvedTheme === 'light' ? '0, 0, 0' : '255, 255, 255';
+      const now = Date.now();
+
       for (const star of stars) {
-        const opacity =
-          star.twinkleSpeed !== null
-            ? // sin oscillates between -1 and 1; remap to [0, 1]
-              0.5 + 0.5 * Math.abs(Math.sin((Date.now() * 0.001) / star.twinkleSpeed))
-            : star.opacity;
+        // Subtle drift animation
+        star.x += star.vx;
+        star.y += star.vy;
+
+        // Wrap around canvas edges
+        if (star.x < 0) star.x = canvas.width;
+        else if (star.x > canvas.width) star.x = 0;
+        
+        if (star.y < 0) star.y = canvas.height;
+        else if (star.y > canvas.height) star.y = 0;
+
+        // Twinkle effects: opacity + slight radius pulse
+        const isTwinkling = star.twinkleSpeed !== null;
+        let opacity = star.opacity;
+        let radius = star.radius;
+
+        if (isTwinkling) {
+          const cyclePhase = (now * 0.001) / star.twinkleSpeed;
+          // opacity between 0.3 and 1.0 based on sin wave
+          opacity = 0.65 + 0.35 * Math.sin(cyclePhase);
+          // radius pulses slightly with the twinkle (up to +30%)
+          radius = star.radius * (1 + 0.3 * Math.sin(cyclePhase));
+        }
 
         ctx.beginPath();
-        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${opacity.toFixed(3)})`;
+        ctx.arc(star.x, star.y, Math.max(0.1, radius), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${rgbPrefix}, ${opacity.toFixed(3)})`;
         ctx.fill();
       }
 
@@ -162,7 +210,7 @@ export function StarsBackground({
     rafId = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(rafId);
-  }, [stars]);
+  }, [stars, resolvedTheme]);
 
   return (
     <canvas

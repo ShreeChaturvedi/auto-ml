@@ -33,7 +33,8 @@ import {
   Calendar,
   CircleHelp,
   Check,
-  Clock
+  TableIcon,
+  BarChart3
 } from 'lucide-react';
 import {
   Table,
@@ -46,7 +47,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -140,6 +142,7 @@ export function DataTable({
   const [globalFilter, setGlobalFilter] = useState('');
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [updatingColumnName, setUpdatingColumnName] = useState<string | null>(null);
+  const [edaView, setEdaView] = useState<'table' | 'eda'>('table');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -422,7 +425,7 @@ export function DataTable({
     const queryInfoDialog = queryInfo ? (
       <Dialog>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" title="Query details" aria-label="Query details">
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Query details">
             <Info className="h-3.5 w-3.5" />
           </Button>
         </DialogTrigger>
@@ -501,22 +504,28 @@ export function DataTable({
 
     const compactSearchControl = (
       <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => {
-            if (searchExpanded && !globalFilter) {
-              setSearchExpanded(false);
-              return;
-            }
-            setSearchExpanded(true);
-          }}
-          className="h-7 w-7"
-          title="Search"
-          aria-label="Search"
-        >
-          <Search className="h-3.5 w-3.5" />
-        </Button>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (searchExpanded && !globalFilter) {
+                    setSearchExpanded(false);
+                    return;
+                  }
+                  setSearchExpanded(true);
+                }}
+                className="h-7 w-7"
+                aria-label="Search"
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Search</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {(searchExpanded || Boolean(globalFilter)) && (
           <div className="relative">
             <Input
@@ -540,7 +549,6 @@ export function DataTable({
                   setSearchExpanded(false);
                 }}
                 className="absolute right-0 top-0 h-7 w-7"
-                title="Clear search"
                 aria-label="Clear search"
               >
                 <X className="h-3 w-3" />
@@ -553,38 +561,84 @@ export function DataTable({
 
     if (controlsPortalTarget) {
       return createPortal(
-        <div className="flex items-center gap-1 min-w-0">
-          {compactSearchControl}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleExport}
-            className="h-7 w-7"
-            title="Export"
-            aria-label="Export"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </Button>
-          {onSave && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onSave}
-              className="h-7 w-7"
-              title="Save"
-              aria-label="Save"
-            >
-              <Save className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {queryInfoDialog}
-          {typeof queryInfo?.executionMs === 'number' && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
-              <Clock className="h-3 w-3" />
-              {Math.round(queryInfo.executionMs)}ms
-            </span>
-          )}
-        </div>,
+        <TooltipProvider delayDuration={300}>
+          <div className="flex items-center gap-1 min-w-0">
+            {hasEda && (
+              <ToggleGroup
+                type="single"
+                value={edaView}
+                onValueChange={(val) => {
+                  if (val === 'table' || val === 'eda') setEdaView(val);
+                }}
+                className="bg-muted/50 p-0.5 rounded-md h-7"
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem
+                      value="table"
+                      aria-label="Table view"
+                      className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                    >
+                      <TableIcon className="h-3 w-3" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Table</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ToggleGroupItem
+                      value="eda"
+                      aria-label="Analysis view"
+                      className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                    >
+                      <BarChart3 className="h-3 w-3" />
+                    </ToggleGroupItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Analysis</TooltipContent>
+                </Tooltip>
+              </ToggleGroup>
+            )}
+            {compactSearchControl}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleExport}
+                  className="h-7 w-7"
+                  aria-label="Export"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Export</TooltipContent>
+            </Tooltip>
+            {onSave && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onSave}
+                    className="h-7 w-7"
+                    aria-label="Save"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Save</TooltipContent>
+              </Tooltip>
+            )}
+            {queryInfoDialog && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {queryInfoDialog}
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Query details</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </TooltipProvider>,
         controlsPortalTarget
       );
     }
@@ -623,50 +677,20 @@ export function DataTable({
             </Button>
           )}
           {queryInfoDialog}
-          {typeof queryInfo?.executionMs === 'number' && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
-              <Clock className="h-3 w-3" />
-              {Math.round(queryInfo.executionMs)}ms
-            </span>
-          )}
         </div>
-      </div>
-    );
-  };
-
-  const renderEdaViewSwitcher = () => {
-    if (!hasEda) {
-      return null;
-    }
-
-    return (
-      <div className="border-b bg-muted/20 px-3 py-2 shrink-0">
-        <TabsList className="h-8 p-1 w-full max-w-[220px]">
-          <TabsTrigger value="table" className="text-xs h-6 px-3 py-0 flex-1">Table</TabsTrigger>
-          <TabsTrigger value="eda" className="text-xs h-6 px-3 py-0 flex-1">Analysis</TabsTrigger>
-        </TabsList>
       </div>
     );
   };
 
   return (
     <div className={cn('flex flex-col h-full overflow-hidden', className)}>
-      {hasEda ? (
-        <Tabs defaultValue="table" className="flex-1 flex flex-col min-h-0">
-          {renderControls()}
-          {renderEdaViewSwitcher()}
-          <TabsContent value="table" className="flex-1 flex flex-col min-h-0 mt-0">
-            {tableView}
-          </TabsContent>
-          <TabsContent value="eda" className="flex-1 min-h-0 mt-0 overflow-auto">
-            {eda && <EDAPanel eda={eda} />}
-          </TabsContent>
-        </Tabs>
+      {renderControls()}
+      {hasEda && edaView === 'eda' ? (
+        <div className="flex-1 min-h-0 overflow-auto">
+          {eda && <EDAPanel eda={eda} />}
+        </div>
       ) : (
-        <>
-          {renderControls()}
-          {tableView}
-        </>
+        tableView
       )}
     </div>
   );

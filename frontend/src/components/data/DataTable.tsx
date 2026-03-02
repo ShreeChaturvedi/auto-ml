@@ -12,7 +12,8 @@ import {
   type SortingState
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowUpDown,
   ArrowUp,
@@ -28,7 +29,9 @@ import {
   ToggleLeft,
   Calendar,
   CircleHelp,
-  Check
+  Check,
+  TableIcon,
+  BarChart3
 } from 'lucide-react';
 import {
   Table,
@@ -41,8 +44,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,6 +67,7 @@ interface DataTableProps {
   typeColorClassName?: string;
   queryInfo?: QueryInfo;
   className?: string;
+  controlsPortalTarget?: HTMLElement | null;
 }
 
 const TYPE_OPTIONS: ColumnDataType[] = ['string', 'integer', 'float', 'boolean', 'date'];
@@ -123,14 +127,25 @@ export function DataTable({
   onColumnTypeChange,
   typeColorClassName,
   queryInfo,
-  className
+  className,
+  controlsPortalTarget
 }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [updatingColumnName, setUpdatingColumnName] = useState<string | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [edaView, setEdaView] = useState<'table' | 'eda'>('table');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
+
+  useEffect(() => {
+    if (searchExpanded) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchExpanded]);
 
   const handleColumnTypeSelect = useCallback(
     async (columnName: string, nextType: ColumnDataType) => {
@@ -395,222 +410,283 @@ export function DataTable({
     </div>
   );
 
-  return (
-    <div className={cn('flex flex-col h-full overflow-hidden', className)}>
-      {hasEda ? (
-        <Tabs defaultValue="table" className="flex-1 flex flex-col min-h-0">
-          {/* Unified header row with view toggle, search, and export */}
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* View Toggle */}
-              <TabsList className="h-8 p-1">
-                <TabsTrigger value="table" className="text-xs h-6 px-3 py-0">Table</TabsTrigger>
-                <TabsTrigger value="eda" className="text-xs h-6 px-3 py-0">Analysis</TabsTrigger>
-              </TabsList>
-
-              {queryInfo && (
-                <div className="flex items-center gap-2">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 px-2">
-                        <Info className="h-3.5 w-3.5" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Query Information</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Executed</p>
-                            <p className="text-sm font-mono">{queryInfo.timestamp.toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Mode</p>
-                            <span
-                              className={cn(
-                                'text-xs px-2 py-0.5 rounded-full font-mono',
-                                queryInfo.mode === 'sql'
-                                  ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                                  : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
-                              )}
-                            >
-                              {queryInfo.mode.toUpperCase()}
-                            </span>
-                          </div>
-                          {typeof queryInfo.executionMs === 'number' && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Execution Time</p>
-                              <p className="text-sm font-mono">{Math.round(queryInfo.executionMs)} ms</p>
-                            </div>
-                          )}
-                          {queryInfo.cached !== undefined && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Cache</p>
-                              <p className="text-sm font-mono">
-                                {queryInfo.cached ? 'Cache hit' : 'Miss'}
-                                {queryInfo.cacheTimestamp ? ` (${queryInfo.cacheTimestamp})` : ''}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">User Query</p>
-                          <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64 scrollbar-thin">
-                            {queryInfo.query}
-                          </pre>
-                        </div>
-
-                        {queryInfo.generatedSql && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Generated SQL</p>
-                            <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64 scrollbar-thin">
-                              {queryInfo.generatedSql}
-                            </pre>
-                          </div>
-                        )}
-
-                        {queryInfo.rationale && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Rationale</p>
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                              {queryInfo.rationale}
-                            </p>
-                          </div>
-                        )}
-
-                        {eda && (
-                          <p className="text-xs text-muted-foreground">
-                            EDA summary available for this result. Use the Analysis tab to explore visuals.
-                          </p>
-                        )}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                  {typeof queryInfo.executionMs === 'number' && (
-                    <Badge variant="outline" className="h-7 px-2 text-xs font-mono">
-                      {Math.round(queryInfo.executionMs)} ms
-                    </Badge>
+  const renderControls = () => {
+    const queryInfoDialog = queryInfo ? (
+      <Dialog>
+        <DialogTrigger asChild>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Query details">
+                <Info className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Query details</TooltipContent>
+          </Tooltip>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Query Information</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Executed</p>
+                <p className="text-sm font-mono">{queryInfo.timestamp.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Mode</p>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-mono',
+                    queryInfo.mode === 'sql'
+                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                      : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
                   )}
-                  {queryInfo.cached !== undefined && (
-                    <Badge variant={queryInfo.cached ? 'secondary' : 'outline'} className="h-7 px-2 text-xs font-mono">
-                      {queryInfo.cached ? 'Cache hit' : 'Cache miss'}
-                    </Badge>
-                  )}
+                >
+                  {queryInfo.mode.toUpperCase()}
+                </span>
+              </div>
+              {typeof queryInfo.executionMs === 'number' && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Execution Time</p>
+                  <p className="text-sm font-mono">{Math.round(queryInfo.executionMs)} ms</p>
                 </div>
               )}
+              {queryInfo.cached !== undefined && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Cache</p>
+                  <p className="text-sm font-mono">
+                    {queryInfo.cached ? 'Cache hit' : 'Miss'}
+                    {queryInfo.cacheTimestamp ? ` (${queryInfo.cacheTimestamp})` : ''}
+                  </p>
+                </div>
+              )}
+            </div>
 
-              <div className="relative w-[200px]">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={globalFilter}
-                  onChange={(e) => setGlobalFilter(e.target.value)}
-                  className="pl-8 pr-8 h-8 text-sm"
-                />
-                {globalFilter && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">User Query</p>
+              <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64 scrollbar-thin">
+                {queryInfo.query}
+              </pre>
+            </div>
+
+            {queryInfo.generatedSql && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Generated SQL</p>
+                <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64 scrollbar-thin">
+                  {queryInfo.generatedSql}
+                </pre>
+              </div>
+            )}
+
+            {queryInfo.rationale && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Rationale</p>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{queryInfo.rationale}</p>
+              </div>
+            )}
+
+            {eda && (
+              <p className="text-xs text-muted-foreground">
+                EDA summary available for this result. Use the Analysis tab to explore visuals.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    ) : null;
+
+    if (controlsPortalTarget) {
+      return createPortal(
+        <TooltipProvider delayDuration={300}>
+          <div className="relative flex h-10 flex-1 min-w-0 items-center">
+            <div
+              className={cn(
+                'flex items-center gap-1 min-w-0 transition-all duration-200 ease-out',
+                searchExpanded ? 'opacity-0 blur-[1px] pointer-events-none' : 'opacity-100'
+              )}
+            >
+              {hasEda && (
+                <ToggleGroup
+                  type="single"
+                  value={edaView}
+                  onValueChange={(val) => {
+                    if (val === 'table' || val === 'eda') setEdaView(val);
+                  }}
+                  className="bg-muted/50 p-0.5 rounded-md h-7"
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ToggleGroupItem
+                        value="table"
+                        aria-label="Table view"
+                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                      >
+                        <TableIcon className="h-3 w-3" />
+                      </ToggleGroupItem>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Table</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ToggleGroupItem
+                        value="eda"
+                        aria-label="Analysis view"
+                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                      >
+                        <BarChart3 className="h-3 w-3" />
+                      </ToggleGroupItem>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Analysis</TooltipContent>
+                  </Tooltip>
+                </ToggleGroup>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    onClick={() => setGlobalFilter('')}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+                    size="icon"
+                    onClick={() => setSearchExpanded(true)}
+                    className="h-7 w-7"
+                    aria-label="Search"
                   >
-                    <X className="h-3 w-3" />
+                    <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
                   </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleExport} className="h-8">
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Search</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleExport}
+                    className="h-7 w-7"
+                    aria-label="Export"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Export</TooltipContent>
+              </Tooltip>
               {onSave && (
-                <Button variant="outline" size="sm" onClick={onSave} className="h-8">
-                  <Save className="h-3.5 w-3.5" />
-                  Save
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onSave}
+                      className="h-7 w-7"
+                      aria-label="Save"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Save</TooltipContent>
+                </Tooltip>
               )}
+              {queryInfoDialog}
             </div>
-          </div>
 
-          <TabsContent value="table" className="flex-1 flex flex-col min-h-0 mt-0">
-            {tableView}
-          </TabsContent>
-          <TabsContent value="eda" className="flex-1 min-h-0 mt-0 overflow-auto">
-            {eda && <EDAPanel eda={eda} />}
-          </TabsContent>
-        </Tabs>
-      ) : (
-        <>
-          {/* Header row for non-EDA view */}
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              {queryInfo && (
-                <div className="flex items-center gap-2">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 px-2">
-                        <Info className="h-3.5 w-3.5" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Query Information</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Executed</p>
-                            <p className="text-sm font-mono">{queryInfo.timestamp.toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">Mode</p>
-                            <span className={cn('text-xs px-2 py-0.5 rounded-full font-mono', queryInfo.mode === 'sql' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-purple-500/10 text-purple-600 dark:text-purple-400')}>
-                              {queryInfo.mode.toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
+            <div
+              className={cn(
+                'absolute inset-0 flex items-center transition-all duration-200 ease-out',
+                searchExpanded
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 translate-y-1 pointer-events-none'
               )}
-
-              <div className="relative w-[200px]">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
+            >
+              <div
+                className="flex h-10 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm"
+                onBlur={(event) => {
+                  const relatedTarget = event.relatedTarget as Node | null;
+                  if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
+                    setSearchExpanded(false);
+                  }
+                }}
+              >
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  ref={searchInputRef}
+                  placeholder="Search rows..."
                   value={globalFilter}
                   onChange={(e) => setGlobalFilter(e.target.value)}
-                  className="pl-8 pr-8 h-8 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setSearchExpanded(false);
+                    }
+                  }}
+                  className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                  autoFocus
                 />
-                {globalFilter && (
-                  <Button variant="ghost" size="sm" onClick={() => setGlobalFilter('')} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0">
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setGlobalFilter('');
+                    setSearchExpanded(false);
+                  }}
+                  className="h-8 w-8 shrink-0"
+                  aria-label="Close search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleExport} className="h-8">
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </Button>
-              {onSave && (
-                <Button variant="outline" size="sm" onClick={onSave} className="h-8">
-                  <Save className="h-3.5 w-3.5" />
-                  Save
-                </Button>
-              )}
-            </div>
           </div>
-          {tableView}
-        </>
+        </TooltipProvider>,
+        controlsPortalTarget
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
+        <div className="relative w-[220px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search..."
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="pl-8 pr-8 h-8 text-sm"
+          />
+          {globalFilter && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setGlobalFilter('')}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExport} className="h-8">
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Export
+          </Button>
+          {onSave && (
+            <Button variant="outline" size="sm" onClick={onSave} className="h-8">
+              <Save className="h-3.5 w-3.5 mr-1" />
+              Save
+            </Button>
+          )}
+          {queryInfoDialog}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className={cn('flex flex-col h-full overflow-hidden', className)}>
+      {renderControls()}
+      {hasEda && edaView === 'eda' ? (
+        <div className="flex-1 min-h-0 overflow-auto">
+          {eda && <EDAPanel eda={eda} />}
+        </div>
+      ) : (
+        tableView
       )}
     </div>
   );

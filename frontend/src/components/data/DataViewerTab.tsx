@@ -23,6 +23,7 @@ import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
 import { projectColorClasses } from '@/types/project';
 import { extractColumnTypesFromQuery } from './sqlColumnTypes';
+import { cn } from '@/lib/utils';
 
 function extractApiErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
@@ -70,6 +71,10 @@ export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
+  const [queryPanelIsExpanding, setQueryPanelIsExpanding] = useState(false);
+  const [queryPanelIsTransitioning, setQueryPanelIsTransitioning] = useState(false);
+  const [queryMode, setQueryMode] = useState<QueryMode>('sql');
+  const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
   const { projectId } = useParams();
   const projects = useProjectStore((state) => state.projects);
   const activeProject = projects.find((p) => p.id === projectId);
@@ -223,6 +228,32 @@ export function DataViewerTab() {
     [activeProject, createArtifact, setActiveFileTab, tableNames]
   );
 
+  const handleQueryPanelCollapsedChange = useCallback(
+    (nextCollapsed: boolean) => {
+      if (queryPanelIsTransitioning || nextCollapsed === queryPanelCollapsed) {
+        return;
+      }
+
+      setQueryPanelIsTransitioning(true);
+      setQueryPanelIsExpanding(!nextCollapsed);
+      setQueryPanelCollapsed(nextCollapsed);
+    },
+    [queryPanelCollapsed, queryPanelIsTransitioning]
+  );
+
+  useEffect(() => {
+    if (!queryPanelIsTransitioning) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setQueryPanelIsTransitioning(false);
+      setQueryPanelIsExpanding(false);
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [queryPanelIsTransitioning]);
+
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -257,6 +288,7 @@ export function DataViewerTab() {
               preview={preview}
               columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
+              controlsPortalTarget={controlsPortalTarget}
               onColumnTypeChange={
                 datasetId
                   ? async (columnName: string, nextType: ColumnDataType) => {
@@ -282,7 +314,7 @@ export function DataViewerTab() {
         );
       }
 
-      return <DocumentViewer file={file} />;
+      return <DocumentViewer file={file} controlsPortalTarget={controlsPortalTarget} />;
     } else if (fileTabType === 'artifact') {
       const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
       if (artifact) {
@@ -293,6 +325,7 @@ export function DataViewerTab() {
               preview={artifact.result}
               columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
+              controlsPortalTarget={controlsPortalTarget}
               queryInfo={{
                 query: artifact.query,
                 mode: artifact.mode,
@@ -327,48 +360,69 @@ export function DataViewerTab() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* File Tab Bar */}
-      {projectId && <FileTabBar projectId={projectId} />}
+    <div className="flex h-full overflow-hidden">
+      {/* Main Content Area (left side) */}
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        {/* File Tab Bar */}
+        {projectId && <FileTabBar projectId={projectId} />}
 
-      {/* Error Banner */}
-      {queryError && (
-        <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-destructive">Query Error</p>
-            <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap">{queryError}</p>
+        {/* Error Banner */}
+        {queryError && (
+          <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-destructive">Query Error</p>
+              <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap">{queryError}</p>
+            </div>
+            <button
+              onClick={() => setQueryError(null)}
+              className="text-destructive/70 hover:text-destructive transition-colors"
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
           </div>
-          <button
-            onClick={() => setQueryError(null)}
-            className="text-destructive/70 hover:text-destructive transition-colors"
-            aria-label="Dismiss error"
-          >
-            ×
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Data Display (left side) */}
-        <div className="flex-1 min-w-0 overflow-auto">
+        {/* Data Display */}
+        <div className="flex-1 min-w-0 overflow-auto bg-background">
           {getActiveTabContent() ?? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a file from the sidebar to open it here.
             </div>
           )}
         </div>
+      </div>
 
-        {/* Query Panel (right side) - collapsible with smooth animation */}
+      {/* Query Panel (right side) */}
+      <div
+        className={cn(
+          'shrink-0 transition-[width] duration-300 ease-in-out [will-change:width]',
+          queryPanelCollapsed ? 'w-12' : 'w-[400px]'
+        )}
+        style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}
+        onTransitionEnd={(event) => {
+          if (event.target !== event.currentTarget || event.propertyName !== 'width') {
+            return;
+          }
+
+          setQueryPanelIsExpanding(false);
+          setQueryPanelIsTransitioning(false);
+        }}
+      >
         <QueryPanel
           onExecute={handleExecuteQuery}
           isExecuting={isExecuting}
-          className={queryPanelCollapsed ? 'w-12 shrink-0' : 'w-[400px] shrink-0'}
+          className="w-full"
           tableNames={tableNames}
           columnsByTable={columnsByTable}
           collapsed={queryPanelCollapsed}
-          onCollapsedChange={setQueryPanelCollapsed}
+          onCollapsedChange={handleQueryPanelCollapsedChange}
+          isExpanding={queryPanelIsExpanding}
+          mode={queryMode}
+          onModeChange={setQueryMode}
+          controlsPortalTarget={controlsPortalTarget}
+          onMountPortalTarget={setControlsPortalTarget}
         />
       </div>
     </div>

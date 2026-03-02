@@ -12,42 +12,56 @@
  * docs/design-system.md
  */
 
-import { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState, useCallback, Suspense, lazy, useEffect, useRef, useId } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, MessageSquare, Code2, PanelRightClose } from 'lucide-react';
+import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
 import type { QueryMode } from '@/types/file';
 
 // Animated lightning bolt icon for execute button
-function AnimatedExecuteIcon({ isExecuting }: { isExecuting: boolean }) {
+function AnimatedExecuteIcon({
+  isExecuting,
+  gradientId,
+  colorClassName
+}: {
+  isExecuting: boolean;
+  gradientId: string;
+  colorClassName: string;
+}) {
   if (isExecuting) {
     return <Loader2 className="h-4 w-4 animate-spin" />;
   }
+
+  const boltPath = 'M13 2L3 14h9l-1 8 10-12h-9l1-8z';
+
   return (
     <svg
-      className="h-4 w-4 execute-icon"
+      className={cn('h-4 w-4 execute-icon', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
       <defs>
-        <linearGradient id="executeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#60a5fa" />
-          <stop offset="50%" stopColor="#a78bfa" />
-          <stop offset="100%" stopColor="#f472b6" />
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.62" />
+          <stop offset="50%" stopColor="currentColor" stopOpacity="1" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
         </linearGradient>
       </defs>
       <path
-        d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
-        stroke="url(#executeGradient)"
-        className="animate-pulse"
+        d={boltPath}
+        stroke={`url(#${gradientId})`}
+        pathLength={100}
+        className="execute-icon-path motion-reduce:!animate-none"
       />
     </svg>
   );
@@ -317,6 +331,16 @@ interface QueryPanelProps {
   collapsed?: boolean;
   /** Callback when collapse state changes */
   onCollapsedChange?: (collapsed: boolean) => void;
+  /** Current query mode (english/sql) - managed by parent */
+  mode?: QueryMode;
+  /** Callback when mode changes */
+  onModeChange?: (mode: QueryMode) => void;
+  /** Ref to the controls portal target element */
+  controlsPortalTarget?: HTMLElement | null;
+  /** Callback when the portal target element is mounted */
+  onMountPortalTarget?: (target: HTMLElement | null) => void;
+  /** Whether the panel is actively expanding in width */
+  isExpanding?: boolean;
 }
 
 const DEFAULT_SQL = `-- Enter your SQL query
@@ -347,19 +371,59 @@ export function QueryPanel({
   tableNames = [],
   columnsByTable = {},
   collapsed = false,
-  onCollapsedChange
+  onCollapsedChange,
+  mode: externalMode,
+  onModeChange,
+  controlsPortalTarget,
+  onMountPortalTarget,
+  isExpanding = false
 }: QueryPanelProps) {
-  const [mode, setMode] = useState<QueryMode>('sql');
+  // Use external mode if provided, otherwise use internal state
+  const [internalMode, setInternalMode] = useState<QueryMode>('sql');
+  const mode = externalMode ?? internalMode;
 
   // Separate state for each mode to preserve inputs when switching
   const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
+
+  // Ref for the controls portal target div
+  const controlsMountRef = useRef<HTMLDivElement>(null);
+
+  // Keep portal target stable so tab controls don't remount/fallback while collapsing.
+  useEffect(() => {
+    if (!onMountPortalTarget) {
+      return;
+    }
+
+    if (controlsMountRef.current && controlsMountRef.current !== controlsPortalTarget) {
+      onMountPortalTarget(controlsMountRef.current);
+    }
+  }, [onMountPortalTarget, controlsPortalTarget]);
+
+  const handleModeChange = useCallback(
+    (nextMode: QueryMode) => {
+      if (externalMode !== undefined) {
+        onModeChange?.(nextMode);
+        return;
+      }
+      setInternalMode(nextMode);
+      onModeChange?.(nextMode);
+    },
+    [externalMode, onModeChange]
+  );
 
   // Theme detection for Monaco Editor
   const { theme: appTheme } = useTheme();
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
     resolveEditorTheme(appTheme)
   );
+  const iconGradientIdSeed = useId();
+  const iconGradientId = `executeGradient-${iconGradientIdSeed.replace(/:/g, '')}`;
+  const { activeProjectId, projects } = useProjectStore();
+  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const executeIconColorClass = activeProject
+    ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
+    : 'text-primary';
   const monacoRef = useRef<Monaco | null>(null);
   
   // Store completion provider disposable for cleanup
@@ -405,15 +469,10 @@ export function QueryPanel({
     monacoRef.current.editor.setTheme(monacoTheme);
   }, [monacoTheme]);
 
+  const showExpandedContent = !collapsed;
+
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
-
-  // Handle mode toggle
-  const handleModeChange = useCallback((value: string) => {
-    if (value === 'sql' || value === 'english') {
-      setMode(value as QueryMode);
-    }
-  }, []);
 
   // Handle query text change
   const handleQueryChange = useCallback((value: string) => {
@@ -447,85 +506,114 @@ export function QueryPanel({
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
 
-  // Collapsed state - clickable bar to expand
-  if (collapsed) {
-    return (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => onCollapsedChange?.(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onCollapsedChange?.(false);
-          }
-        }}
-        className={cn(
-          'flex flex-col h-full bg-card border-l items-center py-4 transition-all duration-300 ease-in-out',
-          'cursor-[w-resize] hover:bg-muted/50',
-          className
-        )}
-        title="Expand Query Panel"
-      >
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180">
-            Query Builder
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
-      {/* Header - single row with title, mode toggle, and collapse button */}
-      <div className="p-3 border-b">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-foreground whitespace-nowrap">Query Builder</h3>
-
-          {/* Compact Mode Toggle */}
-          <ToggleGroup
-            type="single"
-            value={mode}
-            onValueChange={handleModeChange}
-            className="flex-1 bg-muted/50 p-0.5 rounded-md h-7"
-          >
-            <ToggleGroupItem
-              value="english"
-              aria-label="Natural language mode"
-              className="flex-1 h-6 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm px-2"
+    <div className={cn('relative flex flex-col h-full bg-card border-l [contain:layout_paint]', className)}>
+      {/* Unified Header — collapse button stays at the right edge */}
+      <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
+        <div
+          className={cn(
+            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-[opacity,transform,filter] duration-200 ease-out',
+            showExpandedContent
+              ? 'opacity-100 translate-x-0 blur-0'
+              : 'opacity-0 translate-x-1 blur-[1px] pointer-events-none'
+          )}
+          style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
+        >
+            <ToggleGroup
+              type="single"
+              value={mode}
+              onValueChange={(val) => {
+                if (val === 'sql' || val === 'english') {
+                  handleModeChange(val);
+                }
+              }}
+              className="bg-muted/50 p-0.5 rounded-md h-7"
             >
-              <MessageSquare className="h-3 w-3" />
-              <span className="ml-1.5">English</span>
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="sql"
-              aria-label="SQL mode"
-              className="flex-1 h-6 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm font-mono px-2"
-            >
-              <Code2 className="h-3 w-3" />
-              <span className="ml-1.5">SQL</span>
-            </ToggleGroupItem>
-          </ToggleGroup>
+              <ToggleGroupItem
+                value="english"
+                aria-label="Natural language mode"
+                className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              >
+                <MessageSquare className="h-3 w-3" />
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="sql"
+                aria-label="SQL mode"
+                className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              >
+                <Code2 className="h-3 w-3" />
+              </ToggleGroupItem>
+            </ToggleGroup>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onCollapsedChange?.(true)}
-            className="h-7 w-7 shrink-0"
-            title="Collapse Query Panel"
-          >
-            <PanelRightClose className="h-4 w-4" />
-          </Button>
+            <div ref={controlsMountRef} className="relative flex h-10 flex-1 min-w-0 items-center" />
         </div>
 
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onCollapsedChange?.(!collapsed)}
+                className={cn(
+                  'absolute right-3 top-1/2 h-7 w-7 -translate-y-1/2 shrink-0 text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <PanelRight className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {collapsed ? 'Expand query panel' : 'Collapse query panel'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
-      {/* Query Input */}
+      {/* Collapsed body */}
+      {collapsed && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onCollapsedChange?.(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onCollapsedChange?.(false);
+            }
+          }}
+          className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50"
+        >
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180 select-none">
+              Query Builder
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Query Input + Execute (kept mounted for smooth expand/collapse) */}
+      <div
+        className={cn(
+          'flex flex-1 min-h-0 flex-col transition-[opacity,transform,filter] duration-200 ease-out',
+          showExpandedContent
+            ? 'opacity-100 translate-y-0 blur-0'
+            : 'pointer-events-none opacity-0 translate-y-1 blur-[1px] select-none'
+        )}
+        style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
+      >
       <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
         {mode === 'sql' ? (
           // SQL Mode: Monaco Editor with syntax highlighting
-          <div className="relative flex-1 border rounded-md overflow-hidden bg-background">
+          <div
+            className={cn(
+              'relative flex-1 border rounded-md overflow-hidden bg-background [contain:layout_paint]',
+              '[&_.view-lines]:transition-opacity [&_.view-lines]:duration-200 [&_.view-lines]:ease-out',
+              '[&_.line-numbers]:transition-opacity [&_.line-numbers]:duration-200 [&_.line-numbers]:ease-out',
+              '[&_.margin-view-overlays]:transition-opacity [&_.margin-view-overlays]:duration-200 [&_.margin-view-overlays]:ease-out',
+              isExpanding &&
+                '[&_.view-lines]:opacity-0 [&_.line-numbers]:opacity-0 [&_.margin-view-overlays]:opacity-0'
+            )}
+          >
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
@@ -793,7 +881,10 @@ export function QueryPanel({
               onKeyDown={handleKeyDown}
               placeholder="Describe what you want to see in plain English... For example: Show me all rows where revenue is greater than 1000"
               disabled={isExecuting}
-              className="flex-1 resize-none leading-relaxed focus-visible:ring-1"
+              className={cn(
+                'flex-1 resize-none leading-relaxed focus-visible:ring-1 transition-colors duration-200',
+                isExpanding && 'text-transparent'
+              )}
               aria-label="Natural language query input"
             />
             {/* Keyboard shortcut hint */}
@@ -810,11 +901,16 @@ export function QueryPanel({
           variant="secondary"
           onClick={handleExecute}
           disabled={isExecuting || !currentQuery.trim()}
-          className="w-full h-9 text-sm gap-2"
+          className="group/execute w-full h-9 text-sm gap-2"
         >
-          <AnimatedExecuteIcon isExecuting={isExecuting} />
+          <AnimatedExecuteIcon
+            isExecuting={isExecuting}
+            gradientId={iconGradientId}
+            colorClassName={executeIconColorClass}
+          />
           {isExecuting ? 'Executing...' : 'Execute'}
         </Button>
+      </div>
       </div>
     </div>
   );

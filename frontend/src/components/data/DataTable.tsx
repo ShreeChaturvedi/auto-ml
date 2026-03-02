@@ -425,9 +425,14 @@ export function DataTable({
     const queryInfoDialog = queryInfo ? (
       <Dialog>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Query details">
-            <Info className="h-3.5 w-3.5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Query details">
+                <Info className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Query details</TooltipContent>
+          </Tooltip>
         </DialogTrigger>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -503,132 +508,142 @@ export function DataTable({
     ) : null;
 
     if (controlsPortalTarget) {
-      // When search is active, replace all controls with full-width search input
-      if (searchExpanded) {
-        return createPortal(
-          <div className="flex items-center gap-1 flex-1 min-w-0">
-            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <Input
-              ref={searchInputRef}
-              placeholder="Search..."
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  if (!globalFilter) setSearchExpanded(false);
-                  else setGlobalFilter('');
-                }
-              }}
-              className="h-7 flex-1 text-xs"
-              autoFocus
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setGlobalFilter('');
-                setSearchExpanded(false);
-              }}
-              className="h-7 w-7 shrink-0"
-              aria-label="Close search"
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>,
-          controlsPortalTarget
-        );
-      }
-
       return createPortal(
         <TooltipProvider delayDuration={300}>
-          <div className="flex items-center gap-1 min-w-0">
-            {hasEda && (
-              <ToggleGroup
-                type="single"
-                value={edaView}
-                onValueChange={(val) => {
-                  if (val === 'table' || val === 'eda') setEdaView(val);
-                }}
-                className="bg-muted/50 p-0.5 rounded-md h-7"
-              >
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem
-                      value="table"
-                      aria-label="Table view"
-                      className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-                    >
-                      <TableIcon className="h-3 w-3" />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Table</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ToggleGroupItem
-                      value="eda"
-                      aria-label="Analysis view"
-                      className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-                    >
-                      <BarChart3 className="h-3 w-3" />
-                    </ToggleGroupItem>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Analysis</TooltipContent>
-                </Tooltip>
-              </ToggleGroup>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSearchExpanded(true)}
-                  className="h-7 w-7"
-                  aria-label="Search"
+          <div className="relative flex h-10 flex-1 min-w-0 items-center">
+            <div
+              className={cn(
+                'flex items-center gap-1 min-w-0 transition-all duration-200 ease-out',
+                searchExpanded ? 'opacity-0 blur-[1px] pointer-events-none' : 'opacity-100'
+              )}
+            >
+              {hasEda && (
+                <ToggleGroup
+                  type="single"
+                  value={edaView}
+                  onValueChange={(val) => {
+                    if (val === 'table' || val === 'eda') setEdaView(val);
+                  }}
+                  className="bg-muted/50 p-0.5 rounded-md h-7"
                 >
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Search</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleExport}
-                  className="h-7 w-7"
-                  aria-label="Export"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Export</TooltipContent>
-            </Tooltip>
-            {onSave && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ToggleGroupItem
+                        value="table"
+                        aria-label="Table view"
+                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                      >
+                        <TableIcon className="h-3 w-3" />
+                      </ToggleGroupItem>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Table</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ToggleGroupItem
+                        value="eda"
+                        aria-label="Analysis view"
+                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                      >
+                        <BarChart3 className="h-3 w-3" />
+                      </ToggleGroupItem>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Analysis</TooltipContent>
+                  </Tooltip>
+                </ToggleGroup>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={onSave}
+                    onClick={() => setSearchExpanded(true)}
                     className="h-7 w-7"
-                    aria-label="Save"
+                    aria-label="Search"
                   >
-                    <Save className="h-3.5 w-3.5" />
+                    <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Save</TooltipContent>
+                <TooltipContent side="bottom">Search</TooltipContent>
               </Tooltip>
-            )}
-            {queryInfoDialog && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {queryInfoDialog}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleExport}
+                    className="h-7 w-7"
+                    aria-label="Export"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Query details</TooltipContent>
+                <TooltipContent side="bottom">Export</TooltipContent>
               </Tooltip>
-            )}
+              {onSave && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onSave}
+                      className="h-7 w-7"
+                      aria-label="Save"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Save</TooltipContent>
+                </Tooltip>
+              )}
+              {queryInfoDialog}
+            </div>
+
+            <div
+              className={cn(
+                'absolute inset-0 flex items-center transition-all duration-200 ease-out',
+                searchExpanded
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 translate-y-1 pointer-events-none'
+              )}
+            >
+              <div
+                className="flex h-10 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm ring-1 ring-border/40"
+                onBlur={(event) => {
+                  const relatedTarget = event.relatedTarget as Node | null;
+                  if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
+                    setSearchExpanded(false);
+                  }
+                }}
+              >
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  ref={searchInputRef}
+                  placeholder="Search rows..."
+                  value={globalFilter}
+                  onChange={(e) => setGlobalFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setSearchExpanded(false);
+                    }
+                  }}
+                  className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                  autoFocus
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setGlobalFilter('');
+                    setSearchExpanded(false);
+                  }}
+                  className="h-8 w-8 shrink-0"
+                  aria-label="Close search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
           </div>
         </TooltipProvider>,
         controlsPortalTarget

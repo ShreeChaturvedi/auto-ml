@@ -584,9 +584,9 @@ export function QueryPanel({
   return (
     <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
       {/* Unified Header — collapse button stays at the right edge */}
-      <div className="flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
+      <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
         {!collapsed && (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-1 min-w-0 pr-9">
             <ToggleGroup
               type="single"
               value={mode}
@@ -613,10 +613,10 @@ export function QueryPanel({
               </ToggleGroupItem>
             </ToggleGroup>
 
-            <div ref={controlsMountRef} className="flex min-w-0 items-center gap-1" />
+            <div ref={controlsMountRef} className="relative flex h-10 flex-1 min-w-0 items-center" />
           </div>
         )}
-        {collapsed && <div className="flex-1" />}
+        {collapsed && <div className="flex-1 pr-9" />}
 
         <TooltipProvider delayDuration={300}>
           <Tooltip>
@@ -626,8 +626,7 @@ export function QueryPanel({
                 size="icon"
                 onClick={() => onCollapsedChange?.(!collapsed)}
                 className={cn(
-                  'h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground',
-                  !collapsed && 'ml-2'
+                  'absolute right-3 top-1/2 h-7 w-7 -translate-y-1/2 shrink-0 text-muted-foreground hover:text-foreground'
                 )}
               >
                 <PanelRight className="h-4 w-4" />

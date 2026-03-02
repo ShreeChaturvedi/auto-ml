@@ -386,23 +386,16 @@ export function QueryPanel({
   // Ref for the controls portal target div
   const controlsMountRef = useRef<HTMLDivElement>(null);
 
-  // Set the portal target ref when the div is available
+  // Keep portal target stable so tab controls don't remount/fallback while collapsing.
   useEffect(() => {
     if (!onMountPortalTarget) {
-      return;
-    }
-
-    if (collapsed) {
-      if (controlsPortalTarget !== null) {
-        onMountPortalTarget(null);
-      }
       return;
     }
 
     if (controlsMountRef.current && controlsMountRef.current !== controlsPortalTarget) {
       onMountPortalTarget(controlsMountRef.current);
     }
-  }, [collapsed, onMountPortalTarget, controlsPortalTarget]);
+  }, [onMountPortalTarget, controlsPortalTarget]);
 
   const handleModeChange = useCallback(
     (nextMode: QueryMode) => {
@@ -512,8 +505,12 @@ export function QueryPanel({
     <div className={cn('relative flex flex-col h-full bg-card border-l', className)}>
       {/* Unified Header — collapse button stays at the right edge */}
       <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
-        {!collapsed && (
-          <div className="flex items-center gap-2 flex-1 min-w-0 pr-9">
+        <div
+          className={cn(
+            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-opacity duration-300',
+            collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          )}
+        >
             <ToggleGroup
               type="single"
               value={mode}
@@ -541,9 +538,7 @@ export function QueryPanel({
             </ToggleGroup>
 
             <div ref={controlsMountRef} className="relative flex h-10 flex-1 min-w-0 items-center" />
-          </div>
-        )}
-        {collapsed && <div className="flex-1 pr-9" />}
+        </div>
 
         <TooltipProvider delayDuration={300}>
           <Tooltip>

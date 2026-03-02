@@ -319,6 +319,16 @@
   animation: execute-icon-trace 700ms ease-out 1;
 }
 
+.brain-icon-path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 220ms ease-out;
+}
+
+.group\/execute:hover .brain-icon-path {
+  animation: execute-icon-trace 700ms ease-out 1;
+}
+
 /* ─── NL query typewriter cursor ─────────────────────────────────────────── */
 
 @keyframes nl-cursor-blink {

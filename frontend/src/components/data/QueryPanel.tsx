@@ -69,6 +69,55 @@ function AnimatedExecuteIcon({
   );
 }
 
+// Animated brain icon for English mode execute button — same gradient + trace
+// animation pattern as the bolt, but uses the lucide Brain SVG paths.
+function AnimatedBrainIcon({
+  gradientId,
+  colorClassName
+}: {
+  gradientId: string;
+  colorClassName: string;
+}) {
+  const brainPaths = [
+    'M12 5V18',
+    'M9 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1 3 4Z',
+    'M15 13a4.17 4.17 0 0 0 3-4 4.17 4.17 0 0 0-3 4Z',
+    'M6.003 5.125a4 4 0 0 0-2.526 5.77',
+    'M17.997 5.125a4 4 0 0 1 2.526 5.77',
+    'M6 18a4 4 0 0 1-2-7.464',
+    'M18 18a4 4 0 0 0 2-7.464',
+    'M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517',
+  ];
+
+  return (
+    <svg
+      className={cn('h-4 w-4 brain-icon', colorClassName)}
+      viewBox="0 0 24 24"
+      fill="none"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.62" />
+          <stop offset="50%" stopColor="currentColor" stopOpacity="1" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
+        </linearGradient>
+      </defs>
+      {brainPaths.map((d, i) => (
+        <path
+          key={i}
+          d={d}
+          stroke={`url(#${gradientId})`}
+          pathLength={100}
+          className="brain-icon-path motion-reduce:!animate-none"
+        />
+      ))}
+    </svg>
+  );
+}
+
 // Lazy load Monaco Editor to reduce initial bundle size
 const Editor = lazy(() =>
   import('@monaco-editor/react').then((module) => ({
@@ -1009,8 +1058,7 @@ export function QueryPanel({
               </>
             ) : (
               <>
-                <AnimatedExecuteIcon
-                  isExecuting={isExecuting}
+                <AnimatedBrainIcon
                   gradientId={iconGradientId}
                   colorClassName={executeIconColorClass}
                 />

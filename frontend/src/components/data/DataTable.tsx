@@ -43,7 +43,14 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
@@ -412,19 +419,22 @@ export function DataTable({
   const renderControls = () => {
     const queryInfoDialog = queryInfo ? (
       <Dialog>
-        <DialogTrigger asChild>
-          <Tooltip>
-            <TooltipTrigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Query details">
                 <Info className="h-3.5 w-3.5" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Query details</TooltipContent>
-          </Tooltip>
-        </DialogTrigger>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Query details</TooltipContent>
+        </Tooltip>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Query Information</DialogTitle>
+            <DialogDescription>
+              Metadata and SQL context for the currently displayed query result.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -658,41 +668,43 @@ export function DataTable({
     }
 
     return (
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
-        <div className="relative w-[220px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search..."
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-8 pr-8 h-8 text-sm"
-          />
-          {globalFilter && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setGlobalFilter('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          )}
-        </div>
+      <TooltipProvider delayDuration={300}>
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
+          <div className="relative w-[220px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="pl-8 pr-8 h-8 text-sm"
+            />
+            {globalFilter && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setGlobalFilter('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExport} className="h-8">
-            <Download className="h-3.5 w-3.5 mr-1" />
-            Export
-          </Button>
-          {onSave && (
-            <Button variant="outline" size="sm" onClick={onSave} className="h-8">
-              <Save className="h-3.5 w-3.5 mr-1" />
-              Save
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport} className="h-8">
+              <Download className="h-3.5 w-3.5 mr-1" />
+              Export
             </Button>
-          )}
-          {queryInfoDialog}
+            {onSave && (
+              <Button variant="outline" size="sm" onClick={onSave} className="h-8">
+                <Save className="h-3.5 w-3.5 mr-1" />
+                Save
+              </Button>
+            )}
+            {queryInfoDialog}
+          </div>
         </div>
-      </div>
+      </TooltipProvider>
     );
   };
 

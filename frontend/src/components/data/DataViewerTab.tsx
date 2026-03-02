@@ -71,7 +71,7 @@ export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
-  const [queryPanelContentVisible, setQueryPanelContentVisible] = useState(true);
+  const [queryPanelIsExpanding, setQueryPanelIsExpanding] = useState(false);
   const [queryMode, setQueryMode] = useState<QueryMode>('sql');
   const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
   const { projectId } = useParams();
@@ -229,7 +229,9 @@ export function DataViewerTab() {
 
   const handleQueryPanelCollapsedChange = useCallback((nextCollapsed: boolean) => {
     if (!nextCollapsed) {
-      setQueryPanelContentVisible(false);
+      setQueryPanelIsExpanding(true);
+    } else {
+      setQueryPanelIsExpanding(false);
     }
 
     setQueryPanelCollapsed(nextCollapsed);
@@ -386,9 +388,7 @@ export function DataViewerTab() {
             return;
           }
 
-          if (!queryPanelCollapsed) {
-            setQueryPanelContentVisible(true);
-          }
+          setQueryPanelIsExpanding(false);
         }}
       >
         <QueryPanel
@@ -399,7 +399,7 @@ export function DataViewerTab() {
           columnsByTable={columnsByTable}
           collapsed={queryPanelCollapsed}
           onCollapsedChange={handleQueryPanelCollapsedChange}
-          expandedContentVisible={queryPanelContentVisible}
+          isExpanding={queryPanelIsExpanding}
           mode={queryMode}
           onModeChange={setQueryMode}
           controlsPortalTarget={controlsPortalTarget}

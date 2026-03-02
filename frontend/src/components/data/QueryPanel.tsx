@@ -339,8 +339,8 @@ interface QueryPanelProps {
   controlsPortalTarget?: HTMLElement | null;
   /** Callback when the portal target element is mounted */
   onMountPortalTarget?: (target: HTMLElement | null) => void;
-  /** Whether expanded controls/editor content should be visible */
-  expandedContentVisible?: boolean;
+  /** Whether the panel is actively expanding in width */
+  isExpanding?: boolean;
 }
 
 const DEFAULT_SQL = `-- Enter your SQL query
@@ -376,7 +376,7 @@ export function QueryPanel({
   onModeChange,
   controlsPortalTarget,
   onMountPortalTarget,
-  expandedContentVisible
+  isExpanding = false
 }: QueryPanelProps) {
   // Use external mode if provided, otherwise use internal state
   const [internalMode, setInternalMode] = useState<QueryMode>('sql');
@@ -469,7 +469,7 @@ export function QueryPanel({
     monacoRef.current.editor.setTheme(monacoTheme);
   }, [monacoTheme]);
 
-  const showExpandedContent = !collapsed && (expandedContentVisible ?? true);
+  const showExpandedContent = !collapsed;
 
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
@@ -602,7 +602,16 @@ export function QueryPanel({
       <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
         {mode === 'sql' ? (
           // SQL Mode: Monaco Editor with syntax highlighting
-          <div className="relative flex-1 border rounded-md overflow-hidden bg-background">
+          <div
+            className={cn(
+              'relative flex-1 border rounded-md overflow-hidden bg-background',
+              '[&_.view-lines]:transition-opacity [&_.view-lines]:duration-200 [&_.view-lines]:ease-out',
+              '[&_.line-numbers]:transition-opacity [&_.line-numbers]:duration-200 [&_.line-numbers]:ease-out',
+              '[&_.margin-view-overlays]:transition-opacity [&_.margin-view-overlays]:duration-200 [&_.margin-view-overlays]:ease-out',
+              isExpanding &&
+                '[&_.view-lines]:opacity-0 [&_.line-numbers]:opacity-0 [&_.margin-view-overlays]:opacity-0'
+            )}
+          >
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
@@ -870,7 +879,10 @@ export function QueryPanel({
               onKeyDown={handleKeyDown}
               placeholder="Describe what you want to see in plain English... For example: Show me all rows where revenue is greater than 1000"
               disabled={isExecuting}
-              className="flex-1 resize-none leading-relaxed focus-visible:ring-1"
+              className={cn(
+                'flex-1 resize-none leading-relaxed focus-visible:ring-1 transition-colors duration-200',
+                isExpanding && 'text-transparent'
+              )}
               aria-label="Natural language query input"
             />
             {/* Keyboard shortcut hint */}

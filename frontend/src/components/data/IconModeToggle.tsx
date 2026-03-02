@@ -34,6 +34,7 @@ export function IconModeToggle({
     >
       {options.map((option) => {
         const Icon = option.icon;
+        const isSelected = value === option.value;
 
         if (!option.tooltip) {
           return (
@@ -41,7 +42,11 @@ export function IconModeToggle({
               key={option.value}
               value={option.value}
               aria-label={option.ariaLabel}
-              className={cn('h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm', itemClassName)}
+              className={cn(
+                'h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm',
+                isSelected && 'bg-background shadow-sm',
+                itemClassName
+              )}
             >
               <Icon className="h-3 w-3" />
             </ToggleGroupItem>
@@ -54,7 +59,11 @@ export function IconModeToggle({
               <ToggleGroupItem
                 value={option.value}
                 aria-label={option.ariaLabel}
-                className={cn('h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm', itemClassName)}
+                className={cn(
+                  'h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm',
+                  isSelected && 'bg-background shadow-sm',
+                  itemClassName
+                )}
               >
                 <Icon className="h-3 w-3" />
               </ToggleGroupItem>

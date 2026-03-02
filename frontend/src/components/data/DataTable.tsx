@@ -31,7 +31,7 @@ import {
   CircleHelp,
   Check,
   TableIcon,
-  BarChart3
+  ChartLine
 } from 'lucide-react';
 import {
   Table,
@@ -422,7 +422,7 @@ export function DataTable({
         <Tooltip>
           <TooltipTrigger asChild>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Query details">
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Query details">
                 <Info className="h-3.5 w-3.5" />
               </Button>
             </DialogTrigger>
@@ -508,10 +508,10 @@ export function DataTable({
     if (controlsPortalTarget) {
       return createPortal(
         <TooltipProvider delayDuration={300}>
-          <div className="relative flex h-10 flex-1 min-w-0 items-center">
+          <div className="relative flex h-10 flex-1 min-w-0 items-center overflow-hidden">
             <div
               className={cn(
-                'flex items-center gap-1 min-w-0 transition-all duration-200 ease-out',
+                'flex max-w-full min-w-0 items-center gap-1 overflow-hidden transition-all duration-200 ease-out',
                 searchExpanded ? 'opacity-0 blur-[1px] pointer-events-none' : 'opacity-100'
               )}
             >
@@ -531,7 +531,7 @@ export function DataTable({
                     {
                       value: 'eda',
                       ariaLabel: 'Analysis view',
-                      icon: BarChart3,
+                      icon: ChartLine,
                       tooltip: 'Analysis'
                     }
                   ]}
@@ -543,7 +543,7 @@ export function DataTable({
                     variant="ghost"
                     size="icon"
                     onClick={() => setSearchExpanded(true)}
-                    className="h-7 w-7"
+                    className="h-7 w-7 shrink-0"
                     aria-label="Search"
                   >
                     <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
@@ -557,7 +557,7 @@ export function DataTable({
                     variant="ghost"
                     size="icon"
                     onClick={handleExport}
-                    className="h-7 w-7"
+                    className="h-7 w-7 shrink-0"
                     aria-label="Export"
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -572,7 +572,7 @@ export function DataTable({
                       variant="ghost"
                       size="icon"
                       onClick={onSave}
-                      className="h-7 w-7"
+                      className="h-7 w-7 shrink-0"
                       aria-label="Save"
                     >
                       <Save className="h-3.5 w-3.5" />

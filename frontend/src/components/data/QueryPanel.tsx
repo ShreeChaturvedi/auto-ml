@@ -382,6 +382,7 @@ export function QueryPanel({
   // Separate state for each mode to preserve inputs when switching
   const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
+  const [showExpandedContent, setShowExpandedContent] = useState(!collapsed);
 
   // Ref for the controls portal target div
   const controlsMountRef = useRef<HTMLDivElement>(null);
@@ -466,6 +467,19 @@ export function QueryPanel({
     monacoRef.current.editor.setTheme(monacoTheme);
   }, [monacoTheme]);
 
+  useEffect(() => {
+    if (collapsed) {
+      setShowExpandedContent(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowExpandedContent(true);
+    }, 170);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [collapsed]);
+
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
 
@@ -507,8 +521,10 @@ export function QueryPanel({
       <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
         <div
           className={cn(
-            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-opacity duration-300',
-            collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-[opacity,transform,filter] duration-200 ease-out',
+            showExpandedContent
+              ? 'opacity-100 translate-x-0 blur-0'
+              : 'opacity-0 translate-x-1 blur-[1px] pointer-events-none'
           )}
         >
             <ToggleGroup
@@ -586,8 +602,10 @@ export function QueryPanel({
       {/* Query Input + Execute (kept mounted for smooth expand/collapse) */}
       <div
         className={cn(
-          'flex flex-1 min-h-0 flex-col transition-opacity duration-200 ease-out',
-          collapsed ? 'pointer-events-none opacity-0 select-none' : 'opacity-100'
+          'flex flex-1 min-h-0 flex-col transition-[opacity,transform,filter] duration-200 ease-out',
+          showExpandedContent
+            ? 'opacity-100 translate-y-0 blur-0'
+            : 'pointer-events-none opacity-0 translate-y-1 blur-[1px] select-none'
         )}
       >
       <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">

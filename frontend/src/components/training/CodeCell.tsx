@@ -30,6 +30,7 @@ import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { CellOutputRenderer } from './CellOutputRenderer';
+import { buildOutputCopyText } from './cellOutputUtils';
 import type { languages, IDisposable } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
 import type { RichOutput } from '@/lib/api/execution';
@@ -84,8 +85,10 @@ export function CodeCell({
 }: CodeCellProps) {
   const [content, setContent] = useState(cell.content);
   const [copied, setCopied] = useState(false);
+  const [outputCopied, setOutputCopied] = useState(false);
   const [showOutput, setShowOutput] = useState(true);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const outputCopyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { theme: appTheme } = useTheme();
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
@@ -133,6 +136,9 @@ export function CodeCell({
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
+      }
+      if (outputCopyTimeoutRef.current) {
+        clearTimeout(outputCopyTimeoutRef.current);
       }
     };
   }, []);
@@ -203,6 +209,49 @@ export function CodeCell({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard access can be denied by browser privacy settings.
+    }
+  };
+
+  const handleCopyOutput = async () => {
+    const text = buildOutputCopyText(richOutputs);
+    if (!text) {
+      return;
+    }
+
+    const markOutputCopied = () => {
+      setOutputCopied(true);
+      if (outputCopyTimeoutRef.current) {
+        clearTimeout(outputCopyTimeoutRef.current);
+      }
+      outputCopyTimeoutRef.current = setTimeout(() => setOutputCopied(false), 2000);
+    };
+
+    try {
+      await navigator.clipboard.writeText(text);
+      markOutputCopied();
+      return;
+    } catch (error) {
+      void error;
+    }
+
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const copiedFromFallback = document.execCommand('copy');
+    document.body.removeChild(textarea);
+
+    if (copiedFromFallback) {
+      markOutputCopied();
     }
   };
 
@@ -377,32 +426,38 @@ export function CodeCell({
       {/* Output - compact toggle */}
       {richOutputs.length > 0 && (
         <div className="border-t">
-          <div className="flex min-h-[28px] items-center justify-between px-2 py-2">
+          <div className="flex min-h-[32px] items-center justify-between px-2 py-2">
             <button
-              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => setShowOutput(!showOutput)}
+              type="button"
+              aria-label={showOutput ? 'Collapse output' : 'Expand output'}
             >
               {showOutput ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              <span>Out</span>
+              <span>{showOutput ? 'Collapse output' : 'Expand output'}</span>
             </button>
-            {showOutput && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-7 w-7 p-1.5"
-                onClick={async () => {
-                  const text = richOutputs.map(o => o.content).join('\n');
-                  try {
-                    await navigator.clipboard.writeText(text);
-                  } catch {
-                    // Clipboard access can be denied by browser privacy settings.
-                  }
-                }}
-                title="Copy output"
-              >
-                <Copy className="h-2.5 w-2.5" />
-              </Button>
-            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-[11px]"
+              onClick={handleCopyOutput}
+              title="Copy output"
+              aria-label="Copy output"
+              type="button"
+            >
+              {outputCopied ? (
+                <>
+                  <Check className="h-3 w-3 text-green-500" />
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3 w-3" />
+                  <span>Copy output</span>
+                </>
+              )}
+            </Button>
           </div>
 
           {showOutput && (

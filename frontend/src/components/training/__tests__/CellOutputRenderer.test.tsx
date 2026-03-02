@@ -1,59 +1,81 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 
 import { CellOutputRenderer } from '../CellOutputRenderer';
+import { buildOutputCopyText } from '../cellOutputUtils';
 
 describe('CellOutputRenderer', () => {
-  it('starts long text output in collapsed mode and allows expansion', () => {
-    const longOutput = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\n');
-
+  it('renders multiple outputs without per-output action controls', () => {
     render(
       <CellOutputRenderer
         outputs={[
           {
             type: 'text',
-            content: longOutput,
+            content: 'first line',
+          },
+          {
+            type: 'text',
+            content: 'second line',
           },
         ]}
       />
     );
 
-    expect(screen.queryByText('line 12')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Expand output' }));
-
-    expect(screen.getByText(/line 12/)).toBeInTheDocument();
+    expect(screen.getByText('first line')).toBeInTheDocument();
+    expect(screen.getByText('second line')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /copy output/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /expand output/i })).not.toBeInTheDocument();
   });
 
-  it('copies table output as tab-separated text', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(window.navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
+  it('builds copy text for mixed outputs and table data', () => {
+    const outputText = buildOutputCopyText([
+      {
+        type: 'text',
+        content: 'header',
+      },
+      {
+        type: 'table',
+        content: 'DataFrame: 2 rows x 2 columns',
+        data: {
+          columns: ['name', 'score'],
+          rows: [
+            { name: 'alpha', score: 1.23456 },
+            { name: 'beta', score: true },
+          ],
+        },
+      },
+      {
+        type: 'text',
+        content: 'footer',
+      },
+    ]);
 
-    render(
-      <CellOutputRenderer
-        outputs={[
-          {
-            type: 'table',
-            content: 'DataFrame: 2 rows x 2 columns',
-            data: {
-              columns: ['name', 'score'],
-              rows: [
-                { name: 'alpha', score: 1.23456 },
-                { name: 'beta', score: true },
-              ],
-            },
-          },
-        ]}
-      />
+    expect(outputText).toBe(
+      [
+        'header',
+        'name\tscore',
+        'alpha\t1.2346',
+        'beta\tTrue',
+        'footer',
+      ].join('\n')
     );
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy output' }));
+  it('falls back to plain content for malformed table data', () => {
+    const outputText = buildOutputCopyText([
+      {
+        type: 'table',
+        content: 'fallback table content',
+        data: {
+          columns: ['name'],
+          rows: 'not-an-array',
+        } as unknown as {
+          columns: string[];
+          rows: Record<string, unknown>[];
+        },
+      },
+    ]);
 
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('name\tscore\nalpha\t1.2346\nbeta\tTrue');
-    });
+    expect(outputText).toBe('fallback table content');
   });
 });

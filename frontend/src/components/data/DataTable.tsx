@@ -52,7 +52,6 @@ import {
   DialogTrigger
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,6 +63,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { ColumnDataType, DataPreview, QueryMode, EdaSummary } from '@/types/file';
 import { EDAPanel } from './EDAPanel';
+import { IconModeToggle } from './IconModeToggle';
 import Papa from 'papaparse';
 
 interface DataTableProps {
@@ -516,39 +516,26 @@ export function DataTable({
               )}
             >
               {hasEda && (
-                <ToggleGroup
-                  type="single"
+                <IconModeToggle
                   value={edaView}
                   onValueChange={(val) => {
                     if (val === 'table' || val === 'eda') setEdaView(val);
                   }}
-                  className="bg-muted/50 p-0.5 rounded-md h-7"
-                >
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ToggleGroupItem
-                        value="table"
-                        aria-label="Table view"
-                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-                      >
-                        <TableIcon className="h-3 w-3" />
-                      </ToggleGroupItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Table</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ToggleGroupItem
-                        value="eda"
-                        aria-label="Analysis view"
-                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-                      >
-                        <BarChart3 className="h-3 w-3" />
-                      </ToggleGroupItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Analysis</TooltipContent>
-                  </Tooltip>
-                </ToggleGroup>
+                  options={[
+                    {
+                      value: 'table',
+                      ariaLabel: 'Table view',
+                      icon: TableIcon,
+                      tooltip: 'Table'
+                    },
+                    {
+                      value: 'eda',
+                      ariaLabel: 'Analysis view',
+                      icon: BarChart3,
+                      tooltip: 'Analysis'
+                    }
+                  ]}
+                />
               )}
               <Tooltip>
                 <TooltipTrigger asChild>

@@ -13,7 +13,6 @@
  */
 
 import { useState, useCallback, Suspense, lazy, useEffect, useRef, useId } from 'react';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
@@ -23,6 +22,7 @@ import { useTheme } from '@/components/theme-provider';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
+import { IconModeToggle } from './IconModeToggle';
 import type { QueryMode } from '@/types/file';
 
 // Animated lightning bolt icon for execute button
@@ -519,31 +519,26 @@ export function QueryPanel({
           )}
           style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
         >
-            <ToggleGroup
-              type="single"
+            <IconModeToggle
               value={mode}
               onValueChange={(val) => {
                 if (val === 'sql' || val === 'english') {
                   handleModeChange(val);
                 }
               }}
-              className="bg-muted/50 p-0.5 rounded-md h-7"
-            >
-              <ToggleGroupItem
-                value="english"
-                aria-label="Natural language mode"
-                className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-              >
-                <MessageSquare className="h-3 w-3" />
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="sql"
-                aria-label="SQL mode"
-                className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-              >
-                <Code2 className="h-3 w-3" />
-              </ToggleGroupItem>
-            </ToggleGroup>
+              options={[
+                {
+                  value: 'english',
+                  ariaLabel: 'Natural language mode',
+                  icon: MessageSquare
+                },
+                {
+                  value: 'sql',
+                  ariaLabel: 'SQL mode',
+                  icon: Code2
+                }
+              ]}
+            />
 
             <div ref={controlsMountRef} className="relative flex h-10 flex-1 min-w-0 items-center" />
         </div>

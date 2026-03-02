@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildDatasetSearchPlaceholders } from '../datasetSearchPlaceholders';
 
 describe('buildDatasetSearchPlaceholders', () => {
-  it('returns unique filename, id, and table name values from project datasets', () => {
+  it('returns unique table names from project datasets', () => {
     const placeholders = buildDatasetSearchPlaceholders([
       {
         datasetId: 'dataset-1',
@@ -26,21 +26,16 @@ describe('buildDatasetSearchPlaceholders', () => {
     ]);
 
     expect(placeholders).toEqual([
-      'customers.csv',
-      'dataset-1',
       'customers_table',
-      'orders.csv',
-      'dataset-2',
       'orders_table',
-      'dataset-3'
     ]);
   });
 
   it('returns fallback placeholders when there are no datasets', () => {
     expect(buildDatasetSearchPlaceholders([])).toEqual([
-      'customer_churn.csv',
-      'dataset_abc123',
-      'transactions_2025'
+      'customers',
+      'transactions',
+      'support_tickets'
     ]);
   });
 });

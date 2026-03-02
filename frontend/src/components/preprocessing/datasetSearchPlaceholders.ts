@@ -1,16 +1,15 @@
 import type { AvailableTable } from '@/types/preprocessing';
 
 const FALLBACK_SEARCH_PLACEHOLDERS = [
-  'customer_churn.csv',
-  'dataset_abc123',
-  'transactions_2025'
+  'customers',
+  'transactions',
+  'support_tickets'
 ];
 
 const MAX_PLACEHOLDERS = 12;
 
 /**
- * Build animated search placeholder candidates from real dataset values
- * in the current project (filename, id, and table name).
+ * Build animated search placeholder candidates from dataset table names.
  */
 export function buildDatasetSearchPlaceholders(tables: AvailableTable[]): string[] {
   const uniqueValues = new Set<string>();
@@ -28,8 +27,6 @@ export function buildDatasetSearchPlaceholders(tables: AvailableTable[]): string
   };
 
   for (const table of tables) {
-    addValue(table.filename);
-    addValue(table.datasetId);
     addValue(table.name);
 
     if (placeholders.length >= MAX_PLACEHOLDERS) {

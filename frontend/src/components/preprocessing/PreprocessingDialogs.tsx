@@ -91,7 +91,6 @@ export function DatasetChooserDialog({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{table.filename}</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{table.datasetId}</p>
                       </div>
                       <Badge variant={selected ? 'default' : 'outline'} className="text-[10px]">
                         {table.nRows ?? 0} x {table.nCols ?? 0}
@@ -118,36 +117,50 @@ export function DatasetChooserDialog({
                         ) : null}
                       </div>
                     ) : null}
-                    {selected && previewRows.length > 0 ? (
-                      <div className="mt-3 overflow-x-auto rounded-md bg-background/70">
-                        <table className="w-full text-[10px]">
-                          <thead className="bg-muted/30">
-                            <tr className="text-muted-foreground">
-                              {previewColumns.map((columnName) => (
-                                <th key={columnName} className="px-2 py-1.5 text-left font-medium">
-                                  {columnName}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewRows.slice(0, 3).map((previewRow, rowIndex) => (
-                              <tr key={rowIndex} className="border-t border-border/30">
-                                {previewColumns.map((columnName) => (
-                                  <td key={`${rowIndex}-${columnName}`} className="px-2 py-1 font-mono text-muted-foreground">
-                                    {previewRow[columnName] == null ? 'null' : String(previewRow[columnName])}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    {previewRows.length > 0 ? (
+                      <div
+                        className={cn(
+                          'overflow-hidden text-[11px] text-muted-foreground transition-[max-height,opacity,margin-top] duration-200',
+                          selected ? 'mt-0 max-h-0 opacity-0' : 'mt-2 max-h-6 opacity-100'
+                        )}
+                      >
+                        Select to preview sample rows.
                       </div>
                     ) : null}
-                    {!selected && previewRows.length > 0 ? (
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        Select to preview sample rows.
-                      </p>
+                    {previewRows.length > 0 ? (
+                      <div
+                        className={cn(
+                          'grid overflow-hidden transition-[grid-template-rows,opacity,margin-top] duration-300 ease-out',
+                          selected ? 'mt-3 grid-rows-[1fr] opacity-100' : 'mt-0 grid-rows-[0fr] opacity-0'
+                        )}
+                      >
+                        <div className="min-h-0">
+                          <div className="overflow-x-auto rounded-md bg-background/70">
+                            <table className="w-full text-[10px]">
+                              <thead className="bg-muted/30">
+                                <tr className="text-muted-foreground">
+                                  {previewColumns.map((columnName) => (
+                                    <th key={columnName} className="px-2 py-1.5 text-left font-medium">
+                                      {columnName}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {previewRows.slice(0, 3).map((previewRow, rowIndex) => (
+                                  <tr key={rowIndex} className="border-t border-border/30">
+                                    {previewColumns.map((columnName) => (
+                                      <td key={`${rowIndex}-${columnName}`} className="px-2 py-1 font-mono text-muted-foreground">
+                                        {previewRow[columnName] == null ? 'null' : String(previewRow[columnName])}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
                     ) : null}
                   </button>
                 );

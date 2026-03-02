@@ -1,19 +1,18 @@
 /**
- * DataTable - Enhanced table with pagination, search, export
+ * DataTable - Enhanced table with virtual scrolling, search, export
  */
 
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
-  getPaginationRowModel,
   getFilteredRowModel,
   flexRender,
   type ColumnDef,
-  type SortingState,
-  type PaginationState
+  type SortingState
 } from '@tanstack/react-table';
-import { useState, useMemo, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import {
   ArrowUpDown,
   ArrowUp,
@@ -21,8 +20,6 @@ import {
   Search,
   Download,
   Save,
-  ChevronLeft,
-  ChevronRight,
   X,
   Info,
   Type,
@@ -52,13 +49,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
+
+
 import { cn } from '@/lib/utils';
 import type { ColumnDataType, DataPreview, QueryMode, EdaSummary } from '@/types/file';
 import { EDAPanel } from './EDAPanel';
@@ -136,10 +128,7 @@ export function DataTable({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [updatingColumnName, setUpdatingColumnName] = useState<string | null>(null);
-  const [pagination, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: 25
-  });
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
 
@@ -267,14 +256,23 @@ export function DataTable({
   const table = useReactTable({
     data: preview.rows,
     columns,
-    state: { sorting, globalFilter, pagination },
+    state: { sorting, globalFilter },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
-    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel()
+    getFilteredRowModel: getFilteredRowModel()
+  });
+
+  const { rows } = table.getRowModel();
+
+  const ROW_HEIGHT = 40;
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10
   });
 
   const handleExport = useCallback(() => {
@@ -294,14 +292,30 @@ export function DataTable({
   }, [table, preview.headers]);
 
   const totalRows = table.getFilteredRowModel().rows.length;
-  const startRow = pagination.pageIndex * pagination.pageSize + 1;
-  const endRow = Math.min((pagination.pageIndex + 1) * pagination.pageSize, totalRows);
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom =
+    virtualItems.length > 0
+      ? totalSize - virtualItems[virtualItems.length - 1].end
+      : 0;
+
+  // Derive visible row range from the virtualizer for the status ribbon
+  const visibleStart = virtualItems.length > 0 ? virtualItems[0].index + 1 : 0;
+  const visibleEnd =
+    virtualItems.length > 0
+      ? virtualItems[virtualItems.length - 1].index + 1
+      : 0;
 
   const tableView = (
     <div className="flex flex-col h-full">
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div
+        ref={tableContainerRef}
+        className="flex-1 min-h-0 overflow-auto"
+      >
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
@@ -315,16 +329,35 @@ export function DataTable({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+            {rows.length ? (
+              <>
+                {paddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingTop}px` }} />
+                  </tr>
+                )}
+                {virtualItems.map((virtualRow) => {
+                  const row = rows[virtualRow.index];
+                  return (
+                    <TableRow
+                      key={row.id}
+                      data-index={virtualRow.index}
+                      ref={(node) => rowVirtualizer.measureElement(node)}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })}
+                {paddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingBottom}px` }} />
+                  </tr>
+                )}
+              </>
             ) : (
               <TableRow>
                 <TableCell
@@ -344,7 +377,7 @@ export function DataTable({
           <div className="text-xs text-muted-foreground font-mono">
             {totalRows > 0 ? (
               <>
-                Showing {startRow}-{endRow} of {totalRows.toLocaleString()}{' '}
+                Showing {visibleStart}-{visibleEnd} of {totalRows.toLocaleString()}{' '}
                 {totalRows === 1 ? 'row' : 'rows'}
                 {preview.previewRows < preview.totalRows && (
                   <span className="text-muted-foreground/70">
@@ -356,51 +389,6 @@ export function DataTable({
             ) : (
               'No rows'
             )}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Per page</span>
-              <Select
-                value={String(pagination.pageSize)}
-                onValueChange={(value) => table.setPageSize(Number(value))}
-              >
-                <SelectTrigger className="h-7 w-[60px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[10, 25, 50, 100].map((size) => (
-                    <SelectItem key={size} value={String(size)}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="h-7 w-7 p-0"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="text-xs font-mono">
-                {pagination.pageIndex + 1} of {table.getPageCount()}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="h-7 w-7 p-0"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
         </div>
       </div>

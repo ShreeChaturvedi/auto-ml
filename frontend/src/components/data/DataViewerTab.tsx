@@ -23,6 +23,7 @@ import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
 import { projectColorClasses } from '@/types/project';
 import { extractColumnTypesFromQuery } from './sqlColumnTypes';
+import { cn } from '@/lib/utils';
 
 function extractApiErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
@@ -365,20 +366,27 @@ export function DataViewerTab() {
         </div>
       </div>
 
-      {/* Query Panel (right side) - collapsible with smooth animation */}
-      <QueryPanel
-        onExecute={handleExecuteQuery}
-        isExecuting={isExecuting}
-        className={queryPanelCollapsed ? 'w-12 shrink-0' : 'w-[400px] shrink-0'}
-        tableNames={tableNames}
-        columnsByTable={columnsByTable}
-        collapsed={queryPanelCollapsed}
-        onCollapsedChange={setQueryPanelCollapsed}
-        mode={queryMode}
-        onModeChange={setQueryMode}
-        controlsPortalTarget={controlsPortalTarget}
-        onMountPortalTarget={setControlsPortalTarget}
-      />
+      {/* Query Panel (right side) */}
+      <div
+        className={cn(
+          'shrink-0 transition-[width] duration-300 ease-in-out',
+          queryPanelCollapsed ? 'w-12' : 'w-[400px]'
+        )}
+      >
+        <QueryPanel
+          onExecute={handleExecuteQuery}
+          isExecuting={isExecuting}
+          className="w-full"
+          tableNames={tableNames}
+          columnsByTable={columnsByTable}
+          collapsed={queryPanelCollapsed}
+          onCollapsedChange={setQueryPanelCollapsed}
+          mode={queryMode}
+          onModeChange={setQueryMode}
+          controlsPortalTarget={controlsPortalTarget}
+          onMountPortalTarget={setControlsPortalTarget}
+        />
+      </div>
     </div>
   );
 }

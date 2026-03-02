@@ -148,7 +148,7 @@ function PdfToolbar({
                 )}
               >
                 <div
-                  className="flex h-10 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm ring-1 ring-border/40"
+                  className="flex h-10 w-full items-center gap-2 rounded-md bg-background/85 px-2 backdrop-blur-sm"
                   onBlur={(event) => {
                     const relatedTarget = event.relatedTarget as Node | null;
                     if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
@@ -162,7 +162,15 @@ function PdfToolbar({
                     value={searchProps.keyword}
                     placeholder="Search PDF text..."
                     onChange={(e) => {
-                      searchProps.setKeyword(e.target.value);
+                      const nextKeyword = e.target.value;
+                      searchProps.setKeyword(nextKeyword);
+
+                      if (!nextKeyword.trim()) {
+                        searchProps.clearKeyword();
+                        return;
+                      }
+
+                      void searchProps.search();
                     }}
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter') {

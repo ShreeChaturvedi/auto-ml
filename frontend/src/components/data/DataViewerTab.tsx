@@ -173,7 +173,7 @@ export function DataViewerTab() {
           totalRows: result.query.rowCount,
           previewRows: result.query.rowCount,
           eda: result.query.eda,
-          columnTypes: extractColumnTypesFromQuery(result.query.columns)
+          columnTypes: extractColumnTypesFromQuery(result.query.columns, result.query.rows)
         };
 
         // Create artifact with result, including EDA metadata
@@ -258,7 +258,7 @@ export function DataViewerTab() {
           totalRows: queryResult.rowCount,
           previewRows: queryResult.rowCount,
           eda: queryResult.eda,
-          columnTypes: extractColumnTypesFromQuery(queryResult.columns)
+          columnTypes: extractColumnTypesFromQuery(queryResult.columns, queryResult.rows)
         };
 
         const artifactId = createArtifact(approvedSql, 'english', dataPreview, activeProject.id, {

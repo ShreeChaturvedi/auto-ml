@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useRef } from 'react';
 import { NlQueryWorkflow } from '../NlQueryWorkflow';
 import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
 import type { NlGenerationResult } from '@/types/nlQuery';
@@ -95,9 +94,10 @@ describe('NlQueryWorkflow', () => {
   });
 
   it('does NOT render the NlFlowConnector in idle state', () => {
-    const { container } = render(<NlQueryWorkflow {...buildProps()} />);
-    // The connector wrapper should have opacity-0 (not active)
-    const connectorWrapper = container.querySelector('[class*="transition-opacity"]');
+    render(<NlQueryWorkflow {...buildProps()} />);
+    // The connector exists but remains visually collapsed in idle state.
+    const connectorWrapper = screen.getByTestId('nl-flow-connector-wrapper');
+    expect(connectorWrapper).toHaveClass('h-0');
     expect(connectorWrapper).toHaveClass('opacity-0');
   });
 

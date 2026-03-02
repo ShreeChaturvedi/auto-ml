@@ -10,6 +10,48 @@ import type { QueryResultPayload } from '../types/query.js';
 import { buildEdaSummary } from './edaSummary.js';
 import { validateReadOnlySql } from './sqlValidator.js';
 
+export interface PgTypeCatalogRow {
+  oid: number;
+  typname: string;
+  typtype: string;
+  typbasetype: number;
+  typelem: number;
+  base_typname: string | null;
+  elem_typname: string | null;
+}
+
+function normalizeArrayTypeName(typeName: string, elementTypeName: string | null): string {
+  const normalizedTypeName = typeName.trim();
+  const normalizedElementTypeName = elementTypeName?.trim() ?? '';
+
+  if (normalizedElementTypeName) {
+    return `${normalizedElementTypeName}[]`;
+  }
+  if (normalizedTypeName.startsWith('_')) {
+    return `${normalizedTypeName.slice(1)}[]`;
+  }
+  return normalizedTypeName;
+}
+
+export function resolveTypeNameFromPgCatalog(row: PgTypeCatalogRow): string {
+  const typeName = row.typname?.trim();
+  if (!typeName) {
+    return 'unknown';
+  }
+
+  // Domains should resolve to their base type so frontend mapping can classify
+  // the column even when the domain type name itself is custom.
+  if (row.typtype === 'd' && row.base_typname) {
+    return normalizeArrayTypeName(row.base_typname, null);
+  }
+
+  if (row.typelem > 0) {
+    return normalizeArrayTypeName(typeName, row.elem_typname);
+  }
+
+  return typeName;
+}
+
 /**
  * Fetch type names from PostgreSQL for the given type OIDs
  * Uses the pg_type system catalog to get accurate type names
@@ -27,14 +69,27 @@ async function getTypeNames(dataTypeIDs: number[], client: PoolClient): Promise<
 
   const placeholders = uniqueOIDs.map((_, i) => `$${i + 1}`).join(', ');
   
-  const result = await client.query<{ oid: number; typname: string }>(
-    `SELECT oid, typname FROM pg_type WHERE oid IN (${placeholders})`,
+  const result = await client.query<PgTypeCatalogRow>(
+    `
+      SELECT
+        t.oid,
+        t.typname,
+        t.typtype,
+        t.typbasetype,
+        t.typelem,
+        bt.typname AS base_typname,
+        et.typname AS elem_typname
+      FROM pg_type t
+      LEFT JOIN pg_type bt ON bt.oid = t.typbasetype
+      LEFT JOIN pg_type et ON et.oid = t.typelem
+      WHERE t.oid IN (${placeholders})
+    `,
     uniqueOIDs
   );
 
   const typeMap = new Map<number, string>();
   for (const row of result.rows) {
-    typeMap.set(row.oid, row.typname);
+    typeMap.set(row.oid, resolveTypeNameFromPgCatalog(row));
   }
 
   return typeMap;

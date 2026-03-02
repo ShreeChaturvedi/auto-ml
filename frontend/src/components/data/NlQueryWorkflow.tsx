@@ -92,7 +92,6 @@ function useTypewriter(
       return;
     }
 
-    const target = targetRef.current;
     charIndexRef.current = 0;
     stateRef.current = { visibleText: '', isComplete: false };
     forceUpdate();
@@ -356,6 +355,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
       {/* ── Flow connector ───────────────────────────────────────────────── */}
       <div
+        data-testid="nl-flow-connector-wrapper"
         className={cn(
           'transition-[opacity,height] ease-out motion-reduce:transition-none overflow-hidden',
           showConnector

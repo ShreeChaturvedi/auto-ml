@@ -21,6 +21,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { ApiError } from '@/lib/api/client';
 import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
+import type { NlGenerationResult } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
 import { extractColumnTypesFromQuery } from './sqlColumnTypes';
 import { cn } from '@/lib/utils';
@@ -151,7 +152,8 @@ export function DataViewerTab() {
     return result;
   }, [files, previews]);
 
-  // Handle query execution
+  // Handle query execution — SQL only.
+  // Natural-language queries are now handled by handleNlGenerate + handleNlApprove.
   const handleExecuteQuery = useCallback(
     async (query: string, mode: QueryMode) => {
       if (!activeProject) return;
@@ -160,38 +162,6 @@ export function DataViewerTab() {
       setQueryError(null);
 
       try {
-        if (mode === 'english') {
-          const response = await executeNlQuery({
-            projectId: activeProject.id,
-            query,
-            tableName: tableNames[0]
-          });
-          const nl = response.nl;
-          const queryResult = nl.query;
-
-          const dataPreview: DataPreview = {
-            fileId: 'query-result',
-            headers: queryResult.columns.map((col) => col.name),
-            rows: queryResult.rows,
-            totalRows: queryResult.rowCount,
-            previewRows: queryResult.rowCount,
-            eda: queryResult.eda,
-            columnTypes: extractColumnTypesFromQuery(queryResult.columns)
-          };
-
-          const artifactId = createArtifact(query, mode, dataPreview, activeProject.id, {
-            eda: queryResult.eda,
-            cached: queryResult.cached,
-            executionMs: queryResult.executionMs,
-            cacheTimestamp: queryResult.cacheTimestamp,
-            generatedSql: nl.sql,
-            rationale: nl.rationale
-          });
-
-          setActiveFileTab(artifactId, 'artifact');
-          return;
-        }
-
         // Execute SQL using backend Postgres
         const result = await executeSqlQuery({ projectId: activeProject.id, sql: query });
 
@@ -202,7 +172,7 @@ export function DataViewerTab() {
           rows: result.query.rows,
           totalRows: result.query.rowCount,
           previewRows: result.query.rowCount,
-          eda: result.query.eda, // Include EDA metadata for Analysis tab
+          eda: result.query.eda,
           columnTypes: extractColumnTypesFromQuery(result.query.columns)
         };
 
@@ -214,13 +184,99 @@ export function DataViewerTab() {
           cacheTimestamp: result.query.cacheTimestamp
         });
 
-        // Switch to the new artifact tab
         setActiveFileTab(artifactId, 'artifact');
       } catch (error) {
         console.error('Query execution failed:', error);
         const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
 
         setQueryError(withSqlIdentifierHint(errorMessage, mode, tableNames[0]));
+      } finally {
+        setIsExecuting(false);
+      }
+    },
+    [activeProject, createArtifact, setActiveFileTab, tableNames]
+  );
+
+  /**
+   * Phase 1 of the NL workflow: generate SQL from a natural-language query.
+   * Returns the generation result to NlQueryWorkflow WITHOUT creating an
+   * artifact — that only happens once the user approves in phase 2.
+   */
+  const handleNlGenerate = useCallback(
+    async (query: string): Promise<NlGenerationResult> => {
+      if (!activeProject) throw new Error('No active project');
+
+      const response = await executeNlQuery({
+        projectId: activeProject.id,
+        query,
+        tableName: tableNames[0]
+      });
+      const nl = response.nl;
+
+      return {
+        sql: nl.sql,
+        rationale: nl.rationale,
+        queryId: nl.queryId,
+        cached: nl.cached,
+        queryResult: nl.query
+      };
+    },
+    [activeProject, tableNames]
+  );
+
+  /**
+   * Phase 2 of the NL workflow: the user has reviewed (and optionally edited)
+   * the generated SQL and clicked "Approve & Run".
+   *
+   * - If the SQL is unchanged, we reuse the cached query result from the
+   *   generation response — no second round-trip needed.
+   * - If the SQL was edited, we execute the new SQL and use the fresh result.
+   */
+  const handleNlApprove = useCallback(
+    async (result: NlGenerationResult, approvedSql: string) => {
+      if (!activeProject) return;
+
+      setIsExecuting(true);
+      setQueryError(null);
+
+      try {
+        let queryResult = result.queryResult;
+
+        // Re-execute only when the user actually modified the generated SQL.
+        if (approvedSql.trim() !== result.sql.trim()) {
+          const freshResult = await executeSqlQuery({
+            projectId: activeProject.id,
+            sql: approvedSql
+          });
+          queryResult = freshResult.query;
+        }
+
+        const dataPreview: DataPreview = {
+          fileId: 'query-result',
+          headers: queryResult.columns.map((col) => col.name),
+          rows: queryResult.rows,
+          totalRows: queryResult.rowCount,
+          previewRows: queryResult.rowCount,
+          eda: queryResult.eda,
+          columnTypes: extractColumnTypesFromQuery(queryResult.columns)
+        };
+
+        const artifactId = createArtifact(approvedSql, 'english', dataPreview, activeProject.id, {
+          eda: queryResult.eda,
+          cached: queryResult.cached,
+          executionMs: queryResult.executionMs,
+          cacheTimestamp: queryResult.cacheTimestamp,
+          generatedSql: result.sql,
+          rationale: result.rationale
+        });
+
+        setActiveFileTab(artifactId, 'artifact');
+      } catch (error) {
+        console.error('NL query approval failed:', error);
+        const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
+
+        setQueryError(withSqlIdentifierHint(errorMessage, 'english', tableNames[0]));
+        toast.error(`Query failed: ${errorMessage}`);
       } finally {
         setIsExecuting(false);
       }
@@ -423,6 +479,8 @@ export function DataViewerTab() {
           onModeChange={setQueryMode}
           controlsPortalTarget={controlsPortalTarget}
           onMountPortalTarget={setControlsPortalTarget}
+          onNlGenerate={handleNlGenerate}
+          onNlApprove={handleNlApprove}
         />
       </div>
     </div>

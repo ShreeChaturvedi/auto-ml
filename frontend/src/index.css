@@ -318,3 +318,31 @@
 .group\/execute:hover .execute-icon-path {
   animation: execute-icon-trace 700ms ease-out 1;
 }
+
+/* ─── NL query typewriter cursor ─────────────────────────────────────────── */
+
+@keyframes nl-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/**
+ * Appended as a ::after pseudo-element on the last character span of the
+ * typewriter pre block.  A hollow-circle glyph ( ○ / U+25CB ) is used
+ * instead of a traditional pipe so it doesn't shift surrounding text and
+ * stays visually lightweight at any font size.
+ */
+.nl-typewriter-cursor::after {
+  content: '\25CB'; /* ○  hollow circle */
+  font-size: 0.9em;
+  margin-left: 1px;
+  color: hsl(var(--foreground));
+  animation: nl-cursor-blink 700ms step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nl-typewriter-cursor::after {
+    animation: none;
+    opacity: 0.7;
+  }
+}

@@ -14,7 +14,6 @@
 
 import { useState, useCallback, Suspense, lazy, useEffect, useRef, useId } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -23,7 +22,10 @@ import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
 import { IconModeToggle } from './IconModeToggle';
+import { NlQueryWorkflow } from './NlQueryWorkflow';
+import type { NlQueryWorkflowHandle, NlPhase } from './NlQueryWorkflow';
 import type { QueryMode } from '@/types/file';
+import type { NlGenerationResult } from '@/types/nlQuery';
 
 // Animated lightning bolt icon for execute button
 function AnimatedExecuteIcon({
@@ -350,6 +352,16 @@ interface QueryPanelProps {
   onMountPortalTarget?: (target: HTMLElement | null) => void;
   /** Whether the panel is actively expanding in width */
   isExpanding?: boolean;
+  /**
+   * Async callback to generate SQL from a natural-language query.
+   * Required when English mode is active with the NL workflow UI.
+   */
+  onNlGenerate?: (query: string) => Promise<NlGenerationResult>;
+  /**
+   * Called when the user approves the generated (and possibly edited) SQL.
+   * The parent is responsible for executing the SQL and creating an artifact.
+   */
+  onNlApprove?: (result: NlGenerationResult, approvedSql: string) => void;
 }
 
 const DEFAULT_SQL = `-- Enter your SQL query
@@ -385,7 +397,9 @@ export function QueryPanel({
   onModeChange,
   controlsPortalTarget,
   onMountPortalTarget,
-  isExpanding = false
+  isExpanding = false,
+  onNlGenerate,
+  onNlApprove,
 }: QueryPanelProps) {
   // Use external mode if provided, otherwise use internal state
   const [internalMode, setInternalMode] = useState<QueryMode>('sql');
@@ -394,6 +408,11 @@ export function QueryPanel({
   // Separate state for each mode to preserve inputs when switching
   const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
+
+  // NL workflow ref & phase — phase is a local mirror updated via onPhaseChange
+  // so footer buttons re-render reactively without holding workflow state here.
+  const nlWorkflowRef = useRef<NlQueryWorkflowHandle>(null);
+  const [nlPhase, setNlPhase] = useState<NlPhase>('idle');
 
   // Ref for the controls portal target div
   const controlsMountRef = useRef<HTMLDivElement>(null);
@@ -924,43 +943,82 @@ export function QueryPanel({
             </span>
           </div>
         ) : (
-          // English Mode: Simple textarea with hint
-          <div className="relative flex-1 flex flex-col">
-            <Textarea
-              value={englishQuery}
-              onChange={(e) => handleQueryChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe what you want to see in plain English... For example: Show me all rows where revenue is greater than 1000"
-              disabled={isExecuting}
-              className={cn(
-                'flex-1 resize-none leading-relaxed focus-visible:ring-1 transition-colors duration-200',
-                isExpanding && 'text-transparent'
-              )}
-              aria-label="Natural language query input"
-            />
-            {/* Keyboard shortcut hint */}
-            <span className="absolute bottom-2 right-2 text-xs text-muted-foreground/50 pointer-events-none select-none">
-              {modKey} + ⏎
-            </span>
-          </div>
+          // English Mode: NL workflow — animated input → connector → SQL reveal
+          <NlQueryWorkflow
+            englishQuery={englishQuery}
+            onQueryChange={(v) => handleQueryChange(v)}
+            onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
+            onApprove={onNlApprove ?? (() => {})}
+            isExpanding={isExpanding}
+            onPhaseChange={setNlPhase}
+            ref={nlWorkflowRef}
+          />
         )}
       </div>
 
-      {/* Execute Button */}
+      {/* Execute / NL Workflow footer buttons — phase-aware */}
       <div className="px-3 pb-3">
-        <Button
-          variant="secondary"
-          onClick={handleExecute}
-          disabled={isExecuting || !currentQuery.trim()}
-          className="group/execute w-full h-9 text-sm gap-2"
-        >
-          <AnimatedExecuteIcon
-            isExecuting={isExecuting}
-            gradientId={iconGradientId}
-            colorClassName={executeIconColorClass}
-          />
-          {isExecuting ? 'Executing...' : 'Execute'}
-        </Button>
+        {mode === 'sql' ? (
+          <Button
+            variant="secondary"
+            onClick={handleExecute}
+            disabled={isExecuting || !sqlQuery.trim()}
+            className="group/execute w-full h-9 text-sm gap-2"
+          >
+            <AnimatedExecuteIcon
+              isExecuting={isExecuting}
+              gradientId={iconGradientId}
+              colorClassName={executeIconColorClass}
+            />
+            {isExecuting ? 'Executing...' : 'Execute'}
+          </Button>
+        ) : nlPhase === 'reviewing' ? (
+          /* Approve / Reject pair shown once SQL is revealed and editable */
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => nlWorkflowRef.current?.reject()}
+              className="flex-1 h-9 text-sm"
+            >
+              Reject
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => nlWorkflowRef.current?.approve()}
+              className="flex-1 h-9 text-sm"
+            >
+              Approve &amp; Run
+            </Button>
+          </div>
+        ) : (
+          /* English idle / error — trigger generation */
+          <Button
+            variant="secondary"
+            onClick={() => nlWorkflowRef.current?.triggerGenerate()}
+            disabled={
+              nlPhase === 'submitting' ||
+              nlPhase === 'revealing' ||
+              !englishQuery.trim()
+            }
+            className="group/execute w-full h-9 text-sm gap-2"
+          >
+            {nlPhase === 'submitting' || nlPhase === 'revealing' ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <AnimatedExecuteIcon
+                  isExecuting={isExecuting}
+                  gradientId={iconGradientId}
+                  colorClassName={executeIconColorClass}
+                />
+                Execute
+              </>
+            )}
+          </Button>
+        )}
       </div>
       </div>
     </div>

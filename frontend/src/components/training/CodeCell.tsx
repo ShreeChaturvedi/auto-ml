@@ -406,7 +406,7 @@ export function CodeCell({
           </div>
 
           {showOutput && (
-            <div className="px-3 pb-2 text-xs font-mono">
+            <div className="px-3 pb-2">
               <CellOutputRenderer outputs={richOutputs} />
             </div>
           )}

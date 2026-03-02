@@ -137,7 +137,6 @@ export function DataTable({
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [edaView, setEdaView] = useState<'table' | 'eda'>('table');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
 

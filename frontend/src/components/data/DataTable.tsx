@@ -42,7 +42,6 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -58,7 +57,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-
 
 import { cn } from '@/lib/utils';
 import type { ColumnDataType, DataPreview, QueryMode, EdaSummary } from '@/types/file';
@@ -505,179 +503,151 @@ export function DataTable({
       </Dialog>
     ) : null;
 
-    if (controlsPortalTarget) {
-      return createPortal(
-        <TooltipProvider delayDuration={300}>
-          <div className="relative flex h-7 flex-1 min-w-0 items-center overflow-hidden">
-            <div
-              className={cn(
-                'flex max-w-full min-w-0 items-center gap-1 overflow-hidden transition-opacity duration-150 ease-out',
-                searchExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
-              )}
-            >
-              <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSearchExpanded(true)}
-                      className="h-7 w-7 shrink-0"
-                      aria-label="Search"
-                    >
-                      <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Search</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleExport}
-                      className="h-7 w-7 shrink-0"
-                      aria-label="Export"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Export</TooltipContent>
-                </Tooltip>
-
-                {onSave && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onSave}
-                        className="h-7 w-7 shrink-0"
-                        aria-label="Save"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Save</TooltipContent>
-                  </Tooltip>
-                )}
-
-                {queryInfoDialog}
-              </div>
-
-              {hasEda && (
-                <IconModeToggle
-                  value={edaView}
-                  onValueChange={(val) => {
-                    if (val === 'table' || val === 'eda') setEdaView(val);
-                  }}
-                  className="ml-auto shrink-0"
-                  options={[
-                    {
-                      value: 'table',
-                      ariaLabel: 'Table view',
-                      icon: TableIcon,
-                      tooltip: 'Table'
-                    },
-                    {
-                      value: 'eda',
-                      ariaLabel: 'Analysis view',
-                      icon: ChartPie,
-                      tooltip: 'Analysis'
-                    }
-                  ]}
-                />
-              )}
-            </div>
-
-            <div
-              className={cn(
-                'absolute inset-0 flex items-center transition-opacity duration-150 ease-out',
-                searchExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
-              )}
-            >
-              <div
-                className="flex h-7 w-full items-center gap-1 rounded-md bg-muted/50 pl-0 pr-1"
-                onBlur={(event) => {
-                  const relatedTarget = event.relatedTarget as Node | null;
-                  if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
-                    setSearchExpanded(false);
-                  }
-                }}
-              >
-                <div className="grid h-7 w-7 shrink-0 place-items-center">
-                  <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <input
-                  ref={searchInputRef}
-                  placeholder="Search rows..."
-                  value={globalFilter}
-                  onChange={(e) => setGlobalFilter(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setSearchExpanded(false);
-                    }
-                  }}
-                  className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
-                  autoFocus
-                />
+    const compactControls = (
+      <div className="relative flex h-7 w-full min-w-0 items-center overflow-hidden" data-testid="datatable-compact-controls">
+        <div
+          className={cn(
+            'flex max-w-full min-w-0 items-center gap-1 overflow-hidden transition-opacity duration-150 ease-out',
+            searchExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          )}
+          data-testid="datatable-controls-default"
+        >
+          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => {
-                    setGlobalFilter('');
-                    setSearchExpanded(false);
-                  }}
+                  onClick={() => setSearchExpanded(true)}
                   className="h-7 w-7 shrink-0"
-                  aria-label="Close search"
+                  aria-label="Search"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
                 </Button>
-              </div>
-            </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Search</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleExport}
+                  className="h-7 w-7 shrink-0"
+                  aria-label="Export"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Export</TooltipContent>
+            </Tooltip>
+
+            {onSave && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onSave}
+                    className="h-7 w-7 shrink-0"
+                    aria-label="Save"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Save</TooltipContent>
+              </Tooltip>
+            )}
+
+            {queryInfoDialog}
           </div>
-        </TooltipProvider>,
+
+          {hasEda && (
+            <IconModeToggle
+              value={edaView}
+              onValueChange={(val) => {
+                if (val === 'table' || val === 'eda') setEdaView(val);
+              }}
+              className="ml-auto shrink-0"
+              options={[
+                {
+                  value: 'table',
+                  ariaLabel: 'Table view',
+                  icon: TableIcon,
+                  tooltip: 'Table'
+                },
+                {
+                  value: 'eda',
+                  ariaLabel: 'Analysis view',
+                  icon: ChartPie,
+                  tooltip: 'Analysis'
+                }
+              ]}
+            />
+          )}
+        </div>
+
+        <div
+          className={cn(
+            'absolute inset-0 flex items-center transition-opacity duration-150 ease-out',
+            searchExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          )}
+          data-testid="datatable-controls-search-overlay"
+        >
+          <div
+            className="flex h-7 w-full items-center gap-1 rounded-md bg-muted/50 pl-0 pr-1"
+            onBlur={(event) => {
+              const relatedTarget = event.relatedTarget as Node | null;
+              if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
+                setSearchExpanded(false);
+              }
+            }}
+          >
+            <div className="grid h-7 w-7 shrink-0 place-items-center">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <input
+              ref={searchInputRef}
+              placeholder="Search rows..."
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchExpanded(false);
+                }
+              }}
+              className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+              autoFocus
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setGlobalFilter('');
+                setSearchExpanded(false);
+              }}
+              className="h-7 w-7 shrink-0"
+              aria-label="Close search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+
+    if (controlsPortalTarget) {
+      return createPortal(
+        <TooltipProvider delayDuration={300}>{compactControls}</TooltipProvider>,
         controlsPortalTarget
       );
     }
 
     return (
       <TooltipProvider delayDuration={300}>
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/30 shrink-0">
-          <div className="relative w-[220px]">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-              className="pl-8 pr-8 h-8 text-sm"
-            />
-            {globalFilter && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setGlobalFilter('')}
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleExport} className="h-8">
-              <Download className="h-3.5 w-3.5 mr-1" />
-              Export
-            </Button>
-            {onSave && (
-              <Button variant="outline" size="sm" onClick={onSave} className="h-8">
-                <Save className="h-3.5 w-3.5 mr-1" />
-                Save
-              </Button>
-            )}
-            {queryInfoDialog}
-          </div>
+        <div className="shrink-0 border-b bg-muted/30 px-4 py-2.5">
+          {compactControls}
         </div>
       </TooltipProvider>
     );

@@ -73,6 +73,3 @@ Object.defineProperty(globalThis, 'IntersectionObserver', {
   writable: true,
   value: IntersectionObserverMock
 });
-
-// Suppress console errors in tests by default (can be enabled per-test)
-vi.spyOn(console, 'error').mockImplementation(() => {});

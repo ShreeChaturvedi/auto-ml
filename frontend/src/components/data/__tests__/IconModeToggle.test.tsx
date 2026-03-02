@@ -25,19 +25,19 @@ function ToggleHarness() {
 }
 
 describe('IconModeToggle', () => {
-  it('shows selected styling for tooltip-wrapped items', async () => {
+  it('preserves toggle state for tooltip-wrapped items', async () => {
     const user = userEvent.setup();
     render(<ToggleHarness />);
 
     const tableButton = screen.getByRole('radio', { name: /table view/i });
     const analysisButton = screen.getByRole('radio', { name: /analysis view/i });
 
-    expect(tableButton).toHaveClass('bg-background');
-    expect(analysisButton).not.toHaveClass('bg-background');
+    expect(tableButton).toHaveAttribute('data-state', 'on');
+    expect(analysisButton).toHaveAttribute('data-state', 'off');
 
     await user.click(analysisButton);
 
-    expect(analysisButton).toHaveClass('bg-background');
-    expect(tableButton).not.toHaveClass('bg-background');
+    expect(analysisButton).toHaveAttribute('data-state', 'on');
+    expect(tableButton).toHaveAttribute('data-state', 'off');
   });
 });

@@ -12,21 +12,110 @@
  * docs/design-system.md
  */
 
-import { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
+import { useState, useCallback, Suspense, lazy, useEffect, useRef, useId } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
 import type { QueryMode } from '@/types/file';
 
+interface HslColorChannels {
+  hue: number;
+  saturation: number;
+  lightness: number;
+}
+
+interface ExecuteGradientStops {
+  dark: string;
+  light: string;
+}
+
+function clampColorChannel(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function parseHslChannels(rawColor: string): HslColorChannels | null {
+  const normalized = rawColor
+    .trim()
+    .replace(/\s*\/.*$/, '')
+    .replace(/,/g, ' ')
+    .replace(/%/g, '');
+
+  const channelValues = normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => Number(part));
+
+  if (channelValues.length < 3 || channelValues.some(Number.isNaN)) {
+    return null;
+  }
+
+  return {
+    hue: channelValues[0],
+    saturation: channelValues[1],
+    lightness: channelValues[2]
+  };
+}
+
+function toHslColor(channels: HslColorChannels): string {
+  const hue = ((channels.hue % 360) + 360) % 360;
+  const saturation = clampColorChannel(channels.saturation, 0, 100);
+  const lightness = clampColorChannel(channels.lightness, 0, 100);
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
+
+function resolveExecuteGradientStops(): ExecuteGradientStops {
+  if (typeof window === 'undefined') {
+    return {
+      dark: 'hsl(var(--primary))',
+      light: 'hsl(var(--primary))'
+    };
+  }
+
+  const primaryValue = getComputedStyle(document.documentElement)
+    .getPropertyValue('--primary')
+    .trim();
+  const primaryChannels = parseHslChannels(primaryValue);
+
+  if (!primaryChannels) {
+    return {
+      dark: 'hsl(var(--primary))',
+      light: 'hsl(var(--primary))'
+    };
+  }
+
+  return {
+    dark: toHslColor({
+      ...primaryChannels,
+      lightness: primaryChannels.lightness - 24
+    }),
+    light: toHslColor({
+      ...primaryChannels,
+      lightness: primaryChannels.lightness + 18
+    })
+  };
+}
+
 // Animated lightning bolt icon for execute button
-function AnimatedExecuteIcon({ isExecuting }: { isExecuting: boolean }) {
+function AnimatedExecuteIcon({
+  isExecuting,
+  gradientId,
+  gradientStops
+}: {
+  isExecuting: boolean;
+  gradientId: string;
+  gradientStops: ExecuteGradientStops;
+}) {
   if (isExecuting) {
     return <Loader2 className="h-4 w-4 animate-spin" />;
   }
+
+  const boltPath = 'M13 2L3 14h9l-1 8 10-12h-9l1-8z';
+
   return (
     <svg
       className="h-4 w-4 execute-icon"
@@ -38,16 +127,18 @@ function AnimatedExecuteIcon({ isExecuting }: { isExecuting: boolean }) {
       strokeLinejoin="round"
     >
       <defs>
-        <linearGradient id="executeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#60a5fa" />
-          <stop offset="50%" stopColor="#a78bfa" />
-          <stop offset="100%" stopColor="#f472b6" />
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={gradientStops.dark} />
+          <stop offset="50%" stopColor={gradientStops.light} />
+          <stop offset="100%" stopColor={gradientStops.dark} />
         </linearGradient>
       </defs>
+      <path d={boltPath} stroke={`url(#${gradientId})`} className="execute-icon-base" />
       <path
-        d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
-        stroke="url(#executeGradient)"
-        className="animate-pulse"
+        d={boltPath}
+        stroke={`url(#${gradientId})`}
+        pathLength={1}
+        className="execute-icon-trace opacity-0 [stroke-dasharray:1] [stroke-dashoffset:1] transition-[stroke-dashoffset,opacity] duration-500 ease-out group-hover/execute:[stroke-dashoffset:0] group-hover/execute:opacity-100 motion-reduce:transition-none"
       />
     </svg>
   );
@@ -407,6 +498,9 @@ export function QueryPanel({
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
     resolveEditorTheme(appTheme)
   );
+  const iconGradientIdSeed = useId();
+  const iconGradientId = `executeGradient-${iconGradientIdSeed.replace(/:/g, '')}`;
+  const executeGradientStops = resolveExecuteGradientStops();
   const monacoRef = useRef<Monaco | null>(null);
   
   // Store completion provider disposable for cleanup
@@ -487,23 +581,67 @@ export function QueryPanel({
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
 
-  if (collapsed) {
-    return (
-      <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
-        {/* Collapsed Header */}
-        <div className="flex items-center justify-center h-14 border-b border-border bg-card shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onCollapsedChange?.(false)}
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-            title="Expand Query Panel"
-          >
-            <PanelRight className="h-4 w-4" />
-          </Button>
-        </div>
-        
-        {/* Body placeholder for collapsed state */}
+  return (
+    <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
+      {/* Unified Header — collapse button stays at the right edge */}
+      <div className="flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
+        {!collapsed && (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <ToggleGroup
+              type="single"
+              value={mode}
+              onValueChange={(val) => {
+                if (val === 'sql' || val === 'english') {
+                  handleModeChange(val);
+                }
+              }}
+              className="bg-muted/50 p-0.5 rounded-md h-7"
+            >
+              <ToggleGroupItem
+                value="english"
+                aria-label="Natural language mode"
+                className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              >
+                <MessageSquare className="h-3 w-3" />
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="sql"
+                aria-label="SQL mode"
+                className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              >
+                <Code2 className="h-3 w-3" />
+              </ToggleGroupItem>
+            </ToggleGroup>
+
+            <div ref={controlsMountRef} className="flex min-w-0 items-center gap-1" />
+          </div>
+        )}
+        {collapsed && <div className="flex-1" />}
+
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onCollapsedChange?.(!collapsed)}
+                className={cn(
+                  'h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground',
+                  !collapsed && 'ml-2'
+                )}
+              >
+                <PanelRight className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {collapsed ? 'Expand query panel' : 'Collapse query panel'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+
+      {/* Collapsed body */}
+      {collapsed && (
         <div
           role="button"
           tabIndex={0}
@@ -522,58 +660,11 @@ export function QueryPanel({
             </span>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div className={cn('flex flex-col h-full bg-card border-l transition-all duration-300 ease-in-out', className)}>
-      {/* Header - aligns with FileTabBar at h-14 */}
-      <div className="flex items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <ToggleGroup
-            type="single"
-            value={mode}
-            onValueChange={(val) => {
-              if (val === 'sql' || val === 'english') {
-                handleModeChange(val);
-              }
-            }}
-            className="bg-muted/50 p-0.5 rounded-md h-7"
-          >
-            <ToggleGroupItem
-              value="english"
-              aria-label="Natural language mode"
-              title="Natural language mode"
-              className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-            >
-              <MessageSquare className="h-3 w-3" />
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="sql"
-              aria-label="SQL mode"
-              title="SQL mode"
-              className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
-            >
-              <Code2 className="h-3 w-3" />
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          <div ref={controlsMountRef} className="flex min-w-0 items-center gap-1" />
-        </div>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => onCollapsedChange?.(true)}
-          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground ml-2"
-          title="Collapse Query Panel"
-        >
-          <PanelRight className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Query Input */}
+      {/* Query Input + Execute (hidden when collapsed) */}
+      {!collapsed && (
+      <>
       <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
         {mode === 'sql' ? (
           // SQL Mode: Monaco Editor with syntax highlighting
@@ -862,12 +953,18 @@ export function QueryPanel({
           variant="secondary"
           onClick={handleExecute}
           disabled={isExecuting || !currentQuery.trim()}
-          className="w-full h-9 text-sm gap-2"
+          className="group/execute w-full h-9 text-sm gap-2"
         >
-          <AnimatedExecuteIcon isExecuting={isExecuting} />
+          <AnimatedExecuteIcon
+            isExecuting={isExecuting}
+            gradientId={iconGradientId}
+            gradientStops={executeGradientStops}
+          />
           {isExecuting ? 'Executing...' : 'Execute'}
         </Button>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -687,6 +687,7 @@ export function PreprocessingPanel() {
         onOpenChange={setDatasetModalOpen}
         datasetSearch={datasetSearch}
         onDatasetSearchChange={setDatasetSearch}
+        allTables={tables}
         filteredTables={filteredTables}
         candidateDatasetId={candidateDatasetId}
         onCandidateDatasetChange={setCandidateDatasetId}

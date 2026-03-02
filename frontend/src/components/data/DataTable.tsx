@@ -284,7 +284,9 @@ export function DataTable({
 
   const { rows } = table.getRowModel();
 
-  const ROW_HEIGHT = 40;
+  // Row height estimate for the virtualizer. Keep in sync with the cell padding
+  // defined below (TableHead: h-8, TableCell: py-1.5 → ~32 px per row).
+  const ROW_HEIGHT = 32;
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -332,12 +334,12 @@ export function DataTable({
         ref={tableContainerRef}
         className="flex-1 min-h-0 overflow-auto"
       >
-        <table className="w-full caption-bottom text-sm">
+        <table className="w-full caption-bottom text-xs">
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="whitespace-nowrap">
+                  <TableHead key={header.id} className="whitespace-nowrap h-8 px-3">
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -363,7 +365,7 @@ export function DataTable({
                       ref={(node) => rowVirtualizer.measureElement(node)}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
+                        <TableCell key={cell.id} className="py-1.5 px-3">
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                       ))}

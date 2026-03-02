@@ -47,7 +47,7 @@ export function DatasetChooserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Select a dataset</DialogTitle>
           <DialogDescription>
@@ -55,7 +55,7 @@ export function DatasetChooserDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="space-y-3 flex-1 min-h-0">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <AnimatedPlaceholderInput
@@ -68,7 +68,7 @@ export function DatasetChooserDialog({
             />
           </div>
 
-          <ScrollArea className="h-64">
+          <ScrollArea className="h-72 max-h-full">
             <div className="space-y-2 p-2">
               {filteredTables.map((table) => {
                 const selected = candidateDatasetId === table.datasetId;
@@ -115,16 +115,6 @@ export function DatasetChooserDialog({
                             +{table.columns.length - 5} more
                           </span>
                         ) : null}
-                      </div>
-                    ) : null}
-                    {previewRows.length > 0 ? (
-                      <div
-                        className={cn(
-                          'overflow-hidden text-[11px] text-muted-foreground transition-[max-height,opacity,margin-top] duration-200',
-                          selected ? 'mt-0 max-h-0 opacity-0' : 'mt-2 max-h-6 opacity-100'
-                        )}
-                      >
-                        Select to preview sample rows.
                       </div>
                     ) : null}
                     {previewRows.length > 0 ? (

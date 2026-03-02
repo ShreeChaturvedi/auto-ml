@@ -40,7 +40,7 @@ interface ShootingStar {
 }
 
 export interface ShootingStarsProps {
-  /** Minimum travel speed in pixels per frame. @default 4 */
+  /** Minimum travel speed in pixels per frame. @default 6 */
   minSpeed?: number;
   /** Maximum travel speed in pixels per frame. @default 15 */
   maxSpeed?: number;
@@ -91,7 +91,7 @@ function randomEdgeOrigin(
 // ---------------------------------------------------------------------------
 
 export function ShootingStars({
-  minSpeed = 4,
+  minSpeed = 6,
   maxSpeed = 15,
   minDelay = 1200,
   maxDelay = 4200,

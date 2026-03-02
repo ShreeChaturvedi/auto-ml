@@ -511,109 +511,90 @@ export function DataTable({
           <div className="relative flex h-10 flex-1 min-w-0 items-center">
             <div
               className={cn(
-                'flex min-w-0 items-center gap-2 transition-all duration-200 ease-out',
+                'flex items-center gap-1 min-w-0 transition-all duration-200 ease-out',
                 searchExpanded ? 'opacity-0 blur-[1px] pointer-events-none' : 'opacity-100'
               )}
             >
               {hasEda && (
-                <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/35 p-0.5">
-                  <ToggleGroup
-                    type="single"
-                    value={edaView}
-                    onValueChange={(val) => {
-                      if (val === 'table' || val === 'eda') setEdaView(val);
-                    }}
-                    className="h-7 gap-1 rounded-sm bg-transparent p-0"
-                  >
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <ToggleGroupItem
-                          value="table"
-                          aria-label="Table view"
-                          className="h-6 gap-1 rounded-sm px-2 text-[11px] font-medium data-[state=on]:bg-background data-[state=on]:shadow-sm"
-                        >
-                          <TableIcon className="h-3 w-3" />
-                          <span className="leading-none">Table</span>
-                        </ToggleGroupItem>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">Table view</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <ToggleGroupItem
-                          value="eda"
-                          aria-label="Analysis view"
-                          className="h-6 gap-1 rounded-sm px-2 text-[11px] font-medium data-[state=on]:bg-background data-[state=on]:shadow-sm"
-                        >
-                          <BarChart3 className="h-3 w-3" />
-                          <span className="leading-none">Analysis</span>
-                        </ToggleGroupItem>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">Analysis view</TooltipContent>
-                    </Tooltip>
-                  </ToggleGroup>
-                </div>
-              )}
-
-              {hasEda && <div className="h-4 w-px bg-border/70" aria-hidden />}
-
-              <div className="flex h-8 items-center gap-0.5 rounded-md border border-border/70 bg-muted/25 px-0.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSearchExpanded(true)}
-                      className="h-7 w-7 rounded-sm"
-                      aria-label="Search"
-                    >
-                      <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Search rows</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleExport}
-                      className="h-7 w-7 rounded-sm"
-                      aria-label="Export"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Export CSV</TooltipContent>
-                </Tooltip>
-
-                {onSave && (
+                <ToggleGroup
+                  type="single"
+                  value={edaView}
+                  onValueChange={(val) => {
+                    if (val === 'table' || val === 'eda') setEdaView(val);
+                  }}
+                  className="bg-muted/50 p-0.5 rounded-md h-7"
+                >
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onSave}
-                        className="h-7 w-7 rounded-sm"
-                        aria-label="Save"
+                      <ToggleGroupItem
+                        value="table"
+                        aria-label="Table view"
+                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
                       >
-                        <Save className="h-3.5 w-3.5" />
-                      </Button>
+                        <TableIcon className="h-3 w-3" />
+                      </ToggleGroupItem>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom">Save</TooltipContent>
+                    <TooltipContent side="bottom">Table</TooltipContent>
                   </Tooltip>
-                )}
-              </div>
-
-              {queryInfoDialog && (
-                <>
-                  <div className="h-4 w-px bg-border/70" aria-hidden />
-                  <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/25 px-0.5">
-                    {queryInfoDialog}
-                  </div>
-                </>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ToggleGroupItem
+                        value="eda"
+                        aria-label="Analysis view"
+                        className="h-6 w-6 data-[state=on]:bg-background data-[state=on]:shadow-sm"
+                      >
+                        <BarChart3 className="h-3 w-3" />
+                      </ToggleGroupItem>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Analysis</TooltipContent>
+                  </Tooltip>
+                </ToggleGroup>
               )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSearchExpanded(true)}
+                    className="h-7 w-7"
+                    aria-label="Search"
+                  >
+                    <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Search</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleExport}
+                    className="h-7 w-7"
+                    aria-label="Export"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Export</TooltipContent>
+              </Tooltip>
+              {onSave && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onSave}
+                      className="h-7 w-7"
+                      aria-label="Save"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Save</TooltipContent>
+                </Tooltip>
+              )}
+              {queryInfoDialog}
             </div>
 
             <div

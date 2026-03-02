@@ -72,6 +72,7 @@ export function DataViewerTab() {
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
   const [queryPanelIsExpanding, setQueryPanelIsExpanding] = useState(false);
+  const [queryPanelIsTransitioning, setQueryPanelIsTransitioning] = useState(false);
   const [queryMode, setQueryMode] = useState<QueryMode>('sql');
   const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
   const { projectId } = useParams();
@@ -227,15 +228,31 @@ export function DataViewerTab() {
     [activeProject, createArtifact, setActiveFileTab, tableNames]
   );
 
-  const handleQueryPanelCollapsedChange = useCallback((nextCollapsed: boolean) => {
-    if (!nextCollapsed) {
-      setQueryPanelIsExpanding(true);
-    } else {
-      setQueryPanelIsExpanding(false);
+  const handleQueryPanelCollapsedChange = useCallback(
+    (nextCollapsed: boolean) => {
+      if (queryPanelIsTransitioning || nextCollapsed === queryPanelCollapsed) {
+        return;
+      }
+
+      setQueryPanelIsTransitioning(true);
+      setQueryPanelIsExpanding(!nextCollapsed);
+      setQueryPanelCollapsed(nextCollapsed);
+    },
+    [queryPanelCollapsed, queryPanelIsTransitioning]
+  );
+
+  useEffect(() => {
+    if (!queryPanelIsTransitioning) {
+      return;
     }
 
-    setQueryPanelCollapsed(nextCollapsed);
-  }, []);
+    const timeoutId = window.setTimeout(() => {
+      setQueryPanelIsTransitioning(false);
+      setQueryPanelIsExpanding(false);
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [queryPanelIsTransitioning]);
 
   if (files.length === 0) {
     return (
@@ -380,15 +397,17 @@ export function DataViewerTab() {
       {/* Query Panel (right side) */}
       <div
         className={cn(
-          'shrink-0 transition-[width] duration-300 ease-in-out',
+          'shrink-0 transition-[width] duration-300 ease-in-out [will-change:width]',
           queryPanelCollapsed ? 'w-12' : 'w-[400px]'
         )}
+        style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}
         onTransitionEnd={(event) => {
           if (event.target !== event.currentTarget || event.propertyName !== 'width') {
             return;
           }
 
           setQueryPanelIsExpanding(false);
+          setQueryPanelIsTransitioning(false);
         }}
       >
         <QueryPanel

@@ -507,7 +507,7 @@ export function QueryPanel({
   const modKey = isMac ? '⌘' : '⌃';
 
   return (
-    <div className={cn('relative flex flex-col h-full bg-card border-l', className)}>
+    <div className={cn('relative flex flex-col h-full bg-card border-l [contain:layout_paint]', className)}>
       {/* Unified Header — collapse button stays at the right edge */}
       <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
         <div
@@ -517,6 +517,7 @@ export function QueryPanel({
               ? 'opacity-100 translate-x-0 blur-0'
               : 'opacity-0 translate-x-1 blur-[1px] pointer-events-none'
           )}
+          style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
         >
             <ToggleGroup
               type="single"
@@ -598,13 +599,14 @@ export function QueryPanel({
             ? 'opacity-100 translate-y-0 blur-0'
             : 'pointer-events-none opacity-0 translate-y-1 blur-[1px] select-none'
         )}
+        style={{ willChange: isExpanding ? 'opacity, transform, filter' : 'auto' }}
       >
       <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
         {mode === 'sql' ? (
           // SQL Mode: Monaco Editor with syntax highlighting
           <div
             className={cn(
-              'relative flex-1 border rounded-md overflow-hidden bg-background',
+              'relative flex-1 border rounded-md overflow-hidden bg-background [contain:layout_paint]',
               '[&_.view-lines]:transition-opacity [&_.view-lines]:duration-200 [&_.view-lines]:ease-out',
               '[&_.line-numbers]:transition-opacity [&_.line-numbers]:duration-200 [&_.line-numbers]:ease-out',
               '[&_.margin-view-overlays]:transition-opacity [&_.margin-view-overlays]:duration-200 [&_.margin-view-overlays]:ease-out',

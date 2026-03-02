@@ -71,6 +71,7 @@ export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
+  const [queryPanelContentVisible, setQueryPanelContentVisible] = useState(true);
   const [queryMode, setQueryMode] = useState<QueryMode>('sql');
   const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
   const { projectId } = useParams();
@@ -226,6 +227,14 @@ export function DataViewerTab() {
     [activeProject, createArtifact, setActiveFileTab, tableNames]
   );
 
+  const handleQueryPanelCollapsedChange = useCallback((nextCollapsed: boolean) => {
+    if (!nextCollapsed) {
+      setQueryPanelContentVisible(false);
+    }
+
+    setQueryPanelCollapsed(nextCollapsed);
+  }, []);
+
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -372,6 +381,15 @@ export function DataViewerTab() {
           'shrink-0 transition-[width] duration-300 ease-in-out',
           queryPanelCollapsed ? 'w-12' : 'w-[400px]'
         )}
+        onTransitionEnd={(event) => {
+          if (event.target !== event.currentTarget || event.propertyName !== 'width') {
+            return;
+          }
+
+          if (!queryPanelCollapsed) {
+            setQueryPanelContentVisible(true);
+          }
+        }}
       >
         <QueryPanel
           onExecute={handleExecuteQuery}
@@ -380,7 +398,8 @@ export function DataViewerTab() {
           tableNames={tableNames}
           columnsByTable={columnsByTable}
           collapsed={queryPanelCollapsed}
-          onCollapsedChange={setQueryPanelCollapsed}
+          onCollapsedChange={handleQueryPanelCollapsedChange}
+          expandedContentVisible={queryPanelContentVisible}
           mode={queryMode}
           onModeChange={setQueryMode}
           controlsPortalTarget={controlsPortalTarget}

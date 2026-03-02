@@ -339,6 +339,8 @@ interface QueryPanelProps {
   controlsPortalTarget?: HTMLElement | null;
   /** Callback when the portal target element is mounted */
   onMountPortalTarget?: (target: HTMLElement | null) => void;
+  /** Whether expanded controls/editor content should be visible */
+  expandedContentVisible?: boolean;
 }
 
 const DEFAULT_SQL = `-- Enter your SQL query
@@ -373,7 +375,8 @@ export function QueryPanel({
   mode: externalMode,
   onModeChange,
   controlsPortalTarget,
-  onMountPortalTarget
+  onMountPortalTarget,
+  expandedContentVisible
 }: QueryPanelProps) {
   // Use external mode if provided, otherwise use internal state
   const [internalMode, setInternalMode] = useState<QueryMode>('sql');
@@ -382,7 +385,6 @@ export function QueryPanel({
   // Separate state for each mode to preserve inputs when switching
   const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
-  const [showExpandedContent, setShowExpandedContent] = useState(!collapsed);
 
   // Ref for the controls portal target div
   const controlsMountRef = useRef<HTMLDivElement>(null);
@@ -467,18 +469,7 @@ export function QueryPanel({
     monacoRef.current.editor.setTheme(monacoTheme);
   }, [monacoTheme]);
 
-  useEffect(() => {
-    if (collapsed) {
-      setShowExpandedContent(false);
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setShowExpandedContent(true);
-    }, 170);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [collapsed]);
+  const showExpandedContent = !collapsed && (expandedContentVisible ?? true);
 
   // Get current query based on mode
   const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;

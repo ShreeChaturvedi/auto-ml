@@ -110,8 +110,8 @@ export function StarsBackground({
         return {
           x: Math.random() * width,
           y: Math.random() * height,
-          // Slightly bigger radius for better visibility
-          radius: Math.random() * 0.8 + 0.8,
+          // Visible but not oversized — range [0.5, 1.1] px radius
+          radius: Math.random() * 0.6 + 0.5,
           opacity: Math.random() * 0.5 + 0.5,
           twinkleSpeed: shouldTwinkle
             ? Math.random() * (maxTwinkleSpeed - minTwinkleSpeed) + minTwinkleSpeed

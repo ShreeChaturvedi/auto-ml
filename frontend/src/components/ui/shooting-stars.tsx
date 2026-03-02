@@ -136,15 +136,19 @@ export function ShootingStars({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Effect 2 — Self-scheduling spawn timer.
-  //            Creates one star at a time; after each star the timer reschedules
-  //            itself with a fresh random delay.  Cleaned up fully on unmount.
+  // Effect 2 — Reactive spawn: schedules a new star only after the previous one
+  //            has exited bounds (star === null).  This guarantees a star is
+  //            never replaced mid-flight, eliminating the abrupt-disappearance
+  //            bug caused by the old self-scheduling timer.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const { width, height } = containerSize;
     if (width === 0 || height === 0) return;
+    if (star !== null) return; // star still in flight — wait for it to exit
 
-    const schedule = () => {
+    const delay = Math.random() * (maxDelay - minDelay) + minDelay;
+
+    spawnTimerRef.current = setTimeout(() => {
       const { x, y, angle } = randomEdgeOrigin(width, height);
       const speed = Math.random() * (maxSpeed - minSpeed) + minSpeed;
 
@@ -157,14 +161,7 @@ export function ShootingStars({
         scale: 1,
         distance: 0,
       });
-
-      const delay = Math.random() * (maxDelay - minDelay) + minDelay;
-      spawnTimerRef.current = setTimeout(schedule, delay);
-    };
-
-    // Stagger the very first appearance so the page doesn't flash immediately.
-    const initialDelay = Math.random() * (maxDelay - minDelay) + minDelay;
-    spawnTimerRef.current = setTimeout(schedule, initialDelay);
+    }, delay);
 
     return () => {
       if (spawnTimerRef.current !== null) {
@@ -172,7 +169,7 @@ export function ShootingStars({
         spawnTimerRef.current = null;
       }
     };
-  }, [containerSize.width, containerSize.height, minSpeed, maxSpeed, minDelay, maxDelay]);
+  }, [star, containerSize.width, containerSize.height, minSpeed, maxSpeed, minDelay, maxDelay]);
 
   // ---------------------------------------------------------------------------
   // Effect 3 — requestAnimationFrame movement loop.

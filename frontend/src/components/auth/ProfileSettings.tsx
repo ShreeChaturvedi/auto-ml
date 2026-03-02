@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -84,7 +84,9 @@ function SaveButton({
 
 export function ProfileSettings() {
   const navigate = useNavigate();
+  const DEV_BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
   const user = useAuthStore((state) => state.user);
+  const isLoading = useAuthStore((state) => state.isLoading);
   const setUser = useAuthStore((state) => state.setUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const [profileState, setProfileState] = useState<ButtonState>('idle');
@@ -163,14 +165,38 @@ export function ProfileSettings() {
   };
 
   if (!user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Loading...</span>
+    if (DEV_BYPASS_AUTH) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background px-6">
+          <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-sm">
+            <h1 className="text-lg font-semibold tracking-tight">Dev Auth Bypass Active</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Profile settings need a signed-in account. Disable `VITE_DEV_BYPASS_AUTH` or sign in to
+              view and edit profile details.
+            </p>
+            <div className="mt-5 flex justify-center gap-3">
+              <Button variant="outline" onClick={() => navigate('/')}>
+                Back to Projects
+              </Button>
+              <Button onClick={() => navigate('/login')}>Go to Login</Button>
+            </div>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+
+    if (isLoading) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading...</span>
+          </div>
+        </div>
+      );
+    }
+
+    return <Navigate to="/login" replace />;
   }
 
   return (

@@ -19,12 +19,13 @@ vi.mock('../services/sqlExecutor.js', () => ({
   executeReadOnlyQuery: vi.fn()
 }));
 
-vi.mock('../services/nlToSql.js', () => ({
-  generateSqlFromNaturalLanguage: vi.fn()
+vi.mock('../services/nlToSqlV2.js', () => ({
+  generateSqlFromNaturalLanguageV2: vi.fn(),
+  repairSqlFromExecutionErrorV2: vi.fn()
 }));
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { generateSqlFromNaturalLanguage } from '../services/nlToSql.js';
+import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 import { canListen } from '../tests/canListen.js';
@@ -38,7 +39,8 @@ const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
 const mockGetCachedQueryResult = vi.mocked(getCachedQueryResult);
 const mockStoreCachedQueryResult = vi.mocked(storeCachedQueryResult);
 const mockExecuteReadOnlyQuery = vi.mocked(executeReadOnlyQuery);
-const mockGenerateSqlFromNaturalLanguage = vi.mocked(generateSqlFromNaturalLanguage);
+const mockGenerateSqlFromNaturalLanguageV2 = vi.mocked(generateSqlFromNaturalLanguageV2);
+const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV2);
 
 function createTestApp() {
   const app = express();
@@ -51,6 +53,7 @@ describeIf('query routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHasDatabaseConfiguration.mockReturnValue(true);
+    mockRepairSqlFromExecutionErrorV2.mockRejectedValue(new Error('repair unavailable'));
   });
 
   describe('POST /api/query/sql', () => {
@@ -310,10 +313,21 @@ describeIf('query routes', () => {
     });
 
     it('generates SQL from natural language and executes it', async () => {
-      mockGenerateSqlFromNaturalLanguage.mockReturnValue({
+      mockGenerateSqlFromNaturalLanguageV2.mockResolvedValue({
         sql: 'SELECT * FROM users',
         rationale: 'Fetching all users',
-        queryId: 'test-query-id'
+        queryId: 'test-query-id',
+        explanation: {
+          intentSummary: 'Fetch users',
+          selectedTables: ['users'],
+          joinPlan: [],
+          filters: [],
+          aggregations: [],
+          assumptions: [],
+          validationNotes: [],
+          confidence: 0.9,
+          warningLevel: 'none'
+        }
       });
       mockGetCachedQueryResult.mockResolvedValue(null);
       const queryResult = {
@@ -339,15 +353,28 @@ describeIf('query routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.nl.sql).toBe('SELECT * FROM users');
       expect(response.body.nl.rationale).toBe('Fetching all users');
+      expect(response.body.nl.explanation.intentSummary).toBe('Fetch users');
       expect(response.body.nl.cached).toBe(false);
       expect(response.body.nl.query).toEqual(queryResult);
+      expect(response.body.nl.queryExecutionError).toBeNull();
     });
 
     it('returns cached result for generated SQL', async () => {
-      mockGenerateSqlFromNaturalLanguage.mockReturnValue({
+      mockGenerateSqlFromNaturalLanguageV2.mockResolvedValue({
         sql: 'SELECT * FROM users',
         rationale: 'Fetching all users',
-        queryId: 'test-query-id'
+        queryId: 'test-query-id',
+        explanation: {
+          intentSummary: 'Fetch users',
+          selectedTables: ['users'],
+          joinPlan: [],
+          filters: [],
+          aggregations: [],
+          assumptions: [],
+          validationNotes: [],
+          confidence: 0.9,
+          warningLevel: 'none'
+        }
       });
       const cachedResult = {
         queryId: 'cached-nl-query-id',
@@ -369,15 +396,113 @@ describeIf('query routes', () => {
         });
 
       expect(response.status).toBe(200);
+      expect(response.body.nl.explanation.selectedTables).toEqual(['users']);
       expect(response.body.nl.cached).toBe(true);
       expect(response.body.nl.query).toEqual(cachedResult);
+      expect(response.body.nl.queryExecutionError).toBeNull();
       expect(mockExecuteReadOnlyQuery).not.toHaveBeenCalled();
     });
 
-    it('returns error when NL processing fails', async () => {
-      mockGenerateSqlFromNaturalLanguage.mockImplementation(() => {
-        throw new Error('Failed to parse query');
+    it('returns generated SQL even when execution fails', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockResolvedValue({
+        sql: 'SELECT * FROM missing_table',
+        rationale: 'Attempt to fetch records',
+        queryId: 'test-query-id',
+        explanation: {
+          intentSummary: 'Fetch records',
+          selectedTables: ['missing_table'],
+          joinPlan: [],
+          filters: [],
+          aggregations: [],
+          assumptions: [],
+          validationNotes: [],
+          confidence: 0.5,
+          warningLevel: 'medium'
+        }
       });
+      mockGetCachedQueryResult.mockResolvedValue(null);
+      mockExecuteReadOnlyQuery.mockRejectedValue(new Error('relation "missing_table" does not exist'));
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl')
+        .send({
+          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          query: 'show data from missing table'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.nl.sql).toBe('SELECT * FROM missing_table');
+      expect(response.body.nl.query).toBeNull();
+      expect(response.body.nl.queryExecutionError).toContain('missing_table');
+      expect(mockStoreCachedQueryResult).not.toHaveBeenCalled();
+      expect(mockRepairSqlFromExecutionErrorV2).toHaveBeenCalled();
+    });
+
+    it('returns repaired SQL result when repair succeeds', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockResolvedValue({
+        sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
+        rationale: 'Compute average EOC',
+        queryId: 'gen-query-id',
+        explanation: {
+          intentSummary: 'Compute average EOC score',
+          selectedTables: ['checkpoints_eoc'],
+          joinPlan: [],
+          filters: [],
+          aggregations: ['average eoc'],
+          assumptions: [],
+          validationNotes: [],
+          confidence: 0.92,
+          warningLevel: 'none'
+        }
+      });
+      mockGetCachedQueryResult.mockResolvedValue(null);
+      mockExecuteReadOnlyQuery
+        .mockRejectedValueOnce(new Error('column "eoc" does not exist'))
+        .mockResolvedValueOnce({
+          queryId: 'repaired-query-id',
+          sql: 'SELECT AVG(response) FROM checkpoints_eoc',
+          rows: [{ avg: 88.2 }],
+          columns: [{ name: 'avg', dataTypeID: 701, dataType: 'float8' }],
+          rowCount: 1,
+          executionMs: 12,
+          cached: false
+        });
+      mockRepairSqlFromExecutionErrorV2.mockResolvedValue({
+        sql: 'SELECT AVG(response) FROM checkpoints_eoc',
+        rationale: 'Use response column instead of eoc.',
+        queryId: 'repair-id',
+        explanation: {
+          intentSummary: 'Compute average response score',
+          selectedTables: ['checkpoints_eoc'],
+          joinPlan: [],
+          filters: [],
+          aggregations: ['average response'],
+          assumptions: ['response represents score'],
+          validationNotes: ['auto-repaired'],
+          confidence: 0.74,
+          warningLevel: 'low'
+        }
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl')
+        .send({
+          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          query: 'highest performing students by eoc'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.nl.sql).toContain('AVG(response)');
+      expect(response.body.nl.queryExecutionError).toBeNull();
+      expect(response.body.nl.query.rows).toEqual([{ avg: 88.2 }]);
+      expect(mockRepairSqlFromExecutionErrorV2).toHaveBeenCalled();
+      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns error when NL processing fails', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockRejectedValue(new Error('Failed to parse query'));
 
       const app = createTestApp();
       const response = await request(app)

@@ -22,6 +22,7 @@ import {
   getPreprocessingRunSnapshot,
   isPreprocessingToolName,
   listPreprocessingRunSnapshots,
+  markPreprocessingRunsInterrupted,
   syncPreprocessingLangGraphState
 } from '../services/llm/preprocessingGraph.js';
 import {
@@ -109,6 +110,42 @@ const preprocessingRunQuerySchema = z.object({
   projectId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(100).optional()
 });
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function extractPreprocessingRunIdsFromHistory(
+  toolCalls: z.infer<typeof ToolCallSchema>[] | undefined,
+  toolResults: z.infer<typeof toolResultSchema>[] | undefined
+): string[] {
+  const runIds = new Set<string>();
+
+  for (const call of toolCalls ?? []) {
+    const args = toRecord(call.args);
+    const runId = toOptionalString(args?.runId);
+    if (runId) {
+      runIds.add(runId);
+    }
+  }
+
+  for (const result of toolResults ?? []) {
+    const output = toRecord(result.output);
+    const runId = toOptionalString(output?.runId);
+    if (runId) {
+      runIds.add(runId);
+    }
+  }
+
+  return [...runIds];
+}
 
 export function createLlmRouter() {
   const router = Router();
@@ -439,6 +476,7 @@ export function createLlmRouter() {
       enableThinking: parsed.data.enableThinking,
       thinkingLevel: parsed.data.thinkingLevel
     });
+    const hintedRunIds = extractPreprocessingRunIdsFromHistory(parsed.data.toolCalls, parsed.data.toolResults);
 
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
@@ -446,7 +484,30 @@ export function createLlmRouter() {
     const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
-    await streamLlmResponse(res, client, request, 'preprocessing');
+
+    const markInterruptedRuns = async (
+      reason: string,
+      source: 'provider_error' | 'stream_aborted'
+    ): Promise<void> => {
+      if (hintedRunIds.length === 0) {
+        return;
+      }
+      await markPreprocessingRunsInterrupted({
+        projectId: parsed.data.projectId,
+        runIds: hintedRunIds,
+        reason,
+        source
+      });
+    };
+
+    await streamLlmResponse(res, client, request, 'preprocessing', {
+      onError: async (message) => {
+        await markInterruptedRuns(message, 'provider_error');
+      },
+      onAborted: async (message) => {
+        await markInterruptedRuns(message, 'stream_aborted');
+      }
+    });
   });
 
   // DEBUG ENDPOINT
@@ -580,7 +641,11 @@ async function streamLlmResponse(
   res: Response,
   client: LlmClient,
   request: LlmRequest,
-  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing'
+  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing',
+  hooks?: {
+    onError?: (message: string) => Promise<void> | void;
+    onAborted?: (message: string) => Promise<void> | void;
+  }
 ) {
   res.setHeader('Content-Type', 'application/x-ndjson');
   res.setHeader('Cache-Control', 'no-cache');
@@ -594,10 +659,31 @@ async function streamLlmResponse(
   let uiEnvelope: LlmEnvelope | null = null;
   let tokenChars = 0;
   let tokenPreview = '';
+  let streamClosed = false;
 
   const writeEvent = (payload: Record<string, unknown>) => {
+    if (streamClosed || res.destroyed || res.writableEnded) {
+      return;
+    }
     res.write(`${JSON.stringify(payload)}\n`);
   };
+  const closeStream = () => {
+    if (streamClosed || res.destroyed || res.writableEnded) {
+      streamClosed = true;
+      return;
+    }
+    res.write(`${JSON.stringify({ type: 'done' })}\n`);
+    streamClosed = true;
+    res.end();
+  };
+
+  res.on('close', () => {
+    if (streamClosed) {
+      return;
+    }
+    streamClosed = true;
+    void hooks?.onAborted?.('Preprocessing request stream was aborted before completion.');
+  });
 
   try {
     await client.stream(request, {
@@ -760,8 +846,7 @@ async function streamLlmResponse(
     }
 
     if (terminalToolConflict) {
-      writeEvent({ type: 'done' });
-      res.end();
+      closeStream();
       return;
     }
 
@@ -816,8 +901,7 @@ async function streamLlmResponse(
             }
           });
         }
-        writeEvent({ type: 'done' });
-        res.end();
+        closeStream();
         return;
       }
       // Model responded with text only - send as text message
@@ -848,16 +932,84 @@ async function streamLlmResponse(
         });
       }
     }
-    writeEvent({ type: 'done' });
-    res.end();
+    closeStream();
   } catch (error) {
+    if (streamClosed) {
+      return;
+    }
+    const normalizedMessage = normalizeLlmStreamErrorMessage(error, kind);
+    try {
+      await hooks?.onError?.(normalizedMessage);
+    } catch (hookError) {
+      console.error('[llm] Failed to persist stream interruption state:', hookError);
+    }
     writeEvent({
       type: 'error',
-      message: error instanceof Error ? error.message : 'LLM request failed'
+      message: normalizedMessage
     });
-    writeEvent({ type: 'done' });
-    res.end();
+    closeStream();
   }
+}
+
+function normalizeLlmStreamErrorMessage(
+  error: unknown,
+  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing'
+): string {
+  const fallback = error instanceof Error ? error.message : 'LLM request failed';
+  const raw = typeof fallback === 'string' ? fallback : 'LLM request failed';
+  const trimmed = raw.trim();
+
+  const parseJsonError = (value: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+
+  const parsedRoot = parseJsonError(trimmed);
+  const parsedError = parsedRoot && parsedRoot.error && typeof parsedRoot.error === 'object' && !Array.isArray(parsedRoot.error)
+    ? parsedRoot.error as Record<string, unknown>
+    : null;
+
+  const code = typeof parsedError?.code === 'number'
+    ? parsedError.code
+    : typeof parsedRoot?.code === 'number'
+      ? parsedRoot.code
+      : undefined;
+  const status = typeof parsedError?.status === 'string'
+    ? parsedError.status
+    : typeof parsedRoot?.status === 'string'
+      ? parsedRoot.status
+      : undefined;
+  const message = typeof parsedError?.message === 'string'
+    ? parsedError.message
+    : typeof parsedRoot?.message === 'string'
+      ? parsedRoot.message
+      : undefined;
+
+  const fingerprint = `${trimmed}\n${status ?? ''}\n${message ?? ''}`.toLowerCase();
+  const isQuotaFailure = code === 429
+    || fingerprint.includes('resource_exhausted')
+    || fingerprint.includes('quota exceeded')
+    || fingerprint.includes('generate_requests_per_model_per_day');
+
+  if (isQuotaFailure) {
+    if (kind === 'preprocessing') {
+      return 'Gemini quota limit reached (429). This preprocessing request was not completed. Check Gemini API quota/billing and retry.';
+    }
+    return 'Gemini quota limit reached (429). Check Gemini API quota/billing and retry.';
+  }
+
+  if (message && message.trim()) {
+    return message.trim();
+  }
+
+  return raw;
 }
 
 const REQUIRED_PLAN_SECTION_PATTERNS = [

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -113,6 +114,22 @@ function runCommand(command, args, options = {}) {
   }
 }
 
+function readBackendPort() {
+  if (!existsSync(backendEnvPath)) {
+    return 4000;
+  }
+
+  const contents = readFileSync(backendEnvPath, 'utf8');
+  const rawPort = readEnvValue(contents, 'PORT');
+  const parsed = Number.parseInt(rawPort, 10);
+
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+    return 4000;
+  }
+
+  return parsed;
+}
+
 function ensureBackendDependencies() {
   log('Ensuring backend dependencies are installed.');
   runCommand('npm', ['--prefix', 'backend', 'install', '--no-audit', '--no-fund']);
@@ -220,6 +237,55 @@ function ensureDatabaseContainer(dbConfig) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function isPortInUse(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+
+    const markResult = (result) => {
+      if (!socket.destroyed) {
+        socket.destroy();
+      }
+      resolve(result);
+    };
+
+    socket.setTimeout(400);
+
+    socket.once('connect', () => markResult(true));
+    socket.once('timeout', () => markResult(false));
+    socket.once('error', (error) => {
+      if (error?.code === 'ECONNREFUSED' || error?.code === 'EHOSTUNREACH') {
+        markResult(false);
+        return;
+      }
+      markResult(true);
+    });
+
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+async function isBackendHealthy(port) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 800);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = await response.json().catch(() => null);
+    return payload?.status === 'ok';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function runMigrationsWithRetry() {
   const maxAttempts = 8;
   let delayMs = 750;
@@ -240,29 +306,48 @@ async function runMigrationsWithRetry() {
   }
 }
 
-function startDevServers() {
+async function startDevServers() {
   log('Starting backend and frontend dev servers.');
 
-  const backend = spawn('npm', ['--prefix', 'backend', 'run', 'dev'], { stdio: 'inherit' });
+  const backendPort = readBackendPort();
+  const portInUse = await isPortInUse(backendPort);
+
+  let backend = null;
+  if (portInUse) {
+    const backendIsHealthy = await isBackendHealthy(backendPort);
+    if (backendIsHealthy) {
+      log(`Backend already running on port ${backendPort}; reusing existing process.`);
+    } else {
+      throw new Error(
+        `Port ${backendPort} is already in use by another process. ` +
+          `Stop that process or change PORT in backend/.env before running npm run dev.`
+      );
+    }
+  } else {
+    backend = spawn('npm', ['--prefix', 'backend', 'run', 'dev'], { stdio: 'inherit' });
+  }
+
   // Frontend `dev` can include backend in some branches; use `dev:ui` to avoid double-starting backend here.
   const frontend = spawn('npm', ['--prefix', 'frontend', 'run', 'dev:ui'], { stdio: 'inherit' });
+  const children = [backend, frontend].filter(Boolean);
 
   const shutdown = (signal) => {
-    if (!backend.killed) {
-      backend.kill(signal);
-    }
-    if (!frontend.killed) {
-      frontend.kill(signal);
+    for (const child of children) {
+      if (!child.killed) {
+        child.kill(signal);
+      }
     }
   };
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  backend.on('exit', (code) => {
-    shutdown('SIGTERM');
-    process.exit(code ?? 0);
-  });
+  if (backend) {
+    backend.on('exit', (code) => {
+      shutdown('SIGTERM');
+      process.exit(code ?? 0);
+    });
+  }
 
   frontend.on('exit', (code) => {
     shutdown('SIGTERM');
@@ -275,7 +360,7 @@ async function main() {
   ensureBackendDependencies();
   ensureDatabaseContainer(dbConfig);
   await runMigrationsWithRetry();
-  startDevServers();
+  await startDevServers();
 }
 
 main().catch((error) => {

@@ -186,12 +186,12 @@ export function StarsBackground({
         else if (star.y > canvas.height) star.y = 0;
 
         // Twinkle effects: opacity + slight radius pulse
-        const isTwinkling = star.twinkleSpeed !== null;
+        const twinkleSpeed = star.twinkleSpeed;
         let opacity = star.opacity;
         let radius = star.radius;
 
-        if (isTwinkling) {
-          const cyclePhase = (now * 0.001) / star.twinkleSpeed;
+        if (twinkleSpeed !== null) {
+          const cyclePhase = (now * 0.001) / twinkleSpeed;
           // opacity between 0.3 and 1.0 based on sin wave
           opacity = 0.65 + 0.35 * Math.sin(cyclePhase);
           // radius pulses slightly with the twinkle (up to +30%)

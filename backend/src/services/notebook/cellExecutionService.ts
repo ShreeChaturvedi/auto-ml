@@ -9,6 +9,7 @@ import {
   shouldOverwriteDatasetWorkspace,
   type DatasetSyncMode
 } from './datasetSyncMode.js';
+import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
 
 /**
  * Get or ensure a container exists for a project.
@@ -168,6 +169,28 @@ async function processOutputs(
 
   for (let i = 0; i < outputs.length; i++) {
     const output = outputs[i];
+
+    if (output.type === 'image') {
+      const decoded = decodeBase64DataUrl(output.content);
+      if (decoded) {
+        const filename = `image_${i}_${Date.now()}.${extensionForMimeType(decoded.mimeType)}`;
+        const ref = await repo.saveLargeOutput(
+          cellId,
+          'image',
+          decoded.buffer,
+          filename,
+          decoded.mimeType
+        );
+        outputRefs.push(ref);
+        inlineOutputs.push({
+          type: 'image',
+          content: ref.ref,
+          mimeType: decoded.mimeType
+        });
+        continue;
+      }
+    }
+
     const cellOutput: CellOutput = {
       type: output.type,
       content: output.content,

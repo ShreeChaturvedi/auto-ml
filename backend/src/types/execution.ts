@@ -30,6 +30,7 @@ export interface ExecutionResult {
   outputs: RichOutput[];
   executionMs: number;
   error?: string;
+  // Notebook cells assign a notebook-global execution counter when run.
   executionOrder?: number | null;
 }
 

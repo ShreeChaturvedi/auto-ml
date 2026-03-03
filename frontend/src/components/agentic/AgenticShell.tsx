@@ -32,6 +32,7 @@ interface AgenticShellProps {
   toolbarLeft?: React.ReactNode;
   toolbarRight?: React.ReactNode;
   chatMetaSlot?: React.ReactNode;
+  composerStatusSlot?: React.ReactNode;
   storageKey: string;
   domainLockReason?: string;
   beforeSubmit?: (prompt: string) => Promise<string | null>;
@@ -46,6 +47,7 @@ export function AgenticShell({
   toolbarLeft,
   toolbarRight,
   chatMetaSlot,
+  composerStatusSlot,
   storageKey,
   domainLockReason,
   beforeSubmit,
@@ -150,6 +152,13 @@ export function AgenticShell({
             )}
             
             <div className="border-t bg-background">
+              {composerStatusSlot ? (
+                <div className="border-b px-4 py-2">
+                  <div className="mx-auto w-full max-w-5xl">
+                    {composerStatusSlot}
+                  </div>
+                </div>
+              ) : null}
               {suggestions.length > 0 && !domainLockReason ? (
                 <div className="border-b px-4 py-2">
                   <div className="mx-auto flex max-w-5xl flex-wrap gap-2">

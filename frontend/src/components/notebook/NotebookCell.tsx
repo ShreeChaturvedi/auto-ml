@@ -5,7 +5,7 @@
  * behavior is rendered by NotebookMarkdownCell + NotebookEditor section logic.
  */
 
-import { useState, useCallback, Suspense, lazy, useRef, useEffect } from 'react';
+import { useState, useCallback, Suspense, lazy, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -167,33 +167,39 @@ export function NotebookCellComponent({
 
   const isRunning = cell.executionStatus === 'running';
   const executionPrompt = getExecutionPrompt(cell);
-  const hasInlineImageOutput = cell.output.some((output) => output.type === 'image');
-  const inlineOutputRefs = new Set(
-    cell.output
-      .map((output) => output.content)
-      .filter((content) => typeof content === 'string' && content.startsWith('outputs/'))
-  );
 
-  const richOutputs = [
-    ...cell.output.map((output) => ({
+  const richOutputs = useMemo(() => {
+    const baseOutputs = cell.output.map((output) => ({
       type: output.type,
       content: output.content,
       data: output.data,
       mimeType: output.mimeType
-    })),
+    }));
+
+    const hasInlineImageOutput = cell.output.some((output) => output.type === 'image');
+    if (hasInlineImageOutput) {
+      return baseOutputs;
+    }
+
+    const inlineOutputRefs = new Set(
+      cell.output
+        .map((output) => output.content)
+        .filter((content) => typeof content === 'string' && content.startsWith('outputs/'))
+    );
+
     // Backwards-compat: older persisted cells may only have images in outputRefs.
     // If the cell already has inline image outputs (data URLs or placeholders), don't append refs
     // to avoid bunching/duplication at the end of the output list.
-    ...(!hasInlineImageOutput
-      ? cell.outputRefs
-          .filter((ref) => ref.type === 'image' && ref.ref.startsWith('outputs/') && !inlineOutputRefs.has(ref.ref))
-          .map((ref) => ({
-            type: 'image' as const,
-            content: ref.ref,
-            mimeType: ref.mimeType
-          }))
-      : [])
-  ];
+    const legacyImageRefs = cell.outputRefs
+      .filter((ref) => ref.type === 'image' && ref.ref.startsWith('outputs/') && !inlineOutputRefs.has(ref.ref))
+      .map((ref) => ({
+        type: 'image' as const,
+        content: ref.ref,
+        mimeType: ref.mimeType
+      }));
+
+    return [...baseOutputs, ...legacyImageRefs];
+  }, [cell.output, cell.outputRefs]);
 
   const handleCopyOutput = useCallback(async () => {
     const text = buildOutputCopyText(richOutputs);
@@ -204,8 +210,8 @@ export function NotebookCellComponent({
     try {
       await navigator.clipboard.writeText(text);
       return;
-    } catch (error) {
-      void error;
+    } catch {
+      // Ignore and fall back to `execCommand('copy')` below.
     }
 
     if (typeof document === 'undefined') {
@@ -421,8 +427,7 @@ export function NotebookCellComponent({
                     });
 
                     return { suggestions: [...dynamicSuggestions, ...staticSuggestions] };
-                  } catch (error) {
-                    void error;
+                  } catch {
                     return { suggestions: staticSuggestions };
                   }
                 }

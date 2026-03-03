@@ -15,10 +15,24 @@ import { promisify } from 'util';
 
 import { env } from '../config.js';
 import type { PythonVersion, ExecutionResult, RichOutput, PackageInfo } from '../types/execution.js';
+import {
+    AUTOML_ARTIFACT_ROOT,
+    artifactExecDirRel,
+    containerWorkspaceRelativePath,
+    isAutomlArtifactPath,
+    resolveHostPathInWorkspace,
+    CONTAINER_WORKSPACE_ROOT
+} from './executionArtifacts.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const PACKAGE_ALIASES = new Map<string, string>([['pytorch', 'torch']]);
+const MPL_MAX_FIGURES_PER_CELL = 10;
+const CONTAINER_PYTHON_SITE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.python`;
+const CONTAINER_PIP_CACHE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.cache/pip`;
+const CONTAINER_TMP_DIR = `${CONTAINER_WORKSPACE_ROOT}/.tmp`;
+
+type ImageOutputMode = 'data_url' | 'artifact_path';
 
 async function execDocker(
     args: string[],
@@ -72,30 +86,31 @@ async function materializeImageArtifacts(
     container: Container,
     outputs: RichOutput[]
 ): Promise<RichOutput[]> {
-    const artifactPrefix = '/workspace/.automl_artifacts/';
     const execDirs = new Set<string>();
 
     for (const output of outputs) {
         if (output.type !== 'image') {
             continue;
         }
-        if (typeof output.content !== 'string') {
-            continue;
-        }
-        if (!output.content.startsWith(artifactPrefix)) {
+        if (!isAutomlArtifactPath(output.content)) {
             continue;
         }
 
         const containerPath = output.content;
         const mimeType = output.mimeType || 'image/png';
-        const relPath = containerPath.replace(/^\/workspace\/+/, '');
-        const execDirRel = relPath.split('/').slice(0, 2).join('/');
-
-        if (execDirRel.startsWith('.automl_artifacts/')) {
+        const relPath = containerWorkspaceRelativePath(containerPath);
+        const execDirRel = artifactExecDirRel(relPath);
+        if (execDirRel) {
             execDirs.add(execDirRel);
         }
 
-        const hostPath = resolve(container.workspacePath, relPath);
+        const hostPath = resolveHostPathInWorkspace(container.workspacePath, relPath);
+        if (!hostPath) {
+            output.type = 'text';
+            output.mimeType = 'text/plain';
+            output.content = `[rendering] Ignoring unsafe image artifact path: ${containerPath}\n`;
+            continue;
+        }
 
         try {
             const bytes = await readFile(hostPath);
@@ -103,8 +118,8 @@ async function materializeImageArtifacts(
             output.mimeType = mimeType;
             await rm(hostPath, { force: true }).catch(() => { });
             continue;
-        } catch (error) {
-            void error;
+        } catch {
+            // Fall back to reading the file inside the container if the host path isn't accessible.
         }
 
         try {
@@ -121,15 +136,18 @@ async function materializeImageArtifacts(
             output.mimeType = mimeType;
             await execDocker(['exec', container.containerId, 'rm', '-f', containerPath]).catch(() => { });
         } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             output.type = 'text';
             output.mimeType = 'text/plain';
-            output.content = `[rendering] Failed to materialize image output from ${containerPath}\n`;
-            void error;
+            output.content = `[rendering] Failed to materialize image output from ${containerPath}: ${message}\n`;
         }
     }
 
     for (const execDirRel of execDirs) {
-        const hostDir = resolve(container.workspacePath, execDirRel);
+        const hostDir = resolveHostPathInWorkspace(container.workspacePath, execDirRel);
+        if (!hostDir) {
+            continue;
+        }
         await rm(hostDir, { recursive: true, force: true }).catch(() => { });
     }
 
@@ -269,13 +287,13 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
         '--tmpfs', `/tmp:rw,nosuid,size=${env.executionTmpfsMb}m`, // writable tmp
         '-v', `${absWorkspacePath}:/workspace:rw`, // mount workspace
         '-v', `${absDatasetsPath}:/datasets:ro`, // mount datasets read-only
-        '-w', '/workspace',
+        '-w', CONTAINER_WORKSPACE_ROOT,
         '--user', 'sandbox',
-        '-e', 'HOME=/workspace',
-        '-e', 'PYTHONPATH=/workspace/.python',
-        '-e', 'PIP_CACHE_DIR=/workspace/.cache/pip',
+        '-e', `HOME=${CONTAINER_WORKSPACE_ROOT}`,
+        '-e', `PYTHONPATH=${CONTAINER_PYTHON_SITE_DIR}`,
+        '-e', `PIP_CACHE_DIR=${CONTAINER_PIP_CACHE_DIR}`,
         '-e', 'PIP_DISABLE_PIP_VERSION_CHECK=1',
-        '-e', 'TMPDIR=/workspace/.tmp',
+        '-e', `TMPDIR=${CONTAINER_TMP_DIR}`,
         ...(env.executionDockerPlatform ? ['--platform', env.executionDockerPlatform] : []),
         imageName,
         'tail', '-f', '/dev/null' // keep container running
@@ -313,7 +331,7 @@ export async function executeInContainer(
     container: Container,
     code: string,
     timeoutMs: number = env.executionTimeoutMs,
-    options: { executionId?: string; sessionKey?: string } = {}
+    options: { executionId?: string; sessionKey?: string; imageOutputMode?: ImageOutputMode } = {}
 ): Promise<ExecutionResult> {
     const startTime = Date.now();
     // Ensure we always operate on an absolute workspace path.
@@ -328,6 +346,7 @@ export async function executeInContainer(
     const suffix = safeId ? `_${safeId}` : '';
     const sessionStateEnabled = safeSessionKey ? 'True' : 'False';
     const sessionStateFilename = safeSessionKey ? `_state_${safeSessionKey}.pkl` : '';
+    const imageOutputMode: ImageOutputMode = options.imageOutputMode ?? 'data_url';
 
     // Write code to a temporary file in the workspace. Some execution paths may
     // delete workspaces unexpectedly (manual cleanup, crash recovery), so make
@@ -337,11 +356,13 @@ export async function executeInContainer(
     const outputFilename = `_outputs${suffix}.json`;
 
     // Wrap code with output capturing
+    const userCodeBase64 = Buffer.from(code, 'utf8').toString('base64');
     const wrappedCode = `
 import sys
 import json
 import traceback
 import pickle
+import base64
 from pathlib import Path
 
 # Capture outputs
@@ -373,9 +394,10 @@ def _display_df(df, max_rows=20):
 
 # Make datasets accessible + user packages visible
 import os
-os.chdir('/workspace')
-if '/workspace/.python' not in sys.path:
-    sys.path.insert(0, '/workspace/.python')
+os.chdir('${CONTAINER_WORKSPACE_ROOT}')
+_AUTOML_PYTHON_PATH = '${CONTAINER_PYTHON_SITE_DIR}'
+if _AUTOML_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, _AUTOML_PYTHON_PATH)
 
 # Matplotlib figure capture (Jupyter-like inline plots)
 # - Capture on plt.show()
@@ -385,18 +407,20 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 import uuid
 import builtins as _builtins
 
-_AUTOML_ARTIFACT_DIR = Path("/workspace/.automl_artifacts") / str(uuid.uuid4())
+_AUTOML_ARTIFACT_DIR = Path("${AUTOML_ARTIFACT_ROOT}") / str(uuid.uuid4())
 try:
     _AUTOML_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 except Exception:
     _AUTOML_ARTIFACT_DIR = None
 
 _MPL_CAPTURE_INDEX = 0
-_MPL_MAX_FIGURES_PER_CELL = 10
+_MPL_MAX_FIGURES_PER_CELL = ${MPL_MAX_FIGURES_PER_CELL}
 _MPL_PATCHED = False
+_MPL_CAPTURE_LIMIT_REACHED = False
 
 def _capture_matplotlib_figures(reason="show"):
     global _MPL_CAPTURE_INDEX
+    global _MPL_CAPTURE_LIMIT_REACHED
     if not _capture_outputs:
         return
     if _AUTOML_ARTIFACT_DIR is None:
@@ -416,11 +440,17 @@ def _capture_matplotlib_figures(reason="show"):
 
     for fig_num in fignums:
         if _MPL_CAPTURE_INDEX >= _MPL_MAX_FIGURES_PER_CELL:
-            _outputs.append({
-                "type": "text",
-                "content": f"[matplotlib] Too many figures; showing first {_MPL_MAX_FIGURES_PER_CELL} only.\\n"
-            })
-            break
+            if not _MPL_CAPTURE_LIMIT_REACHED:
+                _outputs.append({
+                    "type": "text",
+                    "content": f"[matplotlib] Too many figures; showing first {_MPL_MAX_FIGURES_PER_CELL} only.\\n"
+                })
+                _MPL_CAPTURE_LIMIT_REACHED = True
+            try:
+                plt.close(fig_num)
+            except Exception:
+                pass
+            continue
 
         try:
             fig = plt.figure(fig_num)
@@ -480,7 +510,12 @@ def _automl_import(name, globals=None, locals=None, fromlist=(), level=0):
 
 _builtins.__import__ = _automl_import
 
-_SESSION_STATE_PATH = Path('/workspace/${sessionStateFilename}') if ${sessionStateEnabled} else None
+try:
+    _patch_matplotlib_pyplot()
+except Exception:
+    pass
+
+_SESSION_STATE_PATH = Path('${CONTAINER_WORKSPACE_ROOT}/${sessionStateFilename}') if ${sessionStateEnabled} else None
 
 def _restore_state():
     if _SESSION_STATE_PATH is None or not _SESSION_STATE_PATH.exists():
@@ -573,8 +608,11 @@ def resolve_dataset_path(filename, dataset_id=None):
 
 _restore_state()
 
+_USER_CODE_B64 = "${userCodeBase64}"
+_user_code = base64.b64decode(_USER_CODE_B64).decode("utf-8")
+
 try:
-${code.split('\n').map(line => '    ' + line).join('\n')}
+    exec(compile(_user_code, "<cell>", "exec"), globals(), globals())
 except Exception as e:
     _outputs.append({
         "type": "error",
@@ -588,14 +626,14 @@ finally:
     _persist_state()
 
 # Write outputs to file
-with open('/workspace/${outputFilename}', 'w') as f:
+with open('${CONTAINER_WORKSPACE_ROOT}/${outputFilename}', 'w') as f:
     json.dump(_outputs, f)
 `;
 
     await writeFile(codePath, wrappedCode);
 
     // Execute in container
-    const execPath = `/workspace/_exec_code${suffix}.py`;
+    const execPath = `${CONTAINER_WORKSPACE_ROOT}/_exec_code${suffix}.py`;
     const dockerExec = spawn('docker', [
         'exec',
         container.containerId,
@@ -633,10 +671,12 @@ with open('/workspace/${outputFilename}', 'w') as f:
                     'exec',
                     container.containerId,
                     'cat',
-                    `/workspace/${outputFilename}`
+                    `${CONTAINER_WORKSPACE_ROOT}/${outputFilename}`
                 ]);
                 outputs = JSON.parse(outputJson);
-                outputs = await materializeImageArtifacts(container, outputs);
+                if (imageOutputMode === 'data_url') {
+                    outputs = await materializeImageArtifacts(container, outputs);
+                }
             } catch {
                 // If no outputs file, use stdout as text output
                 if (stdout.trim()) {
@@ -651,7 +691,7 @@ with open('/workspace/${outputFilename}', 'w') as f:
                 'rm',
                 '-f',
                 execPath,
-                `/workspace/${outputFilename}`
+                `${CONTAINER_WORKSPACE_ROOT}/${outputFilename}`
             ]).catch(() => { });
 
             container.lastUsedAt = new Date();
@@ -712,7 +752,7 @@ export async function installPackage(
             '--prefer-binary',
             '--no-cache-dir',
             '--target',
-            '/workspace/.python'
+            CONTAINER_PYTHON_SITE_DIR
         ];
 
         const binaryAttempt = await runPipInstall([
@@ -783,7 +823,7 @@ export async function uninstallPackage(
             'uninstall',
             '-y',
             '--target',
-            '/workspace/.python',
+            CONTAINER_PYTHON_SITE_DIR,
             trimmed
         ], { timeout: 60000 });
 
@@ -873,7 +913,7 @@ export async function installPackageStream(
         '--prefer-binary',
         '--no-cache-dir',
         '--target',
-        '/workspace/.python'
+        CONTAINER_PYTHON_SITE_DIR
     ];
 
     onEvent({ type: 'progress', progress: 8, stage: 'Checking wheels' });
@@ -1427,7 +1467,7 @@ async function ensureJediInstalled(container: Container): Promise<void> {
             'install',
             '--quiet',
             '--target',
-            '/workspace/.python',
+            CONTAINER_PYTHON_SITE_DIR,
             'jedi'
         ], { timeout: 60000 });
         jediInstalledContainers.add(container.containerId);

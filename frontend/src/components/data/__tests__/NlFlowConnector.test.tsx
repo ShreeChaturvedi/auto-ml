@@ -91,9 +91,7 @@ describe('NlFlowConnector', () => {
   it('each branch particle has a staggered animation delay', () => {
     const { container } = render(<NlFlowConnector state="active" />);
     const paths = container.querySelectorAll<SVGPathElement>('path');
-    const delays = [1, 3, 5].map(
-      (idx) => paths[idx].style.animationDelay
-    );
+    const delays = [1, 3, 5].map((idx) => paths[idx].style.animationDelay);
     // Each branch should have a distinct delay
     expect(new Set(delays).size).toBe(3);
   });

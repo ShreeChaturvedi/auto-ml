@@ -151,6 +151,7 @@ describe('preprocessingStore hydration', () => {
         position: 0,
         executionCount: 0,
         executionStatus: 'idle',
+        isDirty: false,
         output: [],
         outputRefs: [],
         createdAt: new Date().toISOString(),
@@ -428,5 +429,62 @@ describe('preprocessingStore hydration', () => {
       status: 'failed',
       error: 'Risk too high'
     });
+  });
+
+  it('marks in-flight steps as failed when stream is interrupted', () => {
+    usePreprocessingStore.setState({
+      timeline: [
+        {
+          id: 'evt-pending',
+          runId: 'prep-run-1',
+          stepId: 'step-pending',
+          toolName: 'propose_transformation_step',
+          title: 'Pending step',
+          status: 'pending',
+          requiresApproval: false,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        },
+        {
+          id: 'evt-running',
+          runId: 'prep-run-1',
+          stepId: 'step-running',
+          toolName: 'materialize_step_code',
+          title: 'Running step',
+          status: 'running',
+          requiresApproval: false,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        },
+        {
+          id: 'evt-await',
+          runId: 'prep-run-1',
+          stepId: 'step-await',
+          toolName: 'validate_step_result',
+          title: 'Awaiting approval step',
+          status: 'awaiting_approval',
+          requiresApproval: true,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ]
+    });
+
+    usePreprocessingStore.getState().markInterruptedSteps('Gemini quota limit reached (429).');
+    const state = usePreprocessingStore.getState();
+
+    expect(state.timeline.find((event) => event.stepId === 'step-pending')).toMatchObject({
+      status: 'failed'
+    });
+    expect(state.timeline.find((event) => event.stepId === 'step-running')).toMatchObject({
+      status: 'failed'
+    });
+    expect(state.timeline.find((event) => event.stepId === 'step-await')).toMatchObject({
+      status: 'awaiting_approval'
+    });
+    expect(state.error).toContain('Gemini quota limit reached');
   });
 });

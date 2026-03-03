@@ -8,7 +8,7 @@
 import { spawn, exec, execFile, type ExecFileOptions } from 'child_process';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
-import { mkdir, writeFile, rm } from 'fs/promises';
+import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
@@ -67,6 +67,74 @@ export interface Container {
 
 // Active containers cache
 const containers = new Map<string, Container>();
+
+async function materializeImageArtifacts(
+    container: Container,
+    outputs: RichOutput[]
+): Promise<RichOutput[]> {
+    const artifactPrefix = '/workspace/.automl_artifacts/';
+    const execDirs = new Set<string>();
+
+    for (const output of outputs) {
+        if (output.type !== 'image') {
+            continue;
+        }
+        if (typeof output.content !== 'string') {
+            continue;
+        }
+        if (!output.content.startsWith(artifactPrefix)) {
+            continue;
+        }
+
+        const containerPath = output.content;
+        const mimeType = output.mimeType || 'image/png';
+        const relPath = containerPath.replace(/^\/workspace\/+/, '');
+        const execDirRel = relPath.split('/').slice(0, 2).join('/');
+
+        if (execDirRel.startsWith('.automl_artifacts/')) {
+            execDirs.add(execDirRel);
+        }
+
+        const hostPath = resolve(container.workspacePath, relPath);
+
+        try {
+            const bytes = await readFile(hostPath);
+            output.content = `data:${mimeType};base64,${bytes.toString('base64')}`;
+            output.mimeType = mimeType;
+            await rm(hostPath, { force: true }).catch(() => { });
+            continue;
+        } catch (error) {
+            void error;
+        }
+
+        try {
+            const script = [
+                'import base64, sys',
+                'data = open(sys.argv[1], "rb").read()',
+                'sys.stdout.write(base64.b64encode(data).decode("utf-8"))'
+            ].join('\n');
+            const { stdout } = await execDocker(
+                ['exec', container.containerId, 'python', '-c', script, containerPath],
+                { maxBuffer: 25 * 1024 * 1024 }
+            );
+            output.content = `data:${mimeType};base64,${stdout.trim()}`;
+            output.mimeType = mimeType;
+            await execDocker(['exec', container.containerId, 'rm', '-f', containerPath]).catch(() => { });
+        } catch (error) {
+            output.type = 'text';
+            output.mimeType = 'text/plain';
+            output.content = `[rendering] Failed to materialize image output from ${containerPath}\n`;
+            void error;
+        }
+    }
+
+    for (const execDirRel of execDirs) {
+        const hostDir = resolve(container.workspacePath, execDirRel);
+        await rm(hostDir, { recursive: true, force: true }).catch(() => { });
+    }
+
+    return outputs;
+}
 
 /**
  * Check if Docker is available and running
@@ -168,7 +236,9 @@ async function ensureRuntimeImage(pythonVersion: PythonVersion): Promise<string>
  */
 export async function createContainer(config: ContainerConfig): Promise<Container> {
     const id = randomUUID();
-    const workspacePath = config.workspacePath;
+    // Normalize to an absolute path so subsequent file operations are consistent even if the
+    // backend is launched from different working directories (dev vs prod, tests, etc.).
+    const workspacePath = resolve(config.workspacePath);
 
     // Create workspace directory
     await mkdir(workspacePath, { recursive: true });
@@ -184,8 +254,8 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
     const imageName = await ensureRuntimeImage(config.pythonVersion);
     const containerName = `automl-exec-${id.slice(0, 8)}`;
 
-    // Resolve to absolute paths (Docker requires absolute paths)
-    const absWorkspacePath = resolve(workspacePath);
+    // Docker requires absolute host paths for bind mounts.
+    const absWorkspacePath = workspacePath;
     const absDatasetsPath = resolve(env.datasetStorageDir);
 
     const dockerArgs = [
@@ -220,7 +290,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
             containerId,
             projectId: config.projectId,
             pythonVersion: config.pythonVersion,
-            workspacePath,
+            workspacePath: absWorkspacePath,
             createdAt: new Date(),
             lastUsedAt: new Date()
         };
@@ -246,6 +316,9 @@ export async function executeInContainer(
     options: { executionId?: string; sessionKey?: string } = {}
 ): Promise<ExecutionResult> {
     const startTime = Date.now();
+    // Ensure we always operate on an absolute workspace path.
+    const workspacePath = resolve(container.workspacePath);
+    container.workspacePath = workspacePath;
     const safeId = options.executionId
         ? options.executionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
         : '';
@@ -256,8 +329,11 @@ export async function executeInContainer(
     const sessionStateEnabled = safeSessionKey ? 'True' : 'False';
     const sessionStateFilename = safeSessionKey ? `_state_${safeSessionKey}.pkl` : '';
 
-    // Write code to a temporary file in the workspace
-    const codePath = join(container.workspacePath, `_exec_code${suffix}.py`);
+    // Write code to a temporary file in the workspace. Some execution paths may
+    // delete workspaces unexpectedly (manual cleanup, crash recovery), so make
+    // sure the directory exists before writing.
+    await mkdir(workspacePath, { recursive: true });
+    const codePath = join(workspacePath, `_exec_code${suffix}.py`);
     const outputFilename = `_outputs${suffix}.json`;
 
     // Wrap code with output capturing
@@ -300,6 +376,109 @@ import os
 os.chdir('/workspace')
 if '/workspace/.python' not in sys.path:
     sys.path.insert(0, '/workspace/.python')
+
+# Matplotlib figure capture (Jupyter-like inline plots)
+# - Capture on plt.show()
+# - Capture any remaining figures at end-of-cell
+os.environ.setdefault("MPLBACKEND", "Agg")
+
+import uuid
+import builtins as _builtins
+
+_AUTOML_ARTIFACT_DIR = Path("/workspace/.automl_artifacts") / str(uuid.uuid4())
+try:
+    _AUTOML_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    _AUTOML_ARTIFACT_DIR = None
+
+_MPL_CAPTURE_INDEX = 0
+_MPL_MAX_FIGURES_PER_CELL = 10
+_MPL_PATCHED = False
+
+def _capture_matplotlib_figures(reason="show"):
+    global _MPL_CAPTURE_INDEX
+    if not _capture_outputs:
+        return
+    if _AUTOML_ARTIFACT_DIR is None:
+        return
+    if "matplotlib.pyplot" not in sys.modules:
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    try:
+        fignums = list(plt.get_fignums())
+    except Exception:
+        return
+
+    for fig_num in fignums:
+        if _MPL_CAPTURE_INDEX >= _MPL_MAX_FIGURES_PER_CELL:
+            _outputs.append({
+                "type": "text",
+                "content": f"[matplotlib] Too many figures; showing first {_MPL_MAX_FIGURES_PER_CELL} only.\\n"
+            })
+            break
+
+        try:
+            fig = plt.figure(fig_num)
+            filename = f"mpl_{_MPL_CAPTURE_INDEX:03d}_{reason}_{fig_num}.png"
+            path = _AUTOML_ARTIFACT_DIR / filename
+            fig.savefig(str(path), format="png", bbox_inches="tight")
+            _outputs.append({
+                "type": "image",
+                "content": str(path),
+                "mimeType": "image/png"
+            })
+            _MPL_CAPTURE_INDEX += 1
+        except Exception:
+            _outputs.append({
+                "type": "text",
+                "content": "[matplotlib] Failed to capture figure output.\\n"
+            })
+        finally:
+            try:
+                plt.close(fig_num)
+            except Exception:
+                pass
+
+def _patch_matplotlib_pyplot():
+    global _MPL_PATCHED
+    if _MPL_PATCHED:
+        return
+    if "matplotlib.pyplot" not in sys.modules:
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    if getattr(plt.show, "__automl_patched__", False):
+        _MPL_PATCHED = True
+        return
+
+    def _automl_show(*args, **kwargs):
+        _capture_matplotlib_figures("show")
+        return None
+
+    _automl_show.__automl_patched__ = True
+    plt.show = _automl_show
+    _MPL_PATCHED = True
+
+_original_import = _builtins.__import__
+def _automl_import(name, globals=None, locals=None, fromlist=(), level=0):
+    module = _original_import(name, globals, locals, fromlist, level)
+    try:
+        if isinstance(name, str) and name.startswith("matplotlib"):
+            _patch_matplotlib_pyplot()
+    except Exception:
+        pass
+    return module
+
+_builtins.__import__ = _automl_import
 
 _SESSION_STATE_PATH = Path('/workspace/${sessionStateFilename}') if ${sessionStateEnabled} else None
 
@@ -402,6 +581,10 @@ except Exception as e:
         "content": traceback.format_exc()
     })
 finally:
+    try:
+        _capture_matplotlib_figures("end")
+    except Exception:
+        pass
     _persist_state()
 
 # Write outputs to file
@@ -453,6 +636,7 @@ with open('/workspace/${outputFilename}', 'w') as f:
                     `/workspace/${outputFilename}`
                 ]);
                 outputs = JSON.parse(outputJson);
+                outputs = await materializeImageArtifacts(container, outputs);
             } catch {
                 // If no outputs file, use stdout as text output
                 if (stdout.trim()) {
@@ -975,6 +1159,21 @@ export async function getOrCreateContainer(config: ContainerConfig): Promise<Con
             container.projectId === config.projectId &&
             container.pythonVersion === config.pythonVersion
         ) {
+            // Guard against stale in-memory state where the workspace directory was deleted
+            // (e.g. manual cleanup or previous crash). If the workspace is missing, recreate
+            // the container so execution can proceed.
+            const workspacePath = resolve(container.workspacePath);
+            if (!existsSync(workspacePath)) {
+                console.warn('[containerManager] Workspace missing for active container; recreating container:', {
+                    containerId: container.containerId,
+                    workspacePath
+                });
+                await destroyContainer(container.id);
+                break;
+            }
+
+            // Normalize stored path to absolute.
+            container.workspacePath = workspacePath;
             container.lastUsedAt = new Date();
             return container;
         }

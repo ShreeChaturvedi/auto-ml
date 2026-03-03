@@ -319,39 +319,36 @@
   animation: execute-icon-trace 700ms ease-out 1;
 }
 
-.brain-icon-path {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-  transition: stroke-dashoffset 220ms ease-out;
-}
-
-.group\/execute:hover .brain-icon-path {
-  animation: execute-icon-trace 700ms ease-out 1;
-}
-
 /* ─── SQL reveal highlighting + token entry animation ────────────────────── */
 
+/**
+ * Token entrance animation.  The colour is INTENTIONALLY NOT set here
+ * so that the per-token syntax classes (.sql-tk-kw, .sql-tk-fn …) remain
+ * visible from frame one.  Instead we use a text-shadow glow that flashes
+ * brightly and fades, mirroring the placeholder-char-in shine effect.
+ */
 @keyframes sql-word-in {
   0% {
     opacity: 0;
-    color: hsl(var(--foreground));
-    filter: brightness(1.25);
+    text-shadow: 0 0 8px currentColor;
+    filter: brightness(1.35);
   }
 
-  60% {
+  40% {
     opacity: 1;
-    color: hsl(var(--foreground));
-    filter: brightness(1.08);
+    text-shadow: 0 0 4px currentColor;
+    filter: brightness(1.15);
   }
 
   100% {
     opacity: 1;
+    text-shadow: none;
     filter: none;
   }
 }
 
 .sql-word-enter {
-  animation: sql-word-in 230ms ease-out both;
+  animation: sql-word-in 320ms ease-out both;
 }
 
 .sql-tk-kw {

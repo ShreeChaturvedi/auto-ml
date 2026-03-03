@@ -8,10 +8,10 @@ describe('NlFlowConnector', () => {
     expect(container.querySelector('svg')).toBeInTheDocument();
   });
 
-  it('renders two path elements (base + particle)', () => {
+  it('renders six path elements (3 branches × base + particle each)', () => {
     const { container } = render(<NlFlowConnector state="active" />);
     const paths = container.querySelectorAll('path');
-    expect(paths).toHaveLength(2);
+    expect(paths).toHaveLength(6);
   });
 
   it('renders a linearGradient for the particle', () => {
@@ -27,34 +27,43 @@ describe('NlFlowConnector', () => {
     expect(style?.textContent).toMatch(/@keyframes nl-particle-/);
   });
 
-  it('particle path is visible (opacity 1) in active state', () => {
+  it('all particle paths are visible (opacity 1) in active state', () => {
     const { container } = render(<NlFlowConnector state="active" />);
     const paths = container.querySelectorAll('path');
-    // Second path is the particle
-    const particle = paths[1] as SVGPathElement;
-    expect(particle.style.opacity).toBe('1');
+    // Particle paths are at indices 1, 3, 5 (second in each <g>)
+    for (const idx of [1, 3, 5]) {
+      const particle = paths[idx] as SVGPathElement;
+      expect(particle.style.opacity).toBe('1');
+    }
   });
 
-  it('particle path is hidden (opacity 0) in settled state', () => {
+  it('all particle paths are hidden (opacity 0) in settled state', () => {
     const { container } = render(<NlFlowConnector state="settled" />);
     const paths = container.querySelectorAll('path');
-    const particle = paths[1] as SVGPathElement;
-    expect(particle.style.opacity).toBe('0');
+    for (const idx of [1, 3, 5]) {
+      const particle = paths[idx] as SVGPathElement;
+      expect(particle.style.opacity).toBe('0');
+    }
   });
 
-  it('base path has reduced opacity in settled state', () => {
+  it('base paths have reduced opacity in settled state', () => {
     const { container } = render(<NlFlowConnector state="settled" />);
     const paths = container.querySelectorAll('path');
-    const base = paths[0] as SVGPathElement;
-    // settled state dims the base to 0.4
-    expect(base.style.opacity).toBe('0.4');
+    // Base paths are at indices 0, 2, 4
+    for (const idx of [0, 2, 4]) {
+      const base = paths[idx] as SVGPathElement;
+      // settled state dims the base to 0.4
+      expect(base.style.opacity).toBe('0.4');
+    }
   });
 
-  it('base path has full opacity in active state', () => {
+  it('base paths have full opacity in active state', () => {
     const { container } = render(<NlFlowConnector state="active" />);
     const paths = container.querySelectorAll('path');
-    const base = paths[0] as SVGPathElement;
-    expect(base.style.opacity).toBe('1');
+    for (const idx of [0, 2, 4]) {
+      const base = paths[idx] as SVGPathElement;
+      expect(base.style.opacity).toBe('1');
+    }
   });
 
   it('applies custom className to the wrapper div', () => {
@@ -77,5 +86,15 @@ describe('NlFlowConnector', () => {
     expect(id1).toBeTruthy();
     expect(id2).toBeTruthy();
     expect(id1).not.toBe(id2);
+  });
+
+  it('each branch particle has a staggered animation delay', () => {
+    const { container } = render(<NlFlowConnector state="active" />);
+    const paths = container.querySelectorAll('path');
+    const delays = [1, 3, 5].map(
+      (idx) => (paths[idx] as HTMLElement).style.animationDelay
+    );
+    // Each branch should have a distinct delay
+    expect(new Set(delays).size).toBe(3);
   });
 });

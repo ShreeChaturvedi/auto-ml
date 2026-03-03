@@ -57,10 +57,14 @@ import type { NlGenerationResult } from '@/types/nlQuery';
 
 // ─── Typewriter hook (token-based) ────────────────────────────────────────────
 
-/** Tokens to advance per animation frame.  1 keeps the word-by-word effect
- *  readable; whitespace tokens are "free" (counted but visually instantaneous)
- *  so the perceived speed is faster than 1 word/frame. */
-const TOKENS_PER_FRAME = 1;
+/**
+ * Time between each token reveal (ms).  65 ms ≈ 15 tokens/sec — fast enough
+ * to feel fluid but slow enough for the glow animation on each token to
+ * register visually.  Compare: the animated placeholder uses per-char
+ * stagger of 30 ms, but here each "frame" is a full SQL word so the
+ * perceived speed is comparable.
+ */
+const TOKEN_INTERVAL_MS = 65;
 const TYPEWRITER_START_DELAY_MS = 150;
 
 interface TypewriterState {
@@ -74,7 +78,7 @@ function useTypewriter(
 ): TypewriterState {
   const stateRef = useRef<TypewriterState>({ visibleTokenCount: 0, isComplete: false });
   const forceUpdate = useReducer((n: number) => n + 1, 0)[1];
-  const rafRef = useRef<number | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenIndexRef = useRef(0);
   const targetRef = useRef(totalTokens);
@@ -85,7 +89,7 @@ function useTypewriter(
 
   useEffect(() => {
     if (!isActive) {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (intervalRef.current !== null) clearInterval(intervalRef.current);
       if (startDelayRef.current !== null) clearTimeout(startDelayRef.current);
       stateRef.current = { visibleTokenCount: 0, isComplete: false };
       tokenIndexRef.current = 0;
@@ -97,30 +101,25 @@ function useTypewriter(
     stateRef.current = { visibleTokenCount: 0, isComplete: false };
     forceUpdate();
 
-    const tick = () => {
-      const total = targetRef.current;
-      tokenIndexRef.current = Math.min(
-        tokenIndexRef.current + TOKENS_PER_FRAME,
-        total
-      );
-      const done = tokenIndexRef.current >= total;
-      stateRef.current = { visibleTokenCount: tokenIndexRef.current, isComplete: done };
-      forceUpdate();
-
-      if (!done) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        rafRef.current = null;
-      }
-    };
-
     startDelayRef.current = setTimeout(() => {
       startDelayRef.current = null;
-      rafRef.current = requestAnimationFrame(tick);
+
+      intervalRef.current = setInterval(() => {
+        const total = targetRef.current;
+        tokenIndexRef.current = Math.min(tokenIndexRef.current + 1, total);
+        const done = tokenIndexRef.current >= total;
+        stateRef.current = { visibleTokenCount: tokenIndexRef.current, isComplete: done };
+        forceUpdate();
+
+        if (done && intervalRef.current !== null) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      }, TOKEN_INTERVAL_MS);
     }, TYPEWRITER_START_DELAY_MS);
 
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (intervalRef.current !== null) clearInterval(intervalRef.current);
       if (startDelayRef.current !== null) clearTimeout(startDelayRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,7 +364,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         className={cn(
           'transition-[opacity,height] ease-out motion-reduce:transition-none overflow-hidden',
           showConnector
-            ? 'h-10 opacity-100 duration-400'
+            ? 'h-16 opacity-100 duration-400'
             : 'h-0 opacity-0 duration-200 pointer-events-none',
         )}
       >
@@ -390,6 +389,12 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             editedSql={editedSql}
             onSqlChange={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}
             originalSql={result?.sql ?? ''}
+            onApprove={() => {
+              if (!result) return;
+              onApprove(result, editedSql);
+              dispatch({ type: 'REJECT' });
+            }}
+            onReject={() => dispatch({ type: 'REJECT' })}
             className="h-full"
           />
         </div>

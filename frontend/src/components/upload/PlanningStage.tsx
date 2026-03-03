@@ -20,6 +20,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
+import {
+  addAssistantTextMessage,
+  addThinkingMessage,
+  appendAssistantTextDelta,
+  appendThinkingDelta,
+  markThinkingMessageComplete
+} from '@/lib/llm/streamMessageUtils';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { useDataStore } from '@/stores/dataStore';
@@ -502,11 +509,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const endThinking = useCallback(() => {
     const id = currentThinkingIdRef.current;
     if (id) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === id && m.type === 'thinking' ? { ...m, isComplete: true } : m
-        )
-      );
+      setMessages((prev) => markThinkingMessageComplete(prev, id));
       currentThinkingIdRef.current = null;
     }
   }, []);
@@ -578,19 +581,10 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 if (!currentThinkingIdRef.current) {
                   const id = `thinking-${Date.now()}`;
                   currentThinkingIdRef.current = id;
-                  setMessages((prev) => [
-                    ...prev,
-                    { id, type: 'thinking', content: event.text, isComplete: false, startTime: Date.now() },
-                  ]);
+                  setMessages((prev) => addThinkingMessage(prev, id, event.text, Date.now()));
                 } else {
                   const tid = currentThinkingIdRef.current;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === tid && m.type === 'thinking'
-                        ? { ...m, content: m.content + event.text }
-                        : m
-                    )
-                  );
+                  setMessages((prev) => appendThinkingDelta(prev, tid, event.text));
                 }
               }
 
@@ -602,18 +596,12 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 if (!currentTextIdRef.current) {
                   const id = `text-${Date.now()}`;
                   currentTextIdRef.current = id;
-                   passTextMessageId = id;
-                  setMessages((prev) => [...prev, { id, type: 'assistant_text', content: event.text }]);
+                  passTextMessageId = id;
+                  setMessages((prev) => addAssistantTextMessage(prev, id, event.text));
                 } else {
                   const tid = currentTextIdRef.current;
                   passTextMessageId = tid;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === tid && m.type === 'assistant_text'
-                        ? { ...m, content: m.content + event.text }
-                        : m
-                    )
-                  );
+                  setMessages((prev) => appendAssistantTextDelta(prev, tid, event.text));
                 }
               }
 
@@ -689,7 +677,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                   passProducedPlainText = true;
                   const id = `text-fallback-${Date.now()}`;
                   passTextMessageId = id;
-                  setMessages((prev) => [...prev, { id, type: 'assistant_text', content: fallback }]);
+                  setMessages((prev) => addAssistantTextMessage(prev, id, fallback));
                 }
               }
 

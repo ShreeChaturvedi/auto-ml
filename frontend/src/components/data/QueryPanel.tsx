@@ -69,29 +69,26 @@ function AnimatedExecuteIcon({
   );
 }
 
-// Animated brain icon for English mode execute button — same gradient + trace
-// animation pattern as the bolt, but uses the lucide Brain SVG paths.
-function AnimatedBrainIcon({
+// Animated idea/lightbulb icon for English mode execute button.
+// Uses the exact same gradient + stroke-trace class as the bolt icon so
+// hover animation remains visually consistent.
+function AnimatedIdeaIcon({
   gradientId,
   colorClassName
 }: {
   gradientId: string;
   colorClassName: string;
 }) {
-  const brainPaths = [
-    'M12 5V18',
-    'M9 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1 3 4Z',
-    'M15 13a4.17 4.17 0 0 0 3-4 4.17 4.17 0 0 0-3 4Z',
-    'M6.003 5.125a4 4 0 0 0-2.526 5.77',
-    'M17.997 5.125a4 4 0 0 1 2.526 5.77',
-    'M6 18a4 4 0 0 1-2-7.464',
-    'M18 18a4 4 0 0 0 2-7.464',
-    'M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517',
+  // Exact Lucide Lightbulb geometry.
+  const ideaPaths = [
+    'M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5',
+    'M9 18h6',
+    'M10 22h4',
   ];
 
   return (
     <svg
-      className={cn('h-4 w-4 brain-icon', colorClassName)}
+      className={cn('h-4 w-4 idea-icon', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
       strokeWidth="2"
@@ -105,13 +102,13 @@ function AnimatedBrainIcon({
           <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
         </linearGradient>
       </defs>
-      {brainPaths.map((d, i) => (
+      {ideaPaths.map((d, i) => (
         <path
           key={i}
           d={d}
           stroke={`url(#${gradientId})`}
           pathLength={100}
-          className="brain-icon-path motion-reduce:!animate-none"
+          className="execute-icon-path motion-reduce:!animate-none"
         />
       ))}
     </svg>
@@ -1009,26 +1006,8 @@ export function QueryPanel({
             />
             {isExecuting ? 'Executing...' : 'Execute'}
           </Button>
-        ) : nlPhase === 'reviewing' ? (
-          /* Approve / Reject pair shown once SQL is revealed and editable */
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => nlWorkflowRef.current?.reject()}
-              className="flex-1 h-9 text-sm"
-            >
-              Reject
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => nlWorkflowRef.current?.approve()}
-              className="flex-1 h-9 text-sm"
-            >
-              Approve &amp; Run
-            </Button>
-          </div>
-        ) : (
-          /* English idle / error — trigger generation */
+        ) : nlPhase !== 'reviewing' ? (
+          /* English idle / submitting / revealing / error — trigger generation */
           <Button
             variant="secondary"
             onClick={() => nlWorkflowRef.current?.triggerGenerate()}
@@ -1046,7 +1025,7 @@ export function QueryPanel({
               </>
             ) : (
               <>
-                <AnimatedBrainIcon
+                <AnimatedIdeaIcon
                   gradientId={iconGradientId}
                   colorClassName={executeIconColorClass}
                 />
@@ -1054,7 +1033,7 @@ export function QueryPanel({
               </>
             )}
           </Button>
-        )}
+        ) : null}
       </div>
       </div>
     </div>

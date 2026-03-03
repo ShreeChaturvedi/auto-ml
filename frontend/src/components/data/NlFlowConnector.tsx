@@ -1,19 +1,24 @@
 /**
  * NlFlowConnector
  *
- * A short vertical SVG connector that bridges the natural-language textarea
- * and the SQL reveal block. It renders two paths over the same geometry:
+ * A vertical SVG connector that bridges the natural-language textarea and the
+ * SQL reveal block.  A single stem enters from the top and fans out into three
+ * branches (left, centre, right), matching the particle-sweep pattern used in
+ * ComputeAnimation.tsx for visual consistency across the app.
  *
- *  1. Base path  – always rendered, uses the border color.  Fully opaque
- *     while a particle is running; dims to 40 % after the particle settles.
+ * Each branch renders two layers over the same cubic-bézier geometry:
+ *
+ *  1. Base path  – always rendered, uses the border colour.  Fully opaque
+ *     while particles are running; dims to 40 % once settled.
  *
  *  2. Particle path – a moving dash that sweeps top-to-bottom along the
  *     base path, using a local linear gradient so it fades in at the entry
  *     point and fades out as it exits.  Visible only in the `active` state.
+ *     Each branch has a staggered animation delay for a cascade effect.
  *
  * The `state` prop drives both the visual appearance and the CSS animation:
- *   - 'active'  → particle animates continuously, base path at full opacity
- *   - 'settled' → particle fades out, base path dims
+ *   - 'active'  → particles animate continuously, base paths at full opacity
+ *   - 'settled' → particles fade out, base paths dim
  *
  * UID-scoped keyframes are injected via an inline <style> tag, mirroring the
  * pattern used in ComputeAnimation.tsx to avoid global class-name collisions.
@@ -27,32 +32,56 @@ interface NlFlowConnectorProps {
   className?: string;
 }
 
-// Connector geometry — a single straight vertical path from top-centre to
-// bottom-centre of the SVG viewport.
-const SVG_WIDTH = 40;
-const SVG_HEIGHT = 40;
-const PATH_X = SVG_WIDTH / 2;       // 20 — horizontal mid-line
-const PATH_D = `M ${PATH_X} 0 L ${PATH_X} ${SVG_HEIGHT}`;
+// ─── SVG geometry ─────────────────────────────────────────────────────────────
+
+const SVG_WIDTH = 120;
+const SVG_HEIGHT = 64;
+const CX = SVG_WIDTH / 2; // 60 — horizontal midpoint
+
+/**
+ * Three cubic-bézier branches fanning out from a shared origin at top-centre.
+ * Control points are tuned so the curves feel natural and evenly spaced.
+ *
+ *   Left   : (60,0) → curves to (18, 64)
+ *   Centre : (60,0) → curves to (60, 64)  (near-straight with subtle ease)
+ *   Right  : (60,0) → curves to (102,64)
+ */
+const BRANCHES = [
+  // left
+  `M ${CX} 0 C ${CX} 22, 18 34, 18 ${SVG_HEIGHT}`,
+  // centre
+  `M ${CX} 0 C ${CX} 18, ${CX} 46, ${CX} ${SVG_HEIGHT}`,
+  // right
+  `M ${CX} 0 C ${CX} 22, 102 34, 102 ${SVG_HEIGHT}`,
+] as const;
+
+/** Staggered delay per branch so particles cascade rather than firing in sync. */
+const BRANCH_DELAYS = ['0s', '0.25s', '0.5s'] as const;
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 function NlFlowConnector({ state, className }: NlFlowConnectorProps) {
   const rawId = useId();
-  // Strip colons from React's internal id format to produce valid CSS idents.
   const uid = rawId.replace(/:/g, '');
 
   const gradId = `nl-grad-${uid}`;
   const animName = `nl-particle-${uid}`;
 
-  // Total dash-cycle length: 10 visible + 70 gap = 80. The path length is 40.
-  // A stroke-dashoffset of 80 → -40 sweeps the full connector height once.
-  const STROKE_DASH = '10 70';
-  const OFFSET_START = 80;      // particle starts above the viewport
-  const OFFSET_END = -40;       // particle exits below the viewport
-  const DURATION = '1.2s';
+  // Particle dash pattern.  The path length is ~80-100 units depending on the
+  // branch curvature.  A 12/90 ratio keeps the dot small and the gap wide
+  // enough that you only see one dot at a time per branch.
+  const STROKE_DASH = '12 90';
+  const OFFSET_START = 110;
+  const OFFSET_END = -50;
+  const DURATION = '1.4s';
 
   const isActive = state === 'active';
 
   return (
-    <div className={cn('h-10 w-full flex items-center justify-center', className)}>
+    <div
+      className={cn('w-full flex items-center justify-center', className)}
+      style={{ height: SVG_HEIGHT }}
+    >
       <style>{`
         @keyframes ${animName} {
           0%   { stroke-dashoffset: ${OFFSET_START}; }
@@ -75,11 +104,7 @@ function NlFlowConnector({ state, className }: NlFlowConnectorProps) {
         className={`nl-conn-${uid}`}
       >
         <defs>
-          {/*
-           * Vertical gradient — transparent at top/bottom, fully opaque at
-           * the midpoint — so the particle appears to emerge from and
-           * dissolve into the path rather than blinking on/off.
-           */}
+          {/* Vertical gradient — transparent at ends, opaque at midpoint */}
           <linearGradient
             id={gradId}
             x1="0%"
@@ -93,33 +118,38 @@ function NlFlowConnector({ state, className }: NlFlowConnectorProps) {
           </linearGradient>
         </defs>
 
-        {/* Base path: full-width connector line */}
-        <path
-          d={PATH_D}
-          fill="none"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          style={{
-            stroke: 'hsl(var(--border))',
-            opacity: isActive ? 1 : 0.4,
-            transition: 'opacity 0.5s ease',
-          }}
-        />
+        {BRANCHES.map((d, i) => (
+          <g key={i}>
+            {/* Base path */}
+            <path
+              d={d}
+              fill="none"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              style={{
+                stroke: 'hsl(var(--border))',
+                opacity: isActive ? 1 : 0.4,
+                transition: 'opacity 0.5s ease',
+              }}
+            />
 
-        {/* Animated particle */}
-        <path
-          d={PATH_D}
-          fill="none"
-          stroke={`url(#${gradId})`}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeDasharray={STROKE_DASH}
-          style={{
-            opacity: isActive ? 1 : 0,
-            transition: 'opacity 0.4s ease',
-            animation: `${animName} ${DURATION} linear infinite`,
-          }}
-        />
+            {/* Animated particle */}
+            <path
+              d={d}
+              fill="none"
+              stroke={`url(#${gradId})`}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={STROKE_DASH}
+              style={{
+                opacity: isActive ? 1 : 0,
+                transition: 'opacity 0.4s ease',
+                animation: `${animName} ${DURATION} linear infinite`,
+                animationDelay: BRANCH_DELAYS[i],
+              }}
+            />
+          </g>
+        ))}
       </svg>
     </div>
   );

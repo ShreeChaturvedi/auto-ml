@@ -29,6 +29,7 @@
 
 import { useRef, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { Check, X, RotateCcw } from 'lucide-react';
 
 // ─── SQL tokenizer ────────────────────────────────────────────────────────────
 
@@ -200,6 +201,10 @@ interface SqlRevealBlockProps {
   /** Original server-generated SQL, used to determine if the user has made
    *  changes and to allow them to reset. */
   originalSql: string;
+  /** Called when the user approves the (possibly edited) SQL. */
+  onApprove?: () => void;
+  /** Called when the user rejects / dismisses the generated SQL. */
+  onReject?: () => void;
   className?: string;
 }
 
@@ -212,6 +217,8 @@ function SqlRevealBlock({
   editedSql,
   onSqlChange,
   originalSql,
+  onApprove,
+  onReject,
   className,
 }: SqlRevealBlockProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -291,24 +298,71 @@ function SqlRevealBlock({
           />
         )}
 
-        {/* Reset badge — only shown once the typewriter is done AND user has
-            made changes.  Positioned bottom-right of the SQL block. */}
-        {isRevealComplete && isEdited && (
-          <button
-            type="button"
-            onClick={() => onSqlChange(originalSql)}
+        {/* Inline action bar — sits below the textarea, only in review mode */}
+        {isRevealComplete && (onApprove || onReject || isEdited) && (
+          <div
             className={cn(
-              'absolute bottom-2 right-2',
-              'rounded px-1.5 py-0.5 text-xs font-medium',
-              'bg-muted text-muted-foreground',
-              'border border-border',
-              'hover:bg-accent hover:text-accent-foreground',
-              'transition-colors duration-150',
+              'flex items-center gap-1.5 mt-1.5',
+              'animate-in fade-in slide-in-from-bottom-1 duration-200',
             )}
-            aria-label="Reset SQL to original generated version"
           >
-            Reset
-          </button>
+            {onReject && (
+              <button
+                type="button"
+                onClick={onReject}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1',
+                  'text-xs font-medium',
+                  'border border-border bg-card text-muted-foreground',
+                  'hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30',
+                  'transition-colors duration-150',
+                )}
+                aria-label="Reject generated SQL"
+              >
+                <X className="h-3 w-3" />
+                Reject
+              </button>
+            )}
+
+            {isEdited && (
+              <button
+                type="button"
+                onClick={() => onSqlChange(originalSql)}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1',
+                  'text-xs font-medium',
+                  'border border-border bg-card text-muted-foreground',
+                  'hover:bg-accent hover:text-accent-foreground',
+                  'transition-colors duration-150',
+                )}
+                aria-label="Reset SQL to original generated version"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset
+              </button>
+            )}
+
+            {/* Spacer pushes Approve to the right */}
+            <div className="flex-1" />
+
+            {onApprove && (
+              <button
+                type="button"
+                onClick={onApprove}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-3 py-1',
+                  'text-xs font-medium',
+                  'border border-primary/40 bg-primary/10 text-primary',
+                  'hover:bg-primary/20 hover:border-primary/60',
+                  'transition-colors duration-150',
+                )}
+                aria-label="Approve and run this SQL"
+              >
+                <Check className="h-3 w-3" />
+                Approve &amp; Run
+              </button>
+            )}
+          </div>
         )}
       </div>
 

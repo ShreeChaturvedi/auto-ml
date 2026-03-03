@@ -236,6 +236,7 @@ export function useAgenticLoop({
           }
           if (event.type === 'error') {
             setError(event.message);
+            domainAdapter.onStreamError?.(event.message);
             const id = `error-${Date.now()}`;
             setMessages((prev) => [...prev, { id, type: 'error', message: event.message }]);
             if (currentThinkingIdRef.current) {
@@ -279,7 +280,9 @@ export function useAgenticLoop({
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       if (requestId !== activeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : 'Failed to execute loop.');
+      const message = err instanceof Error ? err.message : 'Failed to execute loop.';
+      setError(message);
+      domainAdapter.onStreamError?.(message);
       setIsGenerating(false);
       if (currentThinkingIdRef.current) {
         setMessages((prev) => prev.map((msg) =>

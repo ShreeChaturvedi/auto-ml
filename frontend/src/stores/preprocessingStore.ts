@@ -138,6 +138,7 @@ interface PreprocessingState {
   syncDivergence: (cells: NotebookCell[]) => Promise<void>;
   evaluateReplayCompatibility: (projectId: string) => Promise<void>;
   clearRun: () => void;
+  markInterruptedSteps: (reason: string) => void;
   processToolCall: (call: ToolCall, fallbackRunId?: string) => void;
   processToolResult: (call: ToolCall, result: ToolResult, fallbackRunId?: string) => void;
 }
@@ -817,6 +818,29 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         source: 'local_precheck',
         precheckIssues: localIssues
       }
+    });
+  },
+
+  markInterruptedSteps: (reason: string) => {
+    const message = reason.trim() || 'Preprocessing run was interrupted before completion.';
+    set((state) => {
+      const nextTimeline = state.timeline.map((event) => {
+        if (event.status !== 'pending' && event.status !== 'running') {
+          return event;
+        }
+
+        return {
+          ...event,
+          status: 'failed' as TransformationStatus,
+          error: event.error ?? `Interrupted before completion: ${message}`,
+          updatedAt: Date.now()
+        };
+      });
+
+      return {
+        timeline: nextTimeline,
+        error: message
+      };
     });
   },
 

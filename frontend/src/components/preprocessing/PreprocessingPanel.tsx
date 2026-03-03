@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,7 +29,13 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
-import { extractRunIdFromStoredMessages } from './storagePersistence';
+import {
+  buildProcessingStorageKey,
+  buildProcessingTabsStateKey,
+  discoverProcessingTabIds,
+  extractRunIdFromStoredMessages,
+  parseStoredPreprocessingTabsState
+} from './storagePersistence';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -56,6 +62,7 @@ const HIDDEN_ACTIVITY_TOOLS = new Set([
   'list_project_datasets',
   'profile_active_dataset'
 ]);
+const DEFAULT_TAB_ID = 'processing-tab-1';
 
 
 interface PreprocessingTabSnapshot {
@@ -87,8 +94,13 @@ function createTabId(): string {
   return `proc-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function buildProcessingStorageKey(tabId: string, storageVersion: number): string {
-  return `preprocessing-messages-v5-${tabId}-${storageVersion}`;
+function createDefaultTab(): PreprocessingTab {
+  return {
+    id: DEFAULT_TAB_ID,
+    name: 'Processing 1',
+    snapshot: createEmptyTabSnapshot(),
+    storageVersion: 0
+  };
 }
 
 function statusClassName(status: TransformationEvent['status']): string {
@@ -142,29 +154,101 @@ export function PreprocessingPanel() {
   const lastHydratedRunIdRef = useRef<string | null>(null);
   const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
   const suppressStoredRunHydrationRef = useRef(false);
+  const hydratedTabsProjectRef = useRef<string | null>(null);
 
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
   const [renameTabDialogOpen, setRenameTabDialogOpen] = useState(false);
   const [renameTabName, setRenameTabName] = useState('');
-  const [tabs, setTabs] = useState<PreprocessingTab[]>([
-    {
-      id: 'processing-tab-1',
-      name: 'Processing 1',
-      snapshot: createEmptyTabSnapshot(),
-      storageVersion: 0
-    }
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>('processing-tab-1');
+  const [tabs, setTabs] = useState<PreprocessingTab[]>([createDefaultTab()]);
+  const [activeTabId, setActiveTabId] = useState<string>(DEFAULT_TAB_ID);
+  const [tabsReady, setTabsReady] = useState(false);
   const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
   const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
+
+  const buildTabStorageKey = useCallback((tabId: string): string => (
+    buildProcessingStorageKey(tabId)
+  ), []);
+
+  const buildScopedTabStorageKey = useCallback((tabId: string): string => (
+    projectId
+      ? `${buildTabStorageKey(tabId)}-${projectId}`
+      : buildTabStorageKey(tabId)
+  ), [buildTabStorageKey, projectId]);
 
   useEffect(() => {
     if (projectId) {
       void loadTables(projectId);
     }
   }, [projectId, loadTables]);
+
+  useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+    if (hydratedTabsProjectRef.current === projectId) {
+      return;
+    }
+
+    setTabsReady(false);
+    hydratedTabsProjectRef.current = projectId;
+
+    const persistedTabsState = parseStoredPreprocessingTabsState(
+      localStorage.getItem(buildProcessingTabsStateKey(projectId))
+    );
+
+    const recoveredTabs: PreprocessingTab[] = [];
+    const knownTabIds = new Set<string>();
+
+    const appendRecoveredTab = (id: string, name: string, storageVersion: number) => {
+      if (knownTabIds.has(id)) {
+        return;
+      }
+      knownTabIds.add(id);
+      const storageKey = buildScopedTabStorageKey(id);
+      const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
+      recoveredTabs.push({
+        id,
+        name,
+        storageVersion,
+        snapshot: {
+          ...createEmptyTabSnapshot(),
+          runId: inferredRunId
+        }
+      });
+    };
+
+    persistedTabsState?.tabs.forEach((tab) => {
+      appendRecoveredTab(tab.id, tab.name, tab.storageVersion);
+    });
+
+    discoverProcessingTabIds(projectId).forEach((tabId) => {
+      appendRecoveredTab(tabId, `Processing ${recoveredTabs.length + 1}`, 0);
+    });
+
+    if (recoveredTabs.length === 0) {
+      recoveredTabs.push(createDefaultTab());
+    }
+
+    const persistedActiveTabId = persistedTabsState?.activeTabId ?? recoveredTabs[0].id;
+    const recoveredActiveTabId = recoveredTabs.some((tab) => tab.id === persistedActiveTabId)
+      ? persistedActiveTabId
+      : recoveredTabs[0].id;
+    const activeRecoveredTab = recoveredTabs.find((tab) => tab.id === recoveredActiveTabId) ?? recoveredTabs[0];
+
+    setTabs(recoveredTabs);
+    setActiveTabId(recoveredActiveTabId);
+    usePreprocessingStore.setState({
+      selectedDatasetId: activeRecoveredTab.snapshot.selectedDatasetId,
+      runId: activeRecoveredTab.snapshot.runId,
+      timeline: activeRecoveredTab.snapshot.timeline,
+      stepBindings: activeRecoveredTab.snapshot.stepBindings,
+      replayReport: activeRecoveredTab.snapshot.replayReport,
+      error: null
+    });
+    setTabsReady(true);
+  }, [buildScopedTabStorageKey, projectId]);
 
   useEffect(() => {
     if (!selectedDatasetId && tables.length > 0) {
@@ -179,8 +263,38 @@ export function PreprocessingPanel() {
   }, [candidateDatasetId, selectedDatasetId, tables]);
 
   useEffect(() => {
-    syncDivergence(notebookCells);
+    void syncDivergence(notebookCells);
   }, [notebookCells, syncDivergence]);
+
+  useEffect(() => {
+    if (tabs.length === 0) {
+      return;
+    }
+    if (!tabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabs[0].id);
+    }
+  }, [activeTabId, tabs]);
+
+  useEffect(() => {
+    if (!tabsReady || !projectId || tabs.length === 0) {
+      return;
+    }
+    const persistedActiveTabId = tabs.some((tab) => tab.id === activeTabId)
+      ? activeTabId
+      : tabs[0].id;
+
+    localStorage.setItem(
+      buildProcessingTabsStateKey(projectId),
+      JSON.stringify({
+        activeTabId: persistedActiveTabId,
+        tabs: tabs.map((tab) => ({
+          id: tab.id,
+          name: tab.name,
+          storageVersion: tab.storageVersion
+        }))
+      })
+    );
+  }, [activeTabId, projectId, tabs, tabsReady]);
 
   useEffect(() => {
     setTabs((previous) => previous.map((tab) => {
@@ -217,12 +331,12 @@ export function PreprocessingPanel() {
     if (suppressStoredRunHydrationRef.current) {
       return;
     }
-    const storageKey = `${buildProcessingStorageKey(activeTab.id, activeTab.storageVersion)}-${projectId}`;
+    const storageKey = buildScopedTabStorageKey(activeTab.id);
     const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
     if (inferredRunId) {
       setRunId(inferredRunId);
     }
-  }, [activeTab, projectId, runId, setRunId]);
+  }, [activeTab, buildScopedTabStorageKey, projectId, runId, setRunId]);
 
   useEffect(() => {
     if (runId) {
@@ -311,6 +425,85 @@ export function PreprocessingPanel() {
     () => [...timeline].sort((a, b) => a.createdAt - b.createdAt),
     [timeline]
   );
+  const latestTimelineEvent = useMemo(
+    () => [...timeline].sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null,
+    [timeline]
+  );
+  const composerStatusNotice = useMemo(() => {
+    if (!storeError && !latestTimelineEvent) {
+      return null;
+    }
+
+    if (storeError) {
+      return (
+        <Card className="border-red-300 bg-red-50/80">
+          <CardContent className="flex items-center gap-2 p-2 text-xs text-red-700">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="font-medium">Latest error:</span>
+            <span>{storeError}</span>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (!latestTimelineEvent) {
+      return null;
+    }
+
+    const status = latestTimelineEvent.status;
+    const baseClass = status === 'failed'
+      ? 'border-red-300 bg-red-50/80 text-red-700'
+      : status === 'awaiting_approval'
+        ? 'border-amber-300 bg-amber-50/80 text-amber-700'
+        : status === 'diverged'
+          ? 'border-purple-300 bg-purple-50/80 text-purple-700'
+          : status === 'applied'
+            ? 'border-emerald-300 bg-emerald-50/80 text-emerald-700'
+            : 'border-sky-300 bg-sky-50/80 text-sky-700';
+    const detail = latestTimelineEvent.error
+      ?? latestTimelineEvent.decisionReason
+      ?? summarizeValidation(latestTimelineEvent)
+      ?? (status === 'awaiting_approval' ? 'Waiting for your approve/reject decision.' : undefined);
+
+    return (
+      <Card className={baseClass}>
+        <CardContent className="flex items-center gap-2 p-2 text-xs">
+          {status === 'failed' ? (
+            <AlertTriangle className="h-4 w-4" />
+          ) : status === 'awaiting_approval' ? (
+            <ShieldAlert className="h-4 w-4" />
+          ) : status === 'applied' ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
+          <span className="font-medium">{latestTimelineEvent.title} · {STATUS_LABELS[status]}</span>
+          {detail ? <span className="text-[11px] opacity-90">{detail}</span> : null}
+        </CardContent>
+      </Card>
+    );
+  }, [latestTimelineEvent, storeError]);
+
+  const handleReplayCheck = () => {
+    if (!projectId) {
+      return;
+    }
+    void evaluateReplayCompatibility(projectId);
+  };
+
+  const handleApproveStep = (stepId: string) => {
+    if (!projectId) {
+      return;
+    }
+    void approveStep(projectId, stepId);
+  };
+
+  const handleRejectStep = (stepId: string) => {
+    if (!projectId) {
+      return;
+    }
+    void rejectStep(projectId, stepId, 'Rejected by user');
+  };
 
   const handleDatasetStart = () => {
     if (!candidateDatasetId) return;
@@ -379,7 +572,7 @@ export function PreprocessingPanel() {
     const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
     if (!fallbackTab) return;
     if (projectId) {
-      localStorage.removeItem(`${buildProcessingStorageKey(activeTab.id, activeTab.storageVersion)}-${projectId}`);
+      localStorage.removeItem(buildScopedTabStorageKey(activeTab.id));
     }
     setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
     setActiveTabId(fallbackTab.id);
@@ -406,8 +599,7 @@ export function PreprocessingPanel() {
     if (!activeTab) return;
 
     if (projectId) {
-      const currentStorageKey = buildProcessingStorageKey(activeTab.id, activeTab.storageVersion);
-      localStorage.removeItem(`${currentStorageKey}-${projectId}`);
+      localStorage.removeItem(buildScopedTabStorageKey(activeTab.id));
     }
 
     const nextSnapshot = createEmptyTabSnapshot();
@@ -435,10 +627,7 @@ export function PreprocessingPanel() {
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
         beforeSubmit={requestDatasetContinuityChoice}
-        storageKey={buildProcessingStorageKey(
-          activeTab?.id ?? 'processing-tab-1',
-          activeTab?.storageVersion ?? 0
-        )}
+        storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID)}
         toolbarLeft={
           <PreprocessingToolbarLeft
             tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
@@ -446,7 +635,7 @@ export function PreprocessingPanel() {
             onTabSwitch={handleTabSwitch}
             onNewTab={handleNewTab}
             onRenameTab={openRenameTabDialog}
-            onReplayCheck={evaluateReplayCompatibility}
+            onReplayCheck={handleReplayCheck}
             onResetTab={resetActiveTab}
             onDeleteTab={handleDeleteTab}
             canDeleteTab={tabs.length > 1}
@@ -476,6 +665,7 @@ export function PreprocessingPanel() {
             ) : null}
           </div>
         }
+        composerStatusSlot={composerStatusNotice}
         LeftPaneComponent={({ messages, isGenerating, error: shellError }) => {
           const visibleActivityMessages = messages.filter((message) => (
             message.type !== 'tool_call' || !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool)
@@ -505,8 +695,62 @@ export function PreprocessingPanel() {
               </Card>
             ) : null}
 
+            {visibleActivityMessages.length > 0 ? (
+              <div className="space-y-2 mt-6">
+                <h2 className="text-sm font-semibold">Agent Activity</h2>
+                {visibleActivityMessages.map((message) => {
+                  if (message.type === 'user') {
+                    return (
+                      <div key={message.id} className="flex flex-col items-end">
+                        <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
+                          {message.content}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (message.type === 'assistant_text') {
+                    return (
+                      <div key={message.id} className="flex items-start gap-3 w-full">
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
+                          <Wand2 className="h-3 w-3 text-emerald-600" />
+                        </div>
+                        <div className="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (message.type === 'thinking') {
+                    return (
+                      <ThinkingBlock
+                        key={message.id}
+                        content={message.content}
+                        isComplete={message.isComplete}
+                      />
+                    );
+                  }
+
+                  if (message.type === 'tool_call') {
+                    return (
+                      <ToolIndicator
+                        key={message.id}
+                        toolCalls={[message.call]}
+                        results={message.result ? [message.result] : []}
+                        isRunning={!message.result}
+                        autoExpandPreviewTools
+                      />
+                    );
+                  }
+
+                  return null;
+                })}
+              </div>
+            ) : null}
+
             {sortedTimeline.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-3 mt-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold">Transformation Timeline</h2>
                   <p className="text-xs text-muted-foreground">Cards are projected from structured tool events. Notebook remains the execution source of truth.</p>
@@ -567,11 +811,11 @@ export function PreprocessingPanel() {
                             <ShieldAlert className="h-4 w-4 text-amber-600" />
                             <span className="text-amber-700">This step requires explicit approval.</span>
                             <div className="ml-auto flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => rejectStep(event.stepId, 'Rejected by user')}>
+                              <Button size="sm" variant="outline" onClick={() => handleRejectStep(event.stepId)}>
                                 <XCircle className="mr-1 h-3.5 w-3.5" />
                                 Reject
                               </Button>
-                              <Button size="sm" onClick={() => approveStep(event.stepId)}>
+                              <Button size="sm" onClick={() => handleApproveStep(event.stepId)}>
                                 <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                                 Approve
                               </Button>
@@ -593,60 +837,6 @@ export function PreprocessingPanel() {
                       </CardContent>
                     </Card>
                   );
-                })}
-              </div>
-            ) : null}
-
-            {visibleActivityMessages.length > 0 ? (
-              <div className="space-y-2 mt-6">
-                <h2 className="text-sm font-semibold">Agent Activity</h2>
-                {visibleActivityMessages.map((message) => {
-                  if (message.type === 'user') {
-                    return (
-                      <div key={message.id} className="flex flex-col items-end">
-                        <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
-                          {message.content}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  if (message.type === 'assistant_text') {
-                    return (
-                      <div key={message.id} className="flex items-start gap-3 w-full">
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
-                          <Wand2 className="h-3 w-3 text-emerald-600" />
-                        </div>
-                        <div className="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  if (message.type === 'thinking') {
-                    return (
-                      <ThinkingBlock
-                        key={message.id}
-                        content={message.content}
-                        isComplete={message.isComplete}
-                      />
-                    );
-                  }
-
-                  if (message.type === 'tool_call') {
-                    return (
-                      <ToolIndicator
-                        key={message.id}
-                        toolCalls={[message.call]}
-                        results={message.result ? [message.result] : []}
-                        isRunning={!message.result}
-                        autoExpandPreviewTools
-                      />
-                    );
-                  }
-
-                  return null;
                 })}
               </div>
             ) : null}

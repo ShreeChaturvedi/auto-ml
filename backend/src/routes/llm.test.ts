@@ -6,19 +6,23 @@ import { canListen } from '../tests/canListen.js';
 
 import { createLlmRouter } from './llm.js';
 
-const { datasetGetByIdMock, projectGetByIdMock } = vi.hoisted(() => ({
+const { datasetGetByIdMock, projectGetByIdMock, llmCompleteMock, llmStreamMock } = vi.hoisted(() => ({
   datasetGetByIdMock: vi.fn(),
-  projectGetByIdMock: vi.fn()
+  projectGetByIdMock: vi.fn(),
+  llmCompleteMock: vi.fn(async () => ''),
+  llmStreamMock: vi.fn(async () => '')
 }));
 
 vi.mock('../services/llm/llmClient.js', () => {
-  const client = {
-    complete: vi.fn(async () => ''),
-    stream: vi.fn(async () => '')
-  };
   return {
-    createLlmClient: vi.fn(() => client),
-    createThinkingLlmClient: vi.fn(() => client)
+    createLlmClient: vi.fn(() => ({
+      complete: llmCompleteMock,
+      stream: llmStreamMock
+    })),
+    createThinkingLlmClient: vi.fn(() => ({
+      complete: llmCompleteMock,
+      stream: llmStreamMock
+    }))
   };
 });
 
@@ -68,16 +72,23 @@ function createTestApp() {
 describeIf('llm routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    llmCompleteMock.mockResolvedValue('');
+    llmStreamMock.mockResolvedValue('');
     datasetGetByIdMock.mockResolvedValue({
       datasetId: 'ds-1',
+      projectId: 'project-1',
       filename: 'train.csv',
-      profile: {
-        nRows: 10,
-        nCols: 2,
-        dtypes: { age: 'int64', churn: 'int64' },
-        nullCounts: { age: 0, churn: 0 }
-      },
-      sample: [{ age: 21, churn: 0 }]
+      fileType: 'csv',
+      size: 1024,
+      nRows: 10,
+      nCols: 2,
+      columns: [
+        { name: 'age', dtype: 'integer', nullCount: 0 },
+        { name: 'churn', dtype: 'integer', nullCount: 0 }
+      ],
+      sample: [{ age: 21, churn: 0 }],
+      createdAt: '2026-02-01T00:00:00.000Z',
+      updatedAt: '2026-02-01T00:00:00.000Z'
     });
     projectGetByIdMock.mockResolvedValue({
       projectId: 'project-1',
@@ -217,6 +228,144 @@ describeIf('llm routes', () => {
       });
       const reasonCode = response.body.results?.[0]?.output?.reasonCode as string | undefined;
       expect(['RUN_NOT_FOUND', 'RUN_PROJECT_MISMATCH']).toContain(reasonCode);
+    });
+  });
+
+  describe('POST /api/llm/preprocessing/stream', () => {
+    it('normalizes Gemini quota errors into actionable preprocessing message', async () => {
+      llmStreamMock.mockRejectedValueOnce(new Error(JSON.stringify({
+        error: {
+          code: 429,
+          status: 'RESOURCE_EXHAUSTED',
+          message: 'Quota exceeded for metric generate_requests_per_model_per_day'
+        }
+      })));
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'profile missing values'
+        });
+
+      expect(response.status).toBe(200);
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const errorEvent = events.find((event) => event.type === 'error') as { message?: string } | undefined;
+      expect(errorEvent?.message).toContain('Gemini quota limit reached (429)');
+      expect(errorEvent?.message).toContain('preprocessing request was not completed');
+      expect(events[events.length - 1]?.type).toBe('done');
+    });
+
+    it('persists interrupted run state as failed when provider stream errors', async () => {
+      const app = createTestApp();
+
+      const proposeResponse = await request(app)
+        .post('/api/llm/tools/execute')
+        .send({
+          projectId: 'project-1',
+          toolCalls: [
+            {
+              id: 'tool-propose',
+              tool: 'propose_transformation_step',
+              args: {
+                title: 'Scale usage count',
+                intentType: 'numeric_scaling',
+                stepId: 'step_num'
+              }
+            }
+          ]
+        });
+      const runId = proposeResponse.body.results?.[0]?.output?.runId as string;
+      expect(runId).toBeTruthy();
+
+      await request(app)
+        .post('/api/llm/tools/execute')
+        .send({
+          projectId: 'project-1',
+          toolCalls: [
+            {
+              id: 'tool-materialize',
+              tool: 'materialize_step_code',
+              args: {
+                runId,
+                stepId: 'step_num',
+                code: 'df["Usage"] = df["Usage"] / df["Usage"].max()'
+              }
+            }
+          ]
+        });
+
+      await request(app)
+        .post('/api/llm/tools/execute')
+        .send({
+          projectId: 'project-1',
+          toolCalls: [
+            {
+              id: 'tool-execute',
+              tool: 'execute_transformation_step',
+              args: {
+                runId,
+                stepId: 'step_num',
+                cellId: 'cell-1',
+                succeeded: true
+              }
+            }
+          ]
+        });
+
+      llmStreamMock.mockRejectedValueOnce(new Error(JSON.stringify({
+        error: {
+          code: 503,
+          status: 'UNAVAILABLE',
+          message: 'Model temporarily overloaded'
+        }
+      })));
+
+      const streamResponse = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'continue scaling',
+          toolCalls: [
+            {
+              id: 'tool-history',
+              tool: 'execute_transformation_step',
+              args: {
+                runId,
+                stepId: 'step_num'
+              }
+            }
+          ]
+        });
+
+      expect(streamResponse.status).toBe(200);
+
+      const snapshotResponse = await request(app).get(`/api/llm/preprocessing/runs/${runId}`);
+      expect(snapshotResponse.status).toBe(200);
+      const run = snapshotResponse.body.run as {
+        steps: Array<{ stepId: string; status: string; decisionReason?: string }>;
+        langGraphState?: { isCompleted?: boolean; currentStage?: string; lastError?: string };
+        events?: Array<{ type?: string }>;
+      };
+      const interruptedStep = run.steps.find((step) => step.stepId === 'step_num');
+      expect(interruptedStep).toMatchObject({
+        status: 'failed'
+      });
+      expect(interruptedStep?.decisionReason).toContain('Model temporarily overloaded');
+      expect(run.langGraphState).toMatchObject({
+        isCompleted: true,
+        currentStage: 'completed'
+      });
+      expect(run.langGraphState?.lastError).toContain('Model temporarily overloaded');
+      expect(run.events?.at(-1)?.type).toBe('run_interrupted');
     });
   });
 });

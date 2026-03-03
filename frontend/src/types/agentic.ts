@@ -30,6 +30,7 @@ export interface DomainAdapter {
   ) => Promise<void>;
 
   prepareToolCalls?: (toolCalls: ToolCall[]) => ToolCall[];
+  onStreamError?: (message: string) => void;
 
   toolRegistry: Record<string, ToolHandlers>;
   toolUiRegistry: Record<string, ComponentType<{ call: ToolCall; result?: ToolResult }>>;

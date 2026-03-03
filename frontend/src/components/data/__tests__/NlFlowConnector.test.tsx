@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { NlFlowConnector } from '../NlFlowConnector';
 
@@ -31,21 +31,21 @@ describe('NlFlowConnector', () => {
     const { container } = render(<NlFlowConnector state="active" />);
     const paths = container.querySelectorAll('path');
     // Second path is the particle
-    const particle = paths[1] as HTMLElement;
+    const particle = paths[1] as SVGPathElement;
     expect(particle.style.opacity).toBe('1');
   });
 
   it('particle path is hidden (opacity 0) in settled state', () => {
     const { container } = render(<NlFlowConnector state="settled" />);
     const paths = container.querySelectorAll('path');
-    const particle = paths[1] as HTMLElement;
+    const particle = paths[1] as SVGPathElement;
     expect(particle.style.opacity).toBe('0');
   });
 
   it('base path has reduced opacity in settled state', () => {
     const { container } = render(<NlFlowConnector state="settled" />);
     const paths = container.querySelectorAll('path');
-    const base = paths[0] as HTMLElement;
+    const base = paths[0] as SVGPathElement;
     // settled state dims the base to 0.4
     expect(base.style.opacity).toBe('0.4');
   });
@@ -53,7 +53,7 @@ describe('NlFlowConnector', () => {
   it('base path has full opacity in active state', () => {
     const { container } = render(<NlFlowConnector state="active" />);
     const paths = container.querySelectorAll('path');
-    const base = paths[0] as HTMLElement;
+    const base = paths[0] as SVGPathElement;
     expect(base.style.opacity).toBe('1');
   });
 

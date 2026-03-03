@@ -456,8 +456,15 @@ router.get('/cells/:cellId/outputs/:filename', async (req: Request, res: Respons
   try {
     const { cellId, filename } = req.params;
 
-    // Validate filename to prevent path traversal
-    if (filename.includes('..') || filename.includes('/')) {
+    // Validate path segments to prevent traversal attacks.
+    const isSafeSegment = (value: string) => !value.includes('..') && !value.includes('/') && !value.includes('\\');
+
+    if (!isSafeSegment(cellId)) {
+      res.status(400).json({ error: 'Invalid cellId' });
+      return;
+    }
+
+    if (!isSafeSegment(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
@@ -484,7 +491,13 @@ router.get('/cells/:cellId/outputs/:filename', async (req: Request, res: Respons
 
     const contentType = contentTypes[ext ?? ''] ?? 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
-    res.sendFile(filePath, { root: process.cwd() });
+    // Frontend dev server enables COEP/COOP for SharedArrayBuffer (DuckDB). Under COEP=require-corp,
+    // cross-origin subresources (like images served from the API port) must opt in. This header
+    // allows notebook output images to render in the browser.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    // `filePath` is absolute. Do not pass `root`, otherwise Express treats the path as relative and
+    // the underlying `send` module will look up the wrong filesystem location.
+    res.sendFile(filePath);
   } catch (error) {
     console.error('[notebooks] Error serving output:', error);
     res.status(500).json({

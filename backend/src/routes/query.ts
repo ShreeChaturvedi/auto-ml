@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
-import { generateSqlFromNaturalLanguage } from '../services/nlToSql.js';
+import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 
@@ -16,6 +16,13 @@ function hasResolvedColumnTypes(payload: { columns?: Array<{ dataType?: string }
     const normalized = column.dataType.trim().toLowerCase();
     return normalized.length > 0 && normalized !== 'unknown';
   });
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
 }
 
 const sqlQuerySchema = z.object({
@@ -75,42 +82,109 @@ export function createQueryRouter() {
 
     const { projectId, query, tableName } = result.data;
 
+    let generated;
     try {
-      const generated = generateSqlFromNaturalLanguage({
+      generated = await generateSqlFromNaturalLanguageV2({
+        projectId,
         nlQuery: query,
         defaultTable: tableName
       });
+    } catch (error) {
+      console.error('[query/nl] NL generation failed:', error);
+      return res.status(400).json({
+        error: getErrorMessage(error, 'Failed to process NL query')
+      });
+    }
 
+    try {
       const cached = await getCachedQueryResult({ projectId, sql: generated.sql });
       if (cached && hasResolvedColumnTypes(cached)) {
         return res.json({
           nl: {
             ...generated,
             cached: true,
-            query: cached
+            query: cached,
+            queryExecutionError: null
           }
         });
       }
 
-      const queryResult = await executeReadOnlyQuery({ sql: generated.sql });
-      await storeCachedQueryResult({
-        projectId,
-        sql: generated.sql,
-        payload: queryResult
-      });
+      try {
+        const queryResult = await executeReadOnlyQuery({ sql: generated.sql });
+        await storeCachedQueryResult({
+          projectId,
+          sql: generated.sql,
+          payload: queryResult
+        });
 
-      const response = {
-        nl: {
-          ...generated,
-          cached: false,
-          query: queryResult
+        return res.json({
+          nl: {
+            ...generated,
+            cached: false,
+            query: queryResult,
+            queryExecutionError: null
+          }
+        });
+      } catch (executionError) {
+        const message = getErrorMessage(executionError, 'Generated SQL failed to execute');
+        console.warn('[query/nl] Generated SQL execution failed:', {
+          error: message,
+          sql: generated.sql
+        });
+
+        try {
+          const repaired = await repairSqlFromExecutionErrorV2({
+            projectId,
+            nlQuery: query,
+            failedSql: generated.sql,
+            executionError: message,
+            defaultTable: tableName,
+            priorExplanation: generated.explanation
+          });
+
+          try {
+            const repairedQuery = await executeReadOnlyQuery({ sql: repaired.sql });
+            await storeCachedQueryResult({
+              projectId,
+              sql: repaired.sql,
+              payload: repairedQuery
+            });
+
+            return res.json({
+              nl: {
+                ...repaired,
+                cached: false,
+                query: repairedQuery,
+                queryExecutionError: null
+              }
+            });
+          } catch (repairedExecutionError) {
+            const repairedMessage = getErrorMessage(repairedExecutionError, 'Repaired SQL failed to execute');
+            return res.json({
+              nl: {
+                ...repaired,
+                cached: false,
+                query: null,
+                queryExecutionError: repairedMessage
+              }
+            });
+          }
+        } catch (repairError) {
+          console.warn('[query/nl] SQL repair failed, returning original SQL for manual review:', repairError);
+          return res.json({
+            nl: {
+              ...generated,
+              cached: false,
+              query: null,
+              queryExecutionError: message
+            }
+          });
         }
-      };
-
-      return res.json(response);
+      }
     } catch (error) {
+      console.error('[query/nl] NL query post-processing failed:', error);
       return res.status(400).json({
-        error: error instanceof Error ? error.message : 'Failed to process NL query'
+        error: getErrorMessage(error, 'Failed to process NL query')
       });
     }
   });

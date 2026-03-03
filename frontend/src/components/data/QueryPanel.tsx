@@ -595,18 +595,6 @@ export function QueryPanel({
     }
   }, [currentQuery, mode, onExecute]);
 
-  // Handle keyboard shortcuts
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      // Cmd/Ctrl + Enter to execute
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleExecute();
-      }
-    },
-    [handleExecute]
-  );
-
   // Detect if user is on Mac for keyboard shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';

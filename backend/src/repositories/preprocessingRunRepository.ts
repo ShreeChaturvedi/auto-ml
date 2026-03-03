@@ -79,6 +79,7 @@ export type PreprocessingRunEventType =
   | 'step_committed'
   | 'step_diverged'
   | 'step_reconciled'
+  | 'run_interrupted'
   | 'checkpoint_created'
   | 'checkpoint_restored'
   | 'replay_compatibility_checked';

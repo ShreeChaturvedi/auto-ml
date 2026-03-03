@@ -44,6 +44,7 @@ import { Separator } from '@/components/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { downloadDocument } from '@/lib/api/documents';
+import { cn } from '@/lib/utils';
 import type { UploadedFile } from '@/types/file';
 import { formatFileSize } from '@/types/file';
 

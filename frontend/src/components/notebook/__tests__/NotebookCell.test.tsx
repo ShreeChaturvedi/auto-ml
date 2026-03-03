@@ -25,9 +25,13 @@ vi.mock('@/lib/monaco/preloader', () => ({
   initMonaco: vi.fn().mockResolvedValue(undefined)
 }));
 
-vi.mock('@/lib/api/notebooks', () => ({
-  getPythonCompletions: vi.fn().mockResolvedValue([])
-}));
+vi.mock('@/lib/api/notebooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api/notebooks')>();
+  return {
+    ...actual,
+    getPythonCompletions: vi.fn().mockResolvedValue([])
+  };
+});
 
 function createCell(overrides: Partial<NotebookCell> = {}): NotebookCell {
   return {
@@ -168,5 +172,49 @@ describe('NotebookCellComponent', () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('hello output');
     });
+  });
+
+  it('resolves persisted image output refs to API URLs', () => {
+    renderCell(
+      createCell({
+        executionStatus: 'success',
+        output: [
+          {
+            type: 'image',
+            content: 'outputs/cell-1/some.png',
+            mimeType: 'image/png'
+          }
+        ]
+      })
+    );
+
+    const img = screen.getByAltText('Output');
+    expect(img).toHaveAttribute(
+      'src',
+      expect.stringContaining('/api/cells/cell-1/outputs/some.png')
+    );
+  });
+
+  it('renders image outputRefs when inline outputs are missing', () => {
+    renderCell(
+      createCell({
+        executionStatus: 'success',
+        output: [],
+        outputRefs: [
+          {
+            type: 'image',
+            ref: 'outputs/cell-1/some.png',
+            mimeType: 'image/png',
+            byteSize: 123
+          }
+        ]
+      })
+    );
+
+    const img = screen.getByAltText('Output');
+    expect(img).toHaveAttribute(
+      'src',
+      expect.stringContaining('/api/cells/cell-1/outputs/some.png')
+    );
   });
 });

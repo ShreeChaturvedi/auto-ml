@@ -167,12 +167,33 @@ export function NotebookCellComponent({
 
   const isRunning = cell.executionStatus === 'running';
   const executionPrompt = getExecutionPrompt(cell);
-  const richOutputs = cell.output.map((output) => ({
-    type: output.type,
-    content: output.content,
-    data: output.data,
-    mimeType: output.mimeType
-  }));
+  const hasInlineImageOutput = cell.output.some((output) => output.type === 'image');
+  const inlineOutputRefs = new Set(
+    cell.output
+      .map((output) => output.content)
+      .filter((content) => typeof content === 'string' && content.startsWith('outputs/'))
+  );
+
+  const richOutputs = [
+    ...cell.output.map((output) => ({
+      type: output.type,
+      content: output.content,
+      data: output.data,
+      mimeType: output.mimeType
+    })),
+    // Backwards-compat: older persisted cells may only have images in outputRefs.
+    // If the cell already has inline image outputs (data URLs or placeholders), don't append refs
+    // to avoid bunching/duplication at the end of the output list.
+    ...(!hasInlineImageOutput
+      ? cell.outputRefs
+          .filter((ref) => ref.type === 'image' && ref.ref.startsWith('outputs/') && !inlineOutputRefs.has(ref.ref))
+          .map((ref) => ({
+            type: 'image' as const,
+            content: ref.ref,
+            mimeType: ref.mimeType
+          }))
+      : [])
+  ];
 
   const handleCopyOutput = useCallback(async () => {
     const text = buildOutputCopyText(richOutputs);

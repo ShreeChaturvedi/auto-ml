@@ -11,7 +11,9 @@ import type {
   ExecutionResult
 } from '@/types/notebook';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
+// Keep this aligned with the rest of the frontend API clients (see lib/api/client.ts).
+// This also avoids surprises where notebook output URLs point at localhost in non-local deployments.
+const API_BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api').replace(/\/$/, '');
 
 // ============================================================
 // Helper Functions

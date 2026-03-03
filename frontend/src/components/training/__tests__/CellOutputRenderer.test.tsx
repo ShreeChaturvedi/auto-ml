@@ -78,4 +78,20 @@ describe('CellOutputRenderer', () => {
 
     expect(outputText).toBe('fallback table content');
   });
+
+  it('resolves notebook image output refs to API URLs', () => {
+    render(
+      <CellOutputRenderer
+        outputs={[
+          {
+            type: 'image',
+            content: 'outputs/cell-1/some.png'
+          }
+        ]}
+      />
+    );
+
+    const img = screen.getByAltText('Output');
+    expect(img).toHaveAttribute('src', expect.stringContaining('/api/cells/cell-1/outputs/some.png'));
+  });
 });

@@ -1,6 +1,7 @@
 import type { RichOutput } from '@/lib/api/execution';
+import { parseOutputRefUrl } from '@/lib/api/notebooks';
 import { cn } from '@/lib/utils';
-import { AlertCircle, Image as ImageIcon, Table2 } from 'lucide-react';
+import { AlertCircle, Table2 } from 'lucide-react';
 import { formatValue, parseTableData, type TableData } from './cellOutputUtils';
 
 interface CellOutputRendererProps {
@@ -43,20 +44,23 @@ function OutputBody({ output }: { output: RichOutput }) {
         case 'table':
             return <TableOutput output={output} tableData={tableData} />;
 
-        case 'image':
+        case 'image': {
+            const imageSrc = output.content.startsWith('outputs/')
+                ? parseOutputRefUrl(output.content)
+                : output.content;
             return (
-                <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <ImageIcon className="h-3.5 w-3.5" />
-                        <span>Rendered image output</span>
-                    </div>
-                    <img
-                        src={output.content}
-                        alt="Output"
-                        className="max-h-[360px] max-w-full rounded-md border object-contain"
-                    />
-                </div>
+                <img
+                    src={imageSrc}
+                    alt="Output"
+                    loading="lazy"
+                    decoding="async"
+                    className="max-h-[360px] max-w-full rounded-md border object-contain"
+                    onError={() => {
+                        console.warn('[CellOutputRenderer] Failed to load image output:', { original: output.content, src: imageSrc });
+                    }}
+                />
             );
+        }
 
         case 'html':
             return (

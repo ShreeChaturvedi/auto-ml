@@ -85,6 +85,9 @@ export function createPreprocessingAdapter(
         }
       };
     }),
+    onStreamError: (message: string) => {
+      usePreprocessingStore.getState().markInterruptedSteps(message);
+    },
     toolRegistry,
 
     toolUiRegistry: {},

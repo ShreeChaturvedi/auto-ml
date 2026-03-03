@@ -11,7 +11,11 @@ import {
 } from '../../repositories/preprocessingRunRepository.js';
 
 import { createPreprocessingLangGraphRuntime } from './langgraph/preprocessingRuntime.js';
-import { createPreprocessingLangGraphSynchronizer, createPreprocessingToolExecutor } from './preprocessingGraph.js';
+import {
+  createPreprocessingLangGraphSynchronizer,
+  createPreprocessingRunInterruptionMarker,
+  createPreprocessingToolExecutor
+} from './preprocessingGraph.js';
 
 describe('preprocessingGraph', () => {
   let tempDir = '';
@@ -177,6 +181,64 @@ describe('preprocessingGraph', () => {
       reasonCode: 'RUN_PROJECT_MISMATCH',
       projectId: 'project-2',
       runProjectId: projectId
+    });
+  });
+
+  it('marks in-flight run steps as failed when provider stream is interrupted', async () => {
+    const projectId = 'project-1';
+    const { execute, runRepo } = await createExecutor(projectId);
+    const markInterrupted = createPreprocessingRunInterruptionMarker({
+      runRepository: runRepo,
+      runtime: createPreprocessingLangGraphRuntime()
+    });
+
+    const proposed = await execute(projectId, 'propose_transformation_step', {
+      title: 'Scale usage count',
+      intentType: 'numeric_scaling',
+      stepId: 'step_numeric_scaling'
+    });
+    const runId = (proposed.output as { runId: string }).runId;
+    await execute(projectId, 'materialize_step_code', {
+      runId,
+      stepId: 'step_numeric_scaling',
+      code: 'df["Usage Count"] = df["Usage Count"] / df["Usage Count"].max()'
+    });
+    await execute(projectId, 'execute_transformation_step', {
+      runId,
+      stepId: 'step_numeric_scaling',
+      cellId: 'cell-1',
+      succeeded: true
+    });
+
+    const interruptionResult = await markInterrupted({
+      projectId,
+      runIds: [runId],
+      reason: 'Gemini quota limit reached (429).',
+      source: 'provider_error'
+    });
+
+    expect(interruptionResult).toMatchObject({
+      attempted: 1,
+      updated: 1,
+      skipped: 0
+    });
+    const storedRun = await runRepo.getById(runId);
+    expect(storedRun?.steps.step_numeric_scaling).toMatchObject({
+      status: 'failed',
+      decisionReason: 'Gemini quota limit reached (429).'
+    });
+    expect(storedRun?.langGraphState).toMatchObject({
+      currentStage: 'completed',
+      nextStage: 'completed',
+      isCompleted: true,
+      lastError: 'Gemini quota limit reached (429).'
+    });
+    expect(storedRun?.events.at(-1)).toMatchObject({
+      type: 'run_interrupted',
+      payload: expect.objectContaining({
+        source: 'provider_error',
+        interruptedStepIds: ['step_numeric_scaling']
+      })
     });
   });
 

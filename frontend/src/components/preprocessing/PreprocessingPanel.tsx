@@ -85,6 +85,12 @@ interface PreprocessingTab {
   storageVersion: number;
 }
 
+interface RowCountSummary {
+  before: string;
+  after: string;
+  schemaDrift: boolean;
+}
+
 function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
   return {
     selectedDatasetId: null,
@@ -164,11 +170,7 @@ function statusClassName(status: TransformationEvent['status'], divergedClassNam
   return 'border-muted bg-muted/50 text-muted-foreground';
 }
 
-function getRowCountSummary(event: TransformationEvent): {
-  before: string;
-  after: string;
-  schemaDrift: boolean;
-} | null {
+function getRowCountSummary(event: TransformationEvent): RowCountSummary | null {
   const validation = event.validation;
   if (!validation) {
     return null;
@@ -181,6 +183,36 @@ function getRowCountSummary(event: TransformationEvent): {
     after: ROW_COUNT_FORMATTER.format(validation.rowCountAfter),
     schemaDrift: Boolean(validation.schemaDrift)
   };
+}
+
+function RowCountDelta({
+  summary,
+  className,
+  chipClassName,
+  driftBadgeClassName
+}: {
+  summary: RowCountSummary;
+  className?: string;
+  chipClassName?: string;
+  driftBadgeClassName?: string;
+}) {
+  return (
+    <span className={cn('inline-flex items-center gap-1.5', className)}>
+      <span className="opacity-80">Rows</span>
+      <span className={cn('inline-flex h-5 items-center rounded border px-1.5 font-medium tabular-nums', chipClassName)}>
+        {summary.before}
+      </span>
+      <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
+      <span className={cn('inline-flex h-5 items-center rounded border px-1.5 font-medium tabular-nums', chipClassName)}>
+        {summary.after}
+      </span>
+      {summary.schemaDrift ? (
+        <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', driftBadgeClassName)}>
+          Schema drift
+        </Badge>
+      ) : null}
+    </span>
+  );
 }
 
 function summarizeValidation(event: TransformationEvent): string | null {
@@ -561,7 +593,7 @@ export function PreprocessingPanel() {
 
     const status = latestTimelineEvent.status;
     const rowCountSummary = getRowCountSummary(latestTimelineEvent);
-    const showRowCountSummary = Boolean(
+    const hasRowCountSummary = Boolean(
       rowCountSummary && !latestTimelineEvent.error && !latestTimelineEvent.decisionReason
     );
     const baseClass = status === 'failed'
@@ -590,18 +622,22 @@ export function PreprocessingPanel() {
           ) : (
             <Loader2 className="h-4 w-4 animate-spin" />
           )}
-          <span className="font-medium">{latestTimelineEvent.title} · {STATUS_LABELS[status]}</span>
-          {showRowCountSummary && rowCountSummary ? (
-            <span className="flex items-center gap-1 text-[11px] opacity-90">
-              <span>· Rows {rowCountSummary.before}</span>
-              <ArrowRight className="h-3 w-3 shrink-0" />
-              <span>{rowCountSummary.after}</span>
-              {rowCountSummary.schemaDrift ? <span>· Schema drift flagged</span> : null}
-            </span>
+          <span className="min-w-0 flex-1 truncate font-medium">{latestTimelineEvent.title}</span>
+          <Badge
+            variant="outline"
+            className="h-5 border-current/30 bg-background/20 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-current"
+          >
+            {STATUS_LABELS[status]}
+          </Badge>
+          {hasRowCountSummary && rowCountSummary ? (
+            <RowCountDelta
+              summary={rowCountSummary}
+              className="ml-auto text-[11px] opacity-95"
+              chipClassName="border-current/30 bg-background/20"
+              driftBadgeClassName="border-current/30 bg-background/20 text-current"
+            />
           ) : null}
-          {!showRowCountSummary && detail ? (
-            <span className="text-[11px] opacity-90">· {detail}</span>
-          ) : null}
+          {!hasRowCountSummary && detail ? <span className="text-[11px] opacity-90">{detail}</span> : null}
         </CardContent>
       </Card>
     );
@@ -1238,12 +1274,7 @@ export function PreprocessingPanel() {
                           <div className="rounded-md border bg-muted/20 p-2">
                             <p className="font-medium">Validation</p>
                             {rowCountSummary ? (
-                              <div className="mt-1 flex items-center gap-1 text-muted-foreground">
-                                <span>Rows {rowCountSummary.before}</span>
-                                <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                                <span>{rowCountSummary.after}</span>
-                                {rowCountSummary.schemaDrift ? <span>· Schema drift flagged</span> : null}
-                              </div>
+                              <RowCountDelta summary={rowCountSummary} className="mt-1 flex-wrap text-muted-foreground" />
                             ) : (
                               <p className="text-muted-foreground">{validationSummary}</p>
                             )}

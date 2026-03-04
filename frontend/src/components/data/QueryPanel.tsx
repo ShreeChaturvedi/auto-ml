@@ -1050,6 +1050,7 @@ export function QueryPanel({
             isExpanding={isExpanding}
             onPhaseChange={setNlPhase}
             approveThemeClasses={approveThemeClasses}
+            connectorColorClassName={executeIconColorClass}
             ref={nlWorkflowRef}
           />
         )}

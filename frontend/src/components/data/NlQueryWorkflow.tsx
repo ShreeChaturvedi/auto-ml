@@ -20,7 +20,8 @@ import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { NlFlowConnector } from './NlFlowConnector';
 import { NlWorkPlanPanel } from './NlWorkPlanPanel';
-import { SqlRevealBlock, tokenizeSql } from './SqlRevealBlock';
+import { SqlRevealBlock } from './SqlRevealBlock';
+import { tokenizeSql } from './sqlTokenize';
 import {
   applyNlWorkPhaseEvent,
   completeNlWorkDonePhase,
@@ -189,6 +190,7 @@ interface NlQueryWorkflowProps {
   isExpanding?: boolean;
   onPhaseChange?: (phase: NlPhase) => void;
   approveThemeClasses?: ApproveThemeClasses;
+  connectorColorClassName?: string;
   className?: string;
 }
 
@@ -201,6 +203,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     isExpanding,
     onPhaseChange,
     approveThemeClasses,
+    connectorColorClassName,
     className,
   }: NlQueryWorkflowProps,
   ref: Ref<NlQueryWorkflowHandle>
@@ -351,7 +354,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
   const isIdle = phase === 'idle' || phase === 'error';
   const showConnector = phase !== 'idle' && phase !== 'error';
-  const connectorState: 'active' | 'settled' = phase === 'reviewing' ? 'settled' : 'active';
+  const topConnectorState: 'active' | 'settled' = phase === 'submitting' ? 'active' : 'settled';
+  const bottomConnectorState: 'active' | 'settled' = phase === 'revealing' ? 'active' : 'settled';
   const panelPhase: 'submitting' | 'revealing' | 'reviewing' = phase === 'reviewing' ? 'reviewing' : phase === 'revealing' ? 'revealing' : 'submitting';
   const showPlanPanel = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
   const showSqlBlock = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
@@ -369,7 +373,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   return (
     <div
       ref={containerRef}
-      className={cn('flex flex-1 flex-col min-h-0 overflow-y-auto overscroll-contain pr-0.5', className)}
+      className={cn('flex flex-1 min-h-0 flex-col overflow-hidden pr-0.5', className)}
     >
       <div
         className={cn(
@@ -400,63 +404,79 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         />
       </div>
 
-      <div
-        data-testid="nl-flow-connector-top"
-        className={cn(
-          'transition-[opacity,height] ease-out motion-reduce:transition-none overflow-hidden',
-          showConnector
-            ? 'h-16 opacity-100 duration-400'
-            : 'h-0 opacity-0 duration-200 pointer-events-none',
-        )}
-      >
-        <NlFlowConnector state={connectorState} variant="fan-in" />
-      </div>
+      {(showPlanPanel || showSqlBlock) && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col justify-center">
+            <div
+              data-testid="nl-flow-connector-top"
+              className={cn(
+                'overflow-hidden transition-[opacity,flex] ease-out motion-reduce:transition-none',
+                showConnector
+                  ? 'flex min-h-[2.75rem] flex-1 items-end justify-center opacity-100 duration-400'
+                  : 'h-0 opacity-0 duration-200 pointer-events-none',
+              )}
+            >
+              <NlFlowConnector
+                stretch
+                state={topConnectorState}
+                variant="fan-in"
+                className={cn('h-full', connectorColorClassName)}
+              />
+            </div>
 
-      {showPlanPanel && (
-        <NlWorkPlanPanel
-          explanation={result?.explanation}
-          phase={panelPhase}
-          workPhases={workPhases}
-          isExpanded={isPanelExpanded}
-          autoCollapsed={autoCollapsed}
-          onToggleExpanded={togglePanelExpanded}
-          className="mb-2 shrink-0"
-        />
-      )}
+            {showPlanPanel && (
+              <NlWorkPlanPanel
+                explanation={result?.explanation}
+                phase={panelPhase}
+                workPhases={workPhases}
+                isExpanded={isPanelExpanded}
+                autoCollapsed={autoCollapsed}
+                onToggleExpanded={togglePanelExpanded}
+                className="mx-auto w-full max-w-[44rem] shrink-0"
+              />
+            )}
 
-      <div
-        data-testid="nl-flow-connector-bottom"
-        className={cn(
-          'transition-[opacity,height] ease-out motion-reduce:transition-none overflow-hidden',
-          showConnector
-            ? 'h-16 opacity-100 duration-400'
-            : 'h-0 opacity-0 duration-200 pointer-events-none',
-        )}
-      >
-        <NlFlowConnector state={connectorState} variant="fan-out" />
-      </div>
+            <div
+              data-testid="nl-flow-connector-bottom"
+              className={cn(
+                'overflow-hidden transition-[opacity,flex] ease-out motion-reduce:transition-none',
+                showConnector
+                  ? 'flex min-h-[2.75rem] flex-1 items-start justify-center opacity-100 duration-400'
+                  : 'h-0 opacity-0 duration-200 pointer-events-none',
+              )}
+            >
+              <NlFlowConnector
+                stretch
+                state={bottomConnectorState}
+                variant="fan-out"
+                className={cn('h-full', connectorColorClassName)}
+              />
+            </div>
+          </div>
 
-      {showSqlBlock && (
-        <div
-          className={cn(
-            'shrink-0 min-h-[12rem]',
-            'animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out',
+          {showSqlBlock && (
+            <div
+              className={cn(
+                'mt-auto shrink-0 min-h-[12rem]',
+                'animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out',
+              )}
+            >
+              <SqlRevealBlock
+                sql={result?.sql ?? ''}
+                queryExecutionError={result?.queryExecutionError}
+                isRevealing={phase === 'revealing'}
+                visibleTokenCount={visibleTokenCount}
+                isRevealComplete={phase === 'reviewing'}
+                editedSql={editedSql}
+                onSqlChange={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}
+                originalSql={result?.sql ?? ''}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                approveThemeClasses={approveThemeClasses}
+                className="h-full"
+              />
+            </div>
           )}
-        >
-          <SqlRevealBlock
-            sql={result?.sql ?? ''}
-            queryExecutionError={result?.queryExecutionError}
-            isRevealing={phase === 'revealing'}
-            visibleTokenCount={visibleTokenCount}
-            isRevealComplete={phase === 'reviewing'}
-            editedSql={editedSql}
-            onSqlChange={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}
-            originalSql={result?.sql ?? ''}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            approveThemeClasses={approveThemeClasses}
-            className="h-full"
-          />
         </div>
       )}
 

@@ -122,12 +122,8 @@ describe('NlQueryWorkflow', () => {
 
   it('keeps both NlFlowConnector wrappers collapsed in idle state', () => {
     render(<NlQueryWorkflow {...buildProps()} />);
-    const topConnector = screen.getByTestId('nl-flow-connector-top');
-    const bottomConnector = screen.getByTestId('nl-flow-connector-bottom');
-    expect(topConnector).toHaveClass('h-0');
-    expect(topConnector).toHaveClass('opacity-0');
-    expect(bottomConnector).toHaveClass('h-0');
-    expect(bottomConnector).toHaveClass('opacity-0');
+    expect(screen.queryByTestId('nl-flow-connector-top')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nl-flow-connector-bottom')).not.toBeInTheDocument();
   });
 
   // ── triggerGenerate via imperative handle ────────────────────────────────────

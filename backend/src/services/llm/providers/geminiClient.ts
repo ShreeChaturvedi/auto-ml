@@ -12,6 +12,9 @@ interface GeminiClientOptions {
   timeoutMs: number;
 }
 
+const MAX_STREAM_RETRY_ATTEMPTS = 1;
+const STREAM_RETRY_BACKOFF_MS = 1200;
+
 export class GeminiClient implements LlmClient {
   private apiKey: string;
   private model: string;
@@ -26,7 +29,7 @@ export class GeminiClient implements LlmClient {
   async complete(request: LlmRequest): Promise<string> {
     const body = buildGeminiBody(request);
     const response = await this.fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
+      this.modelRequestUrl(this.model, false),
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
 
@@ -39,19 +42,49 @@ export class GeminiClient implements LlmClient {
     return extractGeminiText(payload);
   }
 
-  async stream(request: LlmRequest, handlers: LlmStreamHandlers, retryAttempt = 0): Promise<string> {
+  async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
+    return this.streamWithModel(request, handlers, this.model, 0);
+  }
+
+  private async streamWithModel(
+    request: LlmRequest,
+    handlers: LlmStreamHandlers,
+    model: string,
+    retryAttempt: number
+  ): Promise<string> {
     const body = buildGeminiBody(request);
 
     // DEBUG: Log the full request body
     console.log('[DEBUG][geminiClient.stream] Request body:', JSON.stringify(body, null, 2));
 
-    const response = await this.fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse&key=${this.apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    let response: Response;
+    try {
+      response = await this.fetchWithTimeout(
+        this.modelRequestUrl(model, true),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      );
+    } catch (error) {
+      if (shouldRetryStreamRequest(error, retryAttempt)) {
+        const delayMs = STREAM_RETRY_BACKOFF_MS * (retryAttempt + 1);
+        console.warn(
+          `[llm][gemini] Stream request timed out on model ${model}. Retrying once after ${delayMs}ms (attempt ${retryAttempt + 1}/${MAX_STREAM_RETRY_ATTEMPTS}).`
+        );
+        await sleep(delayMs);
+        return this.streamWithModel(request, handlers, model, retryAttempt + 1);
+      }
+      throw error;
+    }
 
     if (!response.ok || !response.body) {
       const text = await response.text().catch(() => '');
+      if (shouldRetryStreamStatus(response.status, retryAttempt)) {
+        const delayMs = STREAM_RETRY_BACKOFF_MS * (retryAttempt + 1);
+        console.warn(
+          `[llm][gemini] Stream request failed with ${response.status} on model ${model}. Retrying once after ${delayMs}ms (attempt ${retryAttempt + 1}/${MAX_STREAM_RETRY_ATTEMPTS}).`
+        );
+        await sleep(delayMs);
+        return this.streamWithModel(request, handlers, model, retryAttempt + 1);
+      }
       console.error('[DEBUG][geminiClient.stream] HTTP error:', response.status, text);
       throw new Error(text || `Gemini stream failed (${response.status})`);
     }
@@ -154,11 +187,17 @@ export class GeminiClient implements LlmClient {
           enableThinking: false
         };
         console.warn('[llm][gemini] Retrying after MAX_TOKENS with reduced reasoning profile.');
-        return this.stream(retryRequest, handlers, retryAttempt + 1);
+        return this.streamWithModel(retryRequest, handlers, model, retryAttempt + 1);
       }
     }
 
     return fullText;
+  }
+
+  private modelRequestUrl(model: string, stream: boolean): string {
+    return stream
+      ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${this.apiKey}`
+      : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
   }
 
   private async fetchWithTimeout(input: string, init: RequestInit) {
@@ -170,10 +209,31 @@ export class GeminiClient implements LlmClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       return await fetch(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        const timeoutError = new Error(`Gemini request timed out after ${this.timeoutMs}ms.`);
+        timeoutError.name = 'TimeoutError';
+        throw timeoutError;
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
   }
+}
+
+function shouldRetryStreamStatus(statusCode: number, retryAttempt: number): boolean {
+  return retryAttempt < MAX_STREAM_RETRY_ATTEMPTS && statusCode === 503;
+}
+
+function shouldRetryStreamRequest(error: unknown, retryAttempt: number): boolean {
+  return retryAttempt < MAX_STREAM_RETRY_ATTEMPTS
+    && error instanceof Error
+    && error.name === 'TimeoutError';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildGeminiBody(request: LlmRequest) {

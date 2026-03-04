@@ -4,9 +4,54 @@ import { executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
 import { useNotebookStore } from '@/stores/notebookStore';
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function hasAwaitingApprovalStatus(result: ToolResult): boolean {
+  const output = asRecord(result.output);
+  if (!output) {
+    return false;
+  }
+
+  const status = typeof output.status === 'string' ? output.status : undefined;
+  if (status === 'awaiting_approval') {
+    return true;
+  }
+
+  const step = asRecord(output.step);
+  return step?.status === 'awaiting_approval';
+}
+
+function shouldPauseAfterCommit(result: ToolResult): boolean {
+  if (result.tool !== 'commit_transformation_step') {
+    return false;
+  }
+  const output = asRecord(result.output);
+  if (!output) {
+    return false;
+  }
+
+  const reasonCode = typeof output.reasonCode === 'string' ? output.reasonCode : '';
+  if (reasonCode === 'STEP_APPROVAL_REQUIRED' || reasonCode === 'STEP_APPROVAL_USER_REQUIRED') {
+    return true;
+  }
+
+  const outputStatus = typeof output.status === 'string' ? output.status : undefined;
+  const step = asRecord(output.step);
+  const stepStatus = typeof step?.status === 'string' ? step.status : undefined;
+  const status = outputStatus ?? stepStatus;
+
+  return status === 'applied';
+}
+
 export interface UseAgenticLoopOptions {
   projectId?: string;
   storageKey?: string;
+  sessionVersion?: number;
   domainAdapter: DomainAdapter;
   domainLockReason?: string;
 }
@@ -14,6 +59,7 @@ export interface UseAgenticLoopOptions {
 export function useAgenticLoop({
   projectId,
   storageKey,
+  sessionVersion = 0,
   domainAdapter,
   domainLockReason
 }: UseAgenticLoopOptions) {
@@ -28,27 +74,58 @@ export function useAgenticLoop({
   const abortRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
   const currentTextIdRef = useRef<string | null>(null);
+  const skipPersistOnceRef = useRef(false);
   
   const toolHistoryRef = useRef<{ calls: ToolCall[]; results: ToolResult[] }>({ calls: [], results: [] });
 
-  // Storage
+  const messageStorageScope = storageKey && projectId
+    ? `${storageKey}-${projectId}`
+    : null;
+
+  // Reset session state and hydrate messages whenever tab/session scope changes.
   useEffect(() => {
-    if (!storageKey || !projectId) return;
-    const stored = localStorage.getItem(`${storageKey}-${projectId}`);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as ChatMessage[];
-        setMessages(parsed);
-      } catch {
-        // Ignore invalid stored data
-      }
+    skipPersistOnceRef.current = true;
+    activeRequestIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    currentThinkingIdRef.current = null;
+    currentTextIdRef.current = null;
+    toolHistoryRef.current = { calls: [], results: [] };
+    setIsGenerating(false);
+    setError(null);
+    setUiSchema(null);
+
+    if (!messageStorageScope) {
+      setMessages([]);
+      return;
     }
-  }, [storageKey, projectId]);
+
+    const stored = localStorage.getItem(messageStorageScope);
+    if (!stored) {
+      setMessages([]);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as ChatMessage[];
+      setMessages(parsed);
+    } catch {
+      setMessages([]);
+    }
+  }, [messageStorageScope, sessionVersion]);
 
   useEffect(() => {
-    if (!storageKey || !projectId || messages.length === 0) return;
-    localStorage.setItem(`${storageKey}-${projectId}`, JSON.stringify(messages));
-  }, [storageKey, projectId, messages]);
+    if (!messageStorageScope) return;
+    if (skipPersistOnceRef.current) {
+      skipPersistOnceRef.current = false;
+      return;
+    }
+    if (messages.length === 0) {
+      localStorage.removeItem(messageStorageScope);
+      return;
+    }
+    localStorage.setItem(messageStorageScope, JSON.stringify(messages));
+  }, [messageStorageScope, messages]);
 
   const mergeToolCalls = (previous: ToolCall[], next: ToolCall[]) => {
     const merged = new Map(previous.map((call) => [call.id, call]));
@@ -61,6 +138,7 @@ export function useAgenticLoop({
     abortRef.current?.abort();
     abortRef.current = null;
     setIsGenerating(false);
+    domainAdapter.onStop?.('Stopped by user.');
     setMessages((prev) => prev.map((msg) =>
       msg.type === 'thinking' && !msg.isComplete
         ? { ...msg, isComplete: true }
@@ -68,16 +146,16 @@ export function useAgenticLoop({
     ));
     currentThinkingIdRef.current = null;
     currentTextIdRef.current = null;
-  }, []);
+  }, [domainAdapter]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     toolHistoryRef.current = { calls: [], results: [] };
     setUiSchema(null);
-    if (storageKey && projectId) {
-      localStorage.removeItem(`${storageKey}-${projectId}`);
+    if (messageStorageScope) {
+      localStorage.removeItem(messageStorageScope);
     }
-  }, [storageKey, projectId]);
+  }, [messageStorageScope]);
 
   const runLoop = useCallback(async (
     prompt: string,
@@ -98,7 +176,9 @@ export function useAgenticLoop({
     const isRestream = Boolean(toolResultsOverride?.length);
 
     if (!isRestream) {
-      toolHistoryRef.current = { calls: [], results: [] };
+      if (!domainAdapter.preserveToolHistoryBetweenPrompts) {
+        toolHistoryRef.current = { calls: [], results: [] };
+      }
       setUiSchema(null);
       
       // We only append the user message if it's the start of a fresh run
@@ -193,6 +273,15 @@ export function useAgenticLoop({
                     
                     const mergedResults = [...toolHistoryRef.current.results, ...results];
                     toolHistoryRef.current.results = mergedResults;
+
+                    if (results.some(hasAwaitingApprovalStatus)) {
+                      setIsGenerating(false);
+                      return;
+                    }
+                    if (results.some(shouldPauseAfterCommit)) {
+                      setIsGenerating(false);
+                      return;
+                    }
 
                     setTimeout(() => {
                       if (requestId !== activeRequestIdRef.current) return;

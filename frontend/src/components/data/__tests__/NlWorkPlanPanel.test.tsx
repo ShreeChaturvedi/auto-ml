@@ -157,6 +157,27 @@ describe('NlWorkPlanPanel', () => {
     expect(screen.getByText(/confidence 91%/i)).toBeInTheDocument();
   });
 
+  it('shows Done phase label when the pipeline is completed outside review mode', () => {
+    const completedPhases = PHASES.map((phase) => ({
+      ...phase,
+      status: phase.phaseId === 'done' ? 'completed' : 'pending' as const,
+      lastSummary: phase.phaseId === 'done' ? 'NL query pipeline finished.' : phase.lastSummary
+    }));
+
+    render(
+      <NlWorkPlanPanel
+        phase="revealing"
+        workPhases={completedPhases}
+        isExpanded
+        autoCollapsed={false}
+        onToggleExpanded={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText(/^done$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/nl query pipeline finished/i).length).toBeGreaterThan(0);
+  });
+
   it('does not show percentage in deterministic fallback mode and keeps debug collapsed', () => {
     render(
       <NlWorkPlanPanel

@@ -20,6 +20,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ApiError } from '@/lib/api/client';
 import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
+import type { QueryResultPayload } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
@@ -66,6 +67,39 @@ function extractApiErrorMessage(error: unknown): string {
   }
 
   return error.message;
+}
+
+function buildDataPreviewFromQuery(query: QueryResultPayload): DataPreview {
+  return {
+    fileId: 'query-result',
+    headers: query.columns.map((col) => col.name),
+    rows: query.rows,
+    totalRows: query.rowCount,
+    previewRows: query.rowCount,
+    eda: query.eda,
+    columnTypes: extractColumnTypesFromQuery(query.columns, query.rows)
+  };
+}
+
+function buildQueryArtifactMeta(query: QueryResultPayload) {
+  return {
+    eda: query.eda,
+    cached: query.cached,
+    executionMs: query.executionMs,
+    cacheTimestamp: query.cacheTimestamp
+  };
+}
+
+function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
+  return {
+    sql: nl.sql,
+    rationale: nl.rationale,
+    explanation: nl.explanation,
+    queryId: nl.queryId,
+    cached: nl.cached,
+    queryExecutionError: nl.queryExecutionError ?? null,
+    queryResult: nl.query
+  };
 }
 
 export function DataViewerTab() {
@@ -164,25 +198,16 @@ export function DataViewerTab() {
       try {
         // Execute SQL using backend Postgres
         const result = await executeSqlQuery({ projectId: activeProject.id, sql: query });
-
-        // Convert backend QueryResult to DataPreview format
-        const dataPreview: DataPreview = {
-          fileId: 'query-result',
-          headers: result.query.columns.map((col) => col.name),
-          rows: result.query.rows,
-          totalRows: result.query.rowCount,
-          previewRows: result.query.rowCount,
-          eda: result.query.eda,
-          columnTypes: extractColumnTypesFromQuery(result.query.columns, result.query.rows)
-        };
+        const dataPreview = buildDataPreviewFromQuery(result.query);
 
         // Create artifact with result, including EDA metadata
-        const artifactId = createArtifact(query, mode, dataPreview, activeProject.id, {
-          eda: result.query.eda,
-          cached: result.query.cached,
-          executionMs: result.query.executionMs,
-          cacheTimestamp: result.query.cacheTimestamp
-        });
+        const artifactId = createArtifact(
+          query,
+          mode,
+          dataPreview,
+          activeProject.id,
+          buildQueryArtifactMeta(result.query)
+        );
 
         setActiveFileTab(artifactId, 'artifact');
       } catch (error) {
@@ -248,15 +273,7 @@ export function DataViewerTab() {
         });
       }
 
-      return {
-        sql: nl.sql,
-        rationale: nl.rationale,
-        explanation: nl.explanation,
-        queryId: nl.queryId,
-        cached: nl.cached,
-        queryExecutionError: nl.queryExecutionError ?? null,
-        queryResult: nl.query
-      };
+      return toNlGenerationResult(nl);
     },
     [activeProject, tableNames]
   );
@@ -292,21 +309,9 @@ export function DataViewerTab() {
           throw new Error('Generated SQL has no executable result payload. Please retry.');
         }
 
-        const dataPreview: DataPreview = {
-          fileId: 'query-result',
-          headers: queryResult.columns.map((col) => col.name),
-          rows: queryResult.rows,
-          totalRows: queryResult.rowCount,
-          previewRows: queryResult.rowCount,
-          eda: queryResult.eda,
-          columnTypes: extractColumnTypesFromQuery(queryResult.columns, queryResult.rows)
-        };
-
+        const dataPreview = buildDataPreviewFromQuery(queryResult);
         const artifactId = createArtifact(approvedSql, 'english', dataPreview, activeProject.id, {
-          eda: queryResult.eda,
-          cached: queryResult.cached,
-          executionMs: queryResult.executionMs,
-          cacheTimestamp: queryResult.cacheTimestamp,
+          ...buildQueryArtifactMeta(queryResult),
           generatedSql: result.sql,
           rationale: result.rationale,
           explanation: result.explanation
@@ -498,7 +503,7 @@ export function DataViewerTab() {
       {/* Query Panel (right side) */}
       <div
         className={cn(
-          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out [will-change:width>',
+          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out [will-change:width]',
           queryPanelCollapsed ? 'w-12' : 'w-[400px]'
         )}
         style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}

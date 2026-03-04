@@ -59,6 +59,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import type { ColumnDataType, DataPreview, QueryMode, EdaSummary } from '@/types/file';
+import type { NlQueryExplanation } from '@/lib/api/query';
 import { EDAPanel } from './EDAPanel';
 import { IconModeToggle } from './IconModeToggle';
 import Papa from 'papaparse';
@@ -122,6 +123,7 @@ interface QueryInfo {
   executionMs?: number;
   generatedSql?: string;
   rationale?: string;
+  explanation?: NlQueryExplanation;
 }
 
 export function DataTable({
@@ -489,6 +491,47 @@ export function DataTable({
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Rationale</p>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">{queryInfo.rationale}</p>
+              </div>
+            )}
+
+            {queryInfo.explanation && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Explanation</p>
+                <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Confidence</span>
+                    <span className="text-xs font-mono">
+                      {Math.round(queryInfo.explanation.confidence * 100)}%
+                    </span>
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide',
+                        queryInfo.explanation.warningLevel === 'high'
+                          ? 'bg-destructive/10 text-destructive'
+                          : queryInfo.explanation.warningLevel === 'medium'
+                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                            : queryInfo.explanation.warningLevel === 'low'
+                              ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400'
+                              : 'bg-green-500/10 text-green-700 dark:text-green-400'
+                      )}
+                    >
+                      {queryInfo.explanation.warningLevel}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                    {queryInfo.explanation.intentSummary}
+                  </p>
+                  {queryInfo.explanation.assumptions.length > 0 && (
+                    <div>
+                      <p className="text-[11px] text-muted-foreground mb-1">Assumptions</p>
+                      <ul className="list-disc list-inside text-xs text-muted-foreground space-y-0.5">
+                        {queryInfo.explanation.assumptions.map((assumption, idx) => (
+                          <li key={`${assumption}-${idx}`}>{assumption}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

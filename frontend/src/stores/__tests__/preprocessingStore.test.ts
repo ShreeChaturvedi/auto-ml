@@ -352,7 +352,9 @@ describe('preprocessingStore hydration', () => {
             datasetId: 'dataset-1'
           })
         })
-      ]
+      ],
+      undefined,
+      'user_approval'
     );
     expect(getPreprocessingRunSnapshotMock).toHaveBeenCalledWith('prep-run-1', 'project-1');
     expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({
@@ -421,7 +423,9 @@ describe('preprocessingStore hydration', () => {
             rejectionReason: 'Risk too high'
           })
         })
-      ]
+      ],
+      undefined,
+      'user_approval'
     );
     expect(getPreprocessingRunSnapshotMock).toHaveBeenCalledWith('prep-run-1', 'project-1');
     expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({

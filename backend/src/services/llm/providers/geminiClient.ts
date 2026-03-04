@@ -91,6 +91,31 @@ export class GeminiClient implements LlmClient {
     let fullText = '';
     const pendingToolCalls: GeminiToolCall[] = [];
     const debugInfo: GeminiStreamDebug = {};
+    const processPayload = (payload: unknown) => {
+      const chunk = extractGeminiText(payload);
+      if (chunk) {
+        fullText += chunk;
+        handlers.onToken(chunk);
+      }
+
+      const thinkingChunk = extractGeminiThoughts(payload);
+      if (thinkingChunk && handlers.onThinking) {
+        handlers.onThinking(thinkingChunk);
+      }
+
+      updateGeminiDebug(debugInfo, payload);
+      const toolCalls = extractGeminiFunctionCalls(payload, request.contextId);
+      mergeToolCalls(pendingToolCalls, toolCalls);
+    };
+
+    const processSseLine = (line: string) => {
+      const payload = parseSseJsonPayload(line);
+      if (!payload) {
+        return;
+      }
+      processPayload(payload);
+    };
+
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -100,58 +125,12 @@ export class GeminiClient implements LlmClient {
       buffer = lines.pop() ?? '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        // Handle SSE format: data: {...}
-        if (!trimmed.startsWith('data:')) continue;
-        const data = trimmed.slice(5).trim();
-        if (!data || data === '[DONE]') continue;
-        try {
-          const json = JSON.parse(data);
-          const chunk = extractGeminiText(json);
-          if (chunk) {
-            fullText += chunk;
-            handlers.onToken(chunk);
-          }
-          // Extract and emit thinking tokens
-          const thinkingChunk = extractGeminiThoughts(json);
-          if (thinkingChunk && handlers.onThinking) {
-            handlers.onThinking(thinkingChunk);
-          }
-          updateGeminiDebug(debugInfo, json);
-          const toolCalls = extractGeminiFunctionCalls(json, request.contextId);
-          mergeToolCalls(pendingToolCalls, toolCalls);
-        } catch {
-          // Ignore malformed chunks.
-        }
+        processSseLine(line);
       }
     }
 
     if (buffer.trim()) {
-      const tail = buffer.trim();
-      if (tail.startsWith('data:')) {
-        const data = tail.slice(5).trim();
-        if (data && data !== '[DONE]') {
-          try {
-            const json = JSON.parse(data);
-            const chunk = extractGeminiText(json);
-            if (chunk) {
-              fullText += chunk;
-              handlers.onToken(chunk);
-            }
-            // Extract and emit thinking tokens from tail
-            const thinkingChunk = extractGeminiThoughts(json);
-            if (thinkingChunk && handlers.onThinking) {
-              handlers.onThinking(thinkingChunk);
-            }
-            updateGeminiDebug(debugInfo, json);
-            const toolCalls = extractGeminiFunctionCalls(json, request.contextId);
-            mergeToolCalls(pendingToolCalls, toolCalls);
-          } catch {
-            // Ignore malformed tail.
-          }
-        }
-      }
+      processSseLine(buffer);
     }
 
     if (pendingToolCalls.length > 0 && handlers.onToolCall) {
@@ -219,6 +198,24 @@ function shouldRetryStreamRequest(error: unknown, retryAttempt: number): boolean
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseSseJsonPayload(line: string): unknown | null {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith('data:')) {
+    return null;
+  }
+
+  const data = trimmed.slice(5).trim();
+  if (!data || data === '[DONE]') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
 }
 
 function buildGeminiBody(request: LlmRequest, model: string) {
@@ -364,13 +361,14 @@ function buildThinkingConfig(request: LlmRequest, model: string) {
 }
 
 function supportsThinkingConfig(model: string): boolean {
-  const normalized = model.toLowerCase();
-  return normalized.includes('gemini-2.5')
-    || normalized.includes('gemini-3.1-pro')
-    || normalized.includes('thinking');
+  return isThinkingCapableGeminiModel(model);
 }
 
 function supportsExplicitThinkingLevel(model: string): boolean {
+  return isThinkingCapableGeminiModel(model);
+}
+
+function isThinkingCapableGeminiModel(model: string): boolean {
   const normalized = model.toLowerCase();
   return normalized.includes('gemini-2.5')
     || normalized.includes('gemini-3.1-pro')

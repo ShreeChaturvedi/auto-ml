@@ -125,4 +125,83 @@ describe('GeminiClient tool call parsing', () => {
       args: { cellId: 'cell-1', mode: 'safe' }
     });
   });
+
+  it('retries once with backoff on 503 stream failure', async () => {
+    const payload = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { functionCall: { name: 'run_cell', args: { cellId: 'cell-retry-503' } } }
+            ]
+          }
+        }
+      ]
+    };
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('temporary overload', { status: 503 }))
+      .mockResolvedValueOnce(new Response(createSseStream([payload]), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = new GeminiClient({
+      apiKey: 'test-key',
+      model: 'gemini-test',
+      timeoutMs: 1000
+    });
+
+    const seen: LlmToolCall[] = [];
+    await client.stream(createRequest(), {
+      onToken: () => undefined,
+      onToolCall: (call) => seen.push(call)
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      name: 'run_cell',
+      args: { cellId: 'cell-retry-503' }
+    });
+  });
+
+  it('retries once with backoff on timeout-abort stream failure', async () => {
+    const payload = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { functionCall: { name: 'run_cell', args: { cellId: 'cell-retry-timeout' } } }
+            ]
+          }
+        }
+      ]
+    };
+
+    const abortError = new Error('The operation was aborted.');
+    abortError.name = 'AbortError';
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(abortError)
+      .mockResolvedValueOnce(new Response(createSseStream([payload]), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = new GeminiClient({
+      apiKey: 'test-key',
+      model: 'gemini-test',
+      timeoutMs: 1000
+    });
+
+    const seen: LlmToolCall[] = [];
+    await client.stream(createRequest(), {
+      onToken: () => undefined,
+      onToolCall: (call) => seen.push(call)
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      name: 'run_cell',
+      args: { cellId: 'cell-retry-timeout' }
+    });
+  });
+
 });

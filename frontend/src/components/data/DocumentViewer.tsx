@@ -210,7 +210,7 @@ function PdfToolbar({
   return (
     <>
       {controlsPortalTarget && createPortal(controlsContent, controlsPortalTarget)}
-      <div className="flex items-center justify-between w-full px-4 py-2 border-b bg-card h-14">
+      <div className="flex items-center justify-between w-full px-4 py-1.5 border-b bg-card h-12">
         {/* Left section: File info */}
         <div className="flex min-w-0 items-center gap-3">
           <div className="rounded-md bg-muted p-1.5">
@@ -450,7 +450,7 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
     return (
       <>
         {controlsPortalTarget && createPortal(controlsContent, controlsPortalTarget)}
-        <div className="flex items-center justify-between border-b px-4 py-2 bg-card h-14 shrink-0">
+        <div className="flex items-center justify-between border-b px-4 py-1.5 bg-card h-12 shrink-0">
           <div className="flex min-w-0 items-center gap-3">
             <div className="rounded-md bg-muted p-1.5">
               {isMarkdown ? (

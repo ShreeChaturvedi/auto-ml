@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
+import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
 import { FeatureEngineeringFooter } from './FeatureEngineeringFooter';
 import {
@@ -699,11 +701,17 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const renderLeftPane = ({
     messages,
     isGenerating,
-    error
+    error,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds
   }: {
     messages: ChatMessage[];
     isGenerating: boolean;
     error: string | null;
+    activeTextMessageId: string | null;
+    activeThinkingMessageId: string | null;
+    hydratedMessageIds: Set<string>;
   }) => {
     const toolMessages = messages.filter((message): message is Extract<ChatMessage, { type: 'tool_call' }> => {
       return message.type === 'tool_call' && !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool);
@@ -807,17 +815,28 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
                     <Sparkles className="h-3 w-3 text-emerald-600" />
                   </div>
-                  <div className="prose prose-sm max-w-none dark:prose-invert text-foreground">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
-                  </div>
+                  <ProgressiveMessageText
+                    messageId={message.id}
+                    text={cleaned}
+                    isLive={activeTextMessageId === message.id}
+                    mode="markdown"
+                    animateOnMount={!hydratedMessageIds.has(message.id)}
+                    className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert text-foreground"
+                  />
                 </div>
               );
             }
 
             if (message.type === 'thinking') {
               return (
-                <div key={message.id} className="ml-9 border-l-2 pl-3 text-xs italic text-muted-foreground">
-                  Thinking... {message.isComplete ? '' : '(in progress)'}
+                <div key={message.id} className="ml-9">
+                  <ThinkingBlock
+                    messageId={message.id}
+                    content={message.content}
+                    isComplete={message.isComplete}
+                    isLive={activeThinkingMessageId === message.id}
+                    animateOnMount={!hydratedMessageIds.has(message.id)}
+                  />
                 </div>
               );
             }

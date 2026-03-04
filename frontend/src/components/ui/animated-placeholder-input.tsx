@@ -17,6 +17,7 @@
 import { useState, useEffect, useRef, forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
 interface AnimatedPlaceholderInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'placeholder'> {
@@ -54,26 +55,6 @@ function hasInputValue(value: InputHTMLAttributes<HTMLInputElement>['value']): b
   if (value === null || value === undefined) return false;
   if (Array.isArray(value)) return value.length > 0;
   return String(value).length > 0;
-}
-
-function usePrefersReducedMotion(): boolean {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const handleChange = () => setPrefersReducedMotion(mediaQuery.matches);
-
-    handleChange();
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
-    }
-
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
-
-  return prefersReducedMotion;
 }
 
 const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholderInputProps>(

@@ -3,9 +3,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProgressiveMessageText } from '../ProgressiveMessageText';
 
+vi.mock('@/components/llm/streamdown/StreamdownMessage', () => ({
+  StreamdownMessage: ({
+    text,
+    isAnimating,
+    showCaret,
+  }: {
+    text: string;
+    isAnimating: boolean;
+    showCaret?: boolean;
+  }) => (
+    <div>
+      <div data-testid="streamdown-message" data-animating={String(isAnimating)}>
+        {text}
+      </div>
+      {showCaret ? <span data-testid="streamdown-caret" /> : null}
+    </div>
+  ),
+}));
+
 describe('ProgressiveMessageText', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      return window.setTimeout(() => callback(performance.now()), 16);
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      window.clearTimeout(id);
+    });
   });
 
   afterEach(() => {
@@ -13,19 +38,19 @@ describe('ProgressiveMessageText', () => {
       vi.runOnlyPendingTimers();
     });
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it('reveals live text progressively instead of all at once', () => {
+  it('reveals plain text progressively instead of all at once', () => {
     const text = 'streamed response';
     const { container } = render(
       <ProgressiveMessageText
         messageId="m1"
         text={text}
         isLive
+        mode="plain"
         animateOnMount
-        plainClassName="whitespace-pre-wrap"
-        finalClassName="prose"
-        renderFinal={(fullText) => <p>{fullText}</p>}
+        className="whitespace-pre-wrap"
       />
     );
 
@@ -40,66 +65,73 @@ describe('ProgressiveMessageText', () => {
     expect(animatedChars.length).toBeLessThan(text.length);
   });
 
-  it('switches to final render after stream ends and catch-up completes', () => {
+  it('renders markdown progressively while live and keeps caret visible', () => {
+    render(
+      <ProgressiveMessageText
+        messageId="m2"
+        text="**Bold** markdown"
+        isLive
+        mode="markdown"
+        animateOnMount
+        className="prose"
+      />
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+
+    const streamdown = screen.getByTestId('streamdown-message');
+    expect(streamdown).toHaveTextContent(/\*\*B?/);
+    expect(streamdown.getAttribute('data-animating')).toBe('true');
+    expect(screen.getByTestId('streamdown-caret')).toBeInTheDocument();
+  });
+
+  it('switches markdown to catch-up animation after live stream stops', () => {
     const text = '# Final Plan Heading';
     const { rerender } = render(
       <ProgressiveMessageText
-        messageId="m1"
+        messageId="m3"
         text={text}
         isLive
+        mode="markdown"
         animateOnMount
-        plainClassName="whitespace-pre-wrap"
-        finalClassName="prose"
-        renderFinal={(fullText) => <h2>{fullText}</h2>}
       />
     );
 
     rerender(
       <ProgressiveMessageText
-        messageId="m1"
+        messageId="m3"
         text={text}
         isLive={false}
+        mode="markdown"
         animateOnMount
-        plainClassName="whitespace-pre-wrap"
-        finalClassName="prose"
-        renderFinal={(fullText) => <h2>{fullText}</h2>}
       />
     );
 
     act(() => {
-      vi.advanceTimersByTime(1200);
+      vi.advanceTimersByTime(1000);
     });
 
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(text);
+    const streamdown = screen.getByTestId('streamdown-message');
+    expect(streamdown).toHaveTextContent(text);
+    expect(streamdown.getAttribute('data-animating')).toBe('false');
+    expect(screen.queryByTestId('streamdown-caret')).not.toBeInTheDocument();
   });
 
-  it('renders final content immediately for hydrated messages', () => {
+  it('renders full text immediately for hydrated non-live messages', () => {
     const { container } = render(
       <ProgressiveMessageText
         messageId="m-hydrated"
         text="Hydrated full text"
         isLive={false}
+        mode="plain"
         animateOnMount={false}
-        plainClassName="plain"
-        finalClassName="final"
-        renderFinal={(fullText) => <p>{fullText}</p>}
+        className="plain"
       />
     );
 
     expect(screen.getByText('Hydrated full text')).toBeInTheDocument();
     expect(container.querySelectorAll('.llm-char-enter')).toHaveLength(0);
-  });
-
-  it('falls back to raw text when renderFinal is omitted', () => {
-    render(
-      <ProgressiveMessageText
-        messageId="m2"
-        text="plain final"
-        isLive={false}
-        animateOnMount={false}
-      />
-    );
-
-    expect(screen.getByText('plain final')).toBeInTheDocument();
   });
 });

@@ -33,12 +33,20 @@ import {
   Lightbulb
 } from 'lucide-react';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { useDataStore } from '@/stores/dataStore';
 import { uploadDocument } from '@/lib/api/documents';
-import { streamTrainingPlan, executeToolCalls } from '@/lib/api/llm';
+import { streamTrainingPlan, executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
+import {
+  addAssistantTextMessage,
+  addThinkingMessage,
+  appendAssistantTextDelta,
+  appendThinkingDelta,
+  markThinkingMessageComplete
+} from '@/lib/llm/streamMessageUtils';
 import { getFileType, type UploadedFile } from '@/types/file';
-import type { ChatMessage, ToolCall } from '@/types/llmUi';
+import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { cn } from '@/lib/utils';
 
 interface ChatPanelProps {
@@ -71,6 +79,9 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const [enableThinking, setEnableThinking] = useState(false);
   const [attachmentStatus, setAttachmentStatus] = useState<'idle' | 'uploading' | 'error' | 'success'>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
+  const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
+  const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
+  const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -95,9 +106,13 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
       try {
         const parsed = JSON.parse(stored) as ChatMessage[];
         setMessages(parsed);
+        setHydratedMessageIds(new Set(parsed.map((message) => message.id)));
       } catch {
         // Ignore invalid stored data
+        setHydratedMessageIds(new Set());
       }
+    } else {
+      setHydratedMessageIds(new Set());
     }
   }, [projectId]);
 
@@ -133,6 +148,176 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     }
   }, [messages]);
 
+  const completeThinking = useCallback(() => {
+    const thinkingId = currentThinkingIdRef.current;
+    if (!thinkingId) return;
+    setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
+    currentThinkingIdRef.current = null;
+    setActiveThinkingMessageId(null);
+  }, []);
+
+  const closeTextStream = useCallback(() => {
+    currentTextIdRef.current = null;
+    setActiveTextMessageId(null);
+  }, []);
+
+  const appendToken = useCallback((token: string) => {
+    completeThinking();
+    if (!currentTextIdRef.current) {
+      const id = `text-${Date.now()}`;
+      currentTextIdRef.current = id;
+      setActiveTextMessageId(id);
+      setMessages((prev) => addAssistantTextMessage(prev, id, token));
+      return;
+    }
+
+    const targetId = currentTextIdRef.current;
+    setMessages((prev) => appendAssistantTextDelta(prev, targetId, token));
+  }, [completeThinking]);
+
+  const appendThinking = useCallback((text: string) => {
+    closeTextStream();
+    if (!currentThinkingIdRef.current) {
+      const id = `thinking-${Date.now()}`;
+      currentThinkingIdRef.current = id;
+      setActiveThinkingMessageId(id);
+      setMessages((prev) => addThinkingMessage(prev, id, text, Date.now()));
+      return;
+    }
+
+    const targetId = currentThinkingIdRef.current;
+    setMessages((prev) => appendThinkingDelta(prev, targetId, text));
+  }, [closeTextStream]);
+
+  const markToolsCompleteFallback = useCallback((toolCalls: ToolCall[]) => {
+    const toolIds = new Set(toolCalls.map((tc) => tc.id));
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.type === 'tool_call' && toolIds.has(msg.call.id) && !msg.result) {
+          return {
+            ...msg,
+            result: {
+              id: msg.call.id,
+              tool: msg.call.tool,
+              output: { status: 'completed' }
+            }
+          };
+        }
+        return msg;
+      })
+    );
+  }, []);
+
+  const applyToolResults = useCallback((results: ToolResult[]) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.type !== 'tool_call') return msg;
+        const result = results.find((entry) => entry.id === msg.call.id);
+        return result ? { ...msg, result } : msg;
+      })
+    );
+  }, []);
+
+  const runStream = useCallback(async (
+    request: {
+      prompt?: string;
+      toolCalls?: ToolCall[];
+      toolResults?: ToolResult[];
+    },
+    controller: AbortController
+  ) => {
+    await streamTrainingPlan(
+      {
+        projectId,
+        prompt: request.prompt,
+        toolCalls: request.toolCalls,
+        toolResults: request.toolResults,
+        enableThinking
+      },
+      async (event: LlmStreamEvent) => {
+        if (event.type === 'token') {
+          appendToken(event.text);
+          return;
+        }
+
+        if (event.type === 'thinking') {
+          appendThinking(event.text);
+          return;
+        }
+
+        if (event.type === 'envelope') {
+          if (event.envelope.tool_calls?.length) {
+            closeTextStream();
+            const toolCalls = event.envelope.tool_calls;
+            for (const call of toolCalls) {
+              setMessages((prev) => [...prev, { id: `tool-${call.id}`, type: 'tool_call', call }]);
+            }
+
+            try {
+              const { results } = await executeToolCalls(projectId, toolCalls);
+              applyToolResults(results);
+              if (!controller.signal.aborted) {
+                await runStream({ toolCalls, toolResults: results }, controller);
+              }
+            } catch (toolError) {
+              console.error('[ChatPanel] Tool execution failed:', toolError);
+              setMessages((prev) =>
+                prev.map((msg) => {
+                  if (msg.type === 'tool_call' && toolCalls.some((tc) => tc.id === msg.call.id)) {
+                    return {
+                      ...msg,
+                      result: {
+                        id: msg.call.id,
+                        tool: msg.call.tool,
+                        error: toolError instanceof Error ? toolError.message : 'Tool execution failed'
+                      }
+                    };
+                  }
+                  return msg;
+                })
+              );
+            } finally {
+              markToolsCompleteFallback(toolCalls);
+            }
+            return;
+          }
+
+          if (event.envelope.message?.trim()) {
+            appendToken(event.envelope.message);
+          }
+          return;
+        }
+
+        if (event.type === 'error') {
+          setMessages((prev) => [
+            ...prev,
+            { id: `error-${Date.now()}`, type: 'error', message: event.message }
+          ]);
+          completeThinking();
+          closeTextStream();
+          setIsGenerating(false);
+          return;
+        }
+
+        if (event.type === 'done') {
+          completeThinking();
+          closeTextStream();
+          setIsGenerating(false);
+        }
+      },
+      controller.signal
+    );
+  }, [
+    appendThinking,
+    appendToken,
+    applyToolResults,
+    closeTextStream,
+    completeThinking,
+    enableThinking,
+    markToolsCompleteFallback,
+    projectId
+  ]);
+
   const handleSend = useCallback(async () => {
     if (!chatInput.trim() || isGenerating) return;
 
@@ -140,7 +325,6 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     setChatInput('');
     setIsGenerating(true);
 
-    // Add user message
     const userChatMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       type: 'user',
@@ -154,218 +338,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     abortRef.current = controller;
 
     try {
-      await streamTrainingPlan(
-        {
-          projectId,
-          prompt: userMessage,
-          enableThinking
-        },
-        (event) => {
-          if (event.type === 'token') {
-            // Mark thinking as complete if we were thinking
-            if (currentThinkingIdRef.current) {
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                    ? { ...msg, isComplete: true }
-                    : msg
-                )
-              );
-              currentThinkingIdRef.current = null;
-            }
-
-            // Append to current text message or create new one
-            if (!currentTextIdRef.current) {
-              const id = `text-${Date.now()}`;
-              currentTextIdRef.current = id;
-              setMessages((prev) => [...prev, { id, type: 'assistant_text', content: event.text }]);
-            } else {
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === currentTextIdRef.current && msg.type === 'assistant_text'
-                    ? { ...msg, content: msg.content + event.text }
-                    : msg
-                )
-              );
-            }
-          }
-
-          if (event.type === 'thinking') {
-            currentTextIdRef.current = null;
-            if (!currentThinkingIdRef.current) {
-              const id = `thinking-${Date.now()}`;
-              currentThinkingIdRef.current = id;
-              setMessages((prev) => [
-                ...prev,
-                { id, type: 'thinking', content: event.text, isComplete: false, startTime: Date.now() }
-              ]);
-            } else {
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                    ? { ...msg, content: msg.content + event.text }
-                    : msg
-                )
-              );
-            }
-          }
-
-          if (event.type === 'envelope' && event.envelope.tool_calls?.length) {
-            currentTextIdRef.current = null;
-            const toolCalls = event.envelope.tool_calls;
-
-            // Add tool call messages (initially without results)
-            for (const call of toolCalls) {
-              setMessages((prev) => [...prev, { id: `tool-${call.id}`, type: 'tool_call', call }]);
-            }
-
-            // Execute tool calls and update messages with results
-            executeToolCalls(projectId, toolCalls)
-              .then(({ results }) => {
-                // Update each tool call message with its result
-                setMessages((prev) =>
-                  prev.map((msg) => {
-                    if (msg.type === 'tool_call') {
-                      const result = results.find((r) => r.id === msg.call.id);
-                      if (result) {
-                        return { ...msg, result };
-                      }
-                    }
-                    return msg;
-                  })
-                );
-
-                // Re-invoke LLM with tool results to continue the agentic loop
-                setTimeout(() => {
-                  streamTrainingPlan(
-                    {
-                      projectId,
-                      toolCalls,
-                      toolResults: results,
-                      enableThinking
-                    },
-                    (continueEvent) => {
-                      if (continueEvent.type === 'token') {
-                        if (!currentTextIdRef.current) {
-                          const id = `text-${Date.now()}`;
-                          currentTextIdRef.current = id;
-                          setMessages((prev) => [...prev, { id, type: 'assistant_text', content: continueEvent.text }]);
-                        } else {
-                          setMessages((prev) =>
-                            prev.map((msg) =>
-                              msg.id === currentTextIdRef.current && msg.type === 'assistant_text'
-                                ? { ...msg, content: msg.content + continueEvent.text }
-                                : msg
-                            )
-                          );
-                        }
-                      }
-                      if (continueEvent.type === 'thinking') {
-                        currentTextIdRef.current = null;
-                        if (!currentThinkingIdRef.current) {
-                          const id = `thinking-${Date.now()}`;
-                          currentThinkingIdRef.current = id;
-                          setMessages((prev) => [
-                            ...prev,
-                            { id, type: 'thinking', content: continueEvent.text, isComplete: false, startTime: Date.now() }
-                          ]);
-                        } else {
-                          setMessages((prev) =>
-                            prev.map((msg) =>
-                              msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                                ? { ...msg, content: msg.content + continueEvent.text }
-                                : msg
-                            )
-                          );
-                        }
-                      }
-                      if (continueEvent.type === 'done') {
-                        if (currentThinkingIdRef.current) {
-                          setMessages((prev) =>
-                            prev.map((msg) =>
-                              msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                                ? { ...msg, isComplete: true }
-                                : msg
-                            )
-                          );
-                          currentThinkingIdRef.current = null;
-                        }
-                        setIsGenerating(false);
-                      }
-                    }
-                  ).catch((err) => {
-                    console.error('[ChatPanel] LLM continuation failed:', err);
-                    setIsGenerating(false);
-                  });
-                }, 100);
-              })
-              .catch((toolError) => {
-                console.error('[ChatPanel] Tool execution failed:', toolError);
-                // Mark tools as failed
-                setMessages((prev) =>
-                  prev.map((msg) => {
-                    if (msg.type === 'tool_call' && toolCalls.some((tc: ToolCall) => tc.id === msg.call.id)) {
-                      return {
-                        ...msg,
-                        result: {
-                          id: msg.call.id,
-                          tool: msg.call.tool,
-                          error: toolError instanceof Error ? toolError.message : 'Tool execution failed'
-                        }
-                      };
-                    }
-                    return msg;
-                  })
-                );
-              })
-              .finally(() => {
-                // Ensure all tools from this batch are marked as complete even if no responses came back
-                // This prevents spinners from running indefinitely
-                const toolIds = new Set(toolCalls.map((tc: ToolCall) => tc.id));
-                setMessages((prev) =>
-                  prev.map((msg) => {
-                    if (msg.type === 'tool_call' && toolIds.has(msg.call.id) && !msg.result) {
-                      return {
-                        ...msg,
-                        result: {
-                          id: msg.call.id,
-                          tool: msg.call.tool,
-                          output: { status: 'completed' },
-                          error: undefined
-                        }
-                      };
-                    }
-                    return msg;
-                  })
-                );
-              });
-          }
-
-          if (event.type === 'error') {
-            setMessages((prev) => [
-              ...prev,
-              { id: `error-${Date.now()}`, type: 'error', message: event.message }
-            ]);
-            setIsGenerating(false);
-          }
-
-          if (event.type === 'done') {
-            if (currentThinkingIdRef.current) {
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                    ? { ...msg, isComplete: true }
-                    : msg
-                )
-              );
-            }
-            currentThinkingIdRef.current = null;
-            currentTextIdRef.current = null;
-            setIsGenerating(false);
-          }
-        },
-        controller.signal
-      );
+      await runStream({ prompt: userMessage }, controller);
     } catch (error) {
       if ((error as Error).name === 'AbortError') return;
       setMessages((prev) => [
@@ -380,18 +353,20 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     } finally {
       textareaRef.current?.focus();
     }
-  }, [chatInput, isGenerating, projectId, enableThinking]);
+  }, [chatInput, isGenerating, runStream]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
+    completeThinking();
+    closeTextStream();
     setIsGenerating(false);
-  }, []);
+  }, [closeTextStream, completeThinking]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        handleSend();
+        void handleSend();
       }
     },
     [handleSend]
@@ -470,21 +445,31 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
                 return (
                   <ThinkingBlock
                     key={msg.id}
+                    messageId={msg.id}
                     content={msg.content}
                     isComplete={msg.isComplete}
+                    isLive={activeThinkingMessageId === msg.id}
+                    animateOnMount={!hydratedMessageIds.has(msg.id)}
                   />
                 );
-              case 'assistant_text':
-                return msg.content.trim() ? (
+              case 'assistant_text': {
+                const cleaned = stripAssistantArtifacts(msg.content);
+                return cleaned ? (
                   <div
                     key={msg.id}
                     className="rounded-md border border-muted/40 bg-muted/20 p-4 text-sm text-foreground"
                   >
-                    <div className="whitespace-pre-wrap leading-relaxed">
-                      {stripAssistantArtifacts(msg.content)}
-                    </div>
+                    <ProgressiveMessageText
+                      messageId={msg.id}
+                      text={cleaned}
+                      isLive={activeTextMessageId === msg.id}
+                      mode="markdown"
+                      animateOnMount={!hydratedMessageIds.has(msg.id)}
+                      className="llm-notebook-markdown whitespace-pre-wrap leading-relaxed"
+                    />
                   </div>
                 ) : null;
+              }
               case 'tool_call':
                 return (
                   <ToolIndicator
@@ -582,7 +567,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
 
               <InputGroupButton
                 size="sm"
-                onClick={isGenerating ? handleStop : handleSend}
+                onClick={isGenerating ? handleStop : () => void handleSend()}
                 disabled={!chatInput.trim() && !isGenerating}
                 variant="ghost"
                 className="h-9 w-9 rounded-full border border-foreground/30 bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-muted/30 disabled:text-muted-foreground"

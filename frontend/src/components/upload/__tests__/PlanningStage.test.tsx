@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { PlanningStage } from '../PlanningStage';
 import { streamOnboardingPlan } from '@/lib/api/llm';
@@ -197,5 +197,91 @@ describe('PlanningStage Accessibility', () => {
       expect(request?.userIntent).toContain('Use and prioritize these newly attached files');
       expect(request?.userIntent).toContain('cow_milk_study.csv');
     });
+  });
+});
+
+describe('PlanningStage progressive assistant rendering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    vi.useFakeTimers();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      return window.setTimeout(() => callback(performance.now()), 16);
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      window.clearTimeout(id);
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('reveals streamed assistant markdown progressively instead of instant full text', async () => {
+    const streamed = 'Progressive planning response';
+    (streamOnboardingPlan as Mock).mockImplementation(async (_request, onEvent) => {
+      onEvent({ type: 'token', text: streamed });
+      onEvent({ type: 'done' });
+    });
+
+    const { container } = render(
+      <PlanningStage
+        projectId="p1"
+        onPlanApproved={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/describe your goal or request changes/i);
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'create plan' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await Promise.resolve();
+    });
+    expect(streamOnboardingPlan).toHaveBeenCalled();
+
+    expect(screen.queryByText(streamed)).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(96);
+    });
+
+    const renderedAnimatedNodes = container.querySelectorAll('[data-sd-animate]').length;
+    expect(renderedAnimatedNodes).toBeGreaterThan(0);
+  });
+
+  it('renders the full markdown heading after stream completion and catch-up', async () => {
+    const markdown = '# Final Plan Heading';
+    (streamOnboardingPlan as Mock).mockImplementation(async (_request, onEvent) => {
+      onEvent({ type: 'token', text: markdown });
+      onEvent({ type: 'done' });
+    });
+
+    render(
+      <PlanningStage
+        projectId="p1"
+        onPlanApproved={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/describe your goal or request changes/i);
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'finish plan' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await Promise.resolve();
+    });
+    expect(streamOnboardingPlan).toHaveBeenCalled();
+
+    expect(screen.queryByRole('heading', { level: 1, name: 'Final Plan Heading' })).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Final Plan Heading' })).toBeInTheDocument();
   });
 });

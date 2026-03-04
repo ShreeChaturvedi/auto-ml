@@ -22,9 +22,8 @@ import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createTrainingAdapter } from './TrainingAdapter';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import 'katex/dist/katex.min.css';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
+import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
@@ -202,7 +201,21 @@ export function TrainingPanel() {
     }
   };
 
-  const LeftPaneComponent = ({ messages, isGenerating, error }: { messages: ChatMessage[]; isGenerating: boolean; error: string | null }) => {
+  const LeftPaneComponent = ({
+    messages,
+    isGenerating,
+    error,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds
+  }: {
+    messages: ChatMessage[];
+    isGenerating: boolean;
+    error: string | null;
+    activeTextMessageId: string | null;
+    activeThinkingMessageId: string | null;
+    hydratedMessageIds: Set<string>;
+  }) => {
     // Sync cells on render or effect
     const uiSchemas = messages.filter(m => m.type === 'ui').map(m => m.schema as UiSchema);
     const lastUiSchema = uiSchemas[uiSchemas.length - 1];
@@ -284,17 +297,27 @@ export function TrainingPanel() {
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
                     <Wand2 className="h-3 w-3 text-emerald-600" />
                   </div>
-                  <div className="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                  </div>
+                  <ProgressiveMessageText
+                    messageId={msg.id}
+                    text={msg.content}
+                    isLive={activeTextMessageId === msg.id}
+                    mode="markdown"
+                    animateOnMount={!hydratedMessageIds.has(msg.id)}
+                    className="llm-assistant-markdown prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
+                  />
                 </div>
               );
             }
             if (msg.type === 'thinking') {
               return (
-                <div key={msg.id} className="text-xs italic text-muted-foreground border-l-2 pl-3">
-                  Thinking... {msg.isComplete ? '' : '(in progress)'}
-                </div>
+                <ThinkingBlock
+                  key={msg.id}
+                  messageId={msg.id}
+                  content={msg.content}
+                  isComplete={msg.isComplete}
+                  isLive={activeThinkingMessageId === msg.id}
+                  animateOnMount={!hydratedMessageIds.has(msg.id)}
+                />
               );
             }
             if (msg.type === 'ui') {

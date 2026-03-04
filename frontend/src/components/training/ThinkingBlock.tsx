@@ -11,12 +11,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Brain, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
-import 'katex/dist/katex.min.css';
 
 interface ThinkingBlockProps {
     content: string;
@@ -79,7 +74,7 @@ export function ThinkingBlock({
     const isLoading = !isComplete;
     const shouldStreamReveal = isLive ?? !isComplete;
     const markdownClassName = [
-        'text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words',
+        'llm-thinking-markdown text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words',
         '[&_p]:my-0 [&_p+p]:mt-2',
         '[&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5',
         '[&_h1]:my-2 [&_h1]:text-sm [&_h1]:font-semibold',
@@ -89,15 +84,6 @@ export function ThinkingBlock({
         '[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em]',
         '[&_pre_code]:bg-transparent [&_pre_code]:p-0'
     ].join(' ');
-
-    const renderMarkdown = (markdownText: string) => (
-        <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-        >
-            {markdownText}
-        </ReactMarkdown>
-    );
 
     return (
         <div className="flex flex-col">
@@ -133,11 +119,9 @@ export function ThinkingBlock({
                         messageId={effectiveMessageId}
                         text={content}
                         isLive={shouldStreamReveal}
+                        mode="markdown"
                         animateOnMount={animateOnMount}
-                        plainClassName={markdownClassName}
-                        finalClassName={markdownClassName}
-                        renderProgressive={renderMarkdown}
-                        renderFinal={renderMarkdown}
+                        className={markdownClassName}
                     />
                 </div>
             )}

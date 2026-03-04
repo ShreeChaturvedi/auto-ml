@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
@@ -1154,12 +1152,9 @@ export function PreprocessingPanel() {
                           messageId={message.id}
                           text={message.content}
                           isLive={activeTextMessageId === message.id}
+                          mode="markdown"
                           animateOnMount={!hydratedMessageIds.has(message.id)}
-                          plainClassName="mt-0.5 text-sm leading-relaxed text-foreground"
-                          finalClassName="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
-                          renderFinal={(fullText) => (
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{fullText}</ReactMarkdown>
-                          )}
+                          className="llm-assistant-markdown prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
                         />
                       </div>
                     );

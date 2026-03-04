@@ -295,6 +295,109 @@
   100% { opacity: 1; color: hsl(var(--muted-foreground)); }
 }
 
+/* Per-character progressive reveal animation for streamed LLM text.
+   Mirrors placeholder glow timing while preserving existing text color theme. */
+@keyframes llm-char-in {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+    color: hsl(var(--foreground));
+    text-shadow: 0 0 6px currentColor;
+    filter: brightness(1.2);
+  }
+
+  25% {
+    opacity: 1;
+    transform: translateY(1px);
+    color: hsl(var(--foreground));
+    text-shadow: 0 0 3px currentColor;
+    filter: brightness(1.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    color: inherit;
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.llm-char-enter {
+  animation: llm-char-in 260ms ease-out both;
+}
+
+@keyframes llm-streamdown-bloom {
+  0% {
+    text-shadow: 0 0 6px currentColor;
+    filter: brightness(1.2);
+  }
+
+  100% {
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.llm-streamdown-wrap {
+  position: relative;
+}
+
+.llm-streamdown [data-sd-animate] {
+  animation-name: var(--sd-animation, sd-fadeIn), llm-streamdown-bloom;
+  animation-duration: var(--sd-duration, 150ms), 260ms;
+  animation-timing-function: var(--sd-easing, ease), ease-out;
+  animation-fill-mode: both, both;
+}
+
+.llm-streamdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@keyframes llm-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.llm-streaming-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 3px;
+  background-color: hsl(var(--foreground));
+  vertical-align: text-bottom;
+  animation: llm-caret-blink 1s steps(2, start) infinite;
+}
+
+.llm-notebook-markdown .llm-streamdown {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.llm-notebook-markdown .llm-streamdown p {
+  margin: 0;
+}
+
+.llm-notebook-markdown .llm-streamdown p + p {
+  margin-top: 0.5rem;
+}
+
+.llm-notebook-markdown .llm-streamdown code {
+  font-size: 0.85em;
+}
+
+.llm-notebook-markdown .llm-streamdown pre {
+  margin: 0.5rem 0;
+}
+
 @keyframes execute-icon-trace {
   0% {
     stroke-dashoffset: 0;
@@ -317,6 +420,33 @@
 
 .group\/execute:hover .execute-icon-path {
   animation: execute-icon-trace 700ms ease-out 1;
+}
+
+@keyframes idea-filament-trace {
+  0% {
+    stroke-dashoffset: 100;
+  }
+
+  45% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
+
+.idea-icon-outline {
+  stroke-opacity: 0.95;
+}
+
+.idea-icon-filament {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+}
+
+.group\/execute:hover .idea-icon-filament {
+  animation: idea-filament-trace 820ms ease-in-out 1;
 }
 
 /* ─── SQL reveal highlighting + token entry animation ────────────────────── */
@@ -349,6 +479,22 @@
 
 .sql-word-enter {
   animation: sql-word-in 320ms ease-out both;
+}
+
+@keyframes nl-lane-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nl-lane-enter {
+  animation: nl-lane-in 220ms ease-out both;
 }
 
 .sql-tk-kw {
@@ -400,6 +546,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sql-word-enter {
+    animation: none;
+  }
+
+  .nl-lane-enter {
     animation: none;
   }
 

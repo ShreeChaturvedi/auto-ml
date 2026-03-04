@@ -9,6 +9,7 @@ import { Brain, Check, Database, FileText, Loader2 } from 'lucide-react';
 import { LlmChatComposer, type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
 import {
   ASSISTANT_MODEL_OPTIONS,
+  DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
   getModelOption,
   getReasoningEffortOptions,
@@ -27,6 +28,7 @@ import {
   appendThinkingDelta,
   markThinkingMessageComplete
 } from '@/lib/llm/streamMessageUtils';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { useDataStore } from '@/stores/dataStore';
@@ -371,9 +373,9 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
   const [enableThinking, setEnableThinking] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(ASSISTANT_MODEL_OPTIONS[0]?.value ?? 'auto');
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_ASSISTANT_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    getDefaultReasoningEffort(ASSISTANT_MODEL_OPTIONS[0]?.value ?? 'auto')
+    getDefaultReasoningEffort(DEFAULT_ASSISTANT_MODEL)
   );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentFeedback, setAttachmentFeedback] = useState<{ status: AttachmentStatus; message: string } | null>(null);
@@ -382,6 +384,9 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planDrafts, setPlanDrafts] = useState<Record<string, string>>({});
   const [userMessageAttachments, setUserMessageAttachments] = useState<Record<string, UploadedAttachmentPreview[]>>({});
+  const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
+  const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
+  const [hydratedMessageIds] = useState<Set<string>>(new Set());
 
   const controllerRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
@@ -511,11 +516,13 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     if (id) {
       setMessages((prev) => markThinkingMessageComplete(prev, id));
       currentThinkingIdRef.current = null;
+      setActiveThinkingMessageId(null);
     }
   }, []);
 
   const endText = useCallback(() => {
     currentTextIdRef.current = null;
+    setActiveTextMessageId(null);
   }, []);
 
   const requestStream = useCallback(
@@ -581,6 +588,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 if (!currentThinkingIdRef.current) {
                   const id = `thinking-${Date.now()}`;
                   currentThinkingIdRef.current = id;
+                  setActiveThinkingMessageId(id);
                   setMessages((prev) => addThinkingMessage(prev, id, event.text, Date.now()));
                 } else {
                   const tid = currentThinkingIdRef.current;
@@ -596,6 +604,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 if (!currentTextIdRef.current) {
                   const id = `text-${Date.now()}`;
                   currentTextIdRef.current = id;
+                  setActiveTextMessageId(id);
                   passTextMessageId = id;
                   setMessages((prev) => addAssistantTextMessage(prev, id, event.text));
                 } else {
@@ -1116,18 +1125,28 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             if (msg.type === 'assistant_text') {
               return (
                 <div key={msg.id} className="text-sm text-foreground">
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+                  <ProgressiveMessageText
+                    messageId={msg.id}
+                    text={msg.content}
+                    isLive={activeTextMessageId === msg.id}
+                    mode="markdown"
+                    animateOnMount={!hydratedMessageIds.has(msg.id)}
+                    className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert"
+                  />
                 </div>
               );
             }
 
             if (msg.type === 'thinking') {
               return (
-                <ThinkingBlock key={msg.id} content={msg.content} isComplete={msg.isComplete} />
+                <ThinkingBlock
+                  key={msg.id}
+                  messageId={msg.id}
+                  content={msg.content}
+                  isComplete={msg.isComplete}
+                  isLive={activeThinkingMessageId === msg.id}
+                  animateOnMount={!hydratedMessageIds.has(msg.id)}
+                />
               );
             }
 

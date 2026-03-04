@@ -17,6 +17,7 @@
 import { useState, useEffect, useRef, forwardRef } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
 interface AnimatedPlaceholderTextareaProps
   extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'placeholder'> {
@@ -54,28 +55,6 @@ function hasTextareaValue(
   if (value === null || value === undefined) return false;
   if (Array.isArray(value)) return value.length > 0;
   return String(value).length > 0;
-}
-
-function usePrefersReducedMotion(): boolean {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const handleChange = () => setPrefersReducedMotion(mediaQuery.matches);
-
-    handleChange();
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    mediaQuery.addListener(handleChange);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
-
-  return prefersReducedMotion;
 }
 
 const AnimatedPlaceholderTextarea = forwardRef<

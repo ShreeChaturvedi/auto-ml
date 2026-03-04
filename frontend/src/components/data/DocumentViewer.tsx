@@ -7,7 +7,7 @@
  * - Plain text display with monospace font
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -351,7 +351,7 @@ function PdfToolbar({
   );
 }
 
-export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerProps) {
+export const DocumentViewer = memo(function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerProps) {
   const [status, setStatus] = useState<ViewerStatus>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -368,12 +368,8 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
 
   // Initialize viewer plugins (only meaningful for PDF files, but must be
   // called unconditionally to satisfy the rules-of-hooks)
-  const toolbarPluginInstance = useMemo(() => toolbarPlugin(), []);
-  const searchPluginInstance = useMemo(() => searchPlugin(), []);
-  const viewerPlugins = useMemo(
-    () => [toolbarPluginInstance, searchPluginInstance],
-    [toolbarPluginInstance, searchPluginInstance]
-  );
+  const toolbarPluginInstance = toolbarPlugin();
+  const searchPluginInstance = searchPlugin();
   const { Toolbar } = toolbarPluginInstance;
   const PdfSearch = searchPluginInstance.Search;
 
@@ -560,7 +556,7 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
               <div className="flex-1 overflow-hidden">
                 <Viewer
                   fileUrl={blobUrl}
-                  plugins={viewerPlugins}
+                  plugins={[toolbarPluginInstance, searchPluginInstance]}
                   defaultScale={SpecialZoomLevel.PageWidth}
                   theme={PDF_VIEWER_THEME}
                 />
@@ -619,4 +615,4 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
       </div>
     </div>
   );
-}
+});

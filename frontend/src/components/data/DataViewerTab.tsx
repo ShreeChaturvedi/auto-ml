@@ -109,13 +109,6 @@ export function DataViewerTab() {
     [allArtifacts, projectId]
   );
 
-  const activeFile = useMemo(
-    () => (fileTabType === 'file' ? files.find((f) => f.id === activeFileTabId) ?? null : null),
-    [fileTabType, files, activeFileTabId]
-  );
-  const isPdfActive = activeFile?.type === 'pdf';
-  const queryPanelTransitionMs = isPdfActive ? 0 : 300;
-
   // Hydrate data from backend on mount
   useEffect(() => {
     if (projectId) {
@@ -339,25 +332,14 @@ export function DataViewerTab() {
         return;
       }
 
-      if (queryPanelTransitionMs === 0) {
-        setQueryPanelIsExpanding(false);
-        setQueryPanelIsTransitioning(false);
-        setQueryPanelCollapsed(nextCollapsed);
-        return;
-      }
-
       setQueryPanelIsTransitioning(true);
       setQueryPanelIsExpanding(!nextCollapsed);
       setQueryPanelCollapsed(nextCollapsed);
     },
-    [queryPanelCollapsed, queryPanelIsTransitioning, queryPanelTransitionMs]
+    [queryPanelCollapsed, queryPanelIsTransitioning]
   );
 
-  // During resize/collapse, avoid portaling controls into the query panel
-  // header region. Wide portal content (notably PDF controls) can force
-  // intermediate layout shifts and visible flicker while width animates.
-  const activeControlsPortalTarget =
-    queryPanelCollapsed || queryPanelIsTransitioning ? null : controlsPortalTarget;
+  const activeControlsPortalTarget = controlsPortalTarget;
 
   useEffect(() => {
     if (!queryPanelIsTransitioning) {
@@ -367,10 +349,10 @@ export function DataViewerTab() {
     const timeoutId = window.setTimeout(() => {
       setQueryPanelIsTransitioning(false);
       setQueryPanelIsExpanding(false);
-    }, queryPanelTransitionMs + 150);
+    }, 450);
 
     return () => window.clearTimeout(timeoutId);
-  }, [queryPanelIsTransitioning, queryPanelTransitionMs]);
+  }, [queryPanelIsTransitioning]);
 
   if (files.length === 0) {
     return (
@@ -516,13 +498,10 @@ export function DataViewerTab() {
       {/* Query Panel (right side) */}
       <div
         className={cn(
-          'min-w-0 shrink-0 overflow-hidden transition-[width] ease-in-out [will-change:width]',
+          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out [will-change:width>',
           queryPanelCollapsed ? 'w-12' : 'w-[400px]'
         )}
-        style={{
-          willChange: queryPanelIsTransitioning ? 'width' : 'auto',
-          transitionDuration: `${queryPanelTransitionMs}ms`
-        }}
+        style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}
         onTransitionEnd={(event) => {
           if (event.target !== event.currentTarget || event.propertyName !== 'width') {
             return;

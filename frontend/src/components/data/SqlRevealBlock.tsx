@@ -19,42 +19,7 @@ import Editor from '@monaco-editor/react';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType } from 'monaco-editor';
 import type { ApproveThemeClasses } from './NlQueryWorkflow';
-
-export type SqlTokenType =
-  | 'keyword'
-  | 'function'
-  | 'string'
-  | 'number'
-  | 'operator'
-  | 'punctuation'
-  | 'identifier'
-  | 'whitespace';
-
-export interface SqlToken {
-  text: string;
-  type: SqlTokenType;
-}
-
-const SQL_KEYWORDS = new Set([
-  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL',
-  'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ON',
-  'AS', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'DISTINCT',
-  'UNION', 'ALL', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
-  'CREATE', 'TABLE', 'ALTER', 'DROP', 'INDEX', 'VIEW', 'EXISTS',
-  'BETWEEN', 'LIKE', 'ILIKE', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
-  'ASC', 'DESC', 'TRUE', 'FALSE', 'WITH', 'RECURSIVE', 'OVER', 'PARTITION',
-  'WINDOW', 'ROWS', 'RANGE', 'PRECEDING', 'FOLLOWING', 'CURRENT', 'ROW',
-  'FETCH', 'NEXT', 'ONLY', 'FIRST', 'LAST', 'NULLS',
-]);
-
-const SQL_FUNCTIONS = new Set([
-  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF',
-  'CAST', 'CONVERT', 'EXTRACT', 'DATE_PART', 'DATE_TRUNC',
-  'UPPER', 'LOWER', 'TRIM', 'LENGTH', 'SUBSTRING', 'REPLACE',
-  'CONCAT', 'STRING_AGG', 'ARRAY_AGG', 'ROW_NUMBER', 'RANK',
-  'DENSE_RANK', 'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE',
-  'ROUND', 'CEIL', 'FLOOR', 'ABS', 'NOW', 'CURRENT_TIMESTAMP',
-]);
+import { tokenizeSql, type SqlTokenType } from './sqlTokenize';
 
 const TOKEN_CLASS_BY_TYPE: Record<SqlTokenType, string> = {
   keyword: 'sql-tk-kw',
@@ -67,107 +32,14 @@ const TOKEN_CLASS_BY_TYPE: Record<SqlTokenType, string> = {
   whitespace: ''
 };
 
-export function tokenizeSql(sql: string): SqlToken[] {
-  const tokens: SqlToken[] = [];
-  let i = 0;
+const GENERATION_STATUS_STEPS = [
+  'Interpreting intent and target metrics',
+  'Mapping schema entities and relationships',
+  'Synthesizing read-only SQL draft',
+  'Running safety and syntax validation',
+] as const;
 
-  while (i < sql.length) {
-    if (/\s/.test(sql[i])) {
-      let j = i;
-      while (j < sql.length && /\s/.test(sql[j])) j++;
-      tokens.push({ text: sql.slice(i, j), type: 'whitespace' });
-      i = j;
-      continue;
-    }
-
-    if (sql[i] === '-' && i + 1 < sql.length && sql[i + 1] === '-') {
-      let j = i + 2;
-      while (j < sql.length && sql[j] !== '\n') j++;
-      tokens.push({ text: sql.slice(i, j), type: 'identifier' });
-      i = j;
-      continue;
-    }
-
-    if (sql[i] === '\'') {
-      let j = i + 1;
-      while (j < sql.length) {
-        if (sql[j] === '\'' && sql[j + 1] === '\'') {
-          j += 2;
-          continue;
-        }
-        if (sql[j] === '\'') {
-          j += 1;
-          break;
-        }
-        j += 1;
-      }
-      tokens.push({ text: sql.slice(i, j), type: 'string' });
-      i = j;
-      continue;
-    }
-
-    if (sql[i] === '"') {
-      let j = i + 1;
-      while (j < sql.length) {
-        if (sql[j] === '"' && sql[j + 1] === '"') {
-          j += 2;
-          continue;
-        }
-        if (sql[j] === '"') {
-          j += 1;
-          break;
-        }
-        j += 1;
-      }
-      tokens.push({ text: sql.slice(i, j), type: 'identifier' });
-      i = j;
-      continue;
-    }
-
-    if (/\d/.test(sql[i]) || (sql[i] === '.' && i + 1 < sql.length && /\d/.test(sql[i + 1]))) {
-      let j = i;
-      while (j < sql.length && /[\d.]/.test(sql[j])) j++;
-      tokens.push({ text: sql.slice(i, j), type: 'number' });
-      i = j;
-      continue;
-    }
-
-    if (/[=<>!+\-*/%|]/.test(sql[i])) {
-      let j = i + 1;
-      if (j < sql.length && /[=<>|]/.test(sql[j])) j++;
-      tokens.push({ text: sql.slice(i, j), type: 'operator' });
-      i = j;
-      continue;
-    }
-
-    if (/[(),;.]/.test(sql[i])) {
-      tokens.push({ text: sql[i], type: 'punctuation' });
-      i++;
-      continue;
-    }
-
-    if (/[a-zA-Z_]/.test(sql[i])) {
-      let j = i;
-      while (j < sql.length && /[a-zA-Z0-9_]/.test(sql[j])) j++;
-      const word = sql.slice(i, j);
-      const upper = word.toUpperCase();
-      if (SQL_KEYWORDS.has(upper)) {
-        tokens.push({ text: word, type: 'keyword' });
-      } else if (SQL_FUNCTIONS.has(upper)) {
-        tokens.push({ text: word, type: 'function' });
-      } else {
-        tokens.push({ text: word, type: 'identifier' });
-      }
-      i = j;
-      continue;
-    }
-
-    tokens.push({ text: sql[i], type: 'identifier' });
-    i++;
-  }
-
-  return tokens;
-}
+const GENERATION_SKELETON_WIDTHS = [92, 74, 86, 62, 79, 68] as const;
 
 function tokenClassName(type: SqlTokenType): string {
   return TOKEN_CLASS_BY_TYPE[type] ?? '';
@@ -239,6 +111,8 @@ function SqlRevealBlock({
   const monacoApiRef = useRef<Monaco | null>(null);
   const isEdited = editedSql !== originalSql;
   const tokens = useMemo(() => tokenizeSql(sql), [sql]);
+  const showGeneratingSurface = !sql && !isRevealComplete;
+  const [generationStep, setGenerationStep] = useState(0);
   const { theme: appTheme } = useTheme();
   const resolvedTheme = useResolvedEditorTheme(appTheme);
   const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
@@ -260,6 +134,19 @@ function SqlRevealBlock({
       monacoEditorRef.current.revealLine(lineCount);
     }
   }, [isRevealComplete]);
+
+  useEffect(() => {
+    if (!showGeneratingSurface) {
+      setGenerationStep(0);
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setGenerationStep((previous) => (previous + 1) % GENERATION_STATUS_STEPS.length);
+    }, 1250);
+
+    return () => window.clearInterval(interval);
+  }, [showGeneratingSurface]);
 
   const sharedClassName = cn(
     'w-full min-h-[8rem] rounded-md border p-3 font-mono text-sm leading-relaxed',
@@ -337,15 +224,52 @@ function SqlRevealBlock({
             ))}
           </pre>
         ) : (
-          <pre
+          <div
             className={cn(
               sharedClassName,
-              'border-border bg-muted/30 text-muted-foreground',
+              'sql-generation-surface border-border bg-muted/30 text-muted-foreground',
             )}
             aria-label="Generating SQL..."
           >
-            <span className="shimmer-text inline-block">Generating SQL...</span>
-          </pre>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground/85">
+                SQL generation in progress
+              </p>
+              <span className="text-[11px] text-muted-foreground">Live model synthesis</span>
+            </div>
+
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              {GENERATION_STATUS_STEPS[generationStep]}
+            </p>
+
+            <div className="mt-3 space-y-1.5">
+              {GENERATION_SKELETON_WIDTHS.map((width, index) => {
+                const isActiveLine = index === generationStep % GENERATION_SKELETON_WIDTHS.length;
+                return (
+                  <div
+                    key={`sql-gen-line-${index}`}
+                    className={cn(
+                      'h-2 rounded-full bg-muted-foreground/18 transition-opacity duration-300',
+                      isActiveLine && 'sql-generation-line-active',
+                    )}
+                    style={{ width: `${width}%` }}
+                  />
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex items-center gap-1.5" aria-hidden="true">
+              {GENERATION_STATUS_STEPS.map((_, index) => (
+                <span
+                  key={`sql-gen-dot-${index}`}
+                  className={cn(
+                    'h-1.5 w-1.5 rounded-full bg-muted-foreground/30 transition-all duration-300',
+                    generationStep === index && 'sql-generation-dot-active',
+                  )}
+                />
+              ))}
+            </div>
+          </div>
         )}
 
         {isRevealComplete && (onApprove || onReject || isEdited) && (

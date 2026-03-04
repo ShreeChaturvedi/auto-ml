@@ -458,6 +458,75 @@
   animation: sql-word-in 320ms ease-out both;
 }
 
+@keyframes sql-generation-scan {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+@keyframes sql-generation-bar {
+  0%, 100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sql-generation-dot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.sql-generation-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.sql-generation-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    transparent 42%,
+    hsl(var(--foreground) / 0.04) 50%,
+    transparent 58%,
+    transparent 100%
+  );
+  animation: sql-generation-scan 1.9s ease-in-out infinite;
+}
+
+.sql-generation-line-active {
+  background: hsl(var(--foreground) / 0.3);
+  animation: sql-generation-bar 1.1s ease-in-out infinite;
+}
+
+.sql-generation-dot-active {
+  background: hsl(var(--primary));
+  animation: sql-generation-dot 1s ease-in-out infinite;
+}
+
 @keyframes nl-lane-in {
   0% {
     opacity: 0;

@@ -504,7 +504,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
             ...(selectedDatasetId ? { datasetId: selectedDatasetId } : {})
           }
         }
-      ]);
+      ], undefined, 'user_approval');
 
       const result = response.results[0];
       const output = asRecord(result?.output);
@@ -587,7 +587,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
             rejectionReason
           }
         }
-      ]);
+      ], undefined, 'user_approval');
 
       const result = response.results[0];
       const output = asRecord(result?.output);

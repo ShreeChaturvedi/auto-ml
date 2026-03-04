@@ -110,7 +110,9 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
             />
           </button>
         ) : (
-          <Logo size="sm" showText={false} className="text-foreground shrink-0" />
+          <div className="flex h-8 w-8 items-center justify-center shrink-0">
+            <Logo size="sm" showText={false} className="text-foreground" />
+          </div>
         )}
 
         {/* Title - project name or AutoML, fades with opacity */}

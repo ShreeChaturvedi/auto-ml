@@ -73,7 +73,7 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload }: FileItemProp
   return (
     <div
       className={cn(
-        'group flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer',
+        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
         isActive
           ? 'bg-muted text-foreground font-medium'
           : 'text-foreground hover:bg-muted'
@@ -299,7 +299,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="h-5 w-5 hover:bg-muted" 
+            className="h-6 w-6 hover:bg-muted" 
             onClick={handleCreateNewPlan}
             title="Create new plan"
           >
@@ -313,7 +313,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
               <div
                 key={plan.id}
                 className={cn(
-                  'group flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer',
+                  'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
                   plan.id === selectedPlanId
                     ? 'bg-muted text-foreground font-medium'
                     : 'text-foreground hover:bg-muted'

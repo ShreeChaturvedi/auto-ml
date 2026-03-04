@@ -1,9 +1,68 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { parseDocument } from './documentParser.js';
 
+const { extractRawTextMock } = vi.hoisted(() => ({
+  extractRawTextMock: vi.fn()
+}));
+
+vi.mock('mammoth', () => ({
+  extractRawText: extractRawTextMock
+}));
+
 describe('documentParser', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    extractRawTextMock.mockReset();
+  });
+
   describe('parseDocument', () => {
+    describe('docx files', () => {
+      it('parses DOCX by mime type', async () => {
+        extractRawTextMock.mockResolvedValue({
+          value: 'Docx extracted text',
+          messages: []
+        });
+
+        const buffer = Buffer.from('fake-docx');
+        const result = await parseDocument(
+          buffer,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        );
+
+        expect(result.text).toBe('Docx extracted text');
+        expect(result.type).toBe('docx');
+        expect(result.parseError).toBeUndefined();
+      });
+
+      it('parses DOCX by filename fallback when mime is generic', async () => {
+        extractRawTextMock.mockResolvedValue({
+          value: 'Filename-based docx parse',
+          messages: []
+        });
+
+        const buffer = Buffer.from('fake-docx');
+        const result = await parseDocument(buffer, 'application/octet-stream', 'report.docx');
+
+        expect(result.text).toBe('Filename-based docx parse');
+        expect(result.type).toBe('docx');
+      });
+
+      it('returns parseError when DOCX extraction fails', async () => {
+        extractRawTextMock.mockRejectedValue(new Error('mammoth failed'));
+
+        const buffer = Buffer.from('fake-docx');
+        const result = await parseDocument(
+          buffer,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        );
+
+        expect(result.text).toBe('');
+        expect(result.type).toBe('docx');
+        expect(result.parseError).toContain('mammoth failed');
+      });
+    });
+
     describe('text files', () => {
       it('parses plain text', async () => {
         const buffer = Buffer.from('Hello, world!');

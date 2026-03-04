@@ -42,6 +42,7 @@ vi.mock('../services/modelTraining.js', () => ({
 }));
 
 import { canListen } from '../tests/canListen.js';
+
 import modelRouter from './models.js';
 
 const canBind = await canListen();

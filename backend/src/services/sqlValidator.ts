@@ -34,7 +34,13 @@ export function validateReadOnlySql(sql: string, options: ValidateSqlOptions): V
     throw new Error('SQL statement required (query contains only comments)');
   }
 
-  const lower = strippedSql.toLowerCase();
+  // Allow a single trailing semicolon, but reject semicolons elsewhere.
+  const normalizedStatement = strippedSql.replace(/;\s*$/, '').trim();
+  if (!normalizedStatement) {
+    throw new Error('SQL statement required');
+  }
+
+  const lower = normalizedStatement.toLowerCase();
   if (!(lower.startsWith('select') || lower.startsWith('with'))) {
     throw new Error('Only SELECT/CTE statements are allowed');
   }
@@ -45,15 +51,15 @@ export function validateReadOnlySql(sql: string, options: ValidateSqlOptions): V
     }
   }
 
-  if (lower.includes(';')) {
+  if (normalizedStatement.includes(';')) {
     throw new Error('Multiple statements are not allowed');
   }
 
   const limitRegex = /\blimit\s+\d+/i;
-  if (!limitRegex.test(trimmed)) {
-    const normalized = `${trimmed} LIMIT ${options.defaultLimit}`;
+  if (!limitRegex.test(normalizedStatement)) {
+    const normalized = `${normalizedStatement} LIMIT ${options.defaultLimit}`;
     return { normalizedSql: normalized, limitAppended: true };
   }
 
-  return { normalizedSql: trimmed, limitAppended: false };
+  return { normalizedSql: normalizedStatement, limitAppended: false };
 }

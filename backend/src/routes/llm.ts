@@ -17,7 +17,14 @@ import {
   type LlmRequest,
   type LlmThinkingLevel
 } from '../services/llm/llmClient.js';
-import { executePreprocessingTool, isPreprocessingToolName } from '../services/llm/preprocessingGraph.js';
+import {
+  executePreprocessingTool,
+  getPreprocessingRunSnapshot,
+  isPreprocessingToolName,
+  listPreprocessingRunSnapshots,
+  markPreprocessingRunsInterrupted,
+  syncPreprocessingLangGraphState
+} from '../services/llm/preprocessingGraph.js';
 import {
   buildFeatureEngineeringRequest,
   buildOnboardingRequest,
@@ -26,6 +33,7 @@ import {
 } from '../services/llm/prompts.js';
 import {
   LLM_ALL_TOOLS,
+  LLM_FEATURE_ENGINEERING_TOOLS,
   LLM_ONBOARDING_TOOLS,
   LLM_PREPROCESSING_TOOLS,
   LLM_RENDER_UI_TOOL,
@@ -90,8 +98,55 @@ function shouldUseThinkingClient(enableThinking?: boolean, thinkingLevel?: LlmTh
 
 const executeToolsSchema = z.object({
   projectId: z.string().min(1),
+  notebookId: z.string().optional(),
+  executionMode: z.enum(['agent', 'user_approval']).optional(),
   toolCalls: z.array(ToolCallSchema)
 });
+
+const preprocessingRunParamsSchema = z.object({
+  runId: z.string().min(1)
+});
+
+const preprocessingRunQuerySchema = z.object({
+  projectId: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function extractPreprocessingRunIdsFromHistory(
+  toolCalls: z.infer<typeof ToolCallSchema>[] | undefined,
+  toolResults: z.infer<typeof toolResultSchema>[] | undefined
+): string[] {
+  const runIds = new Set<string>();
+
+  for (const call of toolCalls ?? []) {
+    const args = toRecord(call.args);
+    const runId = toOptionalString(args?.runId);
+    if (runId) {
+      runIds.add(runId);
+    }
+  }
+
+  for (const result of toolResults ?? []) {
+    const output = toRecord(result.output);
+    const runId = toOptionalString(output?.runId);
+    if (runId) {
+      runIds.add(runId);
+    }
+  }
+
+  return [...runIds];
+}
 
 export function createLlmRouter() {
   const router = Router();
@@ -105,13 +160,26 @@ export function createLlmRouter() {
       return res.status(400).json({ error: 'Invalid tool payload', details: parsed.error.issues });
     }
 
-    const { projectId, toolCalls } = parsed.data;
+    const { projectId, notebookId, toolCalls, executionMode } = parsed.data;
 
     const results = [];
     for (const call of toolCalls) {
+      const preprocessingArgs = {
+        ...(call.args ?? {}),
+        toolCallId: call.id,
+        approvalSource: executionMode === 'user_approval' ? 'user' : 'agent'
+      };
       const result = isPreprocessingToolName(call.tool)
-        ? await executePreprocessingTool(projectId, call.tool, call.args ?? {})
-        : await executeMcpTool(projectId, call.tool, call.args ?? {});
+        ? await syncPreprocessingLangGraphState(
+            projectId,
+            call.tool,
+            preprocessingArgs,
+            await executePreprocessingTool(projectId, call.tool, preprocessingArgs)
+          )
+        : await executeMcpTool(projectId, call.tool, {
+            ...(call.args ?? {}),
+            ...(notebookId ? { notebookId } : {})
+          });
       results.push({
         id: call.id,
         tool: call.tool,
@@ -125,6 +193,39 @@ export function createLlmRouter() {
 
   router.get('/llm/tools', (_req, res) => {
     return res.json({ tools: LLM_TOOL_DEFINITIONS });
+  });
+
+  router.get('/llm/preprocessing/runs', async (req, res) => {
+    const parsed = preprocessingRunQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+
+    const runs = await listPreprocessingRunSnapshots(parsed.data.projectId, parsed.data.limit);
+    return res.json({
+      projectId: parsed.data.projectId,
+      count: runs.length,
+      runs
+    });
+  });
+
+  router.get('/llm/preprocessing/runs/:runId', async (req, res) => {
+    const parsedParams = preprocessingRunParamsSchema.safeParse(req.params);
+    if (!parsedParams.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsedParams.error.issues });
+    }
+
+    const run = await getPreprocessingRunSnapshot(parsedParams.data.runId);
+    if (!run) {
+      return res.status(404).json({ error: 'Preprocessing run not found' });
+    }
+
+    const projectIdQuery = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+    if (projectIdQuery && run.projectId !== projectIdQuery) {
+      return res.status(404).json({ error: 'Preprocessing run not found' });
+    }
+
+    return res.json({ run });
   });
 
   router.post('/llm/onboarding/stream', async (req, res) => {
@@ -207,7 +308,8 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'onboarding');
@@ -233,7 +335,7 @@ export function createLlmRouter() {
     const projectPlan = typeof project?.metadata?.projectPlan === 'string'
       ? project.metadata.projectPlan
       : undefined;
-    const toolDefinitions = await resolveLlmToolDefinitions();
+    const toolDefinitions = LLM_FEATURE_ENGINEERING_TOOLS;
     const toolCallHistory = parsed.data.toolCalls?.map((call) => ({
       name: call.tool,
       args: call.args ?? {},
@@ -262,7 +364,8 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'feature_engineering');
@@ -328,7 +431,8 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'training');
@@ -377,14 +481,39 @@ export function createLlmRouter() {
       enableThinking: parsed.data.enableThinking,
       thinkingLevel: parsed.data.thinkingLevel
     });
+    const hintedRunIds = extractPreprocessingRunIdsFromHistory(parsed.data.toolCalls, parsed.data.toolResults);
 
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
-      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
-      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
-    await streamLlmResponse(res, client, request, 'preprocessing');
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
+      ? createThinkingLlmClient(modelOverride, env.preprocessingThinkingLlmTimeoutMs)
+      : createLlmClient(modelOverride, env.preprocessingLlmTimeoutMs);
+
+    const markInterruptedRuns = async (
+      reason: string,
+      source: 'provider_error' | 'stream_aborted'
+    ): Promise<void> => {
+      if (hintedRunIds.length === 0) {
+        return;
+      }
+      await markPreprocessingRunsInterrupted({
+        projectId: parsed.data.projectId,
+        runIds: hintedRunIds,
+        reason,
+        source
+      });
+    };
+
+    await streamLlmResponse(res, client, request, 'preprocessing', {
+      onError: async (message) => {
+        await markInterruptedRuns(message, 'provider_error');
+      },
+      onAborted: async (message) => {
+        await markInterruptedRuns(message, 'stream_aborted');
+      }
+    });
   });
 
   // DEBUG ENDPOINT
@@ -465,11 +594,64 @@ function getFeatureEngineeringGateState(metadata: unknown): {
   return { requiresApproval, hasApprovedVersion };
 }
 
+const EMPTY_RENDER_UI_FALLBACK_MESSAGE =
+  'AI plan finished without visible output. Try again or refine your goal.';
+const EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE =
+  'LLM did not return actionable output for this turn. Please retry with a more specific instruction.';
+const FEATURE_ENGINEERING_FALLBACK_MESSAGE =
+  'The model response was incomplete, so I generated a safe fallback feature-engineering summary.';
+
+function buildFeatureEngineeringFallbackEnvelope(
+  reason: 'empty_render_ui' | 'empty_response' | 'blank_text'
+): LlmEnvelope {
+  const reasonText = reason === 'empty_render_ui'
+    ? 'The model returned an empty UI payload.'
+    : reason === 'blank_text'
+      ? 'The model emitted text tokens, but they were blank after trimming.'
+      : 'The model did not emit usable tokens, tools, or UI.';
+
+  return {
+    version: '1',
+    kind: 'feature_engineering',
+    message: FEATURE_ENGINEERING_FALLBACK_MESSAGE,
+    ui: {
+      version: '1',
+      kind: 'feature_engineering',
+      title: 'Feature Engineering Fallback',
+      sections: [
+        {
+          id: 'fallback-fe-summary',
+          title: 'Recovered Guidance',
+          layout: 'column',
+          items: [
+            {
+              type: 'report',
+              id: 'fallback-fe-report',
+              title: 'What happened',
+              content: `${reasonText}\n\nUse the quick actions below to continue without losing progress:\n1. Ask for candidate features.\n2. Ask for leakage-safe validation checks.\n3. Ask for a training-ready feature summary.`,
+              format: 'markdown'
+            },
+            {
+              type: 'callout',
+              tone: 'info',
+              text: 'No data was modified. You can immediately retry with the suggestion pills.'
+            }
+          ]
+        }
+      ]
+    }
+  };
+}
+
 async function streamLlmResponse(
   res: Response,
   client: LlmClient,
   request: LlmRequest,
-  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing'
+  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing',
+  hooks?: {
+    onError?: (message: string) => Promise<void> | void;
+    onAborted?: (message: string) => Promise<void> | void;
+  }
 ) {
   res.setHeader('Content-Type', 'application/x-ndjson');
   res.setHeader('Cache-Control', 'no-cache');
@@ -483,13 +665,11 @@ async function streamLlmResponse(
   let uiEnvelope: LlmEnvelope | null = null;
   let tokenChars = 0;
   let tokenPreview = '';
+  let streamClosed = false;
+  const suppressTokenStreaming = kind === 'preprocessing';
 
-  const writeEvent = (payload: Record<string, unknown>) => {
-    res.write(`${JSON.stringify(payload)}\n`);
-  };
-
-  try {
-    await client.stream(request, {
+  const collectLlmAttempt = async (attemptRequest: LlmRequest): Promise<void> => {
+    await client.stream(attemptRequest, {
       onToken: (token) => {
         // DEBUG: Log actual token content to see if newlines are present
         console.log('[DEBUG][onToken] Token received:', JSON.stringify(token));
@@ -497,7 +677,9 @@ async function streamLlmResponse(
         if (tokenPreview.length < 600) {
           tokenPreview = `${tokenPreview}${token}`.slice(0, 600);
         }
-        writeEvent({ type: 'token', text: token });
+        if (!suppressTokenStreaming) {
+          writeEvent({ type: 'token', text: token });
+        }
       },
       onThinking: (text) => {
         writeEvent({ type: 'thinking', text });
@@ -578,6 +760,7 @@ async function streamLlmResponse(
             }
           }
           const normalizedUi = normalizeUiPayload(uiPayload, kind);
+          console.log(`[DEBUG][llm.ts] normalized render_ui sections=${normalizedUi.sections.length} items=${normalizedUi.sections.reduce((sum, section) => sum + section.items.length, 0)}`);
           const parsed = z
             .object({
               ui: UiSchema,
@@ -598,7 +781,16 @@ async function streamLlmResponse(
           const uiHasItems = parsed.data.ui.sections.some((section) => section.items.length > 0);
           const hasFallbackMessage = Boolean(parsed.data.message?.trim());
           if (!uiHasItems && !hasFallbackMessage) {
-            writeEvent({ type: 'error', message: 'LLM render_ui returned empty UI content.' });
+            if (kind === 'feature_engineering') {
+              uiEnvelope = buildFeatureEngineeringFallbackEnvelope('empty_render_ui');
+              return;
+            }
+            uiEnvelope = {
+              version: '1',
+              kind,
+              message: EMPTY_RENDER_UI_FALLBACK_MESSAGE,
+              ui: null
+            };
             return;
           }
           uiEnvelope = {
@@ -631,6 +823,56 @@ async function streamLlmResponse(
         toolCalls.push(parsed.data);
       }
     });
+  };
+
+  const writeEvent = (payload: Record<string, unknown>) => {
+    if (streamClosed || res.destroyed || res.writableEnded) {
+      return;
+    }
+    res.write(`${JSON.stringify(payload)}\n`);
+  };
+  const closeStream = () => {
+    if (streamClosed || res.destroyed || res.writableEnded) {
+      streamClosed = true;
+      return;
+    }
+    res.write(`${JSON.stringify({ type: 'done' })}\n`);
+    streamClosed = true;
+    res.end();
+  };
+
+  res.on('close', () => {
+    if (streamClosed) {
+      return;
+    }
+    streamClosed = true;
+    void hooks?.onAborted?.('Preprocessing request stream was aborted before completion.');
+  });
+
+  try {
+    await collectLlmAttempt(request);
+
+    const shouldRetryNoToolsPreprocessing = kind === 'preprocessing'
+      && !uiEnvelope
+      && !askUserPayload
+      && !planExitPayload
+      && toolCalls.length === 0
+      && tokenPreview.trim().length > 0;
+
+    if (shouldRetryNoToolsPreprocessing) {
+      console.warn('[llm] preprocessing text-only response detected; retrying once with stricter tool-call directive');
+      const retryRequest: LlmRequest = {
+        ...request,
+        messages: [
+          ...request.messages,
+          {
+            role: 'user',
+            content: 'Your previous response did not call tools. For preprocessing, you must execute actions via tool/function calls only (no plain markdown/code response). Continue this task now using tools.'
+          }
+        ]
+      };
+      await collectLlmAttempt(retryRequest);
+    }
 
     // DEBUG: Log what we're about to send
     console.log(`[DEBUG][llm.ts] Response summary: uiEnvelope=${!!uiEnvelope}, toolCalls=${toolCalls.length}, tokenChars=${tokenChars}`);
@@ -639,8 +881,7 @@ async function streamLlmResponse(
     }
 
     if (terminalToolConflict) {
-      writeEvent({ type: 'done' });
-      res.end();
+      closeStream();
       return;
     }
 
@@ -680,6 +921,32 @@ async function streamLlmResponse(
         }
       });
     } else if (tokenChars > 0) {
+      const trimmedPreview = tokenPreview.trim();
+      if (!trimmedPreview) {
+        if (kind === 'feature_engineering') {
+          writeEvent({ type: 'envelope', envelope: buildFeatureEngineeringFallbackEnvelope('blank_text') });
+        } else {
+          writeEvent({
+            type: 'envelope',
+            envelope: {
+              version: '1',
+              kind,
+              message: EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE,
+              ui: null
+            }
+          });
+        }
+        closeStream();
+        return;
+      }
+      if (kind === 'preprocessing') {
+        writeEvent({
+          type: 'error',
+          message: 'Model returned text without tool calls, so no preprocessing action was executed. Please retry the action.'
+        });
+        closeStream();
+        return;
+      }
       // Model responded with text only - send as text message
       console.log(`[DEBUG][llm.ts] Sending text-only envelope (model didn't use tools)`);
       writeEvent({
@@ -687,25 +954,116 @@ async function streamLlmResponse(
         envelope: {
           version: '1',
           kind,
-          message: tokenPreview.trim(),
+          message: trimmedPreview,
           tool_calls: undefined,
           ui: null
         }
       });
     } else {
       console.warn(`[llm] ${kind} ${requestId} empty response`, { tokenChars });
-      writeEvent({ type: 'error', message: 'LLM returned empty response.' });
+      if (kind === 'feature_engineering') {
+        writeEvent({ type: 'envelope', envelope: buildFeatureEngineeringFallbackEnvelope('empty_response') });
+      } else {
+        writeEvent({
+          type: 'envelope',
+          envelope: {
+            version: '1',
+            kind,
+            message: EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE,
+            ui: null
+          }
+        });
+      }
     }
-    writeEvent({ type: 'done' });
-    res.end();
+    closeStream();
   } catch (error) {
+    if (streamClosed) {
+      return;
+    }
+    const normalizedMessage = normalizeLlmStreamErrorMessage(error, kind);
+    try {
+      await hooks?.onError?.(normalizedMessage);
+    } catch (hookError) {
+      console.error('[llm] Failed to persist stream interruption state:', hookError);
+    }
     writeEvent({
       type: 'error',
-      message: error instanceof Error ? error.message : 'LLM request failed'
+      message: normalizedMessage
     });
-    writeEvent({ type: 'done' });
-    res.end();
+    closeStream();
   }
+}
+
+function normalizeLlmStreamErrorMessage(
+  error: unknown,
+  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing'
+): string {
+  const fallback = error instanceof Error ? error.message : 'LLM request failed';
+  const raw = typeof fallback === 'string' ? fallback : 'LLM request failed';
+  const trimmed = raw.trim();
+
+  const parseJsonError = (value: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+
+  const parsedRoot = parseJsonError(trimmed);
+  const parsedError = parsedRoot && parsedRoot.error && typeof parsedRoot.error === 'object' && !Array.isArray(parsedRoot.error)
+    ? parsedRoot.error as Record<string, unknown>
+    : null;
+
+  const code = typeof parsedError?.code === 'number'
+    ? parsedError.code
+    : typeof parsedRoot?.code === 'number'
+      ? parsedRoot.code
+      : undefined;
+  const status = typeof parsedError?.status === 'string'
+    ? parsedError.status
+    : typeof parsedRoot?.status === 'string'
+      ? parsedRoot.status
+      : undefined;
+  const message = typeof parsedError?.message === 'string'
+    ? parsedError.message
+    : typeof parsedRoot?.message === 'string'
+      ? parsedRoot.message
+      : undefined;
+
+  const fingerprint = `${trimmed}\n${status ?? ''}\n${message ?? ''}`.toLowerCase();
+  const isQuotaFailure = code === 429
+    || fingerprint.includes('resource_exhausted')
+    || fingerprint.includes('quota exceeded')
+    || fingerprint.includes('generate_requests_per_model_per_day');
+
+  if (isQuotaFailure) {
+    if (kind === 'preprocessing') {
+      return 'Gemini quota limit reached (429). This preprocessing request was not completed. Check Gemini API quota/billing and retry.';
+    }
+    return 'Gemini quota limit reached (429). Check Gemini API quota/billing and retry.';
+  }
+
+  const isModelUnavailable = code === 503
+    || fingerprint.includes('unavailable')
+    || fingerprint.includes('high demand')
+    || fingerprint.includes('timed out')
+    || fingerprint.includes('timeout');
+  if (isModelUnavailable) {
+    const providerMessage = message?.trim() || raw;
+    const guidance = 'Current model is unavailable or timing out. Please choose a different model in the model selector and retry.';
+    return `${providerMessage} ${guidance}`.trim();
+  }
+
+  if (message && message.trim()) {
+    return message.trim();
+  }
+
+  return raw;
 }
 
 const REQUIRED_PLAN_SECTION_PATTERNS = [
@@ -779,11 +1137,146 @@ function normalizePlanExitPayload(
   return parsed.success ? parsed.data : null;
 }
 
+function coerceLegacyUiItems(items: unknown[]): unknown[] {
+  const coerced: unknown[] = [];
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const type = typeof candidate.type === 'string' ? candidate.type : '';
+
+    if (type === 'report') {
+      const title = typeof candidate.title === 'string' ? candidate.title : 'Report';
+      const content = typeof candidate.content === 'string' ? candidate.content : '';
+      if (!content.trim()) continue;
+      coerced.push({
+        type: 'report',
+        id: typeof candidate.id === 'string' ? candidate.id : `report-${index + 1}`,
+        title,
+        content,
+        format: candidate.format === 'markdown' || candidate.format === 'json' ? candidate.format : 'text'
+      });
+      continue;
+    }
+
+    if (type === 'callout') {
+      const text = typeof candidate.text === 'string' ? candidate.text : '';
+      if (!text.trim()) continue;
+      coerced.push({
+        type: 'callout',
+        tone: candidate.tone === 'warning' || candidate.tone === 'success' ? candidate.tone : 'info',
+        text
+      });
+      continue;
+    }
+
+    if (type === 'code_cell') {
+      const content = typeof candidate.content === 'string' ? candidate.content : '';
+      if (!content.trim()) continue;
+      coerced.push({
+        type: 'code_cell',
+        id: typeof candidate.id === 'string' ? candidate.id : `code-${index + 1}`,
+        title: typeof candidate.title === 'string' ? candidate.title : undefined,
+        language: 'python',
+        content,
+        autoRun: candidate.autoRun === true
+      });
+      continue;
+    }
+
+    if (type === 'feature_suggestion') {
+      const featureName = typeof candidate.feature === 'string'
+        ? candidate.feature
+        : (typeof candidate.title === 'string' ? candidate.title : '');
+      const method = typeof candidate.method === 'string' ? candidate.method : 'custom';
+      const rationale = typeof candidate.rationale === 'string'
+        ? candidate.rationale
+        : 'Suggested transformation from model response.';
+
+      const featureObject = candidate.feature && typeof candidate.feature === 'object'
+        ? candidate.feature as Record<string, unknown>
+        : null;
+
+      const sourceColumn = featureObject && typeof featureObject.sourceColumn === 'string'
+        ? featureObject.sourceColumn
+        : null;
+
+      const featureTitle = featureObject && typeof featureObject.featureName === 'string'
+        ? featureObject.featureName
+        : featureName;
+
+      if (featureObject && sourceColumn && featureTitle) {
+        const featureObjectRecord = featureObject;
+        coerced.push({
+          type: 'feature_suggestion',
+          id: typeof candidate.id === 'string' ? candidate.id : `feature-${index + 1}`,
+          feature: {
+            sourceColumn,
+            secondaryColumn: typeof featureObjectRecord.secondaryColumn === 'string'
+              ? featureObjectRecord.secondaryColumn
+              : undefined,
+            featureName: featureTitle,
+            description: typeof featureObjectRecord.description === 'string'
+              ? featureObjectRecord.description
+              : rationale,
+            method: typeof featureObjectRecord.method === 'string' ? featureObjectRecord.method : method,
+            params: featureObjectRecord.params && typeof featureObjectRecord.params === 'object'
+              ? featureObjectRecord.params as Record<string, unknown>
+              : {}
+          },
+          rationale,
+          impact: candidate.impact === 'high' || candidate.impact === 'low' ? candidate.impact : 'medium'
+        });
+        continue;
+      }
+
+      if (!featureTitle && !rationale.trim()) {
+        continue;
+      }
+
+      coerced.push({
+        type: 'report',
+        id: `legacy-feature-${index + 1}`,
+        title: featureTitle ? `Suggested feature: ${featureTitle}` : 'Suggested feature',
+        content: `Method: ${method}\n\n${rationale}`,
+        format: 'markdown'
+      });
+      continue;
+    }
+  }
+
+  return coerced;
+}
+
 function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing') {
   if (!payload || typeof payload !== 'object') {
     return { version: '1', kind, sections: [] };
   }
   const candidate = payload as Record<string, unknown>;
+  const rawSections = Array.isArray(candidate.sections) ? candidate.sections : [];
+  const firstSection = rawSections[0];
+  const sectionsLooksLikeLegacyItems = Boolean(
+    firstSection
+    && typeof firstSection === 'object'
+    && firstSection !== null
+    && typeof (firstSection as Record<string, unknown>).type === 'string'
+    && !Array.isArray((firstSection as Record<string, unknown>).items)
+  );
+
+  const legacyItems = sectionsLooksLikeLegacyItems ? coerceLegacyUiItems(rawSections) : [];
+  const normalizedSections = sectionsLooksLikeLegacyItems
+    ? [{
+      id: 'generated-section',
+      title: typeof candidate.title === 'string' ? candidate.title : 'Feature plan',
+      layout: 'column',
+      items: legacyItems
+    }]
+    : rawSections;
+
   const normalized = {
     version: candidate.version === '1' ? '1' : '1',
     kind: candidate.kind === 'feature_engineering'
@@ -794,13 +1287,21 @@ function normalizeUiPayload(payload: unknown, kind: 'feature_engineering' | 'tra
       : kind,
     title: typeof candidate.title === 'string' ? candidate.title : undefined,
     summary: typeof candidate.summary === 'string' ? candidate.summary : undefined,
-    sections: Array.isArray(candidate.sections) ? candidate.sections : []
+    sections: normalizedSections
   };
 
   const parsed = UiSchema.safeParse(normalized);
   if (parsed.success) {
     return parsed.data;
   }
+
+  console.warn('[llm] normalizeUiPayload failed validation', {
+    issues: parsed.error.issues.slice(0, 5).map((issue) => ({
+      path: issue.path.join('.'),
+      message: issue.message
+    })),
+    sectionCount: Array.isArray(normalized.sections) ? normalized.sections.length : 0
+  });
 
   return { version: '1', kind: normalized.kind, title: normalized.title, summary: normalized.summary, sections: [] };
 }

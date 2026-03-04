@@ -5,6 +5,8 @@
  */
 
 import { randomUUID } from 'crypto';
+
+import { env } from '../config.js';
 import type {
     ExecutionRequest,
     ExecutionResult,
@@ -14,6 +16,7 @@ import type {
     RichOutput
 } from '../types/execution.js';
 import { DEFAULT_PACKAGES } from '../types/execution.js';
+
 import {
     isDockerAvailable,
     getOrCreateContainer,
@@ -26,7 +29,6 @@ import {
     type PackageInstallEvent
 } from './containerManager.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
-import { env } from '../config.js';
 
 // Active sessions cache
 const sessions = new Map<string, ExecutionSession>();

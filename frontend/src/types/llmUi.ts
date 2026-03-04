@@ -17,6 +17,8 @@ export const ToolNameSchema = z.enum([
   'execute_transformation_step',
   'validate_step_result',
   'commit_transformation_step',
+  'detect_step_divergence',
+  'reconcile_diverged_step',
   'ask_user',
   'plan_exit',
   'list_cells',

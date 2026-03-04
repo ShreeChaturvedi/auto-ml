@@ -4,11 +4,12 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { cn } from '@/lib/utils';
-import { Brain, Check, Loader2 } from 'lucide-react';
+import { Brain, Check, Database, FileText, Loader2 } from 'lucide-react';
 
-import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
+import { LlmChatComposer, type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
 import {
   ASSISTANT_MODEL_OPTIONS,
+  DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
   getModelOption,
   getReasoningEffortOptions,
@@ -18,7 +19,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
+import {
+  addAssistantTextMessage,
+  addThinkingMessage,
+  appendAssistantTextDelta,
+  appendThinkingDelta,
+  markThinkingMessageComplete
+} from '@/lib/llm/streamMessageUtils';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { useDataStore } from '@/stores/dataStore';
@@ -30,6 +40,30 @@ import type { ChatMessage, ToolCall, ToolResult, QuestionAnswer } from '@/types/
 import { projectColorClasses } from '@/types/project';
 
 const MAX_TOOL_PASSES = 3;
+const CONTEXT_ATTACHMENT_ACCEPT =
+  '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.xls,.html,.htm,.xml,.yml,.yaml,.rtf';
+
+type PendingAttachmentStatus = 'queued' | 'uploading' | 'success' | 'error';
+
+interface PendingAttachment {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  status: PendingAttachmentStatus;
+  errorMessage?: string;
+}
+
+interface UploadedAttachmentPreview {
+  name: string;
+  kind: 'dataset' | 'document';
+  fileType?: string;
+  size: number;
+  nRows?: number;
+  nCols?: number;
+  chunkCount?: number;
+  sample?: Record<string, unknown>[];
+}
 
 interface PlanningStageProps {
   projectId: string;
@@ -331,6 +365,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const files = useDataStore((state) => state.files);
   const projects = useProjectStore((state) => state.projects);
   const addFile = useDataStore((state) => state.addFile);
+  const addPreview = useDataStore((state) => state.addPreview);
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -338,14 +373,19 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
   const [enableThinking, setEnableThinking] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(ASSISTANT_MODEL_OPTIONS[0]?.value ?? 'auto');
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_ASSISTANT_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    getDefaultReasoningEffort(ASSISTANT_MODEL_OPTIONS[0]?.value ?? 'auto')
+    getDefaultReasoningEffort(DEFAULT_ASSISTANT_MODEL)
   );
-  const [attachmentStatus, setAttachmentStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentFeedback, setAttachmentFeedback] = useState<{ status: AttachmentStatus; message: string } | null>(null);
+  const [attachmentStatus, setAttachmentStatus] = useState<AttachmentStatus>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planDrafts, setPlanDrafts] = useState<Record<string, string>>({});
+  const [userMessageAttachments, setUserMessageAttachments] = useState<Record<string, UploadedAttachmentPreview[]>>({});
+  const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
+  const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
 
   const controllerRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
@@ -394,6 +434,15 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     ),
     [hasUserMessages, isStreaming, messages, project?.description, project?.title, projectFiles]
   );
+  const composerAttachmentItems = useMemo<ComposerAttachmentItem[]>(
+    () => pendingAttachments.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      status: attachment.status,
+      message: attachment.errorMessage ?? null
+    })),
+    [pendingAttachments]
+  );
 
   useEffect(() => {
     const supportsCurrent = reasoningEffortOptions.some((option) => option.value === reasoningEffort);
@@ -417,20 +466,62 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     viewport.scrollTop = viewport.scrollHeight;
   }, [messages, isStreaming]);
 
+  useEffect(() => {
+    const uploadingCount = pendingAttachments.filter((attachment) => attachment.status === 'uploading').length;
+    const erroredCount = pendingAttachments.filter((attachment) => attachment.status === 'error').length;
+
+    if (uploadingCount > 0) {
+      setAttachmentStatus('uploading');
+      setAttachmentMessage(`Uploading ${uploadingCount} attachment${uploadingCount === 1 ? '' : 's'}...`);
+      return;
+    }
+
+    if (erroredCount > 0) {
+      setAttachmentStatus('error');
+      setAttachmentMessage(`${erroredCount} attachment${erroredCount === 1 ? '' : 's'} failed. Retry or remove.`);
+      return;
+    }
+
+    if (pendingAttachments.length > 0) {
+      setAttachmentStatus('queued');
+      setAttachmentMessage(`${pendingAttachments.length} attachment${pendingAttachments.length === 1 ? '' : 's'} ready to send.`);
+      return;
+    }
+
+    if (attachmentFeedback) {
+      setAttachmentStatus(attachmentFeedback.status);
+      setAttachmentMessage(attachmentFeedback.message);
+      return;
+    }
+
+    setAttachmentStatus('idle');
+    setAttachmentMessage(null);
+  }, [pendingAttachments, attachmentFeedback]);
+
+  useEffect(() => {
+    if (!attachmentFeedback) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setAttachmentFeedback(null);
+    }, 3500);
+
+    return () => clearTimeout(timeout);
+  }, [attachmentFeedback]);
+
   const endThinking = useCallback(() => {
     const id = currentThinkingIdRef.current;
     if (id) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === id && m.type === 'thinking' ? { ...m, isComplete: true } : m
-        )
-      );
+      setMessages((prev) => markThinkingMessageComplete(prev, id));
       currentThinkingIdRef.current = null;
+      setActiveThinkingMessageId(null);
     }
   }, []);
 
   const endText = useCallback(() => {
     currentTextIdRef.current = null;
+    setActiveTextMessageId(null);
   }, []);
 
   const requestStream = useCallback(
@@ -496,19 +587,11 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 if (!currentThinkingIdRef.current) {
                   const id = `thinking-${Date.now()}`;
                   currentThinkingIdRef.current = id;
-                  setMessages((prev) => [
-                    ...prev,
-                    { id, type: 'thinking', content: event.text, isComplete: false, startTime: Date.now() },
-                  ]);
+                  setActiveThinkingMessageId(id);
+                  setMessages((prev) => addThinkingMessage(prev, id, event.text, Date.now()));
                 } else {
                   const tid = currentThinkingIdRef.current;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === tid && m.type === 'thinking'
-                        ? { ...m, content: m.content + event.text }
-                        : m
-                    )
-                  );
+                  setMessages((prev) => appendThinkingDelta(prev, tid, event.text));
                 }
               }
 
@@ -520,18 +603,13 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 if (!currentTextIdRef.current) {
                   const id = `text-${Date.now()}`;
                   currentTextIdRef.current = id;
-                   passTextMessageId = id;
-                  setMessages((prev) => [...prev, { id, type: 'assistant_text', content: event.text }]);
+                  setActiveTextMessageId(id);
+                  passTextMessageId = id;
+                  setMessages((prev) => addAssistantTextMessage(prev, id, event.text));
                 } else {
                   const tid = currentTextIdRef.current;
                   passTextMessageId = tid;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === tid && m.type === 'assistant_text'
-                        ? { ...m, content: m.content + event.text }
-                        : m
-                    )
-                  );
+                  setMessages((prev) => appendAssistantTextDelta(prev, tid, event.text));
                 }
               }
 
@@ -607,7 +685,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                   passProducedPlainText = true;
                   const id = `text-fallback-${Date.now()}`;
                   passTextMessageId = id;
-                  setMessages((prev) => [...prev, { id, type: 'assistant_text', content: fallback }]);
+                  setMessages((prev) => addAssistantTextMessage(prev, id, fallback));
                 }
               }
 
@@ -685,10 +763,154 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     };
   }, []);
 
-  const submitUserMessage = useCallback((rawText: string) => {
+  const uploadPendingAttachments = useCallback(
+    async (targetIds?: string[]) => {
+      if (!projectId) {
+        return { uploaded: [] as UploadedAttachmentPreview[], failedCount: 0 };
+      }
+
+      const targetIdSet = targetIds ? new Set(targetIds) : null;
+      const queue = pendingAttachments.filter((attachment) => {
+        const isRetryable = attachment.status === 'queued' || attachment.status === 'error';
+        return isRetryable && (!targetIdSet || targetIdSet.has(attachment.id));
+      });
+
+      if (queue.length === 0) {
+        return { uploaded: [] as UploadedAttachmentPreview[], failedCount: 0 };
+      }
+
+      setAttachmentFeedback(null);
+
+      const uploaded: UploadedAttachmentPreview[] = [];
+      let failedCount = 0;
+
+      for (const attachment of queue) {
+        setPendingAttachments((prev) =>
+          prev.map((item) =>
+            item.id === attachment.id ? { ...item, status: 'uploading', errorMessage: undefined } : item
+          )
+        );
+
+        try {
+          const fileType = getFileType(attachment.file);
+          const uploadedFileId = crypto.randomUUID();
+          const uploadedFile: UploadedFile = {
+            id: uploadedFileId,
+            name: attachment.name,
+            size: attachment.size,
+            type: fileType,
+            uploadedAt: new Date(),
+            projectId,
+            file: attachment.file
+          };
+
+          if (fileType === 'csv' || fileType === 'json' || fileType === 'excel') {
+            const response = await uploadDatasetFile(attachment.file, projectId);
+            const dataset = response.dataset;
+
+            addFile(uploadedFile);
+            setFileMetadata(uploadedFileId, {
+              datasetId: dataset.datasetId,
+              tableName: dataset.tableName,
+              rowCount: dataset.n_rows,
+              columnCount: dataset.n_cols,
+              columns: dataset.columns,
+              datasetProfile: {
+                nRows: dataset.n_rows,
+                nCols: dataset.n_cols,
+                dtypes: dataset.dtypes,
+                nullCounts: dataset.null_counts
+              }
+            });
+            addPreview({
+              fileId: uploadedFileId,
+              headers: dataset.columns,
+              rows: dataset.sample,
+              totalRows: dataset.n_rows,
+              previewRows: dataset.sample.length
+            });
+            uploaded.push({
+              name: attachment.name,
+              kind: 'dataset',
+              fileType: fileType,
+              size: attachment.size,
+              nRows: dataset.n_rows,
+              nCols: dataset.n_cols,
+              sample: dataset.sample.slice(0, 2)
+            });
+          } else {
+            const response = await uploadDocument(projectId, attachment.file);
+            addFile(uploadedFile);
+            setFileMetadata(uploadedFileId, {
+              documentId: response.document.documentId,
+              chunkCount: response.document.chunkCount,
+              embeddingDimension: response.document.embeddingDimension
+            });
+            uploaded.push({
+              name: attachment.name,
+              kind: 'document',
+              fileType: response.document.mimeType,
+              size: attachment.size,
+              chunkCount: response.document.chunkCount
+            });
+          }
+
+          setPendingAttachments((prev) =>
+            prev.map((item) =>
+              item.id === attachment.id ? { ...item, status: 'success', errorMessage: undefined } : item
+            )
+          );
+        } catch (error) {
+          failedCount += 1;
+          const errorMessage = error instanceof Error
+            ? error.message
+            : `Failed to upload ${attachment.name}. Please try again.`;
+
+          setPendingAttachments((prev) =>
+            prev.map((item) =>
+              item.id === attachment.id ? { ...item, status: 'error', errorMessage } : item
+            )
+          );
+        }
+      }
+
+      setPendingAttachments((prev) => prev.filter((item) => item.status !== 'success'));
+
+      if (failedCount > 0) {
+        setAttachmentFeedback({
+          status: 'error',
+          message: `${failedCount} attachment${failedCount === 1 ? '' : 's'} failed. Retry or remove before continuing.`
+        });
+      } else if (uploaded.length > 0) {
+        setAttachmentFeedback({
+          status: 'success',
+          message: `Added ${uploaded.length} attachment${uploaded.length === 1 ? '' : 's'} to context.`
+        });
+      }
+
+      return { uploaded, failedCount };
+    },
+    [pendingAttachments, projectId, addFile, addPreview, setFileMetadata]
+  );
+
+  const submitUserMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
     if (!text || isStreaming) return;
 
+    const queuedCount = pendingAttachments.filter((attachment) =>
+      attachment.status === 'queued' || attachment.status === 'error'
+    ).length;
+    let uploadedAttachments: UploadedAttachmentPreview[] = [];
+
+    if (queuedCount > 0) {
+      const uploadResult = await uploadPendingAttachments();
+      uploadedAttachments = uploadResult.uploaded;
+      if (uploadResult.failedCount > 0 && uploadedAttachments.length === 0) {
+        return;
+      }
+    }
+
+    const userMessageId = `user-${Date.now()}`;
     setInputValue('');
     setEditingPlanId(null);
     setMessages((prev) => {
@@ -698,22 +920,30 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
 
       return [
         ...next,
-        { id: `user-${Date.now()}`, type: 'user', content: text, timestamp: Date.now() }
+        { id: userMessageId, type: 'user', content: text, timestamp: Date.now() }
       ];
     });
+    if (uploadedAttachments.length > 0) {
+      setUserMessageAttachments((prev) => ({ ...prev, [userMessageId]: uploadedAttachments }));
+    }
+
+    const uploadedNames = uploadedAttachments.map((item) => item.name);
+    const requestText = uploadedNames.length > 0
+      ? `${text}\n\nUse and prioritize these newly attached files for this response: ${uploadedNames.join(', ')}.`
+      : text;
 
     // Use current round for the request, then advance for next interaction.
     // Round 0 = first user message (triggers data inspection + first questions).
-    void requestStream(text, currentRound);
+    void requestStream(requestText, currentRound);
     setCurrentRound((prev) => Math.min(prev + 1, 5));
-  }, [isStreaming, currentRound, requestStream]);
+  }, [isStreaming, pendingAttachments, uploadPendingAttachments, currentRound, requestStream]);
 
   const handleSend = useCallback(() => {
-    submitUserMessage(inputValue);
+    void submitUserMessage(inputValue);
   }, [inputValue, submitUserMessage]);
 
   const handleSuggestionClick = useCallback((prompt: string) => {
-    submitUserMessage(prompt);
+    void submitUserMessage(prompt);
   }, [submitUserMessage]);
 
   const handleQuestionAnswer = useCallback(
@@ -793,47 +1023,34 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     }
   };
 
-  const handleAttachFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttachFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !projectId) {
       event.target.value = '';
       return;
     }
 
-    const uploadedFile: UploadedFile = {
+    const pendingAttachment: PendingAttachment = {
       id: crypto.randomUUID(),
+      file,
       name: file.name,
       size: file.size,
-      type: getFileType(file),
-      uploadedAt: new Date(),
-      projectId,
-      file
+      status: 'queued',
     };
 
-    addFile(uploadedFile);
-    setAttachmentStatus('uploading');
-    setAttachmentMessage(`Uploading ${file.name}...`);
+    setAttachmentFeedback(null);
+    setPendingAttachments((prev) => [...prev, pendingAttachment]);
+    event.target.value = '';
+  }, [projectId]);
 
-    try {
-      const response = await uploadDocument(projectId, file);
-      setFileMetadata(uploadedFile.id, {
-        documentId: response.document.documentId,
-        chunkCount: response.document.chunkCount,
-        embeddingDimension: response.document.embeddingDimension
-      });
-      setAttachmentStatus('success');
-      setAttachmentMessage(`Added ${file.name} to context.`);
-    } catch {
-      setAttachmentStatus('error');
-      setAttachmentMessage(`Failed to upload ${file.name}. Please try again.`);
-    } finally {
-      event.target.value = '';
-      setTimeout(() => {
-        setAttachmentStatus('idle');
-        setAttachmentMessage(null);
-      }, 3000);
-    }
-  }, [projectId, addFile, setFileMetadata]);
+  const handleRemoveAttachment = useCallback((attachmentId: string) => {
+    setAttachmentFeedback(null);
+    setPendingAttachments((prev) => prev.filter((item) => item.id !== attachmentId));
+  }, []);
+
+  const handleRetryAttachment = useCallback((attachmentId: string) => {
+    void uploadPendingAttachments([attachmentId]);
+  }, [uploadPendingAttachments]);
 
   return (
     <div className="flex h-full flex-col bg-background" data-testid="planning-stage">
@@ -862,10 +1079,43 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
           <div className="w-full space-y-6 p-6 pb-12">
             {messages.map((msg) => {
             if (msg.type === 'user') {
+              const attachedFiles = userMessageAttachments[msg.id] ?? [];
               return (
                 <div key={msg.id} className="flex flex-col items-end">
                   <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
                     {msg.content}
+                    {attachedFiles.length > 0 ? (
+                      <div className="mt-2 space-y-1.5">
+                        {attachedFiles.map((file) => (
+                          <div
+                            key={`${msg.id}-${file.name}`}
+                            className="rounded-md border border-primary/30 bg-background/80 px-2 py-1.5 text-[11px] text-foreground"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1 font-medium">
+                                {file.kind === 'dataset' ? <Database className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
+                                {file.name}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {file.kind === 'dataset'
+                                  ? `${file.nRows ?? 0} rows · ${file.nCols ?? 0} cols`
+                                  : `${file.chunkCount ?? 0} chunks`}
+                              </span>
+                            </div>
+                            {file.sample && file.sample.length > 0 ? (
+                              <div className="mt-1 rounded border border-border/50 bg-muted/40 px-1.5 py-1 font-mono text-[10px] text-muted-foreground">
+                                {Object.entries(file.sample[0]).slice(0, 3).map(([key, value], idx) => (
+                                  <span key={key}>
+                                    {idx > 0 ? ' · ' : ''}
+                                    {key}: {String(value)}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -874,18 +1124,26 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             if (msg.type === 'assistant_text') {
               return (
                 <div key={msg.id} className="text-sm text-foreground">
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+                  <ProgressiveMessageText
+                    messageId={msg.id}
+                    text={msg.content}
+                    isLive={activeTextMessageId === msg.id}
+                    mode="markdown"
+                    className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert"
+                  />
                 </div>
               );
             }
 
             if (msg.type === 'thinking') {
               return (
-                <ThinkingBlock key={msg.id} content={msg.content} isComplete={msg.isComplete} />
+                <ThinkingBlock
+                  key={msg.id}
+                  messageId={msg.id}
+                  content={msg.content}
+                  isComplete={msg.isComplete}
+                  isLive={activeThinkingMessageId === msg.id}
+                />
               );
             }
 
@@ -896,6 +1154,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                   toolCalls={[msg.call]}
                   results={msg.result ? [msg.result] : []}
                   isRunning={!msg.result}
+                  autoExpandPreviewTools
                 />
               );
             }
@@ -1095,7 +1354,11 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             attachment={{
               onAttachFile: handleAttachFile,
               status: attachmentStatus,
-              message: attachmentMessage
+              message: attachmentMessage,
+              items: composerAttachmentItems,
+              onRemoveItem: handleRemoveAttachment,
+              onRetryItem: handleRetryAttachment,
+              accept: CONTEXT_ATTACHMENT_ACCEPT
             }}
             maxWidthClassName="max-w-5xl"
           />

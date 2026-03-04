@@ -6,6 +6,7 @@ import type { CellType } from '../../types/notebook.js';
 import { installPackage, listPackages, uninstallPackage } from '../containerManager.js';
 import { searchDocuments } from '../documentSearchService.js';
 import { executeCell, getOrEnsureContainer } from '../notebook/cellExecutionService.js';
+import type { DatasetSyncMode } from '../notebook/datasetSyncMode.js';
 import * as notebookService from '../notebook/notebookService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
@@ -25,7 +26,7 @@ export async function executeToolCall(projectId: string, call: ToolCall): Promis
 
       // Cell tools
       case 'list_cells':
-        return { id: call.id, tool: call.tool, output: await listCells(projectId) };
+        return { id: call.id, tool: call.tool, output: await listCells(projectId, call.args) };
       case 'read_cell':
         return { id: call.id, tool: call.tool, output: await readCell(call.args) };
       case 'write_cell':
@@ -158,13 +159,29 @@ async function searchProjectDocuments(projectId: string, args: ToolCall['args'])
 // Cell Tool Handlers
 // ============================================================
 
-async function listCells(projectId: string) {
+async function resolveNotebookId(projectId: string, args: ToolCall['args']): Promise<string> {
+  const requestedNotebookId = typeof args?.notebookId === 'string' ? args.notebookId : '';
+  if (!requestedNotebookId) {
+    const notebook = await notebookService.ensureNotebook(projectId);
+    return notebook.notebookId;
+  }
+
+  const projectNotebooks = await notebookService.listProjectNotebooks(projectId);
+  const notebookExists = projectNotebooks.some((notebook) => notebook.notebookId === requestedNotebookId);
+  if (!notebookExists) {
+    throw new Error(`Notebook ${requestedNotebookId} not found in project`);
+  }
+
+  return requestedNotebookId;
+}
+
+async function listCells(projectId: string, args: ToolCall['args']) {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Notebook operations require database configuration.');
   }
-  const notebook = await notebookService.ensureNotebook(projectId);
-  const cells = await notebookService.listCells(notebook.notebookId);
-  return { notebookId: notebook.notebookId, cells };
+  const notebookId = await resolveNotebookId(projectId, args);
+  const cells = await notebookService.listCells(notebookId);
+  return { notebookId, cells };
 }
 
 async function readCell(args: ToolCall['args']) {
@@ -188,12 +205,14 @@ async function writeCell(projectId: string, args: ToolCall['args']) {
     throw new Error('content is required');
   }
 
-  const notebook = await notebookService.ensureNotebook(projectId);
-  const cell = await notebookService.writeCell(notebook.notebookId, {
+  const metadata = parseCellMetadataArg(args?.metadata);
+  const notebookId = await resolveNotebookId(projectId, args);
+  const cell = await notebookService.writeCell(notebookId, {
     cellId: typeof args?.cellId === 'string' ? args.cellId : undefined,
     title: typeof args?.title === 'string' ? args.title : undefined,
     content,
-    cellType: (args?.cellType as CellType) ?? 'code'
+    cellType: (args?.cellType as CellType) ?? 'code',
+    metadata
   });
 
   return cell;
@@ -208,6 +227,7 @@ async function editCell(args: ToolCall['args']) {
     throw new Error('cellId is required');
   }
 
+  const metadata = parseCellMetadataArg(args?.metadata);
   const startLine = typeof args?.startLine === 'number' ? args.startLine : 0;
   const endLine = typeof args?.endLine === 'number' ? args.endLine : 0;
   const newContent = typeof args?.newContent === 'string' ? args.newContent : '';
@@ -219,7 +239,8 @@ async function editCell(args: ToolCall['args']) {
   const result = await notebookService.editCell(cellId, {
     startLine,
     endLine,
-    newContent
+    newContent,
+    metadata
   });
 
   return result;
@@ -234,8 +255,56 @@ async function runCell(projectId: string, args: ToolCall['args']) {
     throw new Error('cellId is required');
   }
 
-  const result = await executeCell(cellId, projectId);
+  const parsedMetadata = parseCellMetadataArg(args?.metadata);
+  const datasetSyncMode = extractDatasetSyncMode(parsedMetadata);
+  const metadata = stripDatasetSyncMode(parsedMetadata);
+  if (metadata && Object.keys(metadata).length > 0) {
+    await notebookService.updateCellMetadata(cellId, metadata);
+  }
+
+  const result = await executeCell(cellId, projectId, {
+    datasetSyncMode
+  });
   return result;
+}
+
+function parseCellMetadataArg(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function extractDatasetSyncMode(metadata: Record<string, unknown> | undefined): DatasetSyncMode | undefined {
+  const preprocessing = metadata?.preprocessing;
+  if (!preprocessing || typeof preprocessing !== 'object' || Array.isArray(preprocessing)) {
+    return undefined;
+  }
+
+  const mode = (preprocessing as Record<string, unknown>).datasetContinuityMode;
+  if (mode === 'continue' || mode === 'restart_from_original') {
+    return mode;
+  }
+  return undefined;
+}
+
+function stripDatasetSyncMode(metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+
+  const preprocessing = metadata.preprocessing;
+  if (!preprocessing || typeof preprocessing !== 'object' || Array.isArray(preprocessing)) {
+    return metadata;
+  }
+
+  const nextPreprocessing = { ...(preprocessing as Record<string, unknown>) };
+  delete nextPreprocessing.datasetContinuityMode;
+
+  return {
+    ...metadata,
+    preprocessing: nextPreprocessing
+  };
 }
 
 async function deleteCell(args: ToolCall['args']) {
@@ -268,8 +337,8 @@ async function reorderCells(projectId: string, args: ToolCall['args']) {
     }
   }
 
-  const notebook = await notebookService.ensureNotebook(projectId);
-  await notebookService.reorderCells(notebook.notebookId, cellIds as string[]);
+  const notebookId = await resolveNotebookId(projectId, args);
+  await notebookService.reorderCells(notebookId, cellIds as string[]);
 
   return { success: true };
 }
@@ -286,8 +355,8 @@ async function insertCell(projectId: string, args: ToolCall['args']) {
     throw new Error('content is required');
   }
 
-  const notebook = await notebookService.ensureNotebook(projectId);
-  const cell = await notebookService.insertCell(notebook.notebookId, {
+  const notebookId = await resolveNotebookId(projectId, args);
+  const cell = await notebookService.insertCell(notebookId, {
     position,
     content,
     title: typeof args?.title === 'string' ? args.title : undefined,

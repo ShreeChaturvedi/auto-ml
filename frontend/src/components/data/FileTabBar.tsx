@@ -110,7 +110,9 @@ function SortableTab({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group flex h-14 cursor-pointer items-center gap-2 border-b-2 px-4 transition-colors flex-none',
+        // `relative` anchors the absolutely-positioned close button.
+        // `overflow-hidden + isolate` keep the button clipped/layered within this tab only.
+        'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden',
         isActive
           ? 'border-primary bg-muted text-foreground'
           : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -122,21 +124,38 @@ function SortableTab({
       {/* Icon and title */}
       <div className="flex items-center gap-2 whitespace-nowrap">
         {getIcon()}
-        <span className="text-sm font-medium max-w-[150px] truncate">{name}</span>
+        {/*
+         * On hover, a CSS mask fades the text toward the right so it naturally
+         * dissolves beneath the close button instead of being hard-clipped.
+         * The mask is purely alpha-based and therefore works over any background.
+         */}
+        <span
+          className="text-sm font-medium max-w-[150px] truncate
+            group-hover:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]
+            group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]"
+        >
+          {name}
+        </span>
       </div>
 
-      {/* Close button (not draggable) */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="ml-2 h-5 w-5 opacity-0 group-hover:opacity-100 flex-shrink-0"
-        onClick={(e: React.MouseEvent) => {
-          e.stopPropagation();
-          onClose();
-        }}
-      >
-        <X className="h-3 w-3" />
-      </Button>
+      {/*
+       * Close button — absolutely positioned at the right edge of the tab so
+       * it superimposes over the content without pushing the tab wider.
+       * `pointer-events-none` while invisible prevents ghost clicks.
+       */}
+      <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <X className="h-3 w-3" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -257,36 +276,40 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
 
   if (orderedTabs.length === 0) {
     return (
-      <div className="flex h-14 items-center border-b border-border bg-card px-4 text-sm text-muted-foreground">
-        No files or queries to display
+      <div className="flex h-14 items-center justify-between gap-3 border-b border-border bg-card px-4">
+        <span className="text-sm text-muted-foreground">No files or queries to display</span>
       </div>
     );
   }
 
   return (
     <div className="h-14 border-b border-border bg-card">
-      <div className="flex h-full items-center overflow-x-auto scrollbar-thin">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-          modifiers={[restrictToHorizontalAxis]}
-        >
-          <SortableContext items={orderedTabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
-            {orderedTabs.map((tab) => (
-              <SortableTab
-                key={tab.id}
-                id={tab.id}
-                name={tab.name}
-                isActive={tab.id === activeFileTabId}
-                fileType={tab.fileType}
-                queryMode={tab.queryMode}
-                onClose={() => handleCloseTab(tab)}
-                onClick={() => handleTabClick(tab)}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+      <div className="flex h-full items-center">
+        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-thin">
+          <div className="flex h-full items-center">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              modifiers={[restrictToHorizontalAxis]}
+            >
+              <SortableContext items={orderedTabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
+                {orderedTabs.map((tab) => (
+                  <SortableTab
+                    key={tab.id}
+                    id={tab.id}
+                    name={tab.name}
+                    isActive={tab.id === activeFileTabId}
+                    fileType={tab.fileType}
+                    queryMode={tab.queryMode}
+                    onClose={() => handleCloseTab(tab)}
+                    onClick={() => handleTabClick(tab)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </div>
+        </div>
       </div>
     </div>
   );

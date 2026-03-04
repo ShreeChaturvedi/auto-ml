@@ -22,6 +22,12 @@ describe('sqlValidator', () => {
         expect(result.limitAppended).toBe(false);
       });
 
+      it('allows trailing semicolon for single statements', () => {
+        const result = validateReadOnlySql('SELECT * FROM users LIMIT 10;', defaultOptions);
+        expect(result.normalizedSql).toBe('SELECT * FROM users LIMIT 10');
+        expect(result.limitAppended).toBe(false);
+      });
+
       it('allows CTE/WITH statements', () => {
         const sql = 'WITH cte AS (SELECT * FROM users) SELECT * FROM cte';
         const result = validateReadOnlySql(sql, defaultOptions);

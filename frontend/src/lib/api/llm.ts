@@ -1,5 +1,6 @@
 import { apiRequest, getApiBaseUrl } from './client';
 import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
+import type { PreprocessingRunSnapshot, PreprocessingRunSummary } from '@/types/preprocessing';
 
 export type ThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
 
@@ -69,11 +70,35 @@ export async function streamOnboardingPlan(
   return streamLlm('/llm/onboarding/stream', request, onEvent, signal);
 }
 
-export async function executeToolCalls(projectId: string, toolCalls: ToolCall[]) {
+export async function executeToolCalls(
+  projectId: string,
+  toolCalls: ToolCall[],
+  notebookId?: string,
+  executionMode: 'agent' | 'user_approval' = 'agent'
+) {
   return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
     method: 'POST',
-    body: JSON.stringify({ projectId, toolCalls })
+    body: JSON.stringify({ projectId, toolCalls, notebookId, executionMode })
   });
+}
+
+export async function listPreprocessingRuns(projectId: string, limit?: number) {
+  const query = new URLSearchParams({ projectId });
+  if (typeof limit === 'number' && Number.isFinite(limit)) {
+    query.set('limit', String(limit));
+  }
+  return apiRequest<{ projectId: string; count: number; runs: PreprocessingRunSummary[] }>(
+    `/llm/preprocessing/runs?${query.toString()}`
+  );
+}
+
+export async function getPreprocessingRunSnapshot(runId: string, projectId?: string) {
+  const query = new URLSearchParams();
+  if (projectId) {
+    query.set('projectId', projectId);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<{ run: PreprocessingRunSnapshot }>(`/llm/preprocessing/runs/${runId}${suffix}`);
 }
 
 async function streamLlm(

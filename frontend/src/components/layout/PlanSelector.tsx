@@ -13,7 +13,19 @@ import {
 import { useProjectStore } from '@/stores/projectStore';
 import { cn } from '@/lib/utils';
 
-export function PlanSelector() {
+interface PlanSelectorProps {
+  className?: string;
+  menuAlign?: 'start' | 'center' | 'end';
+  nameMaxWidthClass?: string;
+  menuContentClassName?: string;
+}
+
+export function PlanSelector({
+  className,
+  menuAlign = 'end',
+  nameMaxWidthClass,
+  menuContentClassName
+}: PlanSelectorProps) {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
@@ -74,13 +86,21 @@ export function PlanSelector() {
         <Button
           variant="outline"
           size="sm"
-          className="h-9 gap-2 shadow-sm bg-background/50 backdrop-blur-sm border-border"
+          className={cn(
+            'h-9 gap-2 border-border bg-background shadow-sm transition-colors',
+            className
+          )}
         >
           <ClipboardList className="h-4 w-4 text-primary" />
-          <span className="max-w-[150px] truncate">{activePlan.name}</span>
+          <span className={cn('truncate text-left', nameMaxWidthClass ?? 'max-w-[150px]')}>
+            {activePlan.name}
+          </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[240px]">
+      <DropdownMenuContent
+        align={menuAlign}
+        className={cn('w-[240px]', menuContentClassName)}
+      >
         {plans.map((plan) => (
           <DropdownMenuItem
             key={plan.id}

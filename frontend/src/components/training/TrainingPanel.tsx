@@ -8,12 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Plus,
   Loader2,
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
-import { RuntimeManagerDialog } from './RuntimeManagerDialog';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
@@ -21,15 +19,15 @@ import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
+import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
-import { useNotebookStore } from '@/stores/notebookStore';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createTrainingAdapter } from './TrainingAdapter';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import 'katex/dist/katex.min.css';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
+import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
+const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -41,26 +39,8 @@ export function TrainingPanel() {
   
   const autoRunIdsRef = useRef(new Set<string>());
 
-  // Execution store
-  const {
-    cloudAvailable,
-    cloudInitializing,
-    sessionId,
-    initializeCloud,
-    checkCloudHealth,
-    executeCode: executeWithStore
-  } = useExecutionStore();
+  const { executeCode: executeWithStore } = useExecutionStore();
 
-  const {
-    initializeNotebook,
-    disconnect: disconnectNotebook,
-    createCell: createNotebookCell
-  } = useNotebookStore();
-
-  useEffect(() => {
-    if (projectId) initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [projectId, initializeNotebook, disconnectNotebook]);
 
   // Files
   const files = useDataStore((s) => s.files);
@@ -81,7 +61,9 @@ export function TrainingPanel() {
 
   // Features
   const features = useFeatureStore((s) => s.features);
-  const pipelineVersions = useFeatureStore((s) => (projectId ? s.versions[projectId] ?? [] : []));
+  const pipelineVersions = useFeatureStore((s) => (
+    projectId ? s.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS : EMPTY_PIPELINE_VERSIONS
+  ));
   const hydrateFeatures = useFeatureStore((s) => s.hydrateFromProject);
   const projectMetadata = useProjectStore((state) => projectId ? state.getProjectById(projectId)?.metadata : undefined);
   const projectFeatures = useMemo(() => projectId ? features.filter(f => f.projectId === projectId && f.enabled) : [], [features, projectId]);
@@ -108,16 +90,6 @@ export function TrainingPanel() {
       setTrainingTargetColumn(selected.columns[0]);
     }
   }, [trainingDatasetOptions, trainingDatasetId, trainingTargetColumn]);
-
-  useEffect(() => {
-    checkCloudHealth().catch(() => undefined);
-  }, [checkCloudHealth]);
-
-  useEffect(() => {
-    if (projectId && cloudAvailable && !sessionId && !cloudInitializing) {
-      initializeCloud(projectId).catch(console.error);
-    }
-  }, [projectId, cloudAvailable, sessionId, cloudInitializing, initializeCloud]);
 
   useEffect(() => {
     cellsRef.current = cells;
@@ -230,7 +202,21 @@ export function TrainingPanel() {
     }
   };
 
-  const LeftPaneComponent = ({ messages, isGenerating, error }: { messages: ChatMessage[]; isGenerating: boolean; error: string | null }) => {
+  const LeftPaneComponent = ({
+    messages,
+    isGenerating,
+    error,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds
+  }: {
+    messages: ChatMessage[];
+    isGenerating: boolean;
+    error: string | null;
+    activeTextMessageId: string | null;
+    activeThinkingMessageId: string | null;
+    hydratedMessageIds: Set<string>;
+  }) => {
     // Sync cells on render or effect
     const uiSchemas = messages.filter(m => m.type === 'ui').map(m => m.schema as UiSchema);
     const lastUiSchema = uiSchemas[uiSchemas.length - 1];
@@ -307,22 +293,34 @@ export function TrainingPanel() {
               );
             }
             if (msg.type === 'assistant_text') {
+              const cleaned = sanitizeAssistantText(msg.content);
+              if (!cleaned) return null;
               return (
                 <div key={msg.id} className="flex items-start gap-3 w-full">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
                     <Wand2 className="h-3 w-3 text-emerald-600" />
                   </div>
-                  <div className="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                  </div>
+                  <ProgressiveMessageText
+                    messageId={msg.id}
+                    text={cleaned}
+                    isLive={activeTextMessageId === msg.id}
+                    mode="markdown"
+                    animateOnMount={!hydratedMessageIds.has(msg.id)}
+                    className="llm-assistant-markdown prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
+                  />
                 </div>
               );
             }
             if (msg.type === 'thinking') {
               return (
-                <div key={msg.id} className="text-xs italic text-muted-foreground border-l-2 pl-3">
-                  Thinking... {msg.isComplete ? '' : '(in progress)'}
-                </div>
+                <ThinkingBlock
+                  key={msg.id}
+                  messageId={msg.id}
+                  content={msg.content}
+                  isComplete={msg.isComplete}
+                  isLive={activeThinkingMessageId === msg.id}
+                  animateOnMount={!hydratedMessageIds.has(msg.id)}
+                />
               );
             }
             if (msg.type === 'ui') {
@@ -374,36 +372,20 @@ export function TrainingPanel() {
         documentFiles
       })}
       LeftPaneComponent={LeftPaneComponent}
-      toolbarLeft={
-        <>
-          <Badge
-            variant={cloudAvailable ? 'default' : 'secondary'}
-            className={cn('text-xs gap-1.5', cloudInitializing && 'animate-pulse')}
-          >
-            {cloudInitializing ? <Loader2 className="h-3 w-3 animate-spin" /> : cloudAvailable ? <span className="h-2 w-2 rounded-full bg-emerald-500" /> : <span className="h-2 w-2 rounded-full bg-destructive" />}
-            {cloudInitializing ? 'Connecting...' : cloudAvailable ? 'Cloud' : 'Unavailable'}
-          </Badge>
-          {projectId && <RuntimeManagerDialog projectId={projectId} />}
-        </>
-      }
+      toolbarLeft={undefined}
       toolbarRight={
-        <>
-          {projectFeatures.length > 0 && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
-                    <Wand2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          <Button variant="ghost" size="icon-sm" onClick={() => createNotebookCell({ content: '', cellType: 'code' })} title="Add notebook cell">
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </>
+        projectFeatures.length > 0 ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
+                  <Wand2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : undefined
       }
     />
   );

@@ -67,7 +67,7 @@ interface DataState {
     metadata?: Partial<
       Pick<
         QueryArtifact,
-        'eda' | 'cached' | 'executionMs' | 'generatedSql' | 'rationale' | 'name' | 'cacheTimestamp'
+        'eda' | 'cached' | 'executionMs' | 'generatedSql' | 'rationale' | 'explanation' | 'name' | 'cacheTimestamp'
       >
     >
   ) => string;
@@ -274,7 +274,8 @@ export const useDataStore = create<DataState>((set, get) => ({
       executionMs: metadata?.executionMs,
       cacheTimestamp: metadata?.cacheTimestamp,
       generatedSql: metadata?.generatedSql,
-      rationale: metadata?.rationale
+      rationale: metadata?.rationale,
+      explanation: metadata?.explanation
     };
 
     set((state) => ({

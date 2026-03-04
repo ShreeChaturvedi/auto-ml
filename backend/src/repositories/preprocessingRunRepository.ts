@@ -36,6 +36,10 @@ export interface StepState {
   rationale?: string;
   intentType: string;
   status: StepStatus;
+  approvalDecision?: 'pending' | 'approved' | 'rejected';
+  decisionReason?: string;
+  toolCallId?: string;
+  linkedFromStepId?: string;
   code?: string;
   codeHash?: string;
   version: number;
@@ -45,6 +49,15 @@ export interface StepState {
   lastExecuteSucceeded: boolean;
   lastValidateSucceeded: boolean;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface PreprocessingCellBinding {
+  runId: string;
+  stepId: string;
+  toolCallId?: string;
+  version: number;
+  codeHash?: string;
   updatedAt: string;
 }
 
@@ -64,6 +77,9 @@ export type PreprocessingRunEventType =
   | 'step_executed'
   | 'step_validated'
   | 'step_committed'
+  | 'step_diverged'
+  | 'step_reconciled'
+  | 'run_interrupted'
   | 'checkpoint_created'
   | 'checkpoint_restored'
   | 'replay_compatibility_checked';
@@ -85,6 +101,8 @@ export interface PreprocessingRunState {
   projectId: string;
   activeDatasetId?: string;
   derivedDatasetIds: string[];
+  langGraphRuntime?: 'langgraph';
+  langGraphState?: Record<string, unknown>;
   steps: Record<string, StepState>;
   checkpoints: CheckpointState[];
   events: PreprocessingRunEvent[];
@@ -98,6 +116,7 @@ interface StoredPreprocessingRuns {
 
 export interface PreprocessingRunRepository {
   getById(runId: string): Promise<PreprocessingRunState | undefined>;
+  listByProjectId(projectId: string): Promise<PreprocessingRunState[]>;
   getOrCreate(projectId: string, explicitRunId?: string): Promise<PreprocessingRunState>;
   save(run: PreprocessingRunState): Promise<void>;
 }
@@ -151,6 +170,13 @@ class FilePreprocessingRunRepository implements PreprocessingRunRepository {
 
   async getById(runId: string): Promise<PreprocessingRunState | undefined> {
     return this.readAll().runs.find((run) => run.runId === runId);
+  }
+
+  async listByProjectId(projectId: string): Promise<PreprocessingRunState[]> {
+    return this.readAll()
+      .runs
+      .filter((run) => run.projectId === projectId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
   async getOrCreate(projectId: string, explicitRunId?: string): Promise<PreprocessingRunState> {

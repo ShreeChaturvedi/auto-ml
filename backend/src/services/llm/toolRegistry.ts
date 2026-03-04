@@ -64,13 +64,18 @@ export const LLM_TOOL_DEFINITIONS: LlmToolDefinition[] = [
   },
   {
     name: 'write_cell',
-    description: 'Create a new code cell or update an existing cell with Python code.',
+    description: 'Create a new notebook cell or update an existing cell. Use markdown cells for section headers and narrative, and code cells for executable Python.',
     parameters: {
       type: 'object',
       properties: {
         cellId: { type: 'string', description: 'Optional UUID of existing cell to update. If omitted, creates a new cell.' },
         title: { type: 'string', description: 'Optional title for the cell.' },
-        content: { type: 'string', description: 'The Python code content for the cell.' }
+        content: { type: 'string', description: 'The Python code content for the cell.' },
+        cellType: { type: 'string', enum: ['code', 'markdown'], description: 'Cell type. Defaults to code.' },
+        metadata: {
+          type: 'object',
+          description: 'Optional cell metadata. For preprocessing lineage use metadata.preprocessing with runId, stepId, toolCallId, version, codeHash.'
+        }
       },
       required: ['content']
     }
@@ -81,7 +86,11 @@ export const LLM_TOOL_DEFINITIONS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        cellId: { type: 'string', description: 'The UUID of the cell to execute (from list_cells id field). Must be a valid UUID, not a cell name.' }
+        cellId: { type: 'string', description: 'The UUID of the cell to execute (from list_cells id field). Must be a valid UUID, not a cell name.' },
+        metadata: {
+          type: 'object',
+          description: 'Optional cell metadata to persist before execution.'
+        }
       },
       required: ['cellId']
     }
@@ -95,7 +104,11 @@ export const LLM_TOOL_DEFINITIONS: LlmToolDefinition[] = [
         cellId: { type: 'string', description: 'The UUID of the cell to edit (from list_cells id field). Must be a valid UUID.' },
         startLine: { type: 'number', description: '1-indexed line number where edit starts.' },
         endLine: { type: 'number', description: '1-indexed line number where edit ends (inclusive). If same as startLine, replaces that single line.' },
-        newContent: { type: 'string', description: 'The new content to replace lines startLine through endLine.' }
+        newContent: { type: 'string', description: 'The new content to replace lines startLine through endLine.' },
+        metadata: {
+          type: 'object',
+          description: 'Optional cell metadata. For preprocessing lineage use metadata.preprocessing with runId, stepId, toolCallId, version, codeHash.'
+        }
       },
       required: ['cellId', 'startLine', 'endLine', 'newContent']
     }
@@ -413,8 +426,39 @@ const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
         runId: { type: 'string' },
         stepId: { type: 'string' },
         approved: { type: 'boolean' },
+        rejectionReason: { type: 'string' },
         datasetId: { type: 'string' },
         label: { type: 'string' }
+      },
+      required: ['stepId']
+    }
+  },
+  {
+    name: 'detect_step_divergence',
+    description: 'Detect backend-authoritative divergence between bound notebook cells and semantic preprocessing steps.',
+    parameters: {
+      type: 'object',
+      properties: {
+        runId: { type: 'string' },
+        stepId: { type: 'string', description: 'Optional single-step divergence check target.' },
+        cellId: { type: 'string', description: 'Optional single-cell divergence check target.' }
+      }
+    }
+  },
+  {
+    name: 'reconcile_diverged_step',
+    description: 'Reconcile a diverged preprocessing step by absorbing edits or creating a linked revised step.',
+    parameters: {
+      type: 'object',
+      properties: {
+        runId: { type: 'string' },
+        stepId: { type: 'string' },
+        strategy: {
+          type: 'string',
+          enum: ['absorb_edit', 'create_linked_step'],
+          description: 'absorb_edit updates the existing step; create_linked_step leaves old step diverged and creates a new linked step.'
+        },
+        title: { type: 'string', description: 'Optional title override when creating a linked step.' }
       },
       required: ['stepId']
     }
@@ -432,8 +476,23 @@ const NOTEBOOK_EXECUTION_TOOLS = [
   'insert_cell'
 ];
 
+const FEATURE_DISCOVERY_TOOLS = [
+  'list_project_files',
+  'get_dataset_profile',
+  'get_dataset_sample',
+  'search_documents'
+];
+
 export const LLM_ALL_TOOLS: LlmToolDefinition[] = [
   ...LLM_TOOL_DEFINITIONS,
+  LLM_RENDER_UI_TOOL
+];
+
+export const LLM_FEATURE_ENGINEERING_TOOLS: LlmToolDefinition[] = [
+  ...LLM_TOOL_DEFINITIONS.filter((tool) =>
+    FEATURE_DISCOVERY_TOOLS.includes(tool.name) || NOTEBOOK_EXECUTION_TOOLS.includes(tool.name)
+  ),
+  ASK_USER_TOOL,
   LLM_RENDER_UI_TOOL
 ];
 

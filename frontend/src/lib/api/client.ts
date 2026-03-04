@@ -88,7 +88,13 @@ async function parseResponse<T>(
       payload = await cloned.text();
     }
     console.error(`[API Error] ${method} ${url} - Status ${response.status}`, payload);
-    throw new ApiError(`Request to ${url} failed with status ${response.status}`, response.status, payload);
+    const payloadMessage = extractApiErrorMessage(payload);
+    const suffix = payloadMessage ? `: ${payloadMessage}` : '';
+    throw new ApiError(
+      `Request to ${url} failed with status ${response.status}${suffix}`,
+      response.status,
+      payload
+    );
   }
 
   if (options.parseJson === false || response.status === 204) {
@@ -101,6 +107,73 @@ async function parseResponse<T>(
   }
 
   return undefined as T;
+}
+
+function extractApiErrorMessage(payload: unknown): string | null {
+  const MAX_CHARS = 320;
+
+  const truncate = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    return trimmed.length > MAX_CHARS ? `${trimmed.slice(0, MAX_CHARS)}…` : trimmed;
+  };
+
+  if (typeof payload === 'string') {
+    const msg = truncate(payload);
+    return msg || null;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+
+  // Common backend shape: { error: string }
+  if (typeof record.error === 'string') {
+    const msg = truncate(record.error);
+    return msg || null;
+  }
+
+  if (typeof record.details === 'string') {
+    const msg = truncate(record.details);
+    return msg || null;
+  }
+
+  // Zod flatten: { errors: { formErrors?: string[], fieldErrors?: Record<string, string[]> } }
+  if (record.errors && typeof record.errors === 'object') {
+    const errors = record.errors as {
+      formErrors?: string[];
+      fieldErrors?: Record<string, string[]>;
+    };
+
+    const form = Array.isArray(errors.formErrors) ? errors.formErrors.filter(Boolean) : [];
+    const field = errors.fieldErrors && typeof errors.fieldErrors === 'object'
+      ? Object.entries(errors.fieldErrors)
+          .flatMap(([key, values]) => (values ?? []).map((value) => `${key}: ${value}`))
+          .filter(Boolean)
+      : [];
+
+    const combined = [...form, ...field].filter(Boolean).join(' | ');
+    const msg = truncate(combined);
+    return msg || null;
+  }
+
+  if (typeof record.message === 'string') {
+    const msg = truncate(record.message);
+    return msg || null;
+  }
+
+  // Gemini-style error: { error: { message: string } }
+  if (record.error && typeof record.error === 'object') {
+    const nested = record.error as Record<string, unknown>;
+    if (typeof nested.message === 'string') {
+      const msg = truncate(nested.message);
+      return msg || null;
+    }
+  }
+
+  return null;
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {

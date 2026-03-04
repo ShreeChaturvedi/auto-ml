@@ -19,9 +19,13 @@ import { DocumentViewer } from './DocumentViewer';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ApiError } from '@/lib/api/client';
-import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
+import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
+import type { QueryResultPayload } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
+import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
+import { extractColumnTypesFromQuery } from './sqlColumnTypes';
+import { cn } from '@/lib/utils';
 
 function extractApiErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
@@ -65,10 +69,47 @@ function extractApiErrorMessage(error: unknown): string {
   return error.message;
 }
 
+function buildDataPreviewFromQuery(query: QueryResultPayload): DataPreview {
+  return {
+    fileId: 'query-result',
+    headers: query.columns.map((col) => col.name),
+    rows: query.rows,
+    totalRows: query.rowCount,
+    previewRows: query.rowCount,
+    eda: query.eda,
+    columnTypes: extractColumnTypesFromQuery(query.columns, query.rows)
+  };
+}
+
+function buildQueryArtifactMeta(query: QueryResultPayload) {
+  return {
+    eda: query.eda,
+    cached: query.cached,
+    executionMs: query.executionMs,
+    cacheTimestamp: query.cacheTimestamp
+  };
+}
+
+function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
+  return {
+    sql: nl.sql,
+    rationale: nl.rationale,
+    explanation: nl.explanation,
+    queryId: nl.queryId,
+    cached: nl.cached,
+    queryExecutionError: nl.queryExecutionError ?? null,
+    queryResult: nl.query
+  };
+}
+
 export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
+  const [queryPanelIsExpanding, setQueryPanelIsExpanding] = useState(false);
+  const [queryPanelIsTransitioning, setQueryPanelIsTransitioning] = useState(false);
+  const [queryMode, setQueryMode] = useState<QueryMode>('sql');
+  const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
   const { projectId } = useParams();
   const projects = useProjectStore((state) => state.projects);
   const activeProject = projects.find((p) => p.id === projectId);
@@ -145,7 +186,8 @@ export function DataViewerTab() {
     return result;
   }, [files, previews]);
 
-  // Handle query execution
+  // Handle query execution — SQL only.
+  // Natural-language queries are now handled by handleNlGenerate + handleNlApprove.
   const handleExecuteQuery = useCallback(
     async (query: string, mode: QueryMode) => {
       if (!activeProject) return;
@@ -154,59 +196,19 @@ export function DataViewerTab() {
       setQueryError(null);
 
       try {
-        if (mode === 'english') {
-          const response = await executeNlQuery({
-            projectId: activeProject.id,
-            query,
-            tableName: tableNames[0]
-          });
-          const nl = response.nl;
-          const queryResult = nl.query;
-
-          const dataPreview: DataPreview = {
-            fileId: 'query-result',
-            headers: queryResult.columns.map((col) => col.name),
-            rows: queryResult.rows,
-            totalRows: queryResult.rowCount,
-            previewRows: queryResult.rowCount,
-            eda: queryResult.eda
-          };
-
-          const artifactId = createArtifact(query, mode, dataPreview, activeProject.id, {
-            eda: queryResult.eda,
-            cached: queryResult.cached,
-            executionMs: queryResult.executionMs,
-            cacheTimestamp: queryResult.cacheTimestamp,
-            generatedSql: nl.sql,
-            rationale: nl.rationale
-          });
-
-          setActiveFileTab(artifactId, 'artifact');
-          return;
-        }
-
         // Execute SQL using backend Postgres
         const result = await executeSqlQuery({ projectId: activeProject.id, sql: query });
-
-        // Convert backend QueryResult to DataPreview format
-        const dataPreview: DataPreview = {
-          fileId: 'query-result',
-          headers: result.query.columns.map((col) => col.name),
-          rows: result.query.rows,
-          totalRows: result.query.rowCount,
-          previewRows: result.query.rowCount,
-          eda: result.query.eda // Include EDA metadata for Analysis tab
-        };
+        const dataPreview = buildDataPreviewFromQuery(result.query);
 
         // Create artifact with result, including EDA metadata
-        const artifactId = createArtifact(query, mode, dataPreview, activeProject.id, {
-          eda: result.query.eda,
-          cached: result.query.cached,
-          executionMs: result.query.executionMs,
-          cacheTimestamp: result.query.cacheTimestamp
-        });
+        const artifactId = createArtifact(
+          query,
+          mode,
+          dataPreview,
+          activeProject.id,
+          buildQueryArtifactMeta(result.query)
+        );
 
-        // Switch to the new artifact tab
         setActiveFileTab(artifactId, 'artifact');
       } catch (error) {
         console.error('Query execution failed:', error);
@@ -219,6 +221,143 @@ export function DataViewerTab() {
     },
     [activeProject, createArtifact, setActiveFileTab, tableNames]
   );
+
+  /**
+   * Phase 1 of the NL workflow: generate SQL from a natural-language query.
+   * Returns the generation result to NlQueryWorkflow WITHOUT creating an
+   * artifact — that only happens once the user approves in phase 2.
+   */
+  const handleNlGenerate = useCallback(
+    async (
+      query: string,
+      onStreamEvent?: (event: NlQueryStreamEvent) => void,
+      signal?: AbortSignal
+    ): Promise<NlGenerationResult> => {
+      if (!activeProject) throw new Error('No active project');
+
+      const requestPayload = {
+        projectId: activeProject.id,
+        query,
+        tableName: tableNames[0]
+      };
+
+      let nl: Awaited<ReturnType<typeof executeNlQuery>>['nl'];
+      if (onStreamEvent) {
+        let streamedNl: Awaited<ReturnType<typeof executeNlQuery>>['nl'] | null = null;
+        let streamFailure: string | null = null;
+        await streamNlQuery(
+          requestPayload,
+          (event) => {
+            onStreamEvent(event);
+            if (event.type === 'result') {
+              streamedNl = event.nl;
+            } else if (event.type === 'phase_failed' && event.phaseId === 'done') {
+              streamFailure = event.summary;
+            }
+          },
+          signal
+        );
+
+        if (!streamedNl) {
+          throw new Error(streamFailure ?? 'NL stream completed without a final result payload.');
+        }
+        nl = streamedNl;
+      } else {
+        const response = await executeNlQuery(requestPayload);
+        nl = response.nl;
+      }
+
+      if (nl.queryExecutionError) {
+        toast.warning('Generated SQL needs review', {
+          description: `Initial execution hit a database error: ${nl.queryExecutionError}`
+        });
+      }
+
+      return toNlGenerationResult(nl);
+    },
+    [activeProject, tableNames]
+  );
+
+  /**
+   * Phase 2 of the NL workflow: the user has reviewed (and optionally edited)
+   * the generated SQL and clicked "Approve & Run".
+   *
+   * - If the SQL is unchanged, we reuse the cached query result from the
+   *   generation response — no second round-trip needed.
+   * - If the SQL was edited, we execute the new SQL and use the fresh result.
+   */
+  const handleNlApprove = useCallback(
+    async (result: NlGenerationResult, approvedSql: string) => {
+      if (!activeProject) return;
+
+      setIsExecuting(true);
+      setQueryError(null);
+
+      try {
+        let queryResult = result.queryResult;
+
+        // Re-execute when SQL was edited OR no initial query payload exists.
+        if (!queryResult || approvedSql.trim() !== result.sql.trim()) {
+          const freshResult = await executeSqlQuery({
+            projectId: activeProject.id,
+            sql: approvedSql
+          });
+          queryResult = freshResult.query;
+        }
+
+        if (!queryResult) {
+          throw new Error('Generated SQL has no executable result payload. Please retry.');
+        }
+
+        const dataPreview = buildDataPreviewFromQuery(queryResult);
+        const artifactId = createArtifact(approvedSql, 'english', dataPreview, activeProject.id, {
+          ...buildQueryArtifactMeta(queryResult),
+          generatedSql: result.sql,
+          rationale: result.rationale,
+          explanation: result.explanation
+        });
+
+        setActiveFileTab(artifactId, 'artifact');
+      } catch (error) {
+        console.error('NL query approval failed:', error);
+        const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
+
+        setQueryError(withSqlIdentifierHint(errorMessage, 'english', tableNames[0]));
+        toast.error(`Query failed: ${errorMessage}`);
+      } finally {
+        setIsExecuting(false);
+      }
+    },
+    [activeProject, createArtifact, setActiveFileTab, tableNames]
+  );
+
+  const handleQueryPanelCollapsedChange = useCallback(
+    (nextCollapsed: boolean) => {
+      if (queryPanelIsTransitioning || nextCollapsed === queryPanelCollapsed) {
+        return;
+      }
+
+      setQueryPanelIsTransitioning(true);
+      setQueryPanelIsExpanding(!nextCollapsed);
+      setQueryPanelCollapsed(nextCollapsed);
+    },
+    [queryPanelCollapsed, queryPanelIsTransitioning]
+  );
+
+  const activeControlsPortalTarget = controlsPortalTarget;
+
+  useEffect(() => {
+    if (!queryPanelIsTransitioning) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setQueryPanelIsTransitioning(false);
+      setQueryPanelIsExpanding(false);
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [queryPanelIsTransitioning]);
 
   if (files.length === 0) {
     return (
@@ -254,6 +393,7 @@ export function DataViewerTab() {
               preview={preview}
               columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
+              controlsPortalTarget={activeControlsPortalTarget}
               onColumnTypeChange={
                 datasetId
                   ? async (columnName: string, nextType: ColumnDataType) => {
@@ -279,14 +419,18 @@ export function DataViewerTab() {
         );
       }
 
-      return <DocumentViewer file={file} />;
+      return <DocumentViewer file={file} controlsPortalTarget={activeControlsPortalTarget} />;
     } else if (fileTabType === 'artifact') {
       const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
       if (artifact) {
+        // Extract column types from the query result metadata
+        const columnTypes = artifact.result.columnTypes;
         return (
             <DataTable
               preview={artifact.result}
+              columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
+              controlsPortalTarget={activeControlsPortalTarget}
               queryInfo={{
                 query: artifact.query,
                 mode: artifact.mode,
@@ -296,7 +440,8 @@ export function DataViewerTab() {
               executionMs: artifact.executionMs,
               cacheTimestamp: artifact.cacheTimestamp,
               generatedSql: artifact.generatedSql,
-              rationale: artifact.rationale
+              rationale: artifact.rationale,
+              explanation: artifact.explanation
             }}
           />
         );
@@ -321,48 +466,71 @@ export function DataViewerTab() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* File Tab Bar */}
-      {projectId && <FileTabBar projectId={projectId} />}
+    <div className="flex h-full overflow-hidden">
+      {/* Main Content Area (left side) */}
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        {/* File Tab Bar */}
+        {projectId && <FileTabBar projectId={projectId} />}
 
-      {/* Error Banner */}
-      {queryError && (
-        <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-destructive">Query Error</p>
-            <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap">{queryError}</p>
+        {/* Error Banner */}
+        {queryError && (
+          <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-destructive">Query Error</p>
+              <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap">{queryError}</p>
+            </div>
+            <button
+              onClick={() => setQueryError(null)}
+              className="text-destructive/70 hover:text-destructive transition-colors"
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
           </div>
-          <button
-            onClick={() => setQueryError(null)}
-            className="text-destructive/70 hover:text-destructive transition-colors"
-            aria-label="Dismiss error"
-          >
-            ×
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Data Display (left side) */}
-        <div className="flex-1 min-w-0 overflow-auto">
+        {/* Data Display */}
+        <div className="flex-1 min-w-0 overflow-auto bg-background">
           {getActiveTabContent() ?? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a file from the sidebar to open it here.
             </div>
           )}
         </div>
+      </div>
 
-        {/* Query Panel (right side) - collapsible with smooth animation */}
+      {/* Query Panel (right side) */}
+      <div
+        className={cn(
+          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out [will-change:width]',
+          queryPanelCollapsed ? 'w-12' : 'w-[400px]'
+        )}
+        style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}
+        onTransitionEnd={(event) => {
+          if (event.target !== event.currentTarget || event.propertyName !== 'width') {
+            return;
+          }
+
+          setQueryPanelIsExpanding(false);
+          setQueryPanelIsTransitioning(false);
+        }}
+      >
         <QueryPanel
           onExecute={handleExecuteQuery}
           isExecuting={isExecuting}
-          className={queryPanelCollapsed ? 'w-12 shrink-0' : 'w-[400px] shrink-0'}
+          className="w-full"
           tableNames={tableNames}
           columnsByTable={columnsByTable}
           collapsed={queryPanelCollapsed}
-          onCollapsedChange={setQueryPanelCollapsed}
+          onCollapsedChange={handleQueryPanelCollapsedChange}
+          isExpanding={queryPanelIsExpanding}
+          mode={queryMode}
+          onModeChange={setQueryMode}
+          controlsPortalTarget={controlsPortalTarget}
+          onMountPortalTarget={setControlsPortalTarget}
+          onNlGenerate={handleNlGenerate}
+          onNlApprove={handleNlApprove}
         />
       </div>
     </div>

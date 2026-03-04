@@ -35,7 +35,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginForm() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setUser, setTokens, isAuthenticated } = useAuthStore();
+  const setUser = useAuthStore((state) => state.setUser);
+  const setTokens = useAuthStore((state) => state.setTokens);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [formError, setFormError] = useState<string | null>(null);
   const [buttonState, setButtonState] = useState<AuthButtonState>('idle');
   const [googleLoading, setGoogleLoading] = useState(false);

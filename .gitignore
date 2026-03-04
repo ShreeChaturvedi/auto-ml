@@ -4,6 +4,9 @@
 # Serena MCP config
 .serena/
 
+# Claude Code config
+.claude/
+
 # Node modules (all workspaces)
 node_modules/
 
@@ -23,3 +26,19 @@ frontend/.env
 LLM_TRAINING_TAB_CONTEXT.md
 NOTEBOOK_IMPLEMENTATION_HANDOFF.md
 TRAINING_TAB_HANDOFF.md
+
+# Agent/coding guidelines (personal preference, not for repo)
+AGENTS.md
+CLAUDE.md
+DECISIONS.md
+PROGRESS.md
+
+# Proposal documents (keep locally, not in repo)
+Proposal Detailed Brainstorm.txt
+Senior Design Project Proposal.pdf
+
+# OpenCode AI planning files
+.opencode/
+
+# Local agent/debug logs
+.cursor/*.log

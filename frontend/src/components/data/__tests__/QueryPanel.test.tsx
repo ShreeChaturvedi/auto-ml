@@ -1,11 +1,15 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QueryPanel } from '../QueryPanel';
 
 const mockState = vi.hoisted(() => ({
   appTheme: 'light' as 'light' | 'dark' | 'system',
-  renderedThemes: [] as string[]
+  renderedThemes: [] as string[],
+  renderedLanguages: [] as Array<string | undefined>,
+  renderedQuickSuggestions: [] as unknown[],
+  renderedTriggerSuggestions: [] as unknown[],
+  renderedFixedOverflowWidgets: [] as unknown[]
 }));
 
 vi.mock('@/components/theme-provider', () => ({
@@ -15,9 +19,25 @@ vi.mock('@/components/theme-provider', () => ({
 }));
 
 vi.mock('@monaco-editor/react', () => ({
-  default: ({ theme }: { theme: string }) => {
+  default: ({
+    theme,
+    language,
+    options
+  }: {
+    theme: string;
+    language?: string;
+    options?: {
+      quickSuggestions?: unknown;
+      suggestOnTriggerCharacters?: unknown;
+      fixedOverflowWidgets?: unknown;
+    };
+  }) => {
     mockState.renderedThemes.push(theme);
-    return <div data-testid="mock-monaco-editor" data-theme={theme} />;
+    mockState.renderedLanguages.push(language);
+    mockState.renderedQuickSuggestions.push(options?.quickSuggestions);
+    mockState.renderedTriggerSuggestions.push(options?.suggestOnTriggerCharacters);
+    mockState.renderedFixedOverflowWidgets.push(options?.fixedOverflowWidgets);
+    return <div data-testid="mock-monaco-editor" data-theme={theme} data-language={language} />;
   }
 }));
 
@@ -25,6 +45,10 @@ describe('QueryPanel theme handling', () => {
   beforeEach(() => {
     mockState.appTheme = 'light';
     mockState.renderedThemes = [];
+    mockState.renderedLanguages = [];
+    mockState.renderedQuickSuggestions = [];
+    mockState.renderedTriggerSuggestions = [];
+    mockState.renderedFixedOverflowWidgets = [];
   });
 
   it('uses light theme immediately and after remount in light mode', async () => {
@@ -32,17 +56,45 @@ describe('QueryPanel theme handling', () => {
 
     const firstRender = render(<QueryPanel onExecute={onExecute} />);
     await waitFor(() => {
-      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'custom-light');
+      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     });
-    expect(mockState.renderedThemes[0]).toBe('custom-light');
-    expect(mockState.renderedThemes).not.toContain('custom-dark');
+    expect(mockState.renderedThemes[0]).toBe('sql-light');
+    expect(mockState.renderedThemes).not.toContain('sql-dark');
+    expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-language', 'sql');
+    expect(mockState.renderedQuickSuggestions.at(-1)).toBe(true);
+    expect(mockState.renderedTriggerSuggestions.at(-1)).toBe(true);
+    expect(mockState.renderedFixedOverflowWidgets.at(-1)).toBe(true);
 
     firstRender.unmount();
 
     render(<QueryPanel onExecute={onExecute} />);
     await waitFor(() => {
-      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'custom-light');
+      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     });
-    expect(mockState.renderedThemes).not.toContain('custom-dark');
+    expect(mockState.renderedThemes).not.toContain('sql-dark');
+  });
+
+  it('expands from collapsed overlay click', () => {
+    const onCollapsedChange = vi.fn();
+    render(<QueryPanel onExecute={vi.fn()} collapsed onCollapsedChange={onCollapsedChange} />);
+
+    const collapsedOverlay = screen.getByText(/query builder/i).closest('[role="button"]');
+    expect(collapsedOverlay).not.toBeNull();
+
+    fireEvent.click(collapsedOverlay!);
+    expect(onCollapsedChange).toHaveBeenCalledWith(false);
+  });
+
+  it('expands from collapsed overlay keyboard interactions', () => {
+    const onCollapsedChange = vi.fn();
+    render(<QueryPanel onExecute={vi.fn()} collapsed onCollapsedChange={onCollapsedChange} />);
+
+    const collapsedOverlay = screen.getByText(/query builder/i).closest('[role="button"]');
+    expect(collapsedOverlay).not.toBeNull();
+
+    fireEvent.keyDown(collapsedOverlay!, { key: 'Enter' });
+    fireEvent.keyDown(collapsedOverlay!, { key: ' ' });
+    expect(onCollapsedChange).toHaveBeenNthCalledWith(1, false);
+    expect(onCollapsedChange).toHaveBeenNthCalledWith(2, false);
   });
 });

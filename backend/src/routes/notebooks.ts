@@ -1,11 +1,12 @@
-import { Router, type Request, type Response } from 'express';
-import { z } from 'zod';
 import { existsSync } from 'node:fs';
 
-import * as notebookService from '../services/notebook/notebookService.js';
-import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
-import { getCompletions } from '../services/containerManager.js';
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+
 import { hasDatabaseConfiguration } from '../db.js';
+import { getCompletions } from '../services/containerManager.js';
+import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
+import * as notebookService from '../services/notebook/notebookService.js';
 import type { CellType } from '../types/notebook.js';
 
 const router = Router();
@@ -77,6 +78,112 @@ router.use(requireDatabase);
 // ============================================================
 // Notebook Endpoints
 // ============================================================
+
+const createNotebookSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional()
+});
+
+const renameNotebookSchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
+/**
+ * GET /api/projects/:projectId/notebooks
+ * List notebooks for a project.
+ */
+router.get('/projects/:projectId/notebooks', async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const notebooks = await notebookService.listProjectNotebooks(projectId);
+    res.json(notebooks);
+  } catch (error) {
+    console.error('[notebooks] Error listing notebooks:', error);
+    res.status(500).json({
+      error: 'Failed to list notebooks',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/projects/:projectId/notebooks
+ * Create a notebook for a project.
+ */
+router.post('/projects/:projectId/notebooks', async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const parsed = createNotebookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid request body',
+        details: parsed.error.issues
+      });
+      return;
+    }
+
+    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name);
+    res.status(201).json(notebook);
+  } catch (error) {
+    console.error('[notebooks] Error creating notebook:', error);
+    res.status(500).json({
+      error: 'Failed to create notebook',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * PATCH /api/notebooks/:notebookId
+ * Rename a notebook.
+ */
+router.patch('/notebooks/:notebookId', async (req: Request, res: Response) => {
+  try {
+    const { notebookId } = req.params;
+    const parsed = renameNotebookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid request body',
+        details: parsed.error.issues
+      });
+      return;
+    }
+
+    const notebook = await notebookService.renameProjectNotebook(notebookId, parsed.data.name);
+    res.json(notebook);
+  } catch (error) {
+    console.error('[notebooks] Error renaming notebook:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const status = message.includes('not found') ? 404 : 500;
+    res.status(status).json({
+      error: 'Failed to rename notebook',
+      message
+    });
+  }
+});
+
+/**
+ * DELETE /api/projects/:projectId/notebooks/:notebookId
+ * Delete a notebook from a project.
+ */
+router.delete('/projects/:projectId/notebooks/:notebookId', async (req: Request, res: Response) => {
+  try {
+    const { projectId, notebookId } = req.params;
+    const result = await notebookService.deleteProjectNotebook(projectId, notebookId);
+    res.json(result);
+  } catch (error) {
+    console.error('[notebooks] Error deleting notebook:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const status = message.includes('last notebook')
+      ? 409
+      : message.includes('not found')
+        ? 404
+        : 500;
+    res.status(status).json({
+      error: 'Failed to delete notebook',
+      message
+    });
+  }
+});
 
 /**
  * GET /api/projects/:projectId/notebook
@@ -349,8 +456,15 @@ router.get('/cells/:cellId/outputs/:filename', async (req: Request, res: Respons
   try {
     const { cellId, filename } = req.params;
 
-    // Validate filename to prevent path traversal
-    if (filename.includes('..') || filename.includes('/')) {
+    // Validate path segments to prevent traversal attacks.
+    const isSafeSegment = (value: string) => !value.includes('..') && !value.includes('/') && !value.includes('\\');
+
+    if (!isSafeSegment(cellId)) {
+      res.status(400).json({ error: 'Invalid cellId' });
+      return;
+    }
+
+    if (!isSafeSegment(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
@@ -377,7 +491,13 @@ router.get('/cells/:cellId/outputs/:filename', async (req: Request, res: Respons
 
     const contentType = contentTypes[ext ?? ''] ?? 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
-    res.sendFile(filePath, { root: process.cwd() });
+    // Frontend dev server enables COEP/COOP for SharedArrayBuffer (DuckDB). Under COEP=require-corp,
+    // cross-origin subresources (like images served from the API port) must opt in. This header
+    // allows notebook output images to render in the browser.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    // `filePath` is absolute. Do not pass `root`, otherwise Express treats the path as relative and
+    // the underlying `send` module will look up the wrong filesystem location.
+    res.sendFile(filePath);
   } catch (error) {
     console.error('[notebooks] Error serving output:', error);
     res.status(500).json({

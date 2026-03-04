@@ -26,12 +26,15 @@ interface FeatureState {
   updateFeature: (id: string, updates: Partial<FeatureSpec>) => void;
   toggleFeature: (id: string) => void;
   removeFeature: (id: string) => void;
+  clearProjectFeatures: (projectId: string) => void;
   getFeaturesByProject: (projectId: string) => FeatureSpec[];
   hydrateFromProject: (projectId: string, options?: { force?: boolean }) => void;
   syncFeaturesToProject: (projectId: string) => Promise<void>;
 
   // FE v2 actions
   createDraftVersion: (projectId: string, name?: string) => PipelineVersion;
+  removeVersion: (projectId: string, versionId: string) => void;
+  renameVersion: (projectId: string, versionId: string, name: string) => void;
   updateReadinessReport: (projectId: string, versionId: string, report: Partial<ReadinessReport>) => void;
   approveVersion: (projectId: string, versionId: string) => void;
   setCurrentVersion: (projectId: string, versionId: string) => void;
@@ -52,7 +55,11 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   hydrateFromProject(projectId, options) {
     const force = options?.force ?? false;
     const state = get();
-    if (!force && state.features.some((feature) => feature.projectId === projectId)) {
+    const hasProjectFeatures = state.features.some((feature) => feature.projectId === projectId);
+    const hasHydratedVersions = Object.prototype.hasOwnProperty.call(state.versions, projectId);
+    const hasHydratedCurrentVersion = Object.prototype.hasOwnProperty.call(state.currentVersionId, projectId);
+
+    if (!force && hasProjectFeatures && hasHydratedVersions && hasHydratedCurrentVersion) {
       return;
     }
 
@@ -187,6 +194,13 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
     }
   },
 
+  clearProjectFeatures(projectId) {
+    set((state) => ({
+      features: state.features.filter((feature) => feature.projectId !== projectId)
+    }));
+    void get().syncFeaturesToProject(projectId);
+  },
+
   getFeaturesByProject(projectId) {
     return get().features.filter((feature) => feature.projectId === projectId);
   },
@@ -221,6 +235,53 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
 
     void get().syncFeaturesToProject(projectId);
     return newVersion;
+  },
+
+  removeVersion(projectId, versionId) {
+    set((state) => {
+      const existingVersions = state.versions[projectId] || [];
+      const remainingVersions = existingVersions.filter((version) => version.id !== versionId);
+      const currentVersionId = state.currentVersionId[projectId];
+      const nextCurrentVersionId = currentVersionId === versionId
+        ? (remainingVersions[0]?.id ?? '')
+        : (currentVersionId ?? '');
+
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: remainingVersions
+        },
+        currentVersionId: {
+          ...state.currentVersionId,
+          [projectId]: nextCurrentVersionId
+        }
+      };
+    });
+
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  renameVersion(projectId, versionId, name) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    set((state) => {
+      const projectVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: projectVersions.map((version) =>
+            version.id === versionId
+              ? { ...version, name: trimmedName }
+              : version
+          )
+        }
+      };
+    });
+
+    void get().syncFeaturesToProject(projectId);
   },
 
   updateReadinessReport(projectId, versionId, report) {

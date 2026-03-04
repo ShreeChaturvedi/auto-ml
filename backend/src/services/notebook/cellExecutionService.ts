@@ -1,8 +1,24 @@
-import { getOrCreateContainer, executeInContainer, type Container } from '../containerManager.js';
-import * as repo from '../../repositories/notebookRepository.js';
+import { readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { env } from '../../config.js';
+import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
+import { getOrCreateContainer, executeInContainer, type Container } from '../containerManager.js';
+import {
+  artifactExecDirRel,
+  containerWorkspaceRelativePath,
+  isAutomlArtifactPath,
+  resolveHostPathInWorkspace
+} from '../executionArtifacts.js';
+
+import {
+  resolveDatasetSyncMode,
+  shouldOverwriteDatasetWorkspace,
+  type DatasetSyncMode
+} from './datasetSyncMode.js';
+import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
 
 /**
  * Get or ensure a container exists for a project.
@@ -13,7 +29,7 @@ export async function getOrEnsureContainer(projectId: string): Promise<Container
   return getOrCreateContainer({
     projectId,
     pythonVersion: '3.11',
-    workspacePath: `${env.executionWorkspaceDir}/${projectId}`,
+    workspacePath: join(env.executionWorkspaceDir, projectId),
     datasetPaths
   });
 }
@@ -43,7 +59,10 @@ function broadcast(notebookId: string, type: string, data: Record<string, unknow
  */
 export async function executeCell(
   cellId: string,
-  projectId: string
+  projectId: string,
+  options?: {
+    datasetSyncMode?: DatasetSyncMode;
+  }
 ): Promise<ExecutionResult> {
   // Get the cell
   const cell = await repo.getCell(cellId);
@@ -75,28 +94,33 @@ export async function executeCell(
     const container = await getOrCreateContainer({
       projectId,
       pythonVersion: '3.11',
-      workspacePath: `${env.executionWorkspaceDir}/${projectId}`,
+      workspacePath: join(env.executionWorkspaceDir, projectId),
       datasetPaths
     });
 
-    // Copy dataset files to workspace so filenames work directly
-    await copyDatasetsToWorkspace(projectId);
+    const datasetSyncMode = resolveDatasetSyncMode(options?.datasetSyncMode, cell.metadata);
+
+    // Copy dataset files to workspace so filenames work directly.
+    // In continue mode, preserve edited working files across actions.
+    await copyDatasetsToWorkspace(projectId, datasetSyncMode);
 
     // Execute the code
-    const result = await executeInContainer(container, cell.content, env.executionTimeoutMs);
+    const result = await executeInContainer(container, cell.content, env.executionTimeoutMs, {
+      sessionKey: cell.notebookId,
+      imageOutputMode: 'artifact_path'
+    });
 
     // Calculate execution time
     const executionMs = Date.now() - startTime;
 
     // Process outputs (inline vs external storage)
-    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs);
+    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs, container.workspacePath);
 
     // Determine final status
     const executionStatus = result.status === 'success' ? 'success' : 'error';
 
-    // Update cell with results
-    const updatedCell = await repo.updateCell(cellId, {
-      executionCount: (cell.executionCount ?? 0) + 1,
+    // Update cell with results and assign notebook-global execution order.
+    const updatedCell = await repo.markCellExecuted(cellId, {
       executionStatus,
       executionDurationMs: executionMs,
       output: inlineOutputs,
@@ -106,29 +130,29 @@ export async function executeCell(
     // Broadcast result
     broadcast(cell.notebookId, 'cell:executed', { cell: updatedCell });
 
+    // Return the persisted/portable outputs (refs) instead of raw execution outputs (data URLs/artifact paths).
+    // This avoids huge payloads and UI flicker when the cell reloads from the server.
     return {
       ...result,
-      executionMs
+      outputs: inlineOutputs,
+      executionMs,
+      executionOrder: updatedCell.executionOrder ?? null
     };
   } catch (error) {
     // Update cell with error status
     const errorMessage = error instanceof Error ? error.message : 'Execution failed';
     const executionMs = Date.now() - startTime;
 
-    await repo.updateCell(cellId, {
-      executionCount: (cell.executionCount ?? 0) + 1,
+    const updatedCell = await repo.markCellExecuted(cellId, {
       executionStatus: 'error',
       executionDurationMs: executionMs,
       output: [{
         type: 'error',
         content: errorMessage
-      }]
+      }],
+      outputRefs: []
     });
-
-    const updatedCell = await repo.getCell(cellId);
-    if (updatedCell) {
-      broadcast(cell.notebookId, 'cell:executed', { cell: updatedCell });
-    }
+    broadcast(cell.notebookId, 'cell:executed', { cell: updatedCell });
 
     return {
       status: 'error',
@@ -136,7 +160,8 @@ export async function executeCell(
       stderr: errorMessage,
       outputs: [{ type: 'error', content: errorMessage }],
       executionMs,
-      error: errorMessage
+      error: errorMessage,
+      executionOrder: updatedCell.executionOrder ?? null
     };
   } finally {
     // Always release lock
@@ -150,13 +175,74 @@ export async function executeCell(
  */
 async function processOutputs(
   cellId: string,
-  outputs: RichOutput[]
+  outputs: RichOutput[],
+  workspacePath: string
 ): Promise<{ inlineOutputs: CellOutput[]; outputRefs: OutputRef[] }> {
   const inlineOutputs: CellOutput[] = [];
   const outputRefs: OutputRef[] = [];
+  const execDirs = new Set<string>();
 
   for (let i = 0; i < outputs.length; i++) {
     const output = outputs[i];
+
+    if (output.type === 'image') {
+      const decoded = decodeBase64DataUrl(output.content);
+      if (decoded) {
+        const filename = `image_${i}_${Date.now()}.${extensionForMimeType(decoded.mimeType)}`;
+        const ref = await repo.saveLargeOutput(
+          cellId,
+          'image',
+          decoded.buffer,
+          filename,
+          decoded.mimeType
+        );
+        outputRefs.push(ref);
+        inlineOutputs.push({
+          type: 'image',
+          content: ref.ref,
+          mimeType: decoded.mimeType
+        });
+        continue;
+      }
+
+      if (isAutomlArtifactPath(output.content)) {
+        const relPath = containerWorkspaceRelativePath(output.content);
+        const execDirRel = artifactExecDirRel(relPath);
+        const hostPath = resolveHostPathInWorkspace(workspacePath, relPath);
+        const mimeType = output.mimeType ?? 'image/png';
+        if (!hostPath) {
+          inlineOutputs.push({
+            type: 'error',
+            content: `[image] Unsafe Matplotlib artifact path: ${output.content}`
+          });
+          continue;
+        }
+        let bytes: Buffer;
+        try {
+          bytes = await readFile(hostPath);
+        } catch (error) {
+          inlineOutputs.push({
+            type: 'error',
+            content: `[image] Failed to read Matplotlib artifact from ${output.content}: ${error instanceof Error ? error.message : 'Unknown error'}`
+          });
+          continue;
+        }
+        const filename = `image_${i}_${Date.now()}.${extensionForMimeType(mimeType)}`;
+        const ref = await repo.saveLargeOutput(cellId, 'image', bytes, filename, mimeType);
+        outputRefs.push(ref);
+        inlineOutputs.push({
+          type: 'image',
+          content: ref.ref,
+          mimeType
+        });
+        if (execDirRel) {
+          execDirs.add(execDirRel);
+        }
+        await rm(hostPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+    }
+
     const cellOutput: CellOutput = {
       type: output.type,
       content: output.content,
@@ -182,6 +268,16 @@ async function processOutputs(
       inlineOutputs.push(cellOutput);
     }
   }
+
+  await Promise.all(
+    Array.from(execDirs).map((execDirRel) => {
+      const hostDir = resolveHostPathInWorkspace(workspacePath, execDirRel);
+      if (!hostDir) {
+        return Promise.resolve();
+      }
+      return rm(hostDir, { recursive: true, force: true }).catch(() => undefined);
+    })
+  );
 
   return { inlineOutputs, outputRefs };
 }
@@ -228,17 +324,17 @@ async function getDatasetPaths(projectId: string): Promise<string[]> {
  * - /workspace/datasets/{datasetId}/{filename}
  * - /workspace/{filename}
  */
-async function copyDatasetsToWorkspace(projectId: string): Promise<void> {
+async function copyDatasetsToWorkspace(projectId: string, mode: DatasetSyncMode): Promise<void> {
   const { createDatasetRepository } = await import('../../repositories/datasetRepository.js');
   const { copyFile, unlink, stat, mkdir } = await import('fs/promises');
-  const { join } = await import('path');
 
   const datasetRepo = createDatasetRepository(env.datasetMetadataPath);
   const datasets = await datasetRepo.list();
   const projectDatasets = datasets.filter((d) => d.projectId === projectId);
 
-  const workspacePath = `${env.executionWorkspaceDir}/${projectId}`;
+  const workspacePath = join(env.executionWorkspaceDir, projectId);
   const datasetsPath = join(workspacePath, 'datasets');
+  const shouldOverwrite = shouldOverwriteDatasetWorkspace(mode);
 
   // Ensure datasets directory exists
   await mkdir(datasetsPath, { recursive: true });
@@ -265,11 +361,21 @@ async function copyDatasetsToWorkspace(projectId: string): Promise<void> {
       await stat(sourceFile);
 
       for (const destFile of destinations) {
-        // Remove existing file if it exists
-        try {
-          await unlink(destFile);
-        } catch {
-          // File doesn't exist, that's fine
+        if (!shouldOverwrite) {
+          try {
+            await stat(destFile);
+            // Preserve edited working copy in continue mode.
+            continue;
+          } catch {
+            // Destination missing; copy source below.
+          }
+        } else {
+          // Remove existing file if it exists before source refresh.
+          try {
+            await unlink(destFile);
+          } catch {
+            // File doesn't exist, that's fine
+          }
         }
 
         // Copy the file

@@ -40,10 +40,10 @@ describe('Badge', () => {
     expect(badge).toHaveClass('custom-badge');
   });
 
-  it('renders as a div element', () => {
+  it('renders as an inline span element', () => {
     render(<Badge data-testid="badge">Test</Badge>);
     const badge = screen.getByTestId('badge');
-    expect(badge.tagName).toBe('DIV');
+    expect(badge.tagName).toBe('SPAN');
   });
 
   it('has proper base styles', () => {

@@ -137,7 +137,6 @@ export function UploadArea() {
         project={activeProject}
         editable={stage === 'upload'}
         collapsed={stage !== 'upload'}
-        collapsedCenterLabel={stage === 'chat' ? 'Project Planning' : undefined}
         onBack={stage === 'chat' ? () => setStage('upload') : undefined}
         onUpdate={(updates) => {
           void updateProject(activeProject.id, updates);

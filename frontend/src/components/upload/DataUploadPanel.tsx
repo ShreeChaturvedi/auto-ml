@@ -29,8 +29,15 @@ const acceptedFileTypes = {
   'application/vnd.ms-excel': ['.xls'],
   // Context/documentation files (for RAG and business context)
   'application/pdf': ['.pdf'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
   'text/markdown': ['.md'],
-  'text/plain': ['.txt']
+  'text/plain': ['.txt', '.log'],
+  'text/html': ['.html', '.htm'],
+  'application/xml': ['.xml'],
+  'text/xml': ['.xml'],
+  'application/yaml': ['.yml', '.yaml'],
+  'text/yaml': ['.yml', '.yaml'],
+  'application/rtf': ['.rtf']
 };
 
 interface DataUploadPanelProps {

@@ -26,13 +26,14 @@ interface UserProfileProps {
 }
 
 export function UserProfile({ collapsed = false }: UserProfileProps) {
+  const DEV_BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const refreshToken = useAuthStore((state) => state.refreshToken);
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
-  const displayName = user?.name ?? 'Account';
-  const displayEmail = user?.email ?? 'Signed in';
+  const displayName = user?.name ?? (DEV_BYPASS_AUTH ? 'Dev Mode' : 'Account');
+  const displayEmail = user?.email ?? (DEV_BYPASS_AUTH ? 'Auth bypass active' : 'Signed in');
   const avatarUrl = undefined;
 
   // Get user initials for avatar fallback

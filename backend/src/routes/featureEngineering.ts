@@ -7,8 +7,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
-import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 import { sanitizeTableName } from '../services/datasetLoader.js';
+import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 
 const featureSpecSchema = z.object({
   id: z.string().optional(),

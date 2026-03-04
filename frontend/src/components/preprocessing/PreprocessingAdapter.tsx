@@ -88,6 +88,10 @@ export function createPreprocessingAdapter(
     onStreamError: (message: string) => {
       usePreprocessingStore.getState().markInterruptedSteps(message);
     },
+    onStop: (reason: string) => {
+      usePreprocessingStore.getState().markInterruptedSteps(reason);
+    },
+    preserveToolHistoryBetweenPrompts: true,
     toolRegistry,
 
     toolUiRegistry: {},

@@ -23,7 +23,7 @@ function ProgressiveMessageText({
   showStreamingCaret = true,
 }: ProgressiveMessageTextProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const { visibleText, visibleSegments, visibleCharCount, isCatchup, isFullyRevealed } = useProgressiveReveal({
+  const { visibleText, visibleSegments, isCatchup, isFullyRevealed } = useProgressiveReveal({
     text,
     isLive,
     animateOnMount,

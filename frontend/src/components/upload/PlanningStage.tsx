@@ -28,6 +28,7 @@ import {
   appendThinkingDelta,
   markThinkingMessageComplete
 } from '@/lib/llm/streamMessageUtils';
+import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
@@ -1122,11 +1123,13 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             }
 
             if (msg.type === 'assistant_text') {
+              const cleaned = sanitizeAssistantText(msg.content);
+              if (!cleaned) return null;
               return (
                 <div key={msg.id} className="text-sm text-foreground">
                   <ProgressiveMessageText
                     messageId={msg.id}
-                    text={msg.content}
+                    text={cleaned}
                     isLive={activeTextMessageId === msg.id}
                     mode="markdown"
                     className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert"

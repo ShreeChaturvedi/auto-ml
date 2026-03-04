@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProgressiveMessageText } from '../ProgressiveMessageText';
+import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
 vi.mock('@/components/llm/streamdown/StreamdownMessage', () => ({
   StreamdownMessage: ({
@@ -24,21 +25,11 @@ vi.mock('@/components/llm/streamdown/StreamdownMessage', () => ({
 
 describe('ProgressiveMessageText', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      return window.setTimeout(() => callback(performance.now()), 16);
-    });
-    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
-      window.clearTimeout(id);
-    });
+    setupRafAnimationClock();
   });
 
   afterEach(() => {
-    act(() => {
-      vi.runOnlyPendingTimers();
-    });
-    vi.useRealTimers();
-    vi.restoreAllMocks();
+    teardownRafAnimationClock();
   });
 
   it('reveals plain text progressively instead of all at once', () => {
@@ -133,5 +124,48 @@ describe('ProgressiveMessageText', () => {
 
     expect(screen.getByText('Hydrated full text')).toBeInTheDocument();
     expect(container.querySelectorAll('.llm-char-enter')).toHaveLength(0);
+  });
+
+  it('hides streaming caret when showStreamingCaret is false', () => {
+    render(
+      <ProgressiveMessageText
+        messageId="m-caret-off"
+        text="Caretless stream"
+        isLive
+        mode="markdown"
+        animateOnMount
+        showStreamingCaret={false}
+      />
+    );
+
+    expect(screen.queryByTestId('streamdown-caret')).not.toBeInTheDocument();
+  });
+
+  it('reveals full markdown immediately and disables animation in reduced-motion mode', () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    render(
+      <ProgressiveMessageText
+        messageId="m-reduced"
+        text="**Immediate** text"
+        isLive
+        mode="markdown"
+        animateOnMount
+      />
+    );
+
+    const streamdown = screen.getByTestId('streamdown-message');
+    expect(streamdown).toHaveTextContent('**Immediate** text');
+    expect(streamdown.getAttribute('data-animating')).toBe('false');
+    expect(screen.queryByTestId('streamdown-caret')).not.toBeInTheDocument();
   });
 });

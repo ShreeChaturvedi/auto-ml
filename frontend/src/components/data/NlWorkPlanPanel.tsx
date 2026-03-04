@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, ChevronUp, GitMerge, ListChecks, Table2, Wand2 } from 'lucide-react';
-import { useMemo, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useMemo, type ComponentType, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 import type { NlQueryExplanation } from '@/lib/api/query';
@@ -177,6 +177,8 @@ function NlWorkPlanPanel({
   onToggleExpanded,
   className
 }: NlWorkPlanPanelProps) {
+  const [visualExpanded, setVisualExpanded] = useState(false);
+  const expandFrameRef = useRef<number | null>(null);
   const isReview = phase === 'reviewing' && Boolean(explanation);
   const active = useMemo(() => getPrimaryNlWorkPhase(workPhases), [workPhases]);
   const { nonDebugValidationNotes, debugValidationNotes } = useMemo(
@@ -188,12 +190,38 @@ function NlWorkPlanPanel({
   const ambiguousJoin = Boolean(explanation?.joinPlan.some((join) => join.confidence < 0.6));
   const simplifiedIntent = explanation ? simplifyIntentSummary(explanation.intentSummary) : null;
 
+  useEffect(() => {
+    if (expandFrameRef.current !== null) {
+      window.cancelAnimationFrame(expandFrameRef.current);
+      expandFrameRef.current = null;
+    }
+
+    if (isExpanded) {
+      // Animate expand even on first mount by moving to expanded state on the next frame.
+      expandFrameRef.current = window.requestAnimationFrame(() => {
+        setVisualExpanded(true);
+        expandFrameRef.current = null;
+      });
+      return;
+    }
+
+    setVisualExpanded(false);
+  }, [isExpanded]);
+
+  useEffect(() => {
+    return () => {
+      if (expandFrameRef.current !== null) {
+        window.cancelAnimationFrame(expandFrameRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div
       className={cn(
         'overflow-hidden rounded-md border shadow-sm',
         tone.container,
-        'animate-in fade-in slide-in-from-bottom-1 duration-300',
+        'transition-colors duration-200',
         className
       )}
       data-testid="nl-work-plan-panel"
@@ -236,9 +264,18 @@ function NlWorkPlanPanel({
         </div>
       </div>
 
-      {isExpanded && (
-        <div className="px-3 pb-3">
-          <div className="max-h-[42vh] space-y-2 overflow-y-auto pr-1">
+      <div
+        className={cn(
+          'grid overflow-hidden transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+          visualExpanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+        )}
+        aria-hidden={!visualExpanded}
+      >
+        <div className="overflow-hidden">
+          <div className="px-3 pb-3">
+            <div className="max-h-[42vh] space-y-2 overflow-y-auto pr-1">
           {!isReview && (
             <div className="space-y-2 rounded-md border border-border/70 bg-background/55 p-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -338,9 +375,10 @@ function NlWorkPlanPanel({
               )}
             </div>
           )}
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

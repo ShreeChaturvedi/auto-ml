@@ -61,17 +61,29 @@ describe('preprocessing storage persistence helpers', () => {
     const parsed = parseStoredPreprocessingTabsState(JSON.stringify({
       activeTabId: 'proc-2',
       tabs: [
-        { id: 'proc-1', name: 'Processing 1', storageVersion: 0 },
-        { id: 'proc-2', name: 'Processing 2', storageVersion: 3 }
+        { id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null },
+        { id: 'proc-2', name: 'Processing 2', storageVersion: 3, notebookId: 'nb-2' }
       ]
     }));
 
     expect(parsed).toEqual({
       activeTabId: 'proc-2',
       tabs: [
-        { id: 'proc-1', name: 'Processing 1', storageVersion: 0 },
-        { id: 'proc-2', name: 'Processing 2', storageVersion: 3 }
+        { id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null },
+        { id: 'proc-2', name: 'Processing 2', storageVersion: 3, notebookId: 'nb-2' }
       ]
+    });
+  });
+
+  it('supports old tabs metadata payloads without notebook id', () => {
+    const parsed = parseStoredPreprocessingTabsState(JSON.stringify({
+      activeTabId: 'proc-1',
+      tabs: [{ id: 'proc-1', name: 'Processing 1', storageVersion: 0 }]
+    }));
+
+    expect(parsed).toEqual({
+      activeTabId: 'proc-1',
+      tabs: [{ id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null }]
     });
   });
 

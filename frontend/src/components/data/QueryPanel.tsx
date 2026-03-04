@@ -881,7 +881,13 @@ export function QueryPanel({
         <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
           {mode === 'sql' ? (
             // SQL Mode: Monaco Editor with syntax highlighting
-            <div className="relative flex-1 border rounded-md overflow-hidden bg-background">
+            <div
+              className={cn(
+                'relative flex-1 rounded-md overflow-hidden bg-background',
+                'border border-input transition-colors duration-200',
+                'focus-within:border-ring'
+              )}
+            >
               <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">

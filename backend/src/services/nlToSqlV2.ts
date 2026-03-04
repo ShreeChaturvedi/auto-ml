@@ -545,6 +545,19 @@ function deriveReliabilityTier(
   return 'low';
 }
 
+function resolveWarnConfidenceThreshold(): number {
+  return Number.isFinite(env.nl2sqlWarnConfidenceThreshold)
+    ? env.nl2sqlWarnConfidenceThreshold
+    : 0.72;
+}
+
+function buildCaseNormalizationValidationNote(replacements: string[]): string | null {
+  if (replacements.length === 0) {
+    return null;
+  }
+  return `Normalized case-sensitive identifiers with double quotes: ${replacements.map((id) => quoteIdentifier(id)).join(', ')}.`;
+}
+
 function normalizeColumnName(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -975,6 +988,20 @@ function formatColumnContextForPrompt(column: SchemaColumnContext): string {
   return `${column.name}:${column.dtype} (must reference as ${quoteIdentifier(column.name)})`;
 }
 
+function formatTableContextForPrompt(
+  tables: SchemaTableContext[],
+  includeRowCount: boolean
+): string {
+  return tables
+    .map((table) => {
+      const prefix = includeRowCount
+        ? `${table.tableName} (${table.rowCount} rows)`
+        : table.tableName;
+      return `- ${prefix}: ${table.columns.map((column) => formatColumnContextForPrompt(column)).join(', ')}`;
+    })
+    .join('\n');
+}
+
 function buildCaseSensitiveIdentifierHint(tables: SchemaTableContext[]): string {
   const identifiers = Array.from(buildCaseSensitiveIdentifierLookup(tables).values())
     .map((identifier) => quoteIdentifier(identifier));
@@ -1035,9 +1062,7 @@ function buildPass1Prompt(params: {
   tables: SchemaTableContext[];
   joinCandidates: JoinCandidate[];
 }): string {
-  const tableSummary = params.tables
-    .map((table) => `- ${table.tableName} (${table.rowCount} rows): ${table.columns.map((column) => formatColumnContextForPrompt(column)).join(', ')}`)
-    .join('\n');
+  const tableSummary = formatTableContextForPrompt(params.tables, true);
 
   const joinSummary = params.joinCandidates.length > 0
     ? params.joinCandidates
@@ -1070,9 +1095,7 @@ function buildPass2Prompt(params: {
   tables: SchemaTableContext[];
   planning: z.infer<typeof PASS1_SCHEMA>;
 }): string {
-  const tableSummary = params.tables
-    .map((table) => `- ${table.tableName}: ${table.columns.map((column) => formatColumnContextForPrompt(column)).join(', ')}`)
-    .join('\n');
+  const tableSummary = formatTableContextForPrompt(params.tables, false);
 
   return [
     'Generate final SQL and explanation JSON for this analytics query.',
@@ -1098,9 +1121,7 @@ function buildPass2FallbackPrompt(params: {
   tables: SchemaTableContext[];
   planning: z.infer<typeof PASS1_SCHEMA>;
 }): string {
-  const compactSchema = params.tables
-    .map((table) => `- ${table.tableName}: ${table.columns.map((column) => formatColumnContextForPrompt(column)).join(', ')}`)
-    .join('\n');
+  const compactSchema = formatTableContextForPrompt(params.tables, false);
 
   return [
     'The previous SQL generation attempt timed out. Return a compact JSON response.',
@@ -1326,9 +1347,7 @@ function buildRepairPrompt(params: {
   defaultTableName: string | null;
   tables: SchemaTableContext[];
 }): string {
-  const tableSummary = params.tables
-    .map((table) => `- ${table.tableName}: ${table.columns.map((column) => formatColumnContextForPrompt(column)).join(', ')}`)
-    .join('\n');
+  const tableSummary = formatTableContextForPrompt(params.tables, false);
 
   return [
     'The SQL below failed execution. Repair it using ONLY valid table/column names from schema.',
@@ -1384,9 +1403,7 @@ function mergeExplanation(
     confidence,
     assumptions,
     joinPlan,
-    Number.isFinite(env.nl2sqlWarnConfidenceThreshold)
-      ? env.nl2sqlWarnConfidenceThreshold
-      : 0.72
+    resolveWarnConfidenceThreshold()
   );
   const reliabilityTier = deriveReliabilityTier(confidenceMode, warningLevel);
 
@@ -1461,9 +1478,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         maxRows: env.sqlMaxRows
       });
       const caseNormalized = normalizeCaseSensitiveIdentifiers(validation.normalizedSql, tables);
-      const caseNormalizationNote = caseNormalized.replacements.length > 0
-        ? `Normalized case-sensitive identifiers with double quotes: ${caseNormalized.replacements.map((id) => quoteIdentifier(id)).join(', ')}.`
-        : null;
+      const caseNormalizationNote = buildCaseNormalizationValidationNote(caseNormalized.replacements);
 
       const selectedTables = priorExplanation?.selectedTables.length
         ? priorExplanation.selectedTables
@@ -1486,9 +1501,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         confidence,
         assumptions,
         joinPlan,
-        Number.isFinite(env.nl2sqlWarnConfidenceThreshold)
-          ? env.nl2sqlWarnConfidenceThreshold
-          : 0.72
+        resolveWarnConfidenceThreshold()
       );
       const confidenceMode: NlConfidenceMode = 'repair';
 
@@ -1789,10 +1802,9 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
           ? `LIMIT was automatically appended (${env.sqlDefaultLimit}) for read-only safety.`
           : 'SQL passed read-only validation checks.'
       ];
-      if (caseNormalized.replacements.length > 0) {
-        validateNotes.push(
-          `Normalized case-sensitive identifiers with double quotes: ${caseNormalized.replacements.map((id) => quoteIdentifier(id)).join(', ')}.`
-        );
+      const caseNormalizationNote = buildCaseNormalizationValidationNote(caseNormalized.replacements);
+      if (caseNormalizationNote) {
+        validateNotes.push(caseNormalizationNote);
       }
 
       const explanation = mergeExplanation(planning, execution, validateNotes, confidenceMode);

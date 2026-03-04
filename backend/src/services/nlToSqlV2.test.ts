@@ -629,7 +629,7 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.9
       })
     ]);
-    const events: Array<{ phaseId: string; status: string }> = [];
+    const events: Array<{ phaseId: string; status: string; summary: string; timestamp: string }> = [];
 
     const service = createNl2SqlService({
       datasetRepository: repo,
@@ -640,11 +640,16 @@ describe('nlToSqlV2 service', () => {
       projectId: 'project-1',
       nlQuery: 'list users',
       onProgress: (event) => {
-        events.push({ phaseId: event.phaseId, status: event.status });
+        events.push({
+          phaseId: event.phaseId,
+          status: event.status,
+          summary: event.summary,
+          timestamp: event.timestamp
+        });
       }
     });
 
-    expect(events).toEqual([
+    expect(events.map((event) => ({ phaseId: event.phaseId, status: event.status }))).toEqual([
       { phaseId: 'schema_context', status: 'started' },
       { phaseId: 'schema_context', status: 'completed' },
       { phaseId: 'planning', status: 'started' },
@@ -655,6 +660,11 @@ describe('nlToSqlV2 service', () => {
       { phaseId: 'validation', status: 'started' },
       { phaseId: 'validation', status: 'completed' }
     ]);
+
+    for (const event of events) {
+      expect(event.summary.length).toBeGreaterThan(0);
+      expect(Number.isNaN(Date.parse(event.timestamp))).toBe(false);
+    }
   });
 
   it('emits failure and recovery progress events when deterministic fallback is used', async () => {
@@ -729,5 +739,46 @@ describe('nlToSqlV2 service', () => {
     expect(result.explanation.reliabilityTier).toBe('medium');
     expect(progressEvents).toContainEqual({ phaseId: 'repair', status: 'started' });
     expect(progressEvents).toContainEqual({ phaseId: 'repair', status: 'completed' });
+  });
+
+  it('emits failed repair progress when repair generation errors', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const client = createClientFromResponses([
+      new Error('repair provider unavailable')
+    ]);
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    const progressEvents: Array<{ phaseId: string; status: string; summary: string }> = [];
+
+    await expect(
+      service.repairSqlFromExecutionErrorV2({
+        projectId: 'project-1',
+        nlQuery: 'show users',
+        failedSql: 'SELECT foo FROM users',
+        executionError: 'column \"foo\" does not exist',
+        onProgress: (event) => {
+          progressEvents.push({
+            phaseId: event.phaseId,
+            status: event.status,
+            summary: event.summary
+          });
+        }
+      })
+    ).rejects.toThrow('repair provider unavailable');
+
+    expect(progressEvents).toContainEqual({
+      phaseId: 'repair',
+      status: 'started',
+      summary: 'Repairing generated SQL using database execution feedback.'
+    });
+    expect(progressEvents.some((event) =>
+      event.phaseId === 'repair'
+      && event.status === 'failed'
+      && event.summary.includes('repair provider unavailable')
+    )).toBe(true);
   });
 });

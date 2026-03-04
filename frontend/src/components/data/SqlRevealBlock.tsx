@@ -2,36 +2,23 @@
  * SqlRevealBlock
  *
  * Displays generated SQL in two sequential phases:
- *
- * Revealing phase
- * ───────────────
- * A <pre> element renders syntax-highlighted SQL tokens one-by-one as the
- * `visibleTokenCount` advances (driven by the useTypewriter hook in
- * NlQueryWorkflow).  Each non-whitespace token enters with the
- * `.sql-word-enter` CSS animation — a subtle brightness flash + fade-in
- * inspired by the animated-placeholder character entrance.
- *
- * Reviewing phase (isRevealComplete = true)
- * ──────────────────────────────────────────
- * The <pre> is swapped for a scrollable <textarea> that the user can freely
- * edit before approving.  Visual affordances indicate the SQL is editable:
- *   • A thin primary-tinted border + faint primary background
- *   • A "Reset" badge appears bottom-right when the content differs from the
- *     server-generated original
- *
- * Rationale
- * ─────────
- * When a non-empty `rationale` string is supplied the component renders a
- * short explanatory paragraph below the SQL area.  It appears with a gentle
- * fade-in + upward-slide entrance animation so it doesn't distract from the
- * SQL reveal but is easy to read once the typing is done.
+ * - reveal phase: syntax-highlighted token stream in a <pre>
+ * - review phase: Monaco SQL editor + approval controls
  */
 
-import { useRef, useEffect, useMemo } from 'react';
+import {
+  useRef,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { cn } from '@/lib/utils';
-import { Check, X, RotateCcw } from 'lucide-react';
-
-// ─── SQL tokenizer ────────────────────────────────────────────────────────────
+import { Check, X, RotateCcw, AlertTriangle } from 'lucide-react';
+import { useTheme } from '@/components/theme-provider';
+import Editor from '@monaco-editor/react';
+import type { Monaco } from '@monaco-editor/react';
+import type { editor as MonacoEditorType } from 'monaco-editor';
+import type { ApproveThemeClasses } from './NlQueryWorkflow';
 
 export type SqlTokenType =
   | 'keyword'
@@ -69,20 +56,11 @@ const SQL_FUNCTIONS = new Set([
   'ROUND', 'CEIL', 'FLOOR', 'ABS', 'NOW', 'CURRENT_TIMESTAMP',
 ]);
 
-/**
- * Split a SQL string into a flat list of tokens suitable for syntax
- * highlighting and word-by-word reveal animation.
- *
- * The tokenizer is intentionally simple — it covers the common Postgres
- * subset used by the NL query generator.  It will never fail or throw;
- * unrecognised characters are emitted as `'identifier'` tokens.
- */
 export function tokenizeSql(sql: string): SqlToken[] {
   const tokens: SqlToken[] = [];
   let i = 0;
 
   while (i < sql.length) {
-    // ── Whitespace ──────────────────────────────────────────────────────
     if (/\s/.test(sql[i])) {
       let j = i;
       while (j < sql.length && /\s/.test(sql[j])) j++;
@@ -91,7 +69,6 @@ export function tokenizeSql(sql: string): SqlToken[] {
       continue;
     }
 
-    // ── Single-line comment (-- ...) ────────────────────────────────────
     if (sql[i] === '-' && i + 1 < sql.length && sql[i + 1] === '-') {
       let j = i + 2;
       while (j < sql.length && sql[j] !== '\n') j++;
@@ -100,21 +77,42 @@ export function tokenizeSql(sql: string): SqlToken[] {
       continue;
     }
 
-    // ── String literal ('...' or "...") ─────────────────────────────────
-    if (sql[i] === "'" || sql[i] === '"') {
-      const quote = sql[i];
+    if (sql[i] === '\'') {
       let j = i + 1;
-      while (j < sql.length && sql[j] !== quote) {
-        if (sql[j] === '\\') j++; // skip escaped char
-        j++;
+      while (j < sql.length) {
+        if (sql[j] === '\'' && sql[j + 1] === '\'') {
+          j += 2;
+          continue;
+        }
+        if (sql[j] === '\'') {
+          j += 1;
+          break;
+        }
+        j += 1;
       }
-      if (j < sql.length) j++; // closing quote
       tokens.push({ text: sql.slice(i, j), type: 'string' });
       i = j;
       continue;
     }
 
-    // ── Number ──────────────────────────────────────────────────────────
+    if (sql[i] === '"') {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === '"' && sql[j + 1] === '"') {
+          j += 2;
+          continue;
+        }
+        if (sql[j] === '"') {
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      tokens.push({ text: sql.slice(i, j), type: 'identifier' });
+      i = j;
+      continue;
+    }
+
     if (/\d/.test(sql[i]) || (sql[i] === '.' && i + 1 < sql.length && /\d/.test(sql[i + 1]))) {
       let j = i;
       while (j < sql.length && /[\d.]/.test(sql[j])) j++;
@@ -123,7 +121,6 @@ export function tokenizeSql(sql: string): SqlToken[] {
       continue;
     }
 
-    // ── Operator (=, <, >, !=, <=, >=, <>, ||, +, -, *, /, %) ─────────
     if (/[=<>!+\-*/%|]/.test(sql[i])) {
       let j = i + 1;
       if (j < sql.length && /[=<>|]/.test(sql[j])) j++;
@@ -132,14 +129,12 @@ export function tokenizeSql(sql: string): SqlToken[] {
       continue;
     }
 
-    // ── Punctuation (parens, commas, semicolons, dots) ──────────────────
     if (/[(),;.]/.test(sql[i])) {
       tokens.push({ text: sql[i], type: 'punctuation' });
       i++;
       continue;
     }
 
-    // ── Word (keyword, function, or identifier) ─────────────────────────
     if (/[a-zA-Z_]/.test(sql[i])) {
       let j = i;
       while (j < sql.length && /[a-zA-Z0-9_]/.test(sql[j])) j++;
@@ -156,7 +151,6 @@ export function tokenizeSql(sql: string): SqlToken[] {
       continue;
     }
 
-    // ── Fallback (backticks, special chars, etc.) ───────────────────────
     tokens.push({ text: sql[i], type: 'identifier' });
     i++;
   }
@@ -164,53 +158,50 @@ export function tokenizeSql(sql: string): SqlToken[] {
   return tokens;
 }
 
-// ─── Token → CSS class mapping ────────────────────────────────────────────────
-
 function tokenClassName(type: SqlTokenType): string {
   switch (type) {
-    case 'keyword':     return 'sql-tk-kw';
-    case 'function':    return 'sql-tk-fn';
-    case 'string':      return 'sql-tk-str';
-    case 'number':      return 'sql-tk-num';
-    case 'operator':    return 'sql-tk-op';
+    case 'keyword': return 'sql-tk-kw';
+    case 'function': return 'sql-tk-fn';
+    case 'string': return 'sql-tk-str';
+    case 'number': return 'sql-tk-num';
+    case 'operator': return 'sql-tk-op';
     case 'punctuation': return 'sql-tk-punc';
-    case 'identifier':  return 'sql-tk-id';
-    case 'whitespace':  return '';
-    default:            return '';
+    case 'identifier': return 'sql-tk-id';
+    case 'whitespace': return '';
+    default: return '';
   }
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 interface SqlRevealBlockProps {
-  /** Full generated SQL string (used for tokenization and as fallback). */
   sql: string;
-  /** Optional AI rationale shown below the SQL block once reveal is complete. */
-  rationale?: string;
-  /** True while the typewriter animation is in progress. */
+  queryExecutionError?: string | null;
   isRevealing: boolean;
-  /** Number of tokens currently visible during the typewriter reveal. */
   visibleTokenCount: number;
-  /** True once the typewriter has finished and the full SQL is shown. */
   isRevealComplete: boolean;
-  /** Current value of the editable textarea (may diverge from `sql` after user
-   *  edits). */
   editedSql: string;
-  /** Callback fired when the user edits the SQL textarea. */
   onSqlChange: (value: string) => void;
-  /** Original server-generated SQL, used to determine if the user has made
-   *  changes and to allow them to reset. */
   originalSql: string;
-  /** Called when the user approves the (possibly edited) SQL. */
   onApprove?: () => void;
-  /** Called when the user rejects / dismisses the generated SQL. */
   onReject?: () => void;
+  approveThemeClasses?: ApproveThemeClasses;
   className?: string;
+}
+
+function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
+  if (theme !== 'system') {
+    return theme;
+  }
+
+  if (typeof window === 'undefined') {
+    return 'light';
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
 function SqlRevealBlock({
   sql,
-  rationale,
+  queryExecutionError,
   isRevealing,
   visibleTokenCount,
   isRevealComplete,
@@ -219,45 +210,102 @@ function SqlRevealBlock({
   originalSql,
   onApprove,
   onReject,
+  approveThemeClasses,
   className,
 }: SqlRevealBlockProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
+  const monacoEditorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
+  const monacoApiRef = useRef<Monaco | null>(null);
   const isEdited = editedSql !== originalSql;
+  const tokens = useMemo(() => tokenizeSql(sql), [sql]);
+  const { theme: appTheme } = useTheme();
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveEditorTheme(appTheme));
+  const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
 
-  // Focus the textarea as soon as it mounts (i.e. when review mode begins).
   useEffect(() => {
-    if (isRevealComplete && textareaRef.current) {
-      textareaRef.current.focus();
-      // Place cursor at the end of the content.
-      const len = textareaRef.current.value.length;
-      textareaRef.current.setSelectionRange(len, len);
+    setResolvedTheme(resolveEditorTheme(appTheme));
+
+    if (appTheme !== 'system') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => {
+      setResolvedTheme(e.matches ? 'dark' : 'light');
+    };
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, [appTheme]);
+
+  useEffect(() => {
+    if (!monacoApiRef.current) {
+      return;
+    }
+    monacoApiRef.current.editor.setTheme(monacoTheme);
+  }, [monacoTheme]);
+
+  useEffect(() => {
+    if (isRevealComplete && monacoEditorRef.current) {
+      monacoEditorRef.current.focus();
+      const model = monacoEditorRef.current.getModel();
+      const lineCount = model?.getLineCount() ?? 1;
+      const col = model?.getLineMaxColumn(lineCount) ?? 1;
+      monacoEditorRef.current.setPosition({ lineNumber: lineCount, column: col });
+      monacoEditorRef.current.revealLine(lineCount);
     }
   }, [isRevealComplete]);
 
-  // Tokenize the SQL once (memoized on the sql string).
-  const tokens = useMemo(() => tokenizeSql(sql), [sql]);
-
   const sharedClassName = cn(
-    'w-full min-h-[8rem] resize-none rounded-md border p-3 font-mono text-sm leading-relaxed',
+    'w-full min-h-[8rem] rounded-md border p-3 font-mono text-sm leading-relaxed',
     'focus-visible:outline-none',
   );
 
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
+    <div className={cn('flex flex-col gap-2', className)}>
       <div className="relative">
-        {!isRevealComplete ? (
-          /*
-           * Typewriter pre — syntax highlighted, word-by-word reveal
-           * Each token enters with the `sql-word-enter` animation:
-           * a brightness flash + fade-in that settles to the token's
-           * natural syntax color.
-           */
+        {isRevealComplete ? (
+          <div
+            className={cn(
+              'w-full min-h-[8rem] rounded-md border border-primary/30 bg-primary/5 overflow-hidden',
+              'transition-colors duration-200',
+            )}
+          >
+            <Editor
+              height="170px"
+              language="sql"
+              value={editedSql}
+              onChange={(value) => onSqlChange(value || '')}
+              onMount={(editorInstance, monaco: Monaco) => {
+                monacoEditorRef.current = editorInstance;
+                monacoApiRef.current = monaco;
+                monaco.editor.setTheme(monacoTheme);
+              }}
+              theme={monacoTheme}
+              options={{
+                readOnly: false,
+                domReadOnly: false,
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                lineNumbersMinChars: 2,
+                glyphMargin: false,
+                folding: false,
+                lineDecorationsWidth: 8,
+                roundedSelection: false,
+                scrollBeyondLastLine: false,
+                fontSize: 13,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                wordWrap: 'on',
+                automaticLayout: true,
+                padding: { top: 8, bottom: 8 },
+                cursorBlinking: 'smooth',
+                cursorSmoothCaretAnimation: 'on',
+              }}
+            />
+          </div>
+        ) : sql ? (
           <pre
             className={cn(
               sharedClassName,
-              'overflow-x-auto whitespace-pre-wrap break-words',
-              'border-border bg-muted/30',
+              'overflow-x-auto whitespace-pre-wrap break-words border-border bg-background',
               isRevealing && 'nl-typewriter-cursor',
             )}
             aria-live="polite"
@@ -268,8 +316,6 @@ function SqlRevealBlock({
                 key={i}
                 className={cn(
                   tokenClassName(token.type),
-                  // Only animate non-whitespace tokens so spaces/newlines
-                  // don't get an awkward brightness flash.
                   token.type !== 'whitespace' && 'sql-word-enter',
                 )}
               >
@@ -278,27 +324,17 @@ function SqlRevealBlock({
             ))}
           </pre>
         ) : (
-          /*
-           * Editable textarea
-           * Matches the <pre> dimensions visually so the swap is seamless.
-           * A primary-tinted border + background signals editability.
-           */
-          <textarea
-            ref={textareaRef}
-            value={editedSql}
-            onChange={(e) => onSqlChange(e.target.value)}
-            spellCheck={false}
-            aria-label="Generated SQL - editable before approval"
+          <pre
             className={cn(
               sharedClassName,
-              'border-primary/30 bg-primary/5',
-              'focus-visible:ring-1 focus-visible:ring-ring',
-              'transition-colors duration-200',
+              'border-border bg-muted/30 text-muted-foreground',
             )}
-          />
+            aria-label="Generating SQL..."
+          >
+            <span className="shimmer-text inline-block">Generating SQL...</span>
+          </pre>
         )}
 
-        {/* Inline action bar — sits below the textarea, only in review mode */}
         {isRevealComplete && (onApprove || onReject || isEdited) && (
           <div
             className={cn(
@@ -342,7 +378,6 @@ function SqlRevealBlock({
               </button>
             )}
 
-            {/* Spacer pushes Approve to the right */}
             <div className="flex-1" />
 
             {onApprove && (
@@ -351,10 +386,11 @@ function SqlRevealBlock({
                 onClick={onApprove}
                 className={cn(
                   'inline-flex items-center gap-1 rounded-md px-3 py-1',
-                  'text-xs font-medium',
-                  'border border-primary/40 bg-primary/10 text-primary',
-                  'hover:bg-primary/20 hover:border-primary/60',
+                  'text-xs font-medium border border-border/70 bg-background/80 text-muted-foreground',
                   'transition-colors duration-150',
+                  approveThemeClasses?.hoverText,
+                  approveThemeClasses?.hoverBorder,
+                  approveThemeClasses?.hoverBg,
                 )}
                 aria-label="Approve and run this SQL"
               >
@@ -366,33 +402,22 @@ function SqlRevealBlock({
         )}
       </div>
 
-      {/* Rationale paragraph — animated entrance after reveal completes */}
-      {isRevealComplete && rationale && (
-        <p
+      {isRevealComplete && queryExecutionError && (
+        <div
           className={cn(
-            'text-xs text-muted-foreground',
-            // Entrance animation: fade-in + slide up from 4 px below.
-            'animate-in fade-in slide-in-from-bottom-1 duration-300',
+            'rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs',
+            'text-foreground',
+            'animate-in fade-in slide-in-from-bottom-1 duration-300'
           )}
-          style={{ animationDelay: '400ms', animationFillMode: 'both' }}
+          style={{ animationDelay: '180ms', animationFillMode: 'both' }}
         >
-          {rationale}
-        </p>
-      )}
-
-      {/* Placeholder shown while the block is first entering the DOM but the
-          typewriter hasn't started yet (extremely brief; avoids a flash of
-          empty space). */}
-      {!isRevealing && !isRevealComplete && !sql && (
-        <pre
-          className={cn(
-            sharedClassName,
-            'border-border bg-muted/30 text-muted-foreground',
-          )}
-          aria-label="Generating SQL..."
-        >
-          <span className="shimmer-text inline-block">Generating SQL...</span>
-        </pre>
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
+            <p className="leading-relaxed">
+              <span className="font-medium">Initial execution failed:</span> {queryExecutionError}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

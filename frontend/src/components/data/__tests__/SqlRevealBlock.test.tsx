@@ -1,14 +1,34 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SqlRevealBlock, tokenizeSql } from '../SqlRevealBlock';
 
+vi.mock('@/components/theme-provider', () => ({
+  useTheme: () => ({
+    theme: 'light'
+  })
+}));
+
+vi.mock('@monaco-editor/react', () => ({
+  default: ({
+    value,
+    onChange
+  }: {
+    value: string;
+    onChange?: (value: string) => void;
+  }) => (
+    <textarea
+      data-testid="mock-monaco-editor"
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
+    />
+  )
+}));
+
 const SAMPLE_SQL = 'SELECT id, name FROM users WHERE active = true;';
-const SAMPLE_RATIONALE = 'Fetches all active users with their identifiers.';
 
 function buildProps(overrides: Partial<Parameters<typeof SqlRevealBlock>[0]> = {}) {
   return {
     sql: SAMPLE_SQL,
-    rationale: undefined,
     isRevealing: false,
     visibleTokenCount: 0,
     isRevealComplete: false,
@@ -20,6 +40,20 @@ function buildProps(overrides: Partial<Parameters<typeof SqlRevealBlock>[0]> = {
 }
 
 describe('SqlRevealBlock', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  });
+
   describe('tokenization + syntax highlighting', () => {
     it('classifies common SQL token types', () => {
       const tokens = tokenizeSql("SELECT COUNT(id), 'x' FROM users WHERE score >= 10;");
@@ -58,6 +92,35 @@ describe('SqlRevealBlock', () => {
   });
 
   describe('typewriter (revealing) phase', () => {
+    it('uses an opaque reveal surface with no blur overlay classes', () => {
+      const { container } = render(
+        <SqlRevealBlock
+          {...buildProps({
+            isRevealing: true,
+            visibleTokenCount: 6,
+            isRevealComplete: false,
+          })}
+        />
+      );
+      const pre = container.querySelector('pre');
+      expect(pre).toBeInTheDocument();
+      expect(pre).not.toHaveClass('backdrop-blur-[1px]');
+      expect(pre).not.toHaveClass('bg-background/96');
+    });
+
+    it('does not mount Monaco editor during reveal phase', () => {
+      render(
+        <SqlRevealBlock
+          {...buildProps({
+            isRevealing: true,
+            visibleTokenCount: 3,
+            isRevealComplete: false,
+          })}
+        />
+      );
+      expect(screen.queryByTestId('mock-monaco-editor')).not.toBeInTheDocument();
+    });
+
     it('renders a <pre> element while revealing', () => {
       const { container } = render(
         <SqlRevealBlock
@@ -115,7 +178,7 @@ describe('SqlRevealBlock', () => {
   });
 
   describe('review (editing) phase', () => {
-    it('renders a textarea when reveal is complete', () => {
+    it('renders Monaco editor when reveal is complete', async () => {
       render(
         <SqlRevealBlock
           {...buildProps({
@@ -125,7 +188,9 @@ describe('SqlRevealBlock', () => {
           })}
         />
       );
-      expect(screen.getByRole('textbox')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-monaco-editor')).toBeInTheDocument();
+      });
     });
 
     it('does NOT render a <pre> in review phase', () => {
@@ -141,7 +206,7 @@ describe('SqlRevealBlock', () => {
       expect(container.querySelector('pre')).not.toBeInTheDocument();
     });
 
-    it('textarea shows the editedSql value', () => {
+    it('editor shows the editedSql value', async () => {
       render(
         <SqlRevealBlock
           {...buildProps({
@@ -150,18 +215,20 @@ describe('SqlRevealBlock', () => {
           })}
         />
       );
-      expect(screen.getByRole('textbox')).toHaveValue('SELECT * FROM orders;');
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-monaco-editor')).toHaveValue('SELECT * FROM orders;');
+      });
     });
 
-    it('calls onSqlChange when the textarea content changes', () => {
+    it('calls onSqlChange when the editor content changes', async () => {
       const onSqlChange = vi.fn();
       render(
         <SqlRevealBlock
           {...buildProps({ isRevealComplete: true, onSqlChange })}
         />
       );
-      const textarea = screen.getByRole('textbox');
-      fireEvent.change(textarea, { target: { value: 'SELECT 1;' } });
+      const editor = await screen.findByTestId('mock-monaco-editor');
+      fireEvent.change(editor, { target: { value: 'SELECT 1;' } });
       expect(onSqlChange).toHaveBeenCalledWith('SELECT 1;');
     });
 
@@ -208,40 +275,19 @@ describe('SqlRevealBlock', () => {
     });
   });
 
-  describe('rationale paragraph', () => {
-    it('shows rationale text once reveal is complete', () => {
+  describe('initial execution error', () => {
+    it('shows initial execution error in review phase', () => {
       render(
         <SqlRevealBlock
           {...buildProps({
             isRevealComplete: true,
-            rationale: SAMPLE_RATIONALE,
+            queryExecutionError: 'relation \"usersx\" does not exist',
           })}
         />
       );
-      expect(screen.getByText(SAMPLE_RATIONALE)).toBeInTheDocument();
-    });
 
-    it('does NOT show rationale while still revealing', () => {
-      render(
-        <SqlRevealBlock
-          {...buildProps({
-            isRevealing: true,
-            visibleTokenCount: 1,
-            isRevealComplete: false,
-            rationale: SAMPLE_RATIONALE,
-          })}
-        />
-      );
-      expect(screen.queryByText(SAMPLE_RATIONALE)).not.toBeInTheDocument();
-    });
-
-    it('does NOT show rationale when undefined', () => {
-      const { container } = render(
-        <SqlRevealBlock
-          {...buildProps({ isRevealComplete: true, rationale: undefined })}
-        />
-      );
-      expect(container.querySelector('p')).not.toBeInTheDocument();
+      expect(screen.getByText(/initial execution failed/i)).toBeInTheDocument();
+      expect(screen.getByText(/usersx/)).toBeInTheDocument();
     });
   });
 });

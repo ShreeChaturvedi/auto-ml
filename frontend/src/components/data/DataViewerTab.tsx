@@ -19,9 +19,9 @@ import { DocumentViewer } from './DocumentViewer';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ApiError } from '@/lib/api/client';
-import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
+import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
-import type { NlGenerationResult } from '@/types/nlQuery';
+import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
 import { extractColumnTypesFromQuery } from './sqlColumnTypes';
 import { cn } from '@/lib/utils';
@@ -108,6 +108,13 @@ export function DataViewerTab() {
     () => allArtifacts.filter((artifact) => artifact.projectId === projectId),
     [allArtifacts, projectId]
   );
+
+  const activeFile = useMemo(
+    () => (fileTabType === 'file' ? files.find((f) => f.id === activeFileTabId) ?? null : null),
+    [fileTabType, files, activeFileTabId]
+  );
+  const isPdfActive = activeFile?.type === 'pdf';
+  const queryPanelTransitionMs = isPdfActive ? 0 : 300;
 
   // Hydrate data from backend on mount
   useEffect(() => {
@@ -203,21 +210,58 @@ export function DataViewerTab() {
    * artifact — that only happens once the user approves in phase 2.
    */
   const handleNlGenerate = useCallback(
-    async (query: string): Promise<NlGenerationResult> => {
+    async (
+      query: string,
+      onStreamEvent?: (event: NlQueryStreamEvent) => void,
+      signal?: AbortSignal
+    ): Promise<NlGenerationResult> => {
       if (!activeProject) throw new Error('No active project');
 
-      const response = await executeNlQuery({
+      const requestPayload = {
         projectId: activeProject.id,
         query,
         tableName: tableNames[0]
-      });
-      const nl = response.nl;
+      };
+
+      let nl: Awaited<ReturnType<typeof executeNlQuery>>['nl'];
+      if (onStreamEvent) {
+        let streamedNl: Awaited<ReturnType<typeof executeNlQuery>>['nl'] | null = null;
+        let streamFailure: string | null = null;
+        await streamNlQuery(
+          requestPayload,
+          (event) => {
+            onStreamEvent(event);
+            if (event.type === 'result') {
+              streamedNl = event.nl;
+            } else if (event.type === 'phase_failed' && event.phaseId === 'done') {
+              streamFailure = event.summary;
+            }
+          },
+          signal
+        );
+
+        if (!streamedNl) {
+          throw new Error(streamFailure ?? 'NL stream completed without a final result payload.');
+        }
+        nl = streamedNl;
+      } else {
+        const response = await executeNlQuery(requestPayload);
+        nl = response.nl;
+      }
+
+      if (nl.queryExecutionError) {
+        toast.warning('Generated SQL needs review', {
+          description: `Initial execution hit a database error: ${nl.queryExecutionError}`
+        });
+      }
 
       return {
         sql: nl.sql,
         rationale: nl.rationale,
+        explanation: nl.explanation,
         queryId: nl.queryId,
         cached: nl.cached,
+        queryExecutionError: nl.queryExecutionError ?? null,
         queryResult: nl.query
       };
     },
@@ -242,13 +286,17 @@ export function DataViewerTab() {
       try {
         let queryResult = result.queryResult;
 
-        // Re-execute only when the user actually modified the generated SQL.
-        if (approvedSql.trim() !== result.sql.trim()) {
+        // Re-execute when SQL was edited OR no initial query payload exists.
+        if (!queryResult || approvedSql.trim() !== result.sql.trim()) {
           const freshResult = await executeSqlQuery({
             projectId: activeProject.id,
             sql: approvedSql
           });
           queryResult = freshResult.query;
+        }
+
+        if (!queryResult) {
+          throw new Error('Generated SQL has no executable result payload. Please retry.');
         }
 
         const dataPreview: DataPreview = {
@@ -267,7 +315,8 @@ export function DataViewerTab() {
           executionMs: queryResult.executionMs,
           cacheTimestamp: queryResult.cacheTimestamp,
           generatedSql: result.sql,
-          rationale: result.rationale
+          rationale: result.rationale,
+          explanation: result.explanation
         });
 
         setActiveFileTab(artifactId, 'artifact');
@@ -290,11 +339,18 @@ export function DataViewerTab() {
         return;
       }
 
+      if (queryPanelTransitionMs === 0) {
+        setQueryPanelIsExpanding(false);
+        setQueryPanelIsTransitioning(false);
+        setQueryPanelCollapsed(nextCollapsed);
+        return;
+      }
+
       setQueryPanelIsTransitioning(true);
       setQueryPanelIsExpanding(!nextCollapsed);
       setQueryPanelCollapsed(nextCollapsed);
     },
-    [queryPanelCollapsed, queryPanelIsTransitioning]
+    [queryPanelCollapsed, queryPanelIsTransitioning, queryPanelTransitionMs]
   );
 
   // During resize/collapse, avoid portaling controls into the query panel
@@ -311,10 +367,10 @@ export function DataViewerTab() {
     const timeoutId = window.setTimeout(() => {
       setQueryPanelIsTransitioning(false);
       setQueryPanelIsExpanding(false);
-    }, 450);
+    }, queryPanelTransitionMs + 150);
 
     return () => window.clearTimeout(timeoutId);
-  }, [queryPanelIsTransitioning]);
+  }, [queryPanelIsTransitioning, queryPanelTransitionMs]);
 
   if (files.length === 0) {
     return (
@@ -397,7 +453,8 @@ export function DataViewerTab() {
               executionMs: artifact.executionMs,
               cacheTimestamp: artifact.cacheTimestamp,
               generatedSql: artifact.generatedSql,
-              rationale: artifact.rationale
+              rationale: artifact.rationale,
+              explanation: artifact.explanation
             }}
           />
         );
@@ -459,10 +516,13 @@ export function DataViewerTab() {
       {/* Query Panel (right side) */}
       <div
         className={cn(
-          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out [will-change:width]',
+          'min-w-0 shrink-0 overflow-hidden transition-[width] ease-in-out [will-change:width]',
           queryPanelCollapsed ? 'w-12' : 'w-[400px]'
         )}
-        style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}
+        style={{
+          willChange: queryPanelIsTransitioning ? 'width' : 'auto',
+          transitionDuration: `${queryPanelTransitionMs}ms`
+        }}
         onTransitionEnd={(event) => {
           if (event.target !== event.currentTarget || event.propertyName !== 'width') {
             return;
@@ -483,7 +543,7 @@ export function DataViewerTab() {
           isExpanding={queryPanelIsExpanding}
           mode={queryMode}
           onModeChange={setQueryMode}
-          controlsPortalTarget={activeControlsPortalTarget}
+          controlsPortalTarget={controlsPortalTarget}
           onMountPortalTarget={setControlsPortalTarget}
           onNlGenerate={handleNlGenerate}
           onNlApprove={handleNlApprove}

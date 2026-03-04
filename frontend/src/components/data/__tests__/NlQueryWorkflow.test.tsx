@@ -2,13 +2,26 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NlQueryWorkflow } from '../NlQueryWorkflow';
 import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
-import type { NlGenerationResult } from '@/types/nlQuery';
+import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
 const MOCK_RESULT: NlGenerationResult = {
   sql: 'SELECT id, name FROM users LIMIT 10;',
   rationale: 'Returns the first 10 users by primary key.',
+  explanation: {
+    intentSummary: 'Return first users by primary key.',
+    selectedTables: ['users'],
+    joinPlan: [],
+    filters: [],
+    aggregations: [],
+    assumptions: [],
+    validationNotes: [],
+    confidence: 0.91,
+    warningLevel: 'none',
+    confidenceMode: 'model',
+    reliabilityTier: 'high',
+  },
   queryId: 'test-query-123',
   cached: false,
   queryResult: {
@@ -29,7 +42,11 @@ function buildProps(
   overrides: Partial<{
     englishQuery: string;
     onQueryChange: (v: string) => void;
-    onGenerate: (q: string) => Promise<NlGenerationResult>;
+    onGenerate: (
+      q: string,
+      onStreamEvent?: (event: NlQueryStreamEvent) => void,
+      signal?: AbortSignal
+    ) => Promise<NlGenerationResult>;
     onApprove: (r: NlGenerationResult, sql: string) => void;
     onPhaseChange: (phase: string) => void;
   }> = {}
@@ -93,12 +110,14 @@ describe('NlQueryWorkflow', () => {
     expect(onQueryChange).toHaveBeenCalledWith('List all orders');
   });
 
-  it('does NOT render the NlFlowConnector in idle state', () => {
+  it('keeps both NlFlowConnector wrappers collapsed in idle state', () => {
     render(<NlQueryWorkflow {...buildProps()} />);
-    // The connector exists but remains visually collapsed in idle state.
-    const connectorWrapper = screen.getByTestId('nl-flow-connector-wrapper');
-    expect(connectorWrapper).toHaveClass('h-0');
-    expect(connectorWrapper).toHaveClass('opacity-0');
+    const topConnector = screen.getByTestId('nl-flow-connector-top');
+    const bottomConnector = screen.getByTestId('nl-flow-connector-bottom');
+    expect(topConnector).toHaveClass('h-0');
+    expect(topConnector).toHaveClass('opacity-0');
+    expect(bottomConnector).toHaveClass('h-0');
+    expect(bottomConnector).toHaveClass('opacity-0');
   });
 
   // ── triggerGenerate via imperative handle ────────────────────────────────────
@@ -141,7 +160,11 @@ describe('NlQueryWorkflow', () => {
       handleRef.current?.triggerGenerate();
     });
 
-    expect(onGenerate).toHaveBeenCalledWith('Show me the first 10 users');
+    expect(onGenerate).toHaveBeenCalledWith(
+      'Show me the first 10 users',
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
   });
 
   // ── Error handling ───────────────────────────────────────────────────────────
@@ -254,6 +277,97 @@ describe('NlQueryWorkflow', () => {
     await waitFor(() => {
       expect(onPhaseChange).toHaveBeenCalledWith('idle');
     });
+  });
+
+  it('renders the model work panel during review', async () => {
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+
+    render(
+      <WorkflowWithRef
+        {...buildProps()}
+        handleRef={handleRef}
+      />
+    );
+
+    await act(async () => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('nl-work-plan-panel')).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
+  it('consumes streamed phase events while generation is in progress', async () => {
+    const pending = new Promise<NlGenerationResult>(() => {});
+    const onGenerate = vi.fn(async (_q: string, onStreamEvent?: (event: NlQueryStreamEvent) => void) => {
+      onStreamEvent?.({
+        type: 'phase_started',
+        phaseId: 'planning',
+        summary: 'Planning started',
+        timestamp: new Date().toISOString()
+      });
+      onStreamEvent?.({
+        type: 'phase_progress',
+        phaseId: 'planning',
+        summary: 'Choosing candidate tables',
+        timestamp: new Date().toISOString()
+      });
+      return pending;
+    });
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    const planningMatches = await screen.findAllByText(/choosing candidate tables/i);
+    expect(planningMatches.length).toBeGreaterThan(0);
+  });
+
+  it('auto-collapses the model work panel on constrained height', async () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    class ResizeObserverMock {
+      private callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe() {
+        this.callback(
+          [{ contentRect: { height: 640 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+    try {
+      const pending = new Promise<NlGenerationResult>(() => {});
+      const handleRef = { current: null as NlQueryWorkflowHandle | null };
+      render(
+        <WorkflowWithRef
+          {...buildProps({ onGenerate: () => pending })}
+          handleRef={handleRef}
+        />
+      );
+
+      act(() => {
+        handleRef.current?.triggerGenerate();
+      });
+
+      expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
   });
 
   // ── onPhaseChange propagation ────────────────────────────────────────────────

@@ -56,10 +56,10 @@ describe('QueryPanel theme handling', () => {
 
     const firstRender = render(<QueryPanel onExecute={onExecute} />);
     await waitFor(() => {
-      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'custom-light');
+      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     });
-    expect(mockState.renderedThemes[0]).toBe('custom-light');
-    expect(mockState.renderedThemes).not.toContain('custom-dark');
+    expect(mockState.renderedThemes[0]).toBe('sql-light');
+    expect(mockState.renderedThemes).not.toContain('sql-dark');
     expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-language', 'sql');
     expect(mockState.renderedQuickSuggestions.at(-1)).toBe(true);
     expect(mockState.renderedTriggerSuggestions.at(-1)).toBe(true);
@@ -69,8 +69,8 @@ describe('QueryPanel theme handling', () => {
 
     render(<QueryPanel onExecute={onExecute} />);
     await waitFor(() => {
-      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'custom-light');
+      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     });
-    expect(mockState.renderedThemes).not.toContain('custom-dark');
+    expect(mockState.renderedThemes).not.toContain('sql-dark');
   });
 });

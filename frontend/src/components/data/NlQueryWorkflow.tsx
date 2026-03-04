@@ -1,42 +1,7 @@
 /**
  * NlQueryWorkflow
  *
- * Orchestrates the natural-language → SQL generation and review flow inside
- * the English query mode of QueryPanel.  It is entirely self-contained: the
- * parent (QueryPanel) only needs to provide the query text, callbacks, and the
- * two async operations (onGenerate / onApprove).
- *
- * ─── State machine ──────────────────────────────────────────────────────────
- *
- *   idle  ──[generate]──→  submitting  ──[result]──→  revealing  ──[done]──→  reviewing
- *    ↑                         │                                                   │
- *    └──────[reject]───────────┘──────────────────────[reject]────────────────────┘
- *
- *   Any state  ──[error]──→  error  ──[dismiss]──→  idle
- *
- * ─── Typewriter animation ───────────────────────────────────────────────────
- *
- * The `useTypewriter` hook uses requestAnimationFrame to advance the visible
- * text slice at ~CHARS_PER_FRAME characters per frame.  A 150 ms startup
- * delay is imposed so the component has time to mount and the user sees the
- * connector animation before text starts appearing.
- *
- * ─── Layout ─────────────────────────────────────────────────────────────────
- *
- *   ┌─────────────────────────────────────────┐
- *   │  AnimatedPlaceholderTextarea             │  ← always rendered; collapses
- *   │  (flex-1 when idle, compact otherwise)  │    to compact read-only strip
- *   ├─────────────────────────────────────────┤    in all non-idle phases
- *   │  NlFlowConnector                        │  ← fades in during submitting;
- *   │  (h-0 opacity-0 when idle)              │    runs particles; dims settled
- *   ├─────────────────────────────────────────┤
- *   │  SqlRevealBlock                         │  ← typewriter → editable area
- *   │  (hidden when idle/error)               │
- *   └─────────────────────────────────────────┘
- *
- * The `phase` is forwarded to QueryPanel via the `onPhaseChange` callback so
- * the parent can render phase-aware footer buttons without holding any of the
- * internal state.
+ * Orchestrates the natural-language → SQL generation and review flow.
  */
 
 import {
@@ -47,25 +12,33 @@ import {
   useMemo,
   forwardRef,
   useImperativeHandle,
+  useState,
+  type KeyboardEvent,
   type Ref,
 } from 'react';
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { NlFlowConnector } from './NlFlowConnector';
+import { NlWorkPlanPanel } from './NlWorkPlanPanel';
 import { SqlRevealBlock, tokenizeSql } from './SqlRevealBlock';
-import type { NlGenerationResult } from '@/types/nlQuery';
+import type {
+  NlGenerationResult,
+  NlQueryStreamEvent,
+  NlStreamPhaseEvent,
+  NlStreamPhaseId,
+  NlWorkPhaseState,
+  NlWorkPhaseStatus
+} from '@/types/nlQuery';
 
-// ─── Typewriter hook (token-based) ────────────────────────────────────────────
+export type ApproveThemeClasses = {
+  hoverText: string;
+  hoverBorder: string;
+  hoverBg: string;
+};
 
-/**
- * Time between each token reveal (ms).  65 ms ≈ 15 tokens/sec — fast enough
- * to feel fluid but slow enough for the glow animation on each token to
- * register visually.  Compare: the animated placeholder uses per-char
- * stagger of 30 ms, but here each "frame" is a full SQL word so the
- * perceived speed is comparable.
- */
 const TOKEN_INTERVAL_MS = 65;
 const TYPEWRITER_START_DELAY_MS = 150;
+const AUTO_COLLAPSE_HEIGHT_PX = 920;
 
 interface TypewriterState {
   visibleTokenCount: number;
@@ -128,8 +101,6 @@ function useTypewriter(
   return stateRef.current;
 }
 
-// ─── State machine ────────────────────────────────────────────────────────────
-
 export type NlPhase =
   | 'idle'
   | 'submitting'
@@ -186,8 +157,6 @@ const initialState: NlState = {
   errorMessage: null,
 };
 
-// ─── Placeholder cycling ──────────────────────────────────────────────────────
-
 const NL_PLACEHOLDER_QUERIES = [
   'Show total revenue by product category for last quarter',
   'Which customers placed more than 5 orders this year?',
@@ -199,40 +168,139 @@ const NL_PLACEHOLDER_QUERIES = [
   'Summarise support tickets opened per day this week',
 ] as const;
 
-// ─── Public handle (for QueryPanel footer button wiring) ──────────────────────
+const WORK_PHASE_IDS: NlStreamPhaseId[] = [
+  'schema_context',
+  'planning',
+  'sql_generation',
+  'validation',
+  'initial_execution',
+  'repair',
+  'done'
+];
+
+const WORK_PHASE_LABELS: Record<NlStreamPhaseId, string> = {
+  schema_context: 'Schema context',
+  planning: 'Planning',
+  sql_generation: 'SQL generation',
+  validation: 'Validation',
+  initial_execution: 'Initial execution',
+  repair: 'Repair',
+  done: 'Done'
+};
+
+function createInitialWorkPhases(): NlWorkPhaseState[] {
+  return WORK_PHASE_IDS.map((phaseId) => ({
+    phaseId,
+    label: WORK_PHASE_LABELS[phaseId],
+    status: 'pending',
+    events: []
+  }));
+}
+
+function mapPhaseTypeToStatus(type: NlStreamPhaseEvent['type']): NlWorkPhaseStatus {
+  if (type === 'phase_completed') return 'completed';
+  if (type === 'phase_failed') return 'failed';
+  return 'active';
+}
+
+function applyPhaseEvent(
+  previous: NlWorkPhaseState[],
+  event: NlStreamPhaseEvent
+): NlWorkPhaseState[] {
+  const targetStatus = mapPhaseTypeToStatus(event.type);
+  const targetIndex = previous.findIndex((entry) => entry.phaseId === event.phaseId);
+  if (targetIndex === -1) {
+    return previous;
+  }
+
+  return previous.map((entry, index) => {
+    if (entry.phaseId === event.phaseId) {
+      return {
+        ...entry,
+        status: targetStatus,
+        lastSummary: event.summary,
+        events: [...entry.events, event]
+      };
+    }
+
+    if ((targetStatus === 'active' || targetStatus === 'completed' || targetStatus === 'failed') && index < targetIndex && entry.status === 'pending') {
+      return { ...entry, status: 'completed' };
+    }
+
+    if (targetStatus === 'active' && entry.status === 'active') {
+      return { ...entry, status: 'completed' };
+    }
+
+    return entry;
+  });
+}
+
+function finalizePhasesWithoutStream(previous: NlWorkPhaseState[]): NlWorkPhaseState[] {
+  if (previous.some((entry) => entry.events.length > 0)) {
+    return previous;
+  }
+
+  return previous.map((entry) => {
+    if (entry.phaseId === 'repair') {
+      return entry;
+    }
+    if (entry.phaseId === 'done') {
+      return {
+        ...entry,
+        status: 'completed',
+        lastSummary: 'NL query pipeline finished.'
+      };
+    }
+    return {
+      ...entry,
+      status: 'completed'
+    };
+  });
+}
+
+function markFailureOnPhases(previous: NlWorkPhaseState[], message: string): NlWorkPhaseState[] {
+  const activeIndex = previous.findIndex((entry) => entry.status === 'active');
+  if (activeIndex >= 0) {
+    return previous.map((entry, index) => {
+      if (index === activeIndex) {
+        return { ...entry, status: 'failed', lastSummary: message };
+      }
+      if (entry.phaseId === 'done') {
+        return { ...entry, status: 'failed', lastSummary: message };
+      }
+      return entry;
+    });
+  }
+
+  return previous.map((entry) => {
+    if (entry.phaseId === 'done') {
+      return { ...entry, status: 'failed', lastSummary: message };
+    }
+    return entry;
+  });
+}
 
 export interface NlQueryWorkflowHandle {
   phase: NlPhase;
-  /** Trigger the generation flow from the parent footer button. */
   triggerGenerate: () => void;
-  /** Trigger the approve flow from the parent footer button. */
   approve: () => void;
-  /** Reject / reset the workflow from the parent footer button. */
   reject: () => void;
 }
-
-// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface NlQueryWorkflowProps {
   englishQuery: string;
   onQueryChange: (value: string) => void;
-  /** Called when the user submits the NL query.  Must return a generation
-   *  result or throw on error. */
-  onGenerate: (query: string) => Promise<NlGenerationResult>;
-  /** Called when the user approves the (possibly edited) SQL. */
+  onGenerate: (
+    query: string,
+    onStreamEvent?: (event: NlQueryStreamEvent) => void,
+    signal?: AbortSignal
+  ) => Promise<NlGenerationResult>;
   onApprove: (result: NlGenerationResult, approvedSql: string) => void;
-  /** Passed through from QueryPanel; suppresses animations during panel expand. */
   isExpanding?: boolean;
-  /**
-   * Called whenever the internal phase changes.  QueryPanel uses this to
-   * keep a local `nlPhase` state in sync so footer buttons can re-render
-   * with phase-aware labels / variants without holding any workflow state.
-   */
   onPhaseChange?: (phase: NlPhase) => void;
+  approveThemeClasses?: ApproveThemeClasses;
   className?: string;
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   {
@@ -242,54 +310,127 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     onApprove,
     isExpanding,
     onPhaseChange,
+    approveThemeClasses,
     className,
   }: NlQueryWorkflowProps,
   ref: Ref<NlQueryWorkflowHandle>
 ) {
   const [state, dispatch] = useReducer(nlReducer, initialState);
+  const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialWorkPhases());
+  const [manualPanelExpanded, setManualPanelExpanded] = useState<boolean | null>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const { phase, result, editedSql, errorMessage } = state;
 
-  // Propagate phase to parent (QueryPanel) so footer buttons can re-render.
   useEffect(() => {
     onPhaseChange?.(phase);
   }, [phase, onPhaseChange]);
 
-  // Tokenize the result SQL so the typewriter can advance by token count.
   const resultTokens = useMemo(
     () => (result?.sql ? tokenizeSql(result.sql) : []),
     [result?.sql]
   );
 
-  // Typewriter: active while in the 'revealing' phase.
   const { visibleTokenCount, isComplete: typewriterComplete } = useTypewriter(
     resultTokens.length,
     phase === 'revealing'
   );
 
-  // Advance to review once typewriter finishes.
   useEffect(() => {
     if (typewriterComplete && phase === 'revealing') {
       dispatch({ type: 'REVEAL_COMPLETE' });
     }
   }, [typewriterComplete, phase]);
 
-  // ── Generate handler ── defined before useImperativeHandle to avoid TDZ ──
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setContainerHeight(entry.contentRect.height);
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'idle' || phase === 'error') {
+      setManualPanelExpanded(null);
+    }
+  }, [phase]);
+
+  const handleStreamEvent = useCallback((event: NlQueryStreamEvent) => {
+    if (event.type === 'result') {
+      return;
+    }
+
+    if (event.type === 'done') {
+      setWorkPhases((previous) => {
+        const donePhase = previous.find((entry) => entry.phaseId === 'done');
+        if (!donePhase || donePhase.status === 'completed' || donePhase.status === 'failed') {
+          return previous;
+        }
+
+        return previous.map((entry) => (
+          entry.phaseId === 'done'
+            ? {
+                ...entry,
+                status: 'completed',
+                lastSummary: entry.lastSummary ?? 'NL query pipeline finished.'
+              }
+            : entry
+        ));
+      });
+      return;
+    }
+
+    setWorkPhases((previous) => applyPhaseEvent(previous, event));
+  }, []);
+
   const handleGenerate = useCallback(async () => {
     const query = englishQuery.trim();
     if (!query) return;
 
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
+    setWorkPhases(createInitialWorkPhases());
+    setManualPanelExpanded(null);
     dispatch({ type: 'GENERATE' });
+
     try {
-      const generationResult = await onGenerate(query);
+      const generationResult = await onGenerate(query, handleStreamEvent, controller.signal);
+      setWorkPhases((previous) => finalizePhasesWithoutStream(previous));
       dispatch({ type: 'RESULT', payload: generationResult });
     } catch (err) {
+      if (controller.signal.aborted) {
+        return;
+      }
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred.';
+      setWorkPhases((previous) => markFailureOnPhases(previous, message));
       dispatch({ type: 'ERROR', payload: message });
+    } finally {
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null;
+      }
     }
-  }, [englishQuery, onGenerate]);
+  }, [englishQuery, onGenerate, handleStreamEvent]);
 
-  // Expose controls to the parent (QueryPanel footer buttons).
   useImperativeHandle(
     ref,
     () => ({
@@ -300,18 +441,18 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
       approve: () => {
         if (!result) return;
         onApprove(result, editedSql);
-        dispatch({ type: 'REJECT' }); // reset after hand-off
+        dispatch({ type: 'REJECT' });
       },
       reject: () => {
+        streamAbortRef.current?.abort();
         dispatch({ type: 'REJECT' });
       },
     }),
     [phase, result, editedSql, onApprove, handleGenerate]
   );
 
-  // ── Keyboard shortcut: Cmd/Ctrl+Enter in idle state submits ──────────────
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         if (phase === 'idle' && englishQuery.trim()) {
@@ -322,15 +463,28 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     [phase, englishQuery, handleGenerate]
   );
 
-  // ── Derived layout state ──────────────────────────────────────────────────
   const isIdle = phase === 'idle' || phase === 'error';
   const showConnector = phase !== 'idle' && phase !== 'error';
   const connectorState: 'active' | 'settled' = phase === 'reviewing' ? 'settled' : 'active';
+  const panelPhase: 'submitting' | 'revealing' | 'reviewing' = phase === 'reviewing' ? 'reviewing' : phase === 'revealing' ? 'revealing' : 'submitting';
+  const showPlanPanel = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
   const showSqlBlock = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
 
+  const autoCollapsed = showPlanPanel && containerHeight > 0 && containerHeight < AUTO_COLLAPSE_HEIGHT_PX;
+  const isPanelExpanded = manualPanelExpanded ?? !autoCollapsed;
+
+  const togglePanelExpanded = useCallback(() => {
+    setManualPanelExpanded((previous) => {
+      const current = previous ?? !autoCollapsed;
+      return !current;
+    });
+  }, [autoCollapsed]);
+
   return (
-    <div className={cn('flex flex-1 flex-col min-h-0', className)}>
-      {/* ── English textarea ─────────────────────────────────────────────── */}
+    <div
+      ref={containerRef}
+      className={cn('flex flex-1 flex-col min-h-0 overflow-y-auto overscroll-contain pr-0.5', className)}
+    >
       <div
         className={cn(
           'transition-[flex,max-height,opacity] ease-out motion-reduce:transition-none',
@@ -358,9 +512,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         />
       </div>
 
-      {/* ── Flow connector ───────────────────────────────────────────────── */}
       <div
-        data-testid="nl-flow-connector-wrapper"
+        data-testid="nl-flow-connector-top"
         className={cn(
           'transition-[opacity,height] ease-out motion-reduce:transition-none overflow-hidden',
           showConnector
@@ -368,21 +521,43 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             : 'h-0 opacity-0 duration-200 pointer-events-none',
         )}
       >
-        <NlFlowConnector state={connectorState} />
+        <NlFlowConnector state={connectorState} variant="fan-in" />
       </div>
 
-      {/* ── SQL block (shimmer → typewriter → editable) ──────────────────── */}
+      {showPlanPanel && (
+        <NlWorkPlanPanel
+          explanation={result?.explanation}
+          phase={panelPhase}
+          workPhases={workPhases}
+          isExpanded={isPanelExpanded}
+          autoCollapsed={autoCollapsed}
+          onToggleExpanded={togglePanelExpanded}
+          className="mb-2 shrink-0"
+        />
+      )}
+
+      <div
+        data-testid="nl-flow-connector-bottom"
+        className={cn(
+          'transition-[opacity,height] ease-out motion-reduce:transition-none overflow-hidden',
+          showConnector
+            ? 'h-16 opacity-100 duration-400'
+            : 'h-0 opacity-0 duration-200 pointer-events-none',
+        )}
+      >
+        <NlFlowConnector state={connectorState} variant="fan-out" />
+      </div>
+
       {showSqlBlock && (
         <div
           className={cn(
-            'flex-1 min-h-0',
-            // Entry animation: fade in + slide up from 4 px below.
+            'shrink-0 min-h-[12rem]',
             'animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out',
           )}
         >
           <SqlRevealBlock
             sql={result?.sql ?? ''}
-            rationale={result?.rationale}
+            queryExecutionError={result?.queryExecutionError}
             isRevealing={phase === 'revealing'}
             visibleTokenCount={visibleTokenCount}
             isRevealComplete={phase === 'reviewing'}
@@ -395,12 +570,12 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
               dispatch({ type: 'REJECT' });
             }}
             onReject={() => dispatch({ type: 'REJECT' })}
+            approveThemeClasses={approveThemeClasses}
             className="h-full"
           />
         </div>
       )}
 
-      {/* ── Error message ─────────────────────────────────────────────────── */}
       {phase === 'error' && errorMessage && (
         <div
           className={cn(

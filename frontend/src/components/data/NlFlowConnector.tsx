@@ -1,10 +1,10 @@
 /**
  * NlFlowConnector
  *
- * A vertical SVG connector that bridges the natural-language textarea and the
- * SQL reveal block.  A single stem enters from the top and fans out into three
- * branches (left, centre, right), matching the particle-sweep pattern used in
- * ComputeAnimation.tsx for visual consistency across the app.
+ * A vertical SVG connector that bridges workflow blocks in English mode.
+ * Supports two mirrored variants:
+ * - `fan-in`: three branches converge into the next block
+ * - `fan-out`: one source branch diverges into three outputs
  *
  * Each branch renders two layers over the same cubic-bézier geometry:
  *
@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 
 interface NlFlowConnectorProps {
   state: 'active' | 'settled';
+  variant?: 'fan-in' | 'fan-out';
   className?: string;
 }
 
@@ -46,7 +47,7 @@ const CX = SVG_WIDTH / 2; // 60 — horizontal midpoint
  *   Centre : (60,0) → curves to (60, 64)  (near-straight with subtle ease)
  *   Right  : (60,0) → curves to (102,64)
  */
-const BRANCHES = [
+const BRANCHES_FAN_OUT = [
   // left
   `M ${CX} 0 C ${CX} 22, 18 34, 18 ${SVG_HEIGHT}`,
   // centre
@@ -55,12 +56,21 @@ const BRANCHES = [
   `M ${CX} 0 C ${CX} 22, 102 34, 102 ${SVG_HEIGHT}`,
 ] as const;
 
+const BRANCHES_FAN_IN = [
+  // left
+  `M 18 0 C 18 30, ${CX} 40, ${CX} ${SVG_HEIGHT}`,
+  // centre
+  `M ${CX} 0 C ${CX} 20, ${CX} 44, ${CX} ${SVG_HEIGHT}`,
+  // right
+  `M 102 0 C 102 30, ${CX} 40, ${CX} ${SVG_HEIGHT}`,
+] as const;
+
 /** Staggered delay per branch so particles cascade rather than firing in sync. */
 const BRANCH_DELAYS = ['0s', '0.25s', '0.5s'] as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-function NlFlowConnector({ state, className }: NlFlowConnectorProps) {
+function NlFlowConnector({ state, variant = 'fan-out', className }: NlFlowConnectorProps) {
   const rawId = useId();
   const uid = rawId.replace(/:/g, '');
 
@@ -76,6 +86,7 @@ function NlFlowConnector({ state, className }: NlFlowConnectorProps) {
   const DURATION = '1.4s';
 
   const isActive = state === 'active';
+  const branches = variant === 'fan-in' ? BRANCHES_FAN_IN : BRANCHES_FAN_OUT;
 
   return (
     <div
@@ -118,7 +129,7 @@ function NlFlowConnector({ state, className }: NlFlowConnectorProps) {
           </linearGradient>
         </defs>
 
-        {BRANCHES.map((d, i) => (
+        {branches.map((d, i) => (
           <g key={i}>
             {/* Base path */}
             <path

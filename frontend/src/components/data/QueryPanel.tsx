@@ -25,7 +25,7 @@ import { IconModeToggle } from './IconModeToggle';
 import { NlQueryWorkflow } from './NlQueryWorkflow';
 import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQueryWorkflow';
 import type { QueryMode } from '@/types/file';
-import type { NlGenerationResult } from '@/types/nlQuery';
+import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 
 // Animated lightning bolt icon for execute button
 function AnimatedExecuteIcon({
@@ -463,7 +463,11 @@ interface QueryPanelProps {
    * Async callback to generate SQL from a natural-language query.
    * Required when English mode is active with the NL workflow UI.
    */
-  onNlGenerate?: (query: string) => Promise<NlGenerationResult>;
+  onNlGenerate?: (
+    query: string,
+    onStreamEvent?: (event: NlQueryStreamEvent) => void,
+    signal?: AbortSignal
+  ) => Promise<NlGenerationResult>;
   /**
    * Called when the user approves the generated (and possibly edited) SQL.
    * The parent is responsible for executing the SQL and creating an artifact.
@@ -1003,7 +1007,7 @@ export function QueryPanel({
           <NlQueryWorkflow
             englishQuery={englishQuery}
             onQueryChange={(v) => handleQueryChange(v)}
-            onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
+            onGenerate={onNlGenerate ?? ((_) => Promise.reject(new Error('onNlGenerate not provided')))}
             onApprove={onNlApprove ?? (() => {})}
             isExpanding={isExpanding}
             onPhaseChange={setNlPhase}

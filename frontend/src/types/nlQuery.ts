@@ -110,7 +110,7 @@ export function applyNlWorkPhaseEvent(
     }
 
     if (
-      (targetStatus === 'active' || targetStatus === 'completed' || targetStatus === 'failed')
+      (targetStatus === 'active' || targetStatus === 'completed')
       && index < targetIndex
       && entry.status === 'pending'
     ) {

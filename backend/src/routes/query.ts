@@ -366,13 +366,13 @@ export function createQueryRouter() {
         onProgress
       });
 
+      writeNdjsonEvent(res, { type: 'result', nl });
+
       emitNlProgress(onProgress, {
         phaseId: 'done',
         status: 'completed',
         summary: 'NL query pipeline finished.'
       });
-
-      writeNdjsonEvent(res, { type: 'result', nl });
     } catch (error) {
       emitNlProgress(onProgress, {
         phaseId: 'done',

@@ -262,19 +262,6 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     }
   }, [phase]);
 
-  const handleStreamEvent = useCallback((event: NlQueryStreamEvent) => {
-    if (event.type === 'result') {
-      return;
-    }
-
-    if (event.type === 'done') {
-      setWorkPhases((previous) => completeNlWorkDonePhase(previous));
-      return;
-    }
-
-    setWorkPhases((previous) => applyNlWorkPhaseEvent(previous, event));
-  }, []);
-
   const handleGenerate = useCallback(async () => {
     const query = englishQuery.trim();
     if (!query) return;
@@ -287,12 +274,32 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     setManualPanelExpanded(null);
     dispatch({ type: 'GENERATE' });
 
+    const handleScopedStreamEvent = (event: NlQueryStreamEvent) => {
+      if (controller.signal.aborted || streamAbortRef.current !== controller) {
+        return;
+      }
+
+      if (event.type === 'result') {
+        return;
+      }
+
+      if (event.type === 'done') {
+        setWorkPhases((previous) => completeNlWorkDonePhase(previous));
+        return;
+      }
+
+      setWorkPhases((previous) => applyNlWorkPhaseEvent(previous, event));
+    };
+
     try {
-      const generationResult = await onGenerate(query, handleStreamEvent, controller.signal);
+      const generationResult = await onGenerate(query, handleScopedStreamEvent, controller.signal);
+      if (controller.signal.aborted || streamAbortRef.current !== controller) {
+        return;
+      }
       setWorkPhases((previous) => finalizeNlWorkPhasesWithoutStream(previous));
       dispatch({ type: 'RESULT', payload: generationResult });
     } catch (err) {
-      if (controller.signal.aborted) {
+      if (controller.signal.aborted || streamAbortRef.current !== controller) {
         return;
       }
       const message =
@@ -304,7 +311,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         streamAbortRef.current = null;
       }
     }
-  }, [englishQuery, onGenerate, handleStreamEvent]);
+  }, [englishQuery, onGenerate]);
 
   const handleApprove = useCallback(() => {
     if (!result) return;

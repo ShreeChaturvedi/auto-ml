@@ -38,6 +38,16 @@ const MOCK_RESULT: NlGenerationResult = {
   },
 };
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function buildProps(
   overrides: Partial<{
     englishQuery: string;
@@ -393,6 +403,58 @@ describe('NlQueryWorkflow', () => {
       expect(onPhaseChange).toHaveBeenCalledWith('idle');
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('ignores stale aborted run results when a newer generation completes', async () => {
+    const onApprove = vi.fn();
+    const firstRun = createDeferred<NlGenerationResult>();
+    const secondResult: NlGenerationResult = {
+      ...MOCK_RESULT,
+      sql: 'SELECT name FROM users ORDER BY name LIMIT 5;',
+      queryId: 'test-query-456'
+    };
+
+    const onGenerate = vi.fn(async () => {
+      if (onGenerate.mock.calls.length === 1) {
+        return firstRun.promise;
+      }
+      return secondResult;
+    });
+
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate, onApprove })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /approve and run this sql/i })).toBeInTheDocument();
+    }, { timeout: 4000 });
+
+    await act(async () => {
+      firstRun.resolve(MOCK_RESULT);
+    });
+
+    act(() => {
+      handleRef.current?.approve();
+    });
+
+    await waitFor(() => {
+      expect(onApprove).toHaveBeenCalledWith(
+        expect.objectContaining({ queryId: 'test-query-456' }),
+        secondResult.sql
+      );
+    });
   });
 
   it('auto-collapses the model work panel on constrained height', async () => {

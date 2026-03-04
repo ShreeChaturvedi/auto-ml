@@ -617,7 +617,7 @@ describeIf('query routes', () => {
       expect(events.at(-1)?.type).toBe('done');
     });
 
-    it('streams phase_progress events with details and orders done-phase before result', async () => {
+    it('streams phase_progress events with details and orders result before done-phase', async () => {
       mockGenerateSqlFromNaturalLanguageV2.mockImplementation(async (input) => {
         input.onProgress?.({
           phaseId: 'sql_generation',
@@ -679,7 +679,7 @@ describeIf('query routes', () => {
       const resultIndex = findEventIndex(events, (event) => event.type === 'result');
       expect(donePhaseIndex).toBeGreaterThan(-1);
       expect(resultIndex).toBeGreaterThan(-1);
-      expect(donePhaseIndex).toBeLessThan(resultIndex);
+      expect(resultIndex).toBeLessThan(donePhaseIndex);
       expect(events.at(-1)?.type).toBe('done');
     });
 

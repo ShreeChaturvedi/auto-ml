@@ -65,6 +65,7 @@ const HIDDEN_ACTIVITY_TOOLS = new Set([
   'profile_active_dataset'
 ]);
 const DEFAULT_TAB_ID = 'processing-tab-1';
+const ROW_COUNT_FORMATTER = new Intl.NumberFormat('en-US');
 
 
 interface PreprocessingTabSnapshot {
@@ -168,7 +169,9 @@ function summarizeValidation(event: TransformationEvent): string | null {
   }
   const { rowCountBefore, rowCountAfter, schemaDrift, notes } = event.validation;
   if (typeof rowCountBefore === 'number' && typeof rowCountAfter === 'number') {
-    return `Rows ${rowCountBefore} -> ${rowCountAfter}${schemaDrift ? ', schema drift flagged' : ''}`;
+    const formattedBefore = ROW_COUNT_FORMATTER.format(rowCountBefore);
+    const formattedAfter = ROW_COUNT_FORMATTER.format(rowCountAfter);
+    return `Rows ${formattedBefore} \u2192 ${formattedAfter}${schemaDrift ? ' · Schema drift flagged' : ''}`;
   }
   if (typeof notes === 'string' && notes.trim()) {
     return notes;
@@ -569,7 +572,7 @@ export function PreprocessingPanel() {
             <Loader2 className="h-4 w-4 animate-spin" />
           )}
           <span className="font-medium">{latestTimelineEvent.title} · {STATUS_LABELS[status]}</span>
-          {detail ? <span className="text-[11px] opacity-90">{detail}</span> : null}
+          {detail ? <span className="text-[11px] opacity-90">· {detail}</span> : null}
         </CardContent>
       </Card>
     );

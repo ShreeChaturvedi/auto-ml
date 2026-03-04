@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QueryPanel } from '../QueryPanel';
@@ -72,5 +72,29 @@ describe('QueryPanel theme handling', () => {
       expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     });
     expect(mockState.renderedThemes).not.toContain('sql-dark');
+  });
+
+  it('expands from collapsed overlay click', () => {
+    const onCollapsedChange = vi.fn();
+    render(<QueryPanel onExecute={vi.fn()} collapsed onCollapsedChange={onCollapsedChange} />);
+
+    const collapsedOverlay = screen.getByText(/query builder/i).closest('[role="button"]');
+    expect(collapsedOverlay).not.toBeNull();
+
+    fireEvent.click(collapsedOverlay!);
+    expect(onCollapsedChange).toHaveBeenCalledWith(false);
+  });
+
+  it('expands from collapsed overlay keyboard interactions', () => {
+    const onCollapsedChange = vi.fn();
+    render(<QueryPanel onExecute={vi.fn()} collapsed onCollapsedChange={onCollapsedChange} />);
+
+    const collapsedOverlay = screen.getByText(/query builder/i).closest('[role="button"]');
+    expect(collapsedOverlay).not.toBeNull();
+
+    fireEvent.keyDown(collapsedOverlay!, { key: 'Enter' });
+    fireEvent.keyDown(collapsedOverlay!, { key: ' ' });
+    expect(onCollapsedChange).toHaveBeenNthCalledWith(1, false);
+    expect(onCollapsedChange).toHaveBeenNthCalledWith(2, false);
   });
 });

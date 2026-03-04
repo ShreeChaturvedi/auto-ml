@@ -437,6 +437,127 @@ function buildSqlMarkers(sqlText: string): MonacoEditor.IMarkerData[] {
   return markers;
 }
 
+type SqlCompletionRange = NonNullable<languages.CompletionItem['range']>;
+
+function createSqlSuggestionCollector({
+  monaco,
+  range,
+  safeTableNames,
+  columnsByTable
+}: {
+  monaco: Monaco;
+  range: SqlCompletionRange;
+  safeTableNames: string[];
+  columnsByTable: Record<string, string[]>;
+}) {
+  const suggestions: languages.CompletionItem[] = [];
+
+  const addKeywordSuggestions = (priority: string) => {
+    SQL_KEYWORDS.forEach((keyword) => {
+      suggestions.push({
+        label: keyword,
+        kind: monaco.languages.CompletionItemKind.Keyword,
+        insertText: keyword,
+        range,
+        detail: 'SQL Keyword',
+        sortText: `${priority}${keyword}`
+      });
+    });
+  };
+
+  const addFunctionSuggestions = (priority: string) => {
+    SQL_FUNCTIONS.forEach((fn) => {
+      suggestions.push({
+        label: fn.label,
+        kind: monaco.languages.CompletionItemKind.Function,
+        insertText: fn.insertText,
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range,
+        detail: 'SQL Function',
+        documentation: fn.documentation,
+        sortText: `${priority}${fn.label}`
+      });
+    });
+  };
+
+  const addTableSuggestions = (priority: string) => {
+    safeTableNames.forEach((tableName) => {
+      const safeTableName = quoteSqlIdentifier(tableName);
+      suggestions.push({
+        label: tableName,
+        kind: monaco.languages.CompletionItemKind.Class,
+        insertText: safeTableName,
+        range,
+        detail: 'Table',
+        documentation: `Database table: ${safeTableName}`,
+        filterText: tableName,
+        sortText: `${priority}${tableName}`
+      });
+    });
+  };
+
+  const addColumnSuggestionsForTable = (tableName: string, priority: string) => {
+    const columns = resolveColumnsForTable(tableName, columnsByTable);
+    columns.forEach((rawColumnName) => {
+      const columnName = sanitizeSuggestionToken(rawColumnName);
+      if (!columnName) {
+        return;
+      }
+
+      suggestions.push({
+        label: columnName,
+        kind: monaco.languages.CompletionItemKind.Field,
+        insertText: quoteSqlIdentifier(columnName),
+        range,
+        detail: `Column in ${tableName}`,
+        documentation: `Column from ${tableName}`,
+        filterText: columnName,
+        sortText: `${priority}${tableName}.${columnName}`
+      });
+    });
+  };
+
+  const addSnippetSuggestions = (priority: string) => {
+    SQL_SNIPPETS.forEach((snippet) => {
+      suggestions.push({
+        label: snippet.label,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: snippet.insertText,
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range,
+        documentation: snippet.documentation,
+        sortText: `${priority}${snippet.label}`
+      });
+    });
+  };
+
+  const addBaselineSuggestions = () => {
+    addSnippetSuggestions('0');
+    addKeywordSuggestions('1');
+    addFunctionSuggestions('2');
+    addTableSuggestions('3');
+    Object.keys(columnsByTable).forEach((tableName) => {
+      const safeTableName = sanitizeSuggestionToken(tableName);
+      if (!safeTableName) {
+        return;
+      }
+      addColumnSuggestionsForTable(safeTableName, '4');
+    });
+  };
+
+  return {
+    suggestions,
+    addKeywordSuggestions,
+    addFunctionSuggestions,
+    addTableSuggestions,
+    addColumnSuggestionsForTable,
+    addSnippetSuggestions,
+    addBaselineSuggestions
+  };
+}
+
 interface QueryPanelProps {
   onExecute: (query: string, mode: QueryMode) => void;
   isExecuting?: boolean;
@@ -663,6 +784,10 @@ export function QueryPanel({
   // Detect if user is on Mac for keyboard shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
+  const isNlGenerating = nlPhase === 'submitting' || nlPhase === 'revealing';
+  const handleExpandFromCollapsed = useCallback(() => {
+    onCollapsedChange?.(false);
+  }, [onCollapsedChange]);
 
   return (
     <div className={cn('relative flex flex-col h-full bg-card border-l', className)}>
@@ -725,11 +850,11 @@ export function QueryPanel({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => onCollapsedChange?.(false)}
+        onClick={handleExpandFromCollapsed}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            onCollapsedChange?.(false);
+            handleExpandFromCollapsed();
           }
         }}
         className={cn(
@@ -809,108 +934,15 @@ export function QueryPanel({
                         startColumn: word.startColumn,
                         endColumn: word.endColumn
                       };
-                      const suggestions: languages.CompletionItem[] = [];
                       const safeTableNames = tableNames
                         .map((tableName) => sanitizeSuggestionToken(tableName))
                         .filter((tableName): tableName is string => Boolean(tableName));
-
-                      const addKeywordSuggestions = (priority: string) => {
-                        SQL_KEYWORDS.forEach((keyword) => {
-                          suggestions.push({
-                            label: keyword,
-                            kind: monaco.languages.CompletionItemKind.Keyword,
-                            insertText: keyword,
-                            range,
-                            detail: 'SQL Keyword',
-                            sortText: `${priority}${keyword}`
-                          });
-                        });
-                      };
-
-                      const addFunctionSuggestions = (priority: string) => {
-                        SQL_FUNCTIONS.forEach((fn) => {
-                          suggestions.push({
-                            label: fn.label,
-                            kind: monaco.languages.CompletionItemKind.Function,
-                            insertText: fn.insertText,
-                            insertTextRules:
-                              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                            range,
-                            detail: 'SQL Function',
-                            documentation: fn.documentation,
-                            sortText: `${priority}${fn.label}`
-                          });
-                        });
-                      };
-
-                      const addTableSuggestions = (priority: string) => {
-                        safeTableNames.forEach((tableName) => {
-                          const safeTableName = quoteSqlIdentifier(tableName);
-                          suggestions.push({
-                            label: tableName,
-                            kind: monaco.languages.CompletionItemKind.Class,
-                            insertText: safeTableName,
-                            range,
-                            detail: 'Table',
-                            documentation: `Database table: ${safeTableName}`,
-                            filterText: tableName,
-                            sortText: `${priority}${tableName}`
-                          });
-                        });
-                      };
-
-                      const addColumnSuggestionsForTable = (
-                        tableName: string,
-                        priority: string
-                      ) => {
-                        const columns = resolveColumnsForTable(tableName, columnsByTable);
-                        columns.forEach((rawColumnName) => {
-                          const columnName = sanitizeSuggestionToken(rawColumnName);
-                          if (!columnName) {
-                            return;
-                          }
-
-                          suggestions.push({
-                            label: columnName,
-                            kind: monaco.languages.CompletionItemKind.Field,
-                            insertText: quoteSqlIdentifier(columnName),
-                            range,
-                            detail: `Column in ${tableName}`,
-                            documentation: `Column from ${tableName}`,
-                            filterText: columnName,
-                            sortText: `${priority}${tableName}.${columnName}`
-                          });
-                        });
-                      };
-
-                      const addSnippetSuggestions = (priority: string) => {
-                        SQL_SNIPPETS.forEach((snippet) => {
-                          suggestions.push({
-                            label: snippet.label,
-                            kind: monaco.languages.CompletionItemKind.Snippet,
-                            insertText: snippet.insertText,
-                            insertTextRules:
-                              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                            range,
-                            documentation: snippet.documentation,
-                            sortText: `${priority}${snippet.label}`
-                          });
-                        });
-                      };
-
-                      const addBaselineSuggestions = () => {
-                        addSnippetSuggestions('0');
-                        addKeywordSuggestions('1');
-                        addFunctionSuggestions('2');
-                        addTableSuggestions('3');
-                        Object.keys(columnsByTable).forEach((tableName) => {
-                          const safeTableName = sanitizeSuggestionToken(tableName);
-                          if (!safeTableName) {
-                            return;
-                          }
-                          addColumnSuggestionsForTable(safeTableName, '4');
-                        });
-                      };
+                      const collector = createSqlSuggestionCollector({
+                        monaco,
+                        range,
+                        safeTableNames,
+                        columnsByTable
+                      });
 
                       try {
                         const textUntilPosition = model.getValueInRange({
@@ -924,30 +956,30 @@ export function QueryPanel({
                         const activeAlias = getAliasBeforeDot(textUntilPosition);
 
                         if (suggestionContext === 'table') {
-                          addTableSuggestions('0');
-                          addKeywordSuggestions('1');
-                          addFunctionSuggestions('2');
-                          addSnippetSuggestions('3');
+                          collector.addTableSuggestions('0');
+                          collector.addKeywordSuggestions('1');
+                          collector.addFunctionSuggestions('2');
+                          collector.addSnippetSuggestions('3');
                         } else if (suggestionContext === 'alias-column' && activeAlias) {
                           const tableFromAlias = aliasToTableMap[activeAlias];
                           if (tableFromAlias) {
-                            addColumnSuggestionsForTable(tableFromAlias, '0');
+                            collector.addColumnSuggestionsForTable(tableFromAlias, '0');
                           }
-                          addFunctionSuggestions('1');
-                          addKeywordSuggestions('2');
-                          addTableSuggestions('3');
+                          collector.addFunctionSuggestions('1');
+                          collector.addKeywordSuggestions('2');
+                          collector.addTableSuggestions('3');
                         } else {
-                          addBaselineSuggestions();
+                          collector.addBaselineSuggestions();
                         }
                       } catch (error) {
                         console.error('SQL autocomplete suggestion generation failed:', error);
                       }
 
-                      if (suggestions.length === 0) {
-                        addBaselineSuggestions();
+                      if (collector.suggestions.length === 0) {
+                        collector.addBaselineSuggestions();
                       }
 
-                      return { suggestions };
+                      return { suggestions: collector.suggestions };
                     }
                   });
 
@@ -1007,7 +1039,7 @@ export function QueryPanel({
           <NlQueryWorkflow
             englishQuery={englishQuery}
             onQueryChange={(v) => handleQueryChange(v)}
-            onGenerate={onNlGenerate ?? ((_) => Promise.reject(new Error('onNlGenerate not provided')))}
+            onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
             onApprove={onNlApprove ?? (() => {})}
             isExpanding={isExpanding}
             onPhaseChange={setNlPhase}
@@ -1039,13 +1071,12 @@ export function QueryPanel({
             variant="secondary"
             onClick={() => nlWorkflowRef.current?.triggerGenerate()}
             disabled={
-              nlPhase === 'submitting' ||
-              nlPhase === 'revealing' ||
+              isNlGenerating ||
               !englishQuery.trim()
             }
             className="group/execute w-full h-9 text-sm gap-2"
           >
-            {nlPhase === 'submitting' || nlPhase === 'revealing' ? (
+            {isNlGenerating ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Generating...

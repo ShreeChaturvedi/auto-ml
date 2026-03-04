@@ -39,6 +39,24 @@ export const ASSISTANT_MODEL_OPTIONS: readonly AssistantModelOption[] = [
     defaultReasoningEffort: 'dynamic',
     supportsThinking: true,
     thinkingAlwaysOn: true
+  },
+  {
+    value: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    icon: 'gemini',
+    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
+    defaultReasoningEffort: 'dynamic',
+    supportsThinking: true,
+    thinkingAlwaysOn: false
+  },
+  {
+    value: 'gemini-2.0-flash',
+    label: 'Gemini 2.0 Flash',
+    icon: 'gemini',
+    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
+    defaultReasoningEffort: 'dynamic',
+    supportsThinking: false,
+    thinkingAlwaysOn: false
   }
 ];
 

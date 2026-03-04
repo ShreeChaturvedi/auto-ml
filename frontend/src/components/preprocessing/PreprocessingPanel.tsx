@@ -85,12 +85,6 @@ interface PreprocessingTab {
   storageVersion: number;
 }
 
-interface RowCountSummary {
-  before: string;
-  after: string;
-  schemaDrift: boolean;
-}
-
 function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
   return {
     selectedDatasetId: null,
@@ -170,7 +164,11 @@ function statusClassName(status: TransformationEvent['status'], divergedClassNam
   return 'border-muted bg-muted/50 text-muted-foreground';
 }
 
-function getRowCountSummary(event: TransformationEvent): RowCountSummary | null {
+function getRowCountSummary(event: TransformationEvent): {
+  before: string;
+  after: string;
+  schemaDrift: boolean;
+} | null {
   const validation = event.validation;
   if (!validation) {
     return null;
@@ -183,36 +181,6 @@ function getRowCountSummary(event: TransformationEvent): RowCountSummary | null 
     after: ROW_COUNT_FORMATTER.format(validation.rowCountAfter),
     schemaDrift: Boolean(validation.schemaDrift)
   };
-}
-
-function RowCountDelta({
-  summary,
-  className,
-  chipClassName,
-  driftBadgeClassName
-}: {
-  summary: RowCountSummary;
-  className?: string;
-  chipClassName?: string;
-  driftBadgeClassName?: string;
-}) {
-  return (
-    <span className={cn('inline-flex items-center gap-1.5', className)}>
-      <span className="opacity-80">Rows</span>
-      <span className={cn('inline-flex h-5 items-center rounded border px-1.5 font-medium tabular-nums', chipClassName)}>
-        {summary.before}
-      </span>
-      <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
-      <span className={cn('inline-flex h-5 items-center rounded border px-1.5 font-medium tabular-nums', chipClassName)}>
-        {summary.after}
-      </span>
-      {summary.schemaDrift ? (
-        <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', driftBadgeClassName)}>
-          Schema drift
-        </Badge>
-      ) : null}
-    </span>
-  );
 }
 
 function summarizeValidation(event: TransformationEvent): string | null {
@@ -630,12 +598,21 @@ export function PreprocessingPanel() {
             {STATUS_LABELS[status]}
           </Badge>
           {hasRowCountSummary && rowCountSummary ? (
-            <RowCountDelta
-              summary={rowCountSummary}
-              className="ml-auto text-[11px] opacity-95"
-              chipClassName="border-current/30 bg-background/20"
-              driftBadgeClassName="border-current/30 bg-background/20 text-current"
-            />
+            <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] opacity-95">
+              <span className="opacity-80">Rows</span>
+              <span className="inline-flex h-5 items-center rounded border border-current/30 bg-background/20 px-1.5 font-medium tabular-nums">
+                {rowCountSummary.before}
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
+              <span className="inline-flex h-5 items-center rounded border border-current/30 bg-background/20 px-1.5 font-medium tabular-nums">
+                {rowCountSummary.after}
+              </span>
+              {rowCountSummary.schemaDrift ? (
+                <Badge variant="outline" className="h-5 border-current/30 bg-background/20 px-1.5 text-[10px] text-current">
+                  Schema drift
+                </Badge>
+              ) : null}
+            </span>
           ) : null}
           {!hasRowCountSummary && detail ? <span className="text-[11px] opacity-90">{detail}</span> : null}
         </CardContent>
@@ -1274,7 +1251,16 @@ export function PreprocessingPanel() {
                           <div className="rounded-md border bg-muted/20 p-2">
                             <p className="font-medium">Validation</p>
                             {rowCountSummary ? (
-                              <RowCountDelta summary={rowCountSummary} className="mt-1 flex-wrap text-muted-foreground" />
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                                <span>Rows {rowCountSummary.before}</span>
+                                <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                                <span>{rowCountSummary.after}</span>
+                                {rowCountSummary.schemaDrift ? (
+                                  <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                    Schema drift
+                                  </Badge>
+                                ) : null}
+                              </div>
                             ) : (
                               <p className="text-muted-foreground">{validationSummary}</p>
                             )}

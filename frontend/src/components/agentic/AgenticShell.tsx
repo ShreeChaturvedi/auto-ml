@@ -34,6 +34,7 @@ interface AgenticShellProps {
   chatMetaSlot?: React.ReactNode;
   composerStatusSlot?: React.ReactNode;
   storageKey: string;
+  sessionVersion?: number;
   domainLockReason?: string;
   beforeSubmit?: (prompt: string) => Promise<string | null>;
   leftPaneScrollable?: boolean;
@@ -49,6 +50,7 @@ export function AgenticShell({
   chatMetaSlot,
   composerStatusSlot,
   storageKey,
+  sessionVersion = 0,
   domainLockReason,
   beforeSubmit,
   leftPaneScrollable = true,
@@ -61,6 +63,7 @@ export function AgenticShell({
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     getDefaultReasoningEffort(ASSISTANT_MODEL_OPTIONS[0].value)
   );
+  const [dismissedModelPromptFor, setDismissedModelPromptFor] = useState<string | null>(null);
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
   const disconnectNotebook = useNotebookStore((s) => s.disconnect);
@@ -79,16 +82,28 @@ export function AgenticShell({
   } = useAgenticLoop({
     projectId,
     storageKey,
+    sessionVersion,
     domainAdapter,
     domainLockReason
   });
 
   const suggestions = domainAdapter.suggestionProvider(messages, isGenerating);
+  const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
+    ? error
+    : null;
+  const modelSwitchOptions = ASSISTANT_MODEL_OPTIONS.filter((option) => option.value !== assistantModel);
+  const showModelSwitchPrompt = Boolean(modelSwitchError && dismissedModelPromptFor !== modelSwitchError);
 
   const handleModelChange = (model: string) => {
     setAssistantModel(model);
     setReasoningEffort(getDefaultReasoningEffort(model));
   };
+
+  useEffect(() => {
+    if (!modelSwitchError) {
+      setDismissedModelPromptFor(null);
+    }
+  }, [modelSwitchError]);
 
   const submitPrompt = (prompt: string) => {
     const trimmed = prompt.trim();
@@ -152,6 +167,41 @@ export function AgenticShell({
             )}
             
             <div className="border-t bg-background">
+              {showModelSwitchPrompt ? (
+                <div className="border-b px-4 py-2">
+                  <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                    <span className="font-medium">Model availability issue detected.</span>
+                    <span className="text-amber-800">Switch model and retry?</span>
+                    <div className="ml-auto flex flex-wrap gap-2">
+                      {modelSwitchOptions.map((option) => (
+                        <Button
+                          key={option.value}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            handleModelChange(option.value);
+                            setDismissedModelPromptFor(modelSwitchError);
+                          }}
+                          disabled={isGenerating}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => setDismissedModelPromptFor(modelSwitchError)}
+                      >
+                        Keep current
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {composerStatusSlot ? (
                 <div className="border-b px-4 py-2">
                   <div className="mx-auto w-full max-w-5xl">

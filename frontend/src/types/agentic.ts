@@ -31,6 +31,8 @@ export interface DomainAdapter {
 
   prepareToolCalls?: (toolCalls: ToolCall[]) => ToolCall[];
   onStreamError?: (message: string) => void;
+  onStop?: (reason: string) => void;
+  preserveToolHistoryBetweenPrompts?: boolean;
 
   toolRegistry: Record<string, ToolHandlers>;
   toolUiRegistry: Record<string, ComponentType<{ call: ToolCall; result?: ToolResult }>>;

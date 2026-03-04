@@ -58,6 +58,7 @@ type ReasonCode =
   | 'STEP_APPLIED_REQUIRES_CELL_BINDINGS'
   | 'STEP_COMMIT_REQUIRES_EXECUTE_VALIDATE'
   | 'STEP_APPROVAL_REQUIRED'
+  | 'STEP_APPROVAL_USER_REQUIRED'
   | 'STEP_RECONCILE_REQUIRES_DIVERGED'
   | 'STEP_RECONCILE_REQUIRES_BOUND_CELL'
   | 'REPLAY_TARGET_DATASET_REQUIRED'
@@ -658,7 +659,7 @@ function buildLangGraphPatch(
       return {
         currentStage: 'commit_or_revise',
         nextStage: 'commit_or_revise',
-        approvalDecision: reasonCode === 'STEP_APPROVAL_REQUIRED'
+        approvalDecision: reasonCode === 'STEP_APPROVAL_REQUIRED' || reasonCode === 'STEP_APPROVAL_USER_REQUIRED'
           ? 'pending'
           : approvedArg === false
             ? 'rejected'
@@ -1515,11 +1516,20 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           const approved = toBooleanValue(args.approved);
+          const approvalSource = toStringValue(args.approvalSource);
           if (step.status === 'awaiting_approval' && typeof approved === 'undefined') {
             return fail(
               run.runId,
               'STEP_APPROVAL_REQUIRED',
               `Step ${step.stepId} requires explicit approval=true before commit.`,
+              { stepId: step.stepId }
+            );
+          }
+          if (step.status === 'awaiting_approval' && approvalSource !== 'user') {
+            return fail(
+              run.runId,
+              'STEP_APPROVAL_USER_REQUIRED',
+              `Step ${step.stepId} can only be approved or rejected through an explicit user decision.`,
               { stepId: step.stepId }
             );
           }

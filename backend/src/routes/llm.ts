@@ -99,6 +99,7 @@ function shouldUseThinkingClient(enableThinking?: boolean, thinkingLevel?: LlmTh
 const executeToolsSchema = z.object({
   projectId: z.string().min(1),
   notebookId: z.string().optional(),
+  executionMode: z.enum(['agent', 'user_approval']).optional(),
   toolCalls: z.array(ToolCallSchema)
 });
 
@@ -159,13 +160,14 @@ export function createLlmRouter() {
       return res.status(400).json({ error: 'Invalid tool payload', details: parsed.error.issues });
     }
 
-    const { projectId, notebookId, toolCalls } = parsed.data;
+    const { projectId, notebookId, toolCalls, executionMode } = parsed.data;
 
     const results = [];
     for (const call of toolCalls) {
       const preprocessingArgs = {
         ...(call.args ?? {}),
-        toolCallId: call.id
+        toolCallId: call.id,
+        approvalSource: executionMode === 'user_approval' ? 'user' : 'agent'
       };
       const result = isPreprocessingToolName(call.tool)
         ? await syncPreprocessingLangGraphState(
@@ -306,7 +308,8 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'onboarding');
@@ -361,7 +364,8 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'feature_engineering');
@@ -427,7 +431,8 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
       ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
       : (modelOverride ? createLlmClient(modelOverride) : llmClient);
     await streamLlmResponse(res, client, request, 'training');
@@ -481,9 +486,10 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const client = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel)
-      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
-      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
+    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
+    const client = useThinkingClient
+      ? createThinkingLlmClient(modelOverride, env.preprocessingThinkingLlmTimeoutMs)
+      : createLlmClient(modelOverride, env.preprocessingLlmTimeoutMs);
 
     const markInterruptedRuns = async (
       reason: string,
@@ -660,33 +666,10 @@ async function streamLlmResponse(
   let tokenChars = 0;
   let tokenPreview = '';
   let streamClosed = false;
+  const suppressTokenStreaming = kind === 'preprocessing';
 
-  const writeEvent = (payload: Record<string, unknown>) => {
-    if (streamClosed || res.destroyed || res.writableEnded) {
-      return;
-    }
-    res.write(`${JSON.stringify(payload)}\n`);
-  };
-  const closeStream = () => {
-    if (streamClosed || res.destroyed || res.writableEnded) {
-      streamClosed = true;
-      return;
-    }
-    res.write(`${JSON.stringify({ type: 'done' })}\n`);
-    streamClosed = true;
-    res.end();
-  };
-
-  res.on('close', () => {
-    if (streamClosed) {
-      return;
-    }
-    streamClosed = true;
-    void hooks?.onAborted?.('Preprocessing request stream was aborted before completion.');
-  });
-
-  try {
-    await client.stream(request, {
+  const collectLlmAttempt = async (attemptRequest: LlmRequest): Promise<void> => {
+    await client.stream(attemptRequest, {
       onToken: (token) => {
         // DEBUG: Log actual token content to see if newlines are present
         console.log('[DEBUG][onToken] Token received:', JSON.stringify(token));
@@ -694,7 +677,9 @@ async function streamLlmResponse(
         if (tokenPreview.length < 600) {
           tokenPreview = `${tokenPreview}${token}`.slice(0, 600);
         }
-        writeEvent({ type: 'token', text: token });
+        if (!suppressTokenStreaming) {
+          writeEvent({ type: 'token', text: token });
+        }
       },
       onThinking: (text) => {
         writeEvent({ type: 'thinking', text });
@@ -838,6 +823,56 @@ async function streamLlmResponse(
         toolCalls.push(parsed.data);
       }
     });
+  };
+
+  const writeEvent = (payload: Record<string, unknown>) => {
+    if (streamClosed || res.destroyed || res.writableEnded) {
+      return;
+    }
+    res.write(`${JSON.stringify(payload)}\n`);
+  };
+  const closeStream = () => {
+    if (streamClosed || res.destroyed || res.writableEnded) {
+      streamClosed = true;
+      return;
+    }
+    res.write(`${JSON.stringify({ type: 'done' })}\n`);
+    streamClosed = true;
+    res.end();
+  };
+
+  res.on('close', () => {
+    if (streamClosed) {
+      return;
+    }
+    streamClosed = true;
+    void hooks?.onAborted?.('Preprocessing request stream was aborted before completion.');
+  });
+
+  try {
+    await collectLlmAttempt(request);
+
+    const shouldRetryNoToolsPreprocessing = kind === 'preprocessing'
+      && !uiEnvelope
+      && !askUserPayload
+      && !planExitPayload
+      && toolCalls.length === 0
+      && tokenPreview.trim().length > 0;
+
+    if (shouldRetryNoToolsPreprocessing) {
+      console.warn('[llm] preprocessing text-only response detected; retrying once with stricter tool-call directive');
+      const retryRequest: LlmRequest = {
+        ...request,
+        messages: [
+          ...request.messages,
+          {
+            role: 'user',
+            content: 'Your previous response did not call tools. For preprocessing, you must execute actions via tool/function calls only (no plain markdown/code response). Continue this task now using tools.'
+          }
+        ]
+      };
+      await collectLlmAttempt(retryRequest);
+    }
 
     // DEBUG: Log what we're about to send
     console.log(`[DEBUG][llm.ts] Response summary: uiEnvelope=${!!uiEnvelope}, toolCalls=${toolCalls.length}, tokenChars=${tokenChars}`);
@@ -901,6 +936,14 @@ async function streamLlmResponse(
             }
           });
         }
+        closeStream();
+        return;
+      }
+      if (kind === 'preprocessing') {
+        writeEvent({
+          type: 'error',
+          message: 'Model returned text without tool calls, so no preprocessing action was executed. Please retry the action.'
+        });
         closeStream();
         return;
       }
@@ -1003,6 +1046,17 @@ function normalizeLlmStreamErrorMessage(
       return 'Gemini quota limit reached (429). This preprocessing request was not completed. Check Gemini API quota/billing and retry.';
     }
     return 'Gemini quota limit reached (429). Check Gemini API quota/billing and retry.';
+  }
+
+  const isModelUnavailable = code === 503
+    || fingerprint.includes('unavailable')
+    || fingerprint.includes('high demand')
+    || fingerprint.includes('timed out')
+    || fingerprint.includes('timeout');
+  if (isModelUnavailable) {
+    const providerMessage = message?.trim() || raw;
+    const guidance = 'Current model is unavailable or timing out. Please choose a different model in the model selector and retry.';
+    return `${providerMessage} ${guidance}`.trim();
   }
 
   if (message && message.trim()) {

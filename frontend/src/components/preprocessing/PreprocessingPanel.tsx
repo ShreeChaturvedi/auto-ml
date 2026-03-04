@@ -32,7 +32,6 @@ import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing
 import {
   buildProcessingStorageKey,
   buildProcessingTabsStateKey,
-  discoverProcessingTabIds,
   extractRunIdFromStoredMessages,
   parseStoredPreprocessingTabsState
 } from './storagePersistence';
@@ -76,6 +75,7 @@ interface PreprocessingTabSnapshot {
 interface PreprocessingTab {
   id: string;
   name: string;
+  notebookId: string | null;
   snapshot: PreprocessingTabSnapshot;
   storageVersion: number;
 }
@@ -98,9 +98,56 @@ function createDefaultTab(): PreprocessingTab {
   return {
     id: DEFAULT_TAB_ID,
     name: 'Processing 1',
+    notebookId: null,
     snapshot: createEmptyTabSnapshot(),
     storageVersion: 0
   };
+}
+
+function parseProcessingIndex(name: string): number | null {
+  const match = /^Processing\s+(\d+)$/i.exec(name.trim());
+  if (!match) {
+    return null;
+  }
+  const value = Number.parseInt(match[1], 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function nextProcessingTabName(tabs: PreprocessingTab[]): string {
+  const used = new Set<number>();
+  tabs.forEach((tab) => {
+    const index = parseProcessingIndex(tab.name);
+    if (index) {
+      used.add(index);
+    }
+  });
+  let candidate = 1;
+  while (used.has(candidate)) {
+    candidate += 1;
+  }
+  return `Processing ${candidate}`;
+}
+
+function normalizeProcessingTabNames(tabs: PreprocessingTab[]): PreprocessingTab[] {
+  const used = new Set<number>();
+  return tabs.map((tab) => {
+    const parsed = parseProcessingIndex(tab.name);
+    if (!parsed || !used.has(parsed)) {
+      if (parsed) {
+        used.add(parsed);
+      }
+      return tab;
+    }
+    let candidate = 1;
+    while (used.has(candidate)) {
+      candidate += 1;
+    }
+    used.add(candidate);
+    return {
+      ...tab,
+      name: `Processing ${candidate}`
+    };
+  });
 }
 
 function statusClassName(status: TransformationEvent['status']): string {
@@ -132,6 +179,13 @@ function summarizeValidation(event: TransformationEvent): string | null {
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
   const notebookCells = useNotebookStore((state) => state.cells);
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
+  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
+  const createNotebook = useNotebookStore((state) => state.createNotebook);
+  const loadNotebooksInStore = useNotebookStore((state) => state.loadNotebooks);
+  const renameNotebook = useNotebookStore((state) => state.renameNotebook);
+  const setActiveNotebook = useNotebookStore((state) => state.setActiveNotebook);
+  const deleteNotebook = useNotebookStore((state) => state.deleteNotebook);
 
   const tables = usePreprocessingStore((state) => state.tables);
   const selectedDatasetId = usePreprocessingStore((state) => state.selectedDatasetId);
@@ -166,6 +220,10 @@ export function PreprocessingPanel() {
   const [tabsReady, setTabsReady] = useState(false);
   const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
   const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
+  const tabsRef = useRef<PreprocessingTab[]>([]);
+  const activeTabIdRef = useRef<string>(DEFAULT_TAB_ID);
+  const notebookEnsureLocksRef = useRef(new Map<string, Promise<string | null>>());
+  const notebookReconcileLockRef = useRef<Promise<void> | null>(null);
 
   const buildTabStorageKey = useCallback((tabId: string): string => (
     buildProcessingStorageKey(tabId)
@@ -201,7 +259,12 @@ export function PreprocessingPanel() {
     const recoveredTabs: PreprocessingTab[] = [];
     const knownTabIds = new Set<string>();
 
-    const appendRecoveredTab = (id: string, name: string, storageVersion: number) => {
+    const appendRecoveredTab = (
+      id: string,
+      name: string,
+      storageVersion: number,
+      notebookId: string | null
+    ) => {
       if (knownTabIds.has(id)) {
         return;
       }
@@ -211,6 +274,7 @@ export function PreprocessingPanel() {
       recoveredTabs.push({
         id,
         name,
+        notebookId,
         storageVersion,
         snapshot: {
           ...createEmptyTabSnapshot(),
@@ -220,24 +284,22 @@ export function PreprocessingPanel() {
     };
 
     persistedTabsState?.tabs.forEach((tab) => {
-      appendRecoveredTab(tab.id, tab.name, tab.storageVersion);
-    });
-
-    discoverProcessingTabIds(projectId).forEach((tabId) => {
-      appendRecoveredTab(tabId, `Processing ${recoveredTabs.length + 1}`, 0);
+      appendRecoveredTab(tab.id, tab.name, tab.storageVersion, tab.notebookId);
     });
 
     if (recoveredTabs.length === 0) {
       recoveredTabs.push(createDefaultTab());
     }
+    const normalizedRecoveredTabs = normalizeProcessingTabNames(recoveredTabs);
 
-    const persistedActiveTabId = persistedTabsState?.activeTabId ?? recoveredTabs[0].id;
-    const recoveredActiveTabId = recoveredTabs.some((tab) => tab.id === persistedActiveTabId)
+    const persistedActiveTabId = persistedTabsState?.activeTabId ?? normalizedRecoveredTabs[0].id;
+    const recoveredActiveTabId = normalizedRecoveredTabs.some((tab) => tab.id === persistedActiveTabId)
       ? persistedActiveTabId
-      : recoveredTabs[0].id;
-    const activeRecoveredTab = recoveredTabs.find((tab) => tab.id === recoveredActiveTabId) ?? recoveredTabs[0];
+      : normalizedRecoveredTabs[0].id;
+    const activeRecoveredTab = normalizedRecoveredTabs.find((tab) => tab.id === recoveredActiveTabId) ?? normalizedRecoveredTabs[0];
 
-    setTabs(recoveredTabs);
+    setTabs(normalizedRecoveredTabs);
+    tabsRef.current = normalizedRecoveredTabs;
     setActiveTabId(recoveredActiveTabId);
     usePreprocessingStore.setState({
       selectedDatasetId: activeRecoveredTab.snapshot.selectedDatasetId,
@@ -261,6 +323,14 @@ export function PreprocessingPanel() {
       }
     }
   }, [candidateDatasetId, selectedDatasetId, tables]);
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
 
   useEffect(() => {
     void syncDivergence(notebookCells);
@@ -290,28 +360,33 @@ export function PreprocessingPanel() {
         tabs: tabs.map((tab) => ({
           id: tab.id,
           name: tab.name,
-          storageVersion: tab.storageVersion
+          storageVersion: tab.storageVersion,
+          notebookId: tab.notebookId
         }))
       })
     );
   }, [activeTabId, projectId, tabs, tabsReady]);
 
   useEffect(() => {
-    setTabs((previous) => previous.map((tab) => {
-      if (tab.id !== activeTabId) {
-        return tab;
-      }
-      return {
-        ...tab,
-        snapshot: {
-          selectedDatasetId,
-          runId,
-          timeline,
-          stepBindings,
-          replayReport
+    setTabs((previous) => {
+      const nextTabs = previous.map((tab) => {
+        if (tab.id !== activeTabId) {
+          return tab;
         }
-      };
-    }));
+        return {
+          ...tab,
+          snapshot: {
+            selectedDatasetId,
+            runId,
+            timeline,
+            stepBindings,
+            replayReport
+          }
+        };
+      });
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
   }, [activeTabId, replayReport, runId, selectedDatasetId, stepBindings, timeline]);
 
   const activeTab = useMemo(
@@ -533,50 +608,314 @@ export function PreprocessingPanel() {
     }
   };
 
+  const setTabNotebookId = useCallback((tabId: string, notebookId: string | null) => {
+    tabsRef.current = tabsRef.current.map((tab) => (
+      tab.id === tabId
+        ? { ...tab, notebookId }
+        : tab
+    ));
+    setTabs((previous) => {
+      const nextTabs = previous.map((tab) => (
+        tab.id === tabId
+          ? { ...tab, notebookId }
+          : tab
+      ));
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
+  }, []);
+
+  const reconcileTabNotebookMappings = useCallback(async (): Promise<void> => {
+    if (!projectId || !tabsReady) {
+      return;
+    }
+    if (useNotebookStore.getState().currentProjectId !== projectId) {
+      return;
+    }
+
+    const existingLock = notebookReconcileLockRef.current;
+    if (existingLock) {
+      await existingLock;
+      return;
+    }
+
+    const reconcilePromise = (async () => {
+      await loadNotebooksInStore();
+      let notebooks = useNotebookStore.getState().notebooks;
+      let notebookIds = new Set(notebooks.map((entry) => entry.notebookId));
+      let nextTabs = tabsRef.current.map((tab) => ({ ...tab }));
+      let tabsChanged = false;
+
+      // 1) Clear stale notebook bindings that no longer exist.
+      nextTabs = nextTabs.map((tab) => {
+        if (tab.notebookId && !notebookIds.has(tab.notebookId)) {
+          tabsChanged = true;
+          return { ...tab, notebookId: null };
+        }
+        return tab;
+      });
+
+      // 2) Ensure every tab has exactly one notebook, reusing unassigned notebooks first.
+      let mappedNotebookIds = new Set(
+        nextTabs
+          .map((tab) => tab.notebookId)
+          .filter((value): value is string => Boolean(value))
+      );
+      let unassignedNotebooks = notebooks.filter((entry) => !mappedNotebookIds.has(entry.notebookId));
+
+      for (const tab of nextTabs) {
+        if (tab.notebookId) {
+          continue;
+        }
+
+        let assignedNotebookId: string | null = null;
+        const adopted = unassignedNotebooks.shift();
+        if (adopted) {
+          assignedNotebookId = adopted.notebookId;
+          if (adopted.name !== tab.name) {
+            await renameNotebook(adopted.notebookId, tab.name);
+          }
+        } else {
+          const created = await createNotebook(tab.name);
+          assignedNotebookId = created?.notebookId ?? null;
+          if (assignedNotebookId) {
+            await loadNotebooksInStore();
+            notebooks = useNotebookStore.getState().notebooks;
+            notebookIds = new Set(notebooks.map((entry) => entry.notebookId));
+          }
+        }
+
+        if (assignedNotebookId) {
+          tab.notebookId = assignedNotebookId;
+          mappedNotebookIds.add(assignedNotebookId);
+          tabsChanged = true;
+        }
+      }
+
+      if (tabsChanged) {
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+      }
+
+      // 3) Delete orphan notebooks (not referenced by any existing processing tab).
+      await loadNotebooksInStore();
+      notebooks = useNotebookStore.getState().notebooks;
+      const finalMappedNotebookIds = new Set(
+        tabsRef.current
+          .map((tab) => tab.notebookId)
+          .filter((value): value is string => Boolean(value))
+      );
+      for (const notebook of notebooks) {
+        if (finalMappedNotebookIds.has(notebook.notebookId)) {
+          continue;
+        }
+        await deleteNotebook(notebook.notebookId);
+      }
+
+      // 4) Keep active tab and notebook view aligned.
+      const latestTabs = tabsRef.current;
+      const activeTab = latestTabs.find((tab) => tab.id === activeTabIdRef.current) ?? latestTabs[0];
+      if (activeTab?.notebookId) {
+        await setActiveNotebook(activeTab.notebookId);
+      }
+    })();
+
+    notebookReconcileLockRef.current = reconcilePromise;
+    try {
+      await reconcilePromise;
+    } finally {
+      notebookReconcileLockRef.current = null;
+    }
+  }, [
+    createNotebook,
+    deleteNotebook,
+    loadNotebooksInStore,
+    projectId,
+    renameNotebook,
+    setActiveNotebook,
+    tabsReady
+  ]);
+
+  const ensureNotebookForTab = useCallback(async (
+    tab: PreprocessingTab,
+    options?: { forceCreate?: boolean }
+  ): Promise<string | null> => {
+    const forceCreate = options?.forceCreate === true;
+    const currentTab = tabsRef.current.find((entry) => entry.id === tab.id) ?? tab;
+
+    const existingLock = notebookEnsureLocksRef.current.get(currentTab.id);
+    if (existingLock) {
+      return existingLock;
+    }
+
+    const ensurePromise = (async () => {
+      const tabState = tabsRef.current.find((entry) => entry.id === currentTab.id) ?? currentTab;
+
+      if (!forceCreate && tabState.notebookId) {
+        const existingNotebookId = tabState.notebookId;
+        let hasNotebook = useNotebookStore.getState().notebooks.some((entry) => entry.notebookId === existingNotebookId);
+        if (!hasNotebook) {
+          await loadNotebooksInStore();
+          hasNotebook = useNotebookStore.getState().notebooks.some((entry) => entry.notebookId === existingNotebookId);
+        }
+        if (hasNotebook) {
+          await setActiveNotebook(existingNotebookId);
+          if (useNotebookStore.getState().activeNotebookId === existingNotebookId) {
+            return existingNotebookId;
+          }
+        }
+        setTabNotebookId(tabState.id, null);
+      }
+
+      // Fresh project bootstrap path: adopt the backend-default notebook for the only tab.
+      if (!forceCreate) {
+        const latestTabState = tabsRef.current.find((entry) => entry.id === currentTab.id) ?? tabState;
+        if (!latestTabState.notebookId) {
+          await loadNotebooksInStore();
+          const availableNotebooks = useNotebookStore.getState().notebooks;
+          const tabsWithoutNotebook = tabsRef.current.filter((entry) => !entry.notebookId);
+          const mappedNotebookIds = new Set(
+            tabsRef.current
+              .map((entry) => entry.notebookId)
+              .filter((value): value is string => Boolean(value))
+          );
+          const unassignedNotebooks = availableNotebooks.filter(
+            (entry) => !mappedNotebookIds.has(entry.notebookId)
+          );
+
+          if (
+            tabsWithoutNotebook.length === 1
+            && tabsWithoutNotebook[0].id === latestTabState.id
+            && unassignedNotebooks.length === 1
+          ) {
+            const adopted = unassignedNotebooks[0];
+            setTabNotebookId(latestTabState.id, adopted.notebookId);
+            await setActiveNotebook(adopted.notebookId);
+            if (adopted.name !== latestTabState.name) {
+              await renameNotebook(adopted.notebookId, latestTabState.name);
+            }
+            return adopted.notebookId;
+          }
+        }
+      }
+
+      const created = await createNotebook((tabsRef.current.find((entry) => entry.id === currentTab.id) ?? currentTab).name);
+      const createdNotebookId = created?.notebookId ?? null;
+      if (createdNotebookId) {
+        setTabNotebookId(currentTab.id, createdNotebookId);
+      }
+      return createdNotebookId;
+    })();
+
+    notebookEnsureLocksRef.current.set(currentTab.id, ensurePromise);
+    try {
+      return await ensurePromise;
+    } finally {
+      notebookEnsureLocksRef.current.delete(currentTab.id);
+    }
+  }, [
+    createNotebook,
+    loadNotebooksInStore,
+    renameNotebook,
+    setActiveNotebook,
+    setTabNotebookId
+  ]);
+
+  const tabIdsSignature = useMemo(
+    () => tabs.map((tab) => tab.id).join('|'),
+    [tabs]
+  );
+
+  useEffect(() => {
+    if (!tabsReady || !projectId) {
+      return;
+    }
+    if (notebookProjectId !== projectId) {
+      return;
+    }
+    void reconcileTabNotebookMappings();
+  }, [notebookProjectId, projectId, reconcileTabNotebookMappings, tabIdsSignature, tabsReady]);
+
+  useEffect(() => {
+    if (!tabsReady || !activeTab) {
+      return;
+    }
+    if (activeTab.notebookId && activeNotebookId === activeTab.notebookId) {
+      return;
+    }
+
+    void ensureNotebookForTab(activeTab);
+  }, [activeNotebookId, activeTab, ensureNotebookForTab, tabsReady]);
+
   const saveActiveSnapshot = () => {
     if (!activeTab) return;
-    setTabs((previous) => previous.map((tab) => (
-      tab.id === activeTab.id
-        ? { ...tab, snapshot: { selectedDatasetId, runId, timeline, stepBindings, replayReport } }
-        : tab
-    )));
+    setTabs((previous) => {
+      const nextTabs = previous.map((tab) => (
+        tab.id === activeTab.id
+          ? { ...tab, snapshot: { selectedDatasetId, runId, timeline, stepBindings, replayReport } }
+          : tab
+      ));
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
   };
 
   const handleTabSwitch = (value: string) => {
     if (!activeTab) return;
-    const targetTab = tabs.find((tab) => tab.id === value);
+    const targetTab = tabsRef.current.find((tab) => tab.id === value);
     if (!targetTab || targetTab.id === activeTab.id) return;
     saveActiveSnapshot();
     setActiveTabId(targetTab.id);
     applyTabSnapshot(targetTab.snapshot);
+    void ensureNotebookForTab(targetTab);
   };
 
   const handleNewTab = () => {
     if (!activeTab) return;
-    const nextIndex = tabs.length + 1;
     const newTab: PreprocessingTab = {
       id: createTabId(),
-      name: `Processing ${nextIndex}`,
+      name: nextProcessingTabName(tabsRef.current),
+      notebookId: null,
       snapshot: createEmptyTabSnapshot(),
       storageVersion: 0
     };
     saveActiveSnapshot();
-    setTabs((previous) => [...previous, newTab]);
+    setTabs((previous) => {
+      const nextTabs = [...previous, newTab];
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
     setActiveTabId(newTab.id);
     applyTabSnapshot(newTab.snapshot);
+    void ensureNotebookForTab(newTab);
   };
 
   const handleDeleteTab = () => {
     if (!activeTab || tabs.length <= 1) return;
+    const deletedTab = activeTab;
     const targetIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
     const fallbackTab = tabs[targetIndex - 1] ?? tabs[targetIndex + 1];
     if (!fallbackTab) return;
+    const notebookIdToDelete = deletedTab.notebookId;
     if (projectId) {
       localStorage.removeItem(buildScopedTabStorageKey(activeTab.id));
     }
-    setTabs((previous) => previous.filter((tab) => tab.id !== activeTab.id));
+    setTabs((previous) => {
+      const nextTabs = previous.filter((tab) => tab.id !== activeTab.id);
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
     setActiveTabId(fallbackTab.id);
     applyTabSnapshot(fallbackTab.snapshot);
+    void (async () => {
+      const fallbackNotebookId = await ensureNotebookForTab(fallbackTab);
+      if (
+        notebookIdToDelete
+        && notebookIdToDelete !== fallbackNotebookId
+      ) {
+        await deleteNotebook(notebookIdToDelete);
+      }
+    })();
   };
 
   const openRenameTabDialog = () => {
@@ -589,31 +928,59 @@ export function PreprocessingPanel() {
     if (!activeTab) return;
     const trimmed = renameTabName.trim();
     if (!trimmed) return;
-    setTabs((previous) => previous.map((tab) =>
-      tab.id === activeTab.id ? { ...tab, name: trimmed } : tab
-    ));
+    const notebookId = activeTab.notebookId;
+    setTabs((previous) => {
+      const nextTabs = previous.map((tab) =>
+        tab.id === activeTab.id ? { ...tab, name: trimmed } : tab
+      );
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
+    if (notebookId) {
+      void renameNotebook(notebookId, trimmed);
+    }
     setRenameTabDialogOpen(false);
   };
 
   const resetActiveTab = () => {
     if (!activeTab) return;
+    const oldNotebookId = activeTab.notebookId;
 
     if (projectId) {
       localStorage.removeItem(buildScopedTabStorageKey(activeTab.id));
     }
 
     const nextSnapshot = createEmptyTabSnapshot();
-    setTabs((previous) => previous.map((tab) => (
-      tab.id === activeTab.id
-        ? {
-            ...tab,
-            snapshot: nextSnapshot,
-            storageVersion: tab.storageVersion + 1
-          }
-        : tab
-    )));
+    const resetTab: PreprocessingTab = {
+      ...activeTab,
+      notebookId: null,
+      snapshot: nextSnapshot
+    };
+    setTabs((previous) => {
+      const nextTabs = previous.map((tab) => (
+        tab.id === activeTab.id
+          ? {
+              ...tab,
+              notebookId: null,
+              snapshot: nextSnapshot,
+              storageVersion: tab.storageVersion + 1
+            }
+          : tab
+      ));
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
     applyTabSnapshot(nextSnapshot);
     setDatasetModalOpen(true);
+    void (async () => {
+      const nextNotebookId = await ensureNotebookForTab(resetTab, { forceCreate: true });
+      if (
+        oldNotebookId
+        && oldNotebookId !== nextNotebookId
+      ) {
+        await deleteNotebook(oldNotebookId);
+      }
+    })();
   };
 
   const domainAdapter = useMemo(() => {
@@ -623,11 +990,11 @@ export function PreprocessingPanel() {
   return (
     <>
       <AgenticShell
-        key={`${activeTab?.id ?? 'processing-tab-1'}-${activeTab?.storageVersion ?? 0}`}
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
         beforeSubmit={requestDatasetContinuityChoice}
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID)}
+        sessionVersion={activeTab?.storageVersion ?? 0}
         toolbarLeft={
           <PreprocessingToolbarLeft
             tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}

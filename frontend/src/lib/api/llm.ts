@@ -73,11 +73,12 @@ export async function streamOnboardingPlan(
 export async function executeToolCalls(
   projectId: string,
   toolCalls: ToolCall[],
-  notebookId?: string
+  notebookId?: string,
+  executionMode: 'agent' | 'user_approval' = 'agent'
 ) {
   return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
     method: 'POST',
-    body: JSON.stringify({ projectId, toolCalls, notebookId })
+    body: JSON.stringify({ projectId, toolCalls, notebookId, executionMode })
   });
 }
 

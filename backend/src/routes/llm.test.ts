@@ -2,11 +2,21 @@ import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { env } from '../config.js';
 import { canListen } from '../tests/canListen.js';
 
 import { createLlmRouter } from './llm.js';
 
-const { datasetGetByIdMock, projectGetByIdMock, llmCompleteMock, llmStreamMock } = vi.hoisted(() => ({
+const {
+  createLlmClientMock,
+  createThinkingLlmClientMock,
+  datasetGetByIdMock,
+  projectGetByIdMock,
+  llmCompleteMock,
+  llmStreamMock
+} = vi.hoisted(() => ({
+  createLlmClientMock: vi.fn(),
+  createThinkingLlmClientMock: vi.fn(),
   datasetGetByIdMock: vi.fn(),
   projectGetByIdMock: vi.fn(),
   llmCompleteMock: vi.fn(async () => ''),
@@ -14,15 +24,17 @@ const { datasetGetByIdMock, projectGetByIdMock, llmCompleteMock, llmStreamMock }
 }));
 
 vi.mock('../services/llm/llmClient.js', () => {
+  createLlmClientMock.mockImplementation(() => ({
+    complete: llmCompleteMock,
+    stream: llmStreamMock
+  }));
+  createThinkingLlmClientMock.mockImplementation(() => ({
+    complete: llmCompleteMock,
+    stream: llmStreamMock
+  }));
   return {
-    createLlmClient: vi.fn(() => ({
-      complete: llmCompleteMock,
-      stream: llmStreamMock
-    })),
-    createThinkingLlmClient: vi.fn(() => ({
-      complete: llmCompleteMock,
-      stream: llmStreamMock
-    }))
+    createLlmClient: createLlmClientMock,
+    createThinkingLlmClient: createThinkingLlmClientMock
   };
 });
 
@@ -74,6 +86,14 @@ describeIf('llm routes', () => {
     vi.clearAllMocks();
     llmCompleteMock.mockResolvedValue('');
     llmStreamMock.mockResolvedValue('');
+    createLlmClientMock.mockImplementation(() => ({
+      complete: llmCompleteMock,
+      stream: llmStreamMock
+    }));
+    createThinkingLlmClientMock.mockImplementation(() => ({
+      complete: llmCompleteMock,
+      stream: llmStreamMock
+    }));
     datasetGetByIdMock.mockResolvedValue({
       datasetId: 'ds-1',
       projectId: 'project-1',
@@ -229,9 +249,25 @@ describeIf('llm routes', () => {
       const reasonCode = response.body.results?.[0]?.output?.reasonCode as string | undefined;
       expect(['RUN_NOT_FOUND', 'RUN_PROJECT_MISMATCH']).toContain(reasonCode);
     });
+
   });
 
   describe('POST /api/llm/preprocessing/stream', () => {
+    it('uses preprocessing-specific timeout for non-thinking requests', async () => {
+      const app = createTestApp();
+
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'profile missing values'
+        });
+
+      expect(response.status).toBe(200);
+      expect(createLlmClientMock.mock.calls).toContainEqual([undefined, env.preprocessingLlmTimeoutMs]);
+    });
+
     it('normalizes Gemini quota errors into actionable preprocessing message', async () => {
       llmStreamMock.mockRejectedValueOnce(new Error(JSON.stringify({
         error: {
@@ -260,6 +296,34 @@ describeIf('llm routes', () => {
       const errorEvent = events.find((event) => event.type === 'error') as { message?: string } | undefined;
       expect(errorEvent?.message).toContain('Gemini quota limit reached (429)');
       expect(errorEvent?.message).toContain('preprocessing request was not completed');
+      expect(events[events.length - 1]?.type).toBe('done');
+    });
+
+    it('emits an error when preprocessing stream returns text-only response without tool calls', async () => {
+      llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const handlers = args[1] as { onToken: (token: string) => void };
+        handlers.onToken('```python\nprint("hello")\n```');
+        return '```python\nprint("hello")\n```';
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'Encode categoricals'
+        });
+
+      expect(response.status).toBe(200);
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const errorEvent = events.find((event) => event.type === 'error') as { message?: string } | undefined;
+      expect(errorEvent?.message).toContain('text without tool calls');
       expect(events[events.length - 1]?.type).toBe('done');
     });
 

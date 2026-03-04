@@ -61,30 +61,32 @@ export interface LlmClient {
   stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string>;
 }
 
-export function createLlmClient(modelOverride?: string): LlmClient {
+export function createLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
   const provider = env.llmProvider.toLowerCase();
+  const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs;
 
   if (provider === 'openai') {
     return new OpenAiClient({
       apiKey: env.llmApiKey,
       baseUrl: env.llmBaseUrl,
       model: modelOverride || env.llmModel,
-      timeoutMs: env.llmTimeoutMs
+      timeoutMs
     });
   }
 
   return new GeminiClient({
     apiKey: env.geminiApiKey || env.llmApiKey,
     model: modelOverride || env.geminiModel || env.llmModel,
-    timeoutMs: env.llmTimeoutMs
+    timeoutMs
   });
 }
 
-export function createThinkingLlmClient(modelOverride?: string): LlmClient {
+export function createThinkingLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
   // Thinking model is only supported for Gemini
+  const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs * 2;
   return new GeminiClient({
     apiKey: env.geminiApiKey || env.llmApiKey,
     model: modelOverride || env.geminiThinkingModel,
-    timeoutMs: env.llmTimeoutMs * 2 // Double timeout for thinking model
+    timeoutMs
   });
 }

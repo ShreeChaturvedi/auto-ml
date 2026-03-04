@@ -149,6 +149,48 @@ describe('preprocessingGraph', () => {
     });
   });
 
+  it('rejects non-user approvals while step is awaiting approval', async () => {
+    const projectId = 'project-1';
+    const { execute } = await createExecutor(projectId);
+
+    const proposed = await execute(projectId, 'propose_transformation_step', {
+      title: 'Drop outliers',
+      intentType: 'drop_rows'
+    });
+    const runId = (proposed.output as { runId: string }).runId;
+    const stepId = (proposed.output as { step?: { stepId: string } }).step?.stepId;
+
+    await execute(projectId, 'materialize_step_code', {
+      runId,
+      stepId,
+      code: 'df = df[df["age"] < 100]'
+    });
+    await execute(projectId, 'execute_transformation_step', {
+      runId,
+      stepId,
+      succeeded: true,
+      cellId: 'cell-1'
+    });
+    await execute(projectId, 'validate_step_result', {
+      runId,
+      stepId,
+      requiresApproval: true
+    });
+
+    const committed = await execute(projectId, 'commit_transformation_step', {
+      runId,
+      stepId,
+      approved: true,
+      approvalSource: 'agent'
+    });
+
+    expect(committed.output).toMatchObject({
+      isError: true,
+      reasonCode: 'STEP_APPROVAL_USER_REQUIRED',
+      stepId
+    });
+  });
+
   it('rejects unknown explicit runId instead of creating a new run', async () => {
     const projectId = 'project-1';
     const { execute } = await createExecutor(projectId);
@@ -328,6 +370,7 @@ describe('preprocessingGraph', () => {
       runId,
       stepId,
       approved: false,
+      approvalSource: 'user',
       rejectionReason: 'Column drop would remove critical records'
     });
 

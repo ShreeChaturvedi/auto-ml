@@ -19,6 +19,7 @@ export interface StoredPreprocessingTabState {
   id: string;
   name: string;
   storageVersion: number;
+  notebookId: string | null;
 }
 
 export interface StoredPreprocessingTabsState {
@@ -48,10 +49,13 @@ export function parseStoredPreprocessingTabsState(
             const storageVersion = typeof record.storageVersion === 'number'
               ? record.storageVersion
               : 0;
+            const notebookId = typeof record.notebookId === 'string' && record.notebookId.trim()
+              ? record.notebookId
+              : null;
             if (!id.trim() || !name.trim()) {
               return null;
             }
-            return { id, name, storageVersion };
+            return { id, name, storageVersion, notebookId };
           })
           .filter((tab): tab is StoredPreprocessingTabState => Boolean(tab))
       : [];

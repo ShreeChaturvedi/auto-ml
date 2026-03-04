@@ -9,6 +9,7 @@ interface ProgressiveMessageTextProps {
   animateOnMount?: boolean;
   plainClassName?: string;
   finalClassName?: string;
+  renderProgressive?: (visibleText: string) => ReactNode;
   renderFinal?: (fullText: string) => ReactNode;
 }
 
@@ -23,6 +24,7 @@ function ProgressiveMessageText({
   animateOnMount = true,
   plainClassName,
   finalClassName,
+  renderProgressive,
   renderFinal,
 }: ProgressiveMessageTextProps) {
   const [visibleChars, setVisibleChars] = useState(() =>
@@ -83,11 +85,13 @@ function ProgressiveMessageText({
 
   return (
     <div className={cn(plainClassName)} aria-live={isLive ? 'polite' : 'off'}>
-      {Array.from(revealedText).map((char, index) => (
-        <span key={`${messageId}-${index}`} className="llm-char-enter">
-          {char}
-        </span>
-      ))}
+      {renderProgressive
+        ? renderProgressive(revealedText)
+        : Array.from(revealedText).map((char, index) => (
+          <span key={`${messageId}-${index}`} className="llm-char-enter">
+            {char}
+          </span>
+        ))}
     </div>
   );
 }

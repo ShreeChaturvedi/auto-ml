@@ -57,12 +57,65 @@ interface NlQueryResponse {
   nl: {
     sql: string;
     rationale: string;
+    explanation: {
+      intentSummary: string;
+      selectedTables: string[];
+      joinPlan: Array<{
+        leftTable: string;
+        leftColumn: string;
+        rightTable: string;
+        rightColumn: string;
+        joinType: 'inner' | 'left' | 'right' | 'full';
+        confidence: number;
+        reason: string;
+      }>;
+      filters: string[];
+      aggregations: string[];
+      assumptions: string[];
+      validationNotes: string[];
+      confidence: number;
+      warningLevel: 'none' | 'low' | 'medium' | 'high';
+      confidenceMode: 'model' | 'heuristic' | 'deterministic_fallback' | 'repair';
+      reliabilityTier: 'high' | 'medium' | 'low';
+    };
     queryId: string;
     cached: boolean;
-    query: SqlQueryResponse['query'];
+    query: SqlQueryResponse['query'] | null;
+    queryExecutionError?: string | null; // present when generation succeeded but initial execution failed
   };
 }
 ```
+
+## `/api/query/nl/stream` (POST, NDJSON stream)
+
+Same request payload as `/api/query/nl`.
+
+**Response (application/x-ndjson)**
+
+```ts
+type NlQueryStreamEvent =
+  | {
+      type: 'phase_started' | 'phase_progress' | 'phase_completed' | 'phase_failed';
+      phaseId:
+        | 'schema_context'
+        | 'planning'
+        | 'sql_generation'
+        | 'validation'
+        | 'initial_execution'
+        | 'repair'
+        | 'done';
+      summary: string;
+      timestamp: string;
+      details?: Record<string, unknown>;
+    }
+  | { type: 'result'; nl: NlQueryResponse['nl'] }
+  | { type: 'done' };
+```
+
+Notes:
+- `phase_*` events stream model and execution progress in order.
+- `result` emits the same final `nl` payload shape as `/api/query/nl`.
+- `done` always terminates the stream.
 
 ---
 

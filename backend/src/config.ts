@@ -13,10 +13,11 @@ loadEnv();
 loadEnv({ path: resolve(BACKEND_ROOT, '.env') });
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview-customtools';
+const DEFAULT_NL2SQL_MODEL = 'gemini-3-flash-preview';
 const RESOLVED_LLM_MODEL = process.env.LLM_MODEL ?? DEFAULT_GEMINI_MODEL;
 const RESOLVED_GEMINI_MODEL = process.env.GEMINI_MODEL ?? RESOLVED_LLM_MODEL;
 const RESOLVED_GEMINI_THINKING_MODEL = process.env.GEMINI_THINKING_MODEL ?? RESOLVED_LLM_MODEL;
-const RESOLVED_NL2SQL_MODEL = process.env.NL2SQL_MODEL ?? RESOLVED_LLM_MODEL;
+const RESOLVED_NL2SQL_MODEL = process.env.NL2SQL_MODEL ?? DEFAULT_NL2SQL_MODEL;
 
 const DEFAULT_ORIGINS = [
   'http://localhost:5173',

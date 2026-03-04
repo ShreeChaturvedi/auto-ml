@@ -326,7 +326,9 @@ describeIf('query routes', () => {
           assumptions: [],
           validationNotes: [],
           confidence: 0.9,
-          warningLevel: 'none'
+          warningLevel: 'none',
+          confidenceMode: 'model',
+          reliabilityTier: 'high'
         }
       });
       mockGetCachedQueryResult.mockResolvedValue(null);
@@ -354,6 +356,8 @@ describeIf('query routes', () => {
       expect(response.body.nl.sql).toBe('SELECT * FROM users');
       expect(response.body.nl.rationale).toBe('Fetching all users');
       expect(response.body.nl.explanation.intentSummary).toBe('Fetch users');
+      expect(response.body.nl.explanation.confidenceMode).toBe('model');
+      expect(response.body.nl.explanation.reliabilityTier).toBe('high');
       expect(response.body.nl.cached).toBe(false);
       expect(response.body.nl.query).toEqual(queryResult);
       expect(response.body.nl.queryExecutionError).toBeNull();
@@ -373,7 +377,9 @@ describeIf('query routes', () => {
           assumptions: [],
           validationNotes: [],
           confidence: 0.9,
-          warningLevel: 'none'
+          warningLevel: 'none',
+          confidenceMode: 'model',
+          reliabilityTier: 'high'
         }
       });
       const cachedResult = {
@@ -417,7 +423,9 @@ describeIf('query routes', () => {
           assumptions: [],
           validationNotes: [],
           confidence: 0.5,
-          warningLevel: 'medium'
+          warningLevel: 'medium',
+          confidenceMode: 'heuristic',
+          reliabilityTier: 'low'
         }
       });
       mockGetCachedQueryResult.mockResolvedValue(null);
@@ -453,7 +461,9 @@ describeIf('query routes', () => {
           assumptions: [],
           validationNotes: [],
           confidence: 0.92,
-          warningLevel: 'none'
+          warningLevel: 'none',
+          confidenceMode: 'model',
+          reliabilityTier: 'high'
         }
       });
       mockGetCachedQueryResult.mockResolvedValue(null);
@@ -481,7 +491,9 @@ describeIf('query routes', () => {
           assumptions: ['response represents score'],
           validationNotes: ['auto-repaired'],
           confidence: 0.74,
-          warningLevel: 'low'
+          warningLevel: 'low',
+          confidenceMode: 'repair',
+          reliabilityTier: 'medium'
         }
       });
 
@@ -514,6 +526,94 @@ describeIf('query routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Failed to parse query');
+    });
+  });
+
+  describe('POST /api/query/nl/stream', () => {
+    it('streams phase events, result payload, and terminal done event', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockImplementation(async (input) => {
+        input.onProgress?.({
+          phaseId: 'schema_context',
+          status: 'started',
+          summary: 'Building schema context.',
+          timestamp: new Date().toISOString()
+        });
+        input.onProgress?.({
+          phaseId: 'schema_context',
+          status: 'completed',
+          summary: 'Schema context ready.',
+          timestamp: new Date().toISOString()
+        });
+        return {
+          sql: 'SELECT * FROM users',
+          rationale: 'Fetching all users',
+          queryId: 'stream-query-id',
+          explanation: {
+            intentSummary: 'Fetch users',
+            selectedTables: ['users'],
+            joinPlan: [],
+            filters: [],
+            aggregations: [],
+            assumptions: [],
+            validationNotes: [],
+            confidence: 0.9,
+            warningLevel: 'none',
+            confidenceMode: 'model',
+            reliabilityTier: 'high'
+          }
+        };
+      });
+      mockGetCachedQueryResult.mockResolvedValue(null);
+      mockExecuteReadOnlyQuery.mockResolvedValue({
+        queryId: 'exec-query-id',
+        sql: 'SELECT * FROM users',
+        rows: [{ id: 1 }],
+        columns: [{ name: 'id' }],
+        rowCount: 1,
+        executionMs: 14,
+        cached: false
+      });
+      mockStoreCachedQueryResult.mockResolvedValue(undefined);
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl/stream')
+        .send({
+          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          query: 'show all users'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toMatch(/application\/x-ndjson/);
+
+      const events = response.text.trim().split('\n').map((line) => JSON.parse(line));
+      expect(events.some((event) => event.type === 'phase_started' && event.phaseId === 'schema_context')).toBe(true);
+      expect(events.some((event) => event.type === 'phase_completed' && event.phaseId === 'done')).toBe(true);
+
+      const resultEvent = events.find((event) => event.type === 'result');
+      expect(resultEvent).toBeDefined();
+      expect(resultEvent.nl.sql).toBe('SELECT * FROM users');
+      expect(resultEvent.nl.explanation.intentSummary).toBe('Fetch users');
+      expect(resultEvent.nl.queryExecutionError).toBeNull();
+
+      expect(events.at(-1)?.type).toBe('done');
+    });
+
+    it('streams failed done phase when generation throws', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockRejectedValue(new Error('provider unavailable'));
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl/stream')
+        .send({
+          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          query: 'show all users'
+        });
+
+      expect(response.status).toBe(200);
+      const events = response.text.trim().split('\n').map((line) => JSON.parse(line));
+      expect(events.some((event) => event.type === 'phase_failed' && event.phaseId === 'done')).toBe(true);
+      expect(events.at(-1)?.type).toBe('done');
     });
   });
 

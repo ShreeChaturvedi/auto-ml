@@ -27,7 +27,7 @@ export class GeminiClient implements LlmClient {
   }
 
   async complete(request: LlmRequest): Promise<string> {
-    const body = buildGeminiBody(request);
+    const body = buildGeminiBody(request, this.model);
     const response = await this.fetchWithTimeout(
       this.modelRequestUrl(this.model, false),
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
@@ -52,10 +52,7 @@ export class GeminiClient implements LlmClient {
     model: string,
     retryAttempt: number
   ): Promise<string> {
-    const body = buildGeminiBody(request);
-
-    // DEBUG: Log the full request body
-    console.log('[DEBUG][geminiClient.stream] Request body:', JSON.stringify(body, null, 2));
+    const body = buildGeminiBody(request, model);
 
     let response: Response;
     try {
@@ -85,7 +82,6 @@ export class GeminiClient implements LlmClient {
         await sleep(delayMs);
         return this.streamWithModel(request, handlers, model, retryAttempt + 1);
       }
-      console.error('[DEBUG][geminiClient.stream] HTTP error:', response.status, text);
       throw new Error(text || `Gemini stream failed (${response.status})`);
     }
 
@@ -95,8 +91,6 @@ export class GeminiClient implements LlmClient {
     let fullText = '';
     const pendingToolCalls: GeminiToolCall[] = [];
     const debugInfo: GeminiStreamDebug = {};
-    const allChunks: unknown[] = []; // DEBUG: Capture all response chunks
-
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -114,7 +108,6 @@ export class GeminiClient implements LlmClient {
         if (!data || data === '[DONE]') continue;
         try {
           const json = JSON.parse(data);
-          allChunks.push(json); // DEBUG: Save chunk
           const chunk = extractGeminiText(json);
           if (chunk) {
             fullText += chunk;
@@ -141,7 +134,6 @@ export class GeminiClient implements LlmClient {
         if (data && data !== '[DONE]') {
           try {
             const json = JSON.parse(data);
-            allChunks.push(json); // DEBUG: Save chunk
             const chunk = extractGeminiText(json);
             if (chunk) {
               fullText += chunk;
@@ -166,13 +158,6 @@ export class GeminiClient implements LlmClient {
       finalizeToolCalls(pendingToolCalls).forEach((call) => handlers.onToolCall?.(call));
     } else if (!fullText || debugInfo.finishReason === 'MALFORMED_FUNCTION_CALL') {
       const reason = debugInfo.finishReason || 'unknown';
-      // DEBUG: Log EVERYTHING when this error occurs
-      console.error('[DEBUG][geminiClient.stream] MALFORMED_FUNCTION_CALL or empty response');
-      console.error('[DEBUG] Full request body was:', JSON.stringify(body, null, 2));
-      console.error('[DEBUG] All response chunks:', JSON.stringify(allChunks, null, 2));
-      console.error('[DEBUG] debugInfo:', JSON.stringify(debugInfo, null, 2));
-      console.error('[DEBUG] pendingToolCalls:', JSON.stringify(pendingToolCalls, null, 2));
-      console.error('[DEBUG] fullText:', fullText);
       console.warn(`[llm][gemini] Empty/failed response (${reason})`, debugInfo);
       // Throw explicit error so callers can handle gracefully
       if (debugInfo.finishReason === 'MALFORMED_FUNCTION_CALL') {
@@ -236,7 +221,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildGeminiBody(request: LlmRequest) {
+function buildGeminiBody(request: LlmRequest, model: string) {
   const system = request.messages.find((msg) => msg.role === 'system');
   const MAX_HISTORY_ITEMS = 8;
   const toolCallHistory = request.toolCallHistory?.slice(-MAX_HISTORY_ITEMS);
@@ -315,7 +300,7 @@ function buildGeminiBody(request: LlmRequest) {
     }
     : undefined;
 
-  const thinkingConfig = buildThinkingConfig(request);
+  const thinkingConfig = buildThinkingConfig(request, model);
 
   const body = {
     contents,
@@ -329,8 +314,6 @@ function buildGeminiBody(request: LlmRequest) {
     tools,
     toolConfig
   };
-
-  console.log('[DEBUG][buildGeminiBody] generationConfig:', JSON.stringify(body.generationConfig, null, 2));
 
   return body;
 }
@@ -353,30 +336,45 @@ function compactFunctionResponse(response: Record<string, unknown>): Record<stri
   }
 }
 
-function buildThinkingConfig(request: LlmRequest) {
-  if (request.thinkingLevel === 'dynamic') {
-    return request.enableThinking
-      ? { includeThoughts: true }
-      : { includeThoughts: false };
+function buildThinkingConfig(request: LlmRequest, model: string) {
+  // Explicitly disable thinking payload when callers turn it off.
+  if (request.enableThinking === false) {
+    return undefined;
+  }
+
+  if (!supportsThinkingConfig(model)) {
+    return undefined;
   }
 
   const explicitLevel = toGeminiThinkingLevel(request.thinkingLevel);
-
-  if (explicitLevel) {
+  if (explicitLevel && supportsExplicitThinkingLevel(model)) {
     return {
       thinkingLevel: explicitLevel,
-      includeThoughts: request.enableThinking ?? true
+      includeThoughts: true
     };
   }
 
   if (request.enableThinking) {
     return {
-      thinkingLevel: 'HIGH' as const,
       includeThoughts: true
     };
   }
 
   return undefined;
+}
+
+function supportsThinkingConfig(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return normalized.includes('gemini-2.5')
+    || normalized.includes('gemini-3.1-pro')
+    || normalized.includes('thinking');
+}
+
+function supportsExplicitThinkingLevel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return normalized.includes('gemini-2.5')
+    || normalized.includes('gemini-3.1-pro')
+    || normalized.includes('thinking');
 }
 
 function toGeminiThinkingLevel(level?: LlmThinkingLevel): 'LOW' | 'MEDIUM' | 'HIGH' | undefined {
@@ -456,9 +454,6 @@ function extractGeminiFunctionCalls(payload: unknown, contextId?: string): Gemin
 
   for (const candidate of candidates) {
     const parts = candidate.content?.parts ?? [];
-
-    // DEBUG: Log what Gemini returns
-    console.log('[DEBUG][extractGeminiFunctionCalls] Parts received:', JSON.stringify(parts, null, 2));
 
     // First pass: find the last thoughtSignature in the response
     // Gemini 3 may return signature on a separate text part at the end

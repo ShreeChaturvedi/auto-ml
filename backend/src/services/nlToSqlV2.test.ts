@@ -131,6 +131,8 @@ describe('nlToSqlV2 service', () => {
     expect(result.explanation.selectedTables).toHaveLength(2);
     expect(result.explanation.joinPlan).toHaveLength(1);
     expect(result.explanation.validationNotes.length).toBeGreaterThan(0);
+    expect(result.explanation.confidenceMode).toBe('heuristic');
+    expect(result.explanation.reliabilityTier).toBe('medium');
   });
 
   it('retries pass-1 once when malformed JSON is returned', async () => {
@@ -274,6 +276,8 @@ describe('nlToSqlV2 service', () => {
 
     expect(result.explanation.warningLevel).toBe('medium');
     expect(result.explanation.assumptions.length).toBeGreaterThan(0);
+    expect(result.explanation.confidenceMode).toBe('model');
+    expect(result.explanation.reliabilityTier).toBe('low');
   });
 
   it('rejects unsafe SQL from model output', async () => {
@@ -406,6 +410,8 @@ describe('nlToSqlV2 service', () => {
 
     expect(result.explanation.confidence).toBe(0.95);
     expect(result.explanation.warningLevel).toBe('none');
+    expect(result.explanation.confidenceMode).toBe('heuristic');
+    expect(result.explanation.reliabilityTier).toBe('medium');
   });
 
   it('falls back to compact pass-2 generation when rich pass output is invalid', async () => {
@@ -484,7 +490,9 @@ describe('nlToSqlV2 service', () => {
     expect(result.sql).toContain('"n_correct"');
     expect(result.sql).toContain('"n_possible"');
     expect(result.explanation.validationNotes.some((note) => note.includes('deterministic fallback'))).toBe(true);
-    expect(result.explanation.confidence).toBeLessThan(0.5);
+    expect(result.explanation.confidence).toBe(0.68);
+    expect(result.explanation.confidenceMode).toBe('deterministic_fallback');
+    expect(result.explanation.reliabilityTier).toBe('low');
   });
 
   it('auto-quotes case-sensitive identifiers from schema context', async () => {
@@ -573,5 +581,153 @@ describe('nlToSqlV2 service', () => {
     });
 
     expect(result.explanation.confidence).toBe(0.95);
+  });
+
+  it('applies provider-failure penalty and emits debug fallback notes', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const client = createClientFromResponses([
+      JSON.stringify({
+        intentSummary: 'List users',
+        selectedTables: ['users'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        confidence: 0.8
+      }),
+      new Error('service unavailable'),
+    ]);
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    const result = await service.generateSqlFromNaturalLanguageV2({
+      projectId: 'project-1',
+      nlQuery: 'list users'
+    });
+
+    expect(result.explanation.confidenceMode).toBe('deterministic_fallback');
+    expect(result.explanation.confidence).toBe(0.42);
+    expect(result.explanation.validationNotes).toContain('Model provider failure triggered deterministic fallback SQL.');
+    expect(result.explanation.validationNotes.some((note) => note.startsWith('debug: provider fallback detail:'))).toBe(true);
+  });
+
+  it('emits ordered progress events for happy-path generation', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const client = createClientFromResponses([
+      JSON.stringify({
+        sql: 'SELECT id, name FROM users LIMIT 25',
+        rationale: 'List users.',
+        selectedTables: ['users'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        validationNotes: [],
+        confidence: 0.9
+      })
+    ]);
+    const events: Array<{ phaseId: string; status: string }> = [];
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    await service.generateSqlFromNaturalLanguageV2({
+      projectId: 'project-1',
+      nlQuery: 'list users',
+      onProgress: (event) => {
+        events.push({ phaseId: event.phaseId, status: event.status });
+      }
+    });
+
+    expect(events).toEqual([
+      { phaseId: 'schema_context', status: 'started' },
+      { phaseId: 'schema_context', status: 'completed' },
+      { phaseId: 'planning', status: 'started' },
+      { phaseId: 'planning', status: 'completed' },
+      { phaseId: 'sql_generation', status: 'started' },
+      { phaseId: 'sql_generation', status: 'progress' },
+      { phaseId: 'sql_generation', status: 'completed' },
+      { phaseId: 'validation', status: 'started' },
+      { phaseId: 'validation', status: 'completed' }
+    ]);
+  });
+
+  it('emits failure and recovery progress events when deterministic fallback is used', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const client = createClientFromResponses([
+      new Error('service unavailable')
+    ]);
+    const events: Array<{ phaseId: string; status: string }> = [];
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    const result = await service.generateSqlFromNaturalLanguageV2({
+      projectId: 'project-1',
+      nlQuery: 'list users',
+      onProgress: (event) => {
+        events.push({ phaseId: event.phaseId, status: event.status });
+      }
+    });
+
+    expect(result.explanation.confidenceMode).toBe('deterministic_fallback');
+    expect(events).toContainEqual({ phaseId: 'sql_generation', status: 'failed' });
+    expect(events).toContainEqual({ phaseId: 'sql_generation', status: 'completed' });
+    expect(events).toContainEqual({ phaseId: 'validation', status: 'completed' });
+  });
+
+  it('returns repair confidence mode metadata for repaired SQL', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const client = createClientFromResponses([
+      JSON.stringify({
+        sql: 'SELECT id, name FROM users LIMIT 25',
+        rationale: 'Adjusted to valid columns.',
+        assumptions: ['Used id and name as available columns.'],
+        validationNotes: ['Repaired invalid column reference.'],
+        confidence: 0.73
+      })
+    ]);
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    const progressEvents: Array<{ phaseId: string; status: string }> = [];
+
+    const result = await service.repairSqlFromExecutionErrorV2({
+      projectId: 'project-1',
+      nlQuery: 'show users',
+      failedSql: 'SELECT foo FROM users',
+      executionError: 'column \"foo\" does not exist',
+      onProgress: (event) => {
+        progressEvents.push({ phaseId: event.phaseId, status: event.status });
+      },
+      priorExplanation: {
+        intentSummary: 'Show users',
+        selectedTables: ['users'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        validationNotes: [],
+        confidence: 0.7,
+        warningLevel: 'low',
+        confidenceMode: 'model',
+        reliabilityTier: 'medium'
+      }
+    });
+
+    expect(result.explanation.confidenceMode).toBe('repair');
+    expect(result.explanation.reliabilityTier).toBe('medium');
+    expect(progressEvents).toContainEqual({ phaseId: 'repair', status: 'started' });
+    expect(progressEvents).toContainEqual({ phaseId: 'repair', status: 'completed' });
   });
 });

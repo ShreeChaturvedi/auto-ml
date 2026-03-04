@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
 import { buildDatasetContinuityPrompt } from './continuityPrompt';
@@ -27,8 +28,10 @@ import {
 import { cn } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { useProjectStore } from '@/stores/projectStore';
 import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
+import { projectColorClasses } from '@/types/project';
 import {
   buildProcessingStorageKey,
   buildProcessingTabsStateKey,
@@ -150,11 +153,11 @@ function normalizeProcessingTabNames(tabs: PreprocessingTab[]): PreprocessingTab
   });
 }
 
-function statusClassName(status: TransformationEvent['status']): string {
+function statusClassName(status: TransformationEvent['status'], divergedClassName: string): string {
   if (status === 'applied') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
   if (status === 'failed') return 'border-red-300 bg-red-50 text-red-700';
   if (status === 'awaiting_approval') return 'border-amber-300 bg-amber-50 text-amber-700';
-  if (status === 'diverged') return 'border-purple-300 bg-purple-50 text-purple-700';
+  if (status === 'diverged') return divergedClassName;
   if (status === 'running') return 'border-sky-300 bg-sky-50 text-sky-700';
   return 'border-muted bg-muted/50 text-muted-foreground';
 }
@@ -178,6 +181,19 @@ function summarizeValidation(event: TransformationEvent): string | null {
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const projects = useProjectStore((state) => state.projects);
+  const activeProjectColor = useMemo(() => {
+    const activeProject = projectId
+      ? projects.find((project) => project.id === projectId)
+      : undefined;
+    return activeProject?.color ?? 'blue';
+  }, [projectId, projects]);
+  const projectAccentClasses = projectColorClasses[activeProjectColor];
+  const divergedAccentClassName = cn(
+    projectAccentClasses.border,
+    projectAccentClasses.bg,
+    projectAccentClasses.text
+  );
   const notebookCells = useNotebookStore((state) => state.cells);
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
   const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
@@ -531,7 +547,7 @@ export function PreprocessingPanel() {
       : status === 'awaiting_approval'
         ? 'border-amber-300 bg-amber-50/80 text-amber-700'
         : status === 'diverged'
-          ? 'border-purple-300 bg-purple-50/80 text-purple-700'
+          ? divergedAccentClassName
           : status === 'applied'
             ? 'border-emerald-300 bg-emerald-50/80 text-emerald-700'
             : 'border-sky-300 bg-sky-50/80 text-sky-700';
@@ -557,7 +573,7 @@ export function PreprocessingPanel() {
         </CardContent>
       </Card>
     );
-  }, [latestTimelineEvent, storeError]);
+  }, [divergedAccentClassName, latestTimelineEvent, storeError]);
 
   const handleReplayCheck = () => {
     if (!projectId) {
@@ -656,12 +672,12 @@ export function PreprocessingPanel() {
       });
 
       // 2) Ensure every tab has exactly one notebook, reusing unassigned notebooks first.
-      let mappedNotebookIds = new Set(
+      const mappedNotebookIds = new Set(
         nextTabs
           .map((tab) => tab.notebookId)
           .filter((value): value is string => Boolean(value))
       );
-      let unassignedNotebooks = notebooks.filter((entry) => !mappedNotebookIds.has(entry.notebookId));
+      const unassignedNotebooks = notebooks.filter((entry) => !mappedNotebookIds.has(entry.notebookId));
 
       for (const tab of nextTabs) {
         if (tab.notebookId) {
@@ -1033,7 +1049,14 @@ export function PreprocessingPanel() {
           </div>
         }
         composerStatusSlot={composerStatusNotice}
-        LeftPaneComponent={({ messages, isGenerating, error: shellError }) => {
+        LeftPaneComponent={({
+          messages,
+          isGenerating,
+          error: shellError,
+          activeTextMessageId,
+          activeThinkingMessageId,
+          hydratedMessageIds
+        }) => {
           const visibleActivityMessages = messages.filter((message) => (
             message.type !== 'tool_call' || !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool)
           ));
@@ -1082,9 +1105,17 @@ export function PreprocessingPanel() {
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
                           <Wand2 className="h-3 w-3 text-emerald-600" />
                         </div>
-                        <div className="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                        </div>
+                        <ProgressiveMessageText
+                          messageId={message.id}
+                          text={message.content}
+                          isLive={activeTextMessageId === message.id}
+                          animateOnMount={!hydratedMessageIds.has(message.id)}
+                          plainClassName="mt-0.5 text-sm leading-relaxed text-foreground"
+                          finalClassName="prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
+                          renderFinal={(fullText) => (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{fullText}</ReactMarkdown>
+                          )}
+                        />
                       </div>
                     );
                   }
@@ -1093,8 +1124,11 @@ export function PreprocessingPanel() {
                     return (
                       <ThinkingBlock
                         key={message.id}
+                        messageId={message.id}
                         content={message.content}
                         isComplete={message.isComplete}
+                        isLive={activeThinkingMessageId === message.id}
+                        animateOnMount={!hydratedMessageIds.has(message.id)}
                       />
                     );
                   }
@@ -1126,14 +1160,14 @@ export function PreprocessingPanel() {
                   const validationSummary = summarizeValidation(event);
 
                   return (
-                    <Card key={event.id} className={cn('border', event.status === 'diverged' ? 'border-purple-300' : '')}>
+                    <Card key={event.id} className={cn('border', event.status === 'diverged' ? projectAccentClasses.border : '')}>
                       <CardHeader className="space-y-2 pb-3">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="space-y-1">
                             <CardTitle className="text-sm font-semibold">{event.title}</CardTitle>
                             <p className="text-xs text-muted-foreground">{event.toolName} · step {event.stepId.slice(0, 8)}</p>
                           </div>
-                          <Badge className={cn('border', statusClassName(event.status))}>{STATUS_LABELS[event.status]}</Badge>
+                          <Badge className={cn('border', statusClassName(event.status, divergedAccentClassName))}>{STATUS_LABELS[event.status]}</Badge>
                         </div>
                         {event.rationale ? <p className="text-xs text-muted-foreground">{event.rationale}</p> : null}
                       </CardHeader>
@@ -1191,7 +1225,7 @@ export function PreprocessingPanel() {
                         ) : null}
 
                         {event.status === 'diverged' ? (
-                          <div className="rounded-md border border-purple-300 bg-purple-50 p-2 text-purple-700">
+                          <div className={cn('rounded-md border p-2', divergedAccentClassName)}>
                             Notebook content diverged from the stored step code hash. Edit and re-run to reconcile.
                           </div>
                         ) : null}
@@ -1207,6 +1241,8 @@ export function PreprocessingPanel() {
                 })}
               </div>
             ) : null}
+
+
 
             {replayReport ? (
               <Card className={cn(replayReport.compatible ? 'border-emerald-300' : 'border-amber-300')}>

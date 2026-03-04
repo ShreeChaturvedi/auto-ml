@@ -297,10 +297,11 @@ export function DataViewerTab() {
     [queryPanelCollapsed, queryPanelIsTransitioning]
   );
 
-  // When the query panel is collapsed, avoid portaling controls into the
-  // hidden header region. Large portal content (notably PDF controls) can
-  // otherwise enforce a wider min-content width during collapse.
-  const activeControlsPortalTarget = queryPanelCollapsed ? null : controlsPortalTarget;
+  // During resize/collapse, avoid portaling controls into the query panel
+  // header region. Wide portal content (notably PDF controls) can force
+  // intermediate layout shifts and visible flicker while width animates.
+  const activeControlsPortalTarget =
+    queryPanelCollapsed || queryPanelIsTransitioning ? null : controlsPortalTarget;
 
   useEffect(() => {
     if (!queryPanelIsTransitioning) {

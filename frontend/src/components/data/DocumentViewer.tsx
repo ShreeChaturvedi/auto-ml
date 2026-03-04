@@ -7,7 +7,7 @@
  * - Plain text display with monospace font
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -58,6 +58,7 @@ interface DocumentViewerProps {
 
 // PDF.js worker URL - must match installed pdfjs-dist version
 const PDFJS_WORKER_URL = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+const PDF_VIEWER_THEME = { theme: 'dark' as const };
 
 // Custom toolbar component for PDF
 function PdfToolbar({
@@ -367,8 +368,12 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
 
   // Initialize viewer plugins (only meaningful for PDF files, but must be
   // called unconditionally to satisfy the rules-of-hooks)
-  const toolbarPluginInstance = toolbarPlugin();
-  const searchPluginInstance = searchPlugin();
+  const toolbarPluginInstance = useMemo(() => toolbarPlugin(), []);
+  const searchPluginInstance = useMemo(() => searchPlugin(), []);
+  const viewerPlugins = useMemo(
+    () => [toolbarPluginInstance, searchPluginInstance],
+    [toolbarPluginInstance, searchPluginInstance]
+  );
   const { Toolbar } = toolbarPluginInstance;
   const PdfSearch = searchPluginInstance.Search;
 
@@ -555,11 +560,9 @@ export function DocumentViewer({ file, controlsPortalTarget }: DocumentViewerPro
               <div className="flex-1 overflow-hidden">
                 <Viewer
                   fileUrl={blobUrl}
-                  plugins={[toolbarPluginInstance, searchPluginInstance]}
+                  plugins={viewerPlugins}
                   defaultScale={SpecialZoomLevel.PageWidth}
-                  theme={{
-                    theme: 'dark',
-                  }}
+                  theme={PDF_VIEWER_THEME}
                 />
               </div>
             </div>

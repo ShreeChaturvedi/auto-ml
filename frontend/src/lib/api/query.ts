@@ -83,6 +83,33 @@ export type NlQueryStreamEvent =
   | { type: 'result'; nl: NlQueryResponsePayload }
   | { type: 'done' };
 
+function emitStreamParseFailure(
+  onEvent: (event: NlQueryStreamEvent) => void,
+  summary: string
+) {
+  onEvent({
+    type: 'phase_failed',
+    phaseId: 'done',
+    summary,
+    timestamp: new Date().toISOString()
+  });
+}
+
+function emitParsedStreamEvent(
+  onEvent: (event: NlQueryStreamEvent) => void,
+  rawPayload: string,
+  parseFailureSummary: string
+): boolean {
+  try {
+    const payload = JSON.parse(rawPayload) as NlQueryStreamEvent;
+    onEvent(payload);
+    return payload.type === 'done';
+  } catch {
+    emitStreamParseFailure(onEvent, parseFailureSummary);
+    return false;
+  }
+}
+
 export async function executeSqlQuery(request: SqlQueryRequest) {
   return apiRequest<{ query: QueryResultPayload }>('/query/sql', {
     method: 'POST',
@@ -131,38 +158,13 @@ export async function streamNlQuery(
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      try {
-        const payload = JSON.parse(trimmed) as NlQueryStreamEvent;
-        if (payload.type === 'done') {
-          sawDone = true;
-        }
-        onEvent(payload);
-      } catch {
-        onEvent({
-          type: 'phase_failed',
-          phaseId: 'done',
-          summary: 'Failed to parse NL stream response.',
-          timestamp: new Date().toISOString()
-        });
-      }
+      sawDone = emitParsedStreamEvent(onEvent, trimmed, 'Failed to parse NL stream response.') || sawDone;
     }
   }
 
+  buffer += decoder.decode();
   if (buffer.trim()) {
-    try {
-      const payload = JSON.parse(buffer.trim()) as NlQueryStreamEvent;
-      if (payload.type === 'done') {
-        sawDone = true;
-      }
-      onEvent(payload);
-    } catch {
-      onEvent({
-        type: 'phase_failed',
-        phaseId: 'done',
-        summary: 'Failed to parse NL stream tail.',
-        timestamp: new Date().toISOString()
-      });
-    }
+    sawDone = emitParsedStreamEvent(onEvent, buffer.trim(), 'Failed to parse NL stream tail.') || sawDone;
   }
 
   if (!sawDone) {

@@ -332,6 +332,69 @@ describe('NlQueryWorkflow', () => {
     expect(planningMatches.length).toBeGreaterThan(0);
   });
 
+  it('surfaces streamed phase_failed events for stream parse failures', async () => {
+    const pending = new Promise<NlGenerationResult>(() => {});
+    const onGenerate = vi.fn(async (_q: string, onStreamEvent?: (event: NlQueryStreamEvent) => void) => {
+      onStreamEvent?.({
+        type: 'phase_failed',
+        phaseId: 'done',
+        summary: 'Failed to parse NL stream response.',
+        timestamp: new Date().toISOString()
+      });
+      return pending;
+    });
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    const parseFailureMatches = await screen.findAllByText(/failed to parse nl stream response/i);
+    expect(parseFailureMatches.length).toBeGreaterThan(0);
+  });
+
+  it('does not enter error state when in-flight generation is aborted via reject()', async () => {
+    const onPhaseChange = vi.fn();
+    const onGenerate = vi.fn(
+      (_q: string, _onStreamEvent?: (event: NlQueryStreamEvent) => void, signal?: AbortSignal) =>
+        new Promise<NlGenerationResult>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    );
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate, onPhaseChange })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    await waitFor(() => {
+      expect(onPhaseChange).toHaveBeenCalledWith('submitting');
+    });
+
+    act(() => {
+      handleRef.current?.reject();
+    });
+
+    await waitFor(() => {
+      expect(onPhaseChange).toHaveBeenCalledWith('idle');
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('auto-collapses the model work panel on constrained height', async () => {
     const OriginalResizeObserver = globalThis.ResizeObserver;
     class ResizeObserverMock {
@@ -365,6 +428,56 @@ describe('NlQueryWorkflow', () => {
       });
 
       expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
+  });
+
+  it('resets manual expand override after reject + regenerate on constrained height', async () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    class ResizeObserverMock {
+      private callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe() {
+        this.callback(
+          [{ contentRect: { height: 640 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+    try {
+      const onGenerate = vi.fn(() => new Promise<NlGenerationResult>(() => {}));
+      const handleRef = { current: null as NlQueryWorkflowHandle | null };
+      render(
+        <WorkflowWithRef
+          {...buildProps({ onGenerate })}
+          handleRef={handleRef}
+        />
+      );
+
+      act(() => {
+        handleRef.current?.triggerGenerate();
+      });
+
+      fireEvent.click(await screen.findByRole('button', { name: /expand model work panel/i }));
+      expect(screen.getByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
+
+      act(() => {
+        handleRef.current?.reject();
+      });
+
+      act(() => {
+        handleRef.current?.triggerGenerate();
+      });
+
+      expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+      expect(onGenerate).toHaveBeenCalledTimes(2);
     } finally {
       globalThis.ResizeObserver = OriginalResizeObserver;
     }

@@ -276,6 +276,20 @@ describe('SqlRevealBlock', () => {
   });
 
   describe('initial execution error', () => {
+    it('does not show initial execution error before review phase', () => {
+      render(
+        <SqlRevealBlock
+          {...buildProps({
+            isRevealComplete: false,
+            isRevealing: true,
+            queryExecutionError: 'relation \"usersx\" does not exist',
+          })}
+        />
+      );
+
+      expect(screen.queryByText(/initial execution failed/i)).not.toBeInTheDocument();
+    });
+
     it('shows initial execution error in review phase', () => {
       render(
         <SqlRevealBlock

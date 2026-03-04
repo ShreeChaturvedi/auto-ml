@@ -21,13 +21,15 @@ import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholde
 import { NlFlowConnector } from './NlFlowConnector';
 import { NlWorkPlanPanel } from './NlWorkPlanPanel';
 import { SqlRevealBlock, tokenizeSql } from './SqlRevealBlock';
-import type {
-  NlGenerationResult,
-  NlQueryStreamEvent,
-  NlStreamPhaseEvent,
-  NlStreamPhaseId,
-  NlWorkPhaseState,
-  NlWorkPhaseStatus
+import {
+  applyNlWorkPhaseEvent,
+  completeNlWorkDonePhase,
+  createInitialNlWorkPhases,
+  finalizeNlWorkPhasesWithoutStream,
+  markNlWorkPhasesFailed,
+  type NlGenerationResult,
+  type NlQueryStreamEvent,
+  type NlWorkPhaseState
 } from '@/types/nlQuery';
 
 export type ApproveThemeClasses = {
@@ -168,118 +170,6 @@ const NL_PLACEHOLDER_QUERIES = [
   'Summarise support tickets opened per day this week',
 ] as const;
 
-const WORK_PHASE_IDS: NlStreamPhaseId[] = [
-  'schema_context',
-  'planning',
-  'sql_generation',
-  'validation',
-  'initial_execution',
-  'repair',
-  'done'
-];
-
-const WORK_PHASE_LABELS: Record<NlStreamPhaseId, string> = {
-  schema_context: 'Schema context',
-  planning: 'Planning',
-  sql_generation: 'SQL generation',
-  validation: 'Validation',
-  initial_execution: 'Initial execution',
-  repair: 'Repair',
-  done: 'Done'
-};
-
-function createInitialWorkPhases(): NlWorkPhaseState[] {
-  return WORK_PHASE_IDS.map((phaseId) => ({
-    phaseId,
-    label: WORK_PHASE_LABELS[phaseId],
-    status: 'pending',
-    events: []
-  }));
-}
-
-function mapPhaseTypeToStatus(type: NlStreamPhaseEvent['type']): NlWorkPhaseStatus {
-  if (type === 'phase_completed') return 'completed';
-  if (type === 'phase_failed') return 'failed';
-  return 'active';
-}
-
-function applyPhaseEvent(
-  previous: NlWorkPhaseState[],
-  event: NlStreamPhaseEvent
-): NlWorkPhaseState[] {
-  const targetStatus = mapPhaseTypeToStatus(event.type);
-  const targetIndex = previous.findIndex((entry) => entry.phaseId === event.phaseId);
-  if (targetIndex === -1) {
-    return previous;
-  }
-
-  return previous.map((entry, index) => {
-    if (entry.phaseId === event.phaseId) {
-      return {
-        ...entry,
-        status: targetStatus,
-        lastSummary: event.summary,
-        events: [...entry.events, event]
-      };
-    }
-
-    if ((targetStatus === 'active' || targetStatus === 'completed' || targetStatus === 'failed') && index < targetIndex && entry.status === 'pending') {
-      return { ...entry, status: 'completed' };
-    }
-
-    if (targetStatus === 'active' && entry.status === 'active') {
-      return { ...entry, status: 'completed' };
-    }
-
-    return entry;
-  });
-}
-
-function finalizePhasesWithoutStream(previous: NlWorkPhaseState[]): NlWorkPhaseState[] {
-  if (previous.some((entry) => entry.events.length > 0)) {
-    return previous;
-  }
-
-  return previous.map((entry) => {
-    if (entry.phaseId === 'repair') {
-      return entry;
-    }
-    if (entry.phaseId === 'done') {
-      return {
-        ...entry,
-        status: 'completed',
-        lastSummary: 'NL query pipeline finished.'
-      };
-    }
-    return {
-      ...entry,
-      status: 'completed'
-    };
-  });
-}
-
-function markFailureOnPhases(previous: NlWorkPhaseState[], message: string): NlWorkPhaseState[] {
-  const activeIndex = previous.findIndex((entry) => entry.status === 'active');
-  if (activeIndex >= 0) {
-    return previous.map((entry, index) => {
-      if (index === activeIndex) {
-        return { ...entry, status: 'failed', lastSummary: message };
-      }
-      if (entry.phaseId === 'done') {
-        return { ...entry, status: 'failed', lastSummary: message };
-      }
-      return entry;
-    });
-  }
-
-  return previous.map((entry) => {
-    if (entry.phaseId === 'done') {
-      return { ...entry, status: 'failed', lastSummary: message };
-    }
-    return entry;
-  });
-}
-
 export interface NlQueryWorkflowHandle {
   phase: NlPhase;
   triggerGenerate: () => void;
@@ -316,7 +206,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   ref: Ref<NlQueryWorkflowHandle>
 ) {
   const [state, dispatch] = useReducer(nlReducer, initialState);
-  const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialWorkPhases());
+  const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
   const [manualPanelExpanded, setManualPanelExpanded] = useState<boolean | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -378,26 +268,11 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     }
 
     if (event.type === 'done') {
-      setWorkPhases((previous) => {
-        const donePhase = previous.find((entry) => entry.phaseId === 'done');
-        if (!donePhase || donePhase.status === 'completed' || donePhase.status === 'failed') {
-          return previous;
-        }
-
-        return previous.map((entry) => (
-          entry.phaseId === 'done'
-            ? {
-                ...entry,
-                status: 'completed',
-                lastSummary: entry.lastSummary ?? 'NL query pipeline finished.'
-              }
-            : entry
-        ));
-      });
+      setWorkPhases((previous) => completeNlWorkDonePhase(previous));
       return;
     }
 
-    setWorkPhases((previous) => applyPhaseEvent(previous, event));
+    setWorkPhases((previous) => applyNlWorkPhaseEvent(previous, event));
   }, []);
 
   const handleGenerate = useCallback(async () => {
@@ -408,13 +283,13 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     const controller = new AbortController();
     streamAbortRef.current = controller;
 
-    setWorkPhases(createInitialWorkPhases());
+    setWorkPhases(createInitialNlWorkPhases());
     setManualPanelExpanded(null);
     dispatch({ type: 'GENERATE' });
 
     try {
       const generationResult = await onGenerate(query, handleStreamEvent, controller.signal);
-      setWorkPhases((previous) => finalizePhasesWithoutStream(previous));
+      setWorkPhases((previous) => finalizeNlWorkPhasesWithoutStream(previous));
       dispatch({ type: 'RESULT', payload: generationResult });
     } catch (err) {
       if (controller.signal.aborted) {
@@ -422,7 +297,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
       }
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred.';
-      setWorkPhases((previous) => markFailureOnPhases(previous, message));
+      setWorkPhases((previous) => markNlWorkPhasesFailed(previous, message));
       dispatch({ type: 'ERROR', payload: message });
     } finally {
       if (streamAbortRef.current === controller) {
@@ -431,6 +306,17 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     }
   }, [englishQuery, onGenerate, handleStreamEvent]);
 
+  const handleApprove = useCallback(() => {
+    if (!result) return;
+    onApprove(result, editedSql);
+    dispatch({ type: 'REJECT' });
+  }, [result, editedSql, onApprove]);
+
+  const handleReject = useCallback(() => {
+    streamAbortRef.current?.abort();
+    dispatch({ type: 'REJECT' });
+  }, []);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -438,17 +324,10 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
       triggerGenerate: () => {
         void handleGenerate();
       },
-      approve: () => {
-        if (!result) return;
-        onApprove(result, editedSql);
-        dispatch({ type: 'REJECT' });
-      },
-      reject: () => {
-        streamAbortRef.current?.abort();
-        dispatch({ type: 'REJECT' });
-      },
+      approve: handleApprove,
+      reject: handleReject,
     }),
-    [phase, result, editedSql, onApprove, handleGenerate]
+    [phase, handleGenerate, handleApprove, handleReject]
   );
 
   const handleKeyDown = useCallback(
@@ -564,12 +443,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             editedSql={editedSql}
             onSqlChange={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}
             originalSql={result?.sql ?? ''}
-            onApprove={() => {
-              if (!result) return;
-              onApprove(result, editedSql);
-              dispatch({ type: 'REJECT' });
-            }}
-            onReject={() => dispatch({ type: 'REJECT' })}
+            onApprove={handleApprove}
+            onReject={handleReject}
             approveThemeClasses={approveThemeClasses}
             className="h-full"
           />

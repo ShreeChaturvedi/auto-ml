@@ -56,6 +56,17 @@ const SQL_FUNCTIONS = new Set([
   'ROUND', 'CEIL', 'FLOOR', 'ABS', 'NOW', 'CURRENT_TIMESTAMP',
 ]);
 
+const TOKEN_CLASS_BY_TYPE: Record<SqlTokenType, string> = {
+  keyword: 'sql-tk-kw',
+  function: 'sql-tk-fn',
+  string: 'sql-tk-str',
+  number: 'sql-tk-num',
+  operator: 'sql-tk-op',
+  punctuation: 'sql-tk-punc',
+  identifier: 'sql-tk-id',
+  whitespace: ''
+};
+
 export function tokenizeSql(sql: string): SqlToken[] {
   const tokens: SqlToken[] = [];
   let i = 0;
@@ -159,17 +170,7 @@ export function tokenizeSql(sql: string): SqlToken[] {
 }
 
 function tokenClassName(type: SqlTokenType): string {
-  switch (type) {
-    case 'keyword': return 'sql-tk-kw';
-    case 'function': return 'sql-tk-fn';
-    case 'string': return 'sql-tk-str';
-    case 'number': return 'sql-tk-num';
-    case 'operator': return 'sql-tk-op';
-    case 'punctuation': return 'sql-tk-punc';
-    case 'identifier': return 'sql-tk-id';
-    case 'whitespace': return '';
-    default: return '';
-  }
+  return TOKEN_CLASS_BY_TYPE[type] ?? '';
 }
 
 interface SqlRevealBlockProps {
@@ -199,6 +200,27 @@ function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+function useResolvedEditorTheme(theme: 'light' | 'dark' | 'system') {
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveEditorTheme(theme));
+
+  useEffect(() => {
+    setResolvedTheme(resolveEditorTheme(theme));
+
+    if (theme !== 'system') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => {
+      setResolvedTheme(e.matches ? 'dark' : 'light');
+    };
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, [theme]);
+
+  return resolvedTheme;
+}
+
 function SqlRevealBlock({
   sql,
   queryExecutionError,
@@ -218,23 +240,8 @@ function SqlRevealBlock({
   const isEdited = editedSql !== originalSql;
   const tokens = useMemo(() => tokenizeSql(sql), [sql]);
   const { theme: appTheme } = useTheme();
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveEditorTheme(appTheme));
+  const resolvedTheme = useResolvedEditorTheme(appTheme);
   const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
-
-  useEffect(() => {
-    setResolvedTheme(resolveEditorTheme(appTheme));
-
-    if (appTheme !== 'system') {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      setResolvedTheme(e.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, [appTheme]);
 
   useEffect(() => {
     if (!monacoApiRef.current) {
@@ -257,6 +264,12 @@ function SqlRevealBlock({
   const sharedClassName = cn(
     'w-full min-h-[8rem] rounded-md border p-3 font-mono text-sm leading-relaxed',
     'focus-visible:outline-none',
+  );
+  const controlButtonClassName = cn(
+    'inline-flex items-center gap-1 rounded-md px-2.5 py-1',
+    'text-xs font-medium',
+    'border border-border bg-card text-muted-foreground',
+    'transition-colors duration-150'
   );
 
   return (
@@ -347,11 +360,8 @@ function SqlRevealBlock({
                 type="button"
                 onClick={onReject}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1',
-                  'text-xs font-medium',
-                  'border border-border bg-card text-muted-foreground',
+                  controlButtonClassName,
                   'hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30',
-                  'transition-colors duration-150',
                 )}
                 aria-label="Reject generated SQL"
               >
@@ -365,11 +375,8 @@ function SqlRevealBlock({
                 type="button"
                 onClick={() => onSqlChange(originalSql)}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1',
-                  'text-xs font-medium',
-                  'border border-border bg-card text-muted-foreground',
+                  controlButtonClassName,
                   'hover:bg-accent hover:text-accent-foreground',
-                  'transition-colors duration-150',
                 )}
                 aria-label="Reset SQL to original generated version"
               >

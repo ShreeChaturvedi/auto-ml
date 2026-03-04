@@ -2,6 +2,8 @@ export type ReasoningEffort = 'dynamic' | 'low' | 'medium' | 'high';
 
 export type ReasoningIcon = 'zap' | 'gauge' | 'brain' | 'flame';
 
+export const DEFAULT_ASSISTANT_MODEL = 'gemini-3.1-pro-preview-customtools';
+
 export interface AssistantModelOption {
   value: string;
   label: string;

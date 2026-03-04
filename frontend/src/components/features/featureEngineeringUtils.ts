@@ -1,5 +1,6 @@
 import type { FeatureSpec, ReadinessReport, TransformationStep } from '@/types/feature';
 import type { UiItem, UiSchema } from '@/types/llmUi';
+import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 
 export type FeatureSuggestionItem = Extract<UiItem, { type: 'feature_suggestion' }>;
 
@@ -16,21 +17,7 @@ export const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
 ]);
 
 export function stripAssistantArtifacts(text: string): string {
-  if (!text) return '';
-  let cleaned = text.replace(/```(?:json)?/g, '').replace(/```/g, '');
-  const markerIndex = cleaned.indexOf('<<<JSON>>>');
-  if (markerIndex !== -1) {
-    cleaned = cleaned.slice(0, markerIndex);
-  }
-  const endIndex = cleaned.indexOf('<<<END>>>');
-  if (endIndex !== -1) {
-    cleaned = cleaned.slice(0, endIndex);
-  }
-  const jsonIndex = cleaned.search(/{\s*"version"\s*:\s*"1"/);
-  if (jsonIndex !== -1) {
-    cleaned = cleaned.slice(0, jsonIndex);
-  }
-  return cleaned.trim();
+  return sanitizeAssistantText(text);
 }
 
 export function hasUiItems(ui: UiSchema | null): boolean {

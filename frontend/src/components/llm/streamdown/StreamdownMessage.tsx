@@ -3,10 +3,7 @@ import { Streamdown } from 'streamdown';
 import { cn } from '@/lib/utils';
 
 import {
-  streamdownAnimated,
-  streamdownControls,
-  streamdownMermaidConfig,
-  streamdownPlugins,
+  streamdownSharedProps,
 } from './streamdownConfig';
 
 import 'katex/dist/katex.min.css';
@@ -29,17 +26,12 @@ export function StreamdownMessage({
     <div className={cn('llm-streamdown-wrap', className)} aria-live={isAnimating ? 'polite' : 'off'}>
       <Streamdown
         className="llm-streamdown"
-        parseIncompleteMarkdown
-        plugins={streamdownPlugins}
-        controls={streamdownControls}
-        mermaid={{ config: streamdownMermaidConfig }}
+        {...streamdownSharedProps}
         isAnimating={isAnimating}
-        animated={streamdownAnimated}
-        caret="block"
+        caret={showCaret ? 'block' : undefined}
       >
         {text}
       </Streamdown>
-      {showCaret ? <span className="llm-streaming-caret" aria-hidden="true" /> : null}
     </div>
   );
 }

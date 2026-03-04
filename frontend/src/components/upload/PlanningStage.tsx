@@ -386,7 +386,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const [userMessageAttachments, setUserMessageAttachments] = useState<Record<string, UploadedAttachmentPreview[]>>({});
   const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
   const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
-  const [hydratedMessageIds] = useState<Set<string>>(new Set());
 
   const controllerRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
@@ -1130,7 +1129,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                     text={msg.content}
                     isLive={activeTextMessageId === msg.id}
                     mode="markdown"
-                    animateOnMount={!hydratedMessageIds.has(msg.id)}
                     className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert"
                   />
                 </div>
@@ -1145,7 +1143,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                   content={msg.content}
                   isComplete={msg.isComplete}
                   isLive={activeThinkingMessageId === msg.id}
-                  animateOnMount={!hydratedMessageIds.has(msg.id)}
                 />
               );
             }

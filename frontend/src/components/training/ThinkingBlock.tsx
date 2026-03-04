@@ -32,7 +32,7 @@ export function ThinkingBlock({
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [finalSeconds, setFinalSeconds] = useState<number | null>(null);
     const startTimeRef = useRef<number>(Date.now());
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const stableMessageIdRef = useRef<string>(messageId ?? `thinking-${Math.random().toString(36).slice(2, 10)}`);
     const effectiveMessageId = messageId ?? stableMessageIdRef.current;
 

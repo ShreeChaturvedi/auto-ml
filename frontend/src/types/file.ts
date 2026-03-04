@@ -7,6 +7,8 @@
  * - Note: Images are NOT supported for upload
  */
 
+import type { NlQueryExplanation } from '@/lib/api/query';
+
 export type FileType =
   | 'csv'
   | 'json'
@@ -192,6 +194,7 @@ export interface QueryArtifact {
   cacheTimestamp?: string;
   generatedSql?: string; // For NL queries
   rationale?: string; // For NL queries
+  explanation?: NlQueryExplanation; // Structured explanation (includes confidence mode/tier for NL review UX)
 }
 
 /**

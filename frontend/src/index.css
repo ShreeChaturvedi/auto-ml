@@ -105,13 +105,19 @@
   }
 }
 
-/* Remove focus outlines from dialogs and forms */
+/* Dialog focus states */
 @layer components {
-
-  [role="dialog"] input:focus,
-  [role="dialog"] textarea:focus,
-  [role="dialog"] select:focus {
+  [role="dialog"] input:focus:not(:focus-visible),
+  [role="dialog"] textarea:focus:not(:focus-visible),
+  [role="dialog"] select:focus:not(:focus-visible) {
     outline: none;
+  }
+
+  [role="dialog"] input:focus-visible,
+  [role="dialog"] textarea:focus-visible,
+  [role="dialog"] select:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 
   /* Override Radix ScrollArea's inline display: table on children */
@@ -353,28 +359,6 @@
 .llm-streamdown .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
-}
-
-@keyframes llm-caret-blink {
-  0%,
-  49% {
-    opacity: 1;
-  }
-
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.llm-streaming-caret {
-  display: inline-block;
-  width: 1px;
-  height: 1em;
-  margin-left: 3px;
-  background-color: hsl(var(--foreground));
-  vertical-align: text-bottom;
-  animation: llm-caret-blink 1s steps(2, start) infinite;
 }
 
 .llm-notebook-markdown .llm-streamdown {

@@ -3,6 +3,14 @@ import type { ChatMessage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi'
 import { executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
 import { useNotebookStore } from '@/stores/notebookStore';
+import {
+  addAssistantTextMessage,
+  addThinkingMessage,
+  appendAssistantTextDelta,
+  appendThinkingDelta,
+  markAllThinkingMessagesComplete,
+  markThinkingMessageComplete
+} from '@/lib/llm/streamMessageUtils';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -66,6 +74,9 @@ export function useAgenticLoop({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
+  const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
+  const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
 
   // For UI representation, keeping track of active elements
   const [uiSchema, setUiSchema] = useState<UiSchema | null>(null);
@@ -94,6 +105,9 @@ export function useAgenticLoop({
     setIsGenerating(false);
     setError(null);
     setUiSchema(null);
+    setHydratedMessageIds(new Set());
+    setActiveThinkingMessageId(null);
+    setActiveTextMessageId(null);
 
     if (!messageStorageScope) {
       setMessages([]);
@@ -109,8 +123,10 @@ export function useAgenticLoop({
     try {
       const parsed = JSON.parse(stored) as ChatMessage[];
       setMessages(parsed);
+      setHydratedMessageIds(new Set(parsed.map((message) => message.id)));
     } catch {
       setMessages([]);
+      setHydratedMessageIds(new Set());
     }
   }, [messageStorageScope, sessionVersion]);
 
@@ -139,19 +155,20 @@ export function useAgenticLoop({
     abortRef.current = null;
     setIsGenerating(false);
     domainAdapter.onStop?.('Stopped by user.');
-    setMessages((prev) => prev.map((msg) =>
-      msg.type === 'thinking' && !msg.isComplete
-        ? { ...msg, isComplete: true }
-        : msg
-    ));
+    setMessages(markAllThinkingMessagesComplete);
     currentThinkingIdRef.current = null;
     currentTextIdRef.current = null;
+    setActiveThinkingMessageId(null);
+    setActiveTextMessageId(null);
   }, [domainAdapter]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     toolHistoryRef.current = { calls: [], results: [] };
     setUiSchema(null);
+    setHydratedMessageIds(new Set());
+    setActiveTextMessageId(null);
+    setActiveThinkingMessageId(null);
     if (messageStorageScope) {
       localStorage.removeItem(messageStorageScope);
     }
@@ -207,36 +224,31 @@ export function useAgenticLoop({
 
           if (event.type === 'token') {
             if (currentThinkingIdRef.current) {
-              setMessages((prev) => prev.map((msg) =>
-                msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                  ? { ...msg, isComplete: true }
-                  : msg
-              ));
+              const thinkingId = currentThinkingIdRef.current;
+              setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
               currentThinkingIdRef.current = null;
+              setActiveThinkingMessageId(null);
             }
             if (!currentTextIdRef.current) {
               const id = `text-${Date.now()}`;
               currentTextIdRef.current = id;
-              setMessages((prev) => [...prev, { id, type: 'assistant_text', content: event.text }]);
+              setActiveTextMessageId(id);
+              setMessages((prev) => addAssistantTextMessage(prev, id, event.text));
             } else {
-              setMessages((prev) => prev.map((msg) =>
-                msg.id === currentTextIdRef.current && msg.type === 'assistant_text'
-                  ? { ...msg, content: msg.content + event.text }
-                  : msg
-              ));
+              const textId = currentTextIdRef.current;
+              setMessages((prev) => appendAssistantTextDelta(prev, textId, event.text));
             }
           }
           if (event.type === 'envelope') {
             if (currentThinkingIdRef.current) {
-              setMessages((prev) => prev.map((msg) =>
-                msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                  ? { ...msg, isComplete: true }
-                  : msg
-              ));
+              const thinkingId = currentThinkingIdRef.current;
+              setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
               currentThinkingIdRef.current = null;
+              setActiveThinkingMessageId(null);
             }
             if (event.envelope.tool_calls?.length) {
               currentTextIdRef.current = null;
+              setActiveTextMessageId(null);
               const preparedToolCalls = domainAdapter.prepareToolCalls
                 ? domainAdapter.prepareToolCalls(event.envelope.tool_calls)
                 : event.envelope.tool_calls;
@@ -319,7 +331,9 @@ export function useAgenticLoop({
             if (event.envelope.message) {
               if (!currentTextIdRef.current && event.envelope.message.trim()) {
                  const id = `text-${Date.now()}`;
-                 setMessages((prev) => [...prev, { id, type: 'assistant_text', content: event.envelope.message as string }]);
+                 currentTextIdRef.current = id;
+                 setActiveTextMessageId(id);
+                 setMessages((prev) => addAssistantTextMessage(prev, id, event.envelope.message as string));
               }
             }
           }
@@ -329,38 +343,34 @@ export function useAgenticLoop({
             const id = `error-${Date.now()}`;
             setMessages((prev) => [...prev, { id, type: 'error', message: event.message }]);
             if (currentThinkingIdRef.current) {
-              setMessages((prev) => prev.map((msg) =>
-                msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                  ? { ...msg, isComplete: true }
-                  : msg
-              ));
+              const thinkingId = currentThinkingIdRef.current;
+              setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
               currentThinkingIdRef.current = null;
             }
+            setActiveThinkingMessageId(null);
+            setActiveTextMessageId(null);
             setIsGenerating(false);
           }
           if (event.type === 'thinking') {
             currentTextIdRef.current = null;
+            setActiveTextMessageId(null);
             if (!currentThinkingIdRef.current) {
               const id = `thinking-${Date.now()}`;
               currentThinkingIdRef.current = id;
-              setMessages((prev) => [...prev, { id, type: 'thinking', content: event.text, isComplete: false, startTime: Date.now() }]);
+              setActiveThinkingMessageId(id);
+              setMessages((prev) => addThinkingMessage(prev, id, event.text, Date.now()));
             } else {
-              setMessages((prev) => prev.map((msg) =>
-                msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-                  ? { ...msg, content: msg.content + event.text }
-                  : msg
-              ));
+              const thinkingId = currentThinkingIdRef.current;
+              setMessages((prev) => appendThinkingDelta(prev, thinkingId, event.text));
             }
           }
           if (event.type === 'done') {
             setIsGenerating(false);
-            setMessages((prev) => prev.map((msg) =>
-              msg.type === 'thinking' && !msg.isComplete
-                ? { ...msg, isComplete: true }
-                : msg
-            ));
+            setMessages(markAllThinkingMessagesComplete);
             currentThinkingIdRef.current = null;
             currentTextIdRef.current = null;
+            setActiveThinkingMessageId(null);
+            setActiveTextMessageId(null);
           }
         },
         controller.signal,
@@ -374,13 +384,12 @@ export function useAgenticLoop({
       domainAdapter.onStreamError?.(message);
       setIsGenerating(false);
       if (currentThinkingIdRef.current) {
-        setMessages((prev) => prev.map((msg) =>
-          msg.id === currentThinkingIdRef.current && msg.type === 'thinking'
-            ? { ...msg, isComplete: true }
-            : msg
-        ));
+        const thinkingId = currentThinkingIdRef.current;
+        setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
         currentThinkingIdRef.current = null;
       }
+      setActiveThinkingMessageId(null);
+      setActiveTextMessageId(null);
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
@@ -404,6 +413,9 @@ export function useAgenticLoop({
     isGenerating,
     error,
     uiSchema,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds,
     runLoop,
     handleStop,
     clearMessages,

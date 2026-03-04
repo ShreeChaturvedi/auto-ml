@@ -23,8 +23,23 @@ import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
-import { ASSISTANT_MODEL_OPTIONS, getDefaultReasoningEffort, getReasoningEffortOptions, type ReasoningEffort } from '@/components/llm/modelOptions';
+import {
+  ASSISTANT_MODEL_OPTIONS,
+  DEFAULT_ASSISTANT_MODEL,
+  getDefaultReasoningEffort,
+  getReasoningEffortOptions,
+  type ReasoningEffort
+} from '@/components/llm/modelOptions';
 import { Sparkles } from 'lucide-react';
+
+type LeftPaneRenderProps = {
+  messages: ChatMessage[];
+  isGenerating: boolean;
+  error: string | null;
+  activeTextMessageId: string | null;
+  activeThinkingMessageId: string | null;
+  hydratedMessageIds: Set<string>;
+};
 
 interface AgenticShellProps {
   projectId: string;
@@ -38,8 +53,8 @@ interface AgenticShellProps {
   domainLockReason?: string;
   beforeSubmit?: (prompt: string) => Promise<string | null>;
   leftPaneScrollable?: boolean;
-  LeftPaneComponent?: React.ComponentType<{ messages: ChatMessage[], isGenerating: boolean, error: string | null }>;
-  renderLeftPane?: (props: { messages: ChatMessage[]; isGenerating: boolean; error: string | null }) => React.ReactNode;
+  LeftPaneComponent?: React.ComponentType<LeftPaneRenderProps>;
+  renderLeftPane?: (props: LeftPaneRenderProps) => React.ReactNode;
 }
 
 export function AgenticShell({
@@ -58,10 +73,10 @@ export function AgenticShell({
   renderLeftPane
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
-  const [assistantModel, setAssistantModel] = useState(ASSISTANT_MODEL_OPTIONS[0].value);
+  const [assistantModel, setAssistantModel] = useState(DEFAULT_ASSISTANT_MODEL);
   const [enableThinking, setEnableThinking] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    getDefaultReasoningEffort(ASSISTANT_MODEL_OPTIONS[0].value)
+    getDefaultReasoningEffort(DEFAULT_ASSISTANT_MODEL)
   );
   const [dismissedModelPromptFor, setDismissedModelPromptFor] = useState<string | null>(null);
 
@@ -77,6 +92,9 @@ export function AgenticShell({
     messages,
     isGenerating,
     error,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds,
     runLoop,
     handleStop
   } = useAgenticLoop({
@@ -135,9 +153,25 @@ export function AgenticShell({
   };
 
   const leftPaneContent = renderLeftPane
-    ? renderLeftPane({ messages, isGenerating, error })
+    ? renderLeftPane({
+      messages,
+      isGenerating,
+      error,
+      activeTextMessageId,
+      activeThinkingMessageId,
+      hydratedMessageIds
+    })
     : LeftPaneComponent
-      ? <LeftPaneComponent messages={messages} isGenerating={isGenerating} error={error} />
+      ? (
+        <LeftPaneComponent
+          messages={messages}
+          isGenerating={isGenerating}
+          error={error}
+          activeTextMessageId={activeTextMessageId}
+          activeThinkingMessageId={activeThinkingMessageId}
+          hydratedMessageIds={hydratedMessageIds}
+        />
+      )
       : null;
 
   return (

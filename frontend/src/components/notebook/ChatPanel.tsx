@@ -38,6 +38,7 @@ import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { useDataStore } from '@/stores/dataStore';
 import { uploadDocument } from '@/lib/api/documents';
 import { streamTrainingPlan, executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
+import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import {
   addAssistantTextMessage,
   addThinkingMessage,
@@ -53,24 +54,6 @@ interface ChatPanelProps {
   projectId: string;
   className?: string;
 }
-
-const stripAssistantArtifacts = (text: string) => {
-  if (!text) return '';
-  let cleaned = text.replace(/```(?:json)?/g, '').replace(/```/g, '');
-  const markerIndex = cleaned.indexOf('<<<JSON>>>');
-  if (markerIndex !== -1) {
-    cleaned = cleaned.slice(0, markerIndex);
-  }
-  const endIndex = cleaned.indexOf('<<<END>>>');
-  if (endIndex !== -1) {
-    cleaned = cleaned.slice(0, endIndex);
-  }
-  const jsonIndex = cleaned.search(/{\s*"version"\s*:\s*"1"/);
-  if (jsonIndex !== -1) {
-    cleaned = cleaned.slice(0, jsonIndex);
-  }
-  return cleaned.trim();
-};
 
 export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -453,7 +436,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
                   />
                 );
               case 'assistant_text': {
-                const cleaned = stripAssistantArtifacts(msg.content);
+                const cleaned = sanitizeAssistantText(msg.content);
                 return cleaned ? (
                   <div
                     key={msg.id}

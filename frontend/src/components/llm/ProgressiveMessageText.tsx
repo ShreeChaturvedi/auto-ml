@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { useProgressiveReveal } from '@/hooks/useProgressiveReveal';
 import { cn } from '@/lib/utils';
@@ -25,14 +23,12 @@ function ProgressiveMessageText({
   showStreamingCaret = true,
 }: ProgressiveMessageTextProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const { visibleText, visibleCharCount, isCatchup, isFullyRevealed } = useProgressiveReveal({
+  const { visibleText, visibleSegments, visibleCharCount, isCatchup, isFullyRevealed } = useProgressiveReveal({
     text,
     isLive,
     animateOnMount,
     prefersReducedMotion,
   });
-
-  const revealedCharacters = useMemo(() => Array.from(visibleText), [visibleText]);
 
   if (mode === 'markdown') {
     return (
@@ -45,13 +41,13 @@ function ProgressiveMessageText({
     );
   }
 
-  if (visibleCharCount >= text.length) {
+  if (isFullyRevealed) {
     return <div className={cn(className)}>{text}</div>;
   }
 
   return (
     <div className={cn(className)} aria-live={isLive ? 'polite' : 'off'}>
-      {revealedCharacters.map((char, index) => (
+      {visibleSegments.map((char, index) => (
         <span key={`${messageId}-${index}`} className="llm-char-enter">
           {char}
         </span>

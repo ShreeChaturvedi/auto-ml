@@ -19,6 +19,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
+import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createTrainingAdapter } from './TrainingAdapter';
@@ -292,6 +293,8 @@ export function TrainingPanel() {
               );
             }
             if (msg.type === 'assistant_text') {
+              const cleaned = sanitizeAssistantText(msg.content);
+              if (!cleaned) return null;
               return (
                 <div key={msg.id} className="flex items-start gap-3 w-full">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
@@ -299,7 +302,7 @@ export function TrainingPanel() {
                   </div>
                   <ProgressiveMessageText
                     messageId={msg.id}
-                    text={msg.content}
+                    text={cleaned}
                     isLive={activeTextMessageId === msg.id}
                     mode="markdown"
                     animateOnMount={!hydratedMessageIds.has(msg.id)}

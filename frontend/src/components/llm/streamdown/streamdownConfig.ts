@@ -39,4 +39,21 @@ const streamdownAnimated: NonNullable<StreamdownProps['animated']> = {
   easing: 'ease-out',
 };
 
-export { streamdownAnimated, streamdownControls, streamdownMermaidConfig, streamdownPlugins };
+const streamdownSharedProps: Pick<
+  StreamdownProps,
+  'animated' | 'controls' | 'parseIncompleteMarkdown' | 'plugins' | 'mermaid'
+> = {
+  animated: streamdownAnimated,
+  controls: streamdownControls,
+  parseIncompleteMarkdown: true,
+  plugins: streamdownPlugins,
+  mermaid: { config: streamdownMermaidConfig },
+};
+
+export {
+  streamdownAnimated,
+  streamdownControls,
+  streamdownMermaidConfig,
+  streamdownPlugins,
+  streamdownSharedProps,
+};

@@ -24,6 +24,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -1143,6 +1144,8 @@ export function PreprocessingPanel() {
                   }
 
                   if (message.type === 'assistant_text') {
+                    const cleaned = sanitizeAssistantText(message.content);
+                    if (!cleaned) return null;
                     return (
                       <div key={message.id} className="flex items-start gap-3 w-full">
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
@@ -1150,7 +1153,7 @@ export function PreprocessingPanel() {
                         </div>
                         <ProgressiveMessageText
                           messageId={message.id}
-                          text={message.content}
+                          text={cleaned}
                           isLive={activeTextMessageId === message.id}
                           mode="markdown"
                           animateOnMount={!hydratedMessageIds.has(message.id)}

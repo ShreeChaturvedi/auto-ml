@@ -113,13 +113,6 @@
     outline: none;
   }
 
-  [role="dialog"] input:focus-visible,
-  [role="dialog"] textarea:focus-visible,
-  [role="dialog"] select:focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
-  }
-
   /* Override Radix ScrollArea's inline display: table on children */
   [data-radix-scroll-area-viewport]>* {
     display: block !important;

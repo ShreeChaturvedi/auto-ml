@@ -43,6 +43,8 @@ const nlQuerySchema = z.object({
 });
 
 type SqlExecutionPayload = Awaited<ReturnType<typeof executeReadOnlyQuery>>;
+type ProgressListener = ((event: NlProgressEvent) => void) | undefined;
+
 type NlResponsePayload = GeneratedSqlV2 & {
   cached: boolean;
   query: SqlExecutionPayload | null;
@@ -96,7 +98,7 @@ function writeNdjsonEvent(res: Response, event: NlStreamEvent) {
 }
 
 function emitNlProgress(
-  onProgress: ((event: NlProgressEvent) => void) | undefined,
+  onProgress: ProgressListener,
   event: Omit<NlProgressEvent, 'timestamp'>
 ) {
   if (!onProgress) {
@@ -109,11 +111,76 @@ function emitNlProgress(
   });
 }
 
+async function executeAndCacheQuery(params: {
+  projectId: string;
+  sql: string;
+}): Promise<SqlExecutionPayload> {
+  const queryResult = await executeReadOnlyQuery({ sql: params.sql });
+  await storeCachedQueryResult({
+    projectId: params.projectId,
+    sql: params.sql,
+    payload: queryResult
+  });
+  return queryResult;
+}
+
+async function executeCachedOrLiveQuery(params: {
+  projectId: string;
+  sql: string;
+}): Promise<{ cached: boolean; query: SqlExecutionPayload }> {
+  const cached = await getCachedQueryResult({
+    projectId: params.projectId,
+    sql: params.sql
+  });
+  if (cached && hasResolvedColumnTypes(cached)) {
+    return {
+      cached: true,
+      query: cached
+    };
+  }
+
+  const queryResult = await executeAndCacheQuery(params);
+  return {
+    cached: false,
+    query: queryResult
+  };
+}
+
+function buildNlResponsePayload(params: {
+  generated: GeneratedSqlV2;
+  cached: boolean;
+  query: SqlExecutionPayload | null;
+  queryExecutionError: string | null;
+}): NlResponsePayload {
+  return {
+    ...params.generated,
+    cached: params.cached,
+    query: params.query,
+    queryExecutionError: params.queryExecutionError
+  };
+}
+
+function initializeNdjsonStreamResponse(res: Response) {
+  res.status(200);
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+}
+
+function createStreamProgressWriter(res: Response): (event: NlProgressEvent) => void {
+  return (event) => {
+    writeNdjsonEvent(res, asPhaseEvent(event));
+  };
+}
+
 async function resolveNlQueryExecution(params: {
   projectId: string;
   query: string;
   tableName?: string;
-  onProgress?: (event: NlProgressEvent) => void;
+  onProgress?: ProgressListener;
 }): Promise<NlResponsePayload> {
   const generated = await generateSqlFromNaturalLanguageV2({
     projectId: params.projectId,
@@ -128,45 +195,25 @@ async function resolveNlQueryExecution(params: {
     summary: 'Checking generated SQL against cache and live execution.'
   });
 
-  const cached = await getCachedQueryResult({
-    projectId: params.projectId,
-    sql: generated.sql
-  });
-  if (cached && hasResolvedColumnTypes(cached)) {
-    emitNlProgress(params.onProgress, {
-      phaseId: 'initial_execution',
-      status: 'completed',
-      summary: 'Using cached query result for generated SQL.'
-    });
-
-    return {
-      ...generated,
-      cached: true,
-      query: cached,
-      queryExecutionError: null
-    };
-  }
-
   try {
-    const queryResult = await executeReadOnlyQuery({ sql: generated.sql });
-    await storeCachedQueryResult({
+    const initialExecution = await executeCachedOrLiveQuery({
       projectId: params.projectId,
-      sql: generated.sql,
-      payload: queryResult
+      sql: generated.sql
     });
-
     emitNlProgress(params.onProgress, {
       phaseId: 'initial_execution',
       status: 'completed',
-      summary: 'Generated SQL executed successfully.'
+      summary: initialExecution.cached
+        ? 'Using cached query result for generated SQL.'
+        : 'Generated SQL executed successfully.'
     });
 
-    return {
-      ...generated,
-      cached: false,
-      query: queryResult,
+    return buildNlResponsePayload({
+      generated,
+      cached: initialExecution.cached,
+      query: initialExecution.query,
       queryExecutionError: null
-    };
+    });
   } catch (executionError) {
     const message = getErrorMessage(executionError, 'Generated SQL failed to execute');
     console.warn('[query/nl] Generated SQL execution failed:', {
@@ -198,11 +245,9 @@ async function resolveNlQueryExecution(params: {
       });
 
       try {
-        const repairedQuery = await executeReadOnlyQuery({ sql: repaired.sql });
-        await storeCachedQueryResult({
+        const repairedQuery = await executeAndCacheQuery({
           projectId: params.projectId,
-          sql: repaired.sql,
-          payload: repairedQuery
+          sql: repaired.sql
         });
 
         emitNlProgress(params.onProgress, {
@@ -211,12 +256,12 @@ async function resolveNlQueryExecution(params: {
           summary: 'Repaired SQL executed successfully.'
         });
 
-        return {
-          ...repaired,
+        return buildNlResponsePayload({
+          generated: repaired,
           cached: false,
           query: repairedQuery,
           queryExecutionError: null
-        };
+        });
       } catch (repairedExecutionError) {
         const repairedMessage = getErrorMessage(repairedExecutionError, 'Repaired SQL failed to execute');
         emitNlProgress(params.onProgress, {
@@ -225,21 +270,21 @@ async function resolveNlQueryExecution(params: {
           summary: `Repaired SQL execution failed: ${repairedMessage}`
         });
 
-        return {
-          ...repaired,
+        return buildNlResponsePayload({
+          generated: repaired,
           cached: false,
           query: null,
           queryExecutionError: repairedMessage
-        };
+        });
       }
     } catch (repairError) {
       console.warn('[query/nl] SQL repair failed, returning original SQL for manual review:', repairError);
-      return {
-        ...generated,
+      return buildNlResponsePayload({
+        generated,
         cached: false,
         query: null,
         queryExecutionError: message
-      };
+      });
     }
   }
 }
@@ -262,15 +307,8 @@ export function createQueryRouter() {
     const { projectId, sql } = result.data;
 
     try {
-      const cached = await getCachedQueryResult({ projectId, sql });
-      if (cached && hasResolvedColumnTypes(cached)) {
-        return res.json({ query: cached });
-      }
-
-      const queryResult = await executeReadOnlyQuery({ sql });
-      await storeCachedQueryResult({ projectId, sql, payload: queryResult });
-
-      return res.json({ query: queryResult });
+      const queryResult = await executeCachedOrLiveQuery({ projectId, sql });
+      return res.json({ query: queryResult.query });
     } catch (error) {
       const statusCode = (error as { statusCode?: number }).statusCode ?? 400;
       return res.status(statusCode).json({
@@ -317,17 +355,8 @@ export function createQueryRouter() {
 
     const { projectId, query, tableName } = result.data;
 
-    res.status(200);
-    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    if (typeof res.flushHeaders === 'function') {
-      res.flushHeaders();
-    }
-
-    const onProgress = (event: NlProgressEvent) => {
-      writeNdjsonEvent(res, asPhaseEvent(event));
-    };
+    initializeNdjsonStreamResponse(res);
+    const onProgress = createStreamProgressWriter(res);
 
     try {
       const nl = await resolveNlQueryExecution({
@@ -337,20 +366,18 @@ export function createQueryRouter() {
         onProgress
       });
 
-      onProgress({
+      emitNlProgress(onProgress, {
         phaseId: 'done',
         status: 'completed',
-        summary: 'NL query pipeline finished.',
-        timestamp: new Date().toISOString()
+        summary: 'NL query pipeline finished.'
       });
 
       writeNdjsonEvent(res, { type: 'result', nl });
     } catch (error) {
-      onProgress({
+      emitNlProgress(onProgress, {
         phaseId: 'done',
         status: 'failed',
-        summary: getErrorMessage(error, 'Failed to process NL query'),
-        timestamp: new Date().toISOString()
+        summary: getErrorMessage(error, 'Failed to process NL query')
       });
     } finally {
       writeNdjsonEvent(res, { type: 'done' });

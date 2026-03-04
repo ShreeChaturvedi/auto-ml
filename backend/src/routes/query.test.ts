@@ -41,6 +41,24 @@ const mockStoreCachedQueryResult = vi.mocked(storeCachedQueryResult);
 const mockExecuteReadOnlyQuery = vi.mocked(executeReadOnlyQuery);
 const mockGenerateSqlFromNaturalLanguageV2 = vi.mocked(generateSqlFromNaturalLanguageV2);
 const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV2);
+const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
+
+type NdjsonEvent = Record<string, any>;
+
+function parseNdjsonEvents(payload: string): NdjsonEvent[] {
+  return payload
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+function findEventIndex(
+  events: NdjsonEvent[],
+  predicate: (event: NdjsonEvent) => boolean
+): number {
+  return events.findIndex((event) => predicate(event));
+}
 
 function createTestApp() {
   const app = express();
@@ -579,14 +597,14 @@ describeIf('query routes', () => {
       const response = await request(app)
         .post('/api/query/nl/stream')
         .send({
-          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          projectId: TEST_PROJECT_ID,
           query: 'show all users'
         });
 
       expect(response.status).toBe(200);
       expect(response.headers['content-type']).toMatch(/application\/x-ndjson/);
 
-      const events = response.text.trim().split('\n').map((line) => JSON.parse(line));
+      const events = parseNdjsonEvents(response.text);
       expect(events.some((event) => event.type === 'phase_started' && event.phaseId === 'schema_context')).toBe(true);
       expect(events.some((event) => event.type === 'phase_completed' && event.phaseId === 'done')).toBe(true);
 
@@ -599,6 +617,183 @@ describeIf('query routes', () => {
       expect(events.at(-1)?.type).toBe('done');
     });
 
+    it('streams phase_progress events with details and orders done-phase before result', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockImplementation(async (input) => {
+        input.onProgress?.({
+          phaseId: 'sql_generation',
+          status: 'progress',
+          summary: 'Retrying with compact fallback.',
+          timestamp: new Date().toISOString(),
+          details: { attempt: 2, path: 'compact' }
+        });
+
+        return {
+          sql: 'SELECT * FROM users LIMIT 25',
+          rationale: 'Fallback SQL generation.',
+          queryId: 'stream-progress-id',
+          explanation: {
+            intentSummary: 'Fetch users quickly',
+            selectedTables: ['users'],
+            joinPlan: [],
+            filters: [],
+            aggregations: [],
+            assumptions: [],
+            validationNotes: [],
+            confidence: 0.78,
+            warningLevel: 'low',
+            confidenceMode: 'heuristic',
+            reliabilityTier: 'medium'
+          }
+        };
+      });
+      mockGetCachedQueryResult.mockResolvedValue({
+        queryId: 'cached-query-id',
+        sql: 'SELECT * FROM users LIMIT 25',
+        rows: [{ id: 1 }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }],
+        rowCount: 1,
+        executionMs: 7,
+        cached: true
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl/stream')
+        .send({
+          projectId: TEST_PROJECT_ID,
+          query: 'show all users'
+        });
+
+      expect(response.status).toBe(200);
+      const events = parseNdjsonEvents(response.text);
+
+      const progressEvent = events.find((event) =>
+        event.type === 'phase_progress' && event.phaseId === 'sql_generation'
+      );
+      expect(progressEvent).toBeDefined();
+      expect(progressEvent?.details).toEqual({ attempt: 2, path: 'compact' });
+
+      const donePhaseIndex = findEventIndex(events, (event) =>
+        event.type === 'phase_completed' && event.phaseId === 'done'
+      );
+      const resultIndex = findEventIndex(events, (event) => event.type === 'result');
+      expect(donePhaseIndex).toBeGreaterThan(-1);
+      expect(resultIndex).toBeGreaterThan(-1);
+      expect(donePhaseIndex).toBeLessThan(resultIndex);
+      expect(events.at(-1)?.type).toBe('done');
+    });
+
+    it('streams initial execution failure and repair recovery progress in order', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockResolvedValue({
+        sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
+        rationale: 'Compute average EOC',
+        queryId: 'stream-repair-gen-id',
+        explanation: {
+          intentSummary: 'Compute average EOC score',
+          selectedTables: ['checkpoints_eoc'],
+          joinPlan: [],
+          filters: [],
+          aggregations: ['average eoc'],
+          assumptions: [],
+          validationNotes: [],
+          confidence: 0.9,
+          warningLevel: 'none',
+          confidenceMode: 'model',
+          reliabilityTier: 'high'
+        }
+      });
+      mockGetCachedQueryResult.mockResolvedValue(null);
+      mockExecuteReadOnlyQuery
+        .mockRejectedValueOnce(new Error('column "eoc" does not exist'))
+        .mockResolvedValueOnce({
+          queryId: 'stream-repair-exec-id',
+          sql: 'SELECT AVG(response) FROM checkpoints_eoc',
+          rows: [{ avg: 88.2 }],
+          columns: [{ name: 'avg', dataTypeID: 701, dataType: 'float8' }],
+          rowCount: 1,
+          executionMs: 9,
+          cached: false
+        });
+      mockRepairSqlFromExecutionErrorV2.mockImplementation(async (input) => {
+        input.onProgress?.({
+          phaseId: 'repair',
+          status: 'started',
+          summary: 'Repairing SQL from execution failure.',
+          timestamp: new Date().toISOString()
+        });
+        input.onProgress?.({
+          phaseId: 'repair',
+          status: 'completed',
+          summary: 'Repaired SQL generated.',
+          timestamp: new Date().toISOString()
+        });
+
+        return {
+          sql: 'SELECT AVG(response) FROM checkpoints_eoc',
+          rationale: 'Use response column instead of eoc.',
+          queryId: 'stream-repair-id',
+          explanation: {
+            intentSummary: 'Compute average response score',
+            selectedTables: ['checkpoints_eoc'],
+            joinPlan: [],
+            filters: [],
+            aggregations: ['average response'],
+            assumptions: ['response is the score column'],
+            validationNotes: ['auto-repaired'],
+            confidence: 0.73,
+            warningLevel: 'low',
+            confidenceMode: 'repair',
+            reliabilityTier: 'medium'
+          }
+        };
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl/stream')
+        .send({
+          projectId: TEST_PROJECT_ID,
+          query: 'highest performing students by eoc'
+        });
+
+      expect(response.status).toBe(200);
+      const events = parseNdjsonEvents(response.text);
+
+      const generatedFailureIndex = findEventIndex(events, (event) =>
+        event.type === 'phase_failed'
+        && event.phaseId === 'initial_execution'
+        && typeof event.summary === 'string'
+        && event.summary.includes('Generated SQL execution failed')
+      );
+      const repairStartedIndex = findEventIndex(events, (event) =>
+        event.type === 'phase_started' && event.phaseId === 'repair'
+      );
+      const repairCompletedIndex = findEventIndex(events, (event) =>
+        event.type === 'phase_completed' && event.phaseId === 'repair'
+      );
+      const repairedProgressIndex = findEventIndex(events, (event) =>
+        event.type === 'phase_progress'
+        && event.phaseId === 'initial_execution'
+        && event.summary === 'Executing repaired SQL for validation.'
+      );
+      const repairedCompletedIndex = findEventIndex(events, (event) =>
+        event.type === 'phase_completed'
+        && event.phaseId === 'initial_execution'
+        && event.summary === 'Repaired SQL executed successfully.'
+      );
+
+      expect(generatedFailureIndex).toBeGreaterThan(-1);
+      expect(repairStartedIndex).toBeGreaterThan(generatedFailureIndex);
+      expect(repairCompletedIndex).toBeGreaterThan(repairStartedIndex);
+      expect(repairedProgressIndex).toBeGreaterThan(repairCompletedIndex);
+      expect(repairedCompletedIndex).toBeGreaterThan(repairedProgressIndex);
+
+      const resultEvent = events.find((event) => event.type === 'result');
+      expect(resultEvent).toBeDefined();
+      expect(resultEvent?.nl?.sql).toContain('AVG(response)');
+      expect(resultEvent?.nl?.queryExecutionError).toBeNull();
+    });
+
     it('streams failed done phase when generation throws', async () => {
       mockGenerateSqlFromNaturalLanguageV2.mockRejectedValue(new Error('provider unavailable'));
 
@@ -606,12 +801,12 @@ describeIf('query routes', () => {
       const response = await request(app)
         .post('/api/query/nl/stream')
         .send({
-          projectId: '550e8400-e29b-41d4-a716-446655440000',
+          projectId: TEST_PROJECT_ID,
           query: 'show all users'
         });
 
       expect(response.status).toBe(200);
-      const events = response.text.trim().split('\n').map((line) => JSON.parse(line));
+      const events = parseNdjsonEvents(response.text);
       expect(events.some((event) => event.type === 'phase_failed' && event.phaseId === 'done')).toBe(true);
       expect(events.at(-1)?.type).toBe('done');
     });

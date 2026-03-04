@@ -122,6 +122,8 @@ export const env = {
   geminiModel: RESOLVED_GEMINI_MODEL,
   geminiThinkingModel: RESOLVED_GEMINI_THINKING_MODEL,
   llmTimeoutMs: parseInteger(process.env.LLM_TIMEOUT_MS, 60000),
+  preprocessingLlmTimeoutMs: parseInteger(process.env.PREPROCESSING_LLM_TIMEOUT_MS, 120000),
+  preprocessingThinkingLlmTimeoutMs: parseInteger(process.env.PREPROCESSING_THINKING_LLM_TIMEOUT_MS, 180000),
   nl2sqlModel: RESOLVED_NL2SQL_MODEL,
   nl2sqlEnableThinking: process.env.NL2SQL_ENABLE_THINKING === 'true',
   nl2sqlTimeoutMs: parseInteger(process.env.NL2SQL_TIMEOUT_MS, 25000),

@@ -19,11 +19,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
+import { projectColorClasses, type ProjectColor } from '@/types/project';
 import { quoteSqlIdentifier } from './sqlIdentifiers';
 import { IconModeToggle } from './IconModeToggle';
 import { NlQueryWorkflow } from './NlQueryWorkflow';
-import type { NlQueryWorkflowHandle, NlPhase } from './NlQueryWorkflow';
+import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQueryWorkflow';
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult } from '@/types/nlQuery';
 
@@ -79,12 +79,10 @@ function AnimatedIdeaIcon({
   gradientId: string;
   colorClassName: string;
 }) {
-  // Exact Lucide Lightbulb geometry.
-  const ideaPaths = [
-    'M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5',
-    'M9 18h6',
-    'M10 22h4',
-  ];
+  const outlinePath =
+    'M9 15.2c-1.8-1.2-2.9-3.1-2.9-5.5C6.1 6.1 8.75 3 12 3s5.9 3.1 5.9 6.7c0 2.4-1.1 4.3-2.9 5.5';
+  const basePaths = ['M9 18h6', 'M10 21h4'];
+  const filamentPath = 'M9.1 10.6c.6-1.1 1.6-1.7 2.9-1.7 1.3 0 2.3.6 2.9 1.7M10 12.9h4';
 
   return (
     <svg
@@ -102,18 +100,81 @@ function AnimatedIdeaIcon({
           <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
         </linearGradient>
       </defs>
-      {ideaPaths.map((d, i) => (
+      <path
+        d={outlinePath}
+        stroke={`url(#${gradientId})`}
+        className="idea-icon-outline"
+      />
+      {basePaths.map((d, i) => (
         <path
           key={i}
           d={d}
           stroke={`url(#${gradientId})`}
-          pathLength={100}
-          className="execute-icon-path motion-reduce:!animate-none"
+          className="idea-icon-outline"
         />
       ))}
+      <path
+        d={filamentPath}
+        stroke={`url(#${gradientId})`}
+        pathLength={100}
+        className="idea-icon-filament motion-reduce:!animate-none"
+      />
     </svg>
   );
 }
+
+const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> = {
+  blue: {
+    hoverText: 'hover:text-blue-700 dark:hover:text-blue-300',
+    hoverBorder: 'hover:border-blue-400 dark:hover:border-blue-400/70',
+    hoverBg: 'hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
+  },
+  green: {
+    hoverText: 'hover:text-green-700 dark:hover:text-green-300',
+    hoverBorder: 'hover:border-green-400 dark:hover:border-green-400/70',
+    hoverBg: 'hover:bg-green-500/15 dark:hover:bg-green-500/20'
+  },
+  purple: {
+    hoverText: 'hover:text-purple-700 dark:hover:text-purple-300',
+    hoverBorder: 'hover:border-purple-400 dark:hover:border-purple-400/70',
+    hoverBg: 'hover:bg-purple-500/15 dark:hover:bg-purple-500/20'
+  },
+  pink: {
+    hoverText: 'hover:text-pink-700 dark:hover:text-pink-300',
+    hoverBorder: 'hover:border-pink-400 dark:hover:border-pink-400/70',
+    hoverBg: 'hover:bg-pink-500/15 dark:hover:bg-pink-500/20'
+  },
+  orange: {
+    hoverText: 'hover:text-orange-700 dark:hover:text-orange-300',
+    hoverBorder: 'hover:border-orange-400 dark:hover:border-orange-400/70',
+    hoverBg: 'hover:bg-orange-500/15 dark:hover:bg-orange-500/20'
+  },
+  red: {
+    hoverText: 'hover:text-red-700 dark:hover:text-red-300',
+    hoverBorder: 'hover:border-red-400 dark:hover:border-red-400/70',
+    hoverBg: 'hover:bg-red-500/15 dark:hover:bg-red-500/20'
+  },
+  yellow: {
+    hoverText: 'hover:text-yellow-700 dark:hover:text-yellow-300',
+    hoverBorder: 'hover:border-yellow-400 dark:hover:border-yellow-400/70',
+    hoverBg: 'hover:bg-yellow-500/15 dark:hover:bg-yellow-500/20'
+  },
+  indigo: {
+    hoverText: 'hover:text-indigo-700 dark:hover:text-indigo-300',
+    hoverBorder: 'hover:border-indigo-400 dark:hover:border-indigo-400/70',
+    hoverBg: 'hover:bg-indigo-500/15 dark:hover:bg-indigo-500/20'
+  },
+  teal: {
+    hoverText: 'hover:text-teal-700 dark:hover:text-teal-300',
+    hoverBorder: 'hover:border-teal-400 dark:hover:border-teal-400/70',
+    hoverBg: 'hover:bg-teal-500/15 dark:hover:bg-teal-500/20'
+  },
+  cyan: {
+    hoverText: 'hover:text-cyan-700 dark:hover:text-cyan-300',
+    hoverBorder: 'hover:border-cyan-400 dark:hover:border-cyan-400/70',
+    hoverBg: 'hover:bg-cyan-500/15 dark:hover:bg-cyan-500/20'
+  }
+};
 
 // Lazy load Monaco Editor to reduce initial bundle size
 const Editor = lazy(() =>
@@ -498,13 +559,16 @@ export function QueryPanel({
   const executeIconColorClass = activeProject
     ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
     : 'text-primary';
+  const approveThemeClasses = activeProject
+    ? APPROVE_THEME_BY_PROJECT_COLOR[activeProject.color]
+    : undefined;
   const monacoRef = useRef<Monaco | null>(null);
   const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   
   // Store completion provider disposable for cleanup
   const completionProviderRef = useRef<IDisposable | null>(null);
   const validationSubscriptionRef = useRef<IDisposable | null>(null);
-  const monacoTheme = resolvedTheme === 'dark' ? 'custom-dark' : 'custom-light';
+  const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
   
   // Cleanup completion provider on unmount
   useEffect(() => {
@@ -653,27 +717,28 @@ export function QueryPanel({
         </TooltipProvider>
       </div>
 
-      {/* Collapsed body */}
-      {collapsed && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => onCollapsedChange?.(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onCollapsedChange?.(false);
-            }
-          }}
-          className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50"
-        >
-          <div className="flex-1 flex items-center justify-center">
-            <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180 select-none">
-              Query Builder
-            </span>
-          </div>
+      {/* Collapsed body - always in DOM, fades via opacity to prevent layout jump */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onCollapsedChange?.(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onCollapsedChange?.(false);
+          }
+        }}
+        className={cn(
+          'absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50 transition-opacity duration-150',
+          collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )}
+      >
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-xs text-muted-foreground [writing-mode:vertical-lr] rotate-180 select-none">
+            Query Builder
+          </span>
         </div>
-      )}
+      </div>
 
       {/* Query Input + Execute (kept mounted for smooth expand/collapse) */}
       <div
@@ -704,50 +769,7 @@ export function QueryPanel({
                   editorInstanceRef.current = editorInstance;
                   monacoRef.current = monaco;
 
-                  // Define custom dark theme matching our site
-                  monaco.editor.defineTheme('custom-dark', {
-                    base: 'vs-dark',
-                    inherit: true,
-                    rules: [
-                      { token: 'keyword', foreground: '60a5fa', fontStyle: 'bold' }, // blue
-                      { token: 'string', foreground: '34d399' }, // green
-                      { token: 'number', foreground: 'f472b6' }, // pink
-                      { token: 'comment', foreground: '6b7280', fontStyle: 'italic' }, // gray
-                      { token: 'operator', foreground: 'a78bfa' }, // purple
-                      { token: 'identifier', foreground: 'fafafa' }, // white
-                      { token: 'type', foreground: 'fbbf24' }, // yellow
-                    ],
-                    colors: {
-                      'editor.background': '#000000', // Match site background
-                      'editor.foreground': '#fafafa',
-                      'editor.lineHighlightBackground': '#0a0a0a',
-                      'editor.selectionBackground': '#2563eb44',
-                      'editorLineNumber.foreground': '#404040',
-                      'editorLineNumber.activeForeground': '#808080',
-                      'editorGutter.background': '#000000',
-                      'editor.inactiveSelectionBackground': '#1e3a5f33',
-                    }
-                  });
-
-                  // Define custom light theme
-                  monaco.editor.defineTheme('custom-light', {
-                    base: 'vs',
-                    inherit: true,
-                    rules: [
-                      { token: 'keyword', foreground: '2563eb', fontStyle: 'bold' },
-                      { token: 'string', foreground: '059669' },
-                      { token: 'number', foreground: 'db2777' },
-                      { token: 'comment', foreground: '9ca3af', fontStyle: 'italic' },
-                      { token: 'operator', foreground: '7c3aed' },
-                    ],
-                    colors: {
-                      'editor.background': '#ffffff',
-                      'editorLineNumber.foreground': '#d4d4d4',
-                      'editorLineNumber.activeForeground': '#a3a3a3',
-                    }
-                  });
-
-                  // Apply the custom theme
+                  // Apply the preloaded SQL theme.
                   monaco.editor.setTheme(monacoTheme);
 
                   // Focus editor on mount
@@ -985,6 +1007,7 @@ export function QueryPanel({
             onApprove={onNlApprove ?? (() => {})}
             isExpanding={isExpanding}
             onPhaseChange={setNlPhase}
+            approveThemeClasses={approveThemeClasses}
             ref={nlWorkflowRef}
           />
         )}

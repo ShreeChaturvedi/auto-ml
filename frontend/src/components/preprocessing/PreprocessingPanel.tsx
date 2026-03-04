@@ -39,6 +39,7 @@ import {
   parseStoredPreprocessingTabsState
 } from './storagePersistence';
 import {
+  ArrowRight,
   AlertTriangle,
   CheckCircle2,
   Database,
@@ -163,21 +164,35 @@ function statusClassName(status: TransformationEvent['status'], divergedClassNam
   return 'border-muted bg-muted/50 text-muted-foreground';
 }
 
+function getRowCountSummary(event: TransformationEvent): {
+  before: string;
+  after: string;
+  schemaDrift: boolean;
+} | null {
+  const validation = event.validation;
+  if (!validation) {
+    return null;
+  }
+  if (typeof validation.rowCountBefore !== 'number' || typeof validation.rowCountAfter !== 'number') {
+    return null;
+  }
+  return {
+    before: ROW_COUNT_FORMATTER.format(validation.rowCountBefore),
+    after: ROW_COUNT_FORMATTER.format(validation.rowCountAfter),
+    schemaDrift: Boolean(validation.schemaDrift)
+  };
+}
+
 function summarizeValidation(event: TransformationEvent): string | null {
   if (!event.validation) {
     return null;
   }
-  const { rowCountBefore, rowCountAfter, schemaDrift, notes } = event.validation;
-  if (typeof rowCountBefore === 'number' && typeof rowCountAfter === 'number') {
-    const formattedBefore = ROW_COUNT_FORMATTER.format(rowCountBefore);
-    const formattedAfter = ROW_COUNT_FORMATTER.format(rowCountAfter);
-    return `Rows ${formattedBefore} \u2192 ${formattedAfter}${schemaDrift ? ' · Schema drift flagged' : ''}`;
-  }
+  const { schemaDrift, notes } = event.validation;
   if (typeof notes === 'string' && notes.trim()) {
     return notes;
   }
   if (schemaDrift) {
-    return 'Validation flagged schema drift.';
+    return 'Schema drift flagged.';
   }
   return null;
 }
@@ -545,6 +560,10 @@ export function PreprocessingPanel() {
     }
 
     const status = latestTimelineEvent.status;
+    const rowCountSummary = getRowCountSummary(latestTimelineEvent);
+    const showRowCountSummary = Boolean(
+      rowCountSummary && !latestTimelineEvent.error && !latestTimelineEvent.decisionReason
+    );
     const baseClass = status === 'failed'
       ? 'border-red-300 bg-red-50/80 text-red-700'
       : status === 'awaiting_approval'
@@ -572,7 +591,17 @@ export function PreprocessingPanel() {
             <Loader2 className="h-4 w-4 animate-spin" />
           )}
           <span className="font-medium">{latestTimelineEvent.title} · {STATUS_LABELS[status]}</span>
-          {detail ? <span className="text-[11px] opacity-90">· {detail}</span> : null}
+          {showRowCountSummary && rowCountSummary ? (
+            <span className="flex items-center gap-1 text-[11px] opacity-90">
+              <span>· Rows {rowCountSummary.before}</span>
+              <ArrowRight className="h-3 w-3 shrink-0" />
+              <span>{rowCountSummary.after}</span>
+              {rowCountSummary.schemaDrift ? <span>· Schema drift flagged</span> : null}
+            </span>
+          ) : null}
+          {!showRowCountSummary && detail ? (
+            <span className="text-[11px] opacity-90">· {detail}</span>
+          ) : null}
         </CardContent>
       </Card>
     );
@@ -1160,7 +1189,9 @@ export function PreprocessingPanel() {
                   <p className="text-xs text-muted-foreground">Cards are projected from structured tool events. Notebook remains the execution source of truth.</p>
                 </div>
                 {sortedTimeline.map((event) => {
+                  const rowCountSummary = getRowCountSummary(event);
                   const validationSummary = summarizeValidation(event);
+                  const hasValidationSummary = Boolean(rowCountSummary || validationSummary);
 
                   return (
                     <Card key={event.id} className={cn('border', event.status === 'diverged' ? projectAccentClasses.border : '')}>
@@ -1203,10 +1234,19 @@ export function PreprocessingPanel() {
                           </div>
                         ) : null}
 
-                        {validationSummary ? (
+                        {hasValidationSummary ? (
                           <div className="rounded-md border bg-muted/20 p-2">
                             <p className="font-medium">Validation</p>
-                            <p className="text-muted-foreground">{validationSummary}</p>
+                            {rowCountSummary ? (
+                              <div className="mt-1 flex items-center gap-1 text-muted-foreground">
+                                <span>Rows {rowCountSummary.before}</span>
+                                <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                                <span>{rowCountSummary.after}</span>
+                                {rowCountSummary.schemaDrift ? <span>· Schema drift flagged</span> : null}
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground">{validationSummary}</p>
+                            )}
                           </div>
                         ) : null}
 
@@ -1244,9 +1284,6 @@ export function PreprocessingPanel() {
                 })}
               </div>
             ) : null}
-
-
-
             {replayReport ? (
               <Card className={cn(replayReport.compatible ? 'border-emerald-300' : 'border-amber-300')}>
                 <CardContent className="space-y-2 p-3 text-sm">

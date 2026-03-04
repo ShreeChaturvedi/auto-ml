@@ -15,6 +15,14 @@ import {
   Box
 } from 'lucide-react';
 import type { ComputeAnimationProps } from '@/types/processing';
+import {
+  FLOW_BASE_STROKE_WIDTH,
+  FLOW_PARTICLE_DASHARRAY,
+  FLOW_PARTICLE_DURATION,
+  FLOW_PARTICLE_OFFSET_END,
+  FLOW_PARTICLE_OFFSET_START,
+  FLOW_PARTICLE_STROKE_WIDTH,
+} from '@/lib/animation/flowPulseTokens';
 
 // ── Dynamic Icon Helpers ──────────────────────────────────────────
 
@@ -144,8 +152,8 @@ export function ComputeAnimation({
     >
       <style>{`
         @keyframes ca-particle-${uid} {
-          0%   { stroke-dashoffset: 440; }
-          100% { stroke-dashoffset: -300; }
+          0%   { stroke-dashoffset: ${FLOW_PARTICLE_OFFSET_START}; }
+          100% { stroke-dashoffset: ${FLOW_PARTICLE_OFFSET_END}; }
         }
         @keyframes ca-rotate-cube-${uid} {
           0%   { transform: rotateX(-20deg) rotateY(0deg); }
@@ -331,7 +339,7 @@ export function ComputeAnimation({
               key={`base-l-${i}`}
               d={`M 200 ${y} C 280 ${y}, 270 230, 350 230`}
               fill="none"
-              strokeWidth="1.5"
+              strokeWidth={FLOW_BASE_STROKE_WIDTH}
               style={{ stroke: 'hsl(var(--border))', opacity: visible ? 1 : 0, transition: 'opacity 0.5s ease' }}
             />
           );
@@ -347,13 +355,13 @@ export function ComputeAnimation({
               d={`M 200 ${y} C 280 ${y}, 270 230, 350 230`}
               fill="none"
               stroke={`url(#particle-grad-${uid})`}
-              strokeWidth="2.5"
+              strokeWidth={FLOW_PARTICLE_STROKE_WIDTH}
               strokeLinecap="round"
-              strokeDasharray="40 400"
+              strokeDasharray={FLOW_PARTICLE_DASHARRAY}
               opacity={visible && !isComplete ? 1 : 0}
               style={{
                 transition: 'opacity 0.5s ease',
-                animation: `ca-particle-${uid} 1.5s linear infinite`,
+                animation: `ca-particle-${uid} ${FLOW_PARTICLE_DURATION} linear infinite`,
                 animationDelay: `${i * 0.2}s`,
               }}
             />
@@ -369,7 +377,7 @@ export function ComputeAnimation({
               key={`base-r-${i}`}
               d={`M 550 230 C 630 230, 620 ${y}, 700 ${y}`}
               fill="none"
-              strokeWidth="1.5"
+              strokeWidth={FLOW_BASE_STROKE_WIDTH}
               style={{ stroke: 'hsl(var(--border))', opacity: visible ? 1 : 0, transition: 'opacity 0.5s ease' }}
             />
           );
@@ -385,13 +393,13 @@ export function ComputeAnimation({
               d={`M 550 230 C 630 230, 620 ${y}, 700 ${y}`}
               fill="none"
               stroke={`url(#particle-grad-${uid})`}
-              strokeWidth="2.5"
+              strokeWidth={FLOW_PARTICLE_STROKE_WIDTH}
               strokeLinecap="round"
-              strokeDasharray="40 400"
+              strokeDasharray={FLOW_PARTICLE_DASHARRAY}
               opacity={visible ? 1 : 0}
               style={{
                 transition: 'opacity 0.5s ease',
-                animation: `ca-particle-${uid} 1.5s linear infinite`,
+                animation: `ca-particle-${uid} ${FLOW_PARTICLE_DURATION} linear infinite`,
                 animationDelay: `${i * 0.3}s`,
               }}
             />

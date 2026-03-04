@@ -1,102 +1,151 @@
 /**
  * NlFlowConnector
  *
- * A vertical SVG connector that bridges workflow blocks in English mode.
- * Supports two mirrored variants:
- * - `fan-in`: three branches converge into the next block
- * - `fan-out`: one source branch diverges into three outputs
- *
- * Each branch renders two layers over the same cubic-bézier geometry:
- *
- *  1. Base path  – always rendered, uses the border colour.  Fully opaque
- *     while particles are running; dims to 40 % once settled.
- *
- *  2. Particle path – a moving dash that sweeps top-to-bottom along the
- *     base path, using a local linear gradient so it fades in at the entry
- *     point and fades out as it exits.  Visible only in the `active` state.
- *     Each branch has a staggered animation delay for a cascade effect.
- *
- * The `state` prop drives both the visual appearance and the CSS animation:
- *   - 'active'  → particles animate continuously, base paths at full opacity
- *   - 'settled' → particles fade out, base paths dim
- *
- * UID-scoped keyframes are injected via an inline <style> tag, mirroring the
- * pattern used in ComputeAnimation.tsx to avoid global class-name collisions.
+ * Vertical connector between NL workflow blocks.
+ * Pulses intentionally mirror ComputeAnimation's line-particle behavior.
  */
 
-import { useId } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import {
+  FLOW_BASE_STROKE_WIDTH,
+  FLOW_PARTICLE_DASHARRAY,
+  FLOW_PARTICLE_DURATION,
+  FLOW_PARTICLE_OFFSET_END,
+  FLOW_PARTICLE_OFFSET_START,
+  FLOW_PARTICLE_PATH_LENGTH,
+  FLOW_PARTICLE_STROKE_WIDTH,
+} from '@/lib/animation/flowPulseTokens';
 
 interface NlFlowConnectorProps {
   state: 'active' | 'settled';
   variant?: 'fan-in' | 'fan-out';
+  stretch?: boolean;
   className?: string;
 }
 
-// ─── SVG geometry ─────────────────────────────────────────────────────────────
+type ConnectorBranch = {
+  d: string;
+  start: [number, number];
+  end: [number, number];
+};
 
-const SVG_WIDTH = 120;
-const SVG_HEIGHT = 64;
-const CX = SVG_WIDTH / 2; // 60 — horizontal midpoint
+const SVG_WIDTH = 156;
+const BASE_HEIGHT = 64;
+const CX = SVG_WIDTH / 2;
+const EDGE_LEFT = 12;
+const EDGE_RIGHT = SVG_WIDTH - EDGE_LEFT;
+const CONTROL_LEFT = 24;
+const CONTROL_RIGHT = SVG_WIDTH - CONTROL_LEFT;
 
-/**
- * Three cubic-bézier branches fanning out from a shared origin at top-centre.
- * Control points are tuned so the curves feel natural and evenly spaced.
- *
- *   Left   : (60,0) → curves to (18, 64)
- *   Centre : (60,0) → curves to (60, 64)  (near-straight with subtle ease)
- *   Right  : (60,0) → curves to (102,64)
- */
-const BRANCHES_FAN_OUT = [
-  // left
-  `M ${CX} 0 C ${CX} 22, 18 34, 18 ${SVG_HEIGHT}`,
-  // centre
-  `M ${CX} 0 C ${CX} 18, ${CX} 46, ${CX} ${SVG_HEIGHT}`,
-  // right
-  `M ${CX} 0 C ${CX} 22, 102 34, 102 ${SVG_HEIGHT}`,
-] as const;
+function roundCoord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
-const BRANCHES_FAN_IN = [
-  // left
-  `M 18 0 C 18 30, ${CX} 40, ${CX} ${SVG_HEIGHT}`,
-  // centre
-  `M ${CX} 0 C ${CX} 20, ${CX} 44, ${CX} ${SVG_HEIGHT}`,
-  // right
-  `M 102 0 C 102 30, ${CX} 40, ${CX} ${SVG_HEIGHT}`,
-] as const;
+function buildFanOutBranches(height: number): readonly ConnectorBranch[] {
+  const h = roundCoord(height);
+  return [
+    {
+      d: `M ${CX} 0 C ${CX} ${roundCoord(h * 0.34)}, ${CONTROL_LEFT} ${roundCoord(h * 0.56)}, ${EDGE_LEFT} ${h}`,
+      start: [CX, 0],
+      end: [EDGE_LEFT, h],
+    },
+    {
+      d: `M ${CX} 0 C ${CX} ${roundCoord(h * 0.22)}, ${CX} ${roundCoord(h * 0.7)}, ${CX} ${h}`,
+      start: [CX, 0],
+      end: [CX, h],
+    },
+    {
+      d: `M ${CX} 0 C ${CX} ${roundCoord(h * 0.34)}, ${CONTROL_RIGHT} ${roundCoord(h * 0.56)}, ${EDGE_RIGHT} ${h}`,
+      start: [CX, 0],
+      end: [EDGE_RIGHT, h],
+    },
+  ] as const;
+}
 
-/** Staggered delay per branch so particles cascade rather than firing in sync. */
-const BRANCH_DELAYS = ['0s', '0.25s', '0.5s'] as const;
+function buildFanInBranches(height: number): readonly ConnectorBranch[] {
+  const h = roundCoord(height);
+  return [
+    {
+      d: `M ${EDGE_LEFT} 0 C ${EDGE_LEFT} ${roundCoord(h * 0.46)}, ${CX} ${roundCoord(h * 0.62)}, ${CX} ${h}`,
+      start: [EDGE_LEFT, 0],
+      end: [CX, h],
+    },
+    {
+      d: `M ${CX} 0 C ${CX} ${roundCoord(h * 0.24)}, ${CX} ${roundCoord(h * 0.72)}, ${CX} ${h}`,
+      start: [CX, 0],
+      end: [CX, h],
+    },
+    {
+      d: `M ${EDGE_RIGHT} 0 C ${EDGE_RIGHT} ${roundCoord(h * 0.46)}, ${CX} ${roundCoord(h * 0.62)}, ${CX} ${h}`,
+      start: [EDGE_RIGHT, 0],
+      end: [CX, h],
+    },
+  ] as const;
+}
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const BRANCH_DELAYS_FAN_IN = ['0s', '0.2s', '0.4s'] as const;
+const BRANCH_DELAYS_FAN_OUT = ['0s', '0.3s', '0.6s'] as const;
 
-function NlFlowConnector({ state, variant = 'fan-out', className }: NlFlowConnectorProps) {
+function NlFlowConnector({
+  state,
+  variant = 'fan-out',
+  stretch = false,
+  className
+}: NlFlowConnectorProps) {
   const rawId = useId();
   const uid = rawId.replace(/:/g, '');
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [measuredHeight, setMeasuredHeight] = useState(BASE_HEIGHT);
 
-  const gradId = `nl-grad-${uid}`;
+  const gradientRootId = `nl-grad-${uid}`;
   const animName = `nl-particle-${uid}`;
 
-  // Particle dash pattern.  The path length is ~80-100 units depending on the
-  // branch curvature.  A 12/90 ratio keeps the dot small and the gap wide
-  // enough that you only see one dot at a time per branch.
-  const STROKE_DASH = '12 90';
-  const OFFSET_START = 110;
-  const OFFSET_END = -50;
-  const DURATION = '1.4s';
+  useEffect(() => {
+    if (!stretch) {
+      return;
+    }
+    const element = containerRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const nextHeight = Math.round(entry.contentRect.height);
+      if (nextHeight > 0) {
+        setMeasuredHeight(nextHeight);
+      }
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [stretch]);
+
+  const connectorHeight = stretch
+    ? Math.max(BASE_HEIGHT, measuredHeight)
+    : BASE_HEIGHT;
 
   const isActive = state === 'active';
-  const branches = variant === 'fan-in' ? BRANCHES_FAN_IN : BRANCHES_FAN_OUT;
+  const branches = useMemo(
+    () => variant === 'fan-in'
+      ? buildFanInBranches(connectorHeight)
+      : buildFanOutBranches(connectorHeight),
+    [variant, connectorHeight]
+  );
+  const branchDelays = variant === 'fan-in' ? BRANCH_DELAYS_FAN_IN : BRANCH_DELAYS_FAN_OUT;
 
   return (
     <div
-      className={cn('w-full flex items-center justify-center', className)}
-      style={{ height: SVG_HEIGHT }}
+      ref={containerRef}
+      className={cn('flex w-full items-center justify-center text-primary', className)}
+      style={{ height: stretch ? '100%' : BASE_HEIGHT }}
     >
       <style>{`
         @keyframes ${animName} {
-          0%   { stroke-dashoffset: ${OFFSET_START}; }
-          100% { stroke-dashoffset: ${OFFSET_END}; }
+          0%   { stroke-dashoffset: ${FLOW_PARTICLE_OFFSET_START}; }
+          100% { stroke-dashoffset: ${FLOW_PARTICLE_OFFSET_END}; }
         }
         @media (prefers-reduced-motion: reduce) {
           .nl-conn-${uid} * {
@@ -109,58 +158,69 @@ function NlFlowConnector({ state, variant = 'fan-out', className }: NlFlowConnec
 
       <svg
         width={SVG_WIDTH}
-        height={SVG_HEIGHT}
-        viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+        height={connectorHeight}
+        viewBox={`0 0 ${SVG_WIDTH} ${connectorHeight}`}
+        preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
         className={`nl-conn-${uid}`}
       >
         <defs>
-          {/* Vertical gradient — transparent at ends, opaque at midpoint */}
-          <linearGradient
-            id={gradId}
-            x1="0%"
-            y1="0%"
-            x2="0%"
-            y2="100%"
-          >
-            <stop offset="0%"   style={{ stopColor: 'currentColor', stopOpacity: 0 }} />
-            <stop offset="50%"  style={{ stopColor: 'currentColor', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: 'currentColor', stopOpacity: 0 }} />
-          </linearGradient>
+          {branches.map((branch, index) => {
+            const gradientId = `${gradientRootId}-${index}`;
+            return (
+              <linearGradient
+                key={gradientId}
+                id={gradientId}
+                gradientUnits="userSpaceOnUse"
+                x1={branch.start[0]}
+                y1={branch.start[1]}
+                x2={branch.end[0]}
+                y2={branch.end[1]}
+              >
+                <stop offset="0%" style={{ stopColor: 'currentColor', stopOpacity: 0 }} />
+                <stop offset="50%" style={{ stopColor: 'currentColor', stopOpacity: 1 }} />
+                <stop offset="100%" style={{ stopColor: 'currentColor', stopOpacity: 0 }} />
+              </linearGradient>
+            );
+          })}
         </defs>
 
-        {branches.map((d, i) => (
-          <g key={i}>
-            {/* Base path */}
-            <path
-              d={d}
-              fill="none"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              style={{
-                stroke: 'hsl(var(--border))',
-                opacity: isActive ? 1 : 0.4,
-                transition: 'opacity 0.5s ease',
-              }}
-            />
+        {branches.map((branch, index) => {
+          const gradientId = `${gradientRootId}-${index}`;
+          return (
+            <g key={gradientId}>
+              <path
+                d={branch.d}
+                fill="none"
+                strokeWidth={FLOW_BASE_STROKE_WIDTH}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                style={{
+                  stroke: 'hsl(var(--border))',
+                  opacity: isActive ? 1 : 0.72,
+                  transition: 'opacity 0.45s ease',
+                }}
+              />
 
-            {/* Animated particle */}
-            <path
-              d={d}
-              fill="none"
-              stroke={`url(#${gradId})`}
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeDasharray={STROKE_DASH}
-              style={{
-                opacity: isActive ? 1 : 0,
-                transition: 'opacity 0.4s ease',
-                animation: `${animName} ${DURATION} linear infinite`,
-                animationDelay: BRANCH_DELAYS[i],
-              }}
-            />
-          </g>
-        ))}
+              <path
+                d={branch.d}
+                fill="none"
+                stroke={`url(#${gradientId})`}
+                strokeWidth={FLOW_PARTICLE_STROKE_WIDTH}
+                strokeLinecap="round"
+                strokeDasharray={FLOW_PARTICLE_DASHARRAY}
+                pathLength={FLOW_PARTICLE_PATH_LENGTH}
+                vectorEffect="non-scaling-stroke"
+                style={{
+                  opacity: isActive ? 1 : 0,
+                  transition: 'opacity 0.35s ease',
+                  animation: `${animName} ${FLOW_PARTICLE_DURATION} linear infinite`,
+                  animationDelay: branchDelays[index],
+                }}
+              />
+            </g>
+          );
+        })}
       </svg>
     </div>
   );

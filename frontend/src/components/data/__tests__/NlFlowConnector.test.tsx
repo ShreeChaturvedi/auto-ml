@@ -52,8 +52,8 @@ describe('NlFlowConnector', () => {
     // Base paths are at indices 0, 2, 4
     for (const idx of [0, 2, 4]) {
       const base = paths[idx] as SVGPathElement;
-      // settled state dims the base to 0.4
-      expect(base.style.opacity).toBe('0.4');
+      // settled state dims the base while keeping connector visibility readable
+      expect(base.style.opacity).toBe('0.72');
     }
   });
 

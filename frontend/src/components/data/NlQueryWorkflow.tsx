@@ -383,6 +383,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         <AnimatedPlaceholderTextarea
           placeholders={NL_PLACEHOLDER_QUERIES as unknown as string[]}
           value={englishQuery}
+          autoFocus={isIdle}
           onChange={(e) => {
             if (isIdle) onQueryChange(e.target.value);
           }}

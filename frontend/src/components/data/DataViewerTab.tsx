@@ -297,6 +297,11 @@ export function DataViewerTab() {
     [queryPanelCollapsed, queryPanelIsTransitioning]
   );
 
+  // When the query panel is collapsed, avoid portaling controls into the
+  // hidden header region. Large portal content (notably PDF controls) can
+  // otherwise enforce a wider min-content width during collapse.
+  const activeControlsPortalTarget = queryPanelCollapsed ? null : controlsPortalTarget;
+
   useEffect(() => {
     if (!queryPanelIsTransitioning) {
       return;
@@ -344,7 +349,7 @@ export function DataViewerTab() {
               preview={preview}
               columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
-              controlsPortalTarget={controlsPortalTarget}
+              controlsPortalTarget={activeControlsPortalTarget}
               onColumnTypeChange={
                 datasetId
                   ? async (columnName: string, nextType: ColumnDataType) => {
@@ -370,7 +375,7 @@ export function DataViewerTab() {
         );
       }
 
-      return <DocumentViewer file={file} controlsPortalTarget={controlsPortalTarget} />;
+      return <DocumentViewer file={file} controlsPortalTarget={activeControlsPortalTarget} />;
     } else if (fileTabType === 'artifact') {
       const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
       if (artifact) {
@@ -381,7 +386,7 @@ export function DataViewerTab() {
               preview={artifact.result}
               columnTypes={columnTypes}
               typeColorClassName={projectTypeColorClassName}
-              controlsPortalTarget={controlsPortalTarget}
+              controlsPortalTarget={activeControlsPortalTarget}
               queryInfo={{
                 query: artifact.query,
                 mode: artifact.mode,
@@ -453,7 +458,7 @@ export function DataViewerTab() {
       {/* Query Panel (right side) */}
       <div
         className={cn(
-          'shrink-0 transition-[width] duration-300 ease-in-out [will-change:width]',
+          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out [will-change:width]',
           queryPanelCollapsed ? 'w-12' : 'w-[400px]'
         )}
         style={{ willChange: queryPanelIsTransitioning ? 'width' : 'auto' }}
@@ -477,7 +482,7 @@ export function DataViewerTab() {
           isExpanding={queryPanelIsExpanding}
           mode={queryMode}
           onModeChange={setQueryMode}
-          controlsPortalTarget={controlsPortalTarget}
+          controlsPortalTarget={activeControlsPortalTarget}
           onMountPortalTarget={setControlsPortalTarget}
           onNlGenerate={handleNlGenerate}
           onNlApprove={handleNlApprove}

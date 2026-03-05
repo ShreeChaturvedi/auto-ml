@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { NlWorkPlanPanel } from '../NlWorkPlanPanel';
 import type { NlQueryExplanation } from '@/lib/api/query';
-import type { NlWorkPhaseState } from '@/types/nlQuery';
+import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
 
 const MODEL_EXPLANATION: NlQueryExplanation = {
   intentSummary: 'Rank students by average chapter score.',
@@ -96,12 +96,37 @@ const PHASES: NlWorkPhaseState[] = [
   }
 ];
 
+const MODEL_WORK_BLOCKS: NlModelWorkBlockState[] = [
+  {
+    blockId: 'plan-1',
+    kind: 'plan',
+    title: 'Query planning',
+    phaseId: 'planning',
+    status: 'streaming',
+    content: 'Selecting candidate tables and grouping strategy.',
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    blockId: 'thinking-1',
+    kind: 'thinking',
+    title: 'Query planning thinking',
+    phaseId: 'planning',
+    status: 'completed',
+    content: 'Reasoning through join ambiguity and metric definitions.',
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
 describe('NlWorkPlanPanel', () => {
   it('renders active phase stream details during submitting', () => {
     render(
-      <NlWorkPlanPanel
+        <NlWorkPlanPanel
         phase="submitting"
         workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming
         isExpanded
         autoCollapsed={false}
         onToggleExpanded={vi.fn()}
@@ -109,7 +134,7 @@ describe('NlWorkPlanPanel', () => {
     );
 
     expect(screen.getAllByText(/planning sql strategy/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/choosing candidate tables/i)).toBeInTheDocument();
+    expect(screen.getByTestId('nl-model-work-block-plan-1')).toBeInTheDocument();
   });
 
   it('calls toggle callback when collapse control is clicked', () => {
@@ -118,6 +143,8 @@ describe('NlWorkPlanPanel', () => {
       <NlWorkPlanPanel
         phase="submitting"
         workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming
         isExpanded
         autoCollapsed={false}
         onToggleExpanded={onToggle}
@@ -133,6 +160,8 @@ describe('NlWorkPlanPanel', () => {
       <NlWorkPlanPanel
         phase="submitting"
         workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming
         isExpanded={false}
         autoCollapsed
         onToggleExpanded={vi.fn()}
@@ -148,19 +177,22 @@ describe('NlWorkPlanPanel', () => {
         phase="reviewing"
         explanation={MODEL_EXPLANATION}
         workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming={false}
         isExpanded
         autoCollapsed={false}
         onToggleExpanded={vi.fn()}
       />
     );
 
+    expect(screen.getByText(/model review/i)).toBeInTheDocument();
     expect(screen.getByText(/confidence 91%/i)).toBeInTheDocument();
   });
 
   it('shows Done phase label when the pipeline is completed outside review mode', () => {
-    const completedPhases = PHASES.map((phase) => ({
+    const completedPhases: NlWorkPhaseState[] = PHASES.map((phase) => ({
       ...phase,
-      status: phase.phaseId === 'done' ? 'completed' : 'pending' as const,
+      status: phase.phaseId === 'done' ? 'completed' as const : 'pending' as const,
       lastSummary: phase.phaseId === 'done' ? 'NL query pipeline finished.' : phase.lastSummary
     }));
 
@@ -168,6 +200,8 @@ describe('NlWorkPlanPanel', () => {
       <NlWorkPlanPanel
         phase="revealing"
         workPhases={completedPhases}
+        modelWorkBlocks={[]}
+        isStreaming={false}
         isExpanded
         autoCollapsed={false}
         onToggleExpanded={vi.fn()}
@@ -184,6 +218,8 @@ describe('NlWorkPlanPanel', () => {
         phase="reviewing"
         explanation={FALLBACK_EXPLANATION}
         workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming={false}
         isExpanded
         autoCollapsed={false}
         onToggleExpanded={vi.fn()}
@@ -191,7 +227,26 @@ describe('NlWorkPlanPanel', () => {
     );
 
     expect(screen.queryByText(/confidence\s+\d+%/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/fallback reliability/i)).toBeInTheDocument();
+    expect(screen.getByText(/fallback review/i)).toBeInTheDocument();
     expect(screen.getByText(/debug details/i)).toBeInTheDocument();
+  });
+
+  it('shows streamed model work blocks during review alongside reliability factors', () => {
+    render(
+      <NlWorkPlanPanel
+        phase="reviewing"
+        explanation={FALLBACK_EXPLANATION}
+        workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming={false}
+        isExpanded
+        autoCollapsed={false}
+        onToggleExpanded={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /show transcript/i }));
+    expect(screen.getAllByText(/query planning/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/reliability factors/i)).toBeInTheDocument();
   });
 });

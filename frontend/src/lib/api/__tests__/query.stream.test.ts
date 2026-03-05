@@ -80,5 +80,30 @@ describe('streamNlQuery', () => {
     )).toBe(true);
     expect(events.at(-1)?.type).toBe('done');
   });
-});
 
+  it('parses model work events across chunk boundaries', async () => {
+    const firstHalf = '{"type":"model_work_delta","blockId":"plan-1","kind":"plan","title":"Query planning","delta":"Selecting ';
+    const secondHalf = 'the users table.","timestamp":"2026-03-05T00:00:00.000Z"}\n';
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      createNdjsonResponse([
+        firstHalf,
+        secondHalf,
+        `${JSON.stringify({ type: 'done' })}\n`
+      ])
+    );
+
+    const events: NlQueryStreamEvent[] = [];
+    await streamNlQuery(
+      { projectId: '550e8400-e29b-41d4-a716-446655440000', query: 'show users' },
+      (event) => events.push(event)
+    );
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'model_work_delta',
+      blockId: 'plan-1',
+      delta: 'Selecting the users table.'
+    }));
+    expect(events.at(-1)?.type).toBe('done');
+  });
+});

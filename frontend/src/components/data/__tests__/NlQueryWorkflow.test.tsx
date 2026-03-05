@@ -3,6 +3,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NlQueryWorkflow } from '../NlQueryWorkflow';
 import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
+import { useProjectStore } from '@/stores/projectStore';
+
+vi.mock('@/lib/api/query', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/query')>('@/lib/api/query');
+  return {
+    ...actual,
+    fetchNlSuggestions: vi.fn().mockResolvedValue({
+      suggestions: [
+        {
+          id: 'suggestion-1',
+          prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
+          label: 'Weekly revenue trends',
+          category: 'trend',
+          tables: ['orders'],
+          rationale: 'Uses time and revenue metrics.'
+        }
+      ],
+      cached: false,
+      schemaFingerprint: 'test-schema'
+    })
+  };
+});
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
@@ -90,6 +112,9 @@ function WorkflowWithRef({
 
 describe('NlQueryWorkflow', () => {
   beforeEach(() => {
+    useProjectStore.setState({
+      activeProjectId: null
+    });
     // Silence matchMedia warnings in jsdom
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -569,6 +594,51 @@ describe('NlQueryWorkflow', () => {
     await waitFor(() => {
       expect(phases).toContain('reviewing');
     }, { timeout: 3000 });
+  });
+
+  it('renders streamed model work blocks while generation is in progress', async () => {
+    const deferred = createDeferred<NlGenerationResult>();
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+    const onGenerate = vi.fn(async (_query, onStreamEvent) => {
+      onStreamEvent?.({
+        type: 'model_work_block_started',
+        blockId: 'plan-1',
+        kind: 'plan',
+        title: 'Query planning',
+        phaseId: 'planning',
+        timestamp: new Date().toISOString()
+      });
+      onStreamEvent?.({
+        type: 'model_work_delta',
+        blockId: 'plan-1',
+        kind: 'plan',
+        title: 'Query planning',
+        phaseId: 'planning',
+        delta: 'Selecting candidate tables.',
+        timestamp: new Date().toISOString()
+      });
+      return deferred.promise;
+    });
+
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    const block = await screen.findByTestId('nl-model-work-block-plan-1');
+    await waitFor(() => {
+      expect(block).toHaveTextContent(/selecting candidate tables/i);
+    });
+
+    await act(async () => {
+      deferred.resolve(MOCK_RESULT);
+    });
   });
 
   // ── Does not call onGenerate when query is empty ─────────────────────────────

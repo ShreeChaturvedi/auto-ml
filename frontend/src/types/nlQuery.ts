@@ -11,6 +11,8 @@ import type {
   QueryResultPayload,
   NlQueryExplanation,
   NlQueryStreamEvent,
+  NlModelWorkKind,
+  NlModelWorkStreamEvent,
   NlStreamPhaseEvent,
   NlStreamPhaseId
 } from '@/lib/api/query';
@@ -36,7 +38,13 @@ export interface NlGenerationResult {
   queryResult: QueryResultPayload | null;
 }
 
-export type { NlQueryStreamEvent, NlStreamPhaseEvent, NlStreamPhaseId };
+export type {
+  NlModelWorkKind,
+  NlModelWorkStreamEvent,
+  NlQueryStreamEvent,
+  NlStreamPhaseEvent,
+  NlStreamPhaseId
+};
 
 export type NlWorkPhaseStatus = 'pending' | 'active' | 'completed' | 'failed';
 
@@ -46,6 +54,20 @@ export interface NlWorkPhaseState {
   status: NlWorkPhaseStatus;
   lastSummary?: string;
   events: NlStreamPhaseEvent[];
+}
+
+export type NlModelWorkBlockStatus = 'streaming' | 'completed' | 'failed';
+
+export interface NlModelWorkBlockState {
+  blockId: string;
+  kind: NlModelWorkKind;
+  title: string;
+  phaseId?: NlStreamPhaseId;
+  status: NlModelWorkBlockStatus;
+  content: string;
+  startedAt: string;
+  updatedAt: string;
+  details?: Record<string, unknown>;
 }
 
 export const NL_WORK_PIPELINE_DONE_SUMMARY = 'NL query pipeline finished.';
@@ -185,6 +207,80 @@ export function markNlWorkPhasesFailed(previous: NlWorkPhaseState[], message: st
     }
     return entry;
   });
+}
+
+function upsertModelWorkBlock(
+  previous: NlModelWorkBlockState[],
+  event: NlModelWorkStreamEvent
+): { blocks: NlModelWorkBlockState[]; index: number } {
+  const targetIndex = previous.findIndex((entry) => entry.blockId === event.blockId);
+  if (targetIndex === -1) {
+    return {
+      blocks: [
+        ...previous,
+        {
+          blockId: event.blockId,
+          kind: event.kind,
+          title: event.title,
+          phaseId: event.phaseId,
+          status: event.type === 'model_work_block_completed' ? (event.status ?? 'completed') : 'streaming',
+          content: event.type === 'model_work_delta' ? event.delta : '',
+          startedAt: event.timestamp,
+          updatedAt: event.timestamp,
+          details: event.details
+        }
+      ],
+      index: previous.length
+    };
+  }
+
+  return {
+    index: targetIndex,
+    blocks: previous.map((entry, index) => {
+      if (index !== targetIndex) {
+        return entry;
+      }
+
+      return {
+        ...entry,
+        kind: event.kind,
+        title: event.title,
+        phaseId: event.phaseId ?? entry.phaseId,
+        status: event.type === 'model_work_block_completed' ? (event.status ?? 'completed') : entry.status,
+        content: event.type === 'model_work_delta' ? `${entry.content}${event.delta}` : entry.content,
+        updatedAt: event.timestamp,
+        details: event.details ?? entry.details
+      };
+    })
+  };
+}
+
+export function applyNlModelWorkEvent(
+  previous: NlModelWorkBlockState[],
+  event: NlModelWorkStreamEvent
+): NlModelWorkBlockState[] {
+  const { blocks, index } = upsertModelWorkBlock(previous, event);
+  if (event.type !== 'model_work_block_started') {
+    return blocks;
+  }
+
+  return blocks.map((entry, entryIndex) => {
+    if (entryIndex === index) {
+      return { ...entry, status: 'streaming' };
+    }
+    if (entry.status === 'streaming') {
+      return { ...entry, status: 'completed' };
+    }
+    return entry;
+  });
+}
+
+export function finalizeNlModelWorkBlocks(previous: NlModelWorkBlockState[]): NlModelWorkBlockState[] {
+  return previous.map((entry) => (
+    entry.status === 'streaming'
+      ? { ...entry, status: 'completed' }
+      : entry
+  ));
 }
 
 const FALLBACK_PHASE: NlWorkPhaseState = {

@@ -375,6 +375,54 @@
   margin: 0.5rem 0;
 }
 
+.nl-model-work-stream .llm-streamdown {
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.nl-model-work-stream .llm-streamdown p {
+  margin: 0;
+}
+
+.nl-model-work-stream .llm-streamdown p + p {
+  margin-top: 0.45rem;
+}
+
+.nl-model-work-stream .llm-streamdown ul,
+.nl-model-work-stream .llm-streamdown ol {
+  margin: 0.45rem 0 0.45rem 1rem;
+}
+
+.nl-model-work-stream .llm-streamdown li + li {
+  margin-top: 0.18rem;
+}
+
+.nl-model-work-stream .llm-streamdown pre {
+  margin: 0.5rem 0 0;
+  border-radius: 0.5rem;
+}
+
+.nl-model-work-stream .llm-streamdown code {
+  font-size: 0.84em;
+}
+
+.nl-model-work-viewport[data-overflow='true'] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--nl-work-fade-top, 0px),
+    #000 calc(100% - var(--nl-work-fade-bottom, 0px)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--nl-work-fade-top, 0px),
+    #000 calc(100% - var(--nl-work-fade-bottom, 0px)),
+    transparent 100%
+  );
+}
+
 @keyframes execute-icon-trace {
   0% {
     stroke-dashoffset: 0;

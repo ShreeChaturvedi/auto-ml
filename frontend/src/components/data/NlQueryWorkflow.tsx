@@ -18,17 +18,22 @@ import {
 } from 'react';
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
+import { fetchNlSuggestions, type NlSuggestion } from '@/lib/api/query';
+import { useProjectStore } from '@/stores/projectStore';
 import { NlFlowConnector } from './NlFlowConnector';
 import { NlWorkPlanPanel } from './NlWorkPlanPanel';
 import { SqlRevealBlock } from './SqlRevealBlock';
 import { tokenizeSql } from './sqlTokenize';
 import {
+  applyNlModelWorkEvent,
   applyNlWorkPhaseEvent,
   completeNlWorkDonePhase,
   createInitialNlWorkPhases,
+  finalizeNlModelWorkBlocks,
   finalizeNlWorkPhasesWithoutStream,
   markNlWorkPhasesFailed,
   type NlGenerationResult,
+  type NlModelWorkBlockState,
   type NlQueryStreamEvent,
   type NlWorkPhaseState
 } from '@/types/nlQuery';
@@ -160,16 +165,7 @@ const initialState: NlState = {
   errorMessage: null,
 };
 
-const NL_PLACEHOLDER_QUERIES = [
-  'Show total revenue by product category for last quarter',
-  'Which customers placed more than 5 orders this year?',
-  'Find products with inventory below their reorder threshold',
-  'Compare monthly signups vs churn over the past 12 months',
-  'List the top 10 users by lifetime spend',
-  'Show average delivery time by carrier and region',
-  'Which campaigns generated the highest conversion rate?',
-  'Summarise support tickets opened per day this week',
-] as const;
+const MAX_VISIBLE_SUGGESTIONS = 6;
 
 export interface NlQueryWorkflowHandle {
   phase: NlPhase;
@@ -208,12 +204,18 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   }: NlQueryWorkflowProps,
   ref: Ref<NlQueryWorkflowHandle>
 ) {
+  const { activeProjectId } = useProjectStore();
   const [state, dispatch] = useReducer(nlReducer, initialState);
   const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
+  const [modelWorkBlocks, setModelWorkBlocks] = useState<NlModelWorkBlockState[]>([]);
+  const [nlSuggestions, setNlSuggestions] = useState<NlSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const [manualPanelExpanded, setManualPanelExpanded] = useState<boolean | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { phase, result, editedSql, errorMessage } = state;
 
@@ -265,6 +267,59 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     }
   }, [phase]);
 
+  useEffect(() => {
+    if (!activeProjectId) {
+      setNlSuggestions([]);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchNlSuggestions(activeProjectId, 8)
+      .then((response) => {
+        if (!cancelled) {
+          setNlSuggestions(response.suggestions);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load NL suggestions:', error);
+        if (!cancelled) {
+          setNlSuggestions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId]);
+
+  const filteredSuggestions = useMemo(() => {
+    const input = englishQuery.trim().toLowerCase();
+    const suggestions = input
+      ? nlSuggestions.filter((suggestion) => (
+          suggestion.prompt.toLowerCase().includes(input)
+          || suggestion.label.toLowerCase().includes(input)
+          || suggestion.category.toLowerCase().includes(input)
+        ))
+      : nlSuggestions;
+
+    return suggestions.slice(0, MAX_VISIBLE_SUGGESTIONS);
+  }, [englishQuery, nlSuggestions]);
+
+  useEffect(() => {
+    if (activeSuggestionIndex >= filteredSuggestions.length) {
+      setActiveSuggestionIndex(0);
+    }
+  }, [activeSuggestionIndex, filteredSuggestions.length]);
+
+  const applySuggestion = useCallback((suggestion: NlSuggestion) => {
+    onQueryChange(suggestion.prompt);
+    setSuggestionsOpen(false);
+    setActiveSuggestionIndex(0);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, [onQueryChange]);
+
   const handleGenerate = useCallback(async () => {
     const query = englishQuery.trim();
     if (!query) return;
@@ -274,6 +329,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     streamAbortRef.current = controller;
 
     setWorkPhases(createInitialNlWorkPhases());
+    setModelWorkBlocks([]);
     setManualPanelExpanded(null);
     dispatch({ type: 'GENERATE' });
 
@@ -288,6 +344,16 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
       if (event.type === 'done') {
         setWorkPhases((previous) => completeNlWorkDonePhase(previous));
+        setModelWorkBlocks((previous) => finalizeNlModelWorkBlocks(previous));
+        return;
+      }
+
+      if (
+        event.type === 'model_work_block_started'
+        || event.type === 'model_work_delta'
+        || event.type === 'model_work_block_completed'
+      ) {
+        setModelWorkBlocks((previous) => applyNlModelWorkEvent(previous, event));
         return;
       }
 
@@ -300,6 +366,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         return;
       }
       setWorkPhases((previous) => finalizeNlWorkPhasesWithoutStream(previous));
+      setModelWorkBlocks((previous) => finalizeNlModelWorkBlocks(previous));
       dispatch({ type: 'RESULT', payload: generationResult });
     } catch (err) {
       if (controller.signal.aborted || streamAbortRef.current !== controller) {
@@ -308,6 +375,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred.';
       setWorkPhases((previous) => markNlWorkPhasesFailed(previous, message));
+      setModelWorkBlocks((previous) => finalizeNlModelWorkBlocks(previous));
       dispatch({ type: 'ERROR', payload: message });
     } finally {
       if (streamAbortRef.current === controller) {
@@ -324,6 +392,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
   const handleReject = useCallback(() => {
     streamAbortRef.current?.abort();
+    setWorkPhases(createInitialNlWorkPhases());
+    setModelWorkBlocks([]);
     dispatch({ type: 'REJECT' });
   }, []);
 
@@ -342,6 +412,36 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (phase === 'idle' && suggestionsOpen && filteredSuggestions.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setActiveSuggestionIndex((previous) => (previous + 1) % filteredSuggestions.length);
+          return;
+        }
+
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setActiveSuggestionIndex((previous) => (
+            previous === 0 ? filteredSuggestions.length - 1 : previous - 1
+          ));
+          return;
+        }
+
+        if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+          e.preventDefault();
+          const suggestion = filteredSuggestions[activeSuggestionIndex];
+          if (suggestion) {
+            applySuggestion(suggestion);
+          }
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          setSuggestionsOpen(false);
+          return;
+        }
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         if (phase === 'idle' && englishQuery.trim()) {
@@ -349,7 +449,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         }
       }
     },
-    [phase, englishQuery, handleGenerate]
+    [phase, suggestionsOpen, filteredSuggestions, activeSuggestionIndex, applySuggestion, englishQuery, handleGenerate]
   );
 
   const isIdle = phase === 'idle' || phase === 'error';
@@ -384,24 +484,70 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           isExpanding && 'text-transparent',
         )}
       >
-        <AnimatedPlaceholderTextarea
-          placeholders={NL_PLACEHOLDER_QUERIES as unknown as string[]}
-          value={englishQuery}
-          autoFocus={isIdle}
-          onChange={(e) => {
-            if (isIdle) onQueryChange(e.target.value);
-          }}
-          onKeyDown={handleKeyDown}
-          readOnly={!isIdle}
-          disabled={phase === 'submitting'}
-          aria-label="Natural language query input"
-          className={cn(
-            'h-full resize-none leading-relaxed',
-            'focus-visible:border-ring focus-visible:ring-0 focus-visible:ring-offset-0',
-            'transition-colors duration-200',
-            !isIdle && 'cursor-default',
+        <div className="relative h-full">
+          <AnimatedPlaceholderTextarea
+            ref={textareaRef}
+            placeholders={nlSuggestions.map((suggestion) => suggestion.prompt)}
+            value={englishQuery}
+            autoFocus={isIdle}
+            onChange={(e) => {
+              if (isIdle) {
+                onQueryChange(e.target.value);
+                setSuggestionsOpen(true);
+                setActiveSuggestionIndex(0);
+              }
+            }}
+            onFocus={() => {
+              if (isIdle && filteredSuggestions.length > 0) {
+                setSuggestionsOpen(true);
+              }
+            }}
+            onBlur={() => {
+              window.setTimeout(() => setSuggestionsOpen(false), 120);
+            }}
+            onKeyDown={handleKeyDown}
+            readOnly={!isIdle}
+            disabled={phase === 'submitting'}
+            aria-label="Natural language query input"
+            aria-autocomplete="list"
+            aria-expanded={isIdle && suggestionsOpen && filteredSuggestions.length > 0}
+            className={cn(
+              'h-full resize-none leading-relaxed',
+              'focus-visible:border-ring focus-visible:ring-0 focus-visible:ring-offset-0',
+              'transition-colors duration-200',
+              !isIdle && 'cursor-default',
+            )}
+          />
+
+          {isIdle && suggestionsOpen && filteredSuggestions.length > 0 && (
+            <div className="absolute inset-x-0 top-full z-20 mt-2 rounded-xl border border-border/70 bg-background/95 p-2 shadow-xl backdrop-blur-sm">
+              <div className="mb-1 px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                Suggested analyses
+              </div>
+              <div className="space-y-1">
+                {filteredSuggestions.map((suggestion, index) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    className={cn(
+                      'flex w-full flex-col rounded-lg border px-3 py-2 text-left transition-colors',
+                      index === activeSuggestionIndex
+                        ? 'border-foreground/15 bg-muted/80'
+                        : 'border-transparent hover:border-border/70 hover:bg-muted/50'
+                    )}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                    }}
+                    onClick={() => applySuggestion(suggestion)}
+                  >
+                    <span className="text-[11px] font-medium text-foreground/95">{suggestion.label}</span>
+                    <span className="mt-1 text-xs leading-relaxed text-muted-foreground">{suggestion.prompt}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
-        />
+        </div>
       </div>
 
       {(showPlanPanel || showSqlBlock) && (
@@ -429,6 +575,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
                 explanation={result?.explanation}
                 phase={panelPhase}
                 workPhases={workPhases}
+                modelWorkBlocks={modelWorkBlocks}
+                isStreaming={phase === 'submitting'}
                 isExpanded={isPanelExpanded}
                 autoCollapsed={autoCollapsed}
                 onToggleExpanded={togglePanelExpanded}

@@ -24,8 +24,13 @@ vi.mock('../services/nlToSqlV2.js', () => ({
   repairSqlFromExecutionErrorV2: vi.fn()
 }));
 
+vi.mock('../services/nlSuggestions.js', () => ({
+  getNaturalLanguageSuggestions: vi.fn()
+}));
+
 import { hasDatabaseConfiguration } from '../db.js';
 import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 import { canListen } from '../tests/canListen.js';
@@ -41,6 +46,7 @@ const mockStoreCachedQueryResult = vi.mocked(storeCachedQueryResult);
 const mockExecuteReadOnlyQuery = vi.mocked(executeReadOnlyQuery);
 const mockGenerateSqlFromNaturalLanguageV2 = vi.mocked(generateSqlFromNaturalLanguageV2);
 const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV2);
+const mockGetNaturalLanguageSuggestions = vi.mocked(getNaturalLanguageSuggestions);
 const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 type NdjsonEvent = Record<string, any>;
@@ -683,6 +689,123 @@ describeIf('query routes', () => {
       expect(events.at(-1)?.type).toBe('done');
     });
 
+    it('streams mapped model work events before the final result', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockImplementation(async (input) => {
+        input.onModelWork?.({
+          type: 'model_work_block_started',
+          blockId: 'plan-1',
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_delta',
+          blockId: 'plan-1',
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          delta: 'Selecting the `users` table and a basic projection.',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_block_started',
+          blockId: 'tool-1',
+          phaseId: 'planning',
+          kind: 'tool',
+          title: 'Tool call: inspect_schema',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_delta',
+          blockId: 'tool-1',
+          phaseId: 'planning',
+          kind: 'tool',
+          title: 'Tool call: inspect_schema',
+          delta: '```json\n{\"table\":\"users\"}\n```',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_block_completed',
+          blockId: 'tool-1',
+          phaseId: 'planning',
+          kind: 'tool',
+          title: 'Tool call: inspect_schema',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_block_completed',
+          blockId: 'plan-1',
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          timestamp: new Date().toISOString()
+        });
+
+        return {
+          sql: 'SELECT id, name FROM users LIMIT 25',
+          rationale: 'List users.',
+          queryId: 'stream-model-work-id',
+          explanation: {
+            intentSummary: 'Fetch users',
+            selectedTables: ['users'],
+            joinPlan: [],
+            filters: [],
+            aggregations: [],
+            assumptions: [],
+            validationNotes: [],
+            confidence: 0.9,
+            warningLevel: 'none',
+            confidenceMode: 'model',
+            reliabilityTier: 'high'
+          }
+        };
+      });
+      mockGetCachedQueryResult.mockResolvedValue({
+        queryId: 'cached-query-id',
+        sql: 'SELECT id, name FROM users LIMIT 25',
+        rows: [{ id: 1, name: 'Ada' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }],
+        rowCount: 1,
+        executionMs: 7,
+        cached: true
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl/stream')
+        .send({
+          projectId: TEST_PROJECT_ID,
+          query: 'list users'
+        });
+
+      expect(response.status).toBe(200);
+      const events = parseNdjsonEvents(response.text);
+
+      const completedBlocks = events.filter((event) => event.type === 'model_work_block_completed');
+      const resultIndex = findEventIndex(events, (event) => event.type === 'result');
+      const modelCompleteIndex = findEventIndex(events, (event) => (
+        event.type === 'model_work_block_completed' && event.blockId === 'plan-1'
+      ));
+
+      expect(completedBlocks).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'model_work_block_completed',
+          blockId: 'plan-1',
+          kind: 'plan',
+          phaseId: 'planning'
+        }),
+        expect.objectContaining({
+          type: 'model_work_block_completed',
+          blockId: 'tool-1',
+          kind: 'tool',
+          phaseId: 'planning'
+        })
+      ]));
+      expect(modelCompleteIndex).toBeGreaterThan(-1);
+      expect(resultIndex).toBeGreaterThan(modelCompleteIndex);
+    });
+
     it('streams initial execution failure and repair recovery progress in order', async () => {
       mockGenerateSqlFromNaturalLanguageV2.mockResolvedValue({
         sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
@@ -809,6 +932,49 @@ describeIf('query routes', () => {
       const events = parseNdjsonEvents(response.text);
       expect(events.some((event) => event.type === 'phase_failed' && event.phaseId === 'done')).toBe(true);
       expect(events.at(-1)?.type).toBe('done');
+    });
+  });
+
+  describe('GET /api/query/nl/suggestions', () => {
+    it('returns cached schema-aware suggestions', async () => {
+      mockGetNaturalLanguageSuggestions.mockResolvedValue({
+        suggestions: [
+          {
+            id: 'revenue-growth-by-segment-1',
+            prompt: 'Compare monthly revenue by customer segment over the last 12 months and show which segments are accelerating fastest.',
+            label: 'Revenue growth by segment',
+            category: 'trend',
+            tables: ['orders', 'customers'],
+            rationale: 'Uses orders and customer attributes.'
+          }
+        ],
+        cached: true,
+        schemaFingerprint: 'schema-hash-1'
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .get('/api/query/nl/suggestions')
+        .query({ projectId: TEST_PROJECT_ID, limit: 6 });
+
+      expect(response.status).toBe(200);
+      expect(mockGetNaturalLanguageSuggestions).toHaveBeenCalledWith({
+        projectId: TEST_PROJECT_ID,
+        limit: 6
+      });
+      expect(response.body.cached).toBe(true);
+      expect(response.body.suggestions).toHaveLength(1);
+      expect(response.body.schemaFingerprint).toBe('schema-hash-1');
+    });
+
+    it('returns 400 for invalid suggestion query params', async () => {
+      const app = createTestApp();
+      const response = await request(app)
+        .get('/api/query/nl/suggestions')
+        .query({ projectId: 'not-a-uuid', limit: 99 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
     });
   });
 

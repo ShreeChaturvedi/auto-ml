@@ -34,6 +34,43 @@ export interface NlProgressEvent {
   details?: Record<string, unknown>;
 }
 
+export type NlModelWorkKind =
+  | 'thinking'
+  | 'plan'
+  | 'tool'
+  | 'sql'
+  | 'validation'
+  | 'repair'
+  | 'status';
+
+interface NlModelWorkEventBase {
+  blockId: string;
+  phaseId: NlProgressPhaseId;
+  kind: NlModelWorkKind;
+  title: string;
+  timestamp: string;
+  details?: Record<string, unknown>;
+}
+
+export interface NlModelWorkBlockStartedEvent extends NlModelWorkEventBase {
+  type: 'model_work_block_started';
+}
+
+export interface NlModelWorkDeltaEvent extends NlModelWorkEventBase {
+  type: 'model_work_delta';
+  delta: string;
+}
+
+export interface NlModelWorkBlockCompletedEvent extends NlModelWorkEventBase {
+  type: 'model_work_block_completed';
+  status?: 'completed' | 'failed';
+}
+
+export type NlModelWorkEvent =
+  | NlModelWorkBlockStartedEvent
+  | NlModelWorkDeltaEvent
+  | NlModelWorkBlockCompletedEvent;
+
 export interface NlJoinPlan {
   leftTable: string;
   leftColumn: string;
@@ -70,6 +107,7 @@ export interface GenerateSqlV2Options {
   nlQuery: string;
   defaultTable?: string;
   onProgress?: (event: NlProgressEvent) => void;
+  onModelWork?: (event: NlModelWorkEvent) => void;
 }
 
 export interface RepairSqlV2Options {
@@ -80,6 +118,7 @@ export interface RepairSqlV2Options {
   defaultTable?: string;
   priorExplanation?: NlExplanation;
   onProgress?: (event: NlProgressEvent) => void;
+  onModelWork?: (event: NlModelWorkEvent) => void;
 }
 
 interface Nl2SqlServiceDeps {
@@ -868,6 +907,231 @@ function emitNlProgress(
   });
 }
 
+function emitNlModelWork(
+  onModelWork: ((event: NlModelWorkEvent) => void) | undefined,
+  event: Omit<NlModelWorkEvent, 'timestamp'>
+) {
+  if (!onModelWork) {
+    return;
+  }
+
+  onModelWork({
+    ...event,
+    timestamp: new Date().toISOString()
+  });
+}
+
+function formatToolCallMarkdown(name: string, args: Record<string, unknown>): string {
+  return [
+    '### Tool call',
+    `- Name: \`${name}\``,
+    '',
+    '```json',
+    JSON.stringify(args, null, 2),
+    '```'
+  ].join('\n');
+}
+
+function formatBulletSection(title: string, items: string[], emptyCopy: string): string {
+  return [
+    `### ${title}`,
+    ...(items.length > 0 ? items.map((item) => `- ${item}`) : [`- ${emptyCopy}`])
+  ].join('\n');
+}
+
+function formatJoinPlanMarkdown(joinPlan: Pass1JoinPlanItem[]): string {
+  return formatBulletSection(
+    'Join plan',
+    joinPlan.map((join) => (
+      `\`${join.leftTable}.${join.leftColumn}\` -> \`${join.rightTable}.${join.rightColumn}\` `
+      + `(${join.joinType}, ${Math.round(clampConfidence(join.confidence) * 100)}% confidence)${join.reason ? `: ${join.reason}` : ''}`
+    )),
+    'No join steps were needed.'
+  );
+}
+
+function formatConfidenceMarkdown(confidence: number): string {
+  return `### Confidence\n- ${Math.round(clampConfidence(confidence) * 100)}%`;
+}
+
+function formatSchemaContextMarkdown(params: {
+  tables: SchemaTableContext[];
+  defaultTableName: string | null;
+  joinCandidates: JoinCandidate[];
+}): string {
+  const tableLines = params.tables.map((table) => {
+    const columns = table.columns
+      .slice(0, 8)
+      .map((column) => `\`${column.name}\` (${column.dtype})`)
+      .join(', ');
+    const overflow = table.columns.length > 8 ? `, +${table.columns.length - 8} more` : '';
+    return `- \`${table.tableName}\` from \`${table.sourceFilename}\` (${table.rowCount} rows): ${columns}${overflow}`;
+  });
+
+  const joinLines = params.joinCandidates
+    .slice(0, 6)
+    .map((join) => (
+      `- \`${join.leftTable}.${join.leftColumn}\` -> \`${join.rightTable}.${join.rightColumn}\` `
+      + `(${Math.round(clampConfidence(join.confidence) * 100)}%): ${join.reason}`
+    ));
+
+  return [
+    '### Schema context',
+    `- Default table: ${params.defaultTableName ? `\`${params.defaultTableName}\`` : 'not set'}`,
+    `- Tables in scope: ${params.tables.length}`,
+    '',
+    formatBulletSection('Tables', tableLines, 'No tables were available.'),
+    '',
+    formatBulletSection('Relationship hints', joinLines, 'No relationship hints were inferred.')
+  ].join('\n');
+}
+
+function formatPlanningMarkdown(planning: z.infer<typeof PASS1_SCHEMA>): string {
+  return [
+    '### Intent',
+    planning.intentSummary,
+    '',
+    formatBulletSection(
+      'Selected tables',
+      planning.selectedTables.map((table) => `\`${table}\``),
+      'No tables were selected.'
+    ),
+    '',
+    formatJoinPlanMarkdown(planning.joinPlan),
+    '',
+    formatBulletSection('Filters', planning.filters, 'No explicit filters were called out.'),
+    '',
+    formatBulletSection('Aggregations', planning.aggregations, 'No aggregations were called out.'),
+    '',
+    formatBulletSection('Assumptions', planning.assumptions, 'No explicit assumptions were reported.'),
+    '',
+    formatConfidenceMarkdown(planning.confidence)
+  ].join('\n');
+}
+
+function formatSqlGenerationMarkdown(execution: {
+  sql: string;
+  rationale: string;
+  assumptions?: string[];
+  validationNotes?: string[];
+  confidence?: number;
+}): string {
+  return [
+    '### Rationale',
+    execution.rationale,
+    '',
+    '### SQL',
+    '```sql',
+    execution.sql,
+    '```',
+    '',
+    formatBulletSection(
+      'Assumptions',
+      execution.assumptions ?? [],
+      'No explicit assumptions were reported.'
+    ),
+    '',
+    formatBulletSection(
+      'Validation notes',
+      execution.validationNotes ?? [],
+      'Validation notes will appear in the validation step.'
+    ),
+    ...(typeof execution.confidence === 'number'
+      ? ['', formatConfidenceMarkdown(execution.confidence)]
+      : [])
+  ].join('\n');
+}
+
+function formatValidationMarkdown(notes: string[]): string {
+  return formatBulletSection('Validation results', notes, 'No validation notes were reported.');
+}
+
+function formatRepairMarkdown(params: {
+  sql: string;
+  rationale: string;
+  assumptions: string[];
+  validationNotes: string[];
+  confidence: number;
+}): string {
+  return [
+    '### Repair rationale',
+    params.rationale,
+    '',
+    '### Repaired SQL',
+    '```sql',
+    params.sql,
+    '```',
+    '',
+    formatBulletSection('Assumptions', params.assumptions, 'No new assumptions were introduced.'),
+    '',
+    formatBulletSection('Validation notes', params.validationNotes, 'No new validation notes were reported.'),
+    '',
+    formatConfidenceMarkdown(params.confidence)
+  ].join('\n');
+}
+
+function createModelWorkBlock(params: {
+  onModelWork?: (event: NlModelWorkEvent) => void;
+  phaseId: NlProgressPhaseId;
+  kind: NlModelWorkKind;
+  title: string;
+  details?: Record<string, unknown>;
+}) {
+  let started = false;
+  let completed = false;
+  const blockId = randomUUID();
+
+  return {
+    blockId,
+    start(details?: Record<string, unknown>) {
+      if (started || completed) {
+        return;
+      }
+      started = true;
+      emitNlModelWork(params.onModelWork, {
+        type: 'model_work_block_started',
+        blockId,
+        phaseId: params.phaseId,
+        kind: params.kind,
+        title: params.title,
+        details: details ?? params.details
+      });
+    },
+    delta(content: string, details?: Record<string, unknown>) {
+      if (completed || !content.trim()) {
+        return;
+      }
+      if (!started) {
+        this.start();
+      }
+      emitNlModelWork(params.onModelWork, {
+        type: 'model_work_delta',
+        blockId,
+        phaseId: params.phaseId,
+        kind: params.kind,
+        title: params.title,
+        delta: content,
+        details
+      });
+    },
+    complete(details?: Record<string, unknown>, status: 'completed' | 'failed' = 'completed') {
+      if (completed || !started) {
+        return;
+      }
+      completed = true;
+      emitNlModelWork(params.onModelWork, {
+        type: 'model_work_block_completed',
+        blockId,
+        phaseId: params.phaseId,
+        kind: params.kind,
+        title: params.title,
+        details,
+        status
+      });
+    }
+  };
+}
+
 async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
   client: LlmClient;
   systemPrompt: string;
@@ -878,6 +1142,13 @@ async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
   maxOutputTokens?: number;
   enableThinking?: boolean;
   thinkingLevel?: LlmThinkingLevel;
+  modelWork?: {
+    onModelWork?: (event: NlModelWorkEvent) => void;
+    phaseId: NlProgressPhaseId;
+    kind: NlModelWorkKind;
+    title: string;
+    formatResult?: (value: z.infer<T>) => string;
+  };
 }): Promise<z.infer<T>> {
   let lastError: Error | null = null;
   let previousRaw = '';
@@ -897,16 +1168,57 @@ async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
     }
 
     let raw = '';
+    let mainBlock: ReturnType<typeof createModelWorkBlock> | null = null;
+    let thinkingBlock: ReturnType<typeof createModelWorkBlock> | null = null;
     try {
-      raw = await params.client.complete({
+      const requestPayload = {
         messages,
         temperature: 0.1,
         maxOutputTokens: params.maxOutputTokens ?? 2048,
-        responseMimeType: 'application/json',
+        responseMimeType: 'application/json' as const,
         enableThinking: params.enableThinking,
-        thinkingLevel: params.thinkingLevel
-      });
+        thinkingLevel: params.thinkingLevel,
+        contextId: `${params.label}-${attempt}`
+      };
+
+      if (params.modelWork?.onModelWork) {
+        thinkingBlock = createModelWorkBlock({
+          onModelWork: params.modelWork.onModelWork,
+          phaseId: params.modelWork.phaseId,
+          kind: 'thinking',
+          title: `${params.modelWork.title} thinking`
+        });
+
+        raw = await params.client.stream(requestPayload, {
+          onToken: () => {},
+          onThinking: (text) => {
+            thinkingBlock?.delta(text);
+          },
+          onToolCall: (call) => {
+            const toolBlock = createModelWorkBlock({
+              onModelWork: params.modelWork?.onModelWork,
+              phaseId: params.modelWork.phaseId,
+              kind: 'tool',
+              title: `Tool call: ${call.name}`
+            });
+            toolBlock.delta(formatToolCallMarkdown(call.name, call.args), {
+              thoughtSignature: call.thoughtSignature
+            });
+            toolBlock.complete();
+          }
+        });
+
+        thinkingBlock.complete();
+      } else {
+        raw = await params.client.complete(requestPayload);
+      }
     } catch (error) {
+      thinkingBlock?.complete({
+        error: summarizeError(error)
+      }, 'failed');
+      mainBlock?.complete({
+        error: summarizeError(error)
+      }, 'failed');
       lastError = toStructuredRequestError(params.label, error);
       // Provider/network failures should fail fast into higher-level fallback logic.
       break;
@@ -919,6 +1231,19 @@ async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
       const normalizedJson = params.normalize ? params.normalize(parsedJson) : parsedJson;
       const validated = params.schema.safeParse(normalizedJson);
       if (validated.success) {
+        if (params.modelWork?.onModelWork) {
+          mainBlock = createModelWorkBlock({
+            onModelWork: params.modelWork.onModelWork,
+            phaseId: params.modelWork.phaseId,
+            kind: params.modelWork.kind,
+            title: params.modelWork.title
+          });
+          const content = params.modelWork.formatResult
+            ? params.modelWork.formatResult(validated.data)
+            : JSON.stringify(validated.data, null, 2);
+          mainBlock.delta(content, { attempt });
+          mainBlock.complete({ attempt });
+        }
         return validated.data;
       }
       lastError = new Error(
@@ -929,6 +1254,31 @@ async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
       if (isTimeoutLikeError(lastError)) {
         break;
       }
+    }
+
+    if (params.modelWork?.onModelWork) {
+      const retryBlock = createModelWorkBlock({
+        onModelWork: params.modelWork.onModelWork,
+        phaseId: params.modelWork.phaseId,
+        kind: 'status',
+        title: attempt === 1 ? `${params.modelWork.title} retry` : `${params.modelWork.title} failed`
+      });
+      retryBlock.delta(
+        attempt === 1
+          ? [
+              `Structured ${params.label} output was invalid on attempt ${attempt}.`,
+              '',
+              `Reason: ${summarizeError(lastError)}`,
+              'Retrying with a stricter JSON-only correction prompt.'
+            ].join('\n')
+          : [
+              `Structured ${params.label} output remained invalid after ${attempt} attempts.`,
+              '',
+              `Reason: ${summarizeError(lastError)}`
+            ].join('\n'),
+        { attempt }
+      );
+      retryBlock.complete({ attempt }, attempt === 1 ? 'completed' : 'failed');
     }
   }
 
@@ -1011,32 +1361,6 @@ function buildCaseSensitiveIdentifierHint(tables: SchemaTableContext[]): string 
   return `Case-sensitive identifiers requiring double quotes: ${identifiers.join(', ')}.`;
 }
 
-function shouldUseModelPlanning(params: {
-  nlQuery: string;
-  defaultTableName: string | null;
-  tables: SchemaTableContext[];
-}): boolean {
-  if (params.tables.length <= 1) {
-    return false;
-  }
-
-  const query = params.nlQuery.toLowerCase();
-  if (/(join|across|combine|between|link|relationship)/.test(query)) {
-    return true;
-  }
-
-  const mentionedTables = params.tables.filter((table) => {
-    const tableName = table.tableName.toLowerCase();
-    return query.includes(tableName);
-  }).length;
-
-  if (mentionedTables >= 2) {
-    return true;
-  }
-
-  return false;
-}
-
 function buildHeuristicPlanning(params: {
   nlQuery: string;
   defaultTableName: string | null;
@@ -1050,7 +1374,7 @@ function buildHeuristicPlanning(params: {
     filters: [],
     aggregations: [],
     assumptions: [
-      'Used heuristic planning to reduce NL generation latency for a likely single-table query.'
+      'Model planning failed, so a heuristic fallback plan was used.'
     ],
     confidence: 0.7
   };
@@ -1433,7 +1757,8 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
     executionError,
     defaultTable,
     priorExplanation,
-    onProgress
+    onProgress,
+    onModelWork
   }: RepairSqlV2Options): Promise<GeneratedSqlV2> {
     emitNlProgress(onProgress, {
       phaseId: 'repair',
@@ -1451,6 +1776,19 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
       if (tables.length === 0) {
         throw new Error('No dataset schema is available for this project. Upload data before using English mode.');
       }
+
+      const schemaContextBlock = createModelWorkBlock({
+        onModelWork,
+        phaseId: 'schema_context',
+        kind: 'status',
+        title: 'Schema context'
+      });
+      schemaContextBlock.delta(formatSchemaContextMarkdown({
+        tables,
+        defaultTableName,
+        joinCandidates: []
+      }));
+      schemaContextBlock.complete();
 
       const model = env.nl2sqlModel || env.llmModel;
       const client = getClient(model, env.nl2sqlEnableThinking);
@@ -1470,7 +1808,20 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
           executionError: executionError.trim(),
           defaultTableName,
           tables
-        })
+        }),
+        modelWork: {
+          onModelWork,
+          phaseId: 'repair',
+          kind: 'repair',
+          title: 'SQL repair',
+          formatResult: (result) => formatSqlGenerationMarkdown({
+            sql: result.sql,
+            rationale: result.rationale,
+            assumptions: result.assumptions,
+            validationNotes: result.validationNotes,
+            confidence: result.confidence
+          })
+        }
       });
 
       const validation = validateReadOnlySql(repaired.sql, {
@@ -1504,6 +1855,20 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         resolveWarnConfidenceThreshold()
       );
       const confidenceMode: NlConfidenceMode = 'repair';
+      const repairSummaryBlock = createModelWorkBlock({
+        onModelWork,
+        phaseId: 'repair',
+        kind: 'repair',
+        title: 'Repair summary'
+      });
+      repairSummaryBlock.delta(formatRepairMarkdown({
+        sql: caseNormalized.sql,
+        rationale: repaired.rationale,
+        assumptions,
+        validationNotes,
+        confidence
+      }));
+      repairSummaryBlock.complete();
 
       emitNlProgress(onProgress, {
         phaseId: 'repair',
@@ -1543,7 +1908,8 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
     projectId,
     nlQuery,
     defaultTable,
-    onProgress
+    onProgress,
+    onModelWork
   }: GenerateSqlV2Options): Promise<GeneratedSqlV2> {
     const query = nlQuery.trim();
     if (!query) {
@@ -1574,6 +1940,18 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         status: 'completed',
         summary: `Prepared schema context for ${tables.length} table${tables.length === 1 ? '' : 's'}.`
       });
+      const schemaContextBlock = createModelWorkBlock({
+        onModelWork,
+        phaseId: 'schema_context',
+        kind: 'status',
+        title: 'Schema context'
+      });
+      schemaContextBlock.delta(formatSchemaContextMarkdown({
+        tables,
+        defaultTableName,
+        joinCandidates
+      }));
+      schemaContextBlock.complete();
     } catch (error) {
       emitNlProgress(onProgress, {
         phaseId: 'schema_context',
@@ -1597,64 +1975,70 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
       status: 'started',
       summary: 'Planning query intent, table selection, and join strategy.'
     });
-
-    if (!shouldUseModelPlanning({ nlQuery: query, defaultTableName, tables })) {
-      planning = buildHeuristicPlanning({ nlQuery: query, defaultTableName, tables });
-      planningConfidenceMode = 'heuristic';
+    try {
+      planning = await requestStructuredJson({
+        client,
+        label: 'nl2sql_plan',
+        schema: PASS1_SCHEMA,
+        normalize: normalizePass1Output,
+        maxOutputTokens: 900,
+        enableThinking: env.nl2sqlEnableThinking,
+        thinkingLevel: env.nl2sqlEnableThinking ? 'low' : 'dynamic',
+        systemPrompt: 'You are a senior analytics SQL planner. Return valid JSON only.',
+        userPrompt: buildPass1Prompt({
+          nlQuery: query,
+          defaultTableName,
+          tables,
+          joinCandidates
+        }),
+        modelWork: {
+          onModelWork,
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          formatResult: formatPlanningMarkdown
+        }
+      });
       emitNlProgress(onProgress, {
         phaseId: 'planning',
         status: 'completed',
-        summary: 'Applied heuristic planning path for likely single-table query.'
+        summary: 'Model planning completed.'
       });
-    } else {
-      try {
-        planning = await requestStructuredJson({
-          client,
-          label: 'nl2sql_plan',
-          schema: PASS1_SCHEMA,
-          normalize: normalizePass1Output,
-          maxOutputTokens: 900,
-          enableThinking: env.nl2sqlEnableThinking,
-          thinkingLevel: env.nl2sqlEnableThinking ? 'low' : 'dynamic',
-          systemPrompt: 'You are a senior analytics SQL planner. Return valid JSON only.',
-          userPrompt: buildPass1Prompt({
-            nlQuery: query,
-            defaultTableName,
-            tables,
-            joinCandidates
-          })
-        });
-        emitNlProgress(onProgress, {
-          phaseId: 'planning',
-          status: 'completed',
-          summary: 'Model planning completed.'
-        });
-      } catch (error) {
-        emitNlProgress(onProgress, {
-          phaseId: 'planning',
-          status: 'failed',
-          summary: `Model planning failed: ${summarizeError(error)}`
-        });
-        planning = {
-          intentSummary: `Fallback plan for query: ${query}`,
-          selectedTables: defaultTableName ? [defaultTableName] : [],
-          joinPlan: [],
-          filters: [],
-          aggregations: [],
-          assumptions: [
-            isTimeoutLikeError(error)
-              ? 'Planning pass timed out; used heuristic planning fallback.'
-              : `Planning pass failed (${summarizeError(error)}); used heuristic planning fallback.`
-          ],
-          confidence: 0.58
-        };
-        planningConfidenceMode = 'heuristic';
-        emitNlProgress(onProgress, {
-          phaseId: 'planning',
-          status: 'completed',
-          summary: 'Recovered with heuristic planning fallback.'
-        });
-      }
+    } catch (error) {
+      emitNlProgress(onProgress, {
+        phaseId: 'planning',
+        status: 'failed',
+        summary: `Model planning failed: ${summarizeError(error)}`
+      });
+      planning = buildHeuristicPlanning({ nlQuery: query, defaultTableName, tables });
+      planning.assumptions = [
+        isTimeoutLikeError(error)
+          ? 'Planning pass timed out; used heuristic planning fallback.'
+          : `Planning pass failed (${summarizeError(error)}); used heuristic planning fallback.`
+      ];
+      planning.confidence = 0.58;
+      planningConfidenceMode = 'heuristic';
+      const planningFallbackBlock = createModelWorkBlock({
+        onModelWork,
+        phaseId: 'planning',
+        kind: 'plan',
+        title: 'Planning fallback'
+      });
+      planningFallbackBlock.delta([
+        '### Heuristic fallback',
+        'Model planning failed; switched to heuristic fallback.',
+        '',
+        `- Reason: ${summarizeError(error)}`,
+        `- Confidence: ${Math.round(planning.confidence * 100)}%`,
+        '',
+        formatPlanningMarkdown(planning)
+      ].join('\n'));
+      planningFallbackBlock.complete();
+      emitNlProgress(onProgress, {
+        phaseId: 'planning',
+        status: 'completed',
+        summary: 'Recovered with heuristic planning fallback.'
+      });
     }
 
     let execution: z.infer<typeof PASS2_SCHEMA>;
@@ -1685,7 +2069,14 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
           defaultTableName,
           tables,
           planning
-        })
+        }),
+        modelWork: {
+          onModelWork,
+          phaseId: 'sql_generation',
+          kind: 'sql',
+          title: 'SQL generation',
+          formatResult: formatSqlGenerationMarkdown
+        }
       });
       emitNlProgress(onProgress, {
         phaseId: 'sql_generation',
@@ -1709,6 +2100,14 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
             : summarizeError(error)
         });
         confidenceMode = 'deterministic_fallback';
+        const fallbackBlock = createModelWorkBlock({
+          onModelWork,
+          phaseId: 'sql_generation',
+          kind: 'sql',
+          title: 'Deterministic SQL fallback'
+        });
+        fallbackBlock.delta(formatSqlGenerationMarkdown(execution));
+        fallbackBlock.complete();
         emitNlProgress(onProgress, {
           phaseId: 'sql_generation',
           status: 'completed',
@@ -1735,7 +2134,14 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
               defaultTableName,
               tables,
               planning
-            })
+            }),
+            modelWork: {
+              onModelWork,
+              phaseId: 'sql_generation',
+              kind: 'sql',
+              title: 'Compact SQL fallback',
+              formatResult: formatSqlGenerationMarkdown
+            }
           });
 
           execution = {
@@ -1775,6 +2181,14 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
               : summarizeError(compactError)
           });
           confidenceMode = 'deterministic_fallback';
+          const fallbackBlock = createModelWorkBlock({
+            onModelWork,
+            phaseId: 'sql_generation',
+            kind: 'sql',
+            title: 'Deterministic SQL fallback'
+          });
+          fallbackBlock.delta(formatSqlGenerationMarkdown(execution));
+          fallbackBlock.complete();
           emitNlProgress(onProgress, {
             phaseId: 'sql_generation',
             status: 'completed',
@@ -1789,6 +2203,18 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
       status: 'started',
       summary: 'Validating SQL safety and normalization rules.'
     });
+    const validationBlock = createModelWorkBlock({
+      onModelWork,
+      phaseId: 'validation',
+      kind: 'validation',
+      title: 'SQL validation'
+    });
+    validationBlock.delta([
+      '### Validation checks',
+      '- Verifying read-only SQL safety.',
+      `- Enforcing LIMIT ${env.sqlDefaultLimit} when needed.`,
+      '- Normalizing case-sensitive identifiers.'
+    ].join('\n'));
 
     try {
       const validation = validateReadOnlySql(execution.sql, {
@@ -1806,6 +2232,8 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
       if (caseNormalizationNote) {
         validateNotes.push(caseNormalizationNote);
       }
+      validationBlock.delta(`\n\n${formatValidationMarkdown(validateNotes)}`);
+      validationBlock.complete();
 
       const explanation = mergeExplanation(planning, execution, validateNotes, confidenceMode);
       emitNlProgress(onProgress, {
@@ -1821,6 +2249,13 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         explanation
       };
     } catch (error) {
+      validationBlock.delta([
+        '',
+        '',
+        '### Validation failure',
+        `- ${summarizeError(error)}`
+      ].join('\n'));
+      validationBlock.complete(undefined, 'failed');
       emitNlProgress(onProgress, {
         phaseId: 'validation',
         status: 'failed',

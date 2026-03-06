@@ -2,24 +2,17 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useProgressiveReveal } from '../useProgressiveReveal';
+import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
 describe('useProgressiveReveal', () => {
+  let cancelSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      return window.setTimeout(() => callback(performance.now()), 16);
-    });
-    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
-      window.clearTimeout(id);
-    });
+    ({ cancelSpy } = setupRafAnimationClock());
   });
 
   afterEach(() => {
-    act(() => {
-      vi.runOnlyPendingTimers();
-    });
-    vi.useRealTimers();
-    vi.restoreAllMocks();
+    teardownRafAnimationClock();
   });
 
   it('progressively reveals text over time', () => {
@@ -108,6 +101,72 @@ describe('useProgressiveReveal', () => {
 
     expect(result.current.visibleText).toBe(text);
     expect(result.current.isFullyRevealed).toBe(true);
+  });
+
+  it('switches to immediate reveal when reduced motion is enabled mid-stream', () => {
+    const text = 'T'.repeat(220);
+    const { result, rerender } = renderHook(
+      ({ prefersReducedMotion }: { prefersReducedMotion: boolean }) =>
+        useProgressiveReveal({
+          text,
+          isLive: true,
+          animateOnMount: true,
+          prefersReducedMotion,
+        }),
+      { initialProps: { prefersReducedMotion: false } }
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    expect(result.current.visibleCharCount).toBeGreaterThan(0);
+    expect(result.current.visibleCharCount).toBeLessThan(text.length);
+
+    rerender({ prefersReducedMotion: true });
+
+    expect(result.current.visibleText).toBe(text);
+    expect(result.current.visibleCharCount).toBe(text.length);
+    expect(result.current.isFullyRevealed).toBe(true);
+  });
+
+  it('clamps visible count and text when source text shrinks', () => {
+    const { result, rerender } = renderHook(
+      ({ text, isLive }: { text: string; isLive: boolean }) =>
+        useProgressiveReveal({
+          text,
+          isLive,
+          animateOnMount: true,
+          prefersReducedMotion: false,
+        }),
+      {
+        initialProps: { text: 'abcdefghijklmnopqrstuv', isLive: true },
+      }
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(420);
+    });
+    expect(result.current.visibleCharCount).toBeGreaterThan(5);
+
+    rerender({ text: 'abc', isLive: false });
+
+    expect(result.current.visibleCharCount).toBeLessThanOrEqual(3);
+    expect(result.current.visibleText.length).toBeLessThanOrEqual(3);
+    expect(result.current.visibleText).toBe('abc');
+  });
+
+  it('cancels queued animation frame on unmount', () => {
+    const { unmount } = renderHook(() =>
+      useProgressiveReveal({
+        text: 'Unmount cleanup check',
+        isLive: true,
+        animateOnMount: true,
+        prefersReducedMotion: false,
+      })
+    );
+
+    unmount();
+    expect(cancelSpy).toHaveBeenCalled();
   });
 
   it('handles empty and short strings without regressions', () => {

@@ -1,3 +1,5 @@
+import { useLayoutEffect } from 'react';
+
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { useProgressiveReveal } from '@/hooks/useProgressiveReveal';
 import { cn } from '@/lib/utils';
@@ -11,6 +13,7 @@ interface ProgressiveMessageTextProps {
   animateOnMount?: boolean;
   className?: string;
   showStreamingCaret?: boolean;
+  onVisibleTextChange?: (visibleText: string) => void;
 }
 
 function ProgressiveMessageText({
@@ -21,14 +24,19 @@ function ProgressiveMessageText({
   animateOnMount = true,
   className,
   showStreamingCaret = true,
+  onVisibleTextChange,
 }: ProgressiveMessageTextProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const { visibleText, visibleSegments, visibleCharCount, isCatchup, isFullyRevealed } = useProgressiveReveal({
+  const { visibleText, visibleSegments, isCatchup, isFullyRevealed } = useProgressiveReveal({
     text,
     isLive,
     animateOnMount,
     prefersReducedMotion,
   });
+
+  useLayoutEffect(() => {
+    onVisibleTextChange?.(visibleText);
+  }, [onVisibleTextChange, visibleText]);
 
   if (mode === 'markdown') {
     return (

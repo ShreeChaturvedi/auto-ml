@@ -375,6 +375,37 @@
   margin: 0.5rem 0;
 }
 
+.nl-model-work-stream .llm-streamdown {
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.nl-model-work-stream .llm-streamdown p {
+  margin: 0;
+}
+
+.nl-model-work-stream .llm-streamdown p + p {
+  margin-top: 0.45rem;
+}
+
+.nl-model-work-stream .llm-streamdown ul,
+.nl-model-work-stream .llm-streamdown ol {
+  margin: 0.45rem 0 0.45rem 1rem;
+}
+
+.nl-model-work-stream .llm-streamdown li + li {
+  margin-top: 0.18rem;
+}
+
+.nl-model-work-stream .llm-streamdown pre {
+  margin: 0.5rem 0 0;
+  border-radius: 0.5rem;
+}
+
+.nl-model-work-stream .llm-streamdown code {
+  font-size: 0.84em;
+}
+
 @keyframes execute-icon-trace {
   0% {
     stroke-dashoffset: 0;
@@ -456,6 +487,75 @@
 
 .sql-word-enter {
   animation: sql-word-in 320ms ease-out both;
+}
+
+@keyframes sql-generation-scan {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+@keyframes sql-generation-bar {
+  0%, 100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sql-generation-dot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.sql-generation-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.sql-generation-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    transparent 42%,
+    hsl(var(--foreground) / 0.04) 50%,
+    transparent 58%,
+    transparent 100%
+  );
+  animation: sql-generation-scan 1.9s ease-in-out infinite;
+}
+
+.sql-generation-line-active {
+  background: hsl(var(--foreground) / 0.3);
+  animation: sql-generation-bar 1.1s ease-in-out infinite;
+}
+
+.sql-generation-dot-active {
+  background: hsl(var(--primary));
+  animation: sql-generation-dot 1s ease-in-out infinite;
 }
 
 @keyframes nl-lane-in {

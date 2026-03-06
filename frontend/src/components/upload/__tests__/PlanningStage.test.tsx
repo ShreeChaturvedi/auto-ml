@@ -5,6 +5,7 @@ import { PlanningStage } from '../PlanningStage';
 import { streamOnboardingPlan } from '@/lib/api/llm';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
+import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
 const addFileMock = vi.fn();
 const addPreviewMock = vi.fn();
@@ -205,21 +206,11 @@ describe('PlanningStage progressive assistant rendering', () => {
     vi.clearAllMocks();
     localStorage.clear();
     HTMLElement.prototype.scrollIntoView = vi.fn();
-    vi.useFakeTimers();
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      return window.setTimeout(() => callback(performance.now()), 16);
-    });
-    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
-      window.clearTimeout(id);
-    });
+    setupRafAnimationClock();
   });
 
   afterEach(() => {
-    act(() => {
-      vi.runOnlyPendingTimers();
-    });
-    vi.useRealTimers();
-    vi.restoreAllMocks();
+    teardownRafAnimationClock();
   });
 
   it('reveals streamed assistant markdown progressively instead of instant full text', async () => {
@@ -283,5 +274,34 @@ describe('PlanningStage progressive assistant rendering', () => {
     });
 
     expect(screen.getByRole('heading', { level: 1, name: 'Final Plan Heading' })).toBeInTheDocument();
+  });
+
+  it('sanitizes streamed assistant artifacts before rendering', async () => {
+    (streamOnboardingPlan as Mock).mockImplementation(async (_request, onEvent) => {
+      onEvent({ type: 'token', text: 'Visible planning output\n<<<END>>>\n{"version":"1"}' });
+      onEvent({ type: 'done' });
+    });
+
+    render(
+      <PlanningStage
+        projectId="p1"
+        onPlanApproved={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/describe your goal or request changes/i);
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'sanitize this response' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+
+    expect(screen.getByText('Visible planning output')).toBeInTheDocument();
+    expect(screen.queryByText(/<<<END>>>/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\"version\":\"1\"/)).not.toBeInTheDocument();
   });
 });

@@ -50,8 +50,20 @@ function createClientFromResponses(responses: Array<string | Error>): LlmClient 
       }
       return next;
     }),
-    stream: vi.fn(async (_request: LlmRequest, _handlers: LlmStreamHandlers) => {
-      throw new Error('stream is not used in nlToSqlV2');
+    stream: vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+      const next = responses.shift();
+      if (next === undefined) {
+        throw new Error('No more mock responses configured');
+      }
+      if (next instanceof Error) {
+        throw next;
+      }
+
+      handlers.onThinking?.('Inspecting schema and building a plan.');
+      const midpoint = Math.max(1, Math.floor(next.length / 2));
+      handlers.onToken(next.slice(0, midpoint));
+      handlers.onToken(next.slice(midpoint));
+      return next;
     })
   };
 }
@@ -131,7 +143,7 @@ describe('nlToSqlV2 service', () => {
     expect(result.explanation.selectedTables).toHaveLength(2);
     expect(result.explanation.joinPlan).toHaveLength(1);
     expect(result.explanation.validationNotes.length).toBeGreaterThan(0);
-    expect(result.explanation.confidenceMode).toBe('heuristic');
+    expect(result.explanation.confidenceMode).toBe('model');
     expect(result.explanation.reliabilityTier).toBe('medium');
   });
 
@@ -410,8 +422,8 @@ describe('nlToSqlV2 service', () => {
 
     expect(result.explanation.confidence).toBe(0.95);
     expect(result.explanation.warningLevel).toBe('none');
-    expect(result.explanation.confidenceMode).toBe('heuristic');
-    expect(result.explanation.reliabilityTier).toBe('medium');
+    expect(result.explanation.confidenceMode).toBe('model');
+    expect(result.explanation.reliabilityTier).toBe('high');
   });
 
   it('falls back to compact pass-2 generation when rich pass output is invalid', async () => {
@@ -618,6 +630,15 @@ describe('nlToSqlV2 service', () => {
     const repo = createDatasetRepository([buildDataset()]);
     const client = createClientFromResponses([
       JSON.stringify({
+        intentSummary: 'List users',
+        selectedTables: ['users'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        confidence: 0.9
+      }),
+      JSON.stringify({
         sql: 'SELECT id, name FROM users LIMIT 25',
         rationale: 'List users.',
         selectedTables: ['users'],
@@ -691,6 +712,69 @@ describe('nlToSqlV2 service', () => {
     expect(events).toContainEqual({ phaseId: 'sql_generation', status: 'failed' });
     expect(events).toContainEqual({ phaseId: 'sql_generation', status: 'completed' });
     expect(events).toContainEqual({ phaseId: 'validation', status: 'completed' });
+  });
+
+  it('streams structured model-work blocks when a listener is provided', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const client = createClientFromResponses([
+      JSON.stringify({
+        intentSummary: 'List users',
+        selectedTables: ['users'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        confidence: 0.91
+      }),
+      JSON.stringify({
+        sql: 'SELECT id, name FROM users LIMIT 25',
+        rationale: 'List users.',
+        selectedTables: ['users'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        validationNotes: [],
+        confidence: 0.91
+      })
+    ]);
+    const events: Array<{ type: string; kind: string; title: string }> = [];
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    await service.generateSqlFromNaturalLanguageV2({
+      projectId: 'project-1',
+      nlQuery: 'list users',
+      onModelWork: (event) => {
+        events.push({
+          type: event.type,
+          kind: event.kind,
+          title: event.title
+        });
+      }
+    });
+
+    expect(events.some((event) =>
+      event.type === 'model_work_block_started'
+      && event.kind === 'plan'
+      && event.title === 'Query planning'
+    )).toBe(true);
+    expect(events.some((event) =>
+      event.type === 'model_work_block_started'
+      && event.kind === 'thinking'
+    )).toBe(true);
+    expect(events.some((event) =>
+      event.type === 'model_work_block_started'
+      && event.kind === 'sql'
+      && event.title === 'SQL generation'
+    )).toBe(true);
+    expect(events.some((event) =>
+      event.type === 'model_work_block_started'
+      && event.kind === 'validation'
+    )).toBe(true);
   });
 
   it('returns repair confidence mode metadata for repaired SQL', async () => {

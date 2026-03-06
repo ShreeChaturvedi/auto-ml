@@ -41,7 +41,6 @@ import {
   ArrowRight,
   AlertTriangle,
   CheckCircle2,
-  Database,
   GitBranch,
   Loader2,
   PlayCircle,
@@ -1112,19 +1111,6 @@ export function PreprocessingPanel() {
                 <CardContent className="flex items-center gap-2 p-3 text-sm text-red-700">
                   <AlertTriangle className="h-4 w-4" />
                   {storeError || shellError}
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {!selectedDatasetId && !isDatasetModalOpen ? (
-              <Card className="border-dashed">
-                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-                  <Database className="h-8 w-8 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">No preprocessing dataset selected</p>
-                    <p className="text-xs text-muted-foreground">Open dataset chooser to set explicit context.</p>
-                  </div>
-                  <Button variant="outline" onClick={() => setDatasetModalOpen(true)}>Open dataset chooser</Button>
                 </CardContent>
               </Card>
             ) : null}

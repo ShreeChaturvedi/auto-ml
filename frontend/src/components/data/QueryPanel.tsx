@@ -881,7 +881,13 @@ export function QueryPanel({
         <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
           {mode === 'sql' ? (
             // SQL Mode: Monaco Editor with syntax highlighting
-            <div className="relative flex-1 border rounded-md overflow-hidden bg-background">
+            <div
+              className={cn(
+                'relative flex-1 rounded-md overflow-hidden bg-background',
+                'border border-input transition-colors duration-200',
+                'focus-within:border-ring'
+              )}
+            >
               <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
@@ -1037,6 +1043,7 @@ export function QueryPanel({
         ) : (
           // English Mode: NL workflow — animated input → connector → SQL reveal
           <NlQueryWorkflow
+            projectId={activeProject?.id ?? activeProjectId}
             englishQuery={englishQuery}
             onQueryChange={(v) => handleQueryChange(v)}
             onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
@@ -1044,6 +1051,7 @@ export function QueryPanel({
             isExpanding={isExpanding}
             onPhaseChange={setNlPhase}
             approveThemeClasses={approveThemeClasses}
+            connectorColorClassName={executeIconColorClass}
             ref={nlWorkflowRef}
           />
         )}

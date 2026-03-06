@@ -7,9 +7,11 @@ import {
   generateSqlFromNaturalLanguageV2,
   repairSqlFromExecutionErrorV2,
   type GeneratedSqlV2,
+  type NlModelWorkEvent,
   type NlProgressEvent,
   type NlProgressStatus
 } from '../services/nlToSqlV2.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 
@@ -42,8 +44,14 @@ const nlQuerySchema = z.object({
   tableName: z.string().min(1).optional()
 });
 
+const nlSuggestionQuerySchema = z.object({
+  projectId: z.string().uuid('projectId must be a valid UUID'),
+  limit: z.coerce.number().int().min(1).max(12).optional()
+});
+
 type SqlExecutionPayload = Awaited<ReturnType<typeof executeReadOnlyQuery>>;
 type ProgressListener = ((event: NlProgressEvent) => void) | undefined;
+type ModelWorkListener = ((event: NlModelWorkEvent) => void) | undefined;
 
 type NlResponsePayload = GeneratedSqlV2 & {
   cached: boolean;
@@ -59,8 +67,20 @@ type NlStreamPhaseEvent = {
   details?: Record<string, unknown>;
 };
 
+type NlStreamModelWorkEvent = {
+  type: 'model_work_block_started' | 'model_work_delta' | 'model_work_block_completed';
+  blockId: string;
+  phaseId: NlProgressEvent['phaseId'];
+  kind: 'thinking' | 'plan' | 'tool' | 'sql' | 'validation' | 'repair' | 'status';
+  title: string;
+  timestamp: string;
+  details?: Record<string, unknown>;
+  delta?: string;
+};
+
 type NlStreamEvent =
   | NlStreamPhaseEvent
+  | NlStreamModelWorkEvent
   | { type: 'result'; nl: NlResponsePayload }
   | { type: 'done' };
 
@@ -88,6 +108,37 @@ function asPhaseEvent(progress: NlProgressEvent): NlStreamPhaseEvent {
     timestamp: progress.timestamp,
     details: progress.details
   };
+}
+
+function mapModelWorkKind(kind: NlModelWorkEvent['kind']): NlStreamModelWorkEvent['kind'] {
+  return kind;
+}
+
+function asModelWorkEvent(event: NlModelWorkEvent): NlStreamModelWorkEvent {
+  const rawType = String((event as { type?: unknown }).type ?? '');
+  const rawDelta = Reflect.get(event as object, 'content') ?? Reflect.get(event as object, 'delta');
+  const base = {
+    blockId: event.blockId,
+    phaseId: event.phaseId,
+    kind: mapModelWorkKind(event.kind),
+    title: event.title,
+    timestamp: event.timestamp,
+    details: event.details
+  };
+
+  if (rawType === 'block_started' || rawType === 'model_work_block_started') {
+    return { type: 'model_work_block_started', ...base };
+  }
+
+  if (rawType === 'block_delta' || rawType === 'model_work_delta' || 'content' in event) {
+    return {
+      type: 'model_work_delta',
+      ...base,
+      delta: typeof rawDelta === 'string' ? rawDelta : undefined
+    };
+  }
+
+  return { type: 'model_work_block_completed', ...base };
 }
 
 function writeNdjsonEvent(res: Response, event: NlStreamEvent) {
@@ -176,17 +227,25 @@ function createStreamProgressWriter(res: Response): (event: NlProgressEvent) => 
   };
 }
 
+function createStreamModelWorkWriter(res: Response): (event: NlModelWorkEvent) => void {
+  return (event) => {
+    writeNdjsonEvent(res, asModelWorkEvent(event));
+  };
+}
+
 async function resolveNlQueryExecution(params: {
   projectId: string;
   query: string;
   tableName?: string;
   onProgress?: ProgressListener;
+  onModelWork?: ModelWorkListener;
 }): Promise<NlResponsePayload> {
   const generated = await generateSqlFromNaturalLanguageV2({
     projectId: params.projectId,
     nlQuery: params.query,
     defaultTable: params.tableName,
-    onProgress: params.onProgress
+    onProgress: params.onProgress,
+    onModelWork: params.onModelWork
   });
 
   emitNlProgress(params.onProgress, {
@@ -235,7 +294,8 @@ async function resolveNlQueryExecution(params: {
         executionError: message,
         defaultTable: params.tableName,
         priorExplanation: generated.explanation,
-        onProgress: params.onProgress
+        onProgress: params.onProgress,
+        onModelWork: params.onModelWork
       });
 
       emitNlProgress(params.onProgress, {
@@ -357,22 +417,24 @@ export function createQueryRouter() {
 
     initializeNdjsonStreamResponse(res);
     const onProgress = createStreamProgressWriter(res);
+    const onModelWork = createStreamModelWorkWriter(res);
 
     try {
       const nl = await resolveNlQueryExecution({
         projectId,
         query,
         tableName,
-        onProgress
+        onProgress,
+        onModelWork
       });
+
+      writeNdjsonEvent(res, { type: 'result', nl });
 
       emitNlProgress(onProgress, {
         phaseId: 'done',
         status: 'completed',
         summary: 'NL query pipeline finished.'
       });
-
-      writeNdjsonEvent(res, { type: 'result', nl });
     } catch (error) {
       emitNlProgress(onProgress, {
         phaseId: 'done',
@@ -382,6 +444,26 @@ export function createQueryRouter() {
     } finally {
       writeNdjsonEvent(res, { type: 'done' });
       res.end();
+    }
+  });
+
+  router.get('/query/nl/suggestions', async (req, res) => {
+    const result = nlSuggestionQuerySchema.safeParse(req.query);
+    if (!result.success) {
+      return res.status(400).json({ errors: result.error.flatten() });
+    }
+
+    try {
+      const suggestions = await getNaturalLanguageSuggestions({
+        projectId: result.data.projectId,
+        limit: result.data.limit
+      });
+
+      return res.json(suggestions);
+    } catch (error) {
+      return res.status(400).json({
+        error: getErrorMessage(error, 'Failed to generate NL suggestions')
+      });
     }
   });
 

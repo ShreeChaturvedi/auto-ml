@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 
 import { ChatPanel } from '../ChatPanel';
 import { streamTrainingPlan } from '@/lib/api/llm';
+import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
 const addFileMock = vi.fn();
 const setFileMetadataMock = vi.fn();
@@ -30,21 +31,11 @@ describe('Notebook ChatPanel progressive rendering', () => {
     vi.clearAllMocks();
     localStorage.clear();
     HTMLElement.prototype.scrollIntoView = vi.fn();
-    vi.useFakeTimers();
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      return window.setTimeout(() => callback(performance.now()), 16);
-    });
-    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
-      window.clearTimeout(id);
-    });
+    setupRafAnimationClock();
   });
 
   afterEach(() => {
-    act(() => {
-      vi.runOnlyPendingTimers();
-    });
-    vi.useRealTimers();
-    vi.restoreAllMocks();
+    teardownRafAnimationClock();
   });
 
   it('reveals assistant markdown progressively', async () => {
@@ -98,5 +89,47 @@ describe('Notebook ChatPanel progressive rendering', () => {
 
     expect(screen.getByText('Think', { selector: '[data-streamdown="strong"]' })).toBeInTheDocument();
     expect(screen.getByText('code', { selector: '[data-streamdown="inline-code"]' })).toBeInTheDocument();
+  });
+
+  it('does not replay animation for hydrated assistant history', () => {
+    localStorage.setItem(
+      'notebook-messages-p-hydrated',
+      JSON.stringify([
+        {
+          id: 'a1',
+          type: 'assistant_text',
+          content: '# Hydrated Heading',
+        },
+      ])
+    );
+
+    const { container } = render(<ChatPanel projectId="p-hydrated" />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Hydrated Heading' })).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-sd-animate]')).toHaveLength(0);
+  });
+
+  it('sanitizes streamed assistant artifacts before rendering markdown', async () => {
+    (streamTrainingPlan as Mock).mockImplementation(async (_request, onEvent) => {
+      onEvent({ type: 'token', text: 'Visible output\n<<<JSON>>>\n{"version":"1"}' });
+      onEvent({ type: 'done' });
+    });
+
+    render(<ChatPanel projectId="p-sanitize" />);
+
+    const input = screen.getByPlaceholderText(/ask ai for help/i);
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'show output' } });
+      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+      await Promise.resolve();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+
+    expect(screen.getByText('Visible output')).toBeInTheDocument();
+    expect(screen.queryByText(/<<<JSON>>>/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\"version\":\"1\"/)).not.toBeInTheDocument();
   });
 });

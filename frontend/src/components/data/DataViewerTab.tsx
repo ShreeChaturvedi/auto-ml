@@ -96,6 +96,7 @@ function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl
     rationale: nl.rationale,
     explanation: nl.explanation,
     queryId: nl.queryId,
+    provider: nl.provider,
     cached: nl.cached,
     queryExecutionError: nl.queryExecutionError ?? null,
     queryResult: nl.query
@@ -470,7 +471,12 @@ export function DataViewerTab() {
       {/* Main Content Area (left side) */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* File Tab Bar */}
-        {projectId && <FileTabBar projectId={projectId} />}
+        {projectId && (
+          <FileTabBar
+            projectId={projectId}
+            queryIconColorClassName={projectTypeColorClassName}
+          />
+        )}
 
         {/* Error Banner */}
         {queryError && (

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SqlRevealBlock, tokenizeSql } from '../SqlRevealBlock';
+import { SqlRevealBlock } from '../SqlRevealBlock';
+import { tokenizeSql } from '../sqlTokenize';
 
 vi.mock('@/components/theme-provider', () => ({
   useTheme: () => ({
@@ -282,7 +283,7 @@ describe('SqlRevealBlock', () => {
           {...buildProps({
             isRevealComplete: false,
             isRevealing: true,
-            queryExecutionError: 'relation \"usersx\" does not exist',
+            queryExecutionError: 'relation "usersx" does not exist',
           })}
         />
       );
@@ -295,7 +296,7 @@ describe('SqlRevealBlock', () => {
         <SqlRevealBlock
           {...buildProps({
             isRevealComplete: true,
-            queryExecutionError: 'relation \"usersx\" does not exist',
+            queryExecutionError: 'relation "usersx" does not exist',
           })}
         />
       );

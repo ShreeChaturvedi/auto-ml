@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AnimatedPlaceholderTextarea } from '../animated-placeholder-textarea';
 
@@ -130,5 +130,38 @@ describe('AnimatedPlaceholderTextarea', () => {
       />
     );
     expect(screen.getByTestId('ta')).toBeDisabled();
+  });
+
+  it('shows an overlay caret while focused with an empty value', () => {
+    render(
+      <AnimatedPlaceholderTextarea
+        placeholders={['Type something here', 'Another placeholder']}
+        value=""
+        onChange={() => {}}
+      />
+    );
+
+    const textarea = screen.getByRole('textbox');
+    fireEvent.focus(textarea);
+
+    expect(document.querySelector('[data-placeholder-cursor="true"]')).toBeInTheDocument();
+    expect(textarea.style.caretColor).toBe('transparent');
+  });
+
+  it('hides the overlay caret after blur', () => {
+    render(
+      <AnimatedPlaceholderTextarea
+        placeholders={['Type something here', 'Another placeholder']}
+        value=""
+        onChange={() => {}}
+      />
+    );
+
+    const textarea = screen.getByRole('textbox');
+    fireEvent.focus(textarea);
+    fireEvent.blur(textarea);
+
+    expect(document.querySelector('[data-placeholder-cursor="true"]')).not.toBeInTheDocument();
+    expect(textarea.style.caretColor).toBe('');
   });
 });

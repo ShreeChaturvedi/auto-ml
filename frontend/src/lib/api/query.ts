@@ -15,6 +15,21 @@ export interface NlQueryRequest {
   tableName?: string;
 }
 
+export interface NlSuggestion {
+  id: string;
+  prompt: string;
+  label: string;
+  category: string;
+  tables: string[];
+  rationale: string;
+}
+
+export interface NlProviderInfo {
+  id: string;
+  label: string;
+  model: string;
+}
+
 export interface QueryResultPayload {
   queryId: string;
   sql: string;
@@ -56,6 +71,7 @@ export interface NlQueryResponsePayload {
   rationale: string;
   explanation: NlQueryExplanation;
   queryId: string;
+  provider: NlProviderInfo;
   cached: boolean;
   query: QueryResultPayload | null;
   queryExecutionError?: string | null;
@@ -70,6 +86,15 @@ export type NlStreamPhaseId =
   | 'repair'
   | 'done';
 
+export type NlModelWorkKind =
+  | 'thinking'
+  | 'plan'
+  | 'tool'
+  | 'sql'
+  | 'validation'
+  | 'repair'
+  | 'status';
+
 export interface NlStreamPhaseEvent {
   type: 'phase_started' | 'phase_progress' | 'phase_completed' | 'phase_failed';
   phaseId: NlStreamPhaseId;
@@ -78,8 +103,37 @@ export interface NlStreamPhaseEvent {
   details?: Record<string, unknown>;
 }
 
+export interface NlModelWorkEventBase {
+  blockId: string;
+  kind: NlModelWorkKind;
+  title: string;
+  timestamp: string;
+  phaseId?: NlStreamPhaseId;
+  details?: Record<string, unknown>;
+}
+
+export interface NlModelWorkBlockStartedEvent extends NlModelWorkEventBase {
+  type: 'model_work_block_started';
+}
+
+export interface NlModelWorkDeltaEvent extends NlModelWorkEventBase {
+  type: 'model_work_delta';
+  delta: string;
+}
+
+export interface NlModelWorkBlockCompletedEvent extends NlModelWorkEventBase {
+  type: 'model_work_block_completed';
+  status?: 'completed' | 'failed';
+}
+
+export type NlModelWorkStreamEvent =
+  | NlModelWorkBlockStartedEvent
+  | NlModelWorkDeltaEvent
+  | NlModelWorkBlockCompletedEvent;
+
 export type NlQueryStreamEvent =
   | NlStreamPhaseEvent
+  | NlModelWorkStreamEvent
   | { type: 'result'; nl: NlQueryResponsePayload }
   | { type: 'done' };
 
@@ -123,6 +177,21 @@ export async function executeNlQuery(request: NlQueryRequest) {
   }>('/query/nl', {
     method: 'POST',
     body: JSON.stringify(request),
+  });
+}
+
+export async function fetchNlSuggestions(projectId: string, limit = 8) {
+  const search = new URLSearchParams({
+    projectId,
+    limit: String(limit)
+  });
+
+  return apiRequest<{
+    suggestions: NlSuggestion[];
+    cached: boolean;
+    schemaFingerprint: string;
+  }>(`/query/nl/suggestions?${search.toString()}`, {
+    method: 'GET'
   });
 }
 

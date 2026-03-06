@@ -3,6 +3,29 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NlQueryWorkflow } from '../NlQueryWorkflow';
 import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
+import { useProjectStore } from '@/stores/projectStore';
+import { fetchNlSuggestions } from '@/lib/api/query';
+
+vi.mock('@/lib/api/query', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/query')>('@/lib/api/query');
+  return {
+    ...actual,
+    fetchNlSuggestions: vi.fn().mockResolvedValue({
+      suggestions: [
+        {
+          id: 'suggestion-1',
+          prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
+          label: 'Weekly revenue trends',
+          category: 'trend',
+          tables: ['orders'],
+          rationale: 'Uses time and revenue metrics.'
+        }
+      ],
+      cached: false,
+      schemaFingerprint: 'test-schema'
+    })
+  };
+});
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
@@ -23,6 +46,11 @@ const MOCK_RESULT: NlGenerationResult = {
     reliabilityTier: 'high',
   },
   queryId: 'test-query-123',
+  provider: {
+    id: 'gemini',
+    label: 'Gemini',
+    model: 'gemini-3-flash-preview'
+  },
   cached: false,
   queryResult: {
     queryId: 'test-query-123',
@@ -38,8 +66,19 @@ const MOCK_RESULT: NlGenerationResult = {
   },
 };
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function buildProps(
   overrides: Partial<{
+    projectId: string | null;
     englishQuery: string;
     onQueryChange: (v: string) => void;
     onGenerate: (
@@ -52,6 +91,7 @@ function buildProps(
   }> = {}
 ) {
   return {
+    projectId: null,
     englishQuery: 'Show me the first 10 users',
     onQueryChange: vi.fn(),
     onGenerate: vi.fn().mockResolvedValue(MOCK_RESULT),
@@ -80,6 +120,9 @@ function WorkflowWithRef({
 
 describe('NlQueryWorkflow', () => {
   beforeEach(() => {
+    useProjectStore.setState({
+      activeProjectId: null
+    });
     // Silence matchMedia warnings in jsdom
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -101,6 +144,16 @@ describe('NlQueryWorkflow', () => {
     expect(screen.getByRole('textbox')).toBeInTheDocument();
   });
 
+  it('loads dynamic placeholder suggestions when a project id is present', async () => {
+    render(<NlQueryWorkflow {...buildProps({ projectId: 'project-123', englishQuery: '' })} />);
+
+    await waitFor(() => {
+      expect(fetchNlSuggestions).toHaveBeenCalledWith('project-123', 8);
+    });
+
+    expect((await screen.findAllByText(/compare weekly revenue and average order value over the last 8 weeks/i)).length).toBeGreaterThan(0);
+  });
+
   it('calls onQueryChange when user types in the textarea', () => {
     const onQueryChange = vi.fn();
     render(<NlQueryWorkflow {...buildProps({ onQueryChange })} />);
@@ -112,12 +165,8 @@ describe('NlQueryWorkflow', () => {
 
   it('keeps both NlFlowConnector wrappers collapsed in idle state', () => {
     render(<NlQueryWorkflow {...buildProps()} />);
-    const topConnector = screen.getByTestId('nl-flow-connector-top');
-    const bottomConnector = screen.getByTestId('nl-flow-connector-bottom');
-    expect(topConnector).toHaveClass('h-0');
-    expect(topConnector).toHaveClass('opacity-0');
-    expect(bottomConnector).toHaveClass('h-0');
-    expect(bottomConnector).toHaveClass('opacity-0');
+    expect(screen.queryByTestId('nl-flow-connector-top')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nl-flow-connector-bottom')).not.toBeInTheDocument();
   });
 
   // ── triggerGenerate via imperative handle ────────────────────────────────────
@@ -395,7 +444,59 @@ describe('NlQueryWorkflow', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('auto-collapses the model work panel on constrained height', async () => {
+  it('ignores stale aborted run results when a newer generation completes', async () => {
+    const onApprove = vi.fn();
+    const firstRun = createDeferred<NlGenerationResult>();
+    const secondResult: NlGenerationResult = {
+      ...MOCK_RESULT,
+      sql: 'SELECT name FROM users ORDER BY name LIMIT 5;',
+      queryId: 'test-query-456'
+    };
+
+    const onGenerate = vi.fn(async () => {
+      if (onGenerate.mock.calls.length === 1) {
+        return firstRun.promise;
+      }
+      return secondResult;
+    });
+
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate, onApprove })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /approve and run this sql/i })).toBeInTheDocument();
+    }, { timeout: 4000 });
+
+    await act(async () => {
+      firstRun.resolve(MOCK_RESULT);
+    });
+
+    act(() => {
+      handleRef.current?.approve();
+    });
+
+    await waitFor(() => {
+      expect(onApprove).toHaveBeenCalledWith(
+        expect.objectContaining({ queryId: 'test-query-456' }),
+        secondResult.sql
+      );
+    });
+  });
+
+  it('keeps the model work panel expanded while generation is in progress on constrained height', async () => {
     const OriginalResizeObserver = globalThis.ResizeObserver;
     class ResizeObserverMock {
       private callback: ResizeObserverCallback;
@@ -427,13 +528,13 @@ describe('NlQueryWorkflow', () => {
         handleRef.current?.triggerGenerate();
       });
 
-      expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
     } finally {
       globalThis.ResizeObserver = OriginalResizeObserver;
     }
   });
 
-  it('resets manual expand override after reject + regenerate on constrained height', async () => {
+  it('resets manual collapse override after reject + regenerate on constrained height', async () => {
     const OriginalResizeObserver = globalThis.ResizeObserver;
     class ResizeObserverMock {
       private callback: ResizeObserverCallback;
@@ -465,8 +566,8 @@ describe('NlQueryWorkflow', () => {
         handleRef.current?.triggerGenerate();
       });
 
-      fireEvent.click(await screen.findByRole('button', { name: /expand model work panel/i }));
-      expect(screen.getByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: /collapse model work panel/i }));
+      expect(screen.getByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
 
       act(() => {
         handleRef.current?.reject();
@@ -476,7 +577,7 @@ describe('NlQueryWorkflow', () => {
         handleRef.current?.triggerGenerate();
       });
 
-      expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
       expect(onGenerate).toHaveBeenCalledTimes(2);
     } finally {
       globalThis.ResizeObserver = OriginalResizeObserver;
@@ -511,6 +612,51 @@ describe('NlQueryWorkflow', () => {
     await waitFor(() => {
       expect(phases).toContain('reviewing');
     }, { timeout: 3000 });
+  });
+
+  it('renders streamed model work blocks while generation is in progress', async () => {
+    const deferred = createDeferred<NlGenerationResult>();
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+    const onGenerate = vi.fn(async (_query, onStreamEvent) => {
+      onStreamEvent?.({
+        type: 'model_work_block_started',
+        blockId: 'plan-1',
+        kind: 'plan',
+        title: 'Query planning',
+        phaseId: 'planning',
+        timestamp: new Date().toISOString()
+      });
+      onStreamEvent?.({
+        type: 'model_work_delta',
+        blockId: 'plan-1',
+        kind: 'plan',
+        title: 'Query planning',
+        phaseId: 'planning',
+        delta: 'Selecting candidate tables.',
+        timestamp: new Date().toISOString()
+      });
+      return deferred.promise;
+    });
+
+    render(
+      <WorkflowWithRef
+        {...buildProps({ onGenerate })}
+        handleRef={handleRef}
+      />
+    );
+
+    act(() => {
+      handleRef.current?.triggerGenerate();
+    });
+
+    const block = await screen.findByTestId('nl-model-work-block-plan-1');
+    await waitFor(() => {
+      expect(block).toHaveTextContent(/selecting candidate tables/i);
+    });
+
+    await act(async () => {
+      deferred.resolve(MOCK_RESULT);
+    });
   });
 
   // ── Does not call onGenerate when query is empty ─────────────────────────────

@@ -24,8 +24,13 @@ vi.mock('../services/nlToSqlV2.js', () => ({
   repairSqlFromExecutionErrorV2: vi.fn()
 }));
 
+vi.mock('../services/nlSuggestions.js', () => ({
+  getNaturalLanguageSuggestions: vi.fn()
+}));
+
 import { hasDatabaseConfiguration } from '../db.js';
 import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 import { canListen } from '../tests/canListen.js';
@@ -41,6 +46,7 @@ const mockStoreCachedQueryResult = vi.mocked(storeCachedQueryResult);
 const mockExecuteReadOnlyQuery = vi.mocked(executeReadOnlyQuery);
 const mockGenerateSqlFromNaturalLanguageV2 = vi.mocked(generateSqlFromNaturalLanguageV2);
 const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV2);
+const mockGetNaturalLanguageSuggestions = vi.mocked(getNaturalLanguageSuggestions);
 const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 type NdjsonEvent = Record<string, any>;
@@ -335,6 +341,11 @@ describeIf('query routes', () => {
         sql: 'SELECT * FROM users',
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Fetch users',
           selectedTables: ['users'],
@@ -373,6 +384,11 @@ describeIf('query routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.nl.sql).toBe('SELECT * FROM users');
       expect(response.body.nl.rationale).toBe('Fetching all users');
+      expect(response.body.nl.provider).toEqual({
+        id: 'gemini',
+        label: 'Gemini',
+        model: 'gemini-3-flash-preview'
+      });
       expect(response.body.nl.explanation.intentSummary).toBe('Fetch users');
       expect(response.body.nl.explanation.confidenceMode).toBe('model');
       expect(response.body.nl.explanation.reliabilityTier).toBe('high');
@@ -386,6 +402,11 @@ describeIf('query routes', () => {
         sql: 'SELECT * FROM users',
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Fetch users',
           selectedTables: ['users'],
@@ -432,6 +453,11 @@ describeIf('query routes', () => {
         sql: 'SELECT * FROM missing_table',
         rationale: 'Attempt to fetch records',
         queryId: 'test-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Fetch records',
           selectedTables: ['missing_table'],
@@ -470,6 +496,11 @@ describeIf('query routes', () => {
         sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
         rationale: 'Compute average EOC',
         queryId: 'gen-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Compute average EOC score',
           selectedTables: ['checkpoints_eoc'],
@@ -500,6 +531,11 @@ describeIf('query routes', () => {
         sql: 'SELECT AVG(response) FROM checkpoints_eoc',
         rationale: 'Use response column instead of eoc.',
         queryId: 'repair-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Compute average response score',
           selectedTables: ['checkpoints_eoc'],
@@ -566,6 +602,11 @@ describeIf('query routes', () => {
           sql: 'SELECT * FROM users',
           rationale: 'Fetching all users',
           queryId: 'stream-query-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Fetch users',
             selectedTables: ['users'],
@@ -610,6 +651,9 @@ describeIf('query routes', () => {
 
       const resultEvent = events.find((event) => event.type === 'result');
       expect(resultEvent).toBeDefined();
+      if (!resultEvent || resultEvent.type !== 'result') {
+        throw new Error('Expected result event in NDJSON stream.');
+      }
       expect(resultEvent.nl.sql).toBe('SELECT * FROM users');
       expect(resultEvent.nl.explanation.intentSummary).toBe('Fetch users');
       expect(resultEvent.nl.queryExecutionError).toBeNull();
@@ -617,7 +661,7 @@ describeIf('query routes', () => {
       expect(events.at(-1)?.type).toBe('done');
     });
 
-    it('streams phase_progress events with details and orders done-phase before result', async () => {
+    it('streams phase_progress events with details and orders result before done-phase', async () => {
       mockGenerateSqlFromNaturalLanguageV2.mockImplementation(async (input) => {
         input.onProgress?.({
           phaseId: 'sql_generation',
@@ -631,6 +675,11 @@ describeIf('query routes', () => {
           sql: 'SELECT * FROM users LIMIT 25',
           rationale: 'Fallback SQL generation.',
           queryId: 'stream-progress-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Fetch users quickly',
             selectedTables: ['users'],
@@ -679,8 +728,130 @@ describeIf('query routes', () => {
       const resultIndex = findEventIndex(events, (event) => event.type === 'result');
       expect(donePhaseIndex).toBeGreaterThan(-1);
       expect(resultIndex).toBeGreaterThan(-1);
-      expect(donePhaseIndex).toBeLessThan(resultIndex);
+      expect(resultIndex).toBeLessThan(donePhaseIndex);
       expect(events.at(-1)?.type).toBe('done');
+    });
+
+    it('streams mapped model work events before the final result', async () => {
+      mockGenerateSqlFromNaturalLanguageV2.mockImplementation(async (input) => {
+        input.onModelWork?.({
+          type: 'model_work_block_started',
+          blockId: 'plan-1',
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_delta',
+          blockId: 'plan-1',
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          delta: 'Selecting the `users` table and a basic projection.',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_block_started',
+          blockId: 'tool-1',
+          phaseId: 'planning',
+          kind: 'tool',
+          title: 'Tool call: inspect_schema',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_delta',
+          blockId: 'tool-1',
+          phaseId: 'planning',
+          kind: 'tool',
+          title: 'Tool call: inspect_schema',
+          delta: '```json\n{\"table\":\"users\"}\n```',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_block_completed',
+          blockId: 'tool-1',
+          phaseId: 'planning',
+          kind: 'tool',
+          title: 'Tool call: inspect_schema',
+          timestamp: new Date().toISOString()
+        });
+        input.onModelWork?.({
+          type: 'model_work_block_completed',
+          blockId: 'plan-1',
+          phaseId: 'planning',
+          kind: 'plan',
+          title: 'Query planning',
+          timestamp: new Date().toISOString()
+        });
+
+        return {
+          sql: 'SELECT id, name FROM users LIMIT 25',
+          rationale: 'List users.',
+          queryId: 'stream-model-work-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
+          explanation: {
+            intentSummary: 'Fetch users',
+            selectedTables: ['users'],
+            joinPlan: [],
+            filters: [],
+            aggregations: [],
+            assumptions: [],
+            validationNotes: [],
+            confidence: 0.9,
+            warningLevel: 'none',
+            confidenceMode: 'model',
+            reliabilityTier: 'high'
+          }
+        };
+      });
+      mockGetCachedQueryResult.mockResolvedValue({
+        queryId: 'cached-query-id',
+        sql: 'SELECT id, name FROM users LIMIT 25',
+        rows: [{ id: 1, name: 'Ada' }],
+        columns: [{ name: 'id', dataTypeID: 23, dataType: 'int4' }],
+        rowCount: 1,
+        executionMs: 7,
+        cached: true
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/query/nl/stream')
+        .send({
+          projectId: TEST_PROJECT_ID,
+          query: 'list users'
+        });
+
+      expect(response.status).toBe(200);
+      const events = parseNdjsonEvents(response.text);
+
+      const completedBlocks = events.filter((event) => event.type === 'model_work_block_completed');
+      const resultIndex = findEventIndex(events, (event) => event.type === 'result');
+      const modelCompleteIndex = findEventIndex(events, (event) => (
+        event.type === 'model_work_block_completed' && event.blockId === 'plan-1'
+      ));
+
+      expect(completedBlocks).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'model_work_block_completed',
+          blockId: 'plan-1',
+          kind: 'plan',
+          phaseId: 'planning'
+        }),
+        expect.objectContaining({
+          type: 'model_work_block_completed',
+          blockId: 'tool-1',
+          kind: 'tool',
+          phaseId: 'planning'
+        })
+      ]));
+      expect(modelCompleteIndex).toBeGreaterThan(-1);
+      expect(resultIndex).toBeGreaterThan(modelCompleteIndex);
     });
 
     it('streams initial execution failure and repair recovery progress in order', async () => {
@@ -688,6 +859,11 @@ describeIf('query routes', () => {
         sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
         rationale: 'Compute average EOC',
         queryId: 'stream-repair-gen-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Compute average EOC score',
           selectedTables: ['checkpoints_eoc'],
@@ -732,6 +908,11 @@ describeIf('query routes', () => {
           sql: 'SELECT AVG(response) FROM checkpoints_eoc',
           rationale: 'Use response column instead of eoc.',
           queryId: 'stream-repair-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Compute average response score',
             selectedTables: ['checkpoints_eoc'],
@@ -809,6 +990,49 @@ describeIf('query routes', () => {
       const events = parseNdjsonEvents(response.text);
       expect(events.some((event) => event.type === 'phase_failed' && event.phaseId === 'done')).toBe(true);
       expect(events.at(-1)?.type).toBe('done');
+    });
+  });
+
+  describe('GET /api/query/nl/suggestions', () => {
+    it('returns cached schema-aware suggestions', async () => {
+      mockGetNaturalLanguageSuggestions.mockResolvedValue({
+        suggestions: [
+          {
+            id: 'revenue-growth-by-segment-1',
+            prompt: 'Compare monthly revenue by customer segment over the last 12 months and show which segments are accelerating fastest.',
+            label: 'Revenue growth by segment',
+            category: 'trend',
+            tables: ['orders', 'customers'],
+            rationale: 'Uses orders and customer attributes.'
+          }
+        ],
+        cached: true,
+        schemaFingerprint: 'schema-hash-1'
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .get('/api/query/nl/suggestions')
+        .query({ projectId: TEST_PROJECT_ID, limit: 6 });
+
+      expect(response.status).toBe(200);
+      expect(mockGetNaturalLanguageSuggestions).toHaveBeenCalledWith({
+        projectId: TEST_PROJECT_ID,
+        limit: 6
+      });
+      expect(response.body.cached).toBe(true);
+      expect(response.body.suggestions).toHaveLength(1);
+      expect(response.body.schemaFingerprint).toBe('schema-hash-1');
+    });
+
+    it('returns 400 for invalid suggestion query params', async () => {
+      const app = createTestApp();
+      const response = await request(app)
+        .get('/api/query/nl/suggestions')
+        .query({ projectId: 'not-a-uuid', limit: 99 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
     });
   });
 

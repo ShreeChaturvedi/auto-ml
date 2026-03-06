@@ -60,11 +60,18 @@ const AUTO_EXPAND_TOOLS = new Set<ToolCall['tool']>([
     'list_project_files'
 ]);
 
+const TOOL_TONE_INTERACTION_CLASSES = 'transition-opacity duration-200 motion-reduce:transition-none group-hover:opacity-100 group-focus-visible:opacity-100';
+const TOOL_TONE_FADE_CLASSES = 'opacity-75';
+
 // Get the static icon for a tool (shown when done/pending)
 function getToolIcon(tool: ToolCall['tool'], status: ToolStatus, projectColorClass?: string) {
     const iconClass = cn(
         'h-3.5 w-3.5 flex-shrink-0',
-        status === 'done' && (projectColorClass ? cn(projectColorClass, 'opacity-80') : 'text-muted-foreground'),
+        status === 'done' && [
+            projectColorClass ?? 'text-muted-foreground',
+            TOOL_TONE_FADE_CLASSES,
+            TOOL_TONE_INTERACTION_CLASSES
+        ],
         status === 'error' && 'text-destructive',
         (status === 'pending' || status === 'running') && 'text-muted-foreground'
     );
@@ -281,13 +288,10 @@ function ToolRow({
                 onClick={() => showDropdown && setExpanded(!expanded)}
                 disabled={!showDropdown}
                 className={cn(
-                    'flex items-center gap-2 text-sm transition-all',
+                    'group flex items-center gap-2 text-sm transition-colors duration-200 motion-reduce:transition-none',
                     'py-1.5 px-2.5 rounded-md w-full text-left',
-                    showDropdown && 'hover:bg-muted/50 cursor-pointer',
-                    !showDropdown && 'cursor-default',
-                    status === 'error' && 'text-destructive',
-                    status === 'done' && 'text-muted-foreground',
-                    isLoading && 'text-muted-foreground'
+                    showDropdown && 'hover:bg-muted cursor-pointer',
+                    !showDropdown && 'cursor-default'
                 )}
             >
                 {/* Icon or spinner */}
@@ -300,7 +304,19 @@ function ToolRow({
                 )}
 
                 {/* Label with shimmer effect when loading */}
-                <span className={cn('flex-1', isLoading && 'shimmer-text')}>
+                <span
+                    className={cn(
+                        'min-w-0 flex-1',
+                        isLoading && 'shimmer-text',
+                        status === 'error' && 'text-destructive',
+                        (status === 'pending' || status === 'running') && 'text-muted-foreground',
+                        status === 'done' && [
+                            'text-foreground',
+                            TOOL_TONE_FADE_CLASSES,
+                            TOOL_TONE_INTERACTION_CLASSES
+                        ]
+                    )}
+                >
                     {label}
                 </span>
 

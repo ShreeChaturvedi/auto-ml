@@ -174,6 +174,11 @@ export function DatasetChooserDialog({
   const projects = useProjectStore((s) => s.projects);
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const themeColor = activeProject ? projectColorClasses[activeProject.color] : null;
+  const themeHoverBorder = themeColor
+    ? themeColor.hover
+        .replaceAll('dark:hover:bg-', 'dark:hover:border-')
+        .replaceAll('hover:bg-', 'hover:border-')
+    : null;
 
   const searchPlaceholders = useMemo(
     () => buildDatasetSearchPlaceholders(allTables),
@@ -241,8 +246,9 @@ export function DatasetChooserDialog({
             variant="outline"
             size="icon"
             className={cn(
-              'group rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
-              themeColor?.hover
+              'group rounded-full border-white bg-white text-black transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
+              themeColor?.hover,
+              themeHoverBorder
             )}
             disabled={!candidateDatasetId}
             onClick={onStart}

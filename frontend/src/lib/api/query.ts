@@ -62,7 +62,7 @@ export interface NlQueryExplanation {
   validationNotes: string[];
   confidence: number;
   warningLevel: 'none' | 'low' | 'medium' | 'high';
-  confidenceMode: 'model' | 'heuristic' | 'deterministic_fallback' | 'repair';
+  confidenceMode: 'model' | 'repair';
   reliabilityTier: 'high' | 'medium' | 'low';
 }
 

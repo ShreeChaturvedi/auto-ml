@@ -48,19 +48,19 @@ const MODEL_EXPLANATION: NlQueryExplanation = {
 };
 
 const FALLBACK_EXPLANATION: NlQueryExplanation = {
-  intentSummary: 'Fallback plan for ranking students.',
+  intentSummary: 'Plan for ranking students.',
   selectedTables: ['checkpoints_pulse'],
   joinPlan: [],
   filters: [],
   aggregations: [],
-  assumptions: ['Model generation timed out; deterministic fallback SQL was generated.'],
+  assumptions: ['Compact SQL generation recovered after the rich response failed validation.'],
   validationNotes: [
-    'Model timeout triggered deterministic fallback SQL.',
+    'Compact SQL generation produced the final SQL after rich output validation failed.',
     'debug: provider fallback detail: quota exceeded'
   ],
   confidence: 0.48,
   warningLevel: 'high',
-  confidenceMode: 'deterministic_fallback',
+  confidenceMode: 'model',
   reliabilityTier: 'low'
 };
 
@@ -248,7 +248,7 @@ describe('NlWorkPlanPanel', () => {
     expect(screen.getByText(/nl query pipeline finished/i)).toBeInTheDocument();
   });
 
-  it('does not show fallback-path or reliability copy in review mode', () => {
+  it('does not show legacy path or reliability copy in review mode', () => {
     render(
       <NlWorkPlanPanel
         phase="reviewing"
@@ -263,7 +263,7 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.queryByText(/deterministic fallback path/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/compact fallback path/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^reliability$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/debug details/i)).toBeInTheDocument();
   });

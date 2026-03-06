@@ -188,7 +188,7 @@ describe('nlToSqlV2 service', () => {
     expect((client.complete as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
   });
 
-  it('falls back deterministically when pass-2 remains malformed after retry', async () => {
+  it('fails when pass-2 remains malformed after rich and compact retries', async () => {
     const repo = createDatasetRepository([buildDataset()]);
     const client = createClientFromResponses([
       JSON.stringify({
@@ -209,15 +209,12 @@ describe('nlToSqlV2 service', () => {
       getClient: () => client
     });
 
-    const result = await service.generateSqlFromNaturalLanguageV2({
-      projectId: 'project-1',
-      nlQuery: 'List users'
-    });
-
-    expect(result.sql).toContain('FROM "users"');
-    expect(result.explanation.validationNotes.some((note) =>
-      note.toLowerCase().includes('deterministic fallback')
-    )).toBe(true);
+    await expect(
+      service.generateSqlFromNaturalLanguageV2({
+        projectId: 'project-1',
+        nlQuery: 'List users'
+      })
+    ).rejects.toThrow();
   });
 
   it('returns elevated warning level for ambiguous join plans', async () => {
@@ -464,7 +461,7 @@ describe('nlToSqlV2 service', () => {
     expect(result.explanation.assumptions.some((entry) => entry.includes('compact fallback'))).toBe(true);
   });
 
-  it('falls back to deterministic SQL when rich and compact passes both time out', async () => {
+  it('fails when rich and compact passes both time out', async () => {
     const repo = createDatasetRepository([
       buildDataset({
         columns: [
@@ -494,18 +491,12 @@ describe('nlToSqlV2 service', () => {
       getClient: () => client
     });
 
-    const result = await service.generateSqlFromNaturalLanguageV2({
-      projectId: 'project-1',
-      nlQuery: 'show me the highest performing students'
-    });
-
-    expect(result.sql).toContain('performance_score');
-    expect(result.sql).toContain('"n_correct"');
-    expect(result.sql).toContain('"n_possible"');
-    expect(result.explanation.validationNotes.some((note) => note.includes('deterministic fallback'))).toBe(true);
-    expect(result.explanation.confidence).toBe(0.68);
-    expect(result.explanation.confidenceMode).toBe('deterministic_fallback');
-    expect(result.explanation.reliabilityTier).toBe('low');
+    await expect(
+      service.generateSqlFromNaturalLanguageV2({
+        projectId: 'project-1',
+        nlQuery: 'show me the highest performing students'
+      })
+    ).rejects.toThrow(/timed out|aborted/i);
   });
 
   it('auto-quotes case-sensitive identifiers from schema context', async () => {
@@ -596,7 +587,7 @@ describe('nlToSqlV2 service', () => {
     expect(result.explanation.confidence).toBe(0.95);
   });
 
-  it('applies provider-failure penalty and emits debug fallback notes', async () => {
+  it('fails when compact fallback cannot recover from provider failure', async () => {
     const repo = createDatasetRepository([buildDataset()]);
     const client = createClientFromResponses([
       JSON.stringify({
@@ -609,6 +600,7 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.8
       }),
       new Error('service unavailable'),
+      new Error('service unavailable')
     ]);
 
     const service = createNl2SqlService({
@@ -616,15 +608,12 @@ describe('nlToSqlV2 service', () => {
       getClient: () => client
     });
 
-    const result = await service.generateSqlFromNaturalLanguageV2({
-      projectId: 'project-1',
-      nlQuery: 'list users'
-    });
-
-    expect(result.explanation.confidenceMode).toBe('deterministic_fallback');
-    expect(result.explanation.confidence).toBe(0.42);
-    expect(result.explanation.validationNotes).toContain('Model provider failure triggered deterministic fallback SQL.');
-    expect(result.explanation.validationNotes.some((note) => note.startsWith('debug: provider fallback detail:'))).toBe(true);
+    await expect(
+      service.generateSqlFromNaturalLanguageV2({
+        projectId: 'project-1',
+        nlQuery: 'list users'
+      })
+    ).rejects.toThrow(/service unavailable/i);
   });
 
   it('emits ordered progress events for happy-path generation', async () => {
@@ -689,7 +678,7 @@ describe('nlToSqlV2 service', () => {
     }
   });
 
-  it('emits failure and recovery progress events when deterministic fallback is used', async () => {
+  it('emits failure progress events when planning cannot recover', async () => {
     const repo = createDatasetRepository([buildDataset()]);
     const client = createClientFromResponses([
       new Error('service unavailable')
@@ -701,18 +690,19 @@ describe('nlToSqlV2 service', () => {
       getClient: () => client
     });
 
-    const result = await service.generateSqlFromNaturalLanguageV2({
-      projectId: 'project-1',
-      nlQuery: 'list users',
-      onProgress: (event) => {
-        events.push({ phaseId: event.phaseId, status: event.status });
-      }
-    });
+    await expect(
+      service.generateSqlFromNaturalLanguageV2({
+        projectId: 'project-1',
+        nlQuery: 'list users',
+        onProgress: (event) => {
+          events.push({ phaseId: event.phaseId, status: event.status });
+        }
+      })
+    ).rejects.toThrow(/service unavailable/i);
 
-    expect(result.explanation.confidenceMode).toBe('deterministic_fallback');
-    expect(events).toContainEqual({ phaseId: 'sql_generation', status: 'failed' });
-    expect(events).toContainEqual({ phaseId: 'sql_generation', status: 'completed' });
-    expect(events).toContainEqual({ phaseId: 'validation', status: 'completed' });
+    expect(events).toContainEqual({ phaseId: 'planning', status: 'failed' });
+    expect(events).not.toContainEqual({ phaseId: 'sql_generation', status: 'completed' });
+    expect(events).not.toContainEqual({ phaseId: 'validation', status: 'completed' });
   });
 
   it('streams structured model-work blocks when a listener is provided', async () => {

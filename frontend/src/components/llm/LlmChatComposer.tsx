@@ -203,8 +203,8 @@ export function LlmChatComposer({
               {leftSlot}
               <div className="hidden lg:flex items-center gap-2">
                 <Select value={currentModelOption.value} onValueChange={onModelChange}>
-                  <SelectTrigger className="h-7 w-auto min-w-0 max-w-[10rem] gap-2 px-2 text-xs">
-                    <span className="flex min-w-0 items-center gap-2">
+                  <SelectTrigger className="h-7 w-fit min-w-[8.25rem] max-w-none gap-2 px-2.5 text-xs">
+                    <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">
                       <span className="shrink-0">{renderModelIcon(currentModelOption)}</span>
                       <span className="truncate">{currentModelOption.label}</span>
                     </span>
@@ -238,7 +238,7 @@ export function LlmChatComposer({
 
                 {reasoningOptions.length > 0 ? (
                   <Select value={reasoningEffort} onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort)}>
-                    <SelectTrigger className="h-7 w-[150px] text-xs">
+                    <SelectTrigger className="h-7 w-fit min-w-[7.5rem] gap-2 px-2.5 text-xs">
                       <SelectValue placeholder="Reasoning" />
                     </SelectTrigger>
                     <SelectContent>

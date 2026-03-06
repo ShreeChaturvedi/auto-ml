@@ -113,7 +113,9 @@ function buildOpenAiBodyBase(
   return {
     model: resolvedModel.id,
     input,
-    temperature: request.temperature ?? 0.3,
+    temperature: shouldSendTemperature(resolvedModel.id, reasoningEffort)
+      ? (request.temperature ?? 0.3)
+      : undefined,
     max_output_tokens: request.maxOutputTokens ?? 2048,
     store: false,
     tools,
@@ -128,6 +130,21 @@ function buildOpenAiBodyBase(
       ? { format: { type: 'json_object' } }
       : undefined
   };
+}
+
+function shouldSendTemperature(modelId: string, reasoningEffort: string | undefined): boolean {
+  if (!modelId.startsWith('gpt-5')) {
+    return true;
+  }
+
+  // Current GPT-5 Responses API guidance rejects temperature for GPT-5 mini/nano,
+  // and for GPT-5.4/5.2 unless reasoning is disabled. We omit temperature entirely
+  // for GPT-5 requests to keep request construction valid across the supported GPT-5 set.
+  if (reasoningEffort && reasoningEffort !== 'none') {
+    return false;
+  }
+
+  return false;
 }
 
 function buildToolHistoryInput(request: LlmRequest): Responses.ResponseInputItem[] {

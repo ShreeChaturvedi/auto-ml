@@ -13,13 +13,13 @@ loadEnv();
 loadEnv({ path: resolve(BACKEND_ROOT, '.env') });
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
-const DEFAULT_NL2SQL_MODEL = DEFAULT_OPENAI_MODEL;
+const DEFAULT_NL2SQL_MODEL = 'gpt-5-mini';
 const RESOLVED_LLM_MODEL = process.env.OPENAI_DEFAULT_MODEL
   ?? process.env.LLM_MODEL
   ?? DEFAULT_OPENAI_MODEL;
 const RESOLVED_NL2SQL_MODEL = process.env.OPENAI_NL2SQL_MODEL
   ?? process.env.NL2SQL_MODEL
-  ?? RESOLVED_LLM_MODEL;
+  ?? DEFAULT_NL2SQL_MODEL;
 
 const DEFAULT_ORIGINS = [
   'http://localhost:5173',

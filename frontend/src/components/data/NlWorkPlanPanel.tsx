@@ -101,8 +101,7 @@ function simplifyIntentSummary(intentSummary: string): string {
   }
 
   return trimmed
-    .replace(/^heuristic plan for query:\s*/i, '')
-    .replace(/^fallback plan for query:\s*/i, '')
+    .replace(/^plan for query:\s*/i, '')
     .replace(/^repair plan for query:\s*/i, '');
 }
 

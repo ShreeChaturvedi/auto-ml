@@ -476,7 +476,7 @@ describeIf('query routes', () => {
           validationNotes: [],
           confidence: 0.5,
           warningLevel: 'medium',
-          confidenceMode: 'heuristic',
+          confidenceMode: 'model',
           reliabilityTier: 'low'
         }
       });
@@ -698,7 +698,7 @@ describeIf('query routes', () => {
             validationNotes: [],
             confidence: 0.78,
             warningLevel: 'low',
-            confidenceMode: 'heuristic',
+            confidenceMode: 'model',
             reliabilityTier: 'medium'
           }
         };

@@ -12,14 +12,13 @@ import {
 } from './llm/llmClient.js';
 import {
   getDefaultLlmModel,
-  getDefaultReasoningEffortForModel,
   normalizeReasoningSelection,
   type LlmReasoningEffort
 } from './llm/modelCatalog.js';
 import { validateReadOnlySql } from './sqlValidator.js';
 
 export type WarningLevel = 'none' | 'low' | 'medium' | 'high';
-export type NlConfidenceMode = 'model' | 'heuristic' | 'deterministic_fallback' | 'repair';
+export type NlConfidenceMode = 'model' | 'repair';
 export type NlReliabilityTier = 'high' | 'medium' | 'low';
 export type NlProgressPhaseId =
   | 'schema_context'
@@ -580,11 +579,7 @@ function deriveReliabilityTier(
   confidenceMode: NlConfidenceMode,
   warningLevel: WarningLevel
 ): NlReliabilityTier {
-  if (confidenceMode === 'deterministic_fallback') {
-    return 'low';
-  }
-
-  if (confidenceMode === 'heuristic' || confidenceMode === 'repair') {
+  if (confidenceMode === 'repair') {
     if (warningLevel === 'high' || warningLevel === 'medium') {
       return 'low';
     }
@@ -652,6 +647,13 @@ function buildCaseSensitiveIdentifierLookup(tables: SchemaTableContext[]): Map<s
   });
 
   return lookup;
+}
+
+function getNl2SqlReasoningEffort(modelId: string): LlmReasoningEffort | undefined {
+  return normalizeReasoningSelection({
+    modelId,
+    reasoningEffort: 'low'
+  });
 }
 
 function normalizeCaseSensitiveIdentifiers(
@@ -868,23 +870,6 @@ function isTimeoutLikeError(error: unknown): boolean {
       || normalized.includes('aborterror');
   }
   return false;
-}
-
-function isProviderFailureLikeError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const normalized = error.message.toLowerCase();
-  return normalized.includes('"code": 503')
-    || normalized.includes('"status": "unavailable"')
-    || normalized.includes('"status":"unavailable"')
-    || normalized.includes('service unavailable')
-    || normalized.includes('fetch failed')
-    || normalized.includes('socketerror')
-    || normalized.includes('und_err_socket')
-    || normalized.includes('econnreset')
-    || normalized.includes('other side closed');
 }
 
 function summarizeError(error: unknown): string {
@@ -1337,23 +1322,6 @@ function buildCaseSensitiveIdentifierHint(tables: SchemaTableContext[]): string 
   return `Case-sensitive identifiers requiring double quotes: ${identifiers.join(', ')}.`;
 }
 
-function buildHeuristicPlanning(params: {
-  nlQuery: string;
-  defaultTableName: string | null;
-  tables: SchemaTableContext[];
-}): z.infer<typeof PASS1_SCHEMA> {
-  const table = chooseFallbackTable(params.tables, params.defaultTableName, params.nlQuery);
-  return {
-    intentSummary: params.nlQuery.trim(),
-    selectedTables: [table.tableName],
-    joinPlan: [],
-    filters: [],
-    aggregations: [],
-    assumptions: [],
-    confidence: 0.7
-  };
-}
-
 function buildPass1Prompt(params: {
   nlQuery: string;
   defaultTableName: string | null;
@@ -1445,200 +1413,6 @@ function buildPass2FallbackPrompt(params: {
   ].join('\n');
 }
 
-function findColumn(table: SchemaTableContext, candidates: string[]): string | null {
-  const lookup = new Map(
-    table.columns.map((column) => [column.name.toLowerCase(), column.name])
-  );
-  for (const candidate of candidates) {
-    const exact = lookup.get(candidate.toLowerCase());
-    if (exact) {
-      return exact;
-    }
-  }
-  return null;
-}
-
-function chooseFallbackTable(
-  tables: SchemaTableContext[],
-  defaultTableName: string | null,
-  nlQuery: string
-): SchemaTableContext {
-  if (defaultTableName) {
-    const defaultMatch = tables.find((table) => isTableNameMatch(table.tableName, defaultTableName));
-    if (defaultMatch) {
-      return defaultMatch;
-    }
-  }
-
-  const queryTokens = nlQuery
-    .toLowerCase()
-    .split(/[^a-z0-9_]+/)
-    .filter((token) => token.length > 2);
-  const normalizedQuery = ` ${nlQuery.toLowerCase()} `;
-
-  let best = tables[0];
-  let bestScore = -1;
-  for (const table of tables) {
-    const tableName = table.tableName.toLowerCase();
-    const sourceName = table.sourceFilename.replace(/\.[^/.]+$/, '').toLowerCase();
-    const tableColumns = table.columns.map((column) => normalizeColumnName(column.name));
-    const spaceColumnNames = tableColumns.map((column) => column.replace(/_/g, ' '));
-
-    let score = queryTokens.reduce((acc, token) => {
-      if (tableName.includes(token)) return acc + 3;
-      if (sourceName.includes(token)) return acc + 2;
-      return acc;
-    }, 0);
-
-    score += spaceColumnNames.reduce((acc, column) => {
-      const token = ` ${column} `;
-      return normalizedQuery.includes(token) ? acc + 2 : acc;
-    }, 0);
-
-    if (/(end of chapter|eoc|chapter score|chapter performance)/.test(normalizedQuery)) {
-      if (tableColumns.includes('eoc')) {
-        score += 8;
-      }
-      if (tableColumns.includes('n_correct') && tableColumns.includes('n_possible')) {
-        score += 4;
-      }
-    }
-
-    if (/(student|students|learner)/.test(normalizedQuery) && tableColumns.includes('student_id')) {
-      score += 3;
-    }
-
-    if (/(perform|highest|top|best|rank|score)/.test(normalizedQuery)) {
-      if (tableColumns.includes('n_correct') || tableColumns.includes('score') || tableColumns.includes('eoc')) {
-        score += 3;
-      }
-    }
-
-    if (score > bestScore) {
-      best = table;
-      bestScore = score;
-    }
-  }
-
-  return best;
-}
-
-type DeterministicFallbackShape = 'ratio_ranking' | 'avg_by_entity' | 'scalar_avg' | 'generic';
-
-function deterministicFallbackBaseConfidence(shape: DeterministicFallbackShape): number {
-  switch (shape) {
-    case 'ratio_ranking':
-      return 0.68;
-    case 'avg_by_entity':
-      return 0.62;
-    case 'scalar_avg':
-      return 0.56;
-    case 'generic':
-    default:
-      return 0.48;
-  }
-}
-
-function deriveDeterministicFallbackConfidence(
-  shape: DeterministicFallbackShape,
-  hasProviderFailureReason: boolean
-): number {
-  const base = deterministicFallbackBaseConfidence(shape);
-  const adjusted = hasProviderFailureReason ? base - 0.06 : base;
-  return clampConfidence(Math.max(0.35, adjusted));
-}
-
-function buildDeterministicFallbackExecution(params: {
-  nlQuery: string;
-  planning: z.infer<typeof PASS1_SCHEMA>;
-  tables: SchemaTableContext[];
-  defaultTableName: string | null;
-  fallbackReason?: string;
-}): z.infer<typeof PASS2_SCHEMA> {
-  const table = chooseFallbackTable(params.tables, params.defaultTableName, params.nlQuery);
-  const quotedTable = quoteIdentifier(table.tableName);
-  const queryLower = params.nlQuery.toLowerCase();
-
-  const studentId = findColumn(table, ['student_id', 'user_id', 'id']);
-  const nCorrect = findColumn(table, ['n_correct', 'correct', 'num_correct']);
-  const nPossible = findColumn(table, ['n_possible', 'possible', 'num_possible', 'total_possible']);
-  const score = findColumn(table, ['EOC', 'eoc', 'score', 'response', 'grade', 'points']);
-
-  let sql = `SELECT * FROM ${quotedTable} LIMIT 100`;
-  let rationale = `Used deterministic fallback query on ${table.tableName} because model generation timed out.`;
-  let shape: DeterministicFallbackShape = 'generic';
-  const fallbackAssumption = params.fallbackReason
-    ? 'Model provider failed; deterministic fallback SQL was generated.'
-    : 'Model generation timed out; deterministic fallback SQL was generated.';
-  const assumptions = [
-    ...params.planning.assumptions,
-    fallbackAssumption
-  ];
-
-  const rankingIntent = /(highest|top|best|rank|perform)/.test(queryLower);
-  const averagingIntent = /(average|avg|mean)/.test(queryLower);
-
-  if (studentId && nCorrect && nPossible && rankingIntent) {
-    const s = quoteIdentifier(studentId);
-    const c = quoteIdentifier(nCorrect);
-    const p = quoteIdentifier(nPossible);
-    sql = [
-      `SELECT ${s} AS student_id,`,
-      `       SUM(${c}) AS total_correct,`,
-      `       SUM(${p}) AS total_possible,`,
-      `       SUM(${c})::double precision / NULLIF(SUM(${p}), 0) AS performance_score`,
-      `FROM ${quotedTable}`,
-      `GROUP BY ${s}`,
-      'ORDER BY performance_score DESC',
-      'LIMIT 100'
-    ].join('\n');
-    rationale = 'Ranked entities by correct/possible ratio using deterministic fallback.';
-    shape = 'ratio_ranking';
-  } else if (studentId && score && (rankingIntent || averagingIntent)) {
-    const s = quoteIdentifier(studentId);
-    const sc = quoteIdentifier(score);
-    sql = [
-      `SELECT ${s} AS student_id,`,
-      `       AVG(${sc}::double precision) AS average_score`,
-      `FROM ${quotedTable}`,
-      `GROUP BY ${s}`,
-      'ORDER BY average_score DESC',
-      'LIMIT 100'
-    ].join('\n');
-    rationale = `Ranked entities by average ${score} using deterministic fallback.`;
-    shape = 'avg_by_entity';
-  } else if (score && averagingIntent) {
-    const sc = quoteIdentifier(score);
-    sql = `SELECT AVG(${sc}::double precision) AS average_score FROM ${quotedTable} LIMIT 1`;
-    rationale = `Computed average ${score} using deterministic fallback.`;
-    shape = 'scalar_avg';
-  }
-
-  const conciseFallbackValidationNote = params.fallbackReason
-    ? 'Model provider failure triggered deterministic fallback SQL.'
-    : 'Model timeout triggered deterministic fallback SQL.';
-  const debugFallbackValidationNote = params.fallbackReason
-    ? `debug: provider fallback detail: ${params.fallbackReason}`
-    : null;
-
-  return {
-    sql,
-    rationale,
-    intentSummary: params.planning.intentSummary,
-    selectedTables: params.planning.selectedTables.length > 0
-      ? params.planning.selectedTables
-      : [table.tableName],
-    joinPlan: params.planning.joinPlan,
-    filters: params.planning.filters,
-    aggregations: params.planning.aggregations,
-    assumptions,
-    validationNotes: [
-      conciseFallbackValidationNote,
-      ...(debugFallbackValidationNote ? [debugFallbackValidationNote] : [])
-    ],
-    confidence: deriveDeterministicFallbackConfidence(shape, Boolean(params.fallbackReason))
-  };
-}
 
 function buildRepairPrompt(params: {
   nlQuery: string;
@@ -1738,7 +1512,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
   }: RepairSqlV2Options): Promise<GeneratedSqlV2> {
     const model = env.nl2sqlModel || env.llmModel || getDefaultLlmModel();
     const provider = getNlProviderInfo(model);
-    const defaultReasoningEffort = getDefaultReasoningEffortForModel(model);
+    const defaultReasoningEffort = getNl2SqlReasoningEffort(model);
     emitNlProgress(onProgress, {
       phaseId: 'repair',
       status: 'started',
@@ -1894,7 +1668,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
   }: GenerateSqlV2Options): Promise<GeneratedSqlV2> {
     const model = env.nl2sqlModel || env.llmModel || getDefaultLlmModel();
     const provider = getNlProviderInfo(model);
-    const defaultReasoningEffort = getDefaultReasoningEffortForModel(model);
+    const defaultReasoningEffort = getNl2SqlReasoningEffort(model);
     const query = nlQuery.trim();
     if (!query) {
       throw new Error('Natural language query is required.');
@@ -1953,7 +1727,6 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
     const client = getClient(model);
 
     let planning: z.infer<typeof PASS1_SCHEMA>;
-    let planningConfidenceMode: Extract<NlConfidenceMode, 'model' | 'heuristic'> = 'model';
     emitNlProgress(onProgress, {
       phaseId: 'planning',
       status: 'started',
@@ -1994,36 +1767,11 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         status: 'failed',
         summary: `Model planning failed: ${summarizeError(error)}`
       });
-      planning = buildHeuristicPlanning({ nlQuery: query, defaultTableName, tables });
-      planning.assumptions = [];
-      planning.confidence = 0.58;
-      planningConfidenceMode = 'heuristic';
-      const planningFallbackBlock = createModelWorkBlock({
-        onModelWork,
-        phaseId: 'planning',
-        kind: 'plan',
-        title: 'Planning fallback',
-        provider
-      });
-      planningFallbackBlock.delta([
-        '### Planning recovery',
-        'Model planning failed, so a schema-guided recovery plan was generated.',
-        '',
-        `- Reason: ${summarizeError(error)}`,
-        `- Confidence: ${Math.round(planning.confidence * 100)}%`,
-        '',
-        formatPlanningMarkdown(planning)
-      ].join('\n'));
-      planningFallbackBlock.complete();
-      emitNlProgress(onProgress, {
-        phaseId: 'planning',
-        status: 'completed',
-        summary: 'Recovered with planning fallback.'
-      });
+      throw error;
     }
 
     let execution: z.infer<typeof PASS2_SCHEMA>;
-    let confidenceMode: NlConfidenceMode = planningConfidenceMode;
+    const confidenceMode: NlConfidenceMode = 'model';
     emitNlProgress(onProgress, {
       phaseId: 'sql_generation',
       status: 'started',
@@ -2070,119 +1818,71 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         status: 'failed',
         summary: `Primary SQL generation failed: ${summarizeError(error)}`
       });
-      if (isTimeoutLikeError(error) || isProviderFailureLikeError(error)) {
-        execution = buildDeterministicFallbackExecution({
-          nlQuery: query,
-          planning,
-          tables,
-          defaultTableName,
-          fallbackReason: isTimeoutLikeError(error)
-            ? undefined
-            : summarizeError(error)
-        });
-        confidenceMode = 'deterministic_fallback';
-        const fallbackBlock = createModelWorkBlock({
-          onModelWork,
-          phaseId: 'sql_generation',
-          kind: 'sql',
-          title: 'Deterministic SQL fallback',
-          provider
-        });
-        fallbackBlock.delta(formatSqlGenerationMarkdown(execution));
-        fallbackBlock.complete();
+      try {
         emitNlProgress(onProgress, {
           phaseId: 'sql_generation',
-          status: 'completed',
-          summary: 'Recovered with deterministic fallback SQL.'
+          status: 'progress',
+          summary: 'Retrying with compact SQL generation fallback.'
         });
-      } else {
-        try {
-          emitNlProgress(onProgress, {
-            phaseId: 'sql_generation',
-            status: 'progress',
-            summary: 'Retrying with compact SQL generation fallback.'
-          });
-          const compact = await requestStructuredJson({
-            client,
-            label: 'nl2sql_result_compact',
-            schema: PASS2_FALLBACK_SCHEMA,
-            normalize: normalizePass2FallbackOutput,
-            maxOutputTokens: 700,
-            reasoningEffort: normalizeReasoningSelection({
-              modelId: model,
-              enableThinking: false,
-              thinkingLevel: 'low'
-            }),
-            systemPrompt: 'You are a senior SQL engineer. Return compact valid JSON only.',
-            userPrompt: buildPass2FallbackPrompt({
-              nlQuery: query,
-              defaultTableName,
-              tables,
-              planning,
-              recoveryReason: summarizeError(error)
-            }),
-            modelWork: {
-              onModelWork,
-              phaseId: 'sql_generation',
-              kind: 'sql',
-              title: 'Compact SQL fallback',
-              provider,
-              formatResult: formatSqlGenerationMarkdown
-            }
-          });
-
-          execution = {
-            sql: compact.sql,
-            rationale: compact.rationale,
-            intentSummary: planning.intentSummary,
-            selectedTables: planning.selectedTables,
-            joinPlan: planning.joinPlan,
-            filters: planning.filters,
-            aggregations: planning.aggregations,
-            assumptions: Array.from(new Set([
-              ...planning.assumptions,
-              ...compact.assumptions,
-              `Recovered with compact fallback after rich SQL generation failed: ${summarizeError(error)}`
-            ])),
-            validationNotes: [
-              `compact fallback generated the final SQL after rich output validation failed: ${summarizeError(error)}`
-            ],
-            confidence: compact.confidence
-          };
-          emitNlProgress(onProgress, {
-            phaseId: 'sql_generation',
-            status: 'completed',
-            summary: 'Recovered with compact SQL generation.'
-          });
-        } catch (compactError) {
-          console.warn('[nlToSqlV2] Compact SQL fallback failed; using deterministic fallback instead.', {
-            error: summarizeError(compactError)
-          });
-          execution = buildDeterministicFallbackExecution({
+        const compact = await requestStructuredJson({
+          client,
+          label: 'nl2sql_result_compact',
+          schema: PASS2_FALLBACK_SCHEMA,
+          normalize: normalizePass2FallbackOutput,
+          maxOutputTokens: 700,
+          reasoningEffort: normalizeReasoningSelection({
+            modelId: model,
+            enableThinking: false,
+            thinkingLevel: 'low'
+          }),
+          systemPrompt: 'You are a senior SQL engineer. Return compact valid JSON only.',
+          userPrompt: buildPass2FallbackPrompt({
             nlQuery: query,
-            planning,
-            tables,
             defaultTableName,
-            fallbackReason: isTimeoutLikeError(compactError)
-              ? undefined
-              : summarizeError(compactError)
-          });
-          confidenceMode = 'deterministic_fallback';
-          const fallbackBlock = createModelWorkBlock({
+            tables,
+            planning,
+            recoveryReason: summarizeError(error)
+          }),
+          modelWork: {
             onModelWork,
             phaseId: 'sql_generation',
             kind: 'sql',
-            title: 'Deterministic SQL fallback',
-            provider
-          });
-          fallbackBlock.delta(formatSqlGenerationMarkdown(execution));
-          fallbackBlock.complete();
-          emitNlProgress(onProgress, {
-            phaseId: 'sql_generation',
-            status: 'completed',
-            summary: 'Recovered with deterministic fallback SQL.'
-          });
-        }
+            title: 'Compact SQL fallback',
+            provider,
+            formatResult: formatSqlGenerationMarkdown
+          }
+        });
+
+        execution = {
+          sql: compact.sql,
+          rationale: compact.rationale,
+          intentSummary: planning.intentSummary,
+          selectedTables: planning.selectedTables,
+          joinPlan: planning.joinPlan,
+          filters: planning.filters,
+          aggregations: planning.aggregations,
+          assumptions: Array.from(new Set([
+            ...planning.assumptions,
+            ...compact.assumptions,
+            `Recovered with compact fallback after rich SQL generation failed: ${summarizeError(error)}`
+          ])),
+          validationNotes: [
+            `compact fallback generated the final SQL after rich output validation failed: ${summarizeError(error)}`
+          ],
+          confidence: compact.confidence
+        };
+        emitNlProgress(onProgress, {
+          phaseId: 'sql_generation',
+          status: 'completed',
+          summary: 'Recovered with compact SQL generation.'
+        });
+      } catch (compactError) {
+        emitNlProgress(onProgress, {
+          phaseId: 'sql_generation',
+          status: 'failed',
+          summary: `Compact SQL generation failed: ${summarizeError(compactError)}`
+        });
+        throw compactError;
       }
     }
 

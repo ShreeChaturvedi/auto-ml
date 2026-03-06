@@ -6,7 +6,7 @@ The Explorer tab NL flow works, but four issues are causing a weak user experien
 
 1. English-mode suggestions are hardcoded and generic.
 2. Model Work shows coarse phase labels instead of real model output.
-3. Heuristic planning bypass makes reliability labels look misleading (even when outputs are good).
+3. Legacy fallback-path framing makes reliability labels look misleading (even when outputs are good).
 4. Streaming UX is fragmented (phase progress and SQL reveal are separate from model-work narration).
 
 This plan upgrades the flow to a single, model-first pipeline with rich streaming visibility and schema-aware suggestion quality.
@@ -38,8 +38,8 @@ This plan upgrades the flow to a single, model-first pipeline with rich streamin
 - English placeholders are hardcoded in `NL_PLACEHOLDER_QUERIES`.
 
 ### Reliability label confusion
-- The current heuristic bypass can set `confidenceMode='heuristic'` on successful simple queries.
-- UI then shows "Heuristic reliability" / low-medium tiers even when intent+SQL look strong.
+- The current NL->SQL flow should report `confidenceMode='model'` for normal generation and `repair` only when execution repair is required.
+- UI should not surface stale fallback-path framing when the result came from the primary model path.
 
 ---
 
@@ -58,7 +58,7 @@ This plan upgrades the flow to a single, model-first pipeline with rich streamin
 - Streamdown reveal effect is used for deltas.
 
 ### Reliability clarity
-- Successful model-path generations should display model reliability (not heuristic reliability).
+- Successful model-path generations should display model reliability.
 - Low reliability must include explicit reasons (confidence threshold, ambiguous joins, risky assumptions).
 
 ### Suggestions
@@ -77,13 +77,13 @@ This plan upgrades the flow to a single, model-first pipeline with rich streamin
 
 ### Changes
 1. Update planning selection so normal flow always attempts model planning.
-2. Keep heuristic planning object only as explicit fallback when model planning fails.
-3. Preserve deterministic fallback and repair behavior.
+2. Fail fast when model planning cannot produce a valid plan.
+3. Keep the compact LLM SQL retry, but remove deterministic SQL synthesis.
 4. Ensure confidence mode on successful runs is `model`.
 
 ### Acceptance
 - Single-table prompt with healthy provider ends in `confidenceMode='model'`.
-- Heuristic mode appears only when planning actually falls back.
+- Planning failure surfaces as an error instead of a heuristic fallback plan.
 
 ---
 
@@ -213,11 +213,11 @@ Each event includes block metadata (`blockId`, `kind`, `title`, `timestamp`) and
    - low confidence score
    - ambiguous joins (confidence < threshold)
    - risky assumptions detected
-3. Keep conservative warnings for fallback/repair paths.
+3. Keep conservative warnings for compact-retry and repair paths.
 
 ### Acceptance
 - Users can immediately understand why reliability is low/high.
-- Misleading "heuristic reliability" on healthy model runs is eliminated.
+- Misleading legacy fallback reliability copy on healthy model runs is eliminated.
 
 ---
 
@@ -238,7 +238,7 @@ While implementing, explicitly harden these cases:
 ### Backend tests
 - `backend/src/services/nlToSqlV2.test.ts`
   - model-first planning behavior
-  - fallback behavior unchanged
+  - compact retry behavior
   - reliability mapping correctness
 - `backend/src/routes/query.test.ts`
   - model-work NDJSON event serialization + ordering
@@ -277,12 +277,11 @@ While implementing, explicitly harden these cases:
 1. Ship backend event contract + model-first planning first.
 2. Ship frontend model-work timeline behind a temporary UI flag if needed.
 3. Enable dynamic suggestions after cache + quality checks are stable.
-4. Monitor fallback rate and low-reliability rate after release.
+4. Monitor retry rate and low-reliability rate after release.
 
 Suggested telemetry counters:
 - model-path success rate
-- planning fallback rate
-- deterministic fallback rate
+- compact retry rate
 - repair rate
 - low-reliability frequency
 

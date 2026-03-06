@@ -2,11 +2,10 @@ export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | '
 
 export type ReasoningIcon = 'slash' | 'zap' | 'gauge' | 'brain' | 'flame' | 'rocket';
 
-export type AssistantModelKind = 'base' | 'chat' | 'codex' | 'mini' | 'nano' | 'pro' | 'search';
+export type AssistantModelKind = 'base' | 'codex' | 'mini' | 'nano';
 
 export const DEFAULT_ASSISTANT_MODEL = 'gpt-5.4';
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'high';
-export const OTHER_ASSISTANT_MODEL_VALUE = '__other__';
 
 export interface AssistantModelOption {
   value: string;
@@ -24,12 +23,12 @@ export interface ReasoningEffortOption {
   icon: ReasoningIcon;
 }
 
-export const OTHER_MODEL_OPTION: AssistantModelOption = {
-  value: OTHER_ASSISTANT_MODEL_VALUE,
-  label: 'Other…',
-  kind: 'search',
-  description: 'Browse the full GPT-5 catalog.',
-  supportedReasoningEfforts: [],
+const DEFAULT_MODEL_OPTION: AssistantModelOption = {
+  value: DEFAULT_ASSISTANT_MODEL,
+  label: 'GPT 5.4',
+  kind: 'base',
+  description: 'Strongest model for complex planning, tool orchestration, and high-stakes work.',
+  supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
   defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
   featured: true
 };
@@ -40,7 +39,7 @@ const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: Reas
   low: { label: 'Low', icon: 'gauge' },
   medium: { label: 'Medium', icon: 'brain' },
   high: { label: 'High', icon: 'flame' },
-  xhigh: { label: 'X-High', icon: 'rocket' }
+  xhigh: { label: 'Extra High', icon: 'rocket' }
 };
 
 export function getReasoningEffortOptions(
@@ -68,27 +67,14 @@ export function getModelOption(
   modelValue: string,
   modelOptions: readonly AssistantModelOption[]
 ): AssistantModelOption {
-  return modelOptions.find((option) => option.value === modelValue) ?? modelOptions[0] ?? OTHER_MODEL_OPTION;
+  return modelOptions.find((option) => option.value === modelValue)
+    ?? modelOptions.find((option) => option.value === DEFAULT_ASSISTANT_MODEL)
+    ?? modelOptions[0]
+    ?? DEFAULT_MODEL_OPTION;
 }
 
 export function buildInlineModelOptions(
-  featuredModelOptions: readonly AssistantModelOption[],
-  allModelOptions: readonly AssistantModelOption[],
-  selectedModel: string
+  featuredModelOptions: readonly AssistantModelOption[]
 ): AssistantModelOption[] {
-  const inlineOptions = [...featuredModelOptions];
-  const isSelectedFeatured = featuredModelOptions.some((option) => option.value === selectedModel);
-
-  if (!isSelectedFeatured) {
-    const selectedOption = allModelOptions.find((option) => option.value === selectedModel);
-    if (selectedOption) {
-      inlineOptions.unshift(selectedOption);
-    }
-  }
-
-  if (!inlineOptions.some((option) => option.value === OTHER_ASSISTANT_MODEL_VALUE)) {
-    inlineOptions.push(OTHER_MODEL_OPTION);
-  }
-
-  return inlineOptions;
+  return [...featuredModelOptions];
 }

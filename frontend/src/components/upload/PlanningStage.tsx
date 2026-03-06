@@ -412,8 +412,8 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     [projectFiles]
   );
   const inlineModelOptions = useMemo(
-    () => buildInlineModelOptions(featuredModelOptions, allModelOptions, selectedModel),
-    [allModelOptions, featuredModelOptions, selectedModel]
+    () => buildInlineModelOptions(featuredModelOptions),
+    [featuredModelOptions]
   );
   const reasoningEffortOptions = useMemo(
     () => getReasoningEffortOptions(selectedModel, allModelOptions),
@@ -1371,7 +1371,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             model={selectedModel}
             onModelChange={handleModelChange}
             modelOptions={inlineModelOptions}
-            searchModelOptions={allModelOptions}
             reasoningEffort={reasoningEffort}
             onReasoningEffortChange={setReasoningEffort}
             reasoningOptions={reasoningEffortOptions}

@@ -28,7 +28,6 @@ import {
   DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
-  OTHER_ASSISTANT_MODEL_VALUE,
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
 import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
@@ -116,9 +115,9 @@ export function AgenticShell({
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
-  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions, allModelOptions, assistantModel);
+  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions);
   const modelSwitchOptions = inlineModelOptions
-    .filter((option) => option.value !== assistantModel && option.value !== OTHER_ASSISTANT_MODEL_VALUE);
+    .filter((option) => option.value !== assistantModel);
   const showModelSwitchPrompt = Boolean(modelSwitchError && dismissedModelPromptFor !== modelSwitchError);
 
   const handleModelChange = (model: string) => {
@@ -321,7 +320,6 @@ export function AgenticShell({
                   model={assistantModel}
                   onModelChange={handleModelChange}
                   modelOptions={inlineModelOptions}
-                  searchModelOptions={allModelOptions}
                   reasoningEffort={reasoningEffort}
                   onReasoningEffortChange={setReasoningEffort}
                   reasoningOptions={getReasoningEffortOptions(assistantModel, allModelOptions)}

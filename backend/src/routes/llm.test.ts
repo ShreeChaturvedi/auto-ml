@@ -147,8 +147,12 @@ describeIf('llm routes', () => {
         'gpt-5-mini',
         'gpt-5-nano'
       ]);
-      expect(response.body.models.map((entry: { id: string }) => entry.id)).toContain('gpt-5.3-chat-latest');
-      expect(response.body.models.map((entry: { id: string }) => entry.id)).toContain('gpt-5.4-pro');
+      expect(response.body.models.map((entry: { id: string }) => entry.id)).toEqual([
+        'gpt-5.4',
+        'gpt-5.3-codex',
+        'gpt-5-mini',
+        'gpt-5-nano'
+      ]);
       expect(response.body.models.every((entry: { id: string }) => entry.id.startsWith('gpt-5'))).toBe(true);
     });
   });

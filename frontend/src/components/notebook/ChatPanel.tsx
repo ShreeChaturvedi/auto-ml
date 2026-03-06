@@ -78,7 +78,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const documentFiles = files.filter(
     (f) => f.projectId === projectId && f.metadata?.documentId
   );
-  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions, allModelOptions, assistantModel);
+  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions);
 
   const handleModelChange = useCallback((model: string) => {
     setAssistantModel(model);
@@ -534,7 +534,6 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
           model={assistantModel}
           onModelChange={handleModelChange}
           modelOptions={inlineModelOptions}
-          searchModelOptions={allModelOptions}
           reasoningEffort={reasoningEffort}
           onReasoningEffortChange={setReasoningEffort}
           reasoningOptions={getReasoningEffortOptions(assistantModel, allModelOptions)}

@@ -341,6 +341,11 @@ describeIf('query routes', () => {
         sql: 'SELECT * FROM users',
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Fetch users',
           selectedTables: ['users'],
@@ -379,6 +384,11 @@ describeIf('query routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.nl.sql).toBe('SELECT * FROM users');
       expect(response.body.nl.rationale).toBe('Fetching all users');
+      expect(response.body.nl.provider).toEqual({
+        id: 'gemini',
+        label: 'Gemini',
+        model: 'gemini-3-flash-preview'
+      });
       expect(response.body.nl.explanation.intentSummary).toBe('Fetch users');
       expect(response.body.nl.explanation.confidenceMode).toBe('model');
       expect(response.body.nl.explanation.reliabilityTier).toBe('high');
@@ -392,6 +402,11 @@ describeIf('query routes', () => {
         sql: 'SELECT * FROM users',
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Fetch users',
           selectedTables: ['users'],
@@ -438,6 +453,11 @@ describeIf('query routes', () => {
         sql: 'SELECT * FROM missing_table',
         rationale: 'Attempt to fetch records',
         queryId: 'test-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Fetch records',
           selectedTables: ['missing_table'],
@@ -476,6 +496,11 @@ describeIf('query routes', () => {
         sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
         rationale: 'Compute average EOC',
         queryId: 'gen-query-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Compute average EOC score',
           selectedTables: ['checkpoints_eoc'],
@@ -506,6 +531,11 @@ describeIf('query routes', () => {
         sql: 'SELECT AVG(response) FROM checkpoints_eoc',
         rationale: 'Use response column instead of eoc.',
         queryId: 'repair-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Compute average response score',
           selectedTables: ['checkpoints_eoc'],
@@ -572,6 +602,11 @@ describeIf('query routes', () => {
           sql: 'SELECT * FROM users',
           rationale: 'Fetching all users',
           queryId: 'stream-query-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Fetch users',
             selectedTables: ['users'],
@@ -616,6 +651,9 @@ describeIf('query routes', () => {
 
       const resultEvent = events.find((event) => event.type === 'result');
       expect(resultEvent).toBeDefined();
+      if (!resultEvent || resultEvent.type !== 'result') {
+        throw new Error('Expected result event in NDJSON stream.');
+      }
       expect(resultEvent.nl.sql).toBe('SELECT * FROM users');
       expect(resultEvent.nl.explanation.intentSummary).toBe('Fetch users');
       expect(resultEvent.nl.queryExecutionError).toBeNull();
@@ -637,6 +675,11 @@ describeIf('query routes', () => {
           sql: 'SELECT * FROM users LIMIT 25',
           rationale: 'Fallback SQL generation.',
           queryId: 'stream-progress-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Fetch users quickly',
             selectedTables: ['users'],
@@ -746,6 +789,11 @@ describeIf('query routes', () => {
           sql: 'SELECT id, name FROM users LIMIT 25',
           rationale: 'List users.',
           queryId: 'stream-model-work-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Fetch users',
             selectedTables: ['users'],
@@ -811,6 +859,11 @@ describeIf('query routes', () => {
         sql: 'SELECT AVG(eoc) FROM checkpoints_eoc',
         rationale: 'Compute average EOC',
         queryId: 'stream-repair-gen-id',
+        provider: {
+          id: 'gemini',
+          label: 'Gemini',
+          model: 'gemini-3-flash-preview'
+        },
         explanation: {
           intentSummary: 'Compute average EOC score',
           selectedTables: ['checkpoints_eoc'],
@@ -855,6 +908,11 @@ describeIf('query routes', () => {
           sql: 'SELECT AVG(response) FROM checkpoints_eoc',
           rationale: 'Use response column instead of eoc.',
           queryId: 'stream-repair-id',
+          provider: {
+            id: 'gemini',
+            label: 'Gemini',
+            model: 'gemini-3-flash-preview'
+          },
           explanation: {
             intentSummary: 'Compute average response score',
             selectedTables: ['checkpoints_eoc'],

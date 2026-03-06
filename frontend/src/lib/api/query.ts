@@ -24,13 +24,10 @@ export interface NlSuggestion {
   rationale: string;
 }
 
-export interface NlSuggestion {
+export interface NlProviderInfo {
   id: string;
-  prompt: string;
   label: string;
-  category: string;
-  tables: string[];
-  rationale: string;
+  model: string;
 }
 
 export interface QueryResultPayload {
@@ -74,6 +71,7 @@ export interface NlQueryResponsePayload {
   rationale: string;
   explanation: NlQueryExplanation;
   queryId: string;
+  provider: NlProviderInfo;
   cached: boolean;
   query: QueryResultPayload | null;
   queryExecutionError?: string | null;

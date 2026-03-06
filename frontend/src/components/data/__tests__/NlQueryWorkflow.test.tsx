@@ -4,6 +4,7 @@ import { NlQueryWorkflow } from '../NlQueryWorkflow';
 import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { useProjectStore } from '@/stores/projectStore';
+import { fetchNlSuggestions } from '@/lib/api/query';
 
 vi.mock('@/lib/api/query', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/query')>('@/lib/api/query');
@@ -45,6 +46,11 @@ const MOCK_RESULT: NlGenerationResult = {
     reliabilityTier: 'high',
   },
   queryId: 'test-query-123',
+  provider: {
+    id: 'gemini',
+    label: 'Gemini',
+    model: 'gemini-3-flash-preview'
+  },
   cached: false,
   queryResult: {
     queryId: 'test-query-123',
@@ -72,6 +78,7 @@ function createDeferred<T>() {
 
 function buildProps(
   overrides: Partial<{
+    projectId: string | null;
     englishQuery: string;
     onQueryChange: (v: string) => void;
     onGenerate: (
@@ -84,6 +91,7 @@ function buildProps(
   }> = {}
 ) {
   return {
+    projectId: null,
     englishQuery: 'Show me the first 10 users',
     onQueryChange: vi.fn(),
     onGenerate: vi.fn().mockResolvedValue(MOCK_RESULT),
@@ -134,6 +142,16 @@ describe('NlQueryWorkflow', () => {
   it('renders the english textarea in idle state', () => {
     render(<NlQueryWorkflow {...buildProps()} />);
     expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  it('loads dynamic placeholder suggestions when a project id is present', async () => {
+    render(<NlQueryWorkflow {...buildProps({ projectId: 'project-123', englishQuery: '' })} />);
+
+    await waitFor(() => {
+      expect(fetchNlSuggestions).toHaveBeenCalledWith('project-123', 8);
+    });
+
+    expect((await screen.findAllByText(/compare weekly revenue and average order value over the last 8 weeks/i)).length).toBeGreaterThan(0);
   });
 
   it('calls onQueryChange when user types in the textarea', () => {
@@ -478,7 +496,7 @@ describe('NlQueryWorkflow', () => {
     });
   });
 
-  it('auto-collapses the model work panel on constrained height', async () => {
+  it('keeps the model work panel expanded while generation is in progress on constrained height', async () => {
     const OriginalResizeObserver = globalThis.ResizeObserver;
     class ResizeObserverMock {
       private callback: ResizeObserverCallback;
@@ -510,13 +528,13 @@ describe('NlQueryWorkflow', () => {
         handleRef.current?.triggerGenerate();
       });
 
-      expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
     } finally {
       globalThis.ResizeObserver = OriginalResizeObserver;
     }
   });
 
-  it('resets manual expand override after reject + regenerate on constrained height', async () => {
+  it('resets manual collapse override after reject + regenerate on constrained height', async () => {
     const OriginalResizeObserver = globalThis.ResizeObserver;
     class ResizeObserverMock {
       private callback: ResizeObserverCallback;
@@ -548,8 +566,8 @@ describe('NlQueryWorkflow', () => {
         handleRef.current?.triggerGenerate();
       });
 
-      fireEvent.click(await screen.findByRole('button', { name: /expand model work panel/i }));
-      expect(screen.getByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: /collapse model work panel/i }));
+      expect(screen.getByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
 
       act(() => {
         handleRef.current?.reject();
@@ -559,7 +577,7 @@ describe('NlQueryWorkflow', () => {
         handleRef.current?.triggerGenerate();
       });
 
-      expect(await screen.findByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
       expect(onGenerate).toHaveBeenCalledTimes(2);
     } finally {
       globalThis.ResizeObserver = OriginalResizeObserver;

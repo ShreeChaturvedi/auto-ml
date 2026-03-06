@@ -9,6 +9,7 @@
 
 import type {
   QueryResultPayload,
+  NlProviderInfo,
   NlQueryExplanation,
   NlQueryStreamEvent,
   NlModelWorkKind,
@@ -26,6 +27,8 @@ export interface NlGenerationResult {
   explanation: NlQueryExplanation;
   /** Unique query ID returned by the server (used for deduplication / caching). */
   queryId: string;
+  /** Provider/model metadata used for the generation. */
+  provider: NlProviderInfo;
   /** Whether the result was served from the server-side cache. */
   cached: boolean;
   /** Optional execution error from the initial generated SQL dry-run. */
@@ -39,6 +42,7 @@ export interface NlGenerationResult {
 }
 
 export type {
+  NlProviderInfo,
   NlModelWorkKind,
   NlModelWorkStreamEvent,
   NlQueryStreamEvent,

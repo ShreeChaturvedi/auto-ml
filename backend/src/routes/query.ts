@@ -111,14 +111,7 @@ function asPhaseEvent(progress: NlProgressEvent): NlStreamPhaseEvent {
 }
 
 function mapModelWorkKind(kind: NlModelWorkEvent['kind']): NlStreamModelWorkEvent['kind'] {
-  switch (kind) {
-    case 'tool_call':
-      return 'tool';
-    case 'sql_generation':
-      return 'sql';
-    default:
-      return kind;
-  }
+  return kind;
 }
 
 function asModelWorkEvent(event: NlModelWorkEvent): NlStreamModelWorkEvent {

@@ -19,7 +19,6 @@ import {
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { fetchNlSuggestions, type NlSuggestion } from '@/lib/api/query';
-import { useProjectStore } from '@/stores/projectStore';
 import { NlFlowConnector } from './NlFlowConnector';
 import { NlWorkPlanPanel } from './NlWorkPlanPanel';
 import { SqlRevealBlock } from './SqlRevealBlock';
@@ -34,6 +33,7 @@ import {
   markNlWorkPhasesFailed,
   type NlGenerationResult,
   type NlModelWorkBlockState,
+  type NlProviderInfo,
   type NlQueryStreamEvent,
   type NlWorkPhaseState
 } from '@/types/nlQuery';
@@ -51,6 +51,17 @@ const AUTO_COLLAPSE_HEIGHT_PX = 920;
 interface TypewriterState {
   visibleTokenCount: number;
   isComplete: boolean;
+}
+
+function isNlProviderInfo(value: unknown): value is NlProviderInfo {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.id === 'string'
+    && typeof candidate.label === 'string'
+    && typeof candidate.model === 'string';
 }
 
 function useTypewriter(
@@ -175,6 +186,7 @@ export interface NlQueryWorkflowHandle {
 }
 
 interface NlQueryWorkflowProps {
+  projectId?: string | null;
   englishQuery: string;
   onQueryChange: (value: string) => void;
   onGenerate: (
@@ -192,6 +204,7 @@ interface NlQueryWorkflowProps {
 
 const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   {
+    projectId,
     englishQuery,
     onQueryChange,
     onGenerate,
@@ -204,7 +217,6 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   }: NlQueryWorkflowProps,
   ref: Ref<NlQueryWorkflowHandle>
 ) {
-  const { activeProjectId } = useProjectStore();
   const [state, dispatch] = useReducer(nlReducer, initialState);
   const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
   const [modelWorkBlocks, setModelWorkBlocks] = useState<NlModelWorkBlockState[]>([]);
@@ -268,13 +280,13 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   }, [phase]);
 
   useEffect(() => {
-    if (!activeProjectId) {
+    if (!projectId) {
       setNlSuggestions([]);
       return;
     }
 
     let cancelled = false;
-    void fetchNlSuggestions(activeProjectId, 8)
+    void fetchNlSuggestions(projectId, 8)
       .then((response) => {
         if (!cancelled) {
           setNlSuggestions(response.suggestions);
@@ -290,7 +302,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     return () => {
       cancelled = true;
     };
-  }, [activeProjectId]);
+  }, [projectId]);
 
   const filteredSuggestions = useMemo(() => {
     const input = englishQuery.trim().toLowerCase();
@@ -304,6 +316,13 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
     return suggestions.slice(0, MAX_VISIBLE_SUGGESTIONS);
   }, [englishQuery, nlSuggestions]);
+
+  const placeholderPrompts = useMemo(
+    () => nlSuggestions
+      .map((suggestion) => suggestion.prompt.trim())
+      .filter((prompt) => prompt.length > 0),
+    [nlSuggestions]
+  );
 
   useEffect(() => {
     if (activeSuggestionIndex >= filteredSuggestions.length) {
@@ -460,8 +479,26 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   const showPlanPanel = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
   const showSqlBlock = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
 
-  const autoCollapsed = showPlanPanel && containerHeight > 0 && containerHeight < AUTO_COLLAPSE_HEIGHT_PX;
+  const autoCollapsed = showPlanPanel
+    && phase === 'reviewing'
+    && containerHeight > 0
+    && containerHeight < AUTO_COLLAPSE_HEIGHT_PX;
   const isPanelExpanded = manualPanelExpanded ?? !autoCollapsed;
+  const activeProvider = useMemo(() => {
+    if (result?.provider) {
+      return result.provider;
+    }
+
+    for (let index = modelWorkBlocks.length - 1; index >= 0; index -= 1) {
+      const details = modelWorkBlocks[index]?.details;
+      const provider = details ? (details as Record<string, unknown>).provider : null;
+      if (isNlProviderInfo(provider)) {
+        return provider;
+      }
+    }
+
+    return null;
+  }, [modelWorkBlocks, result?.provider]);
 
   const togglePanelExpanded = useCallback(() => {
     setManualPanelExpanded((previous) => {
@@ -487,7 +524,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         <div className="relative h-full">
           <AnimatedPlaceholderTextarea
             ref={textareaRef}
-            placeholders={nlSuggestions.map((suggestion) => suggestion.prompt)}
+            placeholders={placeholderPrompts}
             value={englishQuery}
             autoFocus={isIdle}
             onChange={(e) => {
@@ -573,6 +610,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             {showPlanPanel && (
               <NlWorkPlanPanel
                 explanation={result?.explanation}
+                provider={activeProvider}
                 phase={panelPhase}
                 workPhases={workPhases}
                 modelWorkBlocks={modelWorkBlocks}

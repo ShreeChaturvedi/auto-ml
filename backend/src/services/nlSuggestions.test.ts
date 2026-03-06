@@ -17,8 +17,8 @@ function buildDataset(overrides: Partial<DatasetProfile> = {}): DatasetProfile {
     columns: [
       { name: 'order_id', dtype: 'integer', nullCount: 0 },
       { name: 'customer_id', dtype: 'integer', nullCount: 0 },
-      { name: 'order_total', dtype: 'numeric', nullCount: 0 },
-      { name: 'order_date', dtype: 'timestamp', nullCount: 0 }
+      { name: 'order_total', dtype: 'float', nullCount: 0 },
+      { name: 'order_date', dtype: 'date', nullCount: 0 }
     ],
     sample: [],
     createdAt: new Date().toISOString(),
@@ -55,8 +55,8 @@ describe('nlSuggestions service', () => {
         filename: 'customers.csv',
         columns: [
           { name: 'id', dtype: 'integer', nullCount: 0 },
-          { name: 'segment', dtype: 'text', nullCount: 0 },
-          { name: 'region', dtype: 'text', nullCount: 0 }
+          { name: 'segment', dtype: 'string', nullCount: 0 },
+          { name: 'region', dtype: 'string', nullCount: 0 }
         ],
         metadata: { tableName: 'customers' }
       })
@@ -183,4 +183,3 @@ describe('nlSuggestions service', () => {
     ).rejects.toThrow(/no dataset schema is available/i);
   });
 });
-

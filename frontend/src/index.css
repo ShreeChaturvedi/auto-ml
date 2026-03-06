@@ -406,23 +406,6 @@
   font-size: 0.84em;
 }
 
-.nl-model-work-viewport[data-overflow='true'] {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--nl-work-fade-top, 0px),
-    #000 calc(100% - var(--nl-work-fade-bottom, 0px)),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--nl-work-fade-top, 0px),
-    #000 calc(100% - var(--nl-work-fade-bottom, 0px)),
-    transparent 100%
-  );
-}
-
 @keyframes execute-icon-trace {
   0% {
     stroke-dashoffset: 0;

@@ -48,6 +48,7 @@ interface SortableTabProps {
   isActive: boolean;
   fileType?: string;
   queryMode?: 'english' | 'sql';
+  queryIconColorClassName?: string;
   onClose: () => void;
   onClick: () => void;
 }
@@ -58,6 +59,7 @@ function SortableTab({
   isActive,
   fileType,
   queryMode,
+  queryIconColorClassName,
   onClose,
   onClick
 }: SortableTabProps) {
@@ -74,10 +76,11 @@ function SortableTab({
   // Get icon based on type
   const getIcon = () => {
     if (queryMode) {
+      const colorClass = queryIconColorClassName ?? 'text-muted-foreground';
       return queryMode === 'sql' ? (
-        <Database className="h-4 w-4 text-blue-500" />
+        <Database className={cn('h-4 w-4', colorClass)} />
       ) : (
-        <FileText className="h-4 w-4 text-purple-500" />
+        <FileText className={cn('h-4 w-4', colorClass)} />
       );
     }
 
@@ -131,8 +134,8 @@ function SortableTab({
          */}
         <span
           className="text-sm font-medium max-w-[150px] truncate
-            group-hover:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]
-            group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]"
+            group-hover:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]
+            group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]"
         >
           {name}
         </span>
@@ -143,7 +146,7 @@ function SortableTab({
        * it superimposes over the content without pushing the tab wider.
        * `pointer-events-none` while invisible prevents ghost clicks.
        */}
-      <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+      <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
         <Button
           variant="ghost"
           size="icon"
@@ -162,9 +165,10 @@ function SortableTab({
 
 interface FileTabBarProps {
   projectId: string;
+  queryIconColorClassName?: string;
 }
 
-export function FileTabBar({ projectId }: FileTabBarProps) {
+export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarProps) {
   const allFiles = useDataStore((state) => state.files);
   const allArtifacts = useDataStore((state) => state.queryArtifacts);
   const activeFileTabId = useDataStore((state) => state.activeFileTabId);
@@ -302,6 +306,7 @@ export function FileTabBar({ projectId }: FileTabBarProps) {
                     isActive={tab.id === activeFileTabId}
                     fileType={tab.fileType}
                     queryMode={tab.queryMode}
+                    queryIconColorClassName={queryIconColorClassName}
                     onClose={() => handleCloseTab(tab)}
                     onClick={() => handleTabClick(tab)}
                   />

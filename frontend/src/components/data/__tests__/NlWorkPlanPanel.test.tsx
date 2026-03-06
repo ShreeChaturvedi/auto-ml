@@ -1,9 +1,15 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { NlWorkPlanPanel } from '../NlWorkPlanPanel';
-import type { NlQueryExplanation } from '@/lib/api/query';
+import type { NlProviderInfo, NlQueryExplanation } from '@/lib/api/query';
 import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
+
+const GEMINI_PROVIDER: NlProviderInfo = {
+  id: 'gemini',
+  label: 'Gemini',
+  model: 'gemini-3-flash-preview'
+};
 
 const MODEL_EXPLANATION: NlQueryExplanation = {
   intentSummary: 'Rank students by average chapter score.',
@@ -120,10 +126,11 @@ const MODEL_WORK_BLOCKS: NlModelWorkBlockState[] = [
 ];
 
 describe('NlWorkPlanPanel', () => {
-  it('renders active phase stream details during submitting', () => {
+  it('renders active phase stream details during submitting with provider icon only', () => {
     render(
-        <NlWorkPlanPanel
+      <NlWorkPlanPanel
         phase="submitting"
+        provider={GEMINI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -133,7 +140,9 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.getAllByText(/planning sql strategy/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/planning • in progress/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/gemini provider/i)).toBeInTheDocument();
+    expect(screen.queryByText(/model work/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('nl-model-work-block-plan-1')).toBeInTheDocument();
   });
 
@@ -142,6 +151,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="submitting"
+        provider={GEMINI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -159,6 +169,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="submitting"
+        provider={GEMINI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -168,14 +179,15 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.queryByText(/streaming status will appear here/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/streaming model output will appear here/i)).not.toBeInTheDocument();
   });
 
-  it('shows confidence percentage only in model mode', () => {
+  it('renders review without confidence or fallback path chrome', () => {
     render(
       <NlWorkPlanPanel
         phase="reviewing"
         explanation={MODEL_EXPLANATION}
+        provider={GEMINI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming={false}
@@ -185,8 +197,10 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.getByText(/model review/i)).toBeInTheDocument();
-    expect(screen.getByText(/confidence 91%/i)).toBeInTheDocument();
+    expect(screen.getByText(/^review$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/gemini provider/i)).toBeInTheDocument();
+    expect(screen.queryByText(/91% confidence/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/model path/i)).not.toBeInTheDocument();
   });
 
   it('shows Done phase label when the pipeline is completed outside review mode', () => {
@@ -199,6 +213,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="revealing"
+        provider={GEMINI_PROVIDER}
         workPhases={completedPhases}
         modelWorkBlocks={[]}
         isStreaming={false}
@@ -208,15 +223,15 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.getAllByText(/^done$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/nl query pipeline finished/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/nl query pipeline finished/i)).toBeInTheDocument();
   });
 
-  it('does not show percentage in deterministic fallback mode and keeps debug collapsed', () => {
+  it('does not show fallback-path or reliability copy in review mode', () => {
     render(
       <NlWorkPlanPanel
         phase="reviewing"
         explanation={FALLBACK_EXPLANATION}
+        provider={GEMINI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming={false}
@@ -226,16 +241,17 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.queryByText(/confidence\s+\d+%/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/fallback review/i)).toBeInTheDocument();
+    expect(screen.queryByText(/deterministic fallback path/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^reliability$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/debug details/i)).toBeInTheDocument();
   });
 
-  it('shows streamed model work blocks during review alongside reliability factors', () => {
+  it('shows streamed model work blocks during review with validation details', () => {
     render(
       <NlWorkPlanPanel
         phase="reviewing"
         explanation={FALLBACK_EXPLANATION}
+        provider={GEMINI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming={false}
@@ -247,6 +263,215 @@ describe('NlWorkPlanPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /show transcript/i }));
     expect(screen.getAllByText(/query planning/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/reliability factors/i)).toBeInTheDocument();
+    expect(screen.getByText(/^validation$/i)).toBeInTheDocument();
+  });
+
+  it('keeps the live transcript viewport pinned to the bottom as content grows', () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    class ResizeObserverMock {
+      static instances: ResizeObserverMock[] = [];
+      callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+        ResizeObserverMock.instances.push(this);
+      }
+
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    }
+
+    globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+    try {
+      render(
+        <NlWorkPlanPanel
+          phase="submitting"
+          provider={GEMINI_PROVIDER}
+          workPhases={PHASES}
+          modelWorkBlocks={MODEL_WORK_BLOCKS}
+          isStreaming
+          isExpanded
+          autoCollapsed={false}
+          onToggleExpanded={vi.fn()}
+        />
+      );
+
+      const viewport = screen.getByTestId('nl-model-work-viewport') as HTMLDivElement;
+      let scrollHeight = 320;
+
+      Object.defineProperty(viewport, 'clientHeight', {
+        configurable: true,
+        value: 120
+      });
+      Object.defineProperty(viewport, 'scrollHeight', {
+        configurable: true,
+        get: () => scrollHeight
+      });
+
+      viewport.scrollTop = 0;
+
+      act(() => {
+        ResizeObserverMock.instances.forEach((instance) => {
+          instance.callback([], instance as unknown as ResizeObserver);
+        });
+      });
+
+      expect(viewport.scrollTop).toBe(320);
+
+      scrollHeight = 540;
+      act(() => {
+        ResizeObserverMock.instances.forEach((instance) => {
+          instance.callback([], instance as unknown as ResizeObserver);
+        });
+      });
+
+      expect(viewport.scrollTop).toBe(540);
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
+  });
+
+  it('uses smooth scrolling when a new transcript block arrives', () => {
+    const nextBlocks: NlModelWorkBlockState[] = [
+      ...MODEL_WORK_BLOCKS.map((block) => ({ ...block, status: 'completed' as const })),
+      {
+        blockId: 'sql-1',
+        kind: 'sql',
+        title: 'SQL generation',
+        phaseId: 'sql_generation',
+        status: 'streaming',
+        content: 'SELECT * FROM checkpoints_pulse;',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
+
+    const { rerender } = render(
+      <NlWorkPlanPanel
+        phase="submitting"
+        provider={GEMINI_PROVIDER}
+        workPhases={PHASES}
+        modelWorkBlocks={MODEL_WORK_BLOCKS}
+        isStreaming
+        isExpanded
+        autoCollapsed={false}
+        onToggleExpanded={vi.fn()}
+      />
+    );
+
+    const viewport = screen.getByTestId('nl-model-work-viewport') as HTMLDivElement & {
+      scrollTo?: (options: ScrollToOptions) => void;
+    };
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      viewport.scrollTop = options.top ?? 0;
+    });
+
+    Object.defineProperty(viewport, 'clientHeight', {
+      configurable: true,
+      value: 120
+    });
+    Object.defineProperty(viewport, 'scrollHeight', {
+      configurable: true,
+      value: 480
+    });
+
+    viewport.scrollTop = 480;
+    viewport.scrollTo = scrollTo;
+    scrollTo.mockClear();
+
+    rerender(
+      <NlWorkPlanPanel
+        phase="submitting"
+        provider={GEMINI_PROVIDER}
+        workPhases={PHASES}
+        modelWorkBlocks={nextBlocks}
+        isStreaming
+        isExpanded
+        autoCollapsed={false}
+        onToggleExpanded={vi.fn()}
+      />
+    );
+
+    expect(
+      scrollTo.mock.calls.some(([options]) => (
+        options?.top === 480
+        && options?.behavior === 'smooth'
+      ))
+    ).toBe(true);
+  });
+
+  it('keeps the live transcript block body pinned to the bottom as streamed content mutates', () => {
+    const OriginalMutationObserver = globalThis.MutationObserver;
+    const OriginalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    class MutationObserverMock {
+      static instances: MutationObserverMock[] = [];
+      callback: MutationCallback;
+
+      constructor(callback: MutationCallback) {
+        this.callback = callback;
+        MutationObserverMock.instances.push(this);
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    globalThis.MutationObserver = MutationObserverMock as unknown as typeof MutationObserver;
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+
+    try {
+      render(
+        <NlWorkPlanPanel
+          phase="submitting"
+          provider={GEMINI_PROVIDER}
+          workPhases={PHASES}
+          modelWorkBlocks={MODEL_WORK_BLOCKS}
+          isStreaming
+          isExpanded
+          autoCollapsed={false}
+          onToggleExpanded={vi.fn()}
+        />
+      );
+
+      const body = screen.getByTestId('nl-model-work-block-body-plan-1') as HTMLDivElement;
+      let scrollHeight = 180;
+
+      Object.defineProperty(body, 'clientHeight', {
+        configurable: true,
+        value: 80
+      });
+      Object.defineProperty(body, 'scrollHeight', {
+        configurable: true,
+        get: () => scrollHeight
+      });
+
+      body.scrollTop = 0;
+
+      act(() => {
+        MutationObserverMock.instances.forEach((instance) => {
+          instance.callback([], instance as unknown as MutationObserver);
+        });
+      });
+
+      expect(body.scrollTop).toBe(180);
+
+      scrollHeight = 260;
+      act(() => {
+        MutationObserverMock.instances.forEach((instance) => {
+          instance.callback([], instance as unknown as MutationObserver);
+        });
+      });
+
+      expect(body.scrollTop).toBe(260);
+    } finally {
+      globalThis.MutationObserver = OriginalMutationObserver;
+      globalThis.requestAnimationFrame = OriginalRequestAnimationFrame;
+    }
   });
 });

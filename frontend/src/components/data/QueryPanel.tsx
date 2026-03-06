@@ -1043,6 +1043,7 @@ export function QueryPanel({
         ) : (
           // English Mode: NL workflow — animated input → connector → SQL reveal
           <NlQueryWorkflow
+            projectId={activeProject?.id ?? activeProjectId}
             englishQuery={englishQuery}
             onQueryChange={(v) => handleQueryChange(v)}
             onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}

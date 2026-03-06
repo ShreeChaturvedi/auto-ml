@@ -1,4 +1,20 @@
-import { AlertTriangle, ChevronDown, ChevronUp, GitMerge, ListChecks, Table2, Wand2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  Brain,
+  ChevronDown,
+  ChevronUp,
+  FileCode2,
+  GitMerge,
+  Info,
+  ListChecks,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+  Table2,
+  Wand2,
+  Wrench,
+  type LucideIcon
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -7,13 +23,13 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ComponentType,
   type ReactNode
 } from 'react';
 
+import { GeminiIcon } from '@/components/icons/GeminiIcon';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
+import type { NlProviderInfo, NlQueryExplanation } from '@/lib/api/query';
 import { cn } from '@/lib/utils';
-import type { NlQueryExplanation } from '@/lib/api/query';
 import {
   getNlWorkPhaseLabel,
   getPrimaryNlWorkPhase,
@@ -23,6 +39,7 @@ import {
 
 interface NlWorkPlanPanelProps {
   explanation?: NlQueryExplanation;
+  provider?: NlProviderInfo | null;
   phase: 'submitting' | 'revealing' | 'reviewing';
   workPhases: NlWorkPhaseState[];
   modelWorkBlocks?: NlModelWorkBlockState[];
@@ -36,10 +53,11 @@ interface NlWorkPlanPanelProps {
 type WarningTone = {
   container: string;
   accent: string;
-  statusText: string;
 };
 
-type BlockTone = {
+type BlockAppearance = {
+  label: string;
+  icon: LucideIcon;
   badge: string;
   card: string;
   dot: string;
@@ -56,62 +74,24 @@ function toneForWarningLevel(level: NlQueryExplanation['warningLevel']): Warning
     case 'high':
       return {
         container: 'border-destructive/55 bg-destructive/[0.08]',
-        accent: 'bg-destructive',
-        statusText: 'text-destructive'
+        accent: 'bg-destructive'
       };
     case 'medium':
       return {
         container: 'border-amber-500/55 bg-amber-500/[0.08]',
-        accent: 'bg-amber-500',
-        statusText: 'text-amber-700 dark:text-amber-300'
+        accent: 'bg-amber-500'
       };
     case 'low':
       return {
         container: 'border-border/85 bg-card/90',
-        accent: 'bg-border',
-        statusText: 'text-foreground/85'
+        accent: 'bg-border'
       };
     case 'none':
     default:
       return {
         container: 'border-emerald-500/50 bg-emerald-500/[0.08]',
-        accent: 'bg-emerald-500',
-        statusText: 'text-emerald-700 dark:text-emerald-300'
+        accent: 'bg-emerald-500'
       };
-  }
-}
-
-function reliabilityLabel(tier: NlQueryExplanation['reliabilityTier']): string {
-  if (tier === 'high') return 'Reliability high';
-  if (tier === 'medium') return 'Reliability medium';
-  return 'Reliability low';
-}
-
-function riskLabel(level: NlQueryExplanation['warningLevel']): string {
-  switch (level) {
-    case 'high':
-      return 'Risk high';
-    case 'medium':
-      return 'Risk medium';
-    case 'low':
-      return 'Risk low';
-    case 'none':
-    default:
-      return 'Risk minimal';
-  }
-}
-
-function modeNarrative(mode: NlQueryExplanation['confidenceMode']): string {
-  switch (mode) {
-    case 'model':
-      return 'Model reasoning path';
-    case 'heuristic':
-      return 'Heuristic planning fallback';
-    case 'repair':
-      return 'Auto-repair path';
-    case 'deterministic_fallback':
-    default:
-      return 'Deterministic fallback path';
   }
 }
 
@@ -141,11 +121,16 @@ function phaseStatusCopy(status: NlWorkPhaseState['status']): string {
   }
 }
 
-function blockStatusCopy(status: NlModelWorkBlockState['status']): string {
-  if (status === 'failed') {
-    return 'Failed';
+function liveSubtitle(active: NlWorkPhaseState): string {
+  if (active.phaseId === 'done' && active.status === 'completed') {
+    return active.lastSummary ?? 'Pipeline completed';
   }
-  return status === 'completed' ? 'Captured' : 'Streaming';
+
+  if (active.status === 'failed' && active.lastSummary) {
+    return `${getNlWorkPhaseLabel(active.phaseId)} • ${active.lastSummary}`;
+  }
+
+  return `${getNlWorkPhaseLabel(active.phaseId)} • ${phaseStatusCopy(active.status).toLowerCase()}`;
 }
 
 function pluralize(word: string, count: number): string {
@@ -155,6 +140,7 @@ function pluralize(word: string, count: number): string {
 function splitValidationNotes(validationNotes: string[]) {
   const nonDebug: string[] = [];
   const debug: string[] = [];
+
   for (const note of validationNotes) {
     if (note.toLowerCase().startsWith('debug:')) {
       debug.push(note.replace(/^debug:\s*/i, '').trim());
@@ -162,96 +148,60 @@ function splitValidationNotes(validationNotes: string[]) {
     }
     nonDebug.push(note);
   }
+
   return {
     nonDebugValidationNotes: nonDebug,
     debugValidationNotes: debug
   };
 }
 
-function reviewLead(explanation: NlQueryExplanation): string {
-  if (explanation.confidenceMode === 'model') {
-    return `Confidence ${Math.round(explanation.confidence * 100)}%`;
-  }
-  if (explanation.confidenceMode === 'repair') {
-    return 'Repair review';
-  }
-  if (explanation.confidenceMode === 'heuristic') {
-    return 'Heuristic fallback review';
-  }
-  return 'Fallback review';
-}
 
-function reliabilityFactors(explanation: NlQueryExplanation): string[] {
-  const factors: string[] = [];
-
-  if (explanation.confidence < 0.72) {
-    factors.push(`Confidence is only ${Math.round(explanation.confidence * 100)}%.`);
-  }
-
-  if (explanation.joinPlan.some((join) => join.confidence < 0.6)) {
-    factors.push('One or more joins were inferred with low certainty.');
-  }
-
-  const riskyAssumptions = explanation.assumptions.filter((item) => (
-    /(assum|infer|best guess|may |might |likely|unclear|unknown|approx|estimate)/i.test(item)
-  ));
-  if (riskyAssumptions.length > 0) {
-    factors.push(`${riskyAssumptions.length} risky assumption${riskyAssumptions.length === 1 ? '' : 's'} detected.`);
-  }
-
-  if (explanation.confidenceMode === 'heuristic') {
-    factors.push('Planning fell back to a heuristic path after model planning failed.');
-  }
-
-  if (explanation.confidenceMode === 'deterministic_fallback') {
-    factors.push('SQL was recovered via deterministic fallback logic instead of a full model result.');
-  }
-
-  if (explanation.confidenceMode === 'repair') {
-    factors.push('SQL was modified after an execution failure and should be reviewed carefully.');
-  }
-
-  if (factors.length === 0) {
-    factors.push('No major ambiguity signals were detected in the final plan.');
-  }
-
-  return factors;
-}
-
-function blockTone(kind: NlModelWorkBlockState['kind']): BlockTone {
+function blockAppearance(kind: NlModelWorkBlockState['kind']): BlockAppearance {
   switch (kind) {
     case 'thinking':
       return {
+        label: 'Thinking',
+        icon: Brain,
         badge: 'bg-sky-500/12 text-sky-700 dark:text-sky-300',
-        card: 'border-sky-500/18 bg-sky-500/[0.045]',
+        card: 'border-sky-500/18 bg-sky-500/[0.04]',
         dot: 'bg-sky-500'
       };
     case 'tool':
       return {
+        label: 'Tool call',
+        icon: Wrench,
         badge: 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
-        card: 'border-amber-500/18 bg-amber-500/[0.045]',
+        card: 'border-amber-500/18 bg-amber-500/[0.04]',
         dot: 'bg-amber-500'
       };
     case 'sql':
       return {
+        label: 'SQL',
+        icon: FileCode2,
         badge: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
-        card: 'border-emerald-500/18 bg-emerald-500/[0.045]',
+        card: 'border-emerald-500/18 bg-emerald-500/[0.04]',
         dot: 'bg-emerald-500'
       };
     case 'validation':
       return {
+        label: 'Validation',
+        icon: ShieldCheck,
         badge: 'bg-cyan-500/12 text-cyan-700 dark:text-cyan-300',
-        card: 'border-cyan-500/18 bg-cyan-500/[0.045]',
+        card: 'border-cyan-500/18 bg-cyan-500/[0.04]',
         dot: 'bg-cyan-500'
       };
     case 'repair':
       return {
+        label: 'Repair',
+        icon: AlertTriangle,
         badge: 'bg-rose-500/12 text-rose-700 dark:text-rose-300',
-        card: 'border-rose-500/18 bg-rose-500/[0.045]',
+        card: 'border-rose-500/18 bg-rose-500/[0.04]',
         dot: 'bg-rose-500'
       };
     case 'status':
       return {
+        label: 'Status',
+        icon: Info,
         badge: 'bg-muted text-foreground/80',
         card: 'border-border/70 bg-background/65',
         dot: 'bg-muted-foreground/60'
@@ -259,63 +209,110 @@ function blockTone(kind: NlModelWorkBlockState['kind']): BlockTone {
     case 'plan':
     default:
       return {
+        label: 'Plan',
+        icon: Sparkles,
         badge: 'bg-violet-500/12 text-violet-700 dark:text-violet-300',
-        card: 'border-violet-500/18 bg-violet-500/[0.045]',
+        card: 'border-violet-500/18 bg-violet-500/[0.04]',
         dot: 'bg-violet-500'
       };
   }
 }
 
-function blockKindLabel(kind: NlModelWorkBlockState['kind']): string {
-  switch (kind) {
-    case 'thinking':
-      return 'Thinking';
-    case 'tool':
-      return 'Tool';
-    case 'sql':
-      return 'SQL';
-    case 'validation':
-      return 'Validation';
-    case 'repair':
-      return 'Repair';
-    case 'status':
-      return 'Status';
-    case 'plan':
-    default:
-      return 'Plan';
+function transcriptBodyClass(kind: NlModelWorkBlockState['kind']): string {
+  if (kind === 'thinking') {
+    return 'max-h-44';
   }
+  if (kind === 'tool') {
+    return 'max-h-40';
+  }
+  if (kind === 'sql') {
+    return 'max-h-36';
+  }
+  return 'max-h-32';
 }
 
-function transcriptBodyHeight(kind: NlModelWorkBlockState['kind']): string {
-  switch (kind) {
-    case 'thinking':
-      return 'max-h-52';
-    case 'tool':
-      return 'max-h-44';
-    case 'sql':
-      return 'max-h-72';
-    default:
-      return 'max-h-64';
-  }
+function distanceFromViewportBottom(element: HTMLElement): number {
+  return element.scrollHeight - (element.scrollTop + element.clientHeight);
 }
 
-function PlanInfoRow({
+function scrollElementToBottom(element: HTMLElement) {
+  element.scrollTop = element.scrollHeight;
+}
+
+function scheduleScrollToBottom(element: HTMLElement) {
+  const run = () => {
+    scrollElementToBottom(element);
+  };
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(run);
+    return;
+  }
+
+  run();
+}
+
+function scrollViewportToBottom(element: HTMLElement, behavior: ScrollBehavior = 'auto') {
+  if (typeof element.scrollTo === 'function') {
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior
+    });
+    return;
+  }
+
+  scrollElementToBottom(element);
+}
+
+function ProviderMark({ provider }: { provider?: NlProviderInfo | null }) {
+  if (!provider) {
+    return <span className="h-4 w-4" aria-hidden="true" />;
+  }
+
+  const iconClassName = 'h-4 w-4 shrink-0';
+
+  if (provider.id === 'gemini') {
+    return (
+      <span
+        className="inline-flex h-4 w-4 items-center justify-center"
+        aria-label={`${provider.label} provider`}
+        title={`${provider.label} · ${provider.model}`}
+      >
+        <GeminiIcon className={iconClassName} />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground"
+      aria-label={`${provider.label} provider`}
+      title={`${provider.label} · ${provider.model}`}
+    >
+      <Sparkles className={iconClassName} />
+    </span>
+  );
+}
+
+function SummaryCard({
   icon: Icon,
   title,
-  children
+  children,
+  className
 }: {
-  icon: ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   title: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="grid grid-cols-[auto_1fr] items-start gap-2 rounded-xl border border-border/70 bg-background/70 px-3 py-2.5">
-      <Icon className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
-        {children}
+    <section className={cn('rounded-xl border border-border/70 bg-background/70 p-3', className)}>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em]">{title}</p>
       </div>
-    </div>
+      <div className="mt-2 text-sm leading-relaxed text-foreground/92">{children}</div>
+    </section>
   );
 }
 
@@ -328,74 +325,218 @@ function TranscriptBlock({
   isLive: boolean;
   isLast: boolean;
 }) {
-  const tone = blockTone(block.kind);
+  const appearance = blockAppearance(block.kind);
+  const Icon = appearance.icon;
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoFollowInnerRef = useRef(true);
+
+  const followInnerTranscript = useCallback(() => {
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+
+    scheduleScrollToBottom(body);
+  }, []);
+
+  const handleInnerScroll = useCallback(() => {
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+
+    shouldAutoFollowInnerRef.current = distanceFromViewportBottom(body) <= 24;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isLive || block.status !== 'streaming' || !shouldAutoFollowInnerRef.current) {
+      return;
+    }
+
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+
+    scrollElementToBottom(body);
+  }, [block.content, block.status, isLive]);
+
+  useEffect(() => {
+    if (!isLive || block.status !== 'streaming') {
+      return;
+    }
+
+    const body = bodyRef.current;
+    const content = contentRef.current;
+    if (!body || !content || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (!shouldAutoFollowInnerRef.current) {
+        return;
+      }
+
+      followInnerTranscript();
+    });
+
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [block.status, followInnerTranscript, isLive]);
+
+  useEffect(() => {
+    if (!isLive || block.status !== 'streaming') {
+      return;
+    }
+
+    const content = contentRef.current;
+    if (!content || typeof MutationObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      if (!shouldAutoFollowInnerRef.current) {
+        return;
+      }
+
+      followInnerTranscript();
+    });
+
+    observer.observe(content, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    return () => observer.disconnect();
+  }, [block.status, followInnerTranscript, isLive]);
 
   return (
     <li className="relative pl-5">
       {!isLast && (
-        <span className="absolute left-[5px] top-5 bottom-[-12px] w-px bg-border/70" aria-hidden="true" />
+        <span className="absolute left-[6px] top-6 bottom-[-14px] w-px bg-border/70" aria-hidden="true" />
       )}
       <span
         className={cn(
-          'absolute left-0 top-3 h-2.5 w-2.5 rounded-full ring-4 ring-background/95',
-          tone.dot
+          'absolute left-0 top-3 h-3 w-3 rounded-full ring-4 ring-background/95',
+          appearance.dot
         )}
         aria-hidden="true"
       />
+
       <section
         className={cn(
           'rounded-xl border px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
-          tone.card
+          appearance.card
         )}
         data-testid={`nl-model-work-block-${block.blockId}`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em]',
-                  tone.badge
-                )}
-              >
-                {blockKindLabel(block.kind)}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium', appearance.badge)}>
+                <Icon className="h-3 w-3" />
+                {appearance.label}
               </span>
               {block.phaseId && (
-                <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   {getNlWorkPhaseLabel(block.phaseId)}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-sm font-medium leading-snug text-foreground/95">{block.title}</p>
+            <p className="mt-2 text-sm font-semibold leading-snug text-foreground/95">{block.title}</p>
           </div>
-          <p className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            {blockStatusCopy(block.status)}
-          </p>
+
+          {block.status === 'streaming' && (
+            <span className="rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Live
+            </span>
+          )}
+          {block.status === 'failed' && (
+            <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-destructive">
+              Failed
+            </span>
+          )}
         </div>
 
-        <div className={cn('scrollbar-thin mt-2 overflow-y-auto pr-1', transcriptBodyHeight(block.kind))}>
-          <ProgressiveMessageText
-            messageId={block.blockId}
-            text={block.content || 'Waiting for streamed model output.'}
-            isLive={isLive && block.status === 'streaming'}
-            mode="markdown"
-            showStreamingCaret={block.status === 'streaming'}
-            className="nl-model-work-stream text-[12px] leading-relaxed text-foreground/90"
-          />
+        <div
+          ref={bodyRef}
+          className={cn(
+            'scrollbar-thin mt-2 overflow-y-auto pr-1 text-foreground/90',
+            transcriptBodyClass(block.kind)
+          )}
+          data-testid={`nl-model-work-block-body-${block.blockId}`}
+          onScroll={handleInnerScroll}
+        >
+          <div ref={contentRef}>
+            <ProgressiveMessageText
+              messageId={block.blockId}
+              text={block.content || 'Waiting for streamed model output.'}
+              isLive={isLive && block.status === 'streaming'}
+              mode="markdown"
+              showStreamingCaret={block.status === 'streaming'}
+              className="nl-model-work-stream text-[12px] leading-relaxed"
+            />
+          </div>
         </div>
       </section>
     </li>
   );
 }
 
+function TranscriptTimeline({
+  modelWorkBlocks,
+  active,
+  isLive
+}: {
+  modelWorkBlocks: NlModelWorkBlockState[];
+  active: NlWorkPhaseState;
+  isLive: boolean;
+}) {
+  if (modelWorkBlocks.length > 0) {
+    return (
+      <ol className="space-y-3">
+        {modelWorkBlocks.map((block, index) => (
+          <TranscriptBlock
+            key={block.blockId}
+            block={block}
+            isLive={isLive}
+            isLast={index === modelWorkBlocks.length - 1}
+          />
+        ))}
+      </ol>
+    );
+  }
+
+  if (active.events.length > 0) {
+    return (
+      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Phase updates</p>
+        <div className="scrollbar-thin mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[12px] leading-relaxed text-muted-foreground">
+          {active.events.map((entry, index) => (
+            <p key={`${entry.phaseId}-${entry.timestamp}-${index}`}>{entry.summary}</p>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-border/70 bg-background/45 px-3 py-2 text-[12px] text-muted-foreground">
+      Streaming model output will appear here as the query is planned and generated.
+    </div>
+  );
+}
+
 function NlWorkPlanPanel({
   explanation,
+  provider,
   phase,
   workPhases,
   modelWorkBlocks = [],
   isStreaming = false,
   isExpanded,
-  autoCollapsed,
   onToggleExpanded,
   className
 }: NlWorkPlanPanelProps) {
@@ -407,35 +548,40 @@ function NlWorkPlanPanel({
     bottom: false
   });
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const viewportContentRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoFollowRef = useRef(true);
+  const previousBlockSequenceRef = useRef(modelWorkBlocks.map((block) => block.blockId).join('|'));
   const active = useMemo(() => getPrimaryNlWorkPhase(workPhases), [workPhases]);
+  const tone = toneForWarningLevel(explanation?.warningLevel ?? 'low');
+  const isReviewMode = Boolean(explanation) && phase === 'reviewing';
+  const transcriptVisible = !isReviewMode || transcriptExpanded;
   const { nonDebugValidationNotes, debugValidationNotes } = useMemo(
     () => splitValidationNotes(explanation?.validationNotes ?? []),
     [explanation]
   );
-  const tone = toneForWarningLevel(explanation?.warningLevel ?? 'low');
-  const isReviewMode = Boolean(explanation) && phase === 'reviewing';
-  const ambiguousJoin = Boolean(explanation?.joinPlan.some((join) => join.confidence < 0.6));
   const simplifiedIntent = explanation ? simplifyIntentSummary(explanation.intentSummary) : null;
-  const reliabilityNotes = useMemo(
-    () => (explanation ? reliabilityFactors(explanation) : []),
-    [explanation]
-  );
   const transcriptSignature = useMemo(
     () => modelWorkBlocks.map((block) => `${block.blockId}:${block.status}:${block.content.length}`).join('|'),
     [modelWorkBlocks]
   );
+  const blockSequenceSignature = useMemo(
+    () => modelWorkBlocks.map((block) => block.blockId).join('|'),
+    [modelWorkBlocks]
+  );
+  const shouldSmoothViewportHandoff = previousBlockSequenceRef.current.length > 0
+    && previousBlockSequenceRef.current !== blockSequenceSignature;
   const phaseSignature = useMemo(
     () => workPhases.map((entry) => `${entry.phaseId}:${entry.status}:${entry.lastSummary ?? ''}`).join('|'),
     [workPhases]
   );
   const shouldKeepTranscriptLive = isStreaming || phase === 'revealing' || modelWorkBlocks.some((block) => block.status === 'streaming');
+  const showLoadingSpinner = phase !== 'reviewing';
   const viewportMaskStyle = useMemo(() => ({
-    '--nl-work-fade-top': viewportFade.top ? '26px' : '0px',
-    '--nl-work-fade-bottom': viewportFade.bottom ? '22px' : '0px'
+    '--nl-work-fade-top': viewportFade.top ? '24px' : '0px',
+    '--nl-work-fade-bottom': viewportFade.bottom ? '20px' : '0px'
   }) as CSSProperties, [viewportFade.bottom, viewportFade.top]);
 
-  const updateViewportState = useCallback(() => {
+  const refreshViewportState = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
@@ -443,7 +589,7 @@ function NlWorkPlanPanel({
 
     const overflow = viewport.scrollHeight - viewport.clientHeight > 8;
     const hiddenTop = viewport.scrollTop > 8;
-    const hiddenBottomDistance = viewport.scrollHeight - (viewport.scrollTop + viewport.clientHeight);
+    const hiddenBottomDistance = distanceFromViewportBottom(viewport);
     const hiddenBottom = hiddenBottomDistance > 8;
 
     setViewportFade((previous) => {
@@ -454,15 +600,34 @@ function NlWorkPlanPanel({
       ) {
         return previous;
       }
+
       return {
         overflow,
         top: hiddenTop,
         bottom: hiddenBottom
       };
     });
-
-    shouldAutoFollowRef.current = hiddenBottomDistance <= 40;
   }, []);
+
+  const handleViewportScroll = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    shouldAutoFollowRef.current = distanceFromViewportBottom(viewport) <= 40;
+    refreshViewportState();
+  }, [refreshViewportState]);
+
+  const followViewportToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    scrollViewportToBottom(viewport, behavior);
+    refreshViewportState();
+  }, [refreshViewportState]);
 
   useEffect(() => {
     setVisualExpanded(isExpanded);
@@ -473,34 +638,62 @@ function NlWorkPlanPanel({
   }, [phase]);
 
   useEffect(() => {
-    updateViewportState();
-  }, [updateViewportState, isExpanded, transcriptExpanded, transcriptSignature, phaseSignature]);
+    refreshViewportState();
+  }, [refreshViewportState, isExpanded, transcriptVisible, transcriptSignature, phaseSignature, blockSequenceSignature]);
 
   useLayoutEffect(() => {
-    if (!isExpanded || !transcriptExpanded || !shouldKeepTranscriptLive || !shouldAutoFollowRef.current) {
+    if (!isExpanded || !transcriptVisible || !shouldKeepTranscriptLive || !shouldAutoFollowRef.current) {
       return;
     }
 
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
-
-    viewport.scrollTop = viewport.scrollHeight;
-    updateViewportState();
+    const behavior = shouldSmoothViewportHandoff ? 'smooth' : 'auto';
+    previousBlockSequenceRef.current = blockSequenceSignature;
+    followViewportToBottom(behavior);
   }, [
     isExpanded,
-    transcriptExpanded,
+    transcriptVisible,
     shouldKeepTranscriptLive,
     transcriptSignature,
     phaseSignature,
-    updateViewportState
+    blockSequenceSignature,
+    shouldSmoothViewportHandoff,
+    followViewportToBottom
+  ]);
+
+  useEffect(() => {
+    if (!isExpanded || !transcriptVisible || !shouldKeepTranscriptLive) {
+      return;
+    }
+
+    const content = viewportContentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (shouldAutoFollowRef.current) {
+        followViewportToBottom(shouldSmoothViewportHandoff ? 'smooth' : 'auto');
+        return;
+      }
+
+      refreshViewportState();
+    });
+
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [
+    followViewportToBottom,
+    isExpanded,
+    refreshViewportState,
+    shouldSmoothViewportHandoff,
+    shouldKeepTranscriptLive,
+    transcriptVisible
   ]);
 
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-md border shadow-sm transition-colors duration-200',
+        'relative overflow-hidden rounded-md border shadow-sm transition-colors duration-200',
         tone.container,
         className
       )}
@@ -510,43 +703,37 @@ function NlWorkPlanPanel({
 
       <div className="px-3 py-2.5">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Model work</p>
-            <p className="text-sm font-semibold leading-none">
-              {isReviewMode ? 'Model review' : 'Live transcript'}
-            </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {isReviewMode && explanation
-                ? `${reviewLead(explanation)} • ${modeNarrative(explanation.confidenceMode)}`
-                : `${getNlWorkPhaseLabel(active.phaseId)} • ${phaseStatusCopy(active.status).toLowerCase()}`}
-            </p>
+          <div className="min-w-0">
+            <div className="grid min-w-0 grid-cols-[auto,1fr] items-center gap-x-2 gap-y-1">
+              <ProviderMark provider={provider} />
+              <p className="text-sm font-semibold leading-none">
+                {isReviewMode ? 'Review' : 'Live transcript'}
+              </p>
+              {!isReviewMode && (
+                <>
+                  <span aria-hidden="true" className="h-0 w-0" />
+                  <p className="text-[12px] text-muted-foreground">
+                    {liveSubtitle(active)}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-start gap-3">
-            {isReviewMode && explanation && (
-              <div className="text-right">
-                <p className={cn('text-xs font-medium', tone.statusText)}>
-                  {reliabilityLabel(explanation.reliabilityTier)}
-                </p>
-                <p className="text-[11px] text-muted-foreground">{riskLabel(explanation.warningLevel)}</p>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={onToggleExpanded}
-              className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={isExpanded ? 'Collapse model work panel' : 'Expand model work panel'}
-            >
-              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {isExpanded ? 'Collapse' : autoCollapsed ? 'Expand' : 'Details'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+            aria-label={isExpanded ? 'Collapse model work panel' : 'Expand model work panel'}
+          >
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 
       <div
         className={cn(
-          'grid overflow-hidden transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+          'grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none',
           visualExpanded
             ? 'grid-rows-[1fr] opacity-100'
             : 'pointer-events-none grid-rows-[0fr] opacity-0'
@@ -557,180 +744,161 @@ function NlWorkPlanPanel({
           <div className="px-3 pb-3">
             <div
               ref={viewportRef}
-              className="nl-model-work-viewport scrollbar-thin max-h-[46vh] space-y-3 overflow-y-auto pr-1"
+              className={cn(
+                'nl-model-work-viewport scrollbar-thin space-y-3 overflow-y-auto pr-1',
+                isReviewMode
+                  ? 'max-h-[clamp(14rem,34vh,22rem)]'
+                  : 'max-h-[clamp(12rem,28vh,18rem)]'
+              )}
               data-testid="nl-model-work-viewport"
               data-overflow={viewportFade.overflow ? 'true' : 'false'}
-              onScroll={updateViewportState}
+              onScroll={handleViewportScroll}
               style={viewportMaskStyle}
             >
-              {!isReviewMode && (
-                <section className="rounded-xl border border-border/70 bg-background/70 px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Current step</p>
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                      {phaseStatusCopy(active.status)}
-                    </p>
-                  </div>
-                  <p className="mt-1 text-sm font-medium text-foreground/95">
-                    {getNlWorkPhaseLabel(active.phaseId)}
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {active.lastSummary ?? 'Waiting for the next model step.'}
-                  </p>
-                </section>
-              )}
+              <div ref={viewportContentRef} className="space-y-3">
+                {isReviewMode && explanation && (
+                  <>
+                    <section className="grid gap-2 md:grid-cols-2">
+                      <SummaryCard icon={Wand2} title="Intent" className="md:col-span-2">
+                        <p>{simplifiedIntent}</p>
+                      </SummaryCard>
 
-              {isReviewMode && explanation && (
-                <section className="space-y-3 rounded-xl border border-border/70 bg-background/65 p-3">
-                  <PlanInfoRow icon={Wand2} title="Intent">
-                    <p className="text-xs leading-relaxed text-foreground/90">{simplifiedIntent}</p>
-                  </PlanInfoRow>
+                      <SummaryCard icon={Table2} title="Tables">
+                        <p>
+                          {explanation.selectedTables.length > 0
+                            ? explanation.selectedTables.join(', ')
+                            : 'No explicit table selection was reported.'}
+                        </p>
+                      </SummaryCard>
 
-                  <PlanInfoRow icon={Table2} title="Tables">
-                    <p className="text-xs leading-relaxed text-foreground/90">
-                      {explanation.selectedTables.length > 0
-                        ? explanation.selectedTables.join(', ')
-                        : 'No explicit table selection was reported.'}
-                    </p>
-                  </PlanInfoRow>
-
-                  <PlanInfoRow icon={GitMerge} title="Joins">
-                    {explanation.joinPlan.length > 0 ? (
-                      <div className="space-y-1 text-xs text-foreground/90">
-                        {explanation.joinPlan.slice(0, 3).map((join, idx) => (
-                          <p key={`${join.leftTable}-${join.rightTable}-${idx}`}>
-                            {join.leftTable}.{join.leftColumn} → {join.rightTable}.{join.rightColumn} ({join.joinType})
-                          </p>
-                        ))}
-                        {explanation.joinPlan.length > 3 && (
-                          <p className="text-muted-foreground">
-                            +{explanation.joinPlan.length - 3} more join steps
-                          </p>
+                      <SummaryCard icon={GitMerge} title="Joins">
+                        {explanation.joinPlan.length > 0 ? (
+                          <div className="space-y-1">
+                            {explanation.joinPlan.slice(0, 3).map((join, idx) => (
+                              <p key={`${join.leftTable}-${join.rightTable}-${idx}`}>
+                                {join.leftTable}.{join.leftColumn} → {join.rightTable}.{join.rightColumn} ({join.joinType})
+                              </p>
+                            ))}
+                            {explanation.joinPlan.length > 3 && (
+                              <p className="text-xs text-muted-foreground">
+                                +{explanation.joinPlan.length - 3} more join steps
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p>No join steps were required.</p>
                         )}
-                        {ambiguousJoin && (
-                          <p className="text-amber-700 dark:text-amber-300">
-                            One or more joins were inferred with low certainty.
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-foreground/90">No join steps were required.</p>
-                    )}
-                  </PlanInfoRow>
+                      </SummaryCard>
 
-                  <PlanInfoRow icon={ListChecks} title="Assumptions and validation">
-                    <p className="text-xs text-foreground/90">
-                      {pluralize('assumption', explanation.assumptions.length)}
-                      {' • '}
-                      {pluralize('validation note', nonDebugValidationNotes.length)}
-                    </p>
-                    {(explanation.assumptions.length > 0 || nonDebugValidationNotes.length > 0) && (
-                      <details className="mt-2 rounded-lg border border-border/70 bg-background/65 p-2.5">
-                        <summary className="cursor-pointer list-none text-xs font-medium text-foreground/90">
-                          View details
+                      <SummaryCard icon={ListChecks} title="Assumptions">
+                        <p>
+                          {pluralize('assumption', explanation.assumptions.length)}
+                          {' • '}
+                          {pluralize('validation note', nonDebugValidationNotes.length)}
+                        </p>
+                        {(explanation.assumptions.length > 0 || nonDebugValidationNotes.length > 0) && (
+                          <details className="mt-2 rounded-lg border border-border/70 bg-background/65 p-2.5">
+                            <summary className="cursor-pointer list-none text-xs font-medium text-foreground/90">
+                              View details
+                            </summary>
+                            <div className="scrollbar-thin mt-2 max-h-36 space-y-2 overflow-y-auto pr-1 text-[12px] text-foreground/90">
+                              {explanation.assumptions.map((item, index) => (
+                                <p key={`assumption-${index}`}>{item}</p>
+                              ))}
+                              {nonDebugValidationNotes.map((item, index) => (
+                                <p key={`validation-${index}`}>{item}</p>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </SummaryCard>
+
+                      <SummaryCard icon={ShieldCheck} title="Validation">
+                        {nonDebugValidationNotes.length > 0 ? (
+                          <div className="space-y-1">
+                            {nonDebugValidationNotes.slice(0, 3).map((item, index) => (
+                              <p key={`validation-note-${index}`}>{item}</p>
+                            ))}
+                            {nonDebugValidationNotes.length > 3 && (
+                              <p className="text-xs text-muted-foreground">
+                                +{nonDebugValidationNotes.length - 3} more validation notes
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p>No validation notes were reported.</p>
+                        )}
+                      </SummaryCard>
+                    </section>
+
+                    {debugValidationNotes.length > 0 && (
+                      <details className="rounded-xl border border-border/70 bg-background/55 px-3 py-2.5">
+                        <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground">
+                          Debug details
                         </summary>
-                        <div className="scrollbar-thin mt-2 max-h-40 space-y-2 overflow-y-auto pr-1 text-[11px] leading-relaxed text-foreground/90">
-                          {explanation.assumptions.map((item, index) => (
-                            <p key={`assumption-${index}`}>{item}</p>
-                          ))}
-                          {nonDebugValidationNotes.map((item, index) => (
-                            <p key={`validation-${index}`}>{item}</p>
+                        <div className="scrollbar-thin mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px] leading-relaxed text-muted-foreground">
+                          {debugValidationNotes.map((note, idx) => (
+                            <p key={`${note}-${idx}`}>{note}</p>
                           ))}
                         </div>
                       </details>
                     )}
-                  </PlanInfoRow>
+                  </>
+                )}
 
-                  <PlanInfoRow icon={AlertTriangle} title="Reliability factors">
-                    <div className="space-y-1 text-xs leading-relaxed text-foreground/90">
-                      {reliabilityNotes.map((item, index) => (
-                        <p key={`reliability-note-${index}`}>{item}</p>
-                      ))}
-                    </div>
-                  </PlanInfoRow>
-
-                  {debugValidationNotes.length > 0 && (
-                    <details className="rounded-xl border border-border/70 bg-background/55 px-3 py-2.5">
-                      <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground">
-                        Debug details
-                      </summary>
-                      <div className="scrollbar-thin mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px] leading-relaxed text-muted-foreground">
-                        {debugValidationNotes.map((note, idx) => (
-                          <p key={`${note}-${idx}`}>{note}</p>
-                        ))}
+                {isReviewMode ? (
+                  <section className="rounded-xl border border-border/70 bg-background/55 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Transcript</p>
+                        <p className="mt-1 text-[12px] text-muted-foreground">
+                          {modelWorkBlocks.length > 0
+                            ? `${pluralize('block', modelWorkBlocks.length)} captured`
+                            : 'No model transcript was captured.'}
+                        </p>
                       </div>
-                    </details>
-                  )}
 
-                  {explanation.warningLevel === 'high' && (
-                    <div className="flex items-start gap-2 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-xs text-foreground">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-destructive" />
-                      <p className="leading-relaxed">Review SQL and assumptions carefully before running.</p>
+                      {modelWorkBlocks.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTranscriptExpanded((previous) => !previous)}
+                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                          aria-label={transcriptExpanded ? 'Hide transcript' : 'Show transcript'}
+                        >
+                          {transcriptExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          {transcriptExpanded ? 'Hide transcript' : 'Show transcript'}
+                        </button>
+                      )}
                     </div>
-                  )}
-                </section>
-              )}
 
-              <section className="rounded-xl border border-border/70 bg-background/55 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Transcript</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {modelWorkBlocks.length > 0
-                        ? `${pluralize('block', modelWorkBlocks.length)} captured`
-                        : 'No model transcript has been captured yet.'}
-                    </p>
-                  </div>
-                  {isReviewMode && modelWorkBlocks.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setTranscriptExpanded((previous) => !previous)}
-                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label={transcriptExpanded ? 'Hide transcript' : 'Show transcript'}
-                    >
-                      {transcriptExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      {transcriptExpanded ? 'Hide transcript' : 'Show transcript'}
-                    </button>
-                  )}
-                </div>
-
-                {(transcriptExpanded || !isReviewMode) && (
-                  <div className="mt-3">
-                    {modelWorkBlocks.length > 0 ? (
-                      <ol className="space-y-3">
-                        {modelWorkBlocks.map((block, index) => (
-                          <TranscriptBlock
-                            key={block.blockId}
-                            block={block}
-                            isLive={shouldKeepTranscriptLive}
-                            isLast={index === modelWorkBlocks.length - 1}
-                          />
-                        ))}
-                      </ol>
-                    ) : active.events.length > 0 ? (
-                      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium text-foreground/90">Phase updates</p>
-                          <p className="text-[11px] text-muted-foreground">{phaseStatusCopy(active.status)}</p>
-                        </div>
-                        <div className="scrollbar-thin mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[11px] leading-relaxed text-muted-foreground">
-                          {active.events.map((entry, index) => (
-                            <p key={`${entry.phaseId}-${entry.timestamp}-${index}`}>{entry.summary}</p>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-border/70 bg-background/45 px-3 py-2 text-[11px] text-muted-foreground">
-                        Streaming model output will appear here as the query is planned and generated.
+                    {transcriptExpanded && (
+                      <div className="mt-3 border-t border-border/70 pt-3">
+                        <TranscriptTimeline
+                          modelWorkBlocks={modelWorkBlocks}
+                          active={active}
+                          isLive={false}
+                        />
                       </div>
                     )}
-                  </div>
+                  </section>
+                ) : (
+                  <TranscriptTimeline
+                    modelWorkBlocks={modelWorkBlocks}
+                    active={active}
+                    isLive={shouldKeepTranscriptLive}
+                  />
                 )}
-              </section>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {showLoadingSpinner && (
+        <div className="pointer-events-none absolute bottom-3 right-3 inline-flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        </div>
+      )}
     </div>
   );
 }

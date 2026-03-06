@@ -1,5 +1,6 @@
 import { ArrowRight, ClipboardList } from 'lucide-react';
 
+import { fetchNlSuggestions } from '@/lib/api/query';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -54,6 +55,13 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
   }
   const hasAnyPlan = plans.length > 0 || Boolean(legacyPlanName && legacyPlanContent);
 
+  const handleNext = () => {
+    void fetchNlSuggestions(projectId, 8).catch((error) => {
+      console.warn('[UploadStage] Failed to prewarm NL suggestions on upload completion:', error);
+    });
+    onNext();
+  };
+
   return (
     <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-4 p-4 sm:gap-6 sm:p-6" data-testid="upload-stage">
       <div className="min-h-0 flex-1 flex flex-col lg:flex-row gap-6">
@@ -93,7 +101,7 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
           {hasFiles && !allFilesReady ? (
             <p className="mr-3 text-xs text-muted-foreground">Finish processing uploads before continuing.</p>
           ) : null}
-          <Button onClick={onNext} disabled={!allFilesReady} className="gap-2" data-testid="upload-next-button">
+          <Button onClick={handleNext} disabled={!allFilesReady} className="gap-2" data-testid="upload-next-button">
             Next
             <ArrowRight className="h-4 w-4" />
           </Button>

@@ -319,6 +319,156 @@ function normalizeSuggestions(raw: z.infer<typeof SUGGESTION_SCHEMA>, limit: num
   return normalized;
 }
 
+function isNumericLikeColumn(column: SchemaColumnSummary): boolean {
+  const dtype = column.dtype.toLowerCase();
+  const name = column.name.toLowerCase();
+  return /(int|float|double|decimal|numeric|real|number)/.test(dtype)
+    || /(amount|revenue|score|count|total|value|price|points|rate|percent|pct|n_correct|n_possible|response|eoc)/.test(name);
+}
+
+function isTimeLikeColumn(column: SchemaColumnSummary): boolean {
+  const dtype = column.dtype.toLowerCase();
+  const name = column.name.toLowerCase();
+  return /(date|time|timestamp)/.test(dtype)
+    || /(date|time|timestamp|created_at|updated_at|day|week|month|year)/.test(name);
+}
+
+function findColumn(table: SchemaTableSummary, matcher: (column: SchemaColumnSummary) => boolean): SchemaColumnSummary | null {
+  return table.columns.find(matcher) ?? null;
+}
+
+function findDimensionColumn(table: SchemaTableSummary): SchemaColumnSummary | null {
+  return table.columns.find((column) => {
+    const name = column.name.toLowerCase();
+    if (isNumericLikeColumn(column) || isTimeLikeColumn(column)) {
+      return false;
+    }
+    return /(category|type|status|segment|group|class|institution|book|release|chapter|page|region|country|state)/.test(name);
+  }) ?? table.columns.find((column) => {
+    const name = column.name.toLowerCase();
+    return !isNumericLikeColumn(column) && !isTimeLikeColumn(column) && !/^(id|.*_id)$/.test(name);
+  }) ?? null;
+}
+
+function buildSuggestion(
+  prompt: string,
+  label: string,
+  category: string,
+  tables: string[],
+  rationale: string,
+  index: number
+): NlSuggestion {
+  return {
+    id: normalizeSuggestionId(prompt, index),
+    prompt,
+    label,
+    category,
+    tables,
+    rationale
+  };
+}
+
+function buildDeterministicSuggestions(params: {
+  tables: SchemaTableSummary[];
+  relationships: RelationshipHint[];
+  limit: number;
+}): NlSuggestion[] {
+  const primaryTable = params.tables
+    .slice()
+    .sort((left, right) => right.rowCount - left.rowCount)[0];
+  if (!primaryTable) {
+    return [];
+  }
+
+  const primaryMetric = findColumn(primaryTable, isNumericLikeColumn);
+  const primaryTime = findColumn(primaryTable, isTimeLikeColumn);
+  const primaryDimension = findDimensionColumn(primaryTable);
+  const ratioNumerator = findColumn(primaryTable, (column) => column.name.toLowerCase() === 'n_correct');
+  const ratioDenominator = findColumn(primaryTable, (column) => column.name.toLowerCase() === 'n_possible');
+  const joinHint = params.relationships[0];
+  const joinedTable = joinHint
+    ? params.tables.find((table) => table.tableName === joinHint.toTable) ?? null
+    : null;
+  const joinedDimension = joinedTable ? findDimensionColumn(joinedTable) : null;
+
+  const suggestions: Array<Omit<NlSuggestion, 'id'>> = [];
+
+  if (ratioNumerator && ratioDenominator) {
+    suggestions.push({
+      prompt: `Show the top 20 ${joinHint?.fromColumn ?? 'student_id'} values in ${primaryTable.tableName} by ${ratioNumerator.name} divided by ${ratioDenominator.name}, including only rows where ${ratioDenominator.name} is greater than 0.`,
+      label: 'Top performance ratios',
+      category: 'ranking',
+      tables: [primaryTable.tableName],
+      rationale: `Uses ${ratioNumerator.name} and ${ratioDenominator.name} from ${primaryTable.tableName} to create a meaningful ranked performance view.`
+    });
+  }
+
+  if (primaryMetric && primaryTime) {
+    suggestions.push({
+      prompt: `Plot the trend of ${primaryMetric.name} over ${primaryTime.name} from ${primaryTable.tableName}, grouped by time period and ordered chronologically.`,
+      label: 'Metric trend over time',
+      category: 'trend',
+      tables: [primaryTable.tableName],
+      rationale: `Combines the time column ${primaryTime.name} with the metric ${primaryMetric.name} to produce a realistic trend analysis.`
+    });
+  }
+
+  if (primaryMetric && primaryDimension) {
+    suggestions.push({
+      prompt: `Break down average ${primaryMetric.name} by ${primaryDimension.name} in ${primaryTable.tableName}, sorted from highest to lowest average.`,
+      label: 'Dimension breakdown',
+      category: 'segmentation',
+      tables: [primaryTable.tableName],
+      rationale: `Uses ${primaryDimension.name} as a business dimension and ${primaryMetric.name} as the metric for a useful grouped summary.`
+    });
+  }
+
+  if (joinHint && joinedTable) {
+    suggestions.push({
+      prompt: `Join ${joinHint.fromTable} with ${joinHint.toTable} on ${joinHint.fromColumn} and ${joinHint.toColumn}, then summarize row counts${joinedDimension ? ` by ${joinedTable.tableName}.${joinedDimension.name}` : ''}.`,
+      label: 'Joined relationship summary',
+      category: 'join-analysis',
+      tables: [joinHint.fromTable, joinHint.toTable],
+      rationale: `Uses an inferred relationship between ${joinHint.fromTable} and ${joinHint.toTable} so the query builder shows a schema-aware multi-table analysis.`
+    });
+  }
+
+  suggestions.push({
+    prompt: `Find the most common records in ${primaryTable.tableName}${primaryDimension ? ` by ${primaryDimension.name}` : ''} and return the top 20 groups by row count.`,
+    label: 'Most common groups',
+    category: 'ranking',
+    tables: [primaryTable.tableName],
+    rationale: `Provides a safe default exploration pattern grounded in ${primaryTable.tableName}.`
+  });
+
+  suggestions.push({
+    prompt: `Show rows from ${primaryTable.tableName} where key fields${primaryMetric ? ` like ${primaryMetric.name}` : ''}${primaryDimension ? ` and ${primaryDimension.name}` : ''} are null or missing, ordered by frequency.`,
+    label: 'Missing data audit',
+    category: 'quality',
+    tables: [primaryTable.tableName],
+    rationale: `Covers a practical data-quality question using the available columns in ${primaryTable.tableName}.`
+  });
+
+  const normalized = normalizeSuggestions({
+    suggestions: suggestions.map((suggestion) => ({
+      prompt: suggestion.prompt,
+      label: suggestion.label,
+      category: suggestion.category,
+      tables: suggestion.tables,
+      rationale: suggestion.rationale
+    }))
+  }, params.limit);
+
+  return normalized.map((suggestion, index) => buildSuggestion(
+    suggestion.prompt,
+    suggestion.label,
+    suggestion.category,
+    suggestion.tables,
+    suggestion.rationale,
+    index
+  ));
+}
+
 async function requestSuggestions(params: {
   client: LlmClient;
   prompt: string;
@@ -373,16 +523,29 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
     const model = env.nl2sqlModel || env.llmModel;
     const client = getClient(model);
     const relationships = inferRelationshipHints(tables);
-    const suggestions = await requestSuggestions({
-      client,
-      prompt: buildPrompt({
-        projectId,
-        limit,
+    let suggestions: NlSuggestion[];
+    try {
+      suggestions = await requestSuggestions({
+        client,
+        prompt: buildPrompt({
+          projectId,
+          limit,
+          tables,
+          relationships
+        }),
+        limit
+      });
+    } catch (error) {
+      console.warn('[nlSuggestions] Model suggestion generation failed, using deterministic schema-aware fallback.', {
+        error: error instanceof Error ? error.message : String(error),
+        projectId
+      });
+      suggestions = buildDeterministicSuggestions({
         tables,
-        relationships
-      }),
-      limit
-    });
+        relationships,
+        limit
+      });
+    }
 
     suggestionCache.set(cacheKey, {
       suggestions,
@@ -406,4 +569,3 @@ const defaultNlSuggestionsService = createNlSuggestionsService();
 export async function getNaturalLanguageSuggestions(options: GetNlSuggestionsOptions) {
   return defaultNlSuggestionsService.getSuggestions(options);
 }
-

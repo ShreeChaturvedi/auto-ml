@@ -14,9 +14,7 @@ export function usePrefersReducedMotion(): boolean {
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
     mediaQuery.addListener(handleChange);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
     return () => mediaQuery.removeListener(handleChange);
   }, []);
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
 import {
   generateSqlFromNaturalLanguageV2,
   repairSqlFromExecutionErrorV2,
@@ -11,7 +12,6 @@ import {
   type NlProgressEvent,
   type NlProgressStatus
 } from '../services/nlToSqlV2.js';
-import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 

@@ -57,7 +57,7 @@ describe('ThinkingBlock', () => {
           '**Bold** and `code` with inline math $x^2$',
           '',
           '```python',
-          'print(\"hello\")',
+          'print("hello")',
           '```',
           '',
           '```mermaid',
@@ -73,7 +73,7 @@ describe('ThinkingBlock', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Thought for|Thinking for/i }));
 
-    expect(document.querySelector('[data-streamdown=\"code-block\"]')).not.toBeNull();
+    expect(document.querySelector('[data-streamdown="code-block"]')).not.toBeNull();
   });
 
   it('locks the displayed timer once thinking is complete', async () => {

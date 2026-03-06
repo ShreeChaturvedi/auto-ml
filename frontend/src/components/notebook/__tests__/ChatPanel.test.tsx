@@ -130,6 +130,6 @@ describe('Notebook ChatPanel progressive rendering', () => {
 
     expect(screen.getByText('Visible output')).toBeInTheDocument();
     expect(screen.queryByText(/<<<JSON>>>/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/\"version\":\"1\"/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"version":"1"/)).not.toBeInTheDocument();
   });
 });

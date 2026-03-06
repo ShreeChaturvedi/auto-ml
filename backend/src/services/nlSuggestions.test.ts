@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile } from '../types/dataset.js';
-import type { LlmClient, LlmRequest, LlmStreamHandlers } from './llm/llmClient.js';
+ 
+import type { LlmClient } from './llm/llmClient.js';
 import { createNlSuggestionsService } from './nlSuggestions.js';
 
 function buildDataset(overrides: Partial<DatasetProfile> = {}): DatasetProfile {
@@ -41,8 +42,8 @@ function createDatasetRepository(datasets: DatasetProfile[]): DatasetRepository 
 
 function createClient(response: string): LlmClient {
   return {
-    complete: vi.fn(async (_request: LlmRequest) => response),
-    stream: vi.fn(async (_request: LlmRequest, _handlers: LlmStreamHandlers) => '')
+    complete: vi.fn(async () => response),
+    stream: vi.fn(async () => '')
   };
 }
 

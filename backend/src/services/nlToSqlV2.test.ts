@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile } from '../types/dataset.js';
+ 
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from './llm/llmClient.js';
 import { createNl2SqlService } from './nlToSqlV2.js';
 
@@ -40,7 +41,7 @@ function createDatasetRepository(datasets: DatasetProfile[]): DatasetRepository 
 
 function createClientFromResponses(responses: Array<string | Error>): LlmClient {
   return {
-    complete: vi.fn(async (_request: LlmRequest) => {
+    complete: vi.fn(async () => {
       const next = responses.shift();
       if (next === undefined) {
         throw new Error('No more mock responses configured');
@@ -50,7 +51,7 @@ function createClientFromResponses(responses: Array<string | Error>): LlmClient 
       }
       return next;
     }),
-    stream: vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+    stream: vi.fn(async (_: LlmRequest, handlers: LlmStreamHandlers) => {
       const next = responses.shift();
       if (next === undefined) {
         throw new Error('No more mock responses configured');
@@ -800,7 +801,7 @@ describe('nlToSqlV2 service', () => {
       projectId: 'project-1',
       nlQuery: 'show users',
       failedSql: 'SELECT foo FROM users',
-      executionError: 'column \"foo\" does not exist',
+      executionError: 'column "foo" does not exist',
       onProgress: (event) => {
         progressEvents.push({ phaseId: event.phaseId, status: event.status });
       },
@@ -843,7 +844,7 @@ describe('nlToSqlV2 service', () => {
         projectId: 'project-1',
         nlQuery: 'show users',
         failedSql: 'SELECT foo FROM users',
-        executionError: 'column \"foo\" does not exist',
+        executionError: 'column "foo" does not exist',
         onProgress: (event) => {
           progressEvents.push({
             phaseId: event.phaseId,

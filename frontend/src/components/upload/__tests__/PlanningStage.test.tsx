@@ -302,6 +302,6 @@ describe('PlanningStage progressive assistant rendering', () => {
 
     expect(screen.getByText('Visible planning output')).toBeInTheDocument();
     expect(screen.queryByText(/<<<END>>>/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/\"version\":\"1\"/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"version":"1"/)).not.toBeInTheDocument();
   });
 });

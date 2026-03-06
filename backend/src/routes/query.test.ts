@@ -29,8 +29,8 @@ vi.mock('../services/nlSuggestions.js', () => ({
 }));
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
 import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
+import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 import { canListen } from '../tests/canListen.js';
@@ -49,14 +49,14 @@ const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV
 const mockGetNaturalLanguageSuggestions = vi.mocked(getNaturalLanguageSuggestions);
 const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
 
-type NdjsonEvent = Record<string, any>;
+type NdjsonEvent = Record<string, unknown>;
 
 function parseNdjsonEvents(payload: string): NdjsonEvent[] {
   return payload
     .trim()
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line) as NdjsonEvent);
 }
 
 function findEventIndex(
@@ -765,7 +765,7 @@ describeIf('query routes', () => {
           phaseId: 'planning',
           kind: 'tool',
           title: 'Tool call: inspect_schema',
-          delta: '```json\n{\"table\":\"users\"}\n```',
+          delta: '```json\n{"table":"users"}\n```',
           timestamp: new Date().toISOString()
         });
         input.onModelWork?.({

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { env } from '../config.js';
 import { createDatasetRepository, type DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile } from '../types/dataset.js';
+
 import { createLlmClient, type LlmClient, type LlmMessage } from './llm/llmClient.js';
 
 const DEFAULT_SUGGESTION_COUNT = 8;
@@ -83,7 +84,7 @@ function normalizeTableName(value: string): string {
 
 function fallbackTableName(filename: string, datasetId: string): string {
   const baseName = filename.replace(/\.[^/.]+$/, '');
-  let safe = baseName
+  const safe = baseName
     .replace(/[^a-zA-Z0-9_]/g, '_')
     .replace(/_+/g, '_')
     .replace(/_$/, '')

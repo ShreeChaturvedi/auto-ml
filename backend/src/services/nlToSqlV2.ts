@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { createDatasetRepository, type DatasetRepository } from '../repositories/datasetRepository.js';
+
 import {
   type LlmClient,
   type LlmMessage,
@@ -474,18 +475,18 @@ function getNlProviderInfo(): NlProviderInfo {
 
 function fallbackTableName(filename: string, datasetId: string): string {
   const baseName = filename.replace(/\.[^/.]+$/, '');
-  let safe = baseName
+  const safe = baseName
     .replace(/[^a-zA-Z0-9_]/g, '_')
     .replace(/_+/g, '_')
     .replace(/_$/, '')
-    .replace(/^[^a-zA-Z]/, 'table_')
+    .replace(/^[^a-zA-Z]/, `table_${datasetId.slice(0, 6)}_`)
     .toLowerCase();
 
   if (!safe) {
-    return 'table_data';
+    return `table_${datasetId.slice(0, 8)}`;
   }
 
-  return safe.slice(0, 63) || 'table_data';
+  return safe.slice(0, 63);
 }
 
 function normalizeTableName(value: string): string {

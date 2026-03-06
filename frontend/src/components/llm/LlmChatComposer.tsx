@@ -4,6 +4,7 @@ import {
   Ban,
   Brain,
   Code2,
+  CornerDownLeft,
   Crown,
   Flame,
   Gauge,
@@ -198,16 +199,16 @@ export function LlmChatComposer({
           className="min-h-[60px]"
         />
         <InputGroupAddon align="block-end">
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+          <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {leftSlot}
-              <div className="hidden lg:flex items-center gap-2">
+              <div className="hidden lg:flex shrink-0 flex-nowrap items-center gap-2">
                 <Select value={currentModelOption.value} onValueChange={onModelChange}>
-                  <SelectTrigger className="h-7 w-fit min-w-[8.25rem] max-w-none gap-2 px-2.5 text-xs">
-                    <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+                  <SelectTrigger className="flex h-7 w-fit min-w-[8.25rem] max-w-none shrink-0 flex-nowrap gap-2 px-2.5 text-xs [&>div]:flex [&>div]:flex-nowrap [&>div]:min-w-0 [&>div]:overflow-hidden">
+                    <div className="flex min-w-0 shrink flex-nowrap items-center gap-2 whitespace-nowrap">
                       <span className="shrink-0">{renderModelIcon(currentModelOption)}</span>
-                      <span className="truncate">{currentModelOption.label}</span>
-                    </span>
+                      <span className="min-w-0 truncate">{currentModelOption.label}</span>
+                    </div>
                   </SelectTrigger>
                   <SelectContent>
                     {modelOptions.map((option) => (
@@ -257,8 +258,14 @@ export function LlmChatComposer({
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
-              <span className="hidden sm:inline text-[10px] text-muted-foreground/60">
-                ⇧ + ⏎ for newline
+              <span className="hidden sm:flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                  <ArrowUp className="h-3 w-3" />
+                </kbd>
+                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                  <CornerDownLeft className="h-3 w-3" />
+                </kbd>
+                <span>for newline</span>
               </span>
               <div className="min-w-0 max-w-full overflow-hidden">
                 {metaSlot}

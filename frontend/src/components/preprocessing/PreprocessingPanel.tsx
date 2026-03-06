@@ -1076,21 +1076,6 @@ export function PreprocessingPanel() {
             isLoadingTables={isLoadingTables}
           />
         }
-        chatMetaSlot={
-          <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">
-            {selectedTable ? (
-              <Badge variant="outline" className="h-6 max-w-[210px] px-2 text-[11px] font-normal">
-                <span className="truncate" title={selectedTable.filename}>{selectedTable.filename}</span>
-              </Badge>
-            ) : null}
-            {runId ? (
-              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-                <PlayCircle className="mr-1 h-3.5 w-3.5" />
-                Active run
-              </Badge>
-            ) : null}
-          </div>
-        }
         composerStatusSlot={composerStatusNotice}
         LeftPaneComponent={({
           messages,

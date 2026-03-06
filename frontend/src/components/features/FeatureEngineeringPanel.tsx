@@ -960,23 +960,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           onTargetColumnSelect={setTargetColumn}
         />
       }
-      chatMetaSlot={
-        <div className="hidden min-w-0 flex-wrap items-center gap-2 sm:flex">
-          {selectedDatasetFile ? (
-            <Badge variant="outline" className="h-6 max-w-[220px] px-2 text-[11px] font-normal">
-              <span className="truncate" title={selectedDatasetFile.name}>{selectedDatasetFile.name}</span>
-            </Badge>
-          ) : null}
-          {targetColumn ? (
-            <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-              target: {targetColumn}
-            </Badge>
-          ) : null}
-          <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-            {activeFeatures.length} enabled features
-          </Badge>
-        </div>
-      }
       leftPaneScrollable={false}
     />
   );

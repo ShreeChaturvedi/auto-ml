@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from 'react';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -176,6 +178,11 @@ export function DatasetChooserDialog({
   onStart,
   selectedDatasetId
 }: DatasetChooserDialogProps) {
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const projects = useProjectStore((s) => s.projects);
+  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const themeColorText = activeProject ? projectColorClasses[activeProject.color]?.text : '';
+
   const searchPlaceholders = useMemo(
     () => buildDatasetSearchPlaceholders(allTables),
     [allTables]
@@ -264,12 +271,13 @@ export function DatasetChooserDialog({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                variant="outline"
                 size="icon"
-                className="rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg hover:shadow-primary/25 active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none"
+                className="rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none"
                 disabled={!candidateDatasetId}
                 onClick={onStart}
               >
-                <Check className="h-4 w-4" />
+                <Check className={cn('h-4 w-4', themeColorText)} />
                 <span className="sr-only">Start with this dataset</span>
               </Button>
             </TooltipTrigger>

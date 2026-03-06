@@ -30,6 +30,9 @@ import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { X, FileText, FileJson, FileSpreadsheet, Database, FileCode, FileType, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
+import { CsvIcon } from './CsvIcon';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect } from 'react';
 
@@ -49,6 +52,7 @@ interface SortableTabProps {
   fileType?: string;
   queryMode?: 'english' | 'sql';
   queryIconColorClassName?: string;
+  themeColorClass?: string;
   onClose: () => void;
   onClick: () => void;
 }
@@ -60,6 +64,7 @@ function SortableTab({
   fileType,
   queryMode,
   queryIconColorClassName,
+  themeColorClass,
   onClose,
   onClick
 }: SortableTabProps) {
@@ -86,7 +91,7 @@ function SortableTab({
 
     switch (fileType) {
       case 'csv':
-        return <FileSpreadsheet className="h-4 w-4 text-green-500" />;
+        return <CsvIcon className="h-4 w-4" themeColorClass={themeColorClass} isActive={isActive} />;
       case 'json':
         return <FileJson className="h-4 w-4 text-blue-500" />;
       case 'excel':
@@ -176,6 +181,13 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   const openFileTabs = useDataStore((state) => state.openFileTabs);
   const closeFileTab = useDataStore((state) => state.closeFileTab);
   const removeArtifact = useDataStore((state) => state.removeArtifact);
+
+  // Get project theme color
+  const { projects } = useProjectStore();
+  const activeProject = projects.find((project) => project.id === projectId);
+  const themeColorClass = activeProject
+    ? projectColorClasses[activeProject.color]?.text
+    : undefined;
 
   // Get files and artifacts for this project
   const files = useMemo(
@@ -307,6 +319,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
                     fileType={tab.fileType}
                     queryMode={tab.queryMode}
                     queryIconColorClassName={queryIconColorClassName}
+                    themeColorClass={themeColorClass}
                     onClose={() => handleCloseTab(tab)}
                     onClick={() => handleTabClick(tab)}
                   />

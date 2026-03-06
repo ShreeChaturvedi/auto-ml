@@ -29,6 +29,8 @@ import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
 import type { FileType as UploadedFileType, UploadedFile } from '@/types/file';
+import { CsvIcon } from './CsvIcon';
+import { projectColorClasses } from '@/types/project';
 
 interface FileExplorerProps {
   projectId: string;
@@ -59,13 +61,15 @@ const activeIconColorByType: Record<UploadedFileType, string> = {
 interface FileItemProps {
   file: UploadedFile;
   isActive: boolean;
+  themeColorClass?: string;
   onOpen: () => void;
   onDelete: () => void;
   onDownload: () => void;
 }
 
-function FileItem({ file, isActive, onOpen, onDelete, onDownload }: FileItemProps) {
-  const Icon = iconByType[file.type] ?? File;
+function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownload }: FileItemProps) {
+  const isCsv = file.type === 'csv';
+  const Icon = isCsv ? CsvIcon : (iconByType[file.type] ?? File);
   const iconColor = isActive
     ? activeIconColorByType[file.type] ?? 'text-muted-foreground'
     : 'text-muted-foreground';
@@ -80,7 +84,10 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload }: FileItemProp
       )}
       onClick={onOpen}
     >
-      <Icon className={cn('h-3.5 w-3.5 shrink-0', iconColor)} />
+      <Icon 
+        className={cn('h-3.5 w-3.5 shrink-0', !isCsv && iconColor)}
+        {...(isCsv ? { themeColorClass, isActive } : {})}
+      />
       <span className="text-workflow truncate flex-1">{file.name}</span>
 
       <DropdownMenu>

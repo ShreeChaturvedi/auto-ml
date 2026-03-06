@@ -6,18 +6,33 @@
  */
 
 import { spawn, exec, execFile, type ExecFileOptions } from 'child_process';
-import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
-import { mkdir, writeFile, rm } from 'fs/promises';
+import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
+
 import { env } from '../config.js';
 import type { PythonVersion, ExecutionResult, RichOutput, PackageInfo } from '../types/execution.js';
+import {
+    AUTOML_ARTIFACT_ROOT,
+    artifactExecDirRel,
+    containerWorkspaceRelativePath,
+    isAutomlArtifactPath,
+    resolveHostPathInWorkspace,
+    CONTAINER_WORKSPACE_ROOT
+} from './executionArtifacts.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const PACKAGE_ALIASES = new Map<string, string>([['pytorch', 'torch']]);
+const MPL_MAX_FIGURES_PER_CELL = 10;
+const CONTAINER_PYTHON_SITE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.python`;
+const CONTAINER_PIP_CACHE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.cache/pip`;
+const CONTAINER_TMP_DIR = `${CONTAINER_WORKSPACE_ROOT}/.tmp`;
+
+type ImageOutputMode = 'data_url' | 'artifact_path';
 
 async function execDocker(
     args: string[],
@@ -66,6 +81,78 @@ export interface Container {
 
 // Active containers cache
 const containers = new Map<string, Container>();
+
+async function materializeImageArtifacts(
+    container: Container,
+    outputs: RichOutput[]
+): Promise<RichOutput[]> {
+    const execDirs = new Set<string>();
+
+    for (const output of outputs) {
+        if (output.type !== 'image') {
+            continue;
+        }
+        if (!isAutomlArtifactPath(output.content)) {
+            continue;
+        }
+
+        const containerPath = output.content;
+        const mimeType = output.mimeType || 'image/png';
+        const relPath = containerWorkspaceRelativePath(containerPath);
+        const execDirRel = artifactExecDirRel(relPath);
+        if (execDirRel) {
+            execDirs.add(execDirRel);
+        }
+
+        const hostPath = resolveHostPathInWorkspace(container.workspacePath, relPath);
+        if (!hostPath) {
+            output.type = 'text';
+            output.mimeType = 'text/plain';
+            output.content = `[rendering] Ignoring unsafe image artifact path: ${containerPath}\n`;
+            continue;
+        }
+
+        try {
+            const bytes = await readFile(hostPath);
+            output.content = `data:${mimeType};base64,${bytes.toString('base64')}`;
+            output.mimeType = mimeType;
+            await rm(hostPath, { force: true }).catch(() => { });
+            continue;
+        } catch {
+            // Fall back to reading the file inside the container if the host path isn't accessible.
+        }
+
+        try {
+            const script = [
+                'import base64, sys',
+                'data = open(sys.argv[1], "rb").read()',
+                'sys.stdout.write(base64.b64encode(data).decode("utf-8"))'
+            ].join('\n');
+            const { stdout } = await execDocker(
+                ['exec', container.containerId, 'python', '-c', script, containerPath],
+                { maxBuffer: 25 * 1024 * 1024 }
+            );
+            output.content = `data:${mimeType};base64,${stdout.trim()}`;
+            output.mimeType = mimeType;
+            await execDocker(['exec', container.containerId, 'rm', '-f', containerPath]).catch(() => { });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            output.type = 'text';
+            output.mimeType = 'text/plain';
+            output.content = `[rendering] Failed to materialize image output from ${containerPath}: ${message}\n`;
+        }
+    }
+
+    for (const execDirRel of execDirs) {
+        const hostDir = resolveHostPathInWorkspace(container.workspacePath, execDirRel);
+        if (!hostDir) {
+            continue;
+        }
+        await rm(hostDir, { recursive: true, force: true }).catch(() => { });
+    }
+
+    return outputs;
+}
 
 /**
  * Check if Docker is available and running
@@ -167,7 +254,9 @@ async function ensureRuntimeImage(pythonVersion: PythonVersion): Promise<string>
  */
 export async function createContainer(config: ContainerConfig): Promise<Container> {
     const id = randomUUID();
-    const workspacePath = config.workspacePath;
+    // Normalize to an absolute path so subsequent file operations are consistent even if the
+    // backend is launched from different working directories (dev vs prod, tests, etc.).
+    const workspacePath = resolve(config.workspacePath);
 
     // Create workspace directory
     await mkdir(workspacePath, { recursive: true });
@@ -183,8 +272,8 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
     const imageName = await ensureRuntimeImage(config.pythonVersion);
     const containerName = `automl-exec-${id.slice(0, 8)}`;
 
-    // Resolve to absolute paths (Docker requires absolute paths)
-    const absWorkspacePath = resolve(workspacePath);
+    // Docker requires absolute host paths for bind mounts.
+    const absWorkspacePath = workspacePath;
     const absDatasetsPath = resolve(env.datasetStorageDir);
 
     const dockerArgs = [
@@ -198,13 +287,13 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
         '--tmpfs', `/tmp:rw,nosuid,size=${env.executionTmpfsMb}m`, // writable tmp
         '-v', `${absWorkspacePath}:/workspace:rw`, // mount workspace
         '-v', `${absDatasetsPath}:/datasets:ro`, // mount datasets read-only
-        '-w', '/workspace',
+        '-w', CONTAINER_WORKSPACE_ROOT,
         '--user', 'sandbox',
-        '-e', 'HOME=/workspace',
-        '-e', 'PYTHONPATH=/workspace/.python',
-        '-e', 'PIP_CACHE_DIR=/workspace/.cache/pip',
+        '-e', `HOME=${CONTAINER_WORKSPACE_ROOT}`,
+        '-e', `PYTHONPATH=${CONTAINER_PYTHON_SITE_DIR}`,
+        '-e', `PIP_CACHE_DIR=${CONTAINER_PIP_CACHE_DIR}`,
         '-e', 'PIP_DISABLE_PIP_VERSION_CHECK=1',
-        '-e', 'TMPDIR=/workspace/.tmp',
+        '-e', `TMPDIR=${CONTAINER_TMP_DIR}`,
         ...(env.executionDockerPlatform ? ['--platform', env.executionDockerPlatform] : []),
         imageName,
         'tail', '-f', '/dev/null' // keep container running
@@ -219,7 +308,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
             containerId,
             projectId: config.projectId,
             pythonVersion: config.pythonVersion,
-            workspacePath,
+            workspacePath: absWorkspacePath,
             createdAt: new Date(),
             lastUsedAt: new Date()
         };
@@ -242,27 +331,43 @@ export async function executeInContainer(
     container: Container,
     code: string,
     timeoutMs: number = env.executionTimeoutMs,
-    options: { executionId?: string } = {}
+    options: { executionId?: string; sessionKey?: string; imageOutputMode?: ImageOutputMode } = {}
 ): Promise<ExecutionResult> {
     const startTime = Date.now();
+    // Ensure we always operate on an absolute workspace path.
+    const workspacePath = resolve(container.workspacePath);
+    container.workspacePath = workspacePath;
     const safeId = options.executionId
         ? options.executionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
         : '';
+    const safeSessionKey = options.sessionKey
+        ? options.sessionKey.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
+        : '';
     const suffix = safeId ? `_${safeId}` : '';
+    const sessionStateEnabled = safeSessionKey ? 'True' : 'False';
+    const sessionStateFilename = safeSessionKey ? `_state_${safeSessionKey}.pkl` : '';
+    const imageOutputMode: ImageOutputMode = options.imageOutputMode ?? 'data_url';
 
-    // Write code to a temporary file in the workspace
-    const codePath = join(container.workspacePath, `_exec_code${suffix}.py`);
+    // Write code to a temporary file in the workspace. Some execution paths may
+    // delete workspaces unexpectedly (manual cleanup, crash recovery), so make
+    // sure the directory exists before writing.
+    await mkdir(workspacePath, { recursive: true });
+    const codePath = join(workspacePath, `_exec_code${suffix}.py`);
     const outputFilename = `_outputs${suffix}.json`;
 
     // Wrap code with output capturing
+    const userCodeBase64 = Buffer.from(code, 'utf8').toString('base64');
     const wrappedCode = `
 import sys
 import json
 import traceback
+import pickle
+import base64
 from pathlib import Path
 
 # Capture outputs
 _outputs = []
+_capture_outputs = True
 
 # Override print to capture output
 _original_print = print
@@ -271,13 +376,14 @@ def print(*args, **kwargs):
     output = io.StringIO()
     _original_print(*args, file=output, **kwargs)
     value = output.getvalue()
-    _outputs.append({"type": "text", "content": value})
+    if _capture_outputs:
+        _outputs.append({"type": "text", "content": value})
     _original_print(*args, **kwargs)
 
 # Helper to display dataframes nicely
 def _display_df(df, max_rows=20):
     """Display DataFrame as table output"""
-    if hasattr(df, 'to_dict'):
+    if _capture_outputs and hasattr(df, 'to_dict'):
         data = df.head(max_rows).to_dict('records')
         cols = list(df.columns)
         _outputs.append({
@@ -288,9 +394,165 @@ def _display_df(df, max_rows=20):
 
 # Make datasets accessible + user packages visible
 import os
-os.chdir('/workspace')
-if '/workspace/.python' not in sys.path:
-    sys.path.insert(0, '/workspace/.python')
+os.chdir('${CONTAINER_WORKSPACE_ROOT}')
+_AUTOML_PYTHON_PATH = '${CONTAINER_PYTHON_SITE_DIR}'
+if _AUTOML_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, _AUTOML_PYTHON_PATH)
+
+# Matplotlib figure capture (Jupyter-like inline plots)
+# - Capture on plt.show()
+# - Capture any remaining figures at end-of-cell
+os.environ.setdefault("MPLBACKEND", "Agg")
+
+import uuid
+import builtins as _builtins
+
+_AUTOML_ARTIFACT_DIR = Path("${AUTOML_ARTIFACT_ROOT}") / str(uuid.uuid4())
+try:
+    _AUTOML_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    _AUTOML_ARTIFACT_DIR = None
+
+_MPL_CAPTURE_INDEX = 0
+_MPL_MAX_FIGURES_PER_CELL = ${MPL_MAX_FIGURES_PER_CELL}
+_MPL_PATCHED = False
+_MPL_CAPTURE_LIMIT_REACHED = False
+
+def _capture_matplotlib_figures(reason="show"):
+    global _MPL_CAPTURE_INDEX
+    global _MPL_CAPTURE_LIMIT_REACHED
+    if not _capture_outputs:
+        return
+    if _AUTOML_ARTIFACT_DIR is None:
+        return
+    if "matplotlib.pyplot" not in sys.modules:
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    try:
+        fignums = list(plt.get_fignums())
+    except Exception:
+        return
+
+    for fig_num in fignums:
+        if _MPL_CAPTURE_INDEX >= _MPL_MAX_FIGURES_PER_CELL:
+            if not _MPL_CAPTURE_LIMIT_REACHED:
+                _outputs.append({
+                    "type": "text",
+                    "content": f"[matplotlib] Too many figures; showing first {_MPL_MAX_FIGURES_PER_CELL} only.\\n"
+                })
+                _MPL_CAPTURE_LIMIT_REACHED = True
+            try:
+                plt.close(fig_num)
+            except Exception:
+                pass
+            continue
+
+        try:
+            fig = plt.figure(fig_num)
+            filename = f"mpl_{_MPL_CAPTURE_INDEX:03d}_{reason}_{fig_num}.png"
+            path = _AUTOML_ARTIFACT_DIR / filename
+            fig.savefig(str(path), format="png", bbox_inches="tight")
+            _outputs.append({
+                "type": "image",
+                "content": str(path),
+                "mimeType": "image/png"
+            })
+            _MPL_CAPTURE_INDEX += 1
+        except Exception:
+            _outputs.append({
+                "type": "text",
+                "content": "[matplotlib] Failed to capture figure output.\\n"
+            })
+        finally:
+            try:
+                plt.close(fig_num)
+            except Exception:
+                pass
+
+def _patch_matplotlib_pyplot():
+    global _MPL_PATCHED
+    if _MPL_PATCHED:
+        return
+    if "matplotlib.pyplot" not in sys.modules:
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    if getattr(plt.show, "__automl_patched__", False):
+        _MPL_PATCHED = True
+        return
+
+    def _automl_show(*args, **kwargs):
+        _capture_matplotlib_figures("show")
+        return None
+
+    _automl_show.__automl_patched__ = True
+    plt.show = _automl_show
+    _MPL_PATCHED = True
+
+_original_import = _builtins.__import__
+def _automl_import(name, globals=None, locals=None, fromlist=(), level=0):
+    module = _original_import(name, globals, locals, fromlist, level)
+    try:
+        if isinstance(name, str) and name.startswith("matplotlib"):
+            _patch_matplotlib_pyplot()
+    except Exception:
+        pass
+    return module
+
+_builtins.__import__ = _automl_import
+
+try:
+    _patch_matplotlib_pyplot()
+except Exception:
+    pass
+
+_SESSION_STATE_PATH = Path('${CONTAINER_WORKSPACE_ROOT}/${sessionStateFilename}') if ${sessionStateEnabled} else None
+
+def _restore_state():
+    if _SESSION_STATE_PATH is None or not _SESSION_STATE_PATH.exists():
+        return
+    try:
+        with _SESSION_STATE_PATH.open('rb') as _state_file:
+            _state = pickle.load(_state_file)
+        if isinstance(_state, dict):
+            for _name, _value in _state.items():
+                globals()[_name] = _value
+    except Exception:
+        # Ignore state restore failures and continue with a clean namespace.
+        pass
+
+def _persist_state():
+    if _SESSION_STATE_PATH is None:
+        return
+    _skip_names = {
+        'sys', 'json', 'traceback', 'pickle', 'Path', 'os',
+        '_outputs', '_capture_outputs', '_original_print', 'print', '_display_df',
+        '_SESSION_STATE_PATH', '_restore_state', '_persist_state', 'resolve_dataset_path'
+    }
+    _state = {}
+    for _name, _value in globals().items():
+        if _name.startswith('__') or _name.startswith('_') or _name in _skip_names:
+            continue
+        try:
+            pickle.dumps(_value)
+        except Exception:
+            continue
+        _state[_name] = _value
+    try:
+        with _SESSION_STATE_PATH.open('wb') as _state_file:
+            pickle.dump(_state, _state_file)
+    except Exception:
+        # Ignore state persistence failures to avoid masking user code results.
+        pass
 
 def resolve_dataset_path(filename, dataset_id=None):
     """Resolve dataset path across cloud and browser mounts.
@@ -344,23 +606,34 @@ def resolve_dataset_path(filename, dataset_id=None):
     # Return first candidate as fallback (will fail with clear error)
     return str(candidates[0])
 
+_restore_state()
+
+_USER_CODE_B64 = "${userCodeBase64}"
+_user_code = base64.b64decode(_USER_CODE_B64).decode("utf-8")
+
 try:
-${code.split('\n').map(line => '    ' + line).join('\n')}
+    exec(compile(_user_code, "<cell>", "exec"), globals(), globals())
 except Exception as e:
     _outputs.append({
         "type": "error",
         "content": traceback.format_exc()
     })
+finally:
+    try:
+        _capture_matplotlib_figures("end")
+    except Exception:
+        pass
+    _persist_state()
 
 # Write outputs to file
-with open('/workspace/${outputFilename}', 'w') as f:
+with open('${CONTAINER_WORKSPACE_ROOT}/${outputFilename}', 'w') as f:
     json.dump(_outputs, f)
 `;
 
     await writeFile(codePath, wrappedCode);
 
     // Execute in container
-    const execPath = `/workspace/_exec_code${suffix}.py`;
+    const execPath = `${CONTAINER_WORKSPACE_ROOT}/_exec_code${suffix}.py`;
     const dockerExec = spawn('docker', [
         'exec',
         container.containerId,
@@ -398,9 +671,12 @@ with open('/workspace/${outputFilename}', 'w') as f:
                     'exec',
                     container.containerId,
                     'cat',
-                    `/workspace/${outputFilename}`
+                    `${CONTAINER_WORKSPACE_ROOT}/${outputFilename}`
                 ]);
                 outputs = JSON.parse(outputJson);
+                if (imageOutputMode === 'data_url') {
+                    outputs = await materializeImageArtifacts(container, outputs);
+                }
             } catch {
                 // If no outputs file, use stdout as text output
                 if (stdout.trim()) {
@@ -415,7 +691,7 @@ with open('/workspace/${outputFilename}', 'w') as f:
                 'rm',
                 '-f',
                 execPath,
-                `/workspace/${outputFilename}`
+                `${CONTAINER_WORKSPACE_ROOT}/${outputFilename}`
             ]).catch(() => { });
 
             container.lastUsedAt = new Date();
@@ -476,7 +752,7 @@ export async function installPackage(
             '--prefer-binary',
             '--no-cache-dir',
             '--target',
-            '/workspace/.python'
+            CONTAINER_PYTHON_SITE_DIR
         ];
 
         const binaryAttempt = await runPipInstall([
@@ -547,7 +823,7 @@ export async function uninstallPackage(
             'uninstall',
             '-y',
             '--target',
-            '/workspace/.python',
+            CONTAINER_PYTHON_SITE_DIR,
             trimmed
         ], { timeout: 60000 });
 
@@ -614,6 +890,9 @@ export type PackageInstallEvent = {
     message?: string;
 };
 
+const PIP_INSTALL_TIMEOUT_MS = 8 * 60 * 1000;
+const INSTALL_TIMEOUT_MESSAGE = 'Install timed out while waiting for pip process to finish.';
+
 export async function installPackageStream(
     container: Container,
     packageName: string,
@@ -634,17 +913,21 @@ export async function installPackageStream(
         '--prefer-binary',
         '--no-cache-dir',
         '--target',
-        '/workspace/.python'
+        CONTAINER_PYTHON_SITE_DIR
     ];
 
     onEvent({ type: 'progress', progress: 8, stage: 'Checking wheels' });
+    console.info(`[containerManager] pip install phase -> checking-wheels (${requirements.join(', ')})`);
 
     const binaryAttempt = await runPipInstallStream(
         [...baseArgs, '--only-binary', ':all:', ...requirements],
-        onEvent
+        onEvent,
+        'binary-attempt'
     );
 
     if (binaryAttempt.success) {
+        onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
+        console.info(`[containerManager] pip install phase -> completed (binary-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`
@@ -659,11 +942,26 @@ export async function installPackageStream(
         };
     }
 
-    onEvent({ type: 'progress', progress: 35, stage: 'Building from source' });
+    if (isInstallTimeoutError(binaryAttempt.details)) {
+        return {
+            success: false,
+            message: `${aliasNotice}Install timed out while resolving wheel dependencies.`
+                + ' Please retry or try a lighter package spec.'
+        };
+    }
 
-    const sourceAttempt = await runPipInstallStream([...baseArgs, ...requirements], onEvent);
+    onEvent({ type: 'progress', progress: 35, stage: 'Building from source' });
+    console.info(`[containerManager] pip install phase -> building-from-source (${requirements.join(', ')})`);
+
+    const sourceAttempt = await runPipInstallStream(
+        [...baseArgs, ...requirements],
+        onEvent,
+        'source-attempt'
+    );
 
     if (sourceAttempt.success) {
+        onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
+        console.info(`[containerManager] pip install phase -> completed (source-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`
@@ -693,7 +991,8 @@ async function runPipInstall(args: string[]): Promise<{
 
 async function runPipInstallStream(
     args: string[],
-    onEvent: (event: PackageInstallEvent) => void
+    onEvent: (event: PackageInstallEvent) => void,
+    attemptLabel: 'binary-attempt' | 'source-attempt'
 ): Promise<{
     success: boolean;
     message?: string;
@@ -701,9 +1000,13 @@ async function runPipInstallStream(
 }> {
     const progressMarkers = [
         { match: /Collecting/i, progress: 15, stage: 'Collecting' },
+        { match: /Installing build dependencies/i, progress: 45, stage: 'Installing build dependencies' },
+        { match: /Preparing metadata/i, progress: 55, stage: 'Preparing metadata' },
         { match: /Downloading/i, progress: 35, stage: 'Downloading' },
         { match: /Building wheels?/i, progress: 60, stage: 'Building wheels' },
         { match: /Installing collected packages/i, progress: 85, stage: 'Installing' },
+        { match: /Requirement already satisfied/i, progress: 92, stage: 'Already satisfied' },
+        { match: /Successfully built/i, progress: 95, stage: 'Built' },
         { match: /Successfully installed/i, progress: 100, stage: 'Completed' }
     ];
 
@@ -711,6 +1014,21 @@ async function runPipInstallStream(
         const proc = spawn('docker', args);
         const outputLines: string[] = [];
         let currentProgress = 0;
+        let settled = false;
+        let timedOut = false;
+        const installTimeout = setTimeout(() => {
+            timedOut = true;
+            onEvent({ type: 'log', message: INSTALL_TIMEOUT_MESSAGE });
+            console.warn(`[containerManager] pip install timed out (${attemptLabel})`);
+            proc.kill('SIGKILL');
+        }, PIP_INSTALL_TIMEOUT_MS);
+
+        const finish = (result: { success: boolean; message?: string; details: string }) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(installTimeout);
+            resolve(result);
+        };
 
         const handleLine = (line: string) => {
             const trimmed = line.trim();
@@ -722,6 +1040,7 @@ async function runPipInstallStream(
                 if (marker.match.test(trimmed) && marker.progress > currentProgress) {
                     currentProgress = marker.progress;
                     onEvent({ type: 'progress', progress: currentProgress, stage: marker.stage });
+                    console.info(`[containerManager] pip install phase -> ${marker.stage} (${attemptLabel}, ${currentProgress}%)`);
                 }
             }
         };
@@ -746,14 +1065,27 @@ async function runPipInstallStream(
 
         proc.on('close', (code) => {
             const details = outputLines.join('\n');
-            resolve({
+            if (code === 0 && currentProgress < 100) {
+                // pip can finish successfully without emitting a "Successfully installed"
+                // line in some scenarios (already satisfied / quiet tails). Ensure the UI
+                // always leaves the 85% plateau and proceeds to completion.
+                const finalizingProgress = currentProgress < 95 ? 95 : 100;
+                const finalizingStage = finalizingProgress === 100 ? 'Completed' : 'Finalizing';
+                onEvent({ type: 'progress', progress: finalizingProgress, stage: finalizingStage });
+                currentProgress = finalizingProgress;
+                console.info(`[containerManager] pip install phase -> ${finalizingStage} (${attemptLabel}, ${finalizingProgress}%)`);
+            }
+
+            finish({
                 success: code === 0,
                 message: outputLines.slice(-2).join(' '),
-                details
+                details: timedOut
+                    ? `${details}\n${INSTALL_TIMEOUT_MESSAGE}`
+                    : details
             });
         });
         proc.on('error', (error) => {
-            resolve({
+            finish({
                 success: false,
                 details: error instanceof Error ? error.message : 'Failed to start pip install process'
             });
@@ -769,6 +1101,10 @@ function isMissingBinaryError(details: string): boolean {
     );
 }
 
+function isInstallTimeoutError(details: string): boolean {
+    return details.includes(INSTALL_TIMEOUT_MESSAGE);
+}
+
 function formatInstallError(details: string, requirements: string[]): string {
     if (!details) {
         return `Failed to install ${requirements.join(', ')}.`;
@@ -779,6 +1115,10 @@ function formatInstallError(details: string, requirements: string[]): string {
     ) {
         return 'Install ran out of disk space in the runtime.'
             + ' Increase `EXECUTION_TMPFS_MB` or clean up runtime storage and try again.';
+    }
+    if (isInstallTimeoutError(details)) {
+        return 'Install timed out while waiting for pip to finish.'
+            + ' Retry, or use a narrower version spec / lighter dependency set.';
     }
     if (details.includes('subprocess-exited-with-error') || details.includes('Failed building wheel')) {
         return 'Package requires a native build step that failed in this runtime.'
@@ -859,6 +1199,21 @@ export async function getOrCreateContainer(config: ContainerConfig): Promise<Con
             container.projectId === config.projectId &&
             container.pythonVersion === config.pythonVersion
         ) {
+            // Guard against stale in-memory state where the workspace directory was deleted
+            // (e.g. manual cleanup or previous crash). If the workspace is missing, recreate
+            // the container so execution can proceed.
+            const workspacePath = resolve(container.workspacePath);
+            if (!existsSync(workspacePath)) {
+                console.warn('[containerManager] Workspace missing for active container; recreating container:', {
+                    containerId: container.containerId,
+                    workspacePath
+                });
+                await destroyContainer(container.id);
+                break;
+            }
+
+            // Normalize stored path to absolute.
+            container.workspacePath = workspacePath;
             container.lastUsedAt = new Date();
             return container;
         }
@@ -1112,7 +1467,7 @@ async function ensureJediInstalled(container: Container): Promise<void> {
             'install',
             '--quiet',
             '--target',
-            '/workspace/.python',
+            CONTAINER_PYTHON_SITE_DIR,
             'jedi'
         ], { timeout: 60000 });
         jediInstalledContainers.add(container.containerId);

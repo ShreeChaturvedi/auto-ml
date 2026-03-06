@@ -7,7 +7,11 @@ const MIME_TEXT = new Set([
   'application/json'
 ]);
 
-export type SupportedDocumentType = 'pdf' | 'markdown' | 'text' | 'unknown';
+const DOCX_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
+
+export type SupportedDocumentType = 'pdf' | 'docx' | 'markdown' | 'text' | 'unknown';
 
 export interface ParsedDocument {
   text: string;
@@ -16,13 +20,35 @@ export interface ParsedDocument {
   parseError?: string;
 }
 
-export async function parseDocument(buffer: Buffer, mimeType?: string): Promise<ParsedDocument> {
+function isDocxFile(mimeType?: string, filename?: string): boolean {
+  if (mimeType && DOCX_MIME_TYPES.has(mimeType.toLowerCase())) {
+    return true;
+  }
+
+  if (filename?.toLowerCase().endsWith('.docx')) {
+    return true;
+  }
+
+  return false;
+}
+
+export async function parseDocument(buffer: Buffer, mimeType?: string, filename?: string): Promise<ParsedDocument> {
   if (mimeType?.includes('pdf')) {
     const { text, parseError } = await parsePdfBuffer(buffer);
     return {
       text,
       mimeType: mimeType ?? 'application/pdf',
       type: 'pdf',
+      parseError
+    };
+  }
+
+  if (isDocxFile(mimeType, filename)) {
+    const { text, parseError } = await parseDocxBuffer(buffer);
+    return {
+      text,
+      mimeType: mimeType ?? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      type: 'docx',
       parseError
     };
   }
@@ -42,6 +68,27 @@ export async function parseDocument(buffer: Buffer, mimeType?: string): Promise<
     mimeType: mimeType ?? 'text/plain',
     type: text ? 'text' : 'unknown'
   };
+}
+
+async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
+  try {
+    const mammothModule = await import('mammoth');
+    const result = await mammothModule.extractRawText({ buffer });
+    const messages = Array.isArray(result.messages)
+      ? result.messages.map((message) => String(message.message ?? '')).filter(Boolean)
+      : [];
+
+    return {
+      text: result.value ?? '',
+      parseError: messages.length > 0 ? messages.join('; ') : undefined
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to parse DOCX document';
+    return {
+      text: '',
+      parseError: message
+    };
+  }
 }
 
 /**
@@ -264,7 +311,7 @@ async function parsePdfWithPdfParse(buffer: Buffer): Promise<{ text: string; par
 async function parsePdfWithPdfjs(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const data = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  const loadingTask = pdfjs.getDocument({ data, disableWorker: true });
+  const loadingTask = pdfjs.getDocument({ data });
   const doc = await loadingTask.promise;
   let text = '';
 
@@ -273,7 +320,7 @@ async function parsePdfWithPdfjs(buffer: Buffer): Promise<{ text: string; parseE
       const page = await doc.getPage(pageNumber);
       const content = await page.getTextContent();
       const pageText = content.items
-        .map((item: { str?: string }) => item.str ?? '')
+        .map((item) => ('str' in item && typeof item.str === 'string' ? item.str : ''))
         .join(' ');
       text += `${pageText}\n`;
       page.cleanup();

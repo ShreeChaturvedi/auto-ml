@@ -3,9 +3,11 @@
  *
  * Supports various file types:
  * - Structured data: CSV, JSON, Excel
- * - Documents: PDF, Markdown, TXT (Word planned)
+ * - Documents: PDF, Markdown, TXT, DOCX, and common text formats
  * - Note: Images are NOT supported for upload
  */
+
+import type { NlQueryExplanation } from '@/lib/api/query';
 
 export type FileType =
   | 'csv'
@@ -16,6 +18,8 @@ export type FileType =
   | 'word'
   | 'text'
   | 'other';
+
+export type ColumnDataType = 'string' | 'integer' | 'float' | 'boolean' | 'date' | 'unknown';
 
 export interface UploadedFile {
   id: string;
@@ -42,7 +46,7 @@ export interface FileMetadata {
   datasetProfile?: {
     nRows: number;
     nCols: number;
-    dtypes: Record<string, string>;
+    dtypes: Record<string, ColumnDataType>;
     nullCounts: Record<string, number>;
   };
 
@@ -77,6 +81,7 @@ export interface DataPreview {
   previewRows: number; // Number of rows in preview
   statistics?: ColumnStatistics[];
   eda?: EdaSummary;
+  columnTypes?: Record<string, ColumnDataType>; // Column types from query results
 }
 
 /**
@@ -189,6 +194,7 @@ export interface QueryArtifact {
   cacheTimestamp?: string;
   generatedSql?: string; // For NL queries
   rationale?: string; // For NL queries
+  explanation?: NlQueryExplanation; // Structured explanation (includes confidence mode/tier for NL review UX)
 }
 
 /**
@@ -232,7 +238,19 @@ export const getFileType = (file: File): FileType => {
   if (extension === 'pdf') return 'pdf';
   if (extension === 'md') return 'markdown';
   if (extension === 'docx' || extension === 'doc') return 'word';
-  if (extension === 'txt') return 'text';
+  if (
+    extension === 'txt'
+    || extension === 'text'
+    || extension === 'log'
+    || extension === 'html'
+    || extension === 'htm'
+    || extension === 'xml'
+    || extension === 'yml'
+    || extension === 'yaml'
+    || extension === 'rtf'
+  ) {
+    return 'text';
+  }
 
   return 'other';
 };

@@ -105,12 +105,11 @@
   }
 }
 
-/* Remove focus outlines from dialogs and forms */
+/* Dialog focus states */
 @layer components {
-
-  [role="dialog"] input:focus,
-  [role="dialog"] textarea:focus,
-  [role="dialog"] select:focus {
+  [role="dialog"] input:focus:not(:focus-visible),
+  [role="dialog"] textarea:focus:not(:focus-visible),
+  [role="dialog"] select:focus:not(:focus-visible) {
     outline: none;
   }
 
@@ -282,5 +281,357 @@
 
   100% {
     background-position: -100% 0;
+  }
+}
+
+/* Per-character stagger animation for AnimatedPlaceholderInput.
+   No per-character transform — the parent container slide provides all motion.
+   Each character quickly fades in at full foreground color (the "shine"), then
+   slowly settles to muted-foreground, creating a left-to-right brightness wave. */
+@keyframes placeholder-char-in {
+  0%   { opacity: 0; color: hsl(var(--foreground)); }
+  18%  { opacity: 1; color: hsl(var(--foreground)); }
+  100% { opacity: 1; color: hsl(var(--muted-foreground)); }
+}
+
+/* Per-character progressive reveal animation for streamed LLM text.
+   Mirrors placeholder glow timing while preserving existing text color theme. */
+@keyframes llm-char-in {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+    color: hsl(var(--foreground));
+    text-shadow: 0 0 6px currentColor;
+    filter: brightness(1.2);
+  }
+
+  25% {
+    opacity: 1;
+    transform: translateY(1px);
+    color: hsl(var(--foreground));
+    text-shadow: 0 0 3px currentColor;
+    filter: brightness(1.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    color: inherit;
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.llm-char-enter {
+  animation: llm-char-in 260ms ease-out both;
+}
+
+@keyframes llm-streamdown-bloom {
+  0% {
+    text-shadow: 0 0 6px currentColor;
+    filter: brightness(1.2);
+  }
+
+  100% {
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.llm-streamdown-wrap {
+  position: relative;
+}
+
+.llm-streamdown [data-sd-animate] {
+  animation-name: var(--sd-animation, sd-fadeIn), llm-streamdown-bloom;
+  animation-duration: var(--sd-duration, 150ms), 260ms;
+  animation-timing-function: var(--sd-easing, ease), ease-out;
+  animation-fill-mode: both, both;
+}
+
+.llm-streamdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.llm-notebook-markdown .llm-streamdown {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.llm-notebook-markdown .llm-streamdown p {
+  margin: 0;
+}
+
+.llm-notebook-markdown .llm-streamdown p + p {
+  margin-top: 0.5rem;
+}
+
+.llm-notebook-markdown .llm-streamdown code {
+  font-size: 0.85em;
+}
+
+.llm-notebook-markdown .llm-streamdown pre {
+  margin: 0.5rem 0;
+}
+
+.nl-model-work-stream .llm-streamdown {
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.nl-model-work-stream .llm-streamdown p {
+  margin: 0;
+}
+
+.nl-model-work-stream .llm-streamdown p + p {
+  margin-top: 0.45rem;
+}
+
+.nl-model-work-stream .llm-streamdown ul,
+.nl-model-work-stream .llm-streamdown ol {
+  margin: 0.45rem 0 0.45rem 1rem;
+}
+
+.nl-model-work-stream .llm-streamdown li + li {
+  margin-top: 0.18rem;
+}
+
+.nl-model-work-stream .llm-streamdown pre {
+  margin: 0.5rem 0 0;
+  border-radius: 0.5rem;
+}
+
+.nl-model-work-stream .llm-streamdown code {
+  font-size: 0.84em;
+}
+
+@keyframes execute-icon-trace {
+  0% {
+    stroke-dashoffset: 0;
+  }
+
+  35% {
+    stroke-dashoffset: 100;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.execute-icon-path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 220ms ease-out;
+}
+
+.group\/execute:hover .execute-icon-path {
+  animation: execute-icon-trace 700ms ease-out 1;
+}
+
+@keyframes idea-filament-trace {
+  0% {
+    stroke-dashoffset: 100;
+  }
+
+  45% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
+
+.idea-icon-outline {
+  stroke-opacity: 0.95;
+}
+
+.idea-icon-filament {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+}
+
+.group\/execute:hover .idea-icon-filament {
+  animation: idea-filament-trace 820ms ease-in-out 1;
+}
+
+/* ─── SQL reveal highlighting + token entry animation ────────────────────── */
+
+/**
+ * Token entrance animation.  The colour is INTENTIONALLY NOT set here
+ * so that the per-token syntax classes (.sql-tk-kw, .sql-tk-fn …) remain
+ * visible from frame one.  Instead we use a text-shadow glow that flashes
+ * brightly and fades, mirroring the placeholder-char-in shine effect.
+ */
+@keyframes sql-word-in {
+  0% {
+    opacity: 0;
+    text-shadow: 0 0 8px currentColor;
+    filter: brightness(1.35);
+  }
+
+  40% {
+    opacity: 1;
+    text-shadow: 0 0 4px currentColor;
+    filter: brightness(1.15);
+  }
+
+  100% {
+    opacity: 1;
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.sql-word-enter {
+  animation: sql-word-in 320ms ease-out both;
+}
+
+@keyframes sql-generation-scan {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+@keyframes sql-generation-bar {
+  0%, 100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sql-generation-dot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.sql-generation-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.sql-generation-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    transparent 42%,
+    hsl(var(--foreground) / 0.04) 50%,
+    transparent 58%,
+    transparent 100%
+  );
+  animation: sql-generation-scan 1.9s ease-in-out infinite;
+}
+
+.sql-generation-line-active {
+  background: hsl(var(--foreground) / 0.3);
+  animation: sql-generation-bar 1.1s ease-in-out infinite;
+}
+
+.sql-generation-dot-active {
+  background: hsl(var(--primary));
+  animation: sql-generation-dot 1s ease-in-out infinite;
+}
+
+@keyframes nl-lane-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nl-lane-enter {
+  animation: nl-lane-in 220ms ease-out both;
+}
+
+.sql-tk-kw {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+
+.sql-tk-fn {
+  color: hsl(var(--chart-2));
+}
+
+.sql-tk-str {
+  color: hsl(var(--chart-3));
+}
+
+.sql-tk-num {
+  color: hsl(var(--chart-4));
+}
+
+.sql-tk-op,
+.sql-tk-punc {
+  color: hsl(var(--muted-foreground));
+}
+
+.sql-tk-id {
+  color: hsl(var(--foreground));
+}
+
+/* ─── NL query typewriter cursor ─────────────────────────────────────────── */
+
+@keyframes nl-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/**
+ * Appended as a ::after pseudo-element on the last character span of the
+ * typewriter pre block.  A hollow-circle glyph ( ○ / U+25CB ) is used
+ * instead of a traditional pipe so it doesn't shift surrounding text and
+ * stays visually lightweight at any font size.
+ */
+.nl-typewriter-cursor::after {
+  content: '\25CB'; /* ○  hollow circle */
+  font-size: 0.9em;
+  margin-left: 1px;
+  color: hsl(var(--foreground));
+  animation: nl-cursor-blink 700ms step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sql-word-enter {
+    animation: none;
+  }
+
+  .nl-lane-enter {
+    animation: none;
+  }
+
+  .nl-typewriter-cursor::after {
+    animation: none;
+    opacity: 0.7;
   }
 }

@@ -9,8 +9,11 @@ import {
   File,
   MoreVertical,
   Download,
-  Trash2
+  Trash2,
+  ClipboardList,
+  Plus
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +23,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { phaseConfig } from '@/types/phase';
 import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
@@ -40,7 +45,6 @@ const iconByType: Record<UploadedFileType, ComponentType<{ className?: string }>
   other: File
 };
 
-// Colors for file type icons when selected
 const activeIconColorByType: Record<UploadedFileType, string> = {
   csv: 'text-green-500',
   json: 'text-blue-500',
@@ -69,7 +73,7 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload }: FileItemProp
   return (
     <div
       className={cn(
-        'group flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer',
+        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
         isActive
           ? 'bg-muted text-foreground font-medium'
           : 'text-foreground hover:bg-muted'
@@ -125,6 +129,14 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const removeFile = useDataStore((state) => state.removeFile);
 
+  const updateProject = useProjectStore((state) => state.updateProject);
+  const isDataViewerUnlocked = useProjectStore((state) =>
+    state.isPhaseUnlocked(projectId, 'data-viewer')
+  );
+  const project = useProjectStore((state) =>
+    state.projects.find((p) => p.id === projectId)
+  );
+
   useEffect(() => {
     if (projectId) {
       void hydrateFromBackend(projectId);
@@ -146,10 +158,59 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
     [projectFiles]
   );
 
+  const metadata = useMemo(() => (project?.metadata ?? {}) as Record<string, unknown>, [project?.metadata]);
+  const activePlanId = metadata.activePlanId as string | undefined;
+
+  const plans = useMemo(() => {
+    const plansArray = Array.isArray(metadata.plans) ? metadata.plans as { id: string, name: string, content: string }[] : [];
+    
+    // Legacy support
+    const legacyPlanName = metadata.projectPlanName as string | undefined;
+    const legacyPlanContent = metadata.projectPlan as string | undefined;
+    
+    if (plansArray.length === 0 && legacyPlanName && legacyPlanContent) {
+      return [{ id: `plan-${legacyPlanName}`, name: legacyPlanName, content: legacyPlanContent }];
+    }
+    return plansArray;
+  }, [metadata]);
+  const selectedPlanId = activePlanId ?? plans[0]?.id;
+  const currentPhase = project?.currentPhase;
+  const currentPhaseConfig = currentPhase ? phaseConfig[currentPhase] : undefined;
+  const currentPhaseLabel = currentPhaseConfig?.label ?? 'the current step';
+
   const handleOpenFile = useCallback((fileId: string) => {
+    if (!isDataViewerUnlocked) {
+      const description = currentPhase === 'upload'
+        ? 'Finish the Data Upload workflow to unlock Explorer.'
+        : `Complete ${currentPhaseLabel} to unlock Explorer.`;
+      toast.info('Explorer is still locked', { description });
+      return;
+    }
+
     openFileTab(fileId);
     navigate(`/project/${projectId}/data-viewer`);
-  }, [openFileTab, navigate, projectId]);
+  }, [currentPhase, currentPhaseLabel, isDataViewerUnlocked, openFileTab, navigate, projectId]);
+
+  const handleOpenPlan = useCallback((planId: string) => {
+    const selectedPlan = plans.find((plan) => plan.id === planId);
+
+    void updateProject(projectId, {
+      metadata: {
+        ...metadata,
+        activePlanId: planId,
+        projectPlanName: selectedPlan?.name,
+        projectPlan: selectedPlan?.content,
+        uploadStage: 'upload',
+      }
+    });
+    navigate(`/project/${projectId}/upload`);
+  }, [projectId, updateProject, metadata, navigate, plans]);
+
+  const handleCreateNewPlan = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    navigate(`/project/${projectId}/upload?newPlan=1`);
+  }, [projectId, navigate]);
 
   const handleDeleteFile = useCallback(async (file: UploadedFile) => {
     try {
@@ -222,24 +283,6 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
     );
   };
 
-  if (projectFiles.length === 0) {
-    return (
-      <div className="space-y-4">
-        <CollapsibleSection title="Data Files">
-          <div className="px-3 py-2 text-workflow text-muted-foreground">
-            No datasets yet.
-          </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Context Files">
-          <div className="px-3 py-2 text-workflow text-muted-foreground">
-            No context docs yet.
-          </div>
-        </CollapsibleSection>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <CollapsibleSection title="Data Files">
@@ -248,6 +291,50 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
 
       <CollapsibleSection title="Context Files">
         {renderFileList(contextFiles, 'No context docs yet.')}
+      </CollapsibleSection>
+
+      <CollapsibleSection 
+        title="Plans" 
+        action={
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 hover:bg-muted" 
+            onClick={handleCreateNewPlan}
+            title="Create new plan"
+          >
+            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+        }
+      >
+        {plans.length > 0 ? (
+          <div className="space-y-0.5">
+            {plans.map((plan) => (
+              <div
+                key={plan.id}
+                className={cn(
+                  'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
+                  plan.id === selectedPlanId
+                    ? 'bg-muted text-foreground font-medium'
+                    : 'text-foreground hover:bg-muted'
+                )}
+                onClick={() => handleOpenPlan(plan.id)}
+              >
+                <ClipboardList className={cn(
+                  'h-3.5 w-3.5 shrink-0',
+                  plan.id === selectedPlanId
+                    ? 'text-primary'
+                    : 'text-muted-foreground'
+                )} />
+                <span className="text-workflow truncate flex-1">{plan.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="px-3 py-2 text-workflow text-muted-foreground cursor-pointer hover:text-foreground hover:underline" onClick={handleCreateNewPlan}>
+            Create a plan
+          </div>
+        )}
       </CollapsibleSection>
     </div>
   );

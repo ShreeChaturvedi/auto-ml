@@ -2,9 +2,25 @@ import { z } from 'zod';
 
 export const ToolNameSchema = z.enum([
   'list_project_files',
+  'list_project_datasets',
+  'set_active_dataset',
+  'profile_active_dataset',
   'get_dataset_profile',
   'get_dataset_sample',
   'search_documents',
+  'checkpoint_dataset',
+  'register_derived_dataset',
+  'list_checkpoints',
+  'restore_checkpoint',
+  'propose_transformation_step',
+  'materialize_step_code',
+  'execute_transformation_step',
+  'validate_step_result',
+  'commit_transformation_step',
+  'detect_step_divergence',
+  'reconcile_diverged_step',
+  'ask_user',
+  'plan_exit',
   'list_cells',
   'read_cell',
   'write_cell',
@@ -28,11 +44,49 @@ export const ToolCallSchema = z.object({
 
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 
+const AskUserOptionSchema = z.object({
+  label: z.string().min(1),
+  description: z.string().min(1)
+});
+
+const AskUserQuestionBaseSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  header: z.string().min(1),
+  allowCustom: z.boolean().optional()
+});
+
+const AskUserSelectQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.enum(['single_select', 'multi_select']),
+  options: z.array(AskUserOptionSchema).min(1)
+});
+
+const AskUserFreeTextQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.literal('free_text'),
+  options: z.array(AskUserOptionSchema).optional()
+});
+
+export const AskUserQuestionSchema = z.union([
+  AskUserSelectQuestionSchema,
+  AskUserFreeTextQuestionSchema
+]);
+
+export const AskUserPayloadSchema = z.object({
+  questions: z.array(AskUserQuestionSchema).min(1)
+});
+
+export const PlanExitPayloadSchema = z.object({
+  planName: z.string().min(1).max(120).optional(),
+  planMarkdown: z.string().min(1).max(50000)
+});
+
 export const LlmEnvelopeSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding', 'preprocessing']),
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
+  ask_user: AskUserPayloadSchema.optional(),
+  plan_exit: PlanExitPayloadSchema.optional(),
   ui: z.unknown().optional()
 });
 

@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-import { Router } from 'express';
+import { type NextFunction, type Request, type Response, Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 
@@ -9,19 +9,37 @@ import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../services/datasetLoader.js';
+import {
+  loadDatasetIntoPostgres,
+  normalizeValueForColumn,
+  parseDatasetRows,
+  sanitizeTableName
+} from '../services/datasetLoader.js';
 import { profileDatasetRows } from '../services/datasetProfiler.js';
-import type { DatasetFileType } from '../types/dataset.js';
+import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB
+    fileSize: env.datasetUploadMaxMb * 1024 * 1024
   }
 });
 
 const datasetUploadSchema = z.object({
   projectId: z.string().optional()
+});
+
+const COLUMN_DATA_TYPES: [ColumnDataType, ...ColumnDataType[]] = [
+  'string',
+  'integer',
+  'float',
+  'boolean',
+  'date',
+  'unknown'
+];
+
+const updateColumnTypeSchema = z.object({
+  dtype: z.enum(COLUMN_DATA_TYPES)
 });
 
 const SUPPORTED_EXTENSIONS: Record<string, DatasetFileType> = {
@@ -33,21 +51,45 @@ const SUPPORTED_EXTENSIONS: Record<string, DatasetFileType> = {
 
 const SUPPORTED_MIME_TYPES: Partial<Record<string, DatasetFileType>> = {
   'text/csv': 'csv',
+  'application/vnd.ms-excel': 'csv',
+  'application/csv': 'csv',
   'application/json': 'json',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
 };
 
 function detectFileType(filename: string, mimetype?: string): DatasetFileType | undefined {
+  const extension = extname(filename).toLowerCase();
+  const extensionType = SUPPORTED_EXTENSIONS[extension];
+  if (extensionType) {
+    return extensionType;
+  }
   if (mimetype && SUPPORTED_MIME_TYPES[mimetype]) {
     return SUPPORTED_MIME_TYPES[mimetype];
   }
-  const extension = extname(filename).toLowerCase();
-  return SUPPORTED_EXTENSIONS[extension];
+  return undefined;
 }
 
 export function createDatasetUploadRouter(repository?: DatasetRepository) {
   const router = Router();
   const datasetRepository = repository ?? createDatasetRepository(env.datasetMetadataPath);
+
+  const handleDatasetUpload = (req: Request, res: Response, next: NextFunction) => {
+    upload.single('file')(req, res, (error?: unknown) => {
+      if (!error) {
+        next();
+        return;
+      }
+
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({
+          error: `File too large. Maximum dataset size is ${env.datasetUploadMaxMb}MB.`
+        });
+        return;
+      }
+
+      next(error);
+    });
+  };
 
   router.get('/datasets', async (req, res) => {
     const projectId = req.query.projectId as string | undefined;
@@ -90,6 +132,159 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     }
   });
 
+  router.put('/datasets/:datasetId/columns/:columnName', async (req, res) => {
+    const { datasetId } = req.params;
+    const columnName = req.params.columnName;
+    const parseResult = updateColumnTypeSchema.safeParse(req.body);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ errors: parseResult.error.flatten() });
+    }
+
+    const { dtype } = parseResult.data;
+
+    try {
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        return res.status(404).json({ error: 'Dataset not found' });
+      }
+
+      const existingColumn = dataset.columns.find((column) => column.name === columnName);
+      if (!existingColumn) {
+        return res.status(404).json({ error: `Column not found: ${columnName}` });
+      }
+
+      if (existingColumn.dtype === dtype) {
+        return res.json({
+          dataset: {
+            datasetId: dataset.datasetId,
+            filename: dataset.filename,
+            fileType: dataset.fileType,
+            size: dataset.size,
+            n_rows: dataset.nRows,
+            n_cols: dataset.nCols,
+            columns: dataset.columns.map((column) => column.name),
+            dtypes: Object.fromEntries(dataset.columns.map((column) => [column.name, column.dtype])),
+            null_counts: Object.fromEntries(dataset.columns.map((column) => [column.name, column.nullCount])),
+            sample: dataset.sample,
+            createdAt: dataset.createdAt,
+            updatedAt: dataset.updatedAt,
+            tableName:
+              typeof dataset.metadata?.tableName === 'string'
+                ? dataset.metadata.tableName
+                : sanitizeTableName(dataset.filename, dataset.datasetId)
+          }
+        });
+      }
+
+      const updatedColumns = dataset.columns.map((column) =>
+        column.name === columnName ? { ...column, dtype } : column
+      );
+
+      const datasetDir = join(env.datasetStorageDir, datasetId);
+      const filePath = join(datasetDir, dataset.filename);
+
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ error: 'Dataset file not found on disk' });
+      }
+
+      const buffer = readFileSync(filePath);
+      const rows = parseDatasetRows(buffer, dataset.fileType);
+
+      if (rows.length === 0) {
+        return res.status(400).json({ error: 'Dataset has no rows to validate' });
+      }
+
+      for (let index = 0; index < rows.length; index += 1) {
+        try {
+          normalizeValueForColumn(rows[index][columnName], dtype, {
+            strictMode: true,
+            columnName
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return res.status(400).json({
+            error: 'Type override failed due to incompatible values',
+            details: `Row ${index + 1}: ${message}`
+          });
+        }
+      }
+
+      let tableName =
+        typeof dataset.metadata?.tableName === 'string'
+          ? dataset.metadata.tableName
+          : sanitizeTableName(dataset.filename, dataset.datasetId);
+      let rowsLoaded = dataset.nRows;
+
+      if (hasDatabaseConfiguration()) {
+        try {
+          const loadResult = await loadDatasetIntoPostgres({
+            datasetId: dataset.datasetId,
+            filename: dataset.filename,
+            fileType: dataset.fileType,
+            buffer,
+            columns: updatedColumns,
+            rows,
+            strictMode: true,
+            strictColumnNames: [columnName]
+          });
+          tableName = loadResult.tableName;
+          rowsLoaded = loadResult.rowsLoaded;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return res.status(400).json({
+            error: 'Type override failed during table reload',
+            details: message
+          });
+        }
+      }
+
+      const updatedDataset = await datasetRepository.update(dataset.datasetId, (current) => ({
+        ...current,
+        columns: updatedColumns,
+        nRows: rowsLoaded,
+        metadata: {
+          ...(current.metadata ?? {}),
+          tableName,
+          rowsLoaded
+        }
+      }));
+
+      if (!updatedDataset) {
+        return res.status(404).json({ error: 'Dataset not found' });
+      }
+
+      return res.json({
+        dataset: {
+          datasetId: updatedDataset.datasetId,
+          filename: updatedDataset.filename,
+          fileType: updatedDataset.fileType,
+          size: updatedDataset.size,
+          n_rows: updatedDataset.nRows,
+          n_cols: updatedDataset.nCols,
+          columns: updatedDataset.columns.map((column) => column.name),
+          dtypes: Object.fromEntries(updatedDataset.columns.map((column) => [column.name, column.dtype])),
+          null_counts: Object.fromEntries(
+            updatedDataset.columns.map((column) => [column.name, column.nullCount])
+          ),
+          sample: updatedDataset.sample,
+          createdAt: updatedDataset.createdAt,
+          updatedAt: updatedDataset.updatedAt,
+          tableName
+        }
+      });
+    } catch (error) {
+      console.error(
+        `[datasets] Failed to update column type for dataset ${datasetId}, column ${columnName}`,
+        error
+      );
+      return res.status(500).json({
+        error: 'Failed to update column type',
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   // Download raw dataset file for use in code cells
   router.get('/datasets/:datasetId/download', async (req, res) => {
     const { datasetId } = req.params;
@@ -128,7 +323,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
   router.post(
     '/upload/dataset',
-    upload.single('file'),
+    handleDatasetUpload,
     async (req, res) => {
       const parseResult = datasetUploadSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -170,34 +365,55 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         writeFileSync(filePath, req.file.buffer);
 
         let tableName = sanitizeTableName(req.file.originalname, dataset.datasetId);
+        let loadWarning: string | undefined;
 
         if (hasDatabaseConfiguration()) {
-          const { tableName: loadedTableName, rowsLoaded } = await loadDatasetIntoPostgres({
-            datasetId: dataset.datasetId,
-            filename: req.file.originalname,
-            fileType,
-            buffer: req.file.buffer,
-            columns: profiling.columns,
-            rows
-          });
+          try {
+            const { tableName: loadedTableName, rowsLoaded } = await loadDatasetIntoPostgres({
+              datasetId: dataset.datasetId,
+              filename: req.file.originalname,
+              fileType,
+              buffer: req.file.buffer,
+              columns: profiling.columns,
+              rows
+            });
 
-          tableName = loadedTableName;
-          const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
-            ...current,
-            nRows: rowsLoaded,
-            metadata: {
-              ...(current.metadata ?? {}),
-              tableName,
-              rowsLoaded
+            tableName = loadedTableName;
+            const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
+              ...current,
+              nRows: rowsLoaded,
+              metadata: {
+                ...(current.metadata ?? {}),
+                tableName,
+                rowsLoaded
+              }
+            }));
+            if (updated) {
+              dataset = updated;
             }
-          }));
-          if (updated) {
-            dataset = updated;
-          }
 
-          console.log(
-            `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
-          );
+            console.log(
+              `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
+            );
+          } catch (loadError) {
+            loadWarning = loadError instanceof Error ? loadError.message : String(loadError);
+            console.error(
+              `[datasets] Dataset uploaded but Postgres load failed for ${req.file.originalname}:`,
+              loadWarning
+            );
+
+            const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
+              ...current,
+              metadata: {
+                ...(current.metadata ?? {}),
+                tableName,
+                loadWarning
+              }
+            }));
+            if (updated) {
+              dataset = updated;
+            }
+          }
         } else {
           const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
             ...current,
@@ -228,8 +444,10 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
             null_counts: Object.fromEntries(dataset.columns.map((column) => [column.name, column.nullCount])),
             sample: dataset.sample,
             createdAt: dataset.createdAt,
-            tableName
-          }
+            tableName,
+            warning: loadWarning
+          },
+          warning: loadWarning
         });
       } catch (error) {
         console.error('[datasets] Upload failed:', error instanceof Error ? error.message : String(error));

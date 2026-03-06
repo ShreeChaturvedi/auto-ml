@@ -1,5 +1,5 @@
-import { Router } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { Router } from 'express';
 
 import { createMcpServer } from '../services/mcp/mcpServer.js';
 

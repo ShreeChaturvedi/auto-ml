@@ -41,8 +41,11 @@ export const NotebookCellSchema = z.object({
   content: z.string(),
   position: z.number().int().min(0),
   executionCount: z.number().int().min(0).default(0),
+  executionOrder: z.number().int().min(1).nullable().optional(),
   executionStatus: NotebookCellStatusSchema.default('idle'),
   executionDurationMs: z.number().int().nullable().optional(),
+  executedAt: z.string().nullable().optional(),
+  isDirty: z.boolean().default(false),
   output: z.array(CellOutputSchema).default([]),
   outputRefs: z.array(OutputRefSchema).default([]),
   lockedBy: z.string().nullable().optional(),
@@ -60,6 +63,8 @@ export const CellSummarySchema = z.object({
   position: z.number().int(),
   executionStatus: NotebookCellStatusSchema,
   executionCount: z.number().int(),
+  executionOrder: z.number().int().min(1).nullable().optional(),
+  isDirty: z.boolean().default(false),
   lockedBy: z.string().nullable().optional(),
   contentPreview: z.string().optional()
 });
@@ -218,6 +223,19 @@ export interface ReorderCellsRequest {
   cellIds: string[];
 }
 
+export interface CreateNotebookRequest {
+  name?: string;
+}
+
+export interface UpdateNotebookRequest {
+  name: string;
+}
+
+export interface DeleteNotebookResponse {
+  deletedNotebookId: string;
+  fallbackNotebookId: string;
+}
+
 export interface RunCellRequest {
   projectId: string;
 }
@@ -232,6 +250,7 @@ export interface ExecutionResult {
   stderr: string;
   outputs: CellOutput[];
   executionMs: number;
+  executionOrder?: number | null;
   error?: string;
 }
 

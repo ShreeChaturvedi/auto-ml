@@ -67,7 +67,16 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         user: state.user
-      })
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AuthState> | undefined;
+
+        return {
+          ...currentState,
+          ...persisted,
+          isAuthenticated: !!persisted?.user
+        };
+      }
     }
   )
 );

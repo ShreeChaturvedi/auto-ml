@@ -11,23 +11,30 @@
 import { useState, useEffect, useRef } from 'react';
 import { Brain, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import 'katex/dist/katex.min.css';
+import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 
 interface ThinkingBlockProps {
     content: string;
     isComplete: boolean;
+    messageId?: string;
+    isLive?: boolean;
+    animateOnMount?: boolean;
 }
 
-export function ThinkingBlock({ content, isComplete }: ThinkingBlockProps) {
+export function ThinkingBlock({
+    content,
+    isComplete,
+    messageId,
+    isLive,
+    animateOnMount = true
+}: ThinkingBlockProps) {
     const [expanded, setExpanded] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [finalSeconds, setFinalSeconds] = useState<number | null>(null);
     const startTimeRef = useRef<number>(Date.now());
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const stableMessageIdRef = useRef<string>(messageId ?? `thinking-${Math.random().toString(36).slice(2, 10)}`);
+    const effectiveMessageId = messageId ?? stableMessageIdRef.current;
 
     // Start timer on mount, stop when isComplete changes to true
     useEffect(() => {
@@ -65,6 +72,18 @@ export function ThinkingBlock({ content, isComplete }: ThinkingBlockProps) {
     const displaySeconds = finalSeconds ?? elapsedSeconds;
 
     const isLoading = !isComplete;
+    const shouldStreamReveal = isLive ?? !isComplete;
+    const markdownClassName = [
+        'llm-thinking-markdown text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words',
+        '[&_p]:my-0 [&_p+p]:mt-2',
+        '[&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5',
+        '[&_h1]:my-2 [&_h1]:text-sm [&_h1]:font-semibold',
+        '[&_h2]:my-2 [&_h2]:text-sm [&_h2]:font-semibold',
+        '[&_h3]:my-1.5 [&_h3]:text-sm [&_h3]:font-semibold',
+        '[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-2.5',
+        '[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em]',
+        '[&_pre_code]:bg-transparent [&_pre_code]:p-0'
+    ].join(' ');
 
     return (
         <div className="flex flex-col">
@@ -95,16 +114,17 @@ export function ThinkingBlock({ content, isComplete }: ThinkingBlockProps) {
 
             {/* Expandable content - now with markdown rendering */}
             {expanded && content && (
-                <div className="ml-6 mt-1 p-3 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkMath]}
-                        rehypePlugins={[rehypeKatex]}
-                    >
-                        {content}
-                    </ReactMarkdown>
+                <div className="ml-6 mt-1 max-h-[300px] overflow-y-auto rounded-md border border-muted/50 bg-muted/30 p-3">
+                    <ProgressiveMessageText
+                        messageId={effectiveMessageId}
+                        text={content}
+                        isLive={shouldStreamReveal}
+                        mode="markdown"
+                        animateOnMount={animateOnMount}
+                        className={markdownClassName}
+                    />
                 </div>
             )}
         </div>
     );
 }
-

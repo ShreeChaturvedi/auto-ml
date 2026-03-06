@@ -116,6 +116,17 @@ export class UserRepository {
   }
 
   /**
+   * Mark a user's email as verified
+   * Used for trusted OAuth providers
+   */
+  async markEmailVerified(userId: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE users SET email_verified = true, updated_at = NOW() WHERE user_id = $1',
+      [userId]
+    );
+  }
+
+  /**
    * Store a refresh token in the database
    * Token is hashed (SHA-256) before storage for security
    */

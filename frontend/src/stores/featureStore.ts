@@ -1,17 +1,43 @@
 import { create } from 'zustand';
-import type { FeatureSpec } from '@/types/feature';
+import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useProjectStore } from './projectStore';
+
+function buildEmptyReadinessReport(): ReadinessReport {
+  return {
+    dataSummary: {
+      addedColumns: [],
+      removedColumns: [],
+      renamedColumns: [],
+      typeChanges: [],
+      nullDeltas: [],
+      warnings: []
+    },
+    steps: []
+  };
+}
 
 interface FeatureState {
   features: FeatureSpec[];
+  versions: Record<string, PipelineVersion[]>;
+  currentVersionId: Record<string, string>;
+
   addFeature: (feature: Omit<FeatureSpec, 'id' | 'createdAt' | 'enabled'> & { enabled?: boolean }) => FeatureSpec;
   upsertFeature: (feature: FeatureSpec) => FeatureSpec;
   updateFeature: (id: string, updates: Partial<FeatureSpec>) => void;
   toggleFeature: (id: string) => void;
   removeFeature: (id: string) => void;
+  clearProjectFeatures: (projectId: string) => void;
   getFeaturesByProject: (projectId: string) => FeatureSpec[];
   hydrateFromProject: (projectId: string, options?: { force?: boolean }) => void;
   syncFeaturesToProject: (projectId: string) => Promise<void>;
+
+  // FE v2 actions
+  createDraftVersion: (projectId: string, name?: string) => PipelineVersion;
+  removeVersion: (projectId: string, versionId: string) => void;
+  renameVersion: (projectId: string, versionId: string, name: string) => void;
+  updateReadinessReport: (projectId: string, versionId: string, report: Partial<ReadinessReport>) => void;
+  approveVersion: (projectId: string, versionId: string) => void;
+  setCurrentVersion: (projectId: string, versionId: string) => void;
 }
 
 function makeId() {
@@ -23,11 +49,17 @@ function makeId() {
 
 export const useFeatureStore = create<FeatureState>()((set, get) => ({
   features: [],
+  versions: {},
+  currentVersionId: {},
 
   hydrateFromProject(projectId, options) {
     const force = options?.force ?? false;
     const state = get();
-    if (!force && state.features.some((feature) => feature.projectId === projectId)) {
+    const hasProjectFeatures = state.features.some((feature) => feature.projectId === projectId);
+    const hasHydratedVersions = Object.prototype.hasOwnProperty.call(state.versions, projectId);
+    const hasHydratedCurrentVersion = Object.prototype.hasOwnProperty.call(state.currentVersionId, projectId);
+
+    if (!force && hasProjectFeatures && hasHydratedVersions && hasHydratedCurrentVersion) {
       return;
     }
 
@@ -36,6 +68,12 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
     const rawFeatures = Array.isArray(project?.metadata?.features)
       ? (project?.metadata?.features as FeatureSpec[])
       : [];
+
+    const rawVersions = Array.isArray(project?.metadata?.pipelineVersions)
+      ? (project?.metadata?.pipelineVersions as PipelineVersion[])
+      : [];
+      
+    const currentVid = (project?.metadata?.currentPipelineVersionId as string) || '';
 
     const normalized = rawFeatures
       .filter((feature) => feature && typeof feature === 'object')
@@ -60,7 +98,15 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
       features: [
         ...state.features.filter((feature) => feature.projectId !== projectId),
         ...normalized
-      ]
+      ],
+      versions: {
+        ...state.versions,
+        [projectId]: rawVersions
+      },
+      currentVersionId: {
+        ...state.currentVersionId,
+        [projectId]: currentVid
+      }
     }));
   },
 
@@ -148,8 +194,153 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
     }
   },
 
+  clearProjectFeatures(projectId) {
+    set((state) => ({
+      features: state.features.filter((feature) => feature.projectId !== projectId)
+    }));
+    void get().syncFeaturesToProject(projectId);
+  },
+
   getFeaturesByProject(projectId) {
     return get().features.filter((feature) => feature.projectId === projectId);
+  },
+
+  createDraftVersion(projectId, name) {
+    const projectVersions = get().versions[projectId] || [];
+    const draftCount = projectVersions.filter((version) => version.status === 'draft').length;
+    const generatedName = name?.trim() || `Draft Pipeline v${draftCount + 1}`;
+
+    const newVersion: PipelineVersion = {
+      id: makeId(),
+      projectId,
+      name: generatedName,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      readinessReport: buildEmptyReadinessReport()
+    };
+
+    set((state) => {
+      const existingVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: [...existingVersions, newVersion]
+        },
+        currentVersionId: {
+          ...state.currentVersionId,
+          [projectId]: newVersion.id
+        }
+      };
+    });
+
+    void get().syncFeaturesToProject(projectId);
+    return newVersion;
+  },
+
+  removeVersion(projectId, versionId) {
+    set((state) => {
+      const existingVersions = state.versions[projectId] || [];
+      const remainingVersions = existingVersions.filter((version) => version.id !== versionId);
+      const currentVersionId = state.currentVersionId[projectId];
+      const nextCurrentVersionId = currentVersionId === versionId
+        ? (remainingVersions[0]?.id ?? '')
+        : (currentVersionId ?? '');
+
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: remainingVersions
+        },
+        currentVersionId: {
+          ...state.currentVersionId,
+          [projectId]: nextCurrentVersionId
+        }
+      };
+    });
+
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  renameVersion(projectId, versionId, name) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    set((state) => {
+      const projectVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: projectVersions.map((version) =>
+            version.id === versionId
+              ? { ...version, name: trimmedName }
+              : version
+          )
+        }
+      };
+    });
+
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  updateReadinessReport(projectId, versionId, report) {
+    set((state) => {
+      const projectVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: projectVersions.map((version) => {
+            if (version.id === versionId) {
+              return {
+                ...version,
+                readinessReport: {
+                  ...version.readinessReport,
+                  ...report
+                }
+              };
+            }
+            return version;
+          })
+        }
+      };
+    });
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  approveVersion(projectId, versionId) {
+    set((state) => {
+      const projectVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: projectVersions.map((version) => {
+            if (version.id === versionId) {
+              return { ...version, status: 'approved', approvedAt: new Date().toISOString() };
+            }
+            if (version.status === 'approved') {
+              return { ...version, status: 'deprecated' };
+            }
+            return version;
+          })
+        },
+        currentVersionId: {
+          ...state.currentVersionId,
+          [projectId]: versionId
+        }
+      };
+    });
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  setCurrentVersion(projectId, versionId) {
+    set((state) => ({
+      currentVersionId: {
+        ...state.currentVersionId,
+        [projectId]: versionId
+      }
+    }));
+    void get().syncFeaturesToProject(projectId);
   },
 
   async syncFeaturesToProject(projectId: string) {
@@ -158,10 +349,17 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
     if (!project) return;
 
     const features = get().features.filter((feature) => feature.projectId === projectId);
+    const pipelineVersions = get().versions[projectId] || [];
+    const currentPipelineVersionId = get().currentVersionId[projectId];
 
     const metadata = {
       ...(project.metadata ?? {}),
-      features
+      features,
+      pipelineVersions,
+      currentPipelineVersionId,
+      feWorkflowVersion: pipelineVersions.length > 0
+        ? 2
+        : (project.metadata as Record<string, unknown> | undefined)?.feWorkflowVersion
     };
 
     try {

@@ -32,6 +32,10 @@ Object.defineProperty(window, 'matchMedia', {
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
   return {
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: (index: number) => Object.keys(store)[index] ?? null,
     getItem: (key: string) => store[key] || null,
     setItem: (key: string, value: string) => {
       store[key] = value;
@@ -47,18 +51,25 @@ const localStorageMock = (() => {
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
 // Mock ResizeObserver (needed for some UI components)
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn()
-}));
+class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  writable: true,
+  value: ResizeObserverMock
+});
 
 // Mock IntersectionObserver
-global.IntersectionObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn()
-}));
+class IntersectionObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
 
-// Suppress console errors in tests by default (can be enabled per-test)
-vi.spyOn(console, 'error').mockImplementation(() => {});
+Object.defineProperty(globalThis, 'IntersectionObserver', {
+  writable: true,
+  value: IntersectionObserverMock
+});

@@ -10,8 +10,15 @@
  */
 
 import { create } from 'zustand';
-import type { UploadedFile, DataPreview, QueryArtifact, QueryMode, FileMetadata } from '@/types/file';
-import { listDatasets, deleteDataset } from '@/lib/api/datasets';
+import type {
+  UploadedFile,
+  DataPreview,
+  QueryArtifact,
+  QueryMode,
+  FileMetadata,
+  ColumnDataType
+} from '@/types/file';
+import { listDatasets, deleteDataset, updateDatasetColumnType } from '@/lib/api/datasets';
 import { listDocuments, deleteDocument } from '@/lib/api/documents';
 import { getFileType } from '@/types/file';
 
@@ -26,8 +33,8 @@ interface DataState {
   queryCounter: number; // For auto-naming artifacts
 
   // File tab management (for Data Viewer phase)
-  activeFileTabId: string | null; // Can be fileId or artifactId
-  fileTabType: 'file' | 'artifact' | null; // Track what type of tab is active
+  activeFileTabId: string | null; // Can be fileId, artifactId, or planId
+  fileTabType: 'file' | 'artifact' | 'plan' | null; // Track what type of tab is active
   openFileTabs: string[];
 
   // Hydration state (per project)
@@ -46,6 +53,7 @@ interface DataState {
   setProcessing: (processing: boolean) => void;
   clearProjectData: (projectId: string) => void;
   setFileMetadata: (fileId: string, metadata: Partial<FileMetadata>) => void;
+  updateColumnType: (datasetId: string, columnName: string, newType: ColumnDataType) => Promise<void>;
 
   // Hydration actions
   hydrateFromBackend: (projectId: string, options?: { force?: boolean }) => Promise<void>;
@@ -59,7 +67,7 @@ interface DataState {
     metadata?: Partial<
       Pick<
         QueryArtifact,
-        'eda' | 'cached' | 'executionMs' | 'generatedSql' | 'rationale' | 'name' | 'cacheTimestamp'
+        'eda' | 'cached' | 'executionMs' | 'generatedSql' | 'rationale' | 'explanation' | 'name' | 'cacheTimestamp'
       >
     >
   ) => string;
@@ -72,7 +80,7 @@ interface DataState {
   clearProjectArtifacts: (projectId: string) => void;
 
   // File tab actions
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | null) => void;
+  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => void;
   openFileTab: (id: string) => void;
   closeFileTab: (id: string) => void;
 }
@@ -94,6 +102,10 @@ function sanitizeTableName(filename: string, datasetId: string): string {
   const trimmed = safe.slice(0, maxBaseLength);
 
   return `${trimmed || 'table_data'}${separator}`;
+}
+
+function buildFileIdentity(file: UploadedFile): string {
+  return `${file.name}::${file.size}::${file.type}`;
 }
 
 export const useDataStore = create<DataState>((set, get) => ({
@@ -225,6 +237,16 @@ export const useDataStore = create<DataState>((set, get) => ({
     }));
   },
 
+  updateColumnType: async (datasetId: string, columnName: string, newType: ColumnDataType) => {
+    const file = get().files.find((candidate) => candidate.metadata?.datasetId === datasetId);
+    if (!file) {
+      throw new Error(`Dataset ${datasetId} is not loaded in the data store`);
+    }
+
+    await updateDatasetColumnType(datasetId, columnName, newType);
+    await get().hydrateFromBackend(file.projectId, { force: true });
+  },
+
   // Query artifact actions
   createArtifact: (
     query: string,
@@ -252,7 +274,8 @@ export const useDataStore = create<DataState>((set, get) => ({
       executionMs: metadata?.executionMs,
       cacheTimestamp: metadata?.cacheTimestamp,
       generatedSql: metadata?.generatedSql,
-      rationale: metadata?.rationale
+      rationale: metadata?.rationale,
+      explanation: metadata?.explanation
     };
 
     set((state) => ({
@@ -298,7 +321,7 @@ export const useDataStore = create<DataState>((set, get) => ({
   },
 
   // File tab actions
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | null) => {
+  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => {
     set({ activeFileTabId: id, fileTabType: type });
   },
   openFileTab: (id: string) => {
@@ -431,10 +454,29 @@ export const useDataStore = create<DataState>((set, get) => ({
       set((state) => {
         const newHydratedProjects = new Set(state.hydratedProjects);
         newHydratedProjects.add(projectId);
+        const hydratedProjectFiles = [...hydratedFiles, ...hydratedDocuments];
+        const hydratedFileIdentity = new Set(hydratedProjectFiles.map((file) => buildFileIdentity(file)));
+
+        // Preserve local in-flight files during hydration to avoid false upload failure states.
+        const pendingLocalFiles = state.files.filter((file) => (
+          file.projectId === projectId
+          && !file.metadata?.datasetId
+          && !file.metadata?.documentId
+        ));
+        const retainedPendingFiles = pendingLocalFiles.filter(
+          (file) => !hydratedFileIdentity.has(buildFileIdentity(file))
+        );
+        const droppedPendingFileIds = new Set(
+          pendingLocalFiles
+            .filter((file) => hydratedFileIdentity.has(buildFileIdentity(file)))
+            .map((file) => file.id)
+        );
+
         const hydratedIds = new Set([...hydratedFiles, ...hydratedDocuments].map((file) => file.id));
+        const retainedProjectIds = new Set([...hydratedIds, ...retainedPendingFiles.map((file) => file.id)]);
         const nextOpenFileTabs = state.openFileTabs.filter((tabId) => {
           if (!previousProjectFileIds.has(tabId)) return true;
-          return hydratedIds.has(tabId);
+          return retainedProjectIds.has(tabId);
         });
         const nextOpenSet = new Set(nextOpenFileTabs);
         hydratedFiles.forEach((file) => {
@@ -447,11 +489,13 @@ export const useDataStore = create<DataState>((set, get) => ({
           files: [
             ...state.files.filter((file) => file.projectId !== projectId),
             ...hydratedFiles,
-            ...hydratedDocuments
+            ...hydratedDocuments,
+            ...retainedPendingFiles
           ],
           previews: [
             ...state.previews.filter(p =>
               !hydratedFiles.some(f => f.id === p.fileId)
+              && !droppedPendingFileIds.has(p.fileId)
             ),
             ...hydratedPreviews
           ],

@@ -140,6 +140,13 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
   installPackage: async (packageName, projectId, options) => {
     const { sessionId } = get();
     const onEvent = options?.onEvent;
+    let doneSeen = false;
+
+    const emitDone = (success: boolean, message: string) => {
+      if (doneSeen) return;
+      doneSeen = true;
+      onEvent?.({ type: 'done', success, message });
+    };
 
     set({ installingPackage: true });
 
@@ -152,34 +159,41 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
       const activeSessionId = get().sessionId;
       if (!activeSessionId) {
         const result = { success: false, message: 'No active cloud session' };
-        onEvent?.({ type: 'done', success: false, message: result.message });
-        set({ installingPackage: false });
+        emitDone(false, result.message);
         return result;
       }
 
       const result = await executionApi.installPackageStream(activeSessionId, packageName, (event) => {
+        if (event.type === 'done') {
+          doneSeen = true;
+        }
+        if (event.type === 'progress' && event.stage) {
+          console.info(`[executionStore] install phase -> ${event.stage}${typeof event.progress === 'number' ? ` (${event.progress}%)` : ''}`);
+        }
         onEvent?.(event);
       });
 
       if (result.success) {
-        const packages = await executionApi.listPackages(activeSessionId);
-        set({ installedPackages: packages });
+        console.info(`[executionStore] install succeeded, refreshing package list (${packageName})`);
+        try {
+          const packages = await executionApi.listPackages(activeSessionId);
+          set({ installedPackages: packages });
+        } catch (refreshError) {
+          console.warn('[executionStore] install succeeded but package refresh failed:', refreshError);
+        }
         onEvent?.({ type: 'progress', progress: 100, stage: 'Completed' });
+      } else {
+        console.warn(`[executionStore] install failed (${packageName}): ${result.message}`);
       }
 
-      set({ installingPackage: false });
+      emitDone(result.success, result.message);
       return result;
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to install package';
+      emitDone(false, message);
+      return { success: false, message };
+    } finally {
       set({ installingPackage: false });
-      onEvent?.({
-        type: 'done',
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to install package'
-      });
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to install package'
-      };
     }
   },
 

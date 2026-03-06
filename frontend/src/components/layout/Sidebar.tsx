@@ -7,8 +7,9 @@
  * - Only width and opacity change
  */
 
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home, PanelLeft } from 'lucide-react';
+import { Home, PanelLeft, Pencil } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -16,6 +17,7 @@ import { Logo } from '@/components/ui/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FileExplorer } from '@/components/data/FileExplorer';
 import { PhaseList } from './PhaseList';
+import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
 import { UserProfile } from '@/components/projects/UserProfile';
 import { useProjectStore } from '@/stores/projectStore';
@@ -35,6 +37,7 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const navigate = useNavigate();
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const projects = useProjectStore((state) => state.projects);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
@@ -47,6 +50,11 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     e.stopPropagation();
     setActiveProject(null);
     navigate('/');
+  };
+
+  const handleOpenProjectEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditDialogOpen(true);
   };
 
   // Expand when clicking anywhere on sidebar background (not buttons)
@@ -78,18 +86,33 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
       >
         {/* Project icon - always at left, fixed position */}
         {activeProject && ProjectIcon ? (
-          <div
+          <button
+            type="button"
+            onClick={handleOpenProjectEdit}
+            aria-label={`Edit ${activeProject.title} project`}
+            title={`Edit ${activeProject.title}`}
             className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-md shrink-0',
+              'group relative flex h-8 w-8 items-center justify-center rounded-md shrink-0 transition-opacity',
               projectColorClasses[activeProject.color].bg
             )}
           >
             <ProjectIcon
-              className={cn('h-4 w-4', projectColorClasses[activeProject.color].text)}
+              className={cn(
+                'h-4 w-4 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0',
+                projectColorClasses[activeProject.color].text
+              )}
             />
-          </div>
+            <Pencil
+              className={cn(
+                'absolute h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
+                projectColorClasses[activeProject.color].text
+              )}
+            />
+          </button>
         ) : (
-          <Logo size="sm" showText={false} className="text-foreground shrink-0" />
+          <div className="flex h-8 w-8 items-center justify-center shrink-0">
+            <Logo size="sm" showText={false} className="text-foreground" />
+          </div>
         )}
 
         {/* Title - project name or AutoML, fades with opacity */}
@@ -195,6 +218,14 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
       >
         <UserProfile collapsed={collapsed} />
       </div>
+
+      {activeProject && (
+        <ProjectDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          project={activeProject}
+        />
+      )}
     </div>
   );
 }

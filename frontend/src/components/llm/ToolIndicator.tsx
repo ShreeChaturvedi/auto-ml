@@ -6,17 +6,20 @@
  * - Same visual style as ThinkingBlock (clickable rows, expandable content)
  * - Spinner replaces icon during loading
  * - Metallic shine animation on loading tools
- * - Expandable dropdowns for edit_cell (diffs) and search_documents (results)
+ * - Expandable dropdowns with typed, human-friendly renderers via ToolResultRenderer
  * - No chevron - click anywhere on row to toggle
+ * - Result count badge shown inline for data-returning tools
  */
 
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
+import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
 import {
     Globe,
     Eye,
     FolderOpen,
+    Database,
     Loader2,
     AlertCircle,
     FileCode,
@@ -24,13 +27,18 @@ import {
     FileEdit,
     Play,
     SquareCode,
-    Pencil
+    Pencil,
+    Package,
+    Trash2,
+    ArrowUpDown,
+    Plus
 } from 'lucide-react';
 
 interface ToolIndicatorProps {
     toolCalls: ToolCall[];
     results: ToolResult[];
     isRunning: boolean;
+    autoExpandPreviewTools?: boolean;
 }
 
 type ToolStatus = 'pending' | 'running' | 'done' | 'error';
@@ -42,6 +50,13 @@ interface ToolDisplay {
     label: string;
     hasDropdown: boolean;
 }
+
+const AUTO_EXPAND_TOOLS = new Set<ToolCall['tool']>([
+    'get_dataset_profile',
+    'get_dataset_sample',
+    'search_documents',
+    'list_project_files'
+]);
 
 // Get the static icon for a tool (shown when done/pending)
 function getToolIcon(tool: ToolCall['tool'], status: ToolStatus) {
@@ -56,12 +71,19 @@ function getToolIcon(tool: ToolCall['tool'], status: ToolStatus) {
         case 'search_documents':
             return <Globe className={iconClass} />;
         case 'list_project_files':
+        case 'list_project_datasets':
             return <FolderOpen className={iconClass} />;
+        case 'set_active_dataset':
+        case 'checkpoint_dataset':
+        case 'register_derived_dataset':
+            return <Database className={iconClass} />;
         case 'get_dataset_profile':
         case 'get_dataset_sample':
+        case 'validate_step_result':
             return <Eye className={iconClass} />;
+        case 'execute_transformation_step':
         case 'list_cells':
-            return <List className={iconClass} />;
+            return tool === 'list_cells' ? <List className={iconClass} /> : <Play className={iconClass} />;
         case 'read_cell':
             return <FileCode className={iconClass} />;
         case 'write_cell':
@@ -70,6 +92,16 @@ function getToolIcon(tool: ToolCall['tool'], status: ToolStatus) {
             return <Pencil className={iconClass} />;
         case 'run_cell':
             return <Play className={iconClass} />;
+        case 'install_package':
+        case 'uninstall_package':
+        case 'list_packages':
+            return <Package className={iconClass} />;
+        case 'delete_cell':
+            return <Trash2 className={iconClass} />;
+        case 'reorder_cells':
+            return <ArrowUpDown className={iconClass} />;
+        case 'insert_cell':
+            return <Plus className={iconClass} />;
         default:
             return <FileEdit className={iconClass} />;
     }
@@ -88,10 +120,42 @@ function getToolLabel(call: ToolCall, status: ToolStatus): string {
         }
         case 'list_project_files':
             return isDone ? 'Explored workspace' : 'Exploring workspace';
+        case 'list_project_datasets':
+            return isDone ? 'Listed project datasets' : 'Listing project datasets';
+        case 'set_active_dataset':
+            return isDone ? 'Selected active dataset' : 'Selecting active dataset';
+        case 'checkpoint_dataset':
+            return isDone ? 'Created dataset checkpoint' : 'Creating dataset checkpoint';
+        case 'register_derived_dataset':
+            return isDone ? 'Registered derived dataset' : 'Registering derived dataset';
         case 'get_dataset_profile':
             return isDone ? 'Read dataset profile' : 'Reading dataset profile';
         case 'get_dataset_sample':
             return isDone ? 'Read dataset sample' : 'Reading dataset sample';
+        case 'propose_transformation_step': {
+            const title = typeof args.title === 'string'
+                ? args.title
+                : typeof args.intentType === 'string'
+                    ? args.intentType
+                    : 'transformation step';
+            return isDone ? `Proposed ${title}` : `Proposing ${title}`;
+        }
+        case 'materialize_step_code': {
+            const stepId = typeof args.stepId === 'string' ? args.stepId : 'step';
+            return isDone ? `Prepared code for ${stepId}` : `Preparing code for ${stepId}`;
+        }
+        case 'execute_transformation_step': {
+            const stepId = typeof args.stepId === 'string' ? args.stepId : 'step';
+            return isDone ? `Executed ${stepId}` : `Executing ${stepId}`;
+        }
+        case 'validate_step_result': {
+            const stepId = typeof args.stepId === 'string' ? args.stepId : 'step';
+            return isDone ? `Validated ${stepId}` : `Validating ${stepId}`;
+        }
+        case 'commit_transformation_step': {
+            const stepId = typeof args.stepId === 'string' ? args.stepId : 'step';
+            return isDone ? `Committed ${stepId}` : `Committing ${stepId}`;
+        }
         case 'list_cells':
             return isDone ? 'Listed cells' : 'Listing cells';
         case 'read_cell':
@@ -99,100 +163,112 @@ function getToolLabel(call: ToolCall, status: ToolStatus): string {
         case 'write_cell':
             return isDone ? 'Wrote cell' : 'Writing cell';
         case 'edit_cell': {
-            const startLine = typeof args.startLine === 'number' ? args.startLine : '?';
-            const endLine = typeof args.endLine === 'number' ? args.endLine : '?';
+            const startLine = typeof args.startLine === 'number' ? args.startLine : undefined;
+            const endLine = typeof args.endLine === 'number' ? args.endLine : startLine;
+            if (startLine == null) {
+                return isDone ? 'Edited cell' : 'Editing cell';
+            }
+            if (endLine == null || endLine === startLine) {
+                return isDone ? `Edited line ${startLine}` : `Editing line ${startLine}`;
+            }
             return isDone ? `Edited lines ${startLine}–${endLine}` : `Editing lines ${startLine}–${endLine}`;
         }
         case 'run_cell':
             return isDone ? 'Ran cell' : 'Running cell';
+        case 'install_package': {
+            const pkg = typeof args.packageName === 'string' ? args.packageName : 'package';
+            return isDone ? `Installed ${pkg}` : `Installing ${pkg}`;
+        }
+        case 'uninstall_package': {
+            const pkg = typeof args.packageName === 'string' ? args.packageName : 'package';
+            return isDone ? `Uninstalled ${pkg}` : `Uninstalling ${pkg}`;
+        }
+        case 'list_packages':
+            return isDone ? 'Listed packages' : 'Listing packages';
+        case 'delete_cell':
+            return isDone ? 'Deleted cell' : 'Deleting cell';
+        case 'reorder_cells':
+            return isDone ? 'Reordered cells' : 'Reordering cells';
+        case 'insert_cell':
+            return isDone ? 'Inserted cell' : 'Inserting cell';
         default:
             return call.tool;
     }
 }
 
-// Check if tool has expandable content
-function hasExpandableContent(tool: ToolCall['tool']): boolean {
-    return ['edit_cell', 'search_documents'].includes(tool);
-}
+/** Produce a tiny inline count hint for the result (e.g. "3 results") */
+function getResultHint(call: ToolCall, result?: ToolResult): string | null {
+    if (!result?.output || result.error) return null;
+    const out = result.output;
 
-// Render dropdown content for a tool
-function ToolDropdownContent({ call, result }: { call: ToolCall; result?: ToolResult }) {
-    if (!result) return null;
-
-    if (call.tool === 'edit_cell') {
-        const output = result.output as { oldContent?: string; newContent?: string } | undefined;
-        if (!output?.oldContent && !output?.newContent) {
-            return <span className="text-muted-foreground italic">No changes recorded</span>;
+    switch (call.tool) {
+        case 'search_documents': {
+            const items = Array.isArray(out)
+                ? out
+                : Array.isArray((out as { items?: unknown }).items)
+                    ? (out as { items: unknown[] }).items
+                    : null;
+            if (items) return `${items.length} hit${items.length !== 1 ? 's' : ''}`;
+            return null;
         }
-
-        // Render git-style diff
-        const oldLines = (output.oldContent || '').split('\n');
-        const newLines = (output.newContent || '').split('\n');
-
-        return (
-            <div className="font-mono text-xs space-y-0.5">
-                {oldLines.map((line, i) => (
-                    <div key={`old-${i}`} className="text-red-500 bg-red-500/10 px-2 py-0.5 rounded-sm">
-                        - {line}
-                    </div>
-                ))}
-                {newLines.map((line, i) => (
-                    <div key={`new-${i}`} className="text-green-500 bg-green-500/10 px-2 py-0.5 rounded-sm">
-                        + {line}
-                    </div>
-                ))}
-            </div>
-        );
+        case 'get_dataset_profile': {
+            const cols = (out as { nCols?: number }).nCols;
+            const rows = (out as { nRows?: number }).nRows;
+            if (cols != null && rows != null) return `${rows.toLocaleString()}×${cols}`;
+            return null;
+        }
+        case 'get_dataset_sample': {
+            const sample = (out as { sample?: unknown[] }).sample;
+            if (Array.isArray(sample)) return `${sample.length} row${sample.length !== 1 ? 's' : ''}`;
+            return null;
+        }
+        case 'list_project_files': {
+            const ds = (out as { datasets?: unknown[] }).datasets?.length ?? 0;
+            const docs = (out as { documents?: unknown[] }).documents?.length ?? 0;
+            return `${ds + docs} file${ds + docs !== 1 ? 's' : ''}`;
+        }
+        case 'list_project_datasets': {
+            const datasets = (out as { datasets?: unknown[] }).datasets;
+            if (Array.isArray(datasets)) return `${datasets.length} dataset${datasets.length !== 1 ? 's' : ''}`;
+            return null;
+        }
+        case 'validate_step_result': {
+            const status = (out as { status?: string }).status;
+            return typeof status === 'string' ? status : null;
+        }
+        case 'list_cells': {
+            const cells = (out as { cells?: unknown[] }).cells;
+            if (Array.isArray(cells)) return `${cells.length} cell${cells.length !== 1 ? 's' : ''}`;
+            return null;
+        }
+        default:
+            return null;
     }
-
-    if (call.tool === 'search_documents') {
-        const output = result.output;
-        if (!output) {
-            return <span className="text-muted-foreground italic">No results</span>;
-        }
-
-        // Handle array of search results
-        if (Array.isArray(output)) {
-            return (
-                <div className="space-y-2">
-                    {output.slice(0, 5).map((item, i) => (
-                        <div key={i} className="text-xs">
-                            {typeof item === 'object' && item !== null ? (
-                                <div className="space-y-1">
-                                    {(item as { title?: string }).title && (
-                                        <div className="font-medium">{(item as { title?: string }).title}</div>
-                                    )}
-                                    {(item as { snippet?: string }).snippet && (
-                                        <div className="text-muted-foreground">{(item as { snippet?: string }).snippet}</div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="text-muted-foreground">{String(item)}</div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            );
-        }
-
-        // Handle object or string
-        return (
-            <pre className="text-xs whitespace-pre-wrap text-muted-foreground">
-                {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
-            </pre>
-        );
-    }
-
-    return null;
 }
 
 // Single tool row component
-function ToolRow({ display }: { display: ToolDisplay }) {
+function ToolRow({
+    display,
+    autoExpandPreviewTools
+}: {
+    display: ToolDisplay;
+    autoExpandPreviewTools: boolean;
+}) {
     const [expanded, setExpanded] = useState(false);
     const { call, status, result, label, hasDropdown } = display;
 
     const isLoading = status === 'running';
-    const showDropdown = hasDropdown && status === 'done' && result && !result.error;
+    const showDropdown = hasDropdown && result != null;
+    const hint = getResultHint(call, result);
+
+    useEffect(() => {
+        if (!autoExpandPreviewTools || !showDropdown || status !== 'done') {
+            return;
+        }
+        if (AUTO_EXPAND_TOOLS.has(call.tool)) {
+            setExpanded(true);
+        }
+    }, [autoExpandPreviewTools, call.tool, showDropdown, status]);
 
     return (
         <div className="flex flex-col">
@@ -224,6 +300,13 @@ function ToolRow({ display }: { display: ToolDisplay }) {
                     {label}
                 </span>
 
+                {/* Inline result count hint */}
+                {hint && status === 'done' && (
+                    <span className="text-[10px] font-mono text-muted-foreground/60 tabular-nums flex-shrink-0">
+                        {hint}
+                    </span>
+                )}
+
                 {/* Error message inline */}
                 {status === 'error' && result?.error && (
                     <span className="text-[10px] text-destructive/70 truncate max-w-[150px]">
@@ -232,17 +315,22 @@ function ToolRow({ display }: { display: ToolDisplay }) {
                 )}
             </button>
 
-            {/* Expandable content */}
+            {/* Expandable content — rendered by ToolResultRenderer */}
             {expanded && showDropdown && (
-                <div className="ml-6 mt-1 p-3 bg-muted/30 rounded-md border border-muted/50 max-h-[200px] overflow-y-auto">
-                    <ToolDropdownContent call={call} result={result} />
+                <div className="ml-6 mt-1 p-3 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
+                    <ToolResultRenderer call={call} result={result!} />
                 </div>
             )}
         </div>
     );
 }
 
-export function ToolIndicator({ toolCalls, results, isRunning }: ToolIndicatorProps) {
+export function ToolIndicator({
+    toolCalls,
+    results,
+    isRunning,
+    autoExpandPreviewTools = false
+}: ToolIndicatorProps) {
     const displayItems = useMemo<ToolDisplay[]>(() => {
         return toolCalls.map((call) => {
             const result = results.find((r) => r.id === call.id);
@@ -259,7 +347,7 @@ export function ToolIndicator({ toolCalls, results, isRunning }: ToolIndicatorPr
                 status,
                 result,
                 label: getToolLabel(call, status),
-                hasDropdown: hasExpandableContent(call.tool)
+                hasDropdown: EXPANDABLE_TOOLS.has(call.tool)
             };
         });
     }, [toolCalls, results, isRunning]);
@@ -269,7 +357,11 @@ export function ToolIndicator({ toolCalls, results, isRunning }: ToolIndicatorPr
     return (
         <div className="space-y-0.5">
             {displayItems.map((display) => (
-                <ToolRow key={display.call.id} display={display} />
+                <ToolRow
+                    key={display.call.id}
+                    display={display}
+                    autoExpandPreviewTools={autoExpandPreviewTools}
+                />
             ))}
         </div>
     );

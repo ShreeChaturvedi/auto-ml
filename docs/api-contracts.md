@@ -57,12 +57,65 @@ interface NlQueryResponse {
   nl: {
     sql: string;
     rationale: string;
+    explanation: {
+      intentSummary: string;
+      selectedTables: string[];
+      joinPlan: Array<{
+        leftTable: string;
+        leftColumn: string;
+        rightTable: string;
+        rightColumn: string;
+        joinType: 'inner' | 'left' | 'right' | 'full';
+        confidence: number;
+        reason: string;
+      }>;
+      filters: string[];
+      aggregations: string[];
+      assumptions: string[];
+      validationNotes: string[];
+      confidence: number;
+      warningLevel: 'none' | 'low' | 'medium' | 'high';
+      confidenceMode: 'model' | 'heuristic' | 'deterministic_fallback' | 'repair';
+      reliabilityTier: 'high' | 'medium' | 'low';
+    };
     queryId: string;
     cached: boolean;
-    query: SqlQueryResponse['query'];
+    query: SqlQueryResponse['query'] | null;
+    queryExecutionError?: string | null; // present when generation succeeded but initial execution failed
   };
 }
 ```
+
+## `/api/query/nl/stream` (POST, NDJSON stream)
+
+Same request payload as `/api/query/nl`.
+
+**Response (application/x-ndjson)**
+
+```ts
+type NlQueryStreamEvent =
+  | {
+      type: 'phase_started' | 'phase_progress' | 'phase_completed' | 'phase_failed';
+      phaseId:
+        | 'schema_context'
+        | 'planning'
+        | 'sql_generation'
+        | 'validation'
+        | 'initial_execution'
+        | 'repair'
+        | 'done';
+      summary: string;
+      timestamp: string;
+      details?: Record<string, unknown>;
+    }
+  | { type: 'result'; nl: NlQueryResponse['nl'] }
+  | { type: 'done' };
+```
+
+Notes:
+- `phase_*` events stream model and execution progress in order.
+- `result` emits the same final `nl` payload shape as `/api/query/nl`.
+- `done` always terminates the stream.
 
 ---
 
@@ -288,6 +341,96 @@ interface LlmToolDefinition {
 
 interface LlmToolsResponse {
   tools: LlmToolDefinition[];
+}
+```
+
+## `/api/llm/preprocessing/runs` (GET)
+
+Authoritative preprocessing run summaries for UI rehydration.
+
+**Query**
+
+```ts
+interface PreprocessingRunsQuery {
+  projectId: string;
+  limit?: number; // 1..100
+}
+```
+
+**Response**
+
+```ts
+interface PreprocessingRunSummary {
+  runId: string;
+  projectId: string;
+  activeDatasetId?: string;
+  stepCount: number;
+  eventCount: number;
+  latestEventType?: string;
+  latestEventAt?: string;
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+}
+
+interface PreprocessingRunListResponse {
+  projectId: string;
+  count: number;
+  runs: PreprocessingRunSummary[];
+}
+```
+
+## `/api/llm/preprocessing/runs/:runId` (GET)
+
+Authoritative preprocessing run snapshot for deterministic timeline restoration.
+
+**Params**
+
+```ts
+interface PreprocessingRunParams {
+  runId: string;
+}
+```
+
+**Response**
+
+```ts
+interface PreprocessingRunSnapshot {
+  runId: string;
+  projectId: string;
+  stateModel: 'hybrid';
+  activeDatasetId?: string;
+  derivedDatasetIds: string[];
+  langGraphRuntime?: 'langgraph';
+  langGraphState?: Record<string, unknown>;
+  steps: Array<{
+    stepId: string;
+    title: string;
+    rationale?: string;
+    intentType: string;
+    status: 'pending' | 'running' | 'awaiting_approval' | 'applied' | 'failed' | 'diverged';
+    approvalDecision?: 'pending' | 'approved' | 'rejected';
+    decisionReason?: string;
+    toolCallId?: string;
+    linkedFromStepId?: string;
+    code?: string;
+    codeHash?: string;
+    version: number;
+    cellIds: string[];
+    requiresApproval: boolean;
+    validation?: Record<string, unknown>;
+    lastExecuteSucceeded: boolean;
+    lastValidateSucceeded: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  checkpoints: Array<Record<string, unknown>>;
+  events: Array<Record<string, unknown>>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PreprocessingRunSnapshotResponse {
+  run: PreprocessingRunSnapshot;
 }
 ```
 
@@ -527,76 +670,17 @@ When the document store cannot produce supporting evidence the endpoint returns 
 ---
 
 ## `/api/preprocessing/analyze` (POST)
+## `/api/preprocessing/refine` (POST)
+## `/api/preprocessing/execute` (POST)
 
-**Request**
-
-```ts
-interface PreprocessingAnalyzeRequest {
-  projectId: string;
-  tableName: string;
-  sampleSize?: number; // default 1000, min 100, max 10000
-}
-```
-
-**Response**
+Deprecated legacy endpoints. These now return `410 Gone`.
 
 ```ts
-interface PreprocessingAnalyzeResponse {
-  analysis: {
-    rowCount: number;
-    columnCount: number;
-    duplicateRowCount: number;
-    columnProfiles: Array<{
-      name: string;
-      inferredType: 'numeric' | 'categorical' | 'datetime' | 'boolean' | 'text';
-      totalCount: number;
-      missingCount: number;
-      missingPercentage: number;
-      uniqueCount: number;
-      uniquePercentage: number;
-      min?: number;
-      max?: number;
-      mean?: number;
-      median?: number;
-      stdDev?: number;
-      skewness?: number;
-      kurtosis?: number;
-      q1?: number;
-      q3?: number;
-      outlierCount?: number;
-      outlierPercentage?: number;
-      topValues?: Array<{ value: string; count: number }>;
-      entropy?: number;
-    }>;
-    suggestions: Array<{
-      id: string;
-      type: string;
-      column: string;
-      severity: string;
-      title: string;
-      description: string;
-      method: string;
-      methodOptions: string[];
-      parameters: Record<string, unknown>;
-      uiConfig: {
-        renderAs: string;
-        options?: Array<{ value: string; label: string }>;
-        min?: number;
-        max?: number;
-        step?: number;
-        default: unknown;
-      };
-      impact: string;
-      rationale: string;
-      enabled: boolean;
-    }>;
-  };
-  metadata: {
-    tableName: string;
-    totalRows: number;
-    sampledRows: number;
-    samplePercentage: number;
-  };
+interface LegacyPreprocessingDeprecatedResponse {
+  error: string;
+  code: 'PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED';
+  migrationPath: '/api/llm/preprocessing/stream';
+  message: string;
 }
 ```
 

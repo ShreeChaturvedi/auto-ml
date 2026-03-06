@@ -35,7 +35,8 @@ export function AppShell({ children }: AppShellProps) {
 
   // Only show continue button if phase is not yet completed (first time viewing)
   const isPhaseCompleted = activeProject?.completedPhases?.includes(currentPhase as Phase) ?? false;
-  const showContinueButton = effectiveProjectId && currentPhase && !isPhaseCompleted;
+  const showContinueButton =
+    effectiveProjectId && currentPhase && currentPhase !== 'upload' && !isPhaseCompleted;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -54,9 +55,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main Content Area - no top bar, phase content fills entire area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-auto">
-          {children}
-        </div>
+        <div className="flex-1 overflow-auto relative">{children}</div>
       </div>
 
       {/* Fixed Continue Button at bottom-right - only shows for uncompleted phases */}

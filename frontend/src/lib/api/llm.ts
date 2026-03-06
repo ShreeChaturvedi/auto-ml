@@ -1,5 +1,8 @@
 import { apiRequest, getApiBaseUrl } from './client';
 import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
+import type { PreprocessingRunSnapshot, PreprocessingRunSummary } from '@/types/preprocessing';
+
+export type ThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
 
 export interface LlmPlanRequest {
   projectId: string;
@@ -10,12 +13,28 @@ export interface LlmPlanRequest {
   toolResults?: ToolResult[];
   featureSummary?: string;
   enableThinking?: boolean;
+  thinkingLevel?: ThinkingLevel;
+  model?: string;
+}
+
+export interface OnboardingStreamRequest {
+  projectId: string;
+  userIntent?: string;
+  questionAnswers?: Array<{ questionId: string; answer: string | string[] }>;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+  round?: number;
+  enableThinking?: boolean;
+  thinkingLevel?: ThinkingLevel;
+  model?: string;
 }
 
 export type LlmStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'envelope'; envelope: LlmEnvelope }
+  | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
+  | { type: 'plan_exit'; planName?: string; planMarkdown: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -35,28 +54,59 @@ export async function streamTrainingPlan(
   return streamLlm('/llm/training/stream', request, onEvent, signal);
 }
 
-export async function executeToolCalls(projectId: string, toolCalls: ToolCall[]) {
-  return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
-    method: 'POST',
-    body: JSON.stringify({ projectId, toolCalls })
-  });
-}
-
-async function streamLlm(
-  endpoint: string,
+export async function streamPreprocessingPlan(
   request: LlmPlanRequest,
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  // DEBUG: Dump payload to backend for verification (silently ignore errors)
-  try {
-    fetch(`${getApiBaseUrl()}/llm/debug`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint, request })
-    }).catch(() => { /* debug only */ });
-  } catch { /* debug only */ }
+  return streamLlm('/llm/preprocessing/stream', request, onEvent, signal);
+}
 
+export async function streamOnboardingPlan(
+  request: OnboardingStreamRequest,
+  onEvent: (event: LlmStreamEvent) => void,
+  signal?: AbortSignal
+) {
+  return streamLlm('/llm/onboarding/stream', request, onEvent, signal);
+}
+
+export async function executeToolCalls(
+  projectId: string,
+  toolCalls: ToolCall[],
+  notebookId?: string,
+  executionMode: 'agent' | 'user_approval' = 'agent'
+) {
+  return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
+    method: 'POST',
+    body: JSON.stringify({ projectId, toolCalls, notebookId, executionMode })
+  });
+}
+
+export async function listPreprocessingRuns(projectId: string, limit?: number) {
+  const query = new URLSearchParams({ projectId });
+  if (typeof limit === 'number' && Number.isFinite(limit)) {
+    query.set('limit', String(limit));
+  }
+  return apiRequest<{ projectId: string; count: number; runs: PreprocessingRunSummary[] }>(
+    `/llm/preprocessing/runs?${query.toString()}`
+  );
+}
+
+export async function getPreprocessingRunSnapshot(runId: string, projectId?: string) {
+  const query = new URLSearchParams();
+  if (projectId) {
+    query.set('projectId', projectId);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<{ run: PreprocessingRunSnapshot }>(`/llm/preprocessing/runs/${runId}${suffix}`);
+}
+
+async function streamLlm(
+  endpoint: string,
+  request: LlmPlanRequest | OnboardingStreamRequest,
+  onEvent: (event: LlmStreamEvent) => void,
+  signal?: AbortSignal
+) {
   const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
@@ -65,13 +115,26 @@ async function streamLlm(
   });
 
   if (!response.ok || !response.body) {
-    const message = await response.text().catch(() => '');
+    const rawMessage = await response.text().catch(() => '');
+    let message = rawMessage;
+
+    if (rawMessage) {
+      try {
+        const payload = JSON.parse(rawMessage) as { error?: string; message?: string; code?: string };
+        const baseMessage = payload.error || payload.message || rawMessage;
+        message = payload.code ? `${baseMessage} (${payload.code})` : baseMessage;
+      } catch {
+        message = rawMessage;
+      }
+    }
+
     throw new Error(message || `LLM request failed (${response.status})`);
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let sawDone = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -89,10 +152,23 @@ async function streamLlm(
           const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
           if (parsed.success) {
             onEvent({ type: 'envelope', envelope: parsed.data });
+            if (parsed.data.ask_user?.questions?.length) {
+              onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
+            }
+            if (parsed.data.plan_exit?.planMarkdown) {
+              onEvent({
+                type: 'plan_exit',
+                planName: parsed.data.plan_exit.planName,
+                planMarkdown: parsed.data.plan_exit.planMarkdown
+              });
+            }
           } else {
             onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
           }
           continue;
+        }
+        if (payload.type === 'done') {
+          sawDone = true;
         }
         onEvent(payload);
       } catch {
@@ -108,10 +184,23 @@ async function streamLlm(
         const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
         if (parsed.success) {
           onEvent({ type: 'envelope', envelope: parsed.data });
+          if (parsed.data.ask_user?.questions?.length) {
+            onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
+          }
+          if (parsed.data.plan_exit?.planMarkdown) {
+            onEvent({
+              type: 'plan_exit',
+              planName: parsed.data.plan_exit.planName,
+              planMarkdown: parsed.data.plan_exit.planMarkdown
+            });
+          }
         } else {
           onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
         }
       } else {
+        if (payload.type === 'done') {
+          sawDone = true;
+        }
         onEvent(payload);
       }
     } catch {
@@ -119,5 +208,7 @@ async function streamLlm(
     }
   }
 
-  onEvent({ type: 'done' });
+  if (!sawDone) {
+    onEvent({ type: 'done' });
+  }
 }

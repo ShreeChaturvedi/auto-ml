@@ -27,17 +27,15 @@ export function ExperimentsPanel() {
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const files = useDataStore((state) => state.files);
 
-  const {
-    templates,
-    models,
-    isLoadingModels,
-    isLoadingTemplates,
-    isTraining,
-    error,
-    fetchTemplates,
-    refreshModels,
-    trainModel
-  } = useModelStore();
+  const templates = useModelStore((state) => state.templates);
+  const models = useModelStore((state) => state.models);
+  const isLoadingModels = useModelStore((state) => state.isLoadingModels);
+  const isLoadingTemplates = useModelStore((state) => state.isLoadingTemplates);
+  const isTraining = useModelStore((state) => state.isTraining);
+  const error = useModelStore((state) => state.error);
+  const fetchTemplates = useModelStore((state) => state.fetchTemplates);
+  const refreshModels = useModelStore((state) => state.refreshModels);
+  const trainModel = useModelStore((state) => state.trainModel);
 
   const datasetFiles = useMemo(
     () => files.filter((file) => file.projectId === projectId && file.metadata?.datasetId),
@@ -172,7 +170,7 @@ export function ExperimentsPanel() {
         <div className="grid h-full gap-4 p-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
           <Card className="h-full overflow-hidden">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">New Training Run</CardTitle>
+              <CardTitle className="text-sm">Training Run</CardTitle>
             </CardHeader>
             <CardContent className="flex h-full flex-col gap-4 overflow-hidden">
               <div className="space-y-2">

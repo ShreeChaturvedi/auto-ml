@@ -18,7 +18,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -92,26 +91,34 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
         {IconComponent && <IconComponent className="h-3.5 w-3.5" />}
       </div>
 
-      {/* Project title - hidden when collapsed */}
-      {!collapsed && (
-        <span className="flex-1 truncate text-sm font-medium" title={project.title}>
-          {project.title}
-        </span>
-      )}
+      {/* Project title - kept in DOM; fades out via opacity when collapsed to prevent layout jump */}
+      <span
+        className={cn(
+          'flex-1 truncate text-sm font-medium transition-opacity duration-300',
+          collapsed ? 'opacity-0' : 'opacity-100'
+        )}
+        title={project.title}
+      >
+        {project.title}
+      </span>
 
-      {/* More options menu - hidden when collapsed */}
-      {!collapsed && (
+      {/* More options menu - kept in DOM; collapses to w-0 to prevent layout jump */}
+      <div
+        className={cn(
+          'shrink-0 overflow-hidden transition-all duration-300',
+          collapsed ? 'w-0 pointer-events-none' : 'w-6'
+        )}
+      >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 flex-shrink-0"
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-md p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent"
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
               <MoreVertical className="h-3 w-3" />
               <span className="sr-only">More options</span>
-            </Button>
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
@@ -135,7 +142,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      )}
+      </div>
     </div>
   );
 

@@ -2,7 +2,7 @@
  * RuntimeManagerDialog - Configure Python runtime, packages, and datasets
  */
 
-import {
+import React, {
   useCallback,
   useEffect,
   useId,
@@ -84,7 +84,7 @@ function sanitizeDescription(text: string): string {
 
   // Remove badge images (common in READMEs) - lines with multiple [![...](...)]
   cleaned = cleaned.replace(/^\[!\[.*?\]\(.*?\)\]\(.*?\)\s*$/gm, '');
-  cleaned = cleaned.replace(/!\[.*?\]\(https:\/\/[^\)]+\)/g, '');
+  cleaned = cleaned.replace(/!\[.*?\]\(https:\/\/[^)]+\)/g, '');
 
   // Convert RST-style headers to markdown
   // Pattern: line of text followed by a line of only = or - chars
@@ -113,8 +113,8 @@ function sanitizeDescription(text: string): string {
   cleaned = processedLines.join('\n');
 
   // Convert RST code blocks (:: at end of line followed by indented block)
-  cleaned = cleaned.replace(/::\s*\n\n((?:    .+\n?)+)/g, (_, code) => {
-    const unindented = code.split('\n').map((l: string) => l.replace(/^    /, '')).join('\n');
+  cleaned = cleaned.replace(/::\s*\n\n((?: {4}.+\n?)+)/g, (_, code) => {
+    const unindented = code.split('\n').map((l: string) => l.replace(/^ {4}/, '')).join('\n');
     return '\n```\n' + unindented.trim() + '\n```\n';
   });
 
@@ -132,6 +132,7 @@ function sanitizeDescription(text: string): string {
 
 interface RuntimeManagerDialogProps {
   projectId: string;
+  trigger?: React.ReactNode;
 }
 
 /**
@@ -162,6 +163,7 @@ function PackageDialog({
   const [completed, setCompleted] = useState(false);
   const installPackage = useExecutionStore((state) => state.installPackage);
   const installRef = useRef(false);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   // Fetch package details when dialog opens
   useEffect(() => {
@@ -178,47 +180,88 @@ function PackageDialog({
 
   // Reset install state when dialog opens
   useEffect(() => {
-    if (open) {
-      setInstalling(false);
-      setProgress(0);
-      setStage(null);
-      setCompleted(false);
-      installRef.current = false;
+    if (!open) {
+      if (closeTimeoutRef.current !== null) {
+        window.clearTimeout(closeTimeoutRef.current);
+        closeTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    setInstalling(false);
+    setProgress(0);
+    setStage(null);
+    setCompleted(false);
+    installRef.current = false;
+    if (closeTimeoutRef.current !== null) {
+      window.clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current !== null) {
+        window.clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleInstall = async () => {
     if (!pkg || installing || installRef.current) return;
     installRef.current = true;
 
     setInstalling(true);
+    setCompleted(false);
     setProgress(5);
     setStage('Preparing');
 
-    const result = await installPackage(pkg.name, projectId, {
-      onEvent: (event) => {
-        if (event.type === 'progress') {
-          if (typeof event.progress === 'number') setProgress(event.progress);
-          if (event.stage) setStage(event.stage);
+    try {
+      const result = await installPackage(pkg.name, projectId, {
+        onEvent: (event) => {
+          if (event.type === 'progress') {
+            if (typeof event.progress === 'number') {
+              setProgress((prev) => Math.max(prev, event.progress ?? prev));
+            }
+            if (event.stage) {
+              setStage(event.stage);
+              console.info(`[runtime-manager] install phase -> ${event.stage}${typeof event.progress === 'number' ? ` (${event.progress}%)` : ''}`);
+            }
+          }
+          if (event.type === 'done') {
+            setStage(event.success ? 'Completed' : 'Failed');
+            setProgress((prev) => (event.success ? 100 : prev));
+            console.info(`[runtime-manager] install done -> ${event.success ? 'success' : 'failure'} (${pkg.name})`);
+          }
         }
-        if (event.type === 'done') {
-          setStage(event.success ? 'Completed' : 'Failed');
-          setProgress(event.success ? 100 : progress);
-        }
+      });
+
+      if (result.success) {
+        setCompleted(true);
+        // Fallback in case the stream misses a terminal progress event.
+        setStage('Completed');
+        setProgress(100);
+        toast.success(`Installed ${pkg.name}`);
+        closeTimeoutRef.current = window.setTimeout(() => {
+          onOpenChange(false);
+          onInstallComplete?.();
+          closeTimeoutRef.current = null;
+        }, 600);
+      } else {
+        setCompleted(false);
+        setStage('Failed');
+        installRef.current = false;
+        toast.error(`Failed to install ${pkg.name}`, { description: result.message });
       }
-    });
-
-    setInstalling(false);
-    setCompleted(true);
-
-    if (result.success) {
-      toast.success(`Installed ${pkg.name}`);
-      setTimeout(() => {
-        onOpenChange(false);
-        onInstallComplete?.();
-      }, 600);
-    } else {
-      toast.error(`Failed to install ${pkg.name}`, { description: result.message });
+    } catch (error) {
+      setCompleted(false);
+      setStage('Failed');
+      installRef.current = false;
+      toast.error(`Failed to install ${pkg.name}`, {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setInstalling(false);
     }
   };
 
@@ -450,7 +493,7 @@ function PackageDialog({
   );
 }
 
-export function RuntimeManagerDialog({ projectId }: RuntimeManagerDialogProps) {
+export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialogProps) {
   const [open, setOpen] = useState(false);
   const [packageInput, setPackageInput] = useState('');
   const [packageSuggestions, setPackageSuggestions] = useState<PackageInfo[]>([]);
@@ -465,16 +508,22 @@ export function RuntimeManagerDialog({ projectId }: RuntimeManagerDialogProps) {
   const blurTimeoutRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
 
-  const {
-    pythonVersion,
-    setPythonVersion,
-    cloudAvailable,
-    cloudInitializing,
-    sessionId,
-    installedPackages,
-    refreshPackages,
-    initializeCloud
-  } = useExecutionStore();
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const pythonVersion = useExecutionStore((state) => state.pythonVersion);
+  const setPythonVersion = useExecutionStore((state) => state.setPythonVersion);
+  const cloudAvailable = useExecutionStore((state) => state.cloudAvailable);
+  const cloudInitializing = useExecutionStore((state) => state.cloudInitializing);
+  const sessionId = useExecutionStore((state) => state.sessionId);
+  const installedPackages = useExecutionStore((state) => state.installedPackages);
+  const refreshPackages = useExecutionStore((state) => state.refreshPackages);
+  const initializeCloud = useExecutionStore((state) => state.initializeCloud);
 
   const files = useDataStore((state) => state.files);
   const projectFiles = useMemo(
@@ -632,9 +681,11 @@ export function RuntimeManagerDialog({ projectId }: RuntimeManagerDialogProps) {
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon-sm" title="Runtime settings">
-            <Settings2 className="h-4 w-4" />
-          </Button>
+          {trigger ?? (
+            <Button variant="ghost" size="icon-sm" title="Runtime settings">
+              <Settings2 className="h-4 w-4" />
+            </Button>
+          )}
         </DialogTrigger>
         <DialogContent className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col">
           <DialogHeader>
@@ -731,7 +782,7 @@ export function RuntimeManagerDialog({ projectId }: RuntimeManagerDialogProps) {
             <TabsContent value="packages" className="flex-1 flex flex-col min-h-0 space-y-4 mt-4">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10" />
                   <AnimatedPlaceholderInput
                     placeholders={PACKAGE_PLACEHOLDERS}
                     interval={2500}

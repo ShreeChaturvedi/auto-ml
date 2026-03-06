@@ -2,14 +2,36 @@ import { z } from 'zod';
 
 export const ToolNameSchema = z.enum([
   'list_project_files',
+  'list_project_datasets',
+  'set_active_dataset',
+  'profile_active_dataset',
   'get_dataset_profile',
   'get_dataset_sample',
   'search_documents',
+  'checkpoint_dataset',
+  'register_derived_dataset',
+  'list_checkpoints',
+  'restore_checkpoint',
+  'propose_transformation_step',
+  'materialize_step_code',
+  'execute_transformation_step',
+  'validate_step_result',
+  'commit_transformation_step',
+  'detect_step_divergence',
+  'reconcile_diverged_step',
+  'ask_user',
+  'plan_exit',
   'list_cells',
   'read_cell',
   'write_cell',
   'edit_cell',
-  'run_cell'
+  'run_cell',
+  'delete_cell',
+  'reorder_cells',
+  'insert_cell',
+  'install_package',
+  'uninstall_package',
+  'list_packages'
 ]);
 
 export const ToolCallSchema = z.object({
@@ -158,7 +180,7 @@ export type UiSection = z.infer<typeof UiSectionSchema>;
 
 export const UiSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding', 'preprocessing']),
   title: z.string().optional(),
   summary: z.string().optional(),
   sections: z.array(UiSectionSchema)
@@ -166,17 +188,66 @@ export const UiSchema = z.object({
 
 export type UiSchema = z.infer<typeof UiSchema>;
 
+const AskUserOptionSchema = z.object({
+  label: z.string(),
+  description: z.string()
+});
+
+const AskUserQuestionBaseSchema = z.object({
+  id: z.string(),
+  question: z.string(),
+  header: z.string(),
+  allowCustom: z.boolean().optional()
+});
+
+const AskUserSelectQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.enum(['single_select', 'multi_select']),
+  options: z.array(AskUserOptionSchema).min(1)
+});
+
+const AskUserFreeTextQuestionSchema = AskUserQuestionBaseSchema.extend({
+  type: z.literal('free_text'),
+  options: z.array(AskUserOptionSchema).optional()
+});
+
+export const AskUserQuestionSchema = z.union([
+  AskUserSelectQuestionSchema,
+  AskUserFreeTextQuestionSchema
+]);
+
+export type AskUserQuestion = z.infer<typeof AskUserQuestionSchema>;
+
+export const AskUserPayloadSchema = z.object({
+  questions: z.array(AskUserQuestionSchema).min(1)
+});
+
+export type AskUserPayload = z.infer<typeof AskUserPayloadSchema>;
+
+export const PlanExitPayloadSchema = z.object({
+  planName: z.string().min(1).max(120).optional(),
+  planMarkdown: z.string().min(1).max(50000)
+});
+
+export type PlanExitPayload = z.infer<typeof PlanExitPayloadSchema>;
+
+export interface QuestionAnswer {
+  questionId: string;
+  answer: string | string[];
+}
+
 export const LlmEnvelopeSchema = z.object({
   version: z.literal('1'),
-  kind: z.enum(['feature_engineering', 'training']),
+  kind: z.enum(['feature_engineering', 'training', 'onboarding', 'preprocessing']),
   message: z.string().optional(),
   tool_calls: z.array(ToolCallSchema).optional(),
+  ask_user: AskUserPayloadSchema.optional(),
+  plan_exit: PlanExitPayloadSchema.optional(),
   ui: UiSchema.nullable().optional()
 });
 
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
 
-// ChatMessage type for interleaved rendering in Training tab
+// ChatMessage type for interleaved rendering in Training tab and Onboarding chat
 export type ChatMessage =
   | { id: string; type: 'user'; content: string; timestamp: number }
   | { id: string; type: 'assistant_text'; content: string }
@@ -184,4 +255,6 @@ export type ChatMessage =
   | { id: string; type: 'tool_call'; call: ToolCall; result?: ToolResult }
   | { id: string; type: 'code_cell'; cellId: string }
   | { id: string; type: 'ui'; schema: UiSchema }
-  | { id: string; type: 'error'; message: string };
+  | { id: string; type: 'error'; message: string }
+  | { id: string; type: 'ask_user'; questions: AskUserQuestion[]; answered?: boolean }
+  | { id: string; type: 'plan'; content: string; planName: string; approved?: boolean; hidden?: boolean };

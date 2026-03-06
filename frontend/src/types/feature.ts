@@ -663,3 +663,43 @@ export function getSuggestedTemplates(col: ColumnStatistics): FeatureTemplate[] 
     return true;
   });
 }
+
+// ----------------------------------------------------------------------------
+// FE V2 (Notebook-first) UI state types
+// ----------------------------------------------------------------------------
+
+export type PipelineStatus = 'draft' | 'approved' | 'deprecated';
+
+export interface DataChangeSummary {
+  addedColumns: string[];
+  removedColumns: string[];
+  renamedColumns: { oldName: string; newName: string }[];
+  typeChanges: { column: string; oldType: string; newType: string }[];
+  nullDeltas: { column: string; oldNullCount: number; newNullCount: number }[];
+  warnings: string[];
+}
+
+export interface TransformationStep {
+  id: string;
+  name: string;
+  rationale: string;
+  codeReference?: string;
+  method?: FeatureMethod;
+  columns?: string[];
+}
+
+export interface ReadinessReport {
+  dataSummary: DataChangeSummary;
+  steps: TransformationStep[];
+}
+
+export interface PipelineVersion {
+  id: string;
+  projectId: string;
+  name: string;
+  status: PipelineStatus;
+  createdAt: string;
+  approvedAt?: string;
+  readinessReport: ReadinessReport;
+}
+

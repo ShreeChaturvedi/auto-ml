@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import { executeToolCall } from '../llm/tools.js';
-import { LLM_TOOL_DEFINITIONS } from '../llm/toolRegistry.js';
 import type { ToolCall, ToolResult } from '../../types/llm.js';
+import { LLM_TOOL_DEFINITIONS } from '../llm/toolRegistry.js';
+import { executeToolCall } from '../llm/tools.js';
 
 const toolDescriptions = new Map(LLM_TOOL_DEFINITIONS.map((tool) => [tool.name, tool.description]));
 
 const projectIdSchema = z.string().min(1).describe('Project ID');
+const notebookIdSchema = z.string().min(1).describe('Notebook ID').optional();
 
 function toolDescription(name: ToolCall['tool']) {
   return toolDescriptions.get(name) ?? 'MCP tool';
@@ -20,10 +22,17 @@ function toMcpResult(result: ToolResult) {
     typeof payload === 'string'
       ? payload
       : JSON.stringify(payload, null, 2) ?? String(payload);
-  const structuredContent: Record<string, unknown> =
-    payload && typeof payload === 'object'
-      ? (payload as Record<string, unknown>)
-      : { output: payload ?? null };
+
+  // MCP protocol requires structuredContent to be a record (object), not an array.
+  // Arrays must be wrapped in an object container to satisfy the schema.
+  let structuredContent: Record<string, unknown>;
+  if (Array.isArray(payload)) {
+    structuredContent = { items: payload };
+  } else if (payload && typeof payload === 'object') {
+    structuredContent = payload as Record<string, unknown>;
+  } else {
+    structuredContent = { output: payload ?? null };
+  }
 
   return {
     content: [{ type: 'text' as const, text }],
@@ -89,8 +98,8 @@ export function createMcpServer() {
       description: toolDescription('search_documents'),
       inputSchema: {
         projectId: projectIdSchema,
-        query: z.string().min(1).describe('Search query'),
-        limit: z.number().optional().describe('Maximum number of snippets')
+        query: z.string().describe('Search query'),
+        limit: z.coerce.number().optional().describe('Maximum number of snippets')
       }
     },
     async ({ projectId, query, limit }) =>
@@ -106,10 +115,12 @@ export function createMcpServer() {
     {
       description: toolDescription('list_cells'),
       inputSchema: {
-        projectId: projectIdSchema
+        projectId: projectIdSchema,
+        notebookId: notebookIdSchema
       }
     },
-    async ({ projectId }) => toMcpResult(await runTool(projectId, 'list_cells'))
+    async ({ projectId, notebookId }) =>
+      toMcpResult(await runTool(projectId, 'list_cells', { notebookId }))
   );
 
   server.registerTool(
@@ -118,11 +129,12 @@ export function createMcpServer() {
       description: toolDescription('read_cell'),
       inputSchema: {
         projectId: projectIdSchema,
+        notebookId: notebookIdSchema,
         cellId: z.string().min(1).describe('Cell ID')
       }
     },
-    async ({ projectId, cellId }) =>
-      toMcpResult(await runTool(projectId, 'read_cell', { cellId }))
+    async ({ projectId, notebookId, cellId }) =>
+      toMcpResult(await runTool(projectId, 'read_cell', { notebookId, cellId }))
   );
 
   server.registerTool(
@@ -131,14 +143,16 @@ export function createMcpServer() {
       description: toolDescription('write_cell'),
       inputSchema: {
         projectId: projectIdSchema,
+        notebookId: notebookIdSchema,
         cellId: z.string().optional().describe('Cell ID (optional, for updating existing cell)'),
         title: z.string().optional().describe('Cell title'),
         content: z.string().min(1).describe('Cell content (Python code or markdown)'),
-        cellType: z.enum(['code', 'markdown']).optional().describe('Cell type')
+        cellType: z.enum(['code', 'markdown']).optional().describe('Cell type'),
+        metadata: z.record(z.unknown()).optional().describe('Optional metadata to persist on this cell')
       }
     },
-    async ({ projectId, cellId, title, content, cellType }) =>
-      toMcpResult(await runTool(projectId, 'write_cell', { cellId, title, content, cellType }))
+    async ({ projectId, notebookId, cellId, title, content, cellType, metadata }) =>
+      toMcpResult(await runTool(projectId, 'write_cell', { notebookId, cellId, title, content, cellType, metadata }))
   );
 
   server.registerTool(
@@ -147,14 +161,16 @@ export function createMcpServer() {
       description: toolDescription('edit_cell'),
       inputSchema: {
         projectId: projectIdSchema,
+        notebookId: notebookIdSchema,
         cellId: z.string().min(1).describe('Cell ID'),
         startLine: z.number().min(1).describe('Start line (1-indexed)'),
         endLine: z.number().min(1).describe('End line (1-indexed, inclusive)'),
-        newContent: z.string().describe('New content to replace the lines')
+        newContent: z.string().describe('New content to replace the lines'),
+        metadata: z.record(z.unknown()).optional().describe('Optional metadata to persist on this cell')
       }
     },
-    async ({ projectId, cellId, startLine, endLine, newContent }) =>
-      toMcpResult(await runTool(projectId, 'edit_cell', { cellId, startLine, endLine, newContent }))
+    async ({ projectId, notebookId, cellId, startLine, endLine, newContent, metadata }) =>
+      toMcpResult(await runTool(projectId, 'edit_cell', { notebookId, cellId, startLine, endLine, newContent, metadata }))
   );
 
   server.registerTool(
@@ -163,11 +179,13 @@ export function createMcpServer() {
       description: toolDescription('run_cell'),
       inputSchema: {
         projectId: projectIdSchema,
-        cellId: z.string().min(1).describe('Cell ID to execute')
+        notebookId: notebookIdSchema,
+        cellId: z.string().min(1).describe('Cell ID to execute'),
+        metadata: z.record(z.unknown()).optional().describe('Optional metadata to persist before execution')
       }
     },
-    async ({ projectId, cellId }) =>
-      toMcpResult(await runTool(projectId, 'run_cell', { cellId }))
+    async ({ projectId, notebookId, cellId, metadata }) =>
+      toMcpResult(await runTool(projectId, 'run_cell', { notebookId, cellId, metadata }))
   );
 
   server.registerTool(
@@ -176,11 +194,12 @@ export function createMcpServer() {
       description: toolDescription('delete_cell'),
       inputSchema: {
         projectId: projectIdSchema,
+        notebookId: notebookIdSchema,
         cellId: z.string().min(1).describe('Cell ID to delete')
       }
     },
-    async ({ projectId, cellId }) =>
-      toMcpResult(await runTool(projectId, 'delete_cell', { cellId }))
+    async ({ projectId, notebookId, cellId }) =>
+      toMcpResult(await runTool(projectId, 'delete_cell', { notebookId, cellId }))
   );
 
   server.registerTool(
@@ -189,11 +208,12 @@ export function createMcpServer() {
       description: toolDescription('reorder_cells'),
       inputSchema: {
         projectId: projectIdSchema,
+        notebookId: notebookIdSchema,
         cellIds: z.array(z.string()).min(1).describe('Cell IDs in desired order')
       }
     },
-    async ({ projectId, cellIds }) =>
-      toMcpResult(await runTool(projectId, 'reorder_cells', { cellIds }))
+    async ({ projectId, notebookId, cellIds }) =>
+      toMcpResult(await runTool(projectId, 'reorder_cells', { notebookId, cellIds }))
   );
 
   server.registerTool(
@@ -202,14 +222,21 @@ export function createMcpServer() {
       description: toolDescription('insert_cell'),
       inputSchema: {
         projectId: projectIdSchema,
+        notebookId: notebookIdSchema,
         position: z.number().min(0).describe('Position to insert cell (0-indexed)'),
         content: z.string().min(1).describe('Cell content'),
         title: z.string().optional().describe('Cell title'),
         cellType: z.enum(['code', 'markdown']).optional().describe('Cell type')
       }
     },
-    async ({ projectId, position, content, title, cellType }) =>
-      toMcpResult(await runTool(projectId, 'insert_cell', { position, content, title, cellType }))
+    async ({ projectId, notebookId, position, content, title, cellType }) =>
+      toMcpResult(await runTool(projectId, 'insert_cell', {
+        notebookId,
+        position,
+        content,
+        title,
+        cellType
+      }))
   );
 
   return server;

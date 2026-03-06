@@ -13,11 +13,12 @@ import { extname, join } from 'path';
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
-import { executeInContainer, getOrCreateContainer, isDockerAvailable } from './containerManager.js';
-import { syncWorkspaceDatasets } from './executionWorkspace.js';
-import type { DatasetFileType } from '../types/dataset.js';
+import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 import type { PythonVersion } from '../types/execution.js';
+
+import { executeInContainer, getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
+import { syncWorkspaceDatasets } from './executionWorkspace.js';
 
 export const FEATURE_METHODS = [
   'log_transform',
@@ -83,6 +84,26 @@ interface FeatureMetadataResult {
   nRows: number;
   columns: Array<{ name: string; dtype: string; nullCount: number }>;
   sample: Record<string, unknown>[];
+}
+
+function normalizeColumnDataType(dtype: string): ColumnDataType {
+  const normalized = dtype.toLowerCase().trim();
+  if (['integer', 'int', 'int64', 'int32', 'int16', 'int8', 'long', 'bigint'].includes(normalized)) {
+    return 'integer';
+  }
+  if (['float', 'float64', 'float32', 'double', 'real', 'numeric', 'decimal'].includes(normalized)) {
+    return 'float';
+  }
+  if (['bool', 'boolean'].includes(normalized)) {
+    return 'boolean';
+  }
+  if (['date', 'datetime', 'timestamp', 'datetime64', 'datetime64[ns]'].includes(normalized)) {
+    return 'date';
+  }
+  if (['string', 'str', 'text', 'object', 'category'].includes(normalized)) {
+    return 'string';
+  }
+  return 'unknown';
 }
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
@@ -463,6 +484,10 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
   ]);
 
   const metadata = JSON.parse(metaBuffer) as FeatureMetadataResult;
+  const normalizedColumns = metadata.columns.map((column) => ({
+    ...column,
+    dtype: normalizeColumnDataType(column.dtype)
+  }));
 
   const derivedDataset = await datasetRepository.create({
     projectId: input.projectId,
@@ -471,7 +496,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     size: outputStats.size,
     profile: {
       nRows: metadata.nRows,
-      columns: metadata.columns,
+      columns: normalizedColumns,
       sample: metadata.sample
     },
     metadata: {
@@ -495,7 +520,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
       filename: outputFilename,
       fileType: outputFormat,
       buffer: outputBuffer,
-      columns: metadata.columns
+      columns: normalizedColumns
     });
     tableName = loadedName;
     const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({

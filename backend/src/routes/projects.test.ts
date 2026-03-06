@@ -330,5 +330,31 @@ describeIf('project routes', () => {
       expect(response.status).toBe(201);
       expect(response.body.project.metadata.currentPhase).toBe('preprocessing');
     });
+
+    it('accepts metadata.projectPlan up to 50000 chars', async () => {
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/projects')
+        .send({
+          name: 'Project',
+          metadata: { projectPlan: 'a'.repeat(50000) }
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.project.metadata.projectPlan).toHaveLength(50000);
+    });
+
+    it('rejects metadata.projectPlan longer than 50000 chars', async () => {
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/projects')
+        .send({
+          name: 'Project',
+          metadata: { projectPlan: 'a'.repeat(50001) }
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
+    });
   });
 });

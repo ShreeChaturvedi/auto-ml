@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
+import { ToolResultRenderer } from '@/components/llm/ToolResultRenderer';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 interface ToolCallState {
@@ -125,9 +126,9 @@ export function LlmToolPanel({
                 {Boolean(result?.output) && (
                   <details>
                     <summary className="cursor-pointer font-medium text-foreground/80">Output</summary>
-                    <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted/50 p-2 text-[10px] text-muted-foreground">
-                      {formatJson(result?.output as Record<string, unknown>)}
-                    </pre>
+                    <div className="mt-2 max-h-64 overflow-auto rounded-md bg-muted/50 p-2">
+                      <ToolResultRenderer call={call} result={result!} />
+                    </div>
                   </details>
                 )}
               </div>

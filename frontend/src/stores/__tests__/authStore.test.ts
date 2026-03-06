@@ -17,6 +17,7 @@ describe('authStore', () => {
   beforeEach(() => {
     // Reset store to initial state before each test
     useAuthStore.getState().clearAuth();
+    localStorage.removeItem('auth-storage');
   });
 
   describe('initial state', () => {
@@ -189,6 +190,39 @@ describe('authStore', () => {
       expect(state.error).toBe('Invalid credentials');
       expect(state.isAuthenticated).toBe(false);
       expect(state.isLoading).toBe(false);
+    });
+  });
+
+  describe('persistence hydration', () => {
+    it('derives authenticated state from persisted user', async () => {
+      useAuthStore.setState({
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null
+      });
+
+      localStorage.setItem(
+        'auth-storage',
+        JSON.stringify({
+          state: {
+            user: mockUser,
+            accessToken: 'persisted-access',
+            refreshToken: 'persisted-refresh'
+          },
+          version: 0
+        })
+      );
+
+      await useAuthStore.persist.rehydrate();
+
+      const state = useAuthStore.getState();
+      expect(state.user).toEqual(mockUser);
+      expect(state.accessToken).toBe('persisted-access');
+      expect(state.refreshToken).toBe('persisted-refresh');
+      expect(state.isAuthenticated).toBe(true);
     });
   });
 });

@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import type { ColumnDataType } from '@/types/file';
 
 export interface UploadDatasetResponse {
   dataset: {
@@ -10,7 +11,7 @@ export interface UploadDatasetResponse {
     n_rows: number;
     n_cols: number;
     columns: string[];
-    dtypes: Record<string, string>;
+    dtypes: Record<string, ColumnDataType>;
     null_counts: Record<string, number>;
     sample: Record<string, unknown>[];
     createdAt: string;
@@ -41,7 +42,7 @@ export interface DatasetProfile {
   nCols: number;
   columns: Array<{
     name: string;
-    dtype: string;
+    dtype: ColumnDataType;
     nullCount: number;
     uniqueCount?: number;
     sampleCount?: number;
@@ -66,6 +67,23 @@ export interface DatasetProfile {
     rowsLoaded?: number;
     [key: string]: unknown;
   };
+}
+
+export async function updateDatasetColumnType(
+  datasetId: string,
+  columnName: string,
+  dtype: ColumnDataType
+) {
+  return apiRequest<UploadDatasetResponse>(
+    `/datasets/${datasetId}/columns/${encodeURIComponent(columnName)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ dtype }),
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+  );
 }
 
 export async function listDatasets(projectId?: string) {

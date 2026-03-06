@@ -1,10 +1,19 @@
-import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall } from '../llmClient.js';
+import type {
+  LlmClient,
+  LlmRequest,
+  LlmStreamHandlers,
+  LlmThinkingLevel,
+  LlmToolCall
+} from '../llmClient.js';
 
 interface GeminiClientOptions {
   apiKey: string;
   model: string;
   timeoutMs: number;
 }
+
+const MAX_STREAM_RETRY_ATTEMPTS = 1;
+const STREAM_RETRY_BACKOFF_MS = 1200;
 
 export class GeminiClient implements LlmClient {
   private apiKey: string;
@@ -18,9 +27,9 @@ export class GeminiClient implements LlmClient {
   }
 
   async complete(request: LlmRequest): Promise<string> {
-    const body = buildGeminiBody(request);
+    const body = buildGeminiBody(request, this.model);
     const response = await this.fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
+      this.modelRequestUrl(this.model, false),
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
 
@@ -34,19 +43,45 @@ export class GeminiClient implements LlmClient {
   }
 
   async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
-    const body = buildGeminiBody(request);
+    return this.streamWithModel(request, handlers, this.model, 0);
+  }
 
-    // DEBUG: Log the full request body
-    console.log('[DEBUG][geminiClient.stream] Request body:', JSON.stringify(body, null, 2));
+  private async streamWithModel(
+    request: LlmRequest,
+    handlers: LlmStreamHandlers,
+    model: string,
+    retryAttempt: number
+  ): Promise<string> {
+    const body = buildGeminiBody(request, model);
 
-    const response = await this.fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse&key=${this.apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    let response: Response;
+    try {
+      response = await this.fetchWithTimeout(
+        this.modelRequestUrl(model, true),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      );
+    } catch (error) {
+      if (shouldRetryStreamRequest(error, retryAttempt)) {
+        const delayMs = STREAM_RETRY_BACKOFF_MS * (retryAttempt + 1);
+        console.warn(
+          `[llm][gemini] Stream request timed out on model ${model}. Retrying once after ${delayMs}ms (attempt ${retryAttempt + 1}/${MAX_STREAM_RETRY_ATTEMPTS}).`
+        );
+        await sleep(delayMs);
+        return this.streamWithModel(request, handlers, model, retryAttempt + 1);
+      }
+      throw error;
+    }
 
     if (!response.ok || !response.body) {
       const text = await response.text().catch(() => '');
-      console.error('[DEBUG][geminiClient.stream] HTTP error:', response.status, text);
+      if (shouldRetryStreamStatus(response.status, retryAttempt)) {
+        const delayMs = STREAM_RETRY_BACKOFF_MS * (retryAttempt + 1);
+        console.warn(
+          `[llm][gemini] Stream request failed with ${response.status} on model ${model}. Retrying once after ${delayMs}ms (attempt ${retryAttempt + 1}/${MAX_STREAM_RETRY_ATTEMPTS}).`
+        );
+        await sleep(delayMs);
+        return this.streamWithModel(request, handlers, model, retryAttempt + 1);
+      }
       throw new Error(text || `Gemini stream failed (${response.status})`);
     }
 
@@ -56,7 +91,30 @@ export class GeminiClient implements LlmClient {
     let fullText = '';
     const pendingToolCalls: GeminiToolCall[] = [];
     const debugInfo: GeminiStreamDebug = {};
-    const allChunks: unknown[] = []; // DEBUG: Capture all response chunks
+    const processPayload = (payload: unknown) => {
+      const chunk = extractGeminiText(payload);
+      if (chunk) {
+        fullText += chunk;
+        handlers.onToken(chunk);
+      }
+
+      const thinkingChunk = extractGeminiThoughts(payload);
+      if (thinkingChunk && handlers.onThinking) {
+        handlers.onThinking(thinkingChunk);
+      }
+
+      updateGeminiDebug(debugInfo, payload);
+      const toolCalls = extractGeminiFunctionCalls(payload, request.contextId);
+      mergeToolCalls(pendingToolCalls, toolCalls);
+    };
+
+    const processSseLine = (line: string) => {
+      const payload = parseSseJsonPayload(line);
+      if (!payload) {
+        return;
+      }
+      processPayload(payload);
+    };
 
     while (true) {
       const { value, done } = await reader.read();
@@ -67,81 +125,43 @@ export class GeminiClient implements LlmClient {
       buffer = lines.pop() ?? '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        // Handle SSE format: data: {...}
-        if (!trimmed.startsWith('data:')) continue;
-        const data = trimmed.slice(5).trim();
-        if (!data || data === '[DONE]') continue;
-        try {
-          const json = JSON.parse(data);
-          allChunks.push(json); // DEBUG: Save chunk
-          const chunk = extractGeminiText(json);
-          if (chunk) {
-            fullText += chunk;
-            handlers.onToken(chunk);
-          }
-          // Extract and emit thinking tokens
-          const thinkingChunk = extractGeminiThoughts(json);
-          if (thinkingChunk && handlers.onThinking) {
-            handlers.onThinking(thinkingChunk);
-          }
-          updateGeminiDebug(debugInfo, json);
-          const toolCalls = extractGeminiFunctionCalls(json, request.contextId);
-          mergeToolCalls(pendingToolCalls, toolCalls);
-        } catch {
-          // Ignore malformed chunks.
-        }
+        processSseLine(line);
       }
     }
 
     if (buffer.trim()) {
-      const tail = buffer.trim();
-      if (tail.startsWith('data:')) {
-        const data = tail.slice(5).trim();
-        if (data && data !== '[DONE]') {
-          try {
-            const json = JSON.parse(data);
-            allChunks.push(json); // DEBUG: Save chunk
-            const chunk = extractGeminiText(json);
-            if (chunk) {
-              fullText += chunk;
-              handlers.onToken(chunk);
-            }
-            // Extract and emit thinking tokens from tail
-            const thinkingChunk = extractGeminiThoughts(json);
-            if (thinkingChunk && handlers.onThinking) {
-              handlers.onThinking(thinkingChunk);
-            }
-            updateGeminiDebug(debugInfo, json);
-            const toolCalls = extractGeminiFunctionCalls(json, request.contextId);
-            mergeToolCalls(pendingToolCalls, toolCalls);
-          } catch {
-            // Ignore malformed tail.
-          }
-        }
-      }
+      processSseLine(buffer);
     }
 
     if (pendingToolCalls.length > 0 && handlers.onToolCall) {
       finalizeToolCalls(pendingToolCalls).forEach((call) => handlers.onToolCall?.(call));
     } else if (!fullText || debugInfo.finishReason === 'MALFORMED_FUNCTION_CALL') {
       const reason = debugInfo.finishReason || 'unknown';
-      // DEBUG: Log EVERYTHING when this error occurs
-      console.error('[DEBUG][geminiClient.stream] MALFORMED_FUNCTION_CALL or empty response');
-      console.error('[DEBUG] Full request body was:', JSON.stringify(body, null, 2));
-      console.error('[DEBUG] All response chunks:', JSON.stringify(allChunks, null, 2));
-      console.error('[DEBUG] debugInfo:', JSON.stringify(debugInfo, null, 2));
-      console.error('[DEBUG] pendingToolCalls:', JSON.stringify(pendingToolCalls, null, 2));
-      console.error('[DEBUG] fullText:', fullText);
       console.warn(`[llm][gemini] Empty/failed response (${reason})`, debugInfo);
       // Throw explicit error so callers can handle gracefully
       if (debugInfo.finishReason === 'MALFORMED_FUNCTION_CALL') {
         throw new Error('Gemini failed to generate valid function call. Try simplifying your request.');
       }
+
+      if (debugInfo.finishReason === 'MAX_TOKENS' && retryAttempt < 1) {
+        const retryRequest: LlmRequest = {
+          ...request,
+          maxOutputTokens: Math.max(request.maxOutputTokens ?? 2048, 4096),
+          thinkingLevel: 'low',
+          enableThinking: false
+        };
+        console.warn('[llm][gemini] Retrying after MAX_TOKENS with reduced reasoning profile.');
+        return this.streamWithModel(retryRequest, handlers, model, retryAttempt + 1);
+      }
     }
 
     return fullText;
+  }
+
+  private modelRequestUrl(model: string, stream: boolean): string {
+    return stream
+      ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${this.apiKey}`
+      : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
   }
 
   private async fetchWithTimeout(input: string, init: RequestInit) {
@@ -153,14 +173,56 @@ export class GeminiClient implements LlmClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       return await fetch(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        const timeoutError = new Error(`Gemini request timed out after ${this.timeoutMs}ms.`);
+        timeoutError.name = 'TimeoutError';
+        throw timeoutError;
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
   }
 }
 
-function buildGeminiBody(request: LlmRequest) {
+function shouldRetryStreamStatus(statusCode: number, retryAttempt: number): boolean {
+  return retryAttempt < MAX_STREAM_RETRY_ATTEMPTS && statusCode === 503;
+}
+
+function shouldRetryStreamRequest(error: unknown, retryAttempt: number): boolean {
+  return retryAttempt < MAX_STREAM_RETRY_ATTEMPTS
+    && error instanceof Error
+    && error.name === 'TimeoutError';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseSseJsonPayload(line: string): unknown | null {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith('data:')) {
+    return null;
+  }
+
+  const data = trimmed.slice(5).trim();
+  if (!data || data === '[DONE]') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+function buildGeminiBody(request: LlmRequest, model: string) {
   const system = request.messages.find((msg) => msg.role === 'system');
+  const MAX_HISTORY_ITEMS = 8;
+  const toolCallHistory = request.toolCallHistory?.slice(-MAX_HISTORY_ITEMS);
+  const toolResultHistory = request.toolResultHistory?.slice(-MAX_HISTORY_ITEMS);
 
   // Type the parts to support text, functionCall, and functionResponse
   type GeminiPart =
@@ -176,10 +238,10 @@ function buildGeminiBody(request: LlmRequest) {
     }));
 
   // Interleave tool calls and results to support sequential history
-  const historyLen = Math.max(request.toolCallHistory?.length ?? 0, request.toolResultHistory?.length ?? 0);
+  const historyLen = Math.max(toolCallHistory?.length ?? 0, toolResultHistory?.length ?? 0);
   for (let i = 0; i < historyLen; i++) {
-    if (request.toolCallHistory?.[i]) {
-      const call = request.toolCallHistory[i];
+    if (toolCallHistory?.[i]) {
+      const call = toolCallHistory[i];
       contents.push({
         role: 'model',
         parts: [{
@@ -198,14 +260,14 @@ function buildGeminiBody(request: LlmRequest) {
       });
     }
 
-    if (request.toolResultHistory?.[i]) {
-      const result = request.toolResultHistory[i];
+    if (toolResultHistory?.[i]) {
+      const result = toolResultHistory[i];
       contents.push({
         role: 'user',
         parts: [{
           functionResponse: {
             name: result.name,
-            response: result.response
+            response: compactFunctionResponse(result.response)
           }
         }] as GeminiPart[]
       });
@@ -235,6 +297,8 @@ function buildGeminiBody(request: LlmRequest) {
     }
     : undefined;
 
+  const thinkingConfig = buildThinkingConfig(request, model);
+
   const body = {
     contents,
     systemInstruction: system ? { parts: [{ text: system.content }] } : undefined,
@@ -242,21 +306,86 @@ function buildGeminiBody(request: LlmRequest) {
       temperature: request.temperature ?? 0.3,
       maxOutputTokens: request.maxOutputTokens ?? 2048,
       responseMimeType: request.responseMimeType,
-      // Enable thinking mode for Gemini 3 models when explicitly requested
-      ...(request.enableThinking ? {
-        thinkingConfig: {
-          thinkingLevel: 'HIGH',
-          includeThoughts: true
-        }
-      } : {})
+      ...(thinkingConfig ? { thinkingConfig } : {})
     },
     tools,
     toolConfig
   };
 
-  console.log('[DEBUG][buildGeminiBody] generationConfig:', JSON.stringify(body.generationConfig, null, 2));
-
   return body;
+}
+
+function compactFunctionResponse(response: Record<string, unknown>): Record<string, unknown> {
+  const MAX_RESPONSE_CHARS = 2500;
+  try {
+    const serialized = JSON.stringify(response);
+    if (serialized.length <= MAX_RESPONSE_CHARS) {
+      return response;
+    }
+
+    return {
+      truncated: true,
+      preview: `${serialized.slice(0, MAX_RESPONSE_CHARS)}…`,
+      originalSize: serialized.length
+    };
+  } catch {
+    return response;
+  }
+}
+
+function buildThinkingConfig(request: LlmRequest, model: string) {
+  // Explicitly disable thinking payload when callers turn it off.
+  if (request.enableThinking === false) {
+    return undefined;
+  }
+
+  if (!supportsThinkingConfig(model)) {
+    return undefined;
+  }
+
+  const explicitLevel = toGeminiThinkingLevel(request.thinkingLevel);
+  if (explicitLevel && supportsExplicitThinkingLevel(model)) {
+    return {
+      thinkingLevel: explicitLevel,
+      includeThoughts: true
+    };
+  }
+
+  if (request.enableThinking) {
+    return {
+      includeThoughts: true
+    };
+  }
+
+  return undefined;
+}
+
+function supportsThinkingConfig(model: string): boolean {
+  return isThinkingCapableGeminiModel(model);
+}
+
+function supportsExplicitThinkingLevel(model: string): boolean {
+  return isThinkingCapableGeminiModel(model);
+}
+
+function isThinkingCapableGeminiModel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return normalized.includes('gemini-2.5')
+    || normalized.includes('gemini-3.1-pro')
+    || normalized.includes('thinking');
+}
+
+function toGeminiThinkingLevel(level?: LlmThinkingLevel): 'LOW' | 'MEDIUM' | 'HIGH' | undefined {
+  switch (level) {
+    case 'low':
+      return 'LOW';
+    case 'medium':
+      return 'MEDIUM';
+    case 'high':
+      return 'HIGH';
+    default:
+      return undefined;
+  }
 }
 
 function extractGeminiText(payload: unknown): string {
@@ -324,9 +453,6 @@ function extractGeminiFunctionCalls(payload: unknown, contextId?: string): Gemin
   for (const candidate of candidates) {
     const parts = candidate.content?.parts ?? [];
 
-    // DEBUG: Log what Gemini returns
-    console.log('[DEBUG][extractGeminiFunctionCalls] Parts received:', JSON.stringify(parts, null, 2));
-
     // First pass: find the last thoughtSignature in the response
     // Gemini 3 may return signature on a separate text part at the end
     let lastSignature: string | undefined;
@@ -392,7 +518,7 @@ function normalizeToolArgs(args: unknown): { args: Record<string, unknown>; rawA
 function mergeToolCalls(target: GeminiToolCall[], incoming: GeminiToolCall[]) {
   for (const call of incoming) {
     const last = target[target.length - 1];
-    if (last && last.name === call.name) {
+    if (last && last.name === call.name && shouldMergeToolCallFragments(last, call)) {
       last.args = deepMerge(last.args, call.args);
       last.rawArgs = mergeRawArgs(last.rawArgs, call.rawArgs);
       // Keep the thoughtSignature if present (don't overwrite with undefined)
@@ -406,6 +532,41 @@ function mergeToolCalls(target: GeminiToolCall[], incoming: GeminiToolCall[]) {
       });
     }
   }
+}
+
+function shouldMergeToolCallFragments(previous: GeminiToolCall, next: GeminiToolCall): boolean {
+  // If any side has raw partial args, this is almost certainly a fragmented stream payload.
+  if (previous.rawArgs || next.rawArgs) {
+    return true;
+  }
+
+  const previousKeys = Object.keys(previous.args);
+  const nextKeys = Object.keys(next.args);
+
+  // Empty-object tool args are commonly emitted incrementally.
+  if (previousKeys.length === 0 || nextKeys.length === 0) {
+    return true;
+  }
+
+  // Merge only when one arg object is a subset of the other (progressive construction).
+  // Distinct calls with the same tool name but different arguments should remain separate.
+  return isSubsetArgs(previous.args, next.args) || isSubsetArgs(next.args, previous.args);
+}
+
+function isSubsetArgs(
+  subset: Record<string, unknown>,
+  superset: Record<string, unknown>
+): boolean {
+  return Object.entries(subset).every(([key, value]) => {
+    if (!(key in superset)) {
+      return false;
+    }
+    return jsonValueEquals(value, superset[key]);
+  });
+}
+
+function jsonValueEquals(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>) {

@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'http';
+import { randomUUID } from 'node:crypto';
+
+import { WebSocketServer, WebSocket } from 'ws';
 
 import { env } from '../../config.js';
 import type { WSClientMessage, WSServerMessage } from '../../types/notebook.js';

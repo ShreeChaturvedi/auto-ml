@@ -1,0 +1,7 @@
+export const FLOW_BASE_STROKE_WIDTH = 1.7;
+export const FLOW_PARTICLE_STROKE_WIDTH = 2.5;
+export const FLOW_PARTICLE_DASHARRAY = '40 400';
+export const FLOW_PARTICLE_DURATION = '1.5s';
+export const FLOW_PARTICLE_OFFSET_START = 440;
+export const FLOW_PARTICLE_OFFSET_END = -300;
+export const FLOW_PARTICLE_PATH_LENGTH = 400;

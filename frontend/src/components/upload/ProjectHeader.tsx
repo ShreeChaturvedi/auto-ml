@@ -1,109 +1,136 @@
-/**
- * ProjectHeader - Displays project information at the top of upload tab
- *
- * Features:
- * - Large colored icon from project
- * - Prominent project title
- * - Project description with proper overflow handling
- * - Visual hierarchy with size and spacing
- * - Responsive design
- *
- * Design Philosophy:
- * - Establishes context for the user
- * - Uses project branding (icon/color) for visual consistency
- * - Professional, clean aesthetic
- */
+import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 
-import * as LucideIcons from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { PlanSelector } from '@/components/layout/PlanSelector';
+
+import { Input } from '@/components/ui/input';
 import type { Project } from '@/types/project';
-import { projectColorClasses } from '@/types/project';
-import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface ProjectHeaderProps {
   project: Project;
+  editable?: boolean;
+  collapsed?: boolean;
+  onBack?: () => void;
+  onUpdate?: (updates: Partial<Pick<Project, 'title' | 'description'>>) => void;
 }
 
-export function ProjectHeader({ project }: ProjectHeaderProps) {
-  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    project.icon
-  ] || LucideIcons.Folder;
+const SAVE_DEBOUNCE_MS = 500;
 
-  const colorClasses = projectColorClasses[project.color];
+export function ProjectHeader({
+  project,
+  editable = false,
+  collapsed = false,
+  onBack,
+  onUpdate
+}: ProjectHeaderProps) {
+  const [descriptionDraft, setDescriptionDraft] = useState(project.description ?? '');
+  const descriptionTimerRef = useRef<number | null>(null);
 
-  // Truncate title if longer than 60 characters
-  const shouldTruncateTitle = project.title.length > 60;
-  const displayTitle = shouldTruncateTitle ? `${project.title.slice(0, 60)}...` : project.title;
+  useEffect(() => {
+    setDescriptionDraft(project.description ?? '');
+  }, [project.description]);
 
-  // Truncate description if longer than 200 characters
-  const shouldTruncateDesc = project.description && project.description.length > 200;
-  const displayDescription = shouldTruncateDesc
-    ? `${project.description!.slice(0, 200)}...`
-    : project.description;
+  useEffect(() => {
+    return () => {
+      if (descriptionTimerRef.current) {
+        window.clearTimeout(descriptionTimerRef.current);
+      }
+    };
+  }, []);
+
+  const scheduleDescriptionSave = (nextDescription: string) => {
+    if (!onUpdate) return;
+    if (descriptionTimerRef.current) {
+      window.clearTimeout(descriptionTimerRef.current);
+    }
+
+    descriptionTimerRef.current = window.setTimeout(() => {
+      onUpdate({ description: nextDescription.trim() || undefined });
+      descriptionTimerRef.current = null;
+    }, SAVE_DEBOUNCE_MS);
+  };
+
+  const flushDescriptionSave = () => {
+    if (!onUpdate) return;
+    if (descriptionTimerRef.current) {
+      window.clearTimeout(descriptionTimerRef.current);
+      descriptionTimerRef.current = null;
+    }
+    onUpdate({ description: descriptionDraft.trim() || undefined });
+  };
+
+  if (collapsed) {
+    const compactDescription = project.description?.trim() || project.title;
+
+    return (
+      <div className="h-14 shrink-0 border-b border-border bg-card/50 px-4 backdrop-blur-sm transition-all duration-300 sm:px-8">
+        <div className="relative flex h-full items-center gap-3 overflow-hidden">
+          <div className="min-w-0 flex-1 text-left">
+            {compactDescription ? <p className="truncate text-sm text-muted-foreground">{compactDescription}</p> : null}
+          </div>
+
+          {onBack ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="border-b border-border bg-card/50 backdrop-blur-sm">
-      <div className="px-8 py-6">
-        <div className="flex items-center gap-4">
-          {/* Project Icon - Large and prominent */}
-          <div
-            className={cn(
-              'flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl border-2 shadow-sm',
-              colorClasses.bg,
-              colorClasses.border
-            )}
+    <div className="h-14 shrink-0 border-b border-border bg-card/50 px-4 backdrop-blur-sm transition-all duration-300 sm:px-8">
+      <div className="flex h-full items-center gap-3">
+        {onBack ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
           >
-            <IconComponent className={cn('h-8 w-8', colorClasses.text)} />
-          </div>
-
-          {/* Project Info */}
-          <div className="flex-1 min-w-0">
-            {/* Project Title - Large and bold */}
-            <div>
-              {shouldTruncateTitle ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <h1 className="text-3xl font-bold text-foreground tracking-tight cursor-help">
-                        {displayTitle}
-                      </h1>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="start" className="max-w-md">
-                      <p className="text-sm">{project.title}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <h1 className="text-3xl font-bold text-foreground tracking-tight">
-                  {displayTitle}
-                </h1>
-              )}
-            </div>
-
-            {/* Project Description - Only render if exists */}
-            {project.description && (
-              <div className="mt-2">
-                {shouldTruncateDesc ? (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <p className="text-base text-muted-foreground leading-relaxed cursor-help">
-                          {displayDescription}
-                        </p>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" align="start" className="max-w-lg">
-                        <p className="text-sm whitespace-pre-wrap">{project.description}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ) : (
-                  <p className="text-base text-muted-foreground leading-relaxed">
-                    {displayDescription}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <Input
+            value={descriptionDraft}
+            onChange={(event) => {
+              setDescriptionDraft(event.target.value);
+              scheduleDescriptionSave(event.target.value);
+            }}
+            onBlur={flushDescriptionSave}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                flushDescriptionSave();
+              }
+              if (event.key === 'Escape') {
+                setDescriptionDraft(project.description ?? '');
+                if (descriptionTimerRef.current) {
+                  window.clearTimeout(descriptionTimerRef.current);
+                  descriptionTimerRef.current = null;
+                }
+              }
+            }}
+            placeholder="Add a description"
+            disabled={!editable}
+            className="h-9 border-0 bg-transparent px-0 text-sm text-muted-foreground shadow-none focus-visible:ring-0"
+          />
+        </div>
+        <div className="hidden shrink-0 items-center md:flex">
+          <PlanSelector
+            className="h-8 w-[320px] justify-start bg-background/50 opacity-90 backdrop-blur-sm hover:bg-background hover:opacity-100"
+            menuAlign="end"
+            nameMaxWidthClass="max-w-[250px]"
+            menuContentClassName="w-[320px]"
+          />
         </div>
       </div>
     </div>

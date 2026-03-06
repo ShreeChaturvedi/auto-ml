@@ -53,35 +53,45 @@ export function ProjectList({ collapsed = false, onToggleCollapse }: ProjectList
               </TooltipProvider>
             </button>
           ) : (
-            <>
-              <button
-                onClick={() => setSectionExpanded(!sectionExpanded)}
-                className="group flex-1 flex items-center gap-1 rounded transition-colors"
-              >
-                <div className="h-6 w-6 flex items-center justify-center shrink-0">
-                  {sectionExpanded ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  )}
-                </div>
-                <h2 className="text-workflow-label font-semibold text-muted-foreground uppercase tracking-wider group-hover:text-foreground transition-colors">
-                  Projects
-                </h2>
-              </button>
-              <div className="shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => setIsCreateDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="sr-only">New project</span>
-                </Button>
+            <button
+              onClick={() => setSectionExpanded(!sectionExpanded)}
+              className="group flex-1 flex items-center gap-1 rounded transition-colors"
+            >
+              <div className="h-6 w-6 flex items-center justify-center shrink-0">
+                {sectionExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                )}
               </div>
-            </>
+              <h2 className="text-workflow-label font-semibold text-muted-foreground uppercase tracking-wider group-hover:text-foreground transition-colors">
+                Projects
+              </h2>
+            </button>
           )}
+
+          {/* New-project button — always in DOM; collapses to w-0 to prevent layout jump.
+              Opacity fades out fast (75 ms) so the icon disappears before the width
+              animation can slide it sideways; fades back in with a delay so it only
+              appears once the container has re-opened. */}
+          <div
+            className={cn(
+              'shrink-0 overflow-hidden transition-[width] duration-300',
+              collapsed ? 'w-0 pointer-events-none' : 'w-6'
+            )}
+          >
+            <button
+              type="button"
+              className={cn(
+                'flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-opacity',
+                collapsed ? 'opacity-0 duration-75' : 'opacity-100 duration-150 delay-150'
+              )}
+              onClick={() => setIsCreateDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              <span className="sr-only">New project</span>
+            </button>
+          </div>
         </div>
 
         {/* Project items */}

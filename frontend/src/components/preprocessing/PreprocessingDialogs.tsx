@@ -238,9 +238,10 @@ export function DatasetChooserDialog({
           </Button>
 
           <Button
+            variant="outline"
             size="icon"
             className={cn(
-              'group rounded-full border-0 bg-white text-black transition-all duration-200 hover:scale-110 hover:border-0 hover:shadow-lg focus-visible:ring-0 focus-visible:ring-offset-0 active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
+              'group rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
               themeColor?.hover
             )}
             disabled={!candidateDatasetId}

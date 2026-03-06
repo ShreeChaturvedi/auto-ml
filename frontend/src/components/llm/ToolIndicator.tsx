@@ -15,6 +15,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import {
     Globe,
     Eye,
@@ -59,10 +61,10 @@ const AUTO_EXPAND_TOOLS = new Set<ToolCall['tool']>([
 ]);
 
 // Get the static icon for a tool (shown when done/pending)
-function getToolIcon(tool: ToolCall['tool'], status: ToolStatus) {
+function getToolIcon(tool: ToolCall['tool'], status: ToolStatus, projectColorClass?: string) {
     const iconClass = cn(
-        'h-4 w-4 flex-shrink-0',
-        status === 'done' && 'text-emerald-600',
+        'h-3.5 w-3.5 flex-shrink-0',
+        status === 'done' && (projectColorClass ? cn(projectColorClass, 'opacity-80') : 'text-muted-foreground'),
         status === 'error' && 'text-destructive',
         (status === 'pending' || status === 'running') && 'text-muted-foreground'
     );
@@ -249,10 +251,12 @@ function getResultHint(call: ToolCall, result?: ToolResult): string | null {
 // Single tool row component
 function ToolRow({
     display,
-    autoExpandPreviewTools
+    autoExpandPreviewTools,
+    projectColorClass
 }: {
     display: ToolDisplay;
     autoExpandPreviewTools: boolean;
+    projectColorClass?: string;
 }) {
     const [expanded, setExpanded] = useState(false);
     const { call, status, result, label, hasDropdown } = display;
@@ -288,11 +292,11 @@ function ToolRow({
             >
                 {/* Icon or spinner */}
                 {isLoading ? (
-                    <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-muted-foreground" />
+                    <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-muted-foreground" />
                 ) : status === 'error' ? (
-                    <AlertCircle className="h-4 w-4 flex-shrink-0 text-destructive" />
+                    <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-destructive" />
                 ) : (
-                    getToolIcon(call.tool, status)
+                    getToolIcon(call.tool, status, projectColorClass)
                 )}
 
                 {/* Label with shimmer effect when loading */}
@@ -331,6 +335,13 @@ export function ToolIndicator({
     isRunning,
     autoExpandPreviewTools = false
 }: ToolIndicatorProps) {
+    // Get project theme color
+    const { activeProjectId, projects } = useProjectStore();
+    const activeProject = projects.find((project) => project.id === activeProjectId);
+    const projectColorClass = activeProject
+        ? projectColorClasses[activeProject.color]?.text
+        : undefined;
+
     const displayItems = useMemo<ToolDisplay[]>(() => {
         return toolCalls.map((call) => {
             const result = results.find((r) => r.id === call.id);
@@ -361,6 +372,7 @@ export function ToolIndicator({
                     key={display.call.id}
                     display={display}
                     autoExpandPreviewTools={autoExpandPreviewTools}
+                    projectColorClass={projectColorClass}
                 />
             ))}
         </div>

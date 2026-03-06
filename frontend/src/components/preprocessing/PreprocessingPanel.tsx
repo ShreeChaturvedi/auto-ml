@@ -1326,7 +1326,6 @@ export function PreprocessingPanel() {
         candidateDatasetId={candidateDatasetId}
         onCandidateDatasetChange={setCandidateDatasetId}
         onStart={handleDatasetStart}
-        selectedDatasetId={selectedDatasetId}
       />
 
       <RenameTabDialog

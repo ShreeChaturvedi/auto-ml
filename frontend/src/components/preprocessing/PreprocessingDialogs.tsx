@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 import { Button } from '@/components/ui/button';
@@ -162,8 +162,6 @@ interface DatasetChooserDialogProps {
   candidateDatasetId: string | null;
   onCandidateDatasetChange: (datasetId: string) => void;
   onStart: () => void;
-  /** When a dataset is already committed, the dialog can be dismissed. */
-  selectedDatasetId?: string | null;
 }
 
 export function DatasetChooserDialog({
@@ -175,38 +173,21 @@ export function DatasetChooserDialog({
   filteredTables,
   candidateDatasetId,
   onCandidateDatasetChange,
-  onStart,
-  selectedDatasetId
+  onStart
 }: DatasetChooserDialogProps) {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const themeColorText = activeProject ? projectColorClasses[activeProject.color]?.text : '';
+  const themeColor = activeProject ? projectColorClasses[activeProject.color] : null;
 
   const searchPlaceholders = useMemo(
     () => buildDatasetSearchPlaceholders(allTables),
     [allTables]
   );
 
-  /** Dialog may only be dismissed when a dataset is already committed or no tables exist. */
-  const canDismiss = !!selectedDatasetId || allTables.length === 0;
-
-  const handleOpenChange = useCallback(
-    (next: boolean) => {
-      if (!next && !canDismiss) return;       // block close when nothing committed
-      onOpenChange(next);
-    },
-    [canDismiss, onOpenChange]
-  );
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className="max-w-2xl max-h-[80vh] flex flex-col"
-        hideCloseButton={!canDismiss}
-        onInteractOutside={(e) => { if (!canDismiss) e.preventDefault(); }}
-        onEscapeKeyDown={(e) => { if (!canDismiss) e.preventDefault(); }}
-      >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Select a dataset</DialogTitle>
           <DialogDescription>
@@ -251,33 +232,33 @@ export function DatasetChooserDialog({
 
         {/* Footer – icon buttons with tooltips */}
         <DialogFooter className="gap-2">
-          {canDismiss && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="rounded-full transition-all duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md active:scale-95"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="h-4 w-4" />
-                  <span className="sr-only">Cancel</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Cancel</TooltipContent>
-            </Tooltip>
-          )}
-
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="outline"
                 size="icon"
-                className="rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none"
+                className="rounded-full transition-all duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md active:scale-95"
+                onClick={() => onOpenChange(false)}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close dialog</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Close dialog</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                className={cn(
+                  'rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
+                  themeColor?.hover
+                )}
                 disabled={!candidateDatasetId}
                 onClick={onStart}
               >
-                <Check className={cn('h-4 w-4', themeColorText)} />
+                <Check className={cn('h-4 w-4', themeColor?.text)} />
                 <span className="sr-only">Start with this dataset</span>
               </Button>
             </TooltipTrigger>

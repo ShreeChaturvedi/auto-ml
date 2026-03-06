@@ -24,12 +24,14 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
 import {
-  ASSISTANT_MODEL_OPTIONS,
+  buildInlineModelOptions,
   DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
+  OTHER_ASSISTANT_MODEL_VALUE,
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
+import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
 import { Sparkles } from 'lucide-react';
 
 type LeftPaneRenderProps = {
@@ -74,11 +76,16 @@ export function AgenticShell({
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const [assistantModel, setAssistantModel] = useState(DEFAULT_ASSISTANT_MODEL);
-  const [enableThinking, setEnableThinking] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    getDefaultReasoningEffort(DEFAULT_ASSISTANT_MODEL)
+    'high'
   );
   const [dismissedModelPromptFor, setDismissedModelPromptFor] = useState<string | null>(null);
+  const {
+    featuredModelOptions,
+    allModelOptions,
+    defaultModel,
+    defaultReasoningEffort
+  } = useLlmModelCatalog();
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
   const disconnectNotebook = useNotebookStore((s) => s.disconnect);
@@ -109,13 +116,46 @@ export function AgenticShell({
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
-  const modelSwitchOptions = ASSISTANT_MODEL_OPTIONS.filter((option) => option.value !== assistantModel);
+  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions, allModelOptions, assistantModel);
+  const modelSwitchOptions = inlineModelOptions
+    .filter((option) => option.value !== assistantModel && option.value !== OTHER_ASSISTANT_MODEL_VALUE);
   const showModelSwitchPrompt = Boolean(modelSwitchError && dismissedModelPromptFor !== modelSwitchError);
 
   const handleModelChange = (model: string) => {
     setAssistantModel(model);
-    setReasoningEffort(getDefaultReasoningEffort(model));
+    const nextDefault = getDefaultReasoningEffort(model, allModelOptions);
+    setReasoningEffort(nextDefault);
   };
+
+  useEffect(() => {
+    if (!assistantModel && defaultModel) {
+      setAssistantModel(defaultModel);
+    }
+  }, [assistantModel, defaultModel]);
+
+  useEffect(() => {
+    if (!allModelOptions.length) {
+      return;
+    }
+
+    const nextModel = allModelOptions.some((option) => option.value === assistantModel)
+      ? assistantModel
+      : defaultModel;
+    if (nextModel !== assistantModel) {
+      setAssistantModel(nextModel);
+    }
+
+    const supportedReasoning = getReasoningEffortOptions(nextModel, allModelOptions);
+    if (!supportedReasoning.some((option) => option.value === reasoningEffort)) {
+      setReasoningEffort(getDefaultReasoningEffort(nextModel, allModelOptions));
+    }
+  }, [allModelOptions, assistantModel, defaultModel, reasoningEffort]);
+
+  useEffect(() => {
+    if (!allModelOptions.length && defaultReasoningEffort) {
+      setReasoningEffort(defaultReasoningEffort);
+    }
+  }, [allModelOptions.length, defaultReasoningEffort]);
 
   useEffect(() => {
     if (!modelSwitchError) {
@@ -143,8 +183,7 @@ export function AgenticShell({
 
       void runLoop(preparedPrompt, {
         model: assistantModel,
-        enableThinking,
-        thinkingLevel: reasoningEffort
+        reasoningEffort
       });
       setChatInput('');
     };
@@ -281,12 +320,11 @@ export function AgenticShell({
                   onStop={handleStop}
                   model={assistantModel}
                   onModelChange={handleModelChange}
-                  modelOptions={ASSISTANT_MODEL_OPTIONS}
+                  modelOptions={inlineModelOptions}
+                  searchModelOptions={allModelOptions}
                   reasoningEffort={reasoningEffort}
                   onReasoningEffortChange={setReasoningEffort}
-                  reasoningOptions={getReasoningEffortOptions(assistantModel)}
-                  enableThinking={enableThinking}
-                  onToggleThinking={() => setEnableThinking(prev => !prev)}
+                  reasoningOptions={getReasoningEffortOptions(assistantModel, allModelOptions)}
                   metaSlot={chatMetaSlot}
                   maxWidthClassName="max-w-5xl"
                 />

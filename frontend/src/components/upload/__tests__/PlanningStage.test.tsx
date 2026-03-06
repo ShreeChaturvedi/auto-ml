@@ -7,6 +7,10 @@ import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
 import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
+const { mockUseLlmModelCatalog } = vi.hoisted(() => ({
+  mockUseLlmModelCatalog: vi.fn(),
+}));
+
 const addFileMock = vi.fn();
 const addPreviewMock = vi.fn();
 const setFileMetadataMock = vi.fn();
@@ -34,9 +38,118 @@ vi.mock('@/lib/api/datasets', () => ({
   uploadDatasetFile: vi.fn(),
 }));
 
+vi.mock('@/hooks/useLlmModelCatalog', () => ({
+  useLlmModelCatalog: () => mockUseLlmModelCatalog(),
+}));
+
+function createMockModelCatalogState() {
+  return {
+    catalog: null,
+    featuredModelOptions: [
+      {
+        value: 'gpt-5.4',
+        label: 'GPT 5.4',
+        kind: 'base',
+        description: 'Best default for most chats and agentic planning.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.3-codex',
+        label: 'GPT 5.3 Codex',
+        kind: 'codex',
+        description: 'Best when the chat is code-heavy or tool-oriented.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-mini',
+        label: 'GPT 5 Mini',
+        kind: 'mini',
+        description: 'Faster and cheaper while still strong for everyday work.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-nano',
+        label: 'GPT 5 Nano',
+        kind: 'nano',
+        description: 'Best for quick lightweight tasks and short prompts.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'low',
+        featured: true,
+      },
+    ],
+    allModelOptions: [
+      {
+        value: 'gpt-5.4',
+        label: 'GPT 5.4',
+        kind: 'base',
+        description: 'Best default for most chats and agentic planning.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.3-codex',
+        label: 'GPT 5.3 Codex',
+        kind: 'codex',
+        description: 'Best when the chat is code-heavy or tool-oriented.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-mini',
+        label: 'GPT 5 Mini',
+        kind: 'mini',
+        description: 'Faster and cheaper while still strong for everyday work.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-nano',
+        label: 'GPT 5 Nano',
+        kind: 'nano',
+        description: 'Best for quick lightweight tasks and short prompts.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'low',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.4-pro',
+        label: 'GPT 5.4 Pro',
+        kind: 'pro',
+        description: 'Highest-effort reasoning for the hardest tasks.',
+        supportedReasoningEfforts: ['high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: false,
+      },
+      {
+        value: 'gpt-5.2',
+        label: 'GPT 5.2',
+        kind: 'base',
+        description: 'Previous flagship GPT-5 base model.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: false,
+      },
+    ],
+    defaultModel: 'gpt-5.4',
+    defaultReasoningEffort: 'high',
+    isLoading: false,
+    error: null,
+  };
+}
+
 describe('PlanningStage Accessibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseLlmModelCatalog.mockReturnValue(createMockModelCatalogState());
     HTMLElement.prototype.scrollIntoView = vi.fn();
     (streamOnboardingPlan as Mock).mockImplementation(async (_request, onEvent) => {
       onEvent({ type: 'done' });
@@ -198,6 +311,31 @@ describe('PlanningStage Accessibility', () => {
       expect(request?.userIntent).toContain('Use and prioritize these newly attached files');
       expect(request?.userIntent).toContain('cow_milk_study.csv');
     });
+  });
+
+  it('sends GPT-5 model and reasoningEffort without legacy thinking fields', async () => {
+    render(
+      <PlanningStage
+        projectId="p1"
+        onPlanApproved={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/describe your goal or request changes/i);
+    fireEvent.change(input, { target: { value: 'build an execution plan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => {
+      expect(streamOnboardingPlan).toHaveBeenCalled();
+    });
+
+    const request = (streamOnboardingPlan as Mock).mock.calls.at(-1)?.[0];
+    expect(request).toMatchObject({
+      model: 'gpt-5.4',
+      reasoningEffort: 'high',
+    });
+    expect(request).not.toHaveProperty('enableThinking');
+    expect(request).not.toHaveProperty('thinkingLevel');
   });
 });
 

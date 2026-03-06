@@ -146,8 +146,7 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
           toolCalls,
           toolResults,
           featureSummary: config.featureSummary,
-          enableThinking: options.enableThinking,
-          thinkingLevel: options.thinkingLevel,
+          reasoningEffort: options.reasoningEffort,
           model: options.model
         },
         onEvent,

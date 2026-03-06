@@ -12,11 +12,19 @@ import { searchDocuments } from '../services/documentSearchService.js';
 import { FEATURE_METHODS } from '../services/featureEngineering.js';
 import {
   createLlmClient,
-  createThinkingLlmClient,
   type LlmClient,
   type LlmRequest,
   type LlmThinkingLevel
 } from '../services/llm/llmClient.js';
+import {
+  getDefaultReasoningEffortForModel,
+  getDefaultLlmModel,
+  listCatalogModels,
+  listFeaturedModels,
+  normalizeReasoningSelection,
+  resolveCatalogModel,
+  type LlmReasoningEffort
+} from '../services/llm/modelCatalog.js';
 import {
   executePreprocessingTool,
   getPreprocessingRunSnapshot,
@@ -55,6 +63,7 @@ const toolResultSchema = z.object({
 });
 
 const thinkingLevelSchema = z.enum(['dynamic', 'low', 'medium', 'high']);
+const reasoningEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 
 const planSchema = z.object({
   projectId: z.string().min(1),
@@ -64,6 +73,7 @@ const planSchema = z.object({
   toolCalls: z.array(ToolCallSchema).optional(),
   toolResults: z.array(toolResultSchema).optional(),
   featureSummary: z.string().optional(),
+  reasoningEffort: reasoningEffortSchema.optional(),
   enableThinking: z.boolean().optional(),
   thinkingLevel: thinkingLevelSchema.optional(),
   model: z.string().optional()
@@ -83,17 +93,24 @@ const onboardingSchema = z.object({
   toolCalls: z.array(ToolCallSchema).optional(),
   toolResults: z.array(toolResultSchema).optional(),
   round: z.number().int().min(0).max(5).default(0),
+  reasoningEffort: reasoningEffortSchema.optional(),
   enableThinking: z.boolean().optional(),
   thinkingLevel: thinkingLevelSchema.optional(),
   model: z.string().optional()
 });
 
-function shouldUseThinkingClient(enableThinking?: boolean, thinkingLevel?: LlmThinkingLevel): boolean {
-  if (enableThinking) {
-    return true;
-  }
-
-  return thinkingLevel !== undefined && thinkingLevel !== 'dynamic';
+function normalizeReasoningEffortInput(params: {
+  model?: string;
+  reasoningEffort?: LlmReasoningEffort;
+  enableThinking?: boolean;
+  thinkingLevel?: LlmThinkingLevel;
+}): LlmReasoningEffort | undefined {
+  return normalizeReasoningSelection({
+    modelId: params.model ?? getDefaultLlmModel(),
+    reasoningEffort: params.reasoningEffort,
+    enableThinking: params.enableThinking,
+    thinkingLevel: params.thinkingLevel
+  });
 }
 
 const executeToolsSchema = z.object({
@@ -150,9 +167,7 @@ function extractPreprocessingRunIdsFromHistory(
 
 export function createLlmRouter() {
   const router = Router();
-  console.log('[DEBUG] createLlmRouter called, router created');
   const llmClient = createLlmClient();
-  const thinkingLlmClient = createThinkingLlmClient();
 
   router.post('/llm/tools/execute', async (req, res) => {
     const parsed = executeToolsSchema.safeParse(req.body);
@@ -193,6 +208,15 @@ export function createLlmRouter() {
 
   router.get('/llm/tools', (_req, res) => {
     return res.json({ tools: LLM_TOOL_DEFINITIONS });
+  });
+
+  router.get('/llm/models', (_req, res) => {
+    return res.json({
+      defaultModel: getDefaultLlmModel(),
+      defaultReasoningEffort: getDefaultReasoningEffortForModel(getDefaultLlmModel()),
+      featuredModels: listFeaturedModels(),
+      models: listCatalogModels()
+    });
   });
 
   router.get('/llm/preprocessing/runs', async (req, res) => {
@@ -300,18 +324,15 @@ export function createLlmRouter() {
       toolCallHistory,
       toolResultHistory,
       toolDefinitions: LLM_ONBOARDING_TOOLS,
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
       enableThinking: parsed.data.enableThinking,
       thinkingLevel: parsed.data.thinkingLevel
     });
 
-    // Resolve model: 'auto' or absent = default, otherwise use override
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
-    const client = useThinkingClient
-      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
-      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
+    const client = modelOverride ? createLlmClient(modelOverride) : llmClient;
     await streamLlmResponse(res, client, request, 'onboarding');
   });
 
@@ -356,18 +377,15 @@ export function createLlmRouter() {
       toolResultHistory,
       featureMethods: [...FEATURE_METHODS],
       toolDefinitions,
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
       enableThinking: parsed.data.enableThinking,
       thinkingLevel: parsed.data.thinkingLevel
     });
 
-    // Use thinking client if enabled; support per-request model override
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
-    const client = useThinkingClient
-      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
-      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
+    const client = modelOverride ? createLlmClient(modelOverride) : llmClient;
     await streamLlmResponse(res, client, request, 'feature_engineering');
   });
 
@@ -380,8 +398,6 @@ export function createLlmRouter() {
     if (!parsed.data.datasetId) {
       return res.status(400).json({ error: 'datasetId is required' });
     }
-
-    console.log('[DEBUG][training/stream] enableThinking:', parsed.data.enableThinking, 'toolCalls count:', parsed.data.toolCalls?.length ?? 0);
 
     const dataset = await datasetRepository.getById(parsed.data.datasetId);
     if (!dataset) {
@@ -423,18 +439,15 @@ export function createLlmRouter() {
       toolCallHistory,
       toolResultHistory,
       toolDefinitions,
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
       enableThinking: parsed.data.enableThinking,
       thinkingLevel: parsed.data.thinkingLevel
     });
 
-    // Use thinking client if enabled; support per-request model override
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
-    const client = useThinkingClient
-      ? (modelOverride ? createThinkingLlmClient(modelOverride) : thinkingLlmClient)
-      : (modelOverride ? createLlmClient(modelOverride) : llmClient);
+    const client = modelOverride ? createLlmClient(modelOverride) : llmClient;
     await streamLlmResponse(res, client, request, 'training');
   });
 
@@ -478,6 +491,7 @@ export function createLlmRouter() {
       toolCallHistory,
       toolResultHistory,
       toolDefinitions: LLM_PREPROCESSING_TOOLS,
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
       enableThinking: parsed.data.enableThinking,
       thinkingLevel: parsed.data.thinkingLevel
     });
@@ -486,10 +500,12 @@ export function createLlmRouter() {
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
-    const useThinkingClient = shouldUseThinkingClient(parsed.data.enableThinking, parsed.data.thinkingLevel);
-    const client = useThinkingClient
-      ? createThinkingLlmClient(modelOverride, env.preprocessingThinkingLlmTimeoutMs)
-      : createLlmClient(modelOverride, env.preprocessingLlmTimeoutMs);
+    const client = createLlmClient(
+      modelOverride,
+      normalizeReasoningEffortInput(parsed.data)
+        ? env.preprocessingThinkingLlmTimeoutMs
+        : env.preprocessingLlmTimeoutMs
+    );
 
     const markInterruptedRuns = async (
       reason: string,
@@ -527,9 +543,6 @@ export function createLlmRouter() {
     }
     res.status(200).send({ ok: true });
   });
-
-  // Print all registered routes
-  console.log('[DEBUG] Routes registered:', router.stack.map((r: { route?: { path?: string } }) => r.route?.path).filter(Boolean));
 
   return router;
 }
@@ -671,8 +684,6 @@ async function streamLlmResponse(
   const collectLlmAttempt = async (attemptRequest: LlmRequest): Promise<void> => {
     await client.stream(attemptRequest, {
       onToken: (token) => {
-        // DEBUG: Log actual token content to see if newlines are present
-        console.log('[DEBUG][onToken] Token received:', JSON.stringify(token));
         tokenChars += token.length;
         if (tokenPreview.length < 600) {
           tokenPreview = `${tokenPreview}${token}`.slice(0, 600);
@@ -760,7 +771,6 @@ async function streamLlmResponse(
             }
           }
           const normalizedUi = normalizeUiPayload(uiPayload, kind);
-          console.log(`[DEBUG][llm.ts] normalized render_ui sections=${normalizedUi.sections.length} items=${normalizedUi.sections.reduce((sum, section) => sum + section.items.length, 0)}`);
           const parsed = z
             .object({
               ui: UiSchema,
@@ -874,12 +884,6 @@ async function streamLlmResponse(
       await collectLlmAttempt(retryRequest);
     }
 
-    // DEBUG: Log what we're about to send
-    console.log(`[DEBUG][llm.ts] Response summary: uiEnvelope=${!!uiEnvelope}, toolCalls=${toolCalls.length}, tokenChars=${tokenChars}`);
-    if (toolCalls.length > 0) {
-      console.log(`[DEBUG][llm.ts] Tool calls to send:`, JSON.stringify(toolCalls, null, 2));
-    }
-
     if (terminalToolConflict) {
       closeStream();
       return;
@@ -907,10 +911,8 @@ async function streamLlmResponse(
         }
       });
     } else if (uiEnvelope) {
-      console.log(`[DEBUG][llm.ts] Sending UI envelope`);
       writeEvent({ type: 'envelope', envelope: uiEnvelope });
     } else if (toolCalls.length > 0) {
-      console.log(`[DEBUG][llm.ts] Sending tool_calls envelope with ${toolCalls.length} calls`);
       writeEvent({
         type: 'envelope',
         envelope: {
@@ -947,8 +949,6 @@ async function streamLlmResponse(
         closeStream();
         return;
       }
-      // Model responded with text only - send as text message
-      console.log(`[DEBUG][llm.ts] Sending text-only envelope (model didn't use tools)`);
       writeEvent({
         type: 'envelope',
         envelope: {
@@ -1039,13 +1039,13 @@ function normalizeLlmStreamErrorMessage(
   const isQuotaFailure = code === 429
     || fingerprint.includes('resource_exhausted')
     || fingerprint.includes('quota exceeded')
-    || fingerprint.includes('generate_requests_per_model_per_day');
+    || fingerprint.includes('rate limit');
 
   if (isQuotaFailure) {
     if (kind === 'preprocessing') {
-      return 'Gemini quota limit reached (429). This preprocessing request was not completed. Check Gemini API quota/billing and retry.';
+      return 'OpenAI rate limit or quota reached (429). This preprocessing request was not completed. Check API quota/billing and retry.';
     }
-    return 'Gemini quota limit reached (429). Check Gemini API quota/billing and retry.';
+    return 'OpenAI rate limit or quota reached (429). Check API quota/billing and retry.';
   }
 
   const isModelUnavailable = code === 503

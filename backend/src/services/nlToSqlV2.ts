@@ -8,10 +8,14 @@ import { createDatasetRepository, type DatasetRepository } from '../repositories
 import {
   type LlmClient,
   type LlmMessage,
-  type LlmThinkingLevel,
-  createLlmClient,
-  createThinkingLlmClient
+  createLlmClient
 } from './llm/llmClient.js';
+import {
+  getDefaultLlmModel,
+  getDefaultReasoningEffortForModel,
+  normalizeReasoningSelection,
+  type LlmReasoningEffort
+} from './llm/modelCatalog.js';
 import { validateReadOnlySql } from './sqlValidator.js';
 
 export type WarningLevel = 'none' | 'low' | 'medium' | 'high';
@@ -131,7 +135,7 @@ export interface RepairSqlV2Options {
 
 interface Nl2SqlServiceDeps {
   datasetRepository: DatasetRepository;
-  getClient: (model: string, enableThinking: boolean) => LlmClient;
+  getClient: (model: string) => LlmClient;
 }
 
 interface SchemaColumnContext {
@@ -442,34 +446,16 @@ function normalizePass2FallbackOutput(value: unknown): unknown {
   };
 }
 
-function defaultGetClient(model: string, enableThinking: boolean): LlmClient {
-  const provider = env.llmProvider.toLowerCase();
+function defaultGetClient(model: string): LlmClient {
   const timeoutMs = env.nl2sqlTimeoutMs > 0 ? env.nl2sqlTimeoutMs : env.llmTimeoutMs;
-  if (enableThinking && provider === 'gemini') {
-    return createThinkingLlmClient(model, timeoutMs);
-  }
   return createLlmClient(model, timeoutMs);
 }
 
-function providerLabel(providerId: string): string {
-  switch (providerId) {
-    case 'gemini':
-      return 'Gemini';
-    case 'openai':
-      return 'OpenAI';
-    case 'anthropic':
-      return 'Anthropic';
-    default:
-      return providerId.charAt(0).toUpperCase() + providerId.slice(1);
-  }
-}
-
-function getNlProviderInfo(): NlProviderInfo {
-  const id = env.llmProvider.toLowerCase();
+function getNlProviderInfo(model: string): NlProviderInfo {
   return {
-    id,
-    label: providerLabel(id),
-    model: env.nl2sqlModel || env.llmModel
+    id: 'openai',
+    label: 'OpenAI',
+    model
   };
 }
 
@@ -1151,8 +1137,7 @@ async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
   label: string;
   normalize?: (value: unknown) => unknown;
   maxOutputTokens?: number;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
+  reasoningEffort?: LlmReasoningEffort;
   modelWork?: {
     onModelWork?: (event: NlModelWorkEvent) => void;
     phaseId: NlProgressPhaseId;
@@ -1189,8 +1174,7 @@ async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
         temperature: attempt === 1 ? 0.1 : 0,
         maxOutputTokens: params.maxOutputTokens ?? 2048,
         responseMimeType: 'application/json' as const,
-        enableThinking: params.enableThinking,
-        thinkingLevel: params.thinkingLevel,
+        reasoningEffort: params.reasoningEffort,
         contextId: `${params.label}-${attempt}`
       };
 
@@ -1752,7 +1736,9 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
     onProgress,
     onModelWork
   }: RepairSqlV2Options): Promise<GeneratedSqlV2> {
-    const provider = getNlProviderInfo();
+    const model = env.nl2sqlModel || env.llmModel || getDefaultLlmModel();
+    const provider = getNlProviderInfo(model);
+    const defaultReasoningEffort = getDefaultReasoningEffortForModel(model);
     emitNlProgress(onProgress, {
       phaseId: 'repair',
       status: 'started',
@@ -1784,8 +1770,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
       }));
       schemaContextBlock.complete();
 
-      const model = env.nl2sqlModel || env.llmModel;
-      const client = getClient(model, env.nl2sqlEnableThinking);
+      const client = getClient(model);
 
       const repaired = await requestStructuredJson({
         client,
@@ -1793,8 +1778,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         schema: REPAIR_SCHEMA,
         normalize: normalizeRepairOutput,
         maxOutputTokens: 900,
-        enableThinking: env.nl2sqlEnableThinking,
-        thinkingLevel: env.nl2sqlEnableThinking ? 'low' : 'dynamic',
+        reasoningEffort: defaultReasoningEffort,
         systemPrompt: 'You are a senior SQL debugger. Return valid JSON only.',
         userPrompt: buildRepairPrompt({
           nlQuery: nlQuery.trim(),
@@ -1908,7 +1892,9 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
     onProgress,
     onModelWork
   }: GenerateSqlV2Options): Promise<GeneratedSqlV2> {
-    const provider = getNlProviderInfo();
+    const model = env.nl2sqlModel || env.llmModel || getDefaultLlmModel();
+    const provider = getNlProviderInfo(model);
+    const defaultReasoningEffort = getDefaultReasoningEffortForModel(model);
     const query = nlQuery.trim();
     if (!query) {
       throw new Error('Natural language query is required.');
@@ -1964,8 +1950,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
       throw new Error('No dataset schema is available for this project. Upload data before using English mode.');
     }
 
-    const model = env.nl2sqlModel || env.llmModel;
-    const client = getClient(model, env.nl2sqlEnableThinking);
+    const client = getClient(model);
 
     let planning: z.infer<typeof PASS1_SCHEMA>;
     let planningConfidenceMode: Extract<NlConfidenceMode, 'model' | 'heuristic'> = 'model';
@@ -1981,8 +1966,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         schema: PASS1_SCHEMA,
         normalize: normalizePass1Output,
         maxOutputTokens: 900,
-        enableThinking: env.nl2sqlEnableThinking,
-        thinkingLevel: env.nl2sqlEnableThinking ? 'low' : 'dynamic',
+        reasoningEffort: defaultReasoningEffort,
         systemPrompt: 'You are a senior analytics SQL planner. Return valid JSON only.',
         userPrompt: buildPass1Prompt({
           nlQuery: query,
@@ -2058,8 +2042,7 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
         schema: PASS2_SCHEMA,
         normalize: normalizePass2Output,
         maxOutputTokens: 1200,
-        enableThinking: env.nl2sqlEnableThinking,
-        thinkingLevel: env.nl2sqlEnableThinking ? 'low' : 'dynamic',
+        reasoningEffort: defaultReasoningEffort,
         systemPrompt: 'You are a senior SQL engineer. Return valid JSON only.',
         userPrompt: buildPass2Prompt({
           nlQuery: query,
@@ -2125,8 +2108,11 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
             schema: PASS2_FALLBACK_SCHEMA,
             normalize: normalizePass2FallbackOutput,
             maxOutputTokens: 700,
-            enableThinking: false,
-            thinkingLevel: 'low',
+            reasoningEffort: normalizeReasoningSelection({
+              modelId: model,
+              enableThinking: false,
+              thinkingLevel: 'low'
+            }),
             systemPrompt: 'You are a senior SQL engineer. Return compact valid JSON only.',
             userPrompt: buildPass2FallbackPrompt({
               nlQuery: query,
@@ -2155,9 +2141,12 @@ export function createNl2SqlService(overrides: Partial<Nl2SqlServiceDeps> = {}) 
             aggregations: planning.aggregations,
             assumptions: Array.from(new Set([
               ...planning.assumptions,
-              ...compact.assumptions
+              ...compact.assumptions,
+              `Recovered with compact fallback after rich SQL generation failed: ${summarizeError(error)}`
             ])),
-            validationNotes: [],
+            validationNotes: [
+              `compact fallback generated the final SQL after rich output validation failed: ${summarizeError(error)}`
+            ],
             confidence: compact.confidence
           };
           emitNlProgress(onProgress, {

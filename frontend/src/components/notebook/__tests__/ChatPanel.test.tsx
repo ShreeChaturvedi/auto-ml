@@ -5,6 +5,10 @@ import { ChatPanel } from '../ChatPanel';
 import { streamTrainingPlan } from '@/lib/api/llm';
 import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
+const { mockUseLlmModelCatalog } = vi.hoisted(() => ({
+  mockUseLlmModelCatalog: vi.fn(),
+}));
+
 const addFileMock = vi.fn();
 const setFileMetadataMock = vi.fn();
 
@@ -26,9 +30,109 @@ vi.mock('@/lib/api/documents', () => ({
   uploadDocument: vi.fn(),
 }));
 
+vi.mock('@/hooks/useLlmModelCatalog', () => ({
+  useLlmModelCatalog: () => mockUseLlmModelCatalog(),
+}));
+
+function createMockModelCatalogState() {
+  return {
+    catalog: null,
+    featuredModelOptions: [
+      {
+        value: 'gpt-5.4',
+        label: 'GPT 5.4',
+        kind: 'base',
+        description: 'Best default for most chats and agentic planning.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.3-codex',
+        label: 'GPT 5.3 Codex',
+        kind: 'codex',
+        description: 'Best when the chat is code-heavy or tool-oriented.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-mini',
+        label: 'GPT 5 Mini',
+        kind: 'mini',
+        description: 'Faster and cheaper while still strong for everyday work.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-nano',
+        label: 'GPT 5 Nano',
+        kind: 'nano',
+        description: 'Best for quick lightweight tasks and short prompts.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'low',
+        featured: true,
+      },
+    ],
+    allModelOptions: [
+      {
+        value: 'gpt-5.4',
+        label: 'GPT 5.4',
+        kind: 'base',
+        description: 'Best default for most chats and agentic planning.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.3-codex',
+        label: 'GPT 5.3 Codex',
+        kind: 'codex',
+        description: 'Best when the chat is code-heavy or tool-oriented.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-mini',
+        label: 'GPT 5 Mini',
+        kind: 'mini',
+        description: 'Faster and cheaper while still strong for everyday work.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-nano',
+        label: 'GPT 5 Nano',
+        kind: 'nano',
+        description: 'Best for quick lightweight tasks and short prompts.',
+        supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'low',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.4-pro',
+        label: 'GPT 5.4 Pro',
+        kind: 'pro',
+        description: 'Highest-effort reasoning for the hardest tasks.',
+        supportedReasoningEfforts: ['high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: false,
+      },
+    ],
+    defaultModel: 'gpt-5.4',
+    defaultReasoningEffort: 'high',
+    isLoading: false,
+    error: null,
+  };
+}
+
 describe('Notebook ChatPanel progressive rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseLlmModelCatalog.mockReturnValue(createMockModelCatalogState());
     localStorage.clear();
     HTMLElement.prototype.scrollIntoView = vi.fn();
     setupRafAnimationClock();
@@ -131,5 +235,28 @@ describe('Notebook ChatPanel progressive rendering', () => {
     expect(screen.getByText('Visible output')).toBeInTheDocument();
     expect(screen.queryByText(/<<<JSON>>>/)).not.toBeInTheDocument();
     expect(screen.queryByText(/"version":"1"/)).not.toBeInTheDocument();
+  });
+
+  it('sends GPT-5 model and reasoningEffort without legacy thinking fields', async () => {
+    (streamTrainingPlan as Mock).mockImplementation(async (_request, onEvent) => {
+      onEvent({ type: 'done' });
+    });
+
+    render(<ChatPanel projectId="p1" />);
+
+    const input = screen.getByPlaceholderText(/ask ai for help/i);
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'help me debug this notebook' } });
+      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+      await Promise.resolve();
+    });
+
+    const request = (streamTrainingPlan as Mock).mock.calls.at(-1)?.[0];
+    expect(request).toMatchObject({
+      model: 'gpt-5.4',
+      reasoningEffort: 'high',
+    });
+    expect(request).not.toHaveProperty('enableThinking');
+    expect(request).not.toHaveProperty('thinkingLevel');
   });
 });

@@ -26,7 +26,6 @@ import {
   type ReactNode
 } from 'react';
 
-import { GeminiIcon } from '@/components/icons/GeminiIcon';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import type { NlProviderInfo, NlQueryExplanation } from '@/lib/api/query';
 import { cn } from '@/lib/utils';
@@ -270,18 +269,6 @@ function ProviderMark({ provider }: { provider?: NlProviderInfo | null }) {
   }
 
   const iconClassName = 'h-4 w-4 shrink-0';
-
-  if (provider.id === 'gemini') {
-    return (
-      <span
-        className="inline-flex h-4 w-4 items-center justify-center"
-        aria-label={`${provider.label} provider`}
-        title={`${provider.label} · ${provider.model}`}
-      >
-        <GeminiIcon className={iconClassName} />
-      </span>
-    );
-  }
 
   return (
     <span

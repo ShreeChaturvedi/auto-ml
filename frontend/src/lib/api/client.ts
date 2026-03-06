@@ -164,7 +164,7 @@ function extractApiErrorMessage(payload: unknown): string | null {
     return msg || null;
   }
 
-  // Gemini-style error: { error: { message: string } }
+  // Provider error payload: { error: { message: string } }
   if (record.error && typeof record.error === 'object') {
     const nested = record.error as Record<string, unknown>;
     if (typeof nested.message === 'string') {

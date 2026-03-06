@@ -1,66 +1,22 @@
-export type ReasoningEffort = 'dynamic' | 'low' | 'medium' | 'high';
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-export type ReasoningIcon = 'zap' | 'gauge' | 'brain' | 'flame';
+export type ReasoningIcon = 'slash' | 'zap' | 'gauge' | 'brain' | 'flame' | 'rocket';
 
-export const DEFAULT_ASSISTANT_MODEL = 'gemini-3.1-pro-preview-customtools';
+export type AssistantModelKind = 'base' | 'chat' | 'codex' | 'mini' | 'nano' | 'pro' | 'search';
+
+export const DEFAULT_ASSISTANT_MODEL = 'gpt-5.4';
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'high';
+export const OTHER_ASSISTANT_MODEL_VALUE = '__other__';
 
 export interface AssistantModelOption {
   value: string;
   label: string;
-  icon: 'auto' | 'gemini';
+  kind: AssistantModelKind;
+  description: string;
   supportedReasoningEfforts: readonly ReasoningEffort[];
   defaultReasoningEffort: ReasoningEffort;
-  /** Whether this model supports the thinking toggle / reasoning selector */
-  supportsThinking: boolean;
-  /** If true, thinking is always on and cannot be toggled off */
-  thinkingAlwaysOn: boolean;
+  featured?: boolean;
 }
-
-const GEMINI_3_1_REASONING_EFFORTS: readonly ReasoningEffort[] = [
-  'dynamic',
-  'low',
-  'medium',
-  'high'
-];
-
-export const ASSISTANT_MODEL_OPTIONS: readonly AssistantModelOption[] = [
-  {
-    value: 'auto',
-    label: 'Auto',
-    icon: 'auto',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: false,
-    thinkingAlwaysOn: false
-  },
-  {
-    value: 'gemini-3.1-pro-preview-customtools',
-    label: 'Gemini 3.1 Pro',
-    icon: 'gemini',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: true,
-    thinkingAlwaysOn: true
-  },
-  {
-    value: 'gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
-    icon: 'gemini',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: true,
-    thinkingAlwaysOn: false
-  },
-  {
-    value: 'gemini-2.0-flash',
-    label: 'Gemini 2.0 Flash',
-    icon: 'gemini',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: false,
-    thinkingAlwaysOn: false
-  }
-];
 
 export interface ReasoningEffortOption {
   value: ReasoningEffort;
@@ -68,15 +24,30 @@ export interface ReasoningEffortOption {
   icon: ReasoningIcon;
 }
 
-const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
-  dynamic: { label: 'Dynamic', icon: 'zap' },
-  low: { label: 'Low', icon: 'gauge' },
-  medium: { label: 'Medium', icon: 'brain' },
-  high: { label: 'High', icon: 'flame' }
+export const OTHER_MODEL_OPTION: AssistantModelOption = {
+  value: OTHER_ASSISTANT_MODEL_VALUE,
+  label: 'Other…',
+  kind: 'search',
+  description: 'Browse the full GPT-5 catalog.',
+  supportedReasoningEfforts: [],
+  defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
+  featured: true
 };
 
-export function getReasoningEffortOptions(modelValue: string): ReasoningEffortOption[] {
-  const modelOption = ASSISTANT_MODEL_OPTIONS.find((option) => option.value === modelValue) ?? ASSISTANT_MODEL_OPTIONS[0];
+const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
+  none: { label: 'None', icon: 'slash' },
+  minimal: { label: 'Minimal', icon: 'zap' },
+  low: { label: 'Low', icon: 'gauge' },
+  medium: { label: 'Medium', icon: 'brain' },
+  high: { label: 'High', icon: 'flame' },
+  xhigh: { label: 'X-High', icon: 'rocket' }
+};
+
+export function getReasoningEffortOptions(
+  modelValue: string,
+  modelOptions: readonly AssistantModelOption[]
+): ReasoningEffortOption[] {
+  const modelOption = getModelOption(modelValue, modelOptions);
 
   return modelOption.supportedReasoningEfforts.map((effort) => ({
     value: effort,
@@ -85,11 +56,39 @@ export function getReasoningEffortOptions(modelValue: string): ReasoningEffortOp
   }));
 }
 
-export function getDefaultReasoningEffort(modelValue: string): ReasoningEffort {
-  const modelOption = ASSISTANT_MODEL_OPTIONS.find((option) => option.value === modelValue) ?? ASSISTANT_MODEL_OPTIONS[0];
+export function getDefaultReasoningEffort(
+  modelValue: string,
+  modelOptions: readonly AssistantModelOption[]
+): ReasoningEffort {
+  const modelOption = getModelOption(modelValue, modelOptions);
   return modelOption.defaultReasoningEffort;
 }
 
-export function getModelOption(modelValue: string): AssistantModelOption {
-  return ASSISTANT_MODEL_OPTIONS.find((option) => option.value === modelValue) ?? ASSISTANT_MODEL_OPTIONS[0];
+export function getModelOption(
+  modelValue: string,
+  modelOptions: readonly AssistantModelOption[]
+): AssistantModelOption {
+  return modelOptions.find((option) => option.value === modelValue) ?? modelOptions[0] ?? OTHER_MODEL_OPTION;
+}
+
+export function buildInlineModelOptions(
+  featuredModelOptions: readonly AssistantModelOption[],
+  allModelOptions: readonly AssistantModelOption[],
+  selectedModel: string
+): AssistantModelOption[] {
+  const inlineOptions = [...featuredModelOptions];
+  const isSelectedFeatured = featuredModelOptions.some((option) => option.value === selectedModel);
+
+  if (!isSelectedFeatured) {
+    const selectedOption = allModelOptions.find((option) => option.value === selectedModel);
+    if (selectedOption) {
+      inlineOptions.unshift(selectedOption);
+    }
+  }
+
+  if (!inlineOptions.some((option) => option.value === OTHER_ASSISTANT_MODEL_VALUE)) {
+    inlineOptions.push(OTHER_MODEL_OPTION);
+  }
+
+  return inlineOptions;
 }

@@ -9,14 +9,12 @@ import { createLlmRouter } from './llm.js';
 
 const {
   createLlmClientMock,
-  createThinkingLlmClientMock,
   datasetGetByIdMock,
   projectGetByIdMock,
   llmCompleteMock,
   llmStreamMock
 } = vi.hoisted(() => ({
   createLlmClientMock: vi.fn(),
-  createThinkingLlmClientMock: vi.fn(),
   datasetGetByIdMock: vi.fn(),
   projectGetByIdMock: vi.fn(),
   llmCompleteMock: vi.fn(async () => ''),
@@ -28,13 +26,8 @@ vi.mock('../services/llm/llmClient.js', () => {
     complete: llmCompleteMock,
     stream: llmStreamMock
   }));
-  createThinkingLlmClientMock.mockImplementation(() => ({
-    complete: llmCompleteMock,
-    stream: llmStreamMock
-  }));
   return {
-    createLlmClient: createLlmClientMock,
-    createThinkingLlmClient: createThinkingLlmClientMock
+    createLlmClient: createLlmClientMock
   };
 });
 
@@ -90,10 +83,6 @@ describeIf('llm routes', () => {
       complete: llmCompleteMock,
       stream: llmStreamMock
     }));
-    createThinkingLlmClientMock.mockImplementation(() => ({
-      complete: llmCompleteMock,
-      stream: llmStreamMock
-    }));
     datasetGetByIdMock.mockResolvedValue({
       datasetId: 'ds-1',
       projectId: 'project-1',
@@ -141,6 +130,26 @@ describeIf('llm routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Invalid request');
+    });
+  });
+
+  describe('GET /api/llm/models', () => {
+    it('returns a GPT-5-only catalog with featured latest-per-kind entries', async () => {
+      const app = createTestApp();
+      const response = await request(app).get('/api/llm/models');
+
+      expect(response.status).toBe(200);
+      expect(response.body.defaultModel).toBe('gpt-5.4');
+      expect(response.body.defaultReasoningEffort).toBe('high');
+      expect(response.body.featuredModels.map((entry: { id: string }) => entry.id)).toEqual([
+        'gpt-5.4',
+        'gpt-5.3-codex',
+        'gpt-5-mini',
+        'gpt-5-nano'
+      ]);
+      expect(response.body.models.map((entry: { id: string }) => entry.id)).toContain('gpt-5.3-chat-latest');
+      expect(response.body.models.map((entry: { id: string }) => entry.id)).toContain('gpt-5.4-pro');
+      expect(response.body.models.every((entry: { id: string }) => entry.id.startsWith('gpt-5'))).toBe(true);
     });
   });
 
@@ -268,7 +277,7 @@ describeIf('llm routes', () => {
       expect(createLlmClientMock.mock.calls).toContainEqual([undefined, env.preprocessingLlmTimeoutMs]);
     });
 
-    it('normalizes Gemini quota errors into actionable preprocessing message', async () => {
+    it('normalizes OpenAI quota errors into actionable preprocessing message', async () => {
       llmStreamMock.mockRejectedValueOnce(new Error(JSON.stringify({
         error: {
           code: 429,
@@ -294,7 +303,7 @@ describeIf('llm routes', () => {
         .map((line) => JSON.parse(line) as Record<string, unknown>);
 
       const errorEvent = events.find((event) => event.type === 'error') as { message?: string } | undefined;
-      expect(errorEvent?.message).toContain('Gemini quota limit reached (429)');
+      expect(errorEvent?.message).toContain('OpenAI rate limit or quota reached (429)');
       expect(errorEvent?.message).toContain('preprocessing request was not completed');
       expect(events[events.length - 1]?.type).toBe('done');
     });

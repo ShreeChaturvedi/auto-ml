@@ -255,7 +255,7 @@ describe('preprocessingGraph', () => {
     const interruptionResult = await markInterrupted({
       projectId,
       runIds: [runId],
-      reason: 'Gemini quota limit reached (429).',
+      reason: 'OpenAI rate limit or quota reached (429).',
       source: 'provider_error'
     });
 
@@ -267,13 +267,13 @@ describe('preprocessingGraph', () => {
     const storedRun = await runRepo.getById(runId);
     expect(storedRun?.steps.step_numeric_scaling).toMatchObject({
       status: 'failed',
-      decisionReason: 'Gemini quota limit reached (429).'
+      decisionReason: 'OpenAI rate limit or quota reached (429).'
     });
     expect(storedRun?.langGraphState).toMatchObject({
       currentStage: 'completed',
       nextStage: 'completed',
       isCompleted: true,
-      lastError: 'Gemini quota limit reached (429).'
+      lastError: 'OpenAI rate limit or quota reached (429).'
     });
     expect(storedRun?.events.at(-1)).toMatchObject({
       type: 'run_interrupted',

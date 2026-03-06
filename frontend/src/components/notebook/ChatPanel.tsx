@@ -10,34 +10,26 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea
-} from '@/components/ui/input-group';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger
-} from '@/components/ui/tooltip';
-import {
   Loader2,
-  ArrowUp,
-  Square,
-  Paperclip,
   Brain,
-  Lightbulb
 } from 'lucide-react';
+import { LlmChatComposer, type AttachmentStatus } from '@/components/llm/LlmChatComposer';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { useDataStore } from '@/stores/dataStore';
 import { uploadDocument } from '@/lib/api/documents';
 import { streamTrainingPlan, executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
+import {
+  buildInlineModelOptions,
+  DEFAULT_ASSISTANT_MODEL,
+  getDefaultReasoningEffort,
+  getReasoningEffortOptions,
+  type ReasoningEffort
+} from '@/components/llm/modelOptions';
+import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
 import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import {
   addAssistantTextMessage,
@@ -59,8 +51,9 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [enableThinking, setEnableThinking] = useState(false);
-  const [attachmentStatus, setAttachmentStatus] = useState<'idle' | 'uploading' | 'error' | 'success'>('idle');
+  const [assistantModel, setAssistantModel] = useState(DEFAULT_ASSISTANT_MODEL);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('high');
+  const [attachmentStatus, setAttachmentStatus] = useState<AttachmentStatus>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
   const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
   const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
@@ -68,10 +61,15 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
   const currentTextIdRef = useRef<string | null>(null);
+  const {
+    featuredModelOptions,
+    allModelOptions,
+    defaultModel,
+    defaultReasoningEffort
+  } = useLlmModelCatalog();
 
   const files = useDataStore((s) => s.files);
   const addFile = useDataStore((s) => s.addFile);
@@ -80,6 +78,12 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const documentFiles = files.filter(
     (f) => f.projectId === projectId && f.metadata?.documentId
   );
+  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions, allModelOptions, assistantModel);
+
+  const handleModelChange = useCallback((model: string) => {
+    setAssistantModel(model);
+    setReasoningEffort(getDefaultReasoningEffort(model, allModelOptions));
+  }, [allModelOptions]);
 
   // Load messages from localStorage
   useEffect(() => {
@@ -130,6 +134,33 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (!assistantModel && defaultModel) {
+      setAssistantModel(defaultModel);
+    }
+  }, [assistantModel, defaultModel]);
+
+  useEffect(() => {
+    if (!allModelOptions.length) {
+      setReasoningEffort(defaultReasoningEffort);
+      return;
+    }
+
+    const nextModel = allModelOptions.some((option) => option.value === assistantModel)
+      ? assistantModel
+      : defaultModel;
+    if (nextModel !== assistantModel) {
+      setAssistantModel(nextModel);
+      return;
+    }
+
+    const supportsCurrent = getReasoningEffortOptions(nextModel, allModelOptions)
+      .some((option) => option.value === reasoningEffort);
+    if (!supportsCurrent) {
+      setReasoningEffort(getDefaultReasoningEffort(nextModel, allModelOptions));
+    }
+  }, [allModelOptions, assistantModel, defaultModel, defaultReasoningEffort, reasoningEffort]);
 
   const completeThinking = useCallback(() => {
     const thinkingId = currentThinkingIdRef.current;
@@ -215,7 +246,8 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
         prompt: request.prompt,
         toolCalls: request.toolCalls,
         toolResults: request.toolResults,
-        enableThinking
+        model: assistantModel,
+        reasoningEffort
       },
       async (event: LlmStreamEvent) => {
         if (event.type === 'token') {
@@ -296,9 +328,10 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     applyToolResults,
     closeTextStream,
     completeThinking,
-    enableThinking,
+    assistantModel,
     markToolsCompleteFallback,
-    projectId
+    projectId,
+    reasoningEffort
   ]);
 
   const handleSend = useCallback(async () => {
@@ -489,98 +522,37 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
 
       {/* Input */}
       <div className="border-t bg-background p-4">
-        <InputGroup>
-          <InputGroupTextarea
-            ref={textareaRef}
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask AI for help..."
-            disabled={isGenerating}
-            className="min-h-[80px]"
-          />
-          <InputGroupAddon align="block-end">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[11px] gap-1">
-                <Brain className="h-3 w-3" />
-                {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
-              </Badge>
-
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEnableThinking(!enableThinking)}
-                      className={cn(
-                        'h-7 gap-1.5 px-2 text-xs transition-colors',
-                        enableThinking &&
-                        'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-300'
-                      )}
-                    >
-                      <Lightbulb
-                        className={cn(
-                          'h-3.5 w-3.5',
-                          enableThinking && 'text-yellow-500 fill-yellow-400'
-                        )}
-                      />
-                      {enableThinking && <span>Thinking</span>}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>{enableThinking ? 'Disable' : 'Enable'} extended thinking</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={attachmentStatus === 'uploading'}
-                title="Attach context file"
-              >
-                {attachmentStatus === 'uploading' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Paperclip className="h-3.5 w-3.5" />
-                )}
-              </Button>
-
-              <InputGroupButton
-                size="sm"
-                onClick={isGenerating ? handleStop : () => void handleSend()}
-                disabled={!chatInput.trim() && !isGenerating}
-                variant="ghost"
-                className="h-9 w-9 rounded-full border border-foreground/30 bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-muted/30 disabled:text-muted-foreground"
-              >
-                {isGenerating ? <Square className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
-              </InputGroupButton>
-            </div>
-          </InputGroupAddon>
-        </InputGroup>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.md,.txt"
-          onChange={handleAttachFile}
-          className="hidden"
+        <LlmChatComposer
+          value={chatInput}
+          onValueChange={setChatInput}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask AI for help..."
+          disabled={isGenerating}
+          isStreaming={isGenerating}
+          onSend={() => void handleSend()}
+          onStop={handleStop}
+          model={assistantModel}
+          onModelChange={handleModelChange}
+          modelOptions={inlineModelOptions}
+          searchModelOptions={allModelOptions}
+          reasoningEffort={reasoningEffort}
+          onReasoningEffortChange={setReasoningEffort}
+          reasoningOptions={getReasoningEffortOptions(assistantModel, allModelOptions)}
+          metaSlot={(
+            <Badge variant="outline" className="text-[11px] gap-1">
+              <Brain className="h-3 w-3" />
+              {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
+            </Badge>
+          )}
+          attachment={{
+            onAttachFile: handleAttachFile,
+            status: attachmentStatus,
+            message: attachmentMessage,
+            items: [],
+            accept: '.pdf,.md,.txt'
+          }}
+          textareaRef={textareaRef}
         />
-
-        {attachmentMessage && (
-          <div className="mt-2 text-xs text-muted-foreground">
-            <span
-              className={cn(
-                attachmentStatus === 'success' && 'text-emerald-600',
-                attachmentStatus === 'error' && 'text-destructive'
-              )}
-            >
-              {attachmentMessage}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

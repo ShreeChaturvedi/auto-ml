@@ -28,17 +28,17 @@ function stripProjectId(inputSchema: JsonSchema | undefined): JsonSchema | undef
   };
 }
 
-function sanitizeGeminiSchema(schema: unknown): unknown {
+function sanitizeToolSchema(schema: unknown): unknown {
   if (!schema || typeof schema !== 'object') return schema;
   if (Array.isArray(schema)) {
-    return schema.map((entry) => sanitizeGeminiSchema(entry));
+    return schema.map((entry) => sanitizeToolSchema(entry));
   }
   const disallowedKeys = new Set(['$schema', 'additionalProperties']);
   const entries = Object.entries(schema as Record<string, unknown>);
   const sanitized: Record<string, unknown> = {};
   for (const [key, value] of entries) {
     if (disallowedKeys.has(key)) continue;
-    sanitized[key] = sanitizeGeminiSchema(value);
+    sanitized[key] = sanitizeToolSchema(value);
   }
   return sanitized;
 }
@@ -73,7 +73,7 @@ export async function listMcpToolsForLlm(): Promise<LlmToolDefinition[]> {
 
   const mcpTools = result.tools.map((tool) => {
     const normalizedSchema = stripProjectId(tool.inputSchema);
-    const sanitizedSchema = sanitizeGeminiSchema(normalizedSchema ?? {});
+    const sanitizedSchema = sanitizeToolSchema(normalizedSchema ?? {});
     return {
       name: tool.name,
       description: tool.description ?? '',

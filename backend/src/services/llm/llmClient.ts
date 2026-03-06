@@ -1,6 +1,6 @@
 import { env } from '../../config.js';
+import { resolveCatalogModel, type LlmReasoningEffort } from './modelCatalog.js';
 
-import { GeminiClient } from './providers/geminiClient.js';
 import { OpenAiClient } from './providers/openaiClient.js';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
@@ -45,6 +45,7 @@ export interface LlmRequest {
   toolChoice?: LlmToolChoice;
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
+  reasoningEffort?: LlmReasoningEffort;
   enableThinking?: boolean;
   thinkingLevel?: LlmThinkingLevel;
   contextId?: string;
@@ -62,31 +63,13 @@ export interface LlmClient {
 }
 
 export function createLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
-  const provider = env.llmProvider.toLowerCase();
   const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs;
+  const resolvedModel = resolveCatalogModel(modelOverride || env.llmModel);
 
-  if (provider === 'openai') {
-    return new OpenAiClient({
-      apiKey: env.llmApiKey,
-      baseUrl: env.llmBaseUrl,
-      model: modelOverride || env.llmModel,
-      timeoutMs
-    });
-  }
-
-  return new GeminiClient({
-    apiKey: env.geminiApiKey || env.llmApiKey,
-    model: modelOverride || env.geminiModel || env.llmModel,
-    timeoutMs
-  });
-}
-
-export function createThinkingLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
-  // Thinking model is only supported for Gemini
-  const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs * 2;
-  return new GeminiClient({
-    apiKey: env.geminiApiKey || env.llmApiKey,
-    model: modelOverride || env.geminiThinkingModel,
+  return new OpenAiClient({
+    apiKey: env.openaiApiKey,
+    baseUrl: env.openaiBaseUrl,
+    model: resolvedModel.id,
     timeoutMs
   });
 }

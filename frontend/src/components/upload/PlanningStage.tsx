@@ -8,13 +8,13 @@ import { Brain, Check, Database, FileText, Loader2 } from 'lucide-react';
 
 import { LlmChatComposer, type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
 import {
-  ASSISTANT_MODEL_OPTIONS,
+  buildInlineModelOptions,
   DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
-  getModelOption,
   getReasoningEffortOptions,
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
+import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -373,10 +373,9 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const [inputValue, setInputValue] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
-  const [enableThinking, setEnableThinking] = useState(false);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_ASSISTANT_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    getDefaultReasoningEffort(DEFAULT_ASSISTANT_MODEL)
+    'high'
   );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentFeedback, setAttachmentFeedback] = useState<{ status: AttachmentStatus; message: string } | null>(null);
@@ -395,6 +394,12 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const toolCallHistoryRef = useRef<ToolCall[]>([]);
   const toolResultHistoryRef = useRef<ToolResult[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const {
+    featuredModelOptions,
+    allModelOptions,
+    defaultModel,
+    defaultReasoningEffort
+  } = useLlmModelCatalog();
   const project = useMemo(() => projects.find((entry) => entry.id === projectId), [projectId, projects]);
   const projectColor = project?.color ?? 'blue';
   const projectColorClass = projectColorClasses[projectColor];
@@ -406,16 +411,14 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     () => projectFiles.filter((file) => file.metadata?.documentId),
     [projectFiles]
   );
+  const inlineModelOptions = useMemo(
+    () => buildInlineModelOptions(featuredModelOptions, allModelOptions, selectedModel),
+    [allModelOptions, featuredModelOptions, selectedModel]
+  );
   const reasoningEffortOptions = useMemo(
-    () => getReasoningEffortOptions(selectedModel),
-    [selectedModel]
+    () => getReasoningEffortOptions(selectedModel, allModelOptions),
+    [allModelOptions, selectedModel]
   );
-  const selectedModelOption = useMemo(
-    () => getModelOption(selectedModel),
-    [selectedModel]
-  );
-  const shouldIncludeThoughts = selectedModelOption.supportsThinking
-    && (selectedModelOption.thinkingAlwaysOn || enableThinking);
   const hasUserMessages = useMemo(
     () => messages.some((message) => message.type === 'user'),
     [messages]
@@ -445,12 +448,38 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     [pendingAttachments]
   );
 
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model);
+    setReasoningEffort(getDefaultReasoningEffort(model, allModelOptions));
+  }, [allModelOptions]);
+
   useEffect(() => {
-    const supportsCurrent = reasoningEffortOptions.some((option) => option.value === reasoningEffort);
-    if (!supportsCurrent) {
-      setReasoningEffort(getDefaultReasoningEffort(selectedModel));
+    if (!selectedModel && defaultModel) {
+      setSelectedModel(defaultModel);
     }
-  }, [selectedModel, reasoningEffort, reasoningEffortOptions]);
+  }, [defaultModel, selectedModel]);
+
+  useEffect(() => {
+    if (!allModelOptions.length) {
+      setReasoningEffort(defaultReasoningEffort);
+      return;
+    }
+
+    const nextModel = allModelOptions.some((option) => option.value === selectedModel)
+      ? selectedModel
+      : defaultModel;
+
+    if (nextModel !== selectedModel) {
+      setSelectedModel(nextModel);
+      return;
+    }
+
+    const supportsCurrent = getReasoningEffortOptions(nextModel, allModelOptions)
+      .some((option) => option.value === reasoningEffort);
+    if (!supportsCurrent) {
+      setReasoningEffort(getDefaultReasoningEffort(nextModel, allModelOptions));
+    }
+  }, [allModelOptions, defaultModel, defaultReasoningEffort, reasoningEffort, selectedModel]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -577,9 +606,8 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
               toolCalls: toolCallHistoryRef.current.length > 0 ? toolCallHistoryRef.current : undefined,
               toolResults: toolResultHistoryRef.current.length > 0 ? toolResultHistoryRef.current : undefined,
               round: effectiveRound,
-              enableThinking: shouldIncludeThoughts,
-              thinkingLevel: reasoningEffort,
-              model: selectedModel !== 'auto' ? selectedModel : undefined,
+              reasoningEffort,
+              model: selectedModel,
             },
             (event) => {
               // Thinking events
@@ -755,7 +783,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
         setIsStreaming(false);
       }
     },
-    [projectId, currentRound, selectedModel, shouldIncludeThoughts, reasoningEffort, endThinking, endText]
+    [projectId, currentRound, selectedModel, reasoningEffort, endThinking, endText]
   );
 
   useEffect(() => {
@@ -1341,13 +1369,12 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             onSend={handleSend}
             onStop={() => controllerRef.current?.abort()}
             model={selectedModel}
-            onModelChange={setSelectedModel}
-            modelOptions={ASSISTANT_MODEL_OPTIONS}
+            onModelChange={handleModelChange}
+            modelOptions={inlineModelOptions}
+            searchModelOptions={allModelOptions}
             reasoningEffort={reasoningEffort}
             onReasoningEffortChange={setReasoningEffort}
             reasoningOptions={reasoningEffortOptions}
-            enableThinking={enableThinking}
-            onToggleThinking={() => setEnableThinking((prev) => !prev)}
             metaSlot={(
               <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
                 <Brain className="mr-1 h-3 w-3" />

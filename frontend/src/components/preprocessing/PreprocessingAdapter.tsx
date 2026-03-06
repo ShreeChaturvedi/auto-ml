@@ -46,8 +46,7 @@ export function createPreprocessingAdapter(
           toolCalls,
           toolResults,
           model: options.model,
-          enableThinking: options.enableThinking,
-          thinkingLevel: options.thinkingLevel
+          reasoningEffort: options.reasoningEffort
         },
         onEvent,
         signal

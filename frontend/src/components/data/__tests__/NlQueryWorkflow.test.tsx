@@ -47,9 +47,9 @@ const MOCK_RESULT: NlGenerationResult = {
   },
   queryId: 'test-query-123',
   provider: {
-    id: 'gemini',
-    label: 'Gemini',
-    model: 'gemini-3-flash-preview'
+    id: 'openai',
+    label: 'OpenAI',
+    model: 'gpt-5.4'
   },
   cached: false,
   queryResult: {

@@ -48,8 +48,7 @@ export interface RefinePreprocessingRequest {
   message: string;
   draftSteps: PreprocessingStep[];
   model?: string;
-  enableThinking?: boolean;
-  thinkingLevel?: 'dynamic' | 'low' | 'medium' | 'high';
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 }
 
 export interface RefinePreprocessingResponse {

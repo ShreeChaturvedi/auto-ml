@@ -50,6 +50,14 @@ const mockGetNaturalLanguageSuggestions = vi.mocked(getNaturalLanguageSuggestion
 const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 type NdjsonEvent = Record<string, unknown>;
+type NdjsonResultEvent = NdjsonEvent & {
+  type: 'result';
+  nl: {
+    sql: string;
+    explanation: { intentSummary: string };
+    queryExecutionError: string | null;
+  };
+};
 
 function parseNdjsonEvents(payload: string): NdjsonEvent[] {
   return payload
@@ -342,9 +350,9 @@ describeIf('query routes', () => {
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Fetch users',
@@ -385,9 +393,9 @@ describeIf('query routes', () => {
       expect(response.body.nl.sql).toBe('SELECT * FROM users');
       expect(response.body.nl.rationale).toBe('Fetching all users');
       expect(response.body.nl.provider).toEqual({
-        id: 'gemini',
-        label: 'Gemini',
-        model: 'gemini-3-flash-preview'
+        id: 'openai',
+        label: 'OpenAI',
+        model: 'gpt-5.4'
       });
       expect(response.body.nl.explanation.intentSummary).toBe('Fetch users');
       expect(response.body.nl.explanation.confidenceMode).toBe('model');
@@ -403,9 +411,9 @@ describeIf('query routes', () => {
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Fetch users',
@@ -454,9 +462,9 @@ describeIf('query routes', () => {
         rationale: 'Attempt to fetch records',
         queryId: 'test-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Fetch records',
@@ -497,9 +505,9 @@ describeIf('query routes', () => {
         rationale: 'Compute average EOC',
         queryId: 'gen-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Compute average EOC score',
@@ -532,9 +540,9 @@ describeIf('query routes', () => {
         rationale: 'Use response column instead of eoc.',
         queryId: 'repair-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Compute average response score',
@@ -603,9 +611,9 @@ describeIf('query routes', () => {
           rationale: 'Fetching all users',
           queryId: 'stream-query-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Fetch users',
@@ -649,7 +657,7 @@ describeIf('query routes', () => {
       expect(events.some((event) => event.type === 'phase_started' && event.phaseId === 'schema_context')).toBe(true);
       expect(events.some((event) => event.type === 'phase_completed' && event.phaseId === 'done')).toBe(true);
 
-      const resultEvent = events.find((event) => event.type === 'result');
+      const resultEvent = events.find((event) => event.type === 'result') as NdjsonResultEvent | undefined;
       expect(resultEvent).toBeDefined();
       if (!resultEvent || resultEvent.type !== 'result') {
         throw new Error('Expected result event in NDJSON stream.');
@@ -676,9 +684,9 @@ describeIf('query routes', () => {
           rationale: 'Fallback SQL generation.',
           queryId: 'stream-progress-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Fetch users quickly',
@@ -790,9 +798,9 @@ describeIf('query routes', () => {
           rationale: 'List users.',
           queryId: 'stream-model-work-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Fetch users',
@@ -860,9 +868,9 @@ describeIf('query routes', () => {
         rationale: 'Compute average EOC',
         queryId: 'stream-repair-gen-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Compute average EOC score',
@@ -909,9 +917,9 @@ describeIf('query routes', () => {
           rationale: 'Use response column instead of eoc.',
           queryId: 'stream-repair-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Compute average response score',
@@ -969,7 +977,7 @@ describeIf('query routes', () => {
       expect(repairedProgressIndex).toBeGreaterThan(repairCompletedIndex);
       expect(repairedCompletedIndex).toBeGreaterThan(repairedProgressIndex);
 
-      const resultEvent = events.find((event) => event.type === 'result');
+      const resultEvent = events.find((event) => event.type === 'result') as NdjsonResultEvent | undefined;
       expect(resultEvent).toBeDefined();
       expect(resultEvent?.nl?.sql).toContain('AVG(response)');
       expect(resultEvent?.nl?.queryExecutionError).toBeNull();

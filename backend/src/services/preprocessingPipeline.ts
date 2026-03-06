@@ -15,12 +15,17 @@ import { profileDataset } from './datasetProfiler.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import {
   createLlmClient,
-  createThinkingLlmClient,
   type LlmToolCall,
   type LlmToolCallHistory,
   type LlmToolDefinition,
   type LlmToolResultHistory
 } from './llm/llmClient.js';
+import {
+  getDefaultLlmModel,
+  getDefaultReasoningEffortForModel,
+  normalizeReasoningSelection,
+  type LlmReasoningEffort
+} from './llm/modelCatalog.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
@@ -119,6 +124,7 @@ interface RefinePipelineInput {
   message: string;
   draftSteps: PreprocessingStep[];
   model?: string;
+  reasoningEffort?: LlmReasoningEffort;
   enableThinking?: boolean;
   thinkingLevel?: 'dynamic' | 'low' | 'medium' | 'high';
 }
@@ -491,13 +497,13 @@ export async function analyzePreprocessingPipeline(
       : 'No high-impact preprocessing steps were detected.';
 
   try {
-    const raw = await createThinkingLlmClient().complete({
+    const model = getDefaultLlmModel();
+    const raw = await createLlmClient(model).complete({
       messages,
       temperature: 0.2,
       maxOutputTokens: 4096,
       responseMimeType: 'application/json',
-      enableThinking: true,
-      thinkingLevel: 'medium'
+      reasoningEffort: getDefaultReasoningEffortForModel(model)
     });
 
     const parsed = parseJsonBlock(raw, generatedPipelineSchema);
@@ -649,8 +655,14 @@ export async function refinePreprocessingPipeline(
   const toolResultHistory: LlmToolResultHistory[] = [];
   const toolActivities: PreprocessingToolActivity[] = [];
   let assistantMessage = '';
-  const activeClient =
-    input.enableThinking === false ? createLlmClient(input.model) : createThinkingLlmClient(input.model);
+  const model = input.model ?? getDefaultLlmModel();
+  const reasoningEffort = normalizeReasoningSelection({
+    modelId: model,
+    reasoningEffort: input.reasoningEffort,
+    enableThinking: input.enableThinking,
+    thinkingLevel: input.thinkingLevel
+  });
+  const activeClient = createLlmClient(model);
 
   for (let pass = 0; pass < 4; pass += 1) {
     const passToolCalls: LlmToolCall[] = [];
@@ -675,8 +687,7 @@ export async function refinePreprocessingPipeline(
         toolResultHistory,
         temperature: 0.2,
         maxOutputTokens: 4096,
-        enableThinking: input.enableThinking ?? true,
-        thinkingLevel: input.thinkingLevel ?? 'medium'
+        reasoningEffort
       },
       {
         onToken: (token) => {

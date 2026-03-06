@@ -1,8 +1,26 @@
 import { apiRequest, getApiBaseUrl } from './client';
 import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
+import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
 import type { PreprocessingRunSnapshot, PreprocessingRunSummary } from '@/types/preprocessing';
 
-export type ThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
+export interface LlmModelCatalogEntry {
+  id: string;
+  label: string;
+  kind: AssistantModelKind;
+  description?: string;
+  tip?: string;
+  featured: boolean;
+  reasoningEfforts: ReasoningEffort[];
+  defaultReasoningEffort: ReasoningEffort;
+}
+
+export interface LlmModelCatalogResponse {
+  defaultModel: string;
+  defaultReasoningEffort?: ReasoningEffort;
+  featured?: LlmModelCatalogEntry[];
+  featuredModels?: LlmModelCatalogEntry[];
+  models: LlmModelCatalogEntry[];
+}
 
 export interface LlmPlanRequest {
   projectId: string;
@@ -12,8 +30,7 @@ export interface LlmPlanRequest {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   featureSummary?: string;
-  enableThinking?: boolean;
-  thinkingLevel?: ThinkingLevel;
+  reasoningEffort?: ReasoningEffort;
   model?: string;
 }
 
@@ -24,8 +41,7 @@ export interface OnboardingStreamRequest {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   round?: number;
-  enableThinking?: boolean;
-  thinkingLevel?: ThinkingLevel;
+  reasoningEffort?: ReasoningEffort;
   model?: string;
 }
 
@@ -99,6 +115,12 @@ export async function getPreprocessingRunSnapshot(runId: string, projectId?: str
   }
   const suffix = query.toString() ? `?${query.toString()}` : '';
   return apiRequest<{ run: PreprocessingRunSnapshot }>(`/llm/preprocessing/runs/${runId}${suffix}`);
+}
+
+export async function listLlmModels() {
+  return apiRequest<LlmModelCatalogResponse>('/llm/models', {
+    method: 'GET'
+  });
 }
 
 async function streamLlm(

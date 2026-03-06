@@ -9,6 +9,7 @@ import type {
   LlmToolCallHistory,
   LlmToolResultHistory
 } from './llmClient.js';
+import type { LlmReasoningEffort } from './modelCatalog.js';
 import { LLM_ALL_TOOLS } from './toolRegistry.js';
 
 function buildSystemPrompt() {
@@ -109,6 +110,7 @@ export function buildFeatureEngineeringRequest(params: {
   toolResultHistory?: LlmToolResultHistory[];
   featureMethods: FeatureMethod[];
   toolDefinitions?: LlmToolDefinition[];
+  reasoningEffort?: LlmReasoningEffort;
   enableThinking?: boolean;
   thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
@@ -123,6 +125,7 @@ export function buildFeatureEngineeringRequest(params: {
     toolResultHistory,
     featureMethods,
     toolDefinitions,
+    reasoningEffort,
     enableThinking,
     thinkingLevel
   } = params;
@@ -182,6 +185,7 @@ FEATURE ENGINEERING CONTRACT:
     toolChoice: 'auto',
     toolCallHistory,
     toolResultHistory,
+    reasoningEffort,
     enableThinking,
     thinkingLevel,
     contextId: dataset.projectId ?? dataset.datasetId
@@ -199,6 +203,7 @@ export function buildTrainingRequest(params: {
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
   toolDefinitions?: LlmToolDefinition[];
+  reasoningEffort?: LlmReasoningEffort;
   enableThinking?: boolean;
   thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
@@ -213,6 +218,7 @@ export function buildTrainingRequest(params: {
     toolCallHistory,
     toolResultHistory,
     toolDefinitions,
+    reasoningEffort,
     enableThinking,
     thinkingLevel
   } = params;
@@ -252,6 +258,7 @@ export function buildTrainingRequest(params: {
     toolChoice: 'auto',
     toolCallHistory,
     toolResultHistory,
+    reasoningEffort,
     enableThinking,
     thinkingLevel,
     contextId: dataset.projectId ?? dataset.datasetId
@@ -267,6 +274,7 @@ export function buildPreprocessingRequest(params: {
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
   toolDefinitions?: LlmToolDefinition[];
+  reasoningEffort?: LlmReasoningEffort;
   enableThinking?: boolean;
   thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
@@ -279,6 +287,7 @@ export function buildPreprocessingRequest(params: {
     toolCallHistory,
     toolResultHistory,
     toolDefinitions,
+    reasoningEffort,
     enableThinking,
     thinkingLevel
   } = params;
@@ -336,6 +345,7 @@ PREPROCESSING CONTRACT:
     toolChoice: 'auto',
     toolCallHistory,
     toolResultHistory,
+    reasoningEffort,
     enableThinking,
     thinkingLevel,
     contextId: dataset.projectId ?? dataset.datasetId
@@ -353,6 +363,7 @@ export function buildOnboardingRequest(opts: {
   toolCallHistory?: Array<{ name: string; args: Record<string, unknown> }>;
   toolResultHistory?: Array<{ name: string; response: Record<string, unknown> }>;
   toolDefinitions: LlmToolDefinition[];
+  reasoningEffort?: LlmReasoningEffort;
   enableThinking?: boolean;
   thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
@@ -458,6 +469,7 @@ ${opts.round === 0
     toolChoice: 'auto',
     toolCallHistory: opts.toolCallHistory,
     toolResultHistory: opts.toolResultHistory,
+    reasoningEffort: opts.reasoningEffort,
     enableThinking: opts.enableThinking,
     thinkingLevel: opts.thinkingLevel,
     contextId: opts.projectTitle

@@ -477,7 +477,7 @@ describe('preprocessingStore hydration', () => {
       ]
     });
 
-    usePreprocessingStore.getState().markInterruptedSteps('Gemini quota limit reached (429).');
+    usePreprocessingStore.getState().markInterruptedSteps('OpenAI rate limit or quota reached (429).');
     const state = usePreprocessingStore.getState();
 
     expect(state.timeline.find((event) => event.stepId === 'step-pending')).toMatchObject({
@@ -489,6 +489,6 @@ describe('preprocessingStore hydration', () => {
     expect(state.timeline.find((event) => event.stepId === 'step-await')).toMatchObject({
       status: 'awaiting_approval'
     });
-    expect(state.error).toContain('Gemini quota limit reached');
+    expect(state.error).toContain('OpenAI rate limit or quota reached');
   });
 });

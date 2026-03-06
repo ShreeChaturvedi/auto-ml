@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import type { ChatMessage, ToolCall, ToolResult } from './llmUi';
-import type { ThinkingLevel } from '@/lib/api/llm';
+import type { ReasoningEffort } from '@/components/llm/modelOptions';
 
 export interface SuggestionPill {
   id: string;
@@ -10,8 +10,7 @@ export interface SuggestionPill {
 
 export interface BuildRequestOptions {
   model: string;
-  enableThinking: boolean;
-  thinkingLevel: ThinkingLevel;
+  reasoningEffort: ReasoningEffort;
 }
 
 export interface ToolHandlers {

@@ -1,6 +1,28 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('@/components/llm/ProgressiveMessageText', async () => {
+  const React = await import('react');
+
+  return {
+    ProgressiveMessageText({
+      text,
+      className,
+      onVisibleTextChange
+    }: {
+      text: string;
+      className?: string;
+      onVisibleTextChange?: (visibleText: string) => void;
+    }) {
+      React.useLayoutEffect(() => {
+        onVisibleTextChange?.(text);
+      }, [onVisibleTextChange, text]);
+
+      return <div className={className}>{text}</div>;
+    }
+  };
+});
+
 import { NlWorkPlanPanel } from '../NlWorkPlanPanel';
 import type { NlProviderInfo, NlQueryExplanation } from '@/lib/api/query';
 import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
@@ -402,31 +424,15 @@ describe('NlWorkPlanPanel', () => {
     ).toBe(true);
   });
 
-  it('keeps the live transcript block body pinned to the bottom as streamed content mutates', () => {
-    const OriginalMutationObserver = globalThis.MutationObserver;
+  it('keeps the live transcript block body pinned to the bottom as streamed content grows', () => {
     const OriginalRequestAnimationFrame = globalThis.requestAnimationFrame;
-    class MutationObserverMock {
-      static instances: MutationObserverMock[] = [];
-      callback: MutationCallback;
-
-      constructor(callback: MutationCallback) {
-        this.callback = callback;
-        MutationObserverMock.instances.push(this);
-      }
-
-      observe = vi.fn();
-      disconnect = vi.fn();
-      takeRecords = vi.fn(() => []);
-    }
-
-    globalThis.MutationObserver = MutationObserverMock as unknown as typeof MutationObserver;
     globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
       callback(0);
       return 1;
     }) as typeof requestAnimationFrame;
 
     try {
-      render(
+      const { rerender } = render(
         <NlWorkPlanPanel
           phase="submitting"
           provider={GEMINI_PROVIDER}
@@ -453,24 +459,43 @@ describe('NlWorkPlanPanel', () => {
 
       body.scrollTop = 0;
 
-      act(() => {
-        MutationObserverMock.instances.forEach((instance) => {
-          instance.callback([], instance as unknown as MutationObserver);
-        });
-      });
+      rerender(
+        <NlWorkPlanPanel
+          phase="submitting"
+          provider={GEMINI_PROVIDER}
+          workPhases={PHASES}
+          modelWorkBlocks={MODEL_WORK_BLOCKS}
+          isStreaming
+          isExpanded
+          autoCollapsed={false}
+          onToggleExpanded={vi.fn()}
+        />
+      );
 
       expect(body.scrollTop).toBe(180);
 
       scrollHeight = 260;
-      act(() => {
-        MutationObserverMock.instances.forEach((instance) => {
-          instance.callback([], instance as unknown as MutationObserver);
-        });
-      });
+      rerender(
+        <NlWorkPlanPanel
+          phase="submitting"
+          provider={GEMINI_PROVIDER}
+          workPhases={PHASES}
+          modelWorkBlocks={[
+            {
+              ...MODEL_WORK_BLOCKS[0],
+              content: `${MODEL_WORK_BLOCKS[0].content} Adding another streamed sentence for the transcript body.`
+            },
+            MODEL_WORK_BLOCKS[1]
+          ]}
+          isStreaming
+          isExpanded
+          autoCollapsed={false}
+          onToggleExpanded={vi.fn()}
+        />
+      );
 
       expect(body.scrollTop).toBe(260);
     } finally {
-      globalThis.MutationObserver = OriginalMutationObserver;
       globalThis.requestAnimationFrame = OriginalRequestAnimationFrame;
     }
   });

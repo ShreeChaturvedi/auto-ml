@@ -328,7 +328,6 @@ function TranscriptBlock({
   const appearance = blockAppearance(block.kind);
   const Icon = appearance.icon;
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoFollowInnerRef = useRef(true);
 
   const followInnerTranscript = useCallback(() => {
@@ -361,56 +360,6 @@ function TranscriptBlock({
 
     scrollElementToBottom(body);
   }, [block.content, block.status, isLive]);
-
-  useEffect(() => {
-    if (!isLive || block.status !== 'streaming') {
-      return;
-    }
-
-    const body = bodyRef.current;
-    const content = contentRef.current;
-    if (!body || !content || typeof ResizeObserver === 'undefined') {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => {
-      if (!shouldAutoFollowInnerRef.current) {
-        return;
-      }
-
-      followInnerTranscript();
-    });
-
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [block.status, followInnerTranscript, isLive]);
-
-  useEffect(() => {
-    if (!isLive || block.status !== 'streaming') {
-      return;
-    }
-
-    const content = contentRef.current;
-    if (!content || typeof MutationObserver === 'undefined') {
-      return;
-    }
-
-    const observer = new MutationObserver(() => {
-      if (!shouldAutoFollowInnerRef.current) {
-        return;
-      }
-
-      followInnerTranscript();
-    });
-
-    observer.observe(content, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
-
-    return () => observer.disconnect();
-  }, [block.status, followInnerTranscript, isLive]);
 
   return (
     <li className="relative pl-5">
@@ -469,16 +418,21 @@ function TranscriptBlock({
           data-testid={`nl-model-work-block-body-${block.blockId}`}
           onScroll={handleInnerScroll}
         >
-          <div ref={contentRef}>
-            <ProgressiveMessageText
-              messageId={block.blockId}
-              text={block.content || 'Waiting for streamed model output.'}
-              isLive={isLive && block.status === 'streaming'}
-              mode="markdown"
-              showStreamingCaret={block.status === 'streaming'}
-              className="nl-model-work-stream text-[12px] leading-relaxed"
-            />
-          </div>
+          <ProgressiveMessageText
+            messageId={block.blockId}
+            text={block.content || 'Waiting for streamed model output.'}
+            isLive={isLive && block.status === 'streaming'}
+            mode="markdown"
+            showStreamingCaret={block.status === 'streaming'}
+            onVisibleTextChange={() => {
+              if (!shouldAutoFollowInnerRef.current) {
+                return;
+              }
+
+              followInnerTranscript();
+            }}
+            className="nl-model-work-stream text-[12px] leading-relaxed"
+          />
         </div>
       </section>
     </li>
@@ -551,6 +505,7 @@ function NlWorkPlanPanel({
   const viewportContentRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoFollowRef = useRef(true);
   const previousBlockSequenceRef = useRef(modelWorkBlocks.map((block) => block.blockId).join('|'));
+  const pendingSmoothViewportHandoffRef = useRef(false);
   const active = useMemo(() => getPrimaryNlWorkPhase(workPhases), [workPhases]);
   const tone = toneForWarningLevel(explanation?.warningLevel ?? 'low');
   const isReviewMode = Boolean(explanation) && phase === 'reviewing';
@@ -641,12 +596,17 @@ function NlWorkPlanPanel({
     refreshViewportState();
   }, [refreshViewportState, isExpanded, transcriptVisible, transcriptSignature, phaseSignature, blockSequenceSignature]);
 
+  useEffect(() => {
+    pendingSmoothViewportHandoffRef.current = shouldSmoothViewportHandoff;
+  }, [shouldSmoothViewportHandoff]);
+
   useLayoutEffect(() => {
     if (!isExpanded || !transcriptVisible || !shouldKeepTranscriptLive || !shouldAutoFollowRef.current) {
       return;
     }
 
-    const behavior = shouldSmoothViewportHandoff ? 'smooth' : 'auto';
+    const behavior = pendingSmoothViewportHandoffRef.current ? 'smooth' : 'auto';
+    pendingSmoothViewportHandoffRef.current = false;
     previousBlockSequenceRef.current = blockSequenceSignature;
     followViewportToBottom(behavior);
   }, [
@@ -672,7 +632,9 @@ function NlWorkPlanPanel({
 
     const observer = new ResizeObserver(() => {
       if (shouldAutoFollowRef.current) {
-        followViewportToBottom(shouldSmoothViewportHandoff ? 'smooth' : 'auto');
+        const behavior = pendingSmoothViewportHandoffRef.current ? 'smooth' : 'auto';
+        pendingSmoothViewportHandoffRef.current = false;
+        followViewportToBottom(behavior);
         return;
       }
 

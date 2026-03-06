@@ -10,11 +10,6 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from '@/components/ui/tooltip';
 import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-input';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -230,42 +225,38 @@ export function DatasetChooserDialog({
           </ScrollArea>
         </div>
 
-        {/* Footer – icon buttons with tooltips */}
+        {/* Footer – icon buttons */}
         <DialogFooter className="gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                className="rounded-full transition-all duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md active:scale-95"
-                onClick={() => onOpenChange(false)}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">Close dialog</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Close dialog</TooltipContent>
-          </Tooltip>
+          <Button
+            variant="outline"
+            size="icon"
+            className="rounded-full transition-all duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md active:scale-95"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close dialog</span>
+          </Button>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
+          <Button
+            size="icon"
+            className={cn(
+              'group rounded-full border-0 bg-white text-black transition-all duration-200 hover:scale-110 hover:border-0 hover:shadow-lg focus-visible:ring-0 focus-visible:ring-offset-0 active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
+              themeColor?.hover
+            )}
+            disabled={!candidateDatasetId}
+            onClick={onStart}
+          >
+            <span className="relative inline-flex h-4 w-4 items-center justify-center">
+              <Check className="h-4 w-4 text-black transition-opacity group-hover:opacity-0" />
+              <Check
                 className={cn(
-                  'rounded-full transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
-                  themeColor?.hover
+                  'absolute h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100',
+                  themeColor?.text
                 )}
-                disabled={!candidateDatasetId}
-                onClick={onStart}
-              >
-                <Check className={cn('h-4 w-4', themeColor?.text)} />
-                <span className="sr-only">Start with this dataset</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {candidateDatasetId ? 'Start with this dataset' : 'Select a dataset first'}
-            </TooltipContent>
-          </Tooltip>
+              />
+            </span>
+            <span className="sr-only">Start with this dataset</span>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

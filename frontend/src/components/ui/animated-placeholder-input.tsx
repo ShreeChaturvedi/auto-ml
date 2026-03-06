@@ -58,9 +58,25 @@ function hasInputValue(value: InputHTMLAttributes<HTMLInputElement>['value']): b
 }
 
 const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholderInputProps>(
-  ({ placeholders, interval = 3000, leftPadding, className, value, ...props }, ref) => {
+  (
+    {
+      placeholders,
+      interval = 3000,
+      leftPadding,
+      className,
+      value,
+      style,
+      onFocus,
+      onBlur,
+      disabled,
+      readOnly,
+      ...props
+    },
+    ref
+  ) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
+    const [isFocused, setIsFocused] = useState(false);
     // When true the CSS transition is suppressed so the post-animation snap
     // back to idle positions is invisible (avoids the backward slide artifact).
     const [skipTransition, setSkipTransition] = useState(false);
@@ -159,6 +175,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       : /\bpl-9\b/.test(className ?? '')
         ? '2.25rem'
         : '0.75rem';
+    const showOverlayCaret = !hasValue && isFocused && !disabled && !readOnly;
 
     // Outgoing span fades AND slides (both transform + opacity transition).
     // Incoming span only slides — its opacity is snapped to 1 immediately so
@@ -176,10 +193,24 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
         <input
           ref={ref}
           value={value}
+          disabled={disabled}
+          readOnly={readOnly}
           className={cn(
             'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50',
             className
           )}
+          style={{
+            ...style,
+            caretColor: showOverlayCaret ? 'transparent' : style?.caretColor,
+          }}
+          onFocus={(event) => {
+            setIsFocused(true);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setIsFocused(false);
+            onBlur?.(event);
+          }}
           {...props}
         />
         {!hasValue && (
@@ -189,6 +220,18 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
             style={{ paddingLeft, paddingRight: '0.75rem' }}
           >
             <div className="relative h-5 w-full overflow-hidden">
+              {showOverlayCaret && (
+                <span
+                  data-placeholder-cursor="true"
+                  className="absolute left-0 top-1/2 z-10 w-px -translate-y-1/2 rounded-full bg-foreground"
+                  style={{
+                    height: '1.1em',
+                    opacity: prefersReducedMotion ? 0.7 : 1,
+                    animation: prefersReducedMotion ? 'none' : 'nl-cursor-blink 700ms step-end infinite',
+                  }}
+                />
+              )}
+
               {/* Current placeholder – slides up and fades out during animation */}
               <span
                 className="absolute inset-x-0 top-0 text-sm text-muted-foreground whitespace-nowrap"

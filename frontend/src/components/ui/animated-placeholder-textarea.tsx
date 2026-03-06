@@ -60,9 +60,10 @@ function hasTextareaValue(
 const AnimatedPlaceholderTextarea = forwardRef<
   HTMLTextAreaElement,
   AnimatedPlaceholderTextareaProps
->(({ placeholders, interval = 3000, className, value, ...props }, ref) => {
+>(({ placeholders, interval = 3000, className, value, style, onFocus, onBlur, disabled, readOnly, ...props }, ref) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   // When true the CSS transition is suppressed so the post-animation snap
   // back to idle positions is invisible (avoids the backward slide artifact).
   const [skipTransition, setSkipTransition] = useState(false);
@@ -155,6 +156,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
 
   const currentPlaceholder = placeholders[currentIndex] ?? '';
   const nextPlaceholder = placeholders[(currentIndex + 1) % placeholders.length] ?? '';
+  const showOverlayCaret = !hasValue && isFocused && !disabled && !readOnly;
 
   // Outgoing span fades AND slides (both transform + opacity transition).
   // Incoming span only slides — its opacity is snapped to 1 immediately so
@@ -172,10 +174,24 @@ const AnimatedPlaceholderTextarea = forwardRef<
       <textarea
         ref={ref}
         value={value}
+        disabled={disabled}
+        readOnly={readOnly}
         className={cn(
           'flex w-full rounded-md border border-input bg-background px-3 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
           className
         )}
+        style={{
+          ...style,
+          caretColor: showOverlayCaret ? 'transparent' : style?.caretColor,
+        }}
+        onFocus={(event) => {
+          setIsFocused(true);
+          onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          setIsFocused(false);
+          onBlur?.(event);
+        }}
         {...props}
       />
       {!hasValue && (
@@ -184,6 +200,19 @@ const AnimatedPlaceholderTextarea = forwardRef<
           aria-hidden="true"
         >
           <div className="relative w-full overflow-hidden">
+            {showOverlayCaret && (
+              <span
+                data-placeholder-cursor="true"
+                className="absolute left-0 z-10 w-px rounded-full bg-foreground"
+                style={{
+                  top: '0.1em',
+                  height: '1.2em',
+                  opacity: prefersReducedMotion ? 0.7 : 1,
+                  animation: prefersReducedMotion ? 'none' : 'nl-cursor-blink 700ms step-end infinite',
+                }}
+              />
+            )}
+
             {/* Current placeholder – slides up and fades out during animation */}
             <span
               className="block text-sm text-muted-foreground whitespace-pre-wrap break-words"

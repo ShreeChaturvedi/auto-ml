@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AnimatedPlaceholderInput } from '../animated-placeholder-input';
@@ -59,5 +59,30 @@ describe('AnimatedPlaceholderInput', () => {
       vi.advanceTimersByTime(1);
     });
     expect(queryAnimatedChars().length).toBe(0);
+  });
+
+  it('shows an overlay caret while focused with an empty value', () => {
+    render(
+      <AnimatedPlaceholderInput placeholders={['numpy', 'pandas']} value="" onChange={() => {}} />
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.focus(input);
+
+    expect(document.querySelector('[data-placeholder-cursor="true"]')).toBeInTheDocument();
+    expect(input.style.caretColor).toBe('transparent');
+  });
+
+  it('hides the overlay caret after blur', () => {
+    render(
+      <AnimatedPlaceholderInput placeholders={['numpy', 'pandas']} value="" onChange={() => {}} />
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+
+    expect(document.querySelector('[data-placeholder-cursor="true"]')).not.toBeInTheDocument();
+    expect(input.style.caretColor).toBe('');
   });
 });

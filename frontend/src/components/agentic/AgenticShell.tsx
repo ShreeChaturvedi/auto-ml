@@ -31,7 +31,6 @@ import {
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
 import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
-import { Sparkles } from 'lucide-react';
 
 type LeftPaneRenderProps = {
   messages: ChatMessage[];
@@ -282,19 +281,18 @@ export function AgenticShell({
                 </div>
               ) : null}
               {suggestions.length > 0 && !domainLockReason ? (
-                <div className="border-b px-4 py-2">
-                  <div className="mx-auto flex max-w-5xl flex-wrap gap-2">
+                <div className="min-w-0 overflow-x-auto px-4 py-2 scrollbar-hide">
+                  <div className="flex min-w-max flex-nowrap gap-2">
                     {suggestions.map((suggestion) => (
                       <Button
                         key={suggestion.id}
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-7 text-xs"
+                        className="h-7 shrink-0 text-xs"
                         onClick={() => submitPrompt(suggestion.prompt)}
                         disabled={isGenerating}
                       >
-                        <Sparkles className="mr-1 h-3.5 w-3.5" />
                         {suggestion.label}
                       </Button>
                     ))}

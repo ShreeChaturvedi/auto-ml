@@ -121,7 +121,7 @@ export function ProjectHeader({
             }}
             placeholder="Add a description"
             disabled={!editable}
-            className="h-9 border-0 bg-transparent px-0 text-sm text-muted-foreground shadow-none focus-visible:ring-0"
+            className="h-9 border-0 bg-transparent px-0 text-sm text-foreground placeholder:text-muted-foreground shadow-none focus-visible:ring-0"
           />
         </div>
         <div className="hidden shrink-0 items-center md:flex">

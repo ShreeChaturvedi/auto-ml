@@ -17,7 +17,7 @@ interface UseMetallicBorderOptions {
  * React re-renders on every mousemove.
  */
 export function useMetallicBorder({
-  proximityThreshold = 80,
+  proximityThreshold = 90,
 }: UseMetallicBorderOptions = {}) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -30,10 +30,13 @@ export function useMetallicBorder({
     const el = wrapperRef.current;
     if (!el) return;
 
-    // Initialise custom properties so the CSS gradient has valid values.
+    // Initialise custom properties so the CSS gradients have valid values.
     el.style.setProperty('--shine-x', '0px');
     el.style.setProperty('--shine-y', '0px');
     el.style.setProperty('--shine-opacity', '0');
+    el.style.setProperty('--cursor-angle', '0deg');
+
+    const RAD_TO_DEG = 180 / Math.PI;
 
     const handleMouseMove = (e: MouseEvent) => {
       const rect = el.getBoundingClientRect();
@@ -49,8 +52,13 @@ export function useMetallicBorder({
         ? 0
         : Math.sqrt((x - clampedX) ** 2 + (y - clampedY) ** 2);
 
+      // Angle from element center to cursor (CSS conic convention: 0° = top, clockwise).
+      const cssAngle =
+        Math.atan2(x - rect.width / 2, -(y - rect.height / 2)) * RAD_TO_DEG;
+
       el.style.setProperty('--shine-x', `${x}px`);
       el.style.setProperty('--shine-y', `${y}px`);
+      el.style.setProperty('--cursor-angle', `${cssAngle}deg`);
       el.style.setProperty(
         '--shine-opacity',
         distance < proximityThreshold

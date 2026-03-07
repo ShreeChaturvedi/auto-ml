@@ -694,18 +694,18 @@
 .metallic-border::before {
   z-index: 10;
   background: radial-gradient(
-    circle 60px at var(--shine-x) var(--shine-y),
-    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.85)) 0%,
-    hsl(0 0% 80% / calc(var(--shine-opacity) * 0.45)) 35%,
+    circle 68px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.93)) 0%,
+    hsl(0 0% 80% / calc(var(--shine-opacity) * 0.50)) 35%,
     transparent 100%
   );
 }
 
 .dark .metallic-border::before {
   background: radial-gradient(
-    circle 60px at var(--shine-x) var(--shine-y),
-    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.95)) 0%,
-    hsl(0 0% 85% / calc(var(--shine-opacity) * 0.55)) 35%,
+    circle 68px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 1.0)) 0%,
+    hsl(0 0% 85% / calc(var(--shine-opacity) * 0.61)) 35%,
     transparent 100%
   );
 }
@@ -713,13 +713,13 @@
 /* ── Focus layer (sweep-around highlight) ──────────────────────────────── */
 .metallic-border::after {
   z-index: 11;
-  /* Resting value is 360deg (full border) so removing the animation on blur
-     keeps the border fully drawn while opacity fades out smoothly. */
-  --shine-angle: 360deg;
+  /* Resting at 180deg keeps both arms fully drawn (2×180 = 360) so removing
+     the animation on blur preserves the full border while opacity fades. */
+  --shine-angle: 180deg;
   background: conic-gradient(
-    from 0deg,
-    hsl(var(--ring)) 0deg var(--shine-angle),
-    transparent var(--shine-angle)
+    from calc(var(--cursor-angle, 0deg) - var(--shine-angle)),
+    hsl(var(--ring)) 0deg calc(2 * var(--shine-angle)),
+    transparent calc(2 * var(--shine-angle))
   );
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -727,12 +727,12 @@
 
 .metallic-border[data-focused="true"]::after {
   opacity: 1;
-  animation: metallic-sweep 0.5s ease-out forwards;
+  animation: metallic-sweep 0.45s ease-out forwards;
 }
 
 @keyframes metallic-sweep {
   from { --shine-angle: 0deg; }
-  to   { --shine-angle: 360deg; }
+  to   { --shine-angle: 180deg; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -740,7 +740,7 @@
     display: none;
   }
   .metallic-border[data-focused="true"]::after {
-    /* Skip sweep; --shine-angle stays at 360deg so border appears instantly */
+    /* Skip sweep; --shine-angle stays at 180deg so border appears instantly */
     animation: none;
   }
 }

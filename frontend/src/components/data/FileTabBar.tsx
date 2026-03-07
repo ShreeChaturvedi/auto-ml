@@ -53,6 +53,7 @@ interface SortableTabProps {
   queryMode?: 'english' | 'sql';
   queryIconColorClassName?: string;
   themeColorClass?: string;
+  themeBorderAccentClass?: string;
   onClose: () => void;
   onClick: () => void;
 }
@@ -65,6 +66,7 @@ function SortableTab({
   queryMode,
   queryIconColorClassName,
   themeColorClass,
+  themeBorderAccentClass,
   onClose,
   onClick
 }: SortableTabProps) {
@@ -122,7 +124,7 @@ function SortableTab({
         // `overflow-hidden + isolate` keep the button clipped/layered within this tab only.
         'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden',
         isActive
-          ? 'border-primary bg-muted text-foreground'
+          ? cn(themeBorderAccentClass ?? 'border-primary', 'bg-muted text-foreground')
           : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
       )}
       onClick={handleClick}
@@ -187,6 +189,9 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   const activeProject = projects.find((project) => project.id === projectId);
   const themeColorClass = activeProject
     ? projectColorClasses[activeProject.color]?.text
+    : undefined;
+  const themeBorderAccentClass = activeProject
+    ? projectColorClasses[activeProject.color]?.borderAccent
     : undefined;
 
   // Get files and artifacts for this project
@@ -320,6 +325,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
                     queryMode={tab.queryMode}
                     queryIconColorClassName={queryIconColorClassName}
                     themeColorClass={themeColorClass}
+                    themeBorderAccentClass={themeBorderAccentClass}
                     onClose={() => handleCloseTab(tab)}
                     onClick={() => handleTabClick(tab)}
                   />

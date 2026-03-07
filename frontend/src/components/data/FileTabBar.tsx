@@ -33,6 +33,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 import { CsvIcon } from './CsvIcon';
+import { XlsIcon } from './XlsIcon';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect } from 'react';
 
@@ -94,10 +95,9 @@ function SortableTab({
     switch (fileType) {
       case 'csv':
         return <CsvIcon className="h-4 w-4" themeColorClass={themeColorClass} isActive={isActive} />;
-      case 'json':
-        return <FileJson className="h-4 w-4 text-blue-500" />;
       case 'excel':
-        return <FileSpreadsheet className="h-4 w-4 text-emerald-500" />;
+        return <XlsIcon className="h-4 w-4" themeColorClass={themeColorClass} isActive={isActive} />;
+      case 'json':
       case 'pdf':
         return <FileText className="h-4 w-4 text-rose-500" />;
       case 'markdown':

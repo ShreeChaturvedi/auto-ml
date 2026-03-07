@@ -30,6 +30,7 @@ import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
 import type { FileType as UploadedFileType, UploadedFile } from '@/types/file';
 import { CsvIcon } from './CsvIcon';
+import { XlsIcon } from './XlsIcon';
 import { projectColorClasses } from '@/types/project';
 
 interface FileExplorerProps {
@@ -69,7 +70,9 @@ interface FileItemProps {
 
 function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownload }: FileItemProps) {
   const isCsv = file.type === 'csv';
-  const Icon = isCsv ? CsvIcon : (iconByType[file.type] ?? File);
+  const isXls = file.type === 'excel';
+  const isThemeIcon = isCsv || isXls;
+  const Icon = isCsv ? CsvIcon : isXls ? XlsIcon : (iconByType[file.type] ?? File);
   const iconColor = isActive
     ? activeIconColorByType[file.type] ?? 'text-muted-foreground'
     : 'text-muted-foreground';
@@ -85,8 +88,8 @@ function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownloa
       onClick={onOpen}
     >
       <Icon
-        className={cn('h-3.5 w-3.5 shrink-0', !isCsv && iconColor)}
-        {...(isCsv ? { themeColorClass, isActive } : {})}
+        className={cn('h-3.5 w-3.5 shrink-0', !isThemeIcon && iconColor)}
+        {...(isThemeIcon ? { themeColorClass, isActive } : {})}
       />
       <span className="text-workflow truncate flex-1">{file.name}</span>
 

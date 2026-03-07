@@ -19,6 +19,7 @@ import { FilePreview } from './FilePreview';
 import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CsvIcon } from '@/components/data/CsvIcon';
+import { XlsIcon } from '@/components/data/XlsIcon';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 
@@ -63,9 +64,11 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
     <>
       <div className="group flex items-center gap-3 py-2 px-1 rounded-md hover:bg-accent/30 transition-colors">
         {/* Icon */}
-        <div className={cn('flex-shrink-0', file.type !== 'csv' && typeColorMap[file.type])}>
+        <div className={cn('flex-shrink-0', file.type !== 'csv' && file.type !== 'excel' && typeColorMap[file.type])}>
           {file.type === 'csv' ? (
             <CsvIcon className="h-5 w-5" themeColorClass={themeColorClass} />
+          ) : file.type === 'excel' ? (
+            <XlsIcon className="h-5 w-5" themeColorClass={themeColorClass} />
           ) : (
             IconComponent && <IconComponent className="h-5 w-5" />
           )}

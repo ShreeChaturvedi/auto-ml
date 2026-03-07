@@ -99,20 +99,12 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
           {/* Metadata row */}
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs text-muted-foreground uppercase font-medium">
-              {file.type}
+              {file.type === 'excel' ? 'XLSX' : file.type}
             </span>
             <span className="text-xs text-muted-foreground">·</span>
             <span className="text-xs text-muted-foreground font-mono">
               {formatFileSize(file.size)}
             </span>
-            {file.metadata?.tableName && (
-              <>
-                <span className="text-xs text-muted-foreground">·</span>
-                <span className="text-xs text-muted-foreground font-mono truncate max-w-[100px]">
-                  {file.metadata.tableName}
-                </span>
-              </>
-            )}
             {typeof file.metadata?.chunkCount === 'number' && (
               <>
                 <span className="text-xs text-muted-foreground">·</span>

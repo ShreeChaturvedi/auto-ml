@@ -421,40 +421,6 @@
 }
 
 .execute-icon-path {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-  transition: stroke-dashoffset 220ms ease-out;
-}
-
-.group\/execute:hover .execute-icon-path {
-  animation: execute-icon-trace 700ms ease-out 1;
-}
-
-@keyframes idea-filament-trace {
-  0% {
-    stroke-dashoffset: 100;
-  }
-
-  45% {
-    stroke-dashoffset: 0;
-  }
-
-  100% {
-    stroke-dashoffset: -100;
-  }
-}
-
-.idea-icon-outline {
-  stroke-opacity: 0.95;
-}
-
-.idea-icon-filament {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-}
-
-.group\/execute:hover .idea-icon-filament {
-  animation: idea-filament-trace 820ms ease-in-out 1;
 }
 
 /* ─── SQL reveal highlighting + token entry animation ────────────────────── */

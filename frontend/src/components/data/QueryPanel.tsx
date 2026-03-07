@@ -45,7 +45,7 @@ function AnimatedExecuteIcon({
 
   return (
     <svg
-      className={cn('h-4 w-4 execute-icon', colorClassName)}
+      className={cn('h-4 w-4 shrink-0', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
       strokeWidth="2"
@@ -53,40 +53,38 @@ function AnimatedExecuteIcon({
       strokeLinejoin="round"
     >
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.62" />
-          <stop offset="50%" stopColor="currentColor" stopOpacity="1" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="200%" y2="0%">
+          <stop offset="0%" stopColor="currentColor" />
+          <stop offset="30%" stopColor="currentColor" stopOpacity="0.3" />
+          <stop offset="50%" stopColor="currentColor" />
+          <stop offset="80%" stopColor="currentColor" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="currentColor" />
+          <animate attributeName="x1" values="0%;-100%" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="x2" values="200%;100%" dur="2s" repeatCount="indefinite" />
         </linearGradient>
       </defs>
       <path
         d={boltPath}
+        fill="currentColor"
+        fillOpacity="0.1"
         stroke={`url(#${gradientId})`}
-        pathLength={100}
-        className="execute-icon-path motion-reduce:!animate-none"
       />
     </svg>
   );
 }
 
-// Animated idea/lightbulb icon for English mode execute button.
-// Uses the exact same gradient + stroke-trace class as the bolt icon so
-// hover animation remains visually consistent.
-function AnimatedIdeaIcon({
+// Animated brain icon for English mode execute button.
+// Uses the exact same gradient so animation remains visually consistent.
+function AnimatedBrainIcon({
   gradientId,
   colorClassName
 }: {
   gradientId: string;
   colorClassName: string;
 }) {
-  const outlinePath =
-    'M9 15.2c-1.8-1.2-2.9-3.1-2.9-5.5C6.1 6.1 8.75 3 12 3s5.9 3.1 5.9 6.7c0 2.4-1.1 4.3-2.9 5.5';
-  const basePaths = ['M9 18h6', 'M10 21h4'];
-  const filamentPath = 'M9.1 10.6c.6-1.1 1.6-1.7 2.9-1.7 1.3 0 2.3.6 2.9 1.7M10 12.9h4';
-
   return (
     <svg
-      className={cn('h-4 w-4 idea-icon', colorClassName)}
+      className={cn('h-4 w-4 shrink-0', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
       strokeWidth="2"
@@ -94,31 +92,27 @@ function AnimatedIdeaIcon({
       strokeLinejoin="round"
     >
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.62" />
-          <stop offset="50%" stopColor="currentColor" stopOpacity="1" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.62" />
+        <linearGradient id={`${gradientId}-brain`} x1="0%" y1="0%" x2="200%" y2="0%">
+          <stop offset="0%" stopColor="currentColor" />
+          <stop offset="30%" stopColor="currentColor" stopOpacity="0.3" />
+          <stop offset="50%" stopColor="currentColor" />
+          <stop offset="80%" stopColor="currentColor" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="currentColor" />
+          <animate attributeName="x1" values="0%;-100%" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="x2" values="200%;100%" dur="2s" repeatCount="indefinite" />
         </linearGradient>
       </defs>
-      <path
-        d={outlinePath}
-        stroke={`url(#${gradientId})`}
-        className="idea-icon-outline"
-      />
-      {basePaths.map((d, i) => (
-        <path
-          key={i}
-          d={d}
-          stroke={`url(#${gradientId})`}
-          className="idea-icon-outline"
-        />
-      ))}
-      <path
-        d={filamentPath}
-        stroke={`url(#${gradientId})`}
-        pathLength={100}
-        className="idea-icon-filament motion-reduce:!animate-none"
-      />
+      <g stroke={`url(#${gradientId}-brain)`}>
+        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+        <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+        <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+        <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
+        <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+        <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
+        <path d="M19.938 10.5a4 4 0 0 1 .585.396" />
+        <path d="M6 18a4 4 0 0 1-1.967-.516" />
+        <path d="M19.967 17.484A4 4 0 0 1 18 18" />
+      </g>
     </svg>
   );
 }
@@ -1091,7 +1085,7 @@ export function QueryPanel({
               </>
             ) : (
               <>
-                <AnimatedIdeaIcon
+                <AnimatedBrainIcon
                   gradientId={iconGradientId}
                   colorClassName={executeIconColorClass}
                 />

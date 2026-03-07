@@ -17,20 +17,23 @@ export function CsvIcon({ className, themeColorClass, isActive = true, ...props 
       className={cn(className, isMuted && "text-muted-foreground")}
       {...props}
     >
-      <g transform="translate(12, 12) scale(0.8, 1.3)">
         <text
-          x="0"
-          y="4"
-          fontSize="12"
+          x="12"
+          y="12"
+          fontSize="15"
           fontWeight="bold"
           fontFamily="ui-sans-serif, system-ui, sans-serif"
           textAnchor="middle"
+          dominantBaseline="central"
           fill="currentColor"
           className={cn(!isMuted && themeColorClass)}
+          style={{
+            transform: 'scale(0.8, 1.25)',
+            transformOrigin: 'center'
+          }}
         >
           CSV
         </text>
-      </g>
     </svg>
   );
 }

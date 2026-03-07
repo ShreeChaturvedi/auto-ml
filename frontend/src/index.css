@@ -433,6 +433,20 @@
   transition: opacity 0.3s ease;
 }
 
+.execute-icon {
+  --comet-head-color: currentColor;
+  --comet-head-max: 100%;
+  --comet-tail-color: currentColor;
+  --comet-tail-max: 0%;
+}
+
+.dark .execute-icon {
+  --comet-head-color: white;
+  --comet-head-max: 100%;
+  --comet-tail-color: currentColor;
+  --comet-tail-max: 0%;
+}
+
 .group\/execute:hover .execute-icon-trace-base {
   opacity: 1;
 }

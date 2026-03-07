@@ -38,19 +38,17 @@ function generateTraceLayers() {
     const shift = L_max - length;
 
     const ratio = i / (layers - 1);
-    // Dark tail in first 20%, bright head in last 80%
-    const isDark = ratio < 0.2;
-    const pct = isDark 
-      ? 40 - (ratio / 0.2) * 40 
-      : ((ratio - 0.2) / 0.8) * 100;
     
-    const mixColor = isDark ? `black ${pct}%` : `white ${pct}%`;
-    const color = `color-mix(in srgb, currentColor, ${mixColor})`;
+    // In Light mode, we just want currentColor fading out via opacity.
+    // In Dark mode, we want a white-hot head that fades to currentColor and also fades out via opacity.
+    // This is cleanly handled purely via CSS variables defined on .execute-icon
+    const color = `color-mix(in srgb, currentColor, var(--comet-head-color) calc(var(--comet-head-max) * ${ratio}))`;
 
     return {
       key: i,
       strokeDasharray: `${length} ${SUM - length}`,
       stroke: color,
+      strokeOpacity: ratio,
       animationDelay: `-${(shift / SUM) * 1.5}s`
     };
   });
@@ -83,12 +81,13 @@ function AnimatedExecuteIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      {/* Base stroke (fully opaque) */}
+      {/* Base stroke (translucent so the fully opaque shine pops) */}
       <path
         d={boltPath}
         fill="currentColor"
         fillOpacity="0.1"
         stroke="currentColor"
+        strokeOpacity="0.3"
         pathLength={1}
       />
       
@@ -102,6 +101,7 @@ function AnimatedExecuteIcon({
           className="execute-icon-trace-base"
           style={{
             stroke: layer.stroke,
+            strokeOpacity: layer.strokeOpacity,
             strokeDasharray: layer.strokeDasharray,
             animationDelay: layer.animationDelay
           }}
@@ -139,8 +139,8 @@ function AnimatedBrainIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      {/* Base strokes (opaque) */}
-      <g stroke="currentColor">
+      {/* Base strokes (translucent so the fully opaque shine pops) */}
+      <g stroke="currentColor" strokeOpacity="0.3">
         {brainPaths.map((d, i) => (
           <path key={`base-${i}`} d={d} pathLength={1} />
         ))}
@@ -158,6 +158,7 @@ function AnimatedBrainIcon({
                 className="execute-icon-trace-base"
                 style={{
                   stroke: layer.stroke,
+                  strokeOpacity: layer.strokeOpacity,
                   strokeDasharray: layer.strokeDasharray,
                   animationDelay: layer.animationDelay
                 }}

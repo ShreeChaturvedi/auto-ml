@@ -235,7 +235,7 @@ export function NotebookCellComponent({
   return (
     <div
       className={cn(
-        'group rounded-lg border bg-card transition-colors duration-150',
+        'group overflow-hidden rounded-lg border bg-card transition-colors duration-150',
         isRunning && 'border-primary/40 ring-1 ring-primary/20',
         cell.executionStatus === 'error' && 'border-destructive/50',
         isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20'

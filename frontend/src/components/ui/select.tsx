@@ -111,6 +111,22 @@ const SelectLabel = React.forwardRef<
 ))
 SelectLabel.displayName = SelectPrimitive.Label.displayName
 
+/** Compact header for dropdown groups; matches app-wide label style (uppercase, muted). */
+const SelectGroupHeader = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn(
+      "px-2 py-1 text-workflow-label font-semibold text-muted-foreground uppercase tracking-wider",
+      className
+    )}
+    {...props}
+  />
+))
+SelectGroupHeader.displayName = "SelectGroupHeader"
+
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
@@ -153,6 +169,7 @@ export {
   SelectTrigger,
   SelectContent,
   SelectLabel,
+  SelectGroupHeader,
   SelectItem,
   SelectSeparator,
   SelectScrollUpButton,

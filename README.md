@@ -45,8 +45,6 @@ npm run dev
 
 The `npm run dev` flow boots a local Postgres container, applies migrations, and starts the frontend + backend.
 
-Backend LLM configuration is OpenAI-only. Copy `backend/.env.example`, set `OPENAI_API_KEY`, and leave the default GPT-5 model settings unless you need a specific GPT-5 override.
-
 ## Repository Layout
 
 ```

@@ -36,7 +36,6 @@ function generateTraceLayers() {
   return Array.from({ length: layers }).map((_, i) => {
     const length = L_max - (i * L_max / layers);
     const shift = L_max - length;
-    const gap = SUM - L_max;
 
     const ratio = i / (layers - 1);
     // Dark tail in first 20%, bright head in last 80%
@@ -50,9 +49,9 @@ function generateTraceLayers() {
 
     return {
       key: i,
-      strokeDasharray: `${length} ${gap + shift}`,
+      strokeDasharray: `${length} ${SUM - length}`,
       stroke: color,
-      shift: -shift
+      animationDelay: `-${(shift / SUM) * 1.5}s`
     };
   });
 }
@@ -104,8 +103,8 @@ function AnimatedExecuteIcon({
           style={{
             stroke: layer.stroke,
             strokeDasharray: layer.strokeDasharray,
-            '--dash-shift': layer.shift
-          } as React.CSSProperties}
+            animationDelay: layer.animationDelay
+          }}
         />
       ))}
     </svg>
@@ -160,8 +159,8 @@ function AnimatedBrainIcon({
                 style={{
                   stroke: layer.stroke,
                   strokeDasharray: layer.strokeDasharray,
-                  '--dash-shift': layer.shift
-                } as React.CSSProperties}
+                  animationDelay: layer.animationDelay
+                }}
               />
             ))}
           </g>

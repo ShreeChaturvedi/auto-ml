@@ -418,10 +418,10 @@
 
 @keyframes execute-trace-movement {
   from {
-    stroke-dashoffset: calc(1.2 - var(--dash-shift, 0));
+    stroke-dashoffset: 1.2;
   }
   to {
-    stroke-dashoffset: calc(0 - var(--dash-shift, 0));
+    stroke-dashoffset: 0;
   }
 }
 

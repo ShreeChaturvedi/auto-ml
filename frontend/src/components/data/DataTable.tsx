@@ -332,7 +332,7 @@ export function DataTable({
     <div className="flex flex-col h-full">
       <div
         ref={tableContainerRef}
-        className="flex-1 min-h-0 overflow-auto"
+        className="flex-1 min-h-0 overflow-auto overscroll-none"
       >
         <table className="w-full caption-bottom text-xs">
           <TableHeader className="sticky top-0 z-10 bg-background">

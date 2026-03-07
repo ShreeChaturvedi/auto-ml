@@ -27,15 +27,46 @@ import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQu
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 
+// Generate the array of overlapping strokes for a smooth continuous gradient tail
+function generateTraceLayers() {
+  const layers = 20;
+  const L_max = 0.40;
+  const SUM = 1.2;
+  
+  return Array.from({ length: layers }).map((_, i) => {
+    const length = L_max - (i * L_max / layers);
+    const shift = L_max - length;
+    const gap = SUM - L_max;
+
+    const ratio = i / (layers - 1);
+    // Dark tail in first 20%, bright head in last 80%
+    const isDark = ratio < 0.2;
+    const pct = isDark 
+      ? 40 - (ratio / 0.2) * 40 
+      : ((ratio - 0.2) / 0.8) * 100;
+    
+    const mixColor = isDark ? `black ${pct}%` : `white ${pct}%`;
+    const color = `color-mix(in srgb, currentColor, ${mixColor})`;
+
+    return {
+      key: i,
+      strokeDasharray: `${length} ${gap + shift}`,
+      stroke: color,
+      shift: -shift
+    };
+  });
+}
+
+const TRACE_LAYERS = generateTraceLayers();
+
 // Animated lightning bolt icon for execute button.
-// Uses a blurred, brighter dash flowing along the path to create a continuous metallic gradient shine.
+// Uses perfectly overlapping layered strokes to create a true continuous metallic gradient shine
+// that flows precisely along the path contour without opacity blending or fixed-axis defects.
 function AnimatedExecuteIcon({
   isExecuting,
-  gradientId,
   colorClassName
 }: {
   isExecuting: boolean;
-  gradientId: string;
   colorClassName: string;
 }) {
   if (isExecuting) {
@@ -53,18 +84,7 @@ function AnimatedExecuteIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <defs>
-        {/* Glow filter creates a true smooth gradient falloff instead of discrete dots */}
-        <filter id={`${gradientId}-glow`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.2" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      
-      {/* Base stroke (fully opaque as requested) */}
+      {/* Base stroke (fully opaque) */}
       <path
         d={boltPath}
         fill="currentColor"
@@ -73,14 +93,21 @@ function AnimatedExecuteIcon({
         pathLength={1}
       />
       
-      {/* Gradient shimmer: single continuous dashed path with blur */}
-      <path
-        d={boltPath}
-        fill="none"
-        pathLength={1}
-        className="execute-icon-trace-path"
-        filter={`url(#${gradientId}-glow)`}
-      />
+      {/* Gradient shimmer: layered traces flow along the path continuously */}
+      {TRACE_LAYERS.map((layer) => (
+        <path
+          key={layer.key}
+          d={boltPath}
+          fill="none"
+          pathLength={1}
+          className="execute-icon-trace-base"
+          style={{
+            stroke: layer.stroke,
+            strokeDasharray: layer.strokeDasharray,
+            '--dash-shift': layer.shift
+          } as React.CSSProperties}
+        />
+      ))}
     </svg>
   );
 }
@@ -88,10 +115,8 @@ function AnimatedExecuteIcon({
 // Animated brain icon for English mode execute button.
 // Uses the exact same gradient tail logic to flow along each stroke.
 function AnimatedBrainIcon({
-  gradientId,
   colorClassName
 }: {
-  gradientId: string;
   colorClassName: string;
 }) {
   const brainPaths = [
@@ -115,16 +140,6 @@ function AnimatedBrainIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <defs>
-        <filter id={`${gradientId}-brain-glow`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.2" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
       {/* Base strokes (opaque) */}
       <g stroke="currentColor">
         {brainPaths.map((d, i) => (
@@ -133,14 +148,23 @@ function AnimatedBrainIcon({
       </g>
       
       {/* Gradient shimmer: layered traces flow along each stroke continuously */}
-      <g fill="none" filter={`url(#${gradientId}-brain-glow)`}>
-        {brainPaths.map((d, i) => (
-          <path
-            key={`trace-${i}`}
-            d={d}
-            pathLength={1}
-            className="execute-icon-trace-path"
-          />
+      <g fill="none">
+        {brainPaths.map((d, pathIdx) => (
+          <g key={`trace-group-${pathIdx}`}>
+            {TRACE_LAYERS.map((layer) => (
+              <path
+                key={`trace-${pathIdx}-${layer.key}`}
+                d={d}
+                pathLength={1}
+                className="execute-icon-trace-base"
+                style={{
+                  stroke: layer.stroke,
+                  strokeDasharray: layer.strokeDasharray,
+                  '--dash-shift': layer.shift
+                } as React.CSSProperties}
+              />
+            ))}
+          </g>
         ))}
       </g>
     </svg>

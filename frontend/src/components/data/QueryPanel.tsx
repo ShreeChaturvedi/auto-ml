@@ -27,7 +27,8 @@ import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQu
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 
-// Animated lightning bolt icon for execute button
+// Animated lightning bolt icon for execute button.
+// Uses a blurred, brighter dash flowing along the path to create a continuous metallic gradient shine.
 function AnimatedExecuteIcon({
   isExecuting,
   gradientId,
@@ -45,7 +46,7 @@ function AnimatedExecuteIcon({
 
   return (
     <svg
-      className={cn('h-4 w-4 shrink-0', colorClassName)}
+      className={cn('h-4 w-4 shrink-0 execute-icon', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
       strokeWidth="2"
@@ -53,28 +54,39 @@ function AnimatedExecuteIcon({
       strokeLinejoin="round"
     >
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="200%" y2="0%">
-          <stop offset="0%" stopColor="currentColor" />
-          <stop offset="30%" stopColor="currentColor" stopOpacity="0.3" />
-          <stop offset="50%" stopColor="currentColor" />
-          <stop offset="80%" stopColor="currentColor" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="currentColor" />
-          <animate attributeName="x1" values="0%;-100%" dur="2s" repeatCount="indefinite" />
-          <animate attributeName="x2" values="200%;100%" dur="2s" repeatCount="indefinite" />
-        </linearGradient>
+        {/* Glow filter creates a true smooth gradient falloff instead of discrete dots */}
+        <filter id={`${gradientId}-glow`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
+      
+      {/* Base stroke (fully opaque as requested) */}
       <path
         d={boltPath}
         fill="currentColor"
         fillOpacity="0.1"
-        stroke={`url(#${gradientId})`}
+        stroke="currentColor"
+        pathLength={1}
+      />
+      
+      {/* Gradient shimmer: single continuous dashed path with blur */}
+      <path
+        d={boltPath}
+        fill="none"
+        pathLength={1}
+        className="execute-icon-trace-path"
+        filter={`url(#${gradientId}-glow)`}
       />
     </svg>
   );
 }
 
 // Animated brain icon for English mode execute button.
-// Uses the exact same gradient so animation remains visually consistent.
+// Uses the exact same gradient tail logic to flow along each stroke.
 function AnimatedBrainIcon({
   gradientId,
   colorClassName
@@ -82,9 +94,21 @@ function AnimatedBrainIcon({
   gradientId: string;
   colorClassName: string;
 }) {
+  const brainPaths = [
+    'M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z',
+    'M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z',
+    'M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4',
+    'M17.599 6.5a3 3 0 0 0 .399-1.375',
+    'M6.003 5.125A3 3 0 0 0 6.401 6.5',
+    'M3.477 10.896a4 4 0 0 1 .585-.396',
+    'M19.938 10.5a4 4 0 0 1 .585.396',
+    'M6 18a4 4 0 0 1-1.967-.516',
+    'M19.967 17.484A4 4 0 0 1 18 18',
+  ];
+
   return (
     <svg
-      className={cn('h-4 w-4 shrink-0', colorClassName)}
+      className={cn('h-4 w-4 shrink-0 execute-icon', colorClassName)}
       viewBox="0 0 24 24"
       fill="none"
       strokeWidth="2"
@@ -92,26 +116,32 @@ function AnimatedBrainIcon({
       strokeLinejoin="round"
     >
       <defs>
-        <linearGradient id={`${gradientId}-brain`} x1="0%" y1="0%" x2="200%" y2="0%">
-          <stop offset="0%" stopColor="currentColor" />
-          <stop offset="30%" stopColor="currentColor" stopOpacity="0.3" />
-          <stop offset="50%" stopColor="currentColor" />
-          <stop offset="80%" stopColor="currentColor" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="currentColor" />
-          <animate attributeName="x1" values="0%;-100%" dur="2s" repeatCount="indefinite" />
-          <animate attributeName="x2" values="200%;100%" dur="2s" repeatCount="indefinite" />
-        </linearGradient>
+        <filter id={`${gradientId}-brain-glow`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
-      <g stroke={`url(#${gradientId}-brain)`}>
-        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-        <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-        <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-        <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
-        <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
-        <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
-        <path d="M19.938 10.5a4 4 0 0 1 .585.396" />
-        <path d="M6 18a4 4 0 0 1-1.967-.516" />
-        <path d="M19.967 17.484A4 4 0 0 1 18 18" />
+
+      {/* Base strokes (opaque) */}
+      <g stroke="currentColor">
+        {brainPaths.map((d, i) => (
+          <path key={`base-${i}`} d={d} pathLength={1} />
+        ))}
+      </g>
+      
+      {/* Gradient shimmer: layered traces flow along each stroke continuously */}
+      <g fill="none" filter={`url(#${gradientId}-brain-glow)`}>
+        {brainPaths.map((d, i) => (
+          <path
+            key={`trace-${i}`}
+            d={d}
+            pathLength={1}
+            className="execute-icon-trace-path"
+          />
+        ))}
       </g>
     </svg>
   );

@@ -406,21 +406,37 @@
   font-size: 0.84em;
 }
 
+/* Execute icon: layered traces flow along stroke paths, hover-only */
 @keyframes execute-icon-trace {
   0% {
     stroke-dashoffset: 0;
   }
-
-  35% {
-    stroke-dashoffset: 100;
-  }
-
   100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes execute-trace-movement {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
     stroke-dashoffset: 0;
   }
 }
 
-.execute-icon-path {
+.execute-icon-trace-path {
+  /* Using color-mix to get p + dx (a brighter/whiter version of the theme color) without opacity */
+  stroke: color-mix(in srgb, currentColor, white 60%);
+  /* A single continuous dash creates a solid comet body, blurred via SVG filter into a smooth gradient */
+  stroke-dasharray: 0.35 0.65;
+  animation: execute-trace-movement 1.5s linear infinite;
+  stroke-linecap: round;
+}
+
+.dark .execute-icon-trace-path {
+  /* In dark mode, use more white so it pops vividly against the bright base color */
+  stroke: color-mix(in srgb, currentColor, white 85%);
 }
 
 /* ─── SQL reveal highlighting + token entry animation ────────────────────── */

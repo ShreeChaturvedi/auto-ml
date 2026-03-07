@@ -20,7 +20,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectGroupHeader, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
@@ -211,8 +211,10 @@ export function LlmChatComposer({
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    {modelOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
+                    <SelectGroup>
+                      <SelectGroupHeader>Model</SelectGroupHeader>
+                      {modelOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="shrink-0">{renderModelIcon(option)}</span>
                           <span className="truncate">{option.label}</span>
@@ -234,6 +236,7 @@ export function LlmChatComposer({
                         </div>
                       </SelectItem>
                     ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
 
@@ -243,14 +246,17 @@ export function LlmChatComposer({
                       <SelectValue placeholder="Reasoning" />
                     </SelectTrigger>
                     <SelectContent>
-                      {reasoningOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <span className="flex items-center gap-1.5">
-                            {renderReasoningIcon(option.icon)}
-                            {option.label}
-                          </span>
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        <SelectGroupHeader>Reasoning</SelectGroupHeader>
+                        {reasoningOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <span className="flex items-center gap-1.5">
+                              {renderReasoningIcon(option.icon)}
+                              {option.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 ) : null}

@@ -192,14 +192,16 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
               <div className="space-y-4">
                 {/* PhaseList now handles the collapse button internally */}
                 <PhaseList collapsed={collapsed} onToggleCollapse={onToggleCollapse} />
-                {/* Hide file explorer when collapsed */}
+                {/* Hide file explorer when collapsed - grid-rows for smooth height animation */}
                 <div
                   className={cn(
-                    'transition-all duration-300 overflow-hidden',
-                    collapsed ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
+                    'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
+                    collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
                   )}
                 >
-                  <FileExplorer projectId={activeProject.id} />
+                  <div className="min-h-0 overflow-hidden">
+                    <FileExplorer projectId={activeProject.id} />
+                  </div>
                 </div>
               </div>
             ) : (

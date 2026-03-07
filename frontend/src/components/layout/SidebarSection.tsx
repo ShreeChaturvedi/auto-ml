@@ -1,6 +1,6 @@
 /**
  * SidebarSection - Shared component for sidebar sections
- * 
+ *
  * Used by both PhaseList (WORKFLOW) and ProjectList (PROJECTS)
  * Handles:
  * - Collapsed/expanded states with smooth transitions
@@ -107,69 +107,76 @@ export function SidebarSection({
                 )}
             </div>
 
-            {/* Items - only visible when section expanded (or always when sidebar collapsed) */}
-            {(collapsed || sectionExpanded) && (
-                <div className="space-y-0.5">
-                    {isLoading ? (
-                        <div className={cn(
-                            'flex flex-col items-center justify-center py-8 text-center text-xs text-muted-foreground',
-                            collapsed && 'hidden'
-                        )}>
-                            Loading...
-                        </div>
-                    ) : items.length > 0 ? (
-                        items.map((item) => {
-                            const buttonContent = (
-                                <button
-                                    key={item.id}
-                                    onClick={item.onClick}
-                                    disabled={item.isDisabled}
-                                    className={cn(
-                                        'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left',
-                                        !item.isDisabled
-                                            ? item.isActive
-                                                ? 'bg-muted font-medium'
-                                                : 'text-foreground hover:bg-muted cursor-pointer'
-                                            : 'text-muted-foreground/50 cursor-default'
-                                    )}
-                                >
-                                    {/* Icon */}
-                                    <div className="shrink-0">{item.icon}</div>
-
-                                    {/* Text - fades when collapsed */}
-                                    <span
+            {/* Items - smooth collapse/expand with height + fade */}
+            <div
+                className={cn(
+                    'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
+                    (collapsed || sectionExpanded) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                )}
+            >
+                <div className="min-h-0 overflow-hidden">
+                    <div className="space-y-0.5">
+                        {isLoading ? (
+                            <div className={cn(
+                                'flex flex-col items-center justify-center py-8 text-center text-xs text-muted-foreground',
+                                collapsed && 'hidden'
+                            )}>
+                                Loading...
+                            </div>
+                        ) : items.length > 0 ? (
+                            items.map((item) => {
+                                const buttonContent = (
+                                    <button
+                                        key={item.id}
+                                        onClick={item.onClick}
+                                        disabled={item.isDisabled}
                                         className={cn(
-                                            'flex-1 text-workflow truncate transition-opacity duration-300',
-                                            collapsed && 'opacity-0'
+                                            'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left',
+                                            !item.isDisabled
+                                                ? item.isActive
+                                                    ? 'bg-muted font-medium'
+                                                    : 'text-foreground hover:bg-muted cursor-pointer'
+                                                : 'text-muted-foreground/50 cursor-default'
                                         )}
                                     >
-                                        {item.label}
-                                    </span>
-                                </button>
-                            );
+                                        {/* Icon */}
+                                        <div className="shrink-0">{item.icon}</div>
 
-                            // Always use TooltipProvider wrapper for stable DOM (enables CSS transitions)
-                            return (
-                                <TooltipProvider key={item.id} delayDuration={300}>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            {buttonContent}
-                                        </TooltipTrigger>
-                                        {/* Only show tooltip content when collapsed */}
-                                        {collapsed && (
-                                            <TooltipContent side="right">
-                                                <p>{item.label}</p>
-                                            </TooltipContent>
-                                        )}
-                                    </Tooltip>
-                                </TooltipProvider>
-                            );
-                        })
-                    ) : emptyContent && !collapsed ? (
-                        emptyContent
-                    ) : null}
+                                        {/* Text - fades when collapsed */}
+                                        <span
+                                            className={cn(
+                                                'flex-1 text-workflow truncate transition-opacity duration-300',
+                                                collapsed && 'opacity-0'
+                                            )}
+                                        >
+                                            {item.label}
+                                        </span>
+                                    </button>
+                                );
+
+                                // Always use TooltipProvider wrapper for stable DOM (enables CSS transitions)
+                                return (
+                                    <TooltipProvider key={item.id} delayDuration={300}>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                {buttonContent}
+                                            </TooltipTrigger>
+                                            {/* Only show tooltip content when collapsed */}
+                                            {collapsed && (
+                                                <TooltipContent side="right">
+                                                    <p>{item.label}</p>
+                                                </TooltipContent>
+                                            )}
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                );
+                            })
+                        ) : emptyContent && !collapsed ? (
+                            emptyContent
+                        ) : null}
+                    </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 }

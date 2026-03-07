@@ -94,8 +94,14 @@ export function ProjectList({ collapsed = false, onToggleCollapse }: ProjectList
           </div>
         </div>
 
-        {/* Project items */}
-        {(collapsed || sectionExpanded) && (
+        {/* Project items - smooth collapse/expand with height + fade */}
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
+            (collapsed || sectionExpanded) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
           <div className="space-y-0.5">
             {!isInitialized && isLoading ? (
               <div className={cn(
@@ -123,7 +129,8 @@ export function ProjectList({ collapsed = false, onToggleCollapse }: ProjectList
               </div>
             ) : null}
           </div>
-        )}
+          </div>
+        </div>
       </div>
 
       <ProjectDialog

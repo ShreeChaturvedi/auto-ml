@@ -1,5 +1,10 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -48,7 +53,14 @@ export function CollapsibleSection({
         )}
       </div>
 
-      {expanded && children}
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
+          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
+      </div>
     </div>
   );
 }

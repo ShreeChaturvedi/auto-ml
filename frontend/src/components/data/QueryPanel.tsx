@@ -30,8 +30,8 @@ import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 // Generate the array of overlapping strokes for a smooth continuous gradient tail
 function generateTraceLayers() {
   const layers = 20;
-  const L_max = 0.40;
-  const SUM = 1.2;
+  const L_max = 0.5;
+  const SUM = 1;
   
   return Array.from({ length: layers }).map((_, i) => {
     const length = L_max - (i * L_max / layers);

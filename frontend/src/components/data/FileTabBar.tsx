@@ -27,7 +27,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
-import { X, FileText, FileJson, FileSpreadsheet, Database, FileCode, FileType, File } from 'lucide-react';
+import { X, FileText, Database, FileCode, FileType, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -35,7 +35,7 @@ import { projectColorClasses } from '@/types/project';
 import { CsvIcon } from './CsvIcon';
 import { XlsIcon } from './XlsIcon';
 import { cn } from '@/lib/utils';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 
 // Combined tab type
 type FileTab = {
@@ -57,6 +57,8 @@ interface SortableTabProps {
   themeBorderAccentClass?: string;
   onClose: () => void;
   onClick: () => void;
+  /** Ref for the active tab, used to scroll it into view */
+  activeTabRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 function SortableTab({
@@ -69,11 +71,17 @@ function SortableTab({
   themeColorClass,
   themeBorderAccentClass,
   onClose,
-  onClick
+  onClick,
+  activeTabRef
 }: SortableTabProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id
   });
+
+  const setRef = (el: HTMLDivElement | null) => {
+    setNodeRef(el);
+    if (isActive && activeTabRef) (activeTabRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+  };
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -117,7 +125,7 @@ function SortableTab({
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setRef}
       style={style}
       className={cn(
         // `relative` anchors the absolutely-positioned close button.
@@ -235,6 +243,21 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   // Maintain tab order state for drag-drop persistence
   const [orderedTabs, setOrderedTabs] = useState<FileTab[]>(baseTabs);
 
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll active tab into view when it changes (e.g. new query opened off-screen)
+  useEffect(() => {
+    if (!activeFileTabId) return;
+    const tabExists = orderedTabs.some((t) => t.id === activeFileTabId);
+    if (!tabExists) return;
+    const el = activeTabRef.current;
+    if (!el) return;
+    const rafId = requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [activeFileTabId, orderedTabs]);
+
   // Update ordered tabs when base tabs change
   useEffect(() => {
     setOrderedTabs((prevOrdered) => {
@@ -328,6 +351,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
                     themeBorderAccentClass={themeBorderAccentClass}
                     onClose={() => handleCloseTab(tab)}
                     onClick={() => handleTabClick(tab)}
+                    activeTabRef={activeTabRef}
                   />
                 ))}
               </SortableContext>

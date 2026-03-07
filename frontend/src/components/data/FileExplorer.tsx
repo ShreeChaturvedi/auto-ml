@@ -84,7 +84,7 @@ function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownloa
       )}
       onClick={onOpen}
     >
-      <Icon 
+      <Icon
         className={cn('h-3.5 w-3.5 shrink-0', !isCsv && iconColor)}
         {...(isCsv ? { themeColorClass, isActive } : {})}
       />
@@ -143,6 +143,10 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const project = useProjectStore((state) =>
     state.projects.find((p) => p.id === projectId)
   );
+
+  const themeColorClass = project
+    ? projectColorClasses[project.color]?.text
+    : undefined;
 
   useEffect(() => {
     if (projectId) {
@@ -281,6 +285,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
             key={file.id}
             file={file}
             isActive={file.id === activeFileTabId}
+            themeColorClass={themeColorClass}
             onOpen={() => handleOpenFile(file.id)}
             onDelete={() => handleDeleteFile(file)}
             onDownload={() => handleDownloadFile(file)}

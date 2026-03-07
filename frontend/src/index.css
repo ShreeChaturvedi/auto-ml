@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Registered property so --shine-angle is interpolable in @keyframes */
+@property --shine-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -406,6 +413,25 @@
   font-size: 0.84em;
 }
 
+.nl-model-work-viewport {
+  --nl-work-fade-top: 0px;
+  --nl-work-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black var(--nl-work-fade-top),
+    black calc(100% - var(--nl-work-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black var(--nl-work-fade-top),
+    black calc(100% - var(--nl-work-fade-bottom)),
+    transparent 100%
+  );
+}
+
 /* Execute icon: layered traces flow along stroke paths, hover-only */
 @keyframes execute-icon-trace {
   0% {
@@ -627,5 +653,94 @@
   .nl-typewriter-cursor::after {
     animation: none;
     opacity: 0.7;
+  }
+}
+
+/* ─── Metallic shine border for chat composer ────────────────────────────── */
+
+/*
+ * Technique: two absolutely-positioned pseudo-elements masked to only the 1 px
+ * border region (padding-box XOR content-box).  ::before renders the
+ * proximity-following radial shine; ::after renders the solid focus border.
+ * The base border comes from the inner InputGroup.
+ */
+.metallic-border {
+  --shine-x: 0px;
+  --shine-y: 0px;
+  --shine-opacity: 0;
+  position: relative;
+}
+
+/* Shared mask that isolates the 1 px border strip */
+.metallic-border::before,
+.metallic-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* ── Proximity shine (cursor-following) ────────────────────────────────── */
+.metallic-border::before {
+  z-index: 10;
+  background: radial-gradient(
+    circle 60px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.85)) 0%,
+    hsl(0 0% 80% / calc(var(--shine-opacity) * 0.45)) 35%,
+    transparent 100%
+  );
+}
+
+.dark .metallic-border::before {
+  background: radial-gradient(
+    circle 60px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.95)) 0%,
+    hsl(0 0% 85% / calc(var(--shine-opacity) * 0.55)) 35%,
+    transparent 100%
+  );
+}
+
+/* ── Focus layer (sweep-around highlight) ──────────────────────────────── */
+.metallic-border::after {
+  z-index: 11;
+  /* Resting value is 360deg (full border) so removing the animation on blur
+     keeps the border fully drawn while opacity fades out smoothly. */
+  --shine-angle: 360deg;
+  background: conic-gradient(
+    from 0deg,
+    hsl(var(--ring)) 0deg var(--shine-angle),
+    transparent var(--shine-angle)
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.metallic-border[data-focused="true"]::after {
+  opacity: 1;
+  animation: metallic-sweep 0.5s ease-out forwards;
+}
+
+@keyframes metallic-sweep {
+  from { --shine-angle: 0deg; }
+  to   { --shine-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metallic-border::before {
+    display: none;
+  }
+  .metallic-border[data-focused="true"]::after {
+    /* Skip sweep; --shine-angle stays at 360deg so border appears instantly */
+    animation: none;
   }
 }

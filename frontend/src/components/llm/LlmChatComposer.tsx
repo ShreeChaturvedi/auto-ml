@@ -1,4 +1,6 @@
 import { useMemo, useRef, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+
+import { useMetallicBorder } from '@/hooks/useMetallicBorder';
 import {
   ArrowUp,
   Ban,
@@ -139,6 +141,8 @@ export function LlmChatComposer({
     ? `Supported: ${attachment.accept}`
     : 'Add document to context';
 
+  const { wrapperRef, isFocused, onFocusCapture, onBlurCapture } = useMetallicBorder();
+
   const activeProject = useProjectStore((s) => s.getActiveProject());
   const projectIconColorClass = activeProject
     ? projectColorClasses[activeProject.color]?.text
@@ -198,8 +202,15 @@ export function LlmChatComposer({
         </div>
       ) : null}
 
-      <InputGroup>
-        <InputGroupTextarea
+      <div
+        ref={wrapperRef}
+        className="metallic-border rounded-md"
+        data-focused={isFocused}
+        onFocusCapture={onFocusCapture}
+        onBlurCapture={onBlurCapture}
+      >
+        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+          <InputGroupTextarea
           ref={textareaRef}
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
@@ -351,7 +362,8 @@ export function LlmChatComposer({
             </div>
           </div>
         </InputGroupAddon>
-      </InputGroup>
+        </InputGroup>
+      </div>
 
       {attachment?.message ? (
         <div className={cn(

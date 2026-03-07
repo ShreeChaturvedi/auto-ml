@@ -20,7 +20,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
-import { Select, SelectContent, SelectGroup, SelectGroupHeader, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
@@ -31,6 +31,10 @@ import {
   type ReasoningEffortOption,
   type ReasoningIcon
 } from './modelOptions';
+
+/** Compact dropdown group label; smaller than option text (text-sm). */
+const SELECT_GROUP_LABEL_CLASS =
+  'px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider';
 
 export type AttachmentStatus = 'idle' | 'queued' | 'uploading' | 'success' | 'error';
 
@@ -212,7 +216,9 @@ export function LlmChatComposer({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectGroupHeader>Model</SelectGroupHeader>
+                      <SelectLabel className={SELECT_GROUP_LABEL_CLASS}>
+                        Model
+                      </SelectLabel>
                       {modelOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                         <div className="flex min-w-0 items-center gap-2">
@@ -247,7 +253,9 @@ export function LlmChatComposer({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectGroupHeader>Reasoning</SelectGroupHeader>
+                        <SelectLabel className={SELECT_GROUP_LABEL_CLASS}>
+                          Reasoning
+                        </SelectLabel>
                         {reasoningOptions.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             <span className="flex items-center gap-1.5">

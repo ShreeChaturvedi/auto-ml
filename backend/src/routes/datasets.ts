@@ -45,8 +45,7 @@ const updateColumnTypeSchema = z.object({
 const SUPPORTED_EXTENSIONS: Record<string, DatasetFileType> = {
   '.csv': 'csv',
   '.json': 'json',
-  '.xlsx': 'xlsx',
-  '.xls': 'xlsx'
+  '.xlsx': 'xlsx'
 };
 
 const SUPPORTED_MIME_TYPES: Partial<Record<string, DatasetFileType>> = {
@@ -65,6 +64,13 @@ function detectFileType(filename: string, mimetype?: string): DatasetFileType | 
   }
   if (mimetype && SUPPORTED_MIME_TYPES[mimetype]) {
     return SUPPORTED_MIME_TYPES[mimetype];
+  }
+  return undefined;
+}
+
+function legacySpreadsheetError(filename: string): string | undefined {
+  if (extname(filename).toLowerCase() === '.xls') {
+    return 'Legacy .xls spreadsheets are no longer supported. Please convert the file to .xlsx or .csv and upload it again.';
   }
   return undefined;
 }
@@ -189,7 +195,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       }
 
       const buffer = readFileSync(filePath);
-      const rows = parseDatasetRows(buffer, dataset.fileType);
+      const rows = await parseDatasetRows(buffer, dataset.fileType, dataset.filename);
 
       if (rows.length === 0) {
         return res.status(400).json({ error: 'Dataset has no rows to validate' });
@@ -334,13 +340,18 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         return res.status(400).json({ error: 'file field is required' });
       }
 
+      const unsupportedSpreadsheetMessage = legacySpreadsheetError(req.file.originalname);
+      if (unsupportedSpreadsheetMessage) {
+        return res.status(400).json({ error: unsupportedSpreadsheetMessage });
+      }
+
       const fileType = detectFileType(req.file.originalname, req.file.mimetype);
       if (!fileType) {
         return res.status(400).json({ error: `Unsupported file type: ${req.file.originalname}` });
       }
 
       try {
-        const rows = parseDatasetRows(req.file.buffer, fileType);
+        const rows = await parseDatasetRows(req.file.buffer, fileType, req.file.originalname);
         if (rows.length === 0) {
           return res.status(400).json({ error: 'Dataset has no rows to process' });
         }

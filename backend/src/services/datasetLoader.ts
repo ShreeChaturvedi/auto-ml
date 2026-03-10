@@ -3,8 +3,8 @@
  */
 
 import { parse as parseCsv } from 'csv-parse/sync';
+import ExcelJS from 'exceljs';
 import type { PoolClient } from 'pg';
-import XLSX from 'xlsx';
 
 import { getDbPool } from '../db.js';
 import type { ColumnDataType, DatasetProfileColumn } from '../types/dataset.js';
@@ -44,7 +44,7 @@ export async function loadDatasetIntoPostgres(params: {
   const tableName = sanitizeTableName(filename, datasetId);
 
   // Parse data based on file type
-  const rows = params.rows ?? parseDatasetRows(buffer, fileType);
+  const rows = params.rows ?? await parseDatasetRows(buffer, fileType, filename);
 
   if (rows.length === 0) {
     throw new Error('No data rows to load');
@@ -114,10 +114,20 @@ export function sanitizeTableName(filename: string, datasetId: string, forceUniq
   return sanitized.slice(0, 63) || 'table_data';
 }
 
-export function parseDatasetRows(
+const LEGACY_XLS_ERROR =
+  'Legacy .xls spreadsheets are no longer supported. Please convert the file to .xlsx or .csv and upload it again.';
+
+function assertSupportedSpreadsheetFilename(filename?: string) {
+  if (filename?.toLowerCase().endsWith('.xls')) {
+    throw new Error(LEGACY_XLS_ERROR);
+  }
+}
+
+export async function parseDatasetRows(
   buffer: Buffer,
-  fileType: 'csv' | 'json' | 'xlsx'
-): Record<string, unknown>[] {
+  fileType: 'csv' | 'json' | 'xlsx',
+  filename?: string
+): Promise<Record<string, unknown>[]> {
   switch (fileType) {
     case 'csv': {
       const text = buffer.toString('utf8');
@@ -164,16 +174,92 @@ export function parseDatasetRows(
       }
     }
     case 'xlsx': {
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const sheetName = workbook.SheetNames[0];
-      if (!sheetName) return [];
-      const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
+      assertSupportedSpreadsheetFilename(filename);
+      const workbook = new ExcelJS.Workbook();
+      void (await workbook.xlsx.load(buffer));
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet) {
+        return [];
+      }
+
+      const headerRow = worksheet.getRow(1);
+      const headers = headerRow.values
+        .slice(1)
+        .map((value, index) => {
+          const header = stringifySpreadsheetCell(value).trim();
+          return header || `column_${index + 1}`;
+        });
+
+      if (!headers.length) {
+        return [];
+      }
+
+      const rows: Record<string, unknown>[] = [];
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) {
+          return;
+        }
+
+        const record: Record<string, unknown> = {};
+        let hasValue = false;
+
+        headers.forEach((header, columnIndex) => {
+          const cell = row.getCell(columnIndex + 1);
+          const value = normalizeSpreadsheetCell(cell.value);
+          if (value !== null && value !== undefined && value !== '') {
+            hasValue = true;
+          }
+          record[header] = value;
+        });
+
+        if (hasValue) {
+          rows.push(record);
+        }
+      });
+
       return sanitizeDatasetRows(rows);
     }
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
   }
+}
+
+function normalizeSpreadsheetCell(value: ExcelJS.CellValue | undefined): unknown {
+  if (value === undefined) {
+    return null;
+  }
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeSpreadsheetCell(entry));
+  }
+  if (typeof value === 'object') {
+    if ('result' in value) {
+      return normalizeSpreadsheetCell(value.result);
+    }
+    if ('text' in value) {
+      return value.text;
+    }
+    if ('hyperlink' in value) {
+      return value.text ?? value.hyperlink ?? null;
+    }
+    if ('richText' in value) {
+      return value.richText.map((entry) => entry.text).join('');
+    }
+    if ('error' in value) {
+      return value.error;
+    }
+  }
+  return String(value);
+}
+
+function stringifySpreadsheetCell(value: ExcelJS.CellValue | undefined): string {
+  const normalized = normalizeSpreadsheetCell(value);
+  return normalized === null || normalized === undefined ? '' : String(normalized);
 }
 
 function sanitizeDatasetRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {

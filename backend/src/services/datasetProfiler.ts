@@ -19,8 +19,12 @@ export interface DatasetProfilingResult {
   sample: Record<string, unknown>[];
 }
 
-export function profileDataset(buffer: Buffer, fileType: DatasetFileType, options: ProfileOptions = {}): DatasetProfilingResult {
-  const rows = parseDatasetRows(buffer, fileType);
+export async function profileDataset(
+  buffer: Buffer,
+  fileType: DatasetFileType,
+  options: ProfileOptions = {}
+): Promise<DatasetProfilingResult> {
+  const rows = await parseDatasetRows(buffer, fileType);
   return profileDatasetRows(rows, options);
 }
 

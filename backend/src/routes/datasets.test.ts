@@ -249,6 +249,21 @@ describeIf('dataset routes', () => {
     });
   });
 
+  describe('POST /api/upload/dataset', () => {
+    it('rejects legacy XLS uploads with a clear migration message', async () => {
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/upload/dataset')
+        .attach('file', Buffer.from('legacy-binary'), {
+          filename: 'legacy.xls',
+          contentType: 'application/vnd.ms-excel'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/convert the file to \.xlsx or \.csv/i);
+    });
+  });
+
   describe('DELETE /api/datasets/:datasetId', () => {
     it('returns 404 for non-existent dataset', async () => {
       const app = createTestApp(repository);

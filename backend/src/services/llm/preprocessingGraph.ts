@@ -14,6 +14,7 @@ import {
   type StepState,
   type ValidationMetrics
 } from '../../repositories/preprocessingRunRepository.js';
+import { asBoolean, asNumber, asRecord, asString } from '../../utils/typeCoercion.js';
 
 import {
   createPreprocessingLangGraphRuntime,
@@ -155,22 +156,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function toStringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function toBooleanValue(value: unknown): boolean | undefined {
-  if (typeof value === 'boolean') return value;
-  return undefined;
-}
-
-function toNumberValue(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  return undefined;
-}
-
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -178,13 +163,6 @@ function toStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === 'string' ? item.trim() : ''))
     .filter((item) => item.length > 0);
-}
-
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== 'object') {
-    return undefined;
-  }
-  return value as Record<string, unknown>;
 }
 
 function isUuidLike(value: string): boolean {
@@ -581,7 +559,7 @@ async function resolveExecutionRun(
 }
 
 function toPreprocessingGraphState(value: unknown): PreprocessingGraphState | undefined {
-  const candidate = toRecord(value);
+  const candidate = asRecord(value);
   if (!candidate) {
     return undefined;
   }
@@ -602,15 +580,15 @@ function buildLangGraphPatch(
   args: Record<string, unknown>,
   result: { output?: unknown; error?: string }
 ): Partial<PreprocessingGraphState> | undefined {
-  const output = toRecord(result.output);
-  const step = toRecord(output?.step);
-  const stepId = toStringValue(step?.stepId) ?? toStringValue(args.stepId);
+  const output = asRecord(result.output);
+  const step = asRecord(output?.step);
+  const stepId = asString(step?.stepId) ?? asString(args.stepId);
   const failed = Boolean(result.error);
 
   switch (toolName) {
     case 'set_active_dataset':
     case 'profile_active_dataset': {
-      const datasetId = toStringValue(output?.datasetId) ?? toStringValue(args.datasetId);
+      const datasetId = asString(output?.datasetId) ?? asString(args.datasetId);
       return {
         currentStage: 'context_ready',
         nextStage: 'context_ready',
@@ -633,7 +611,7 @@ function buildLangGraphPatch(
         currentStepId: stepId
       };
     case 'execute_transformation_step': {
-      const executeSucceeded = !failed && (toBooleanValue(step?.lastExecuteSucceeded) ?? toBooleanValue(args.succeeded) ?? true);
+      const executeSucceeded = !failed && (asBoolean(step?.lastExecuteSucceeded) ?? asBoolean(args.succeeded) ?? true);
       return {
         currentStage: 'execute_code',
         nextStage: 'execute_code',
@@ -642,8 +620,8 @@ function buildLangGraphPatch(
       };
     }
     case 'validate_step_result': {
-      const requiresApproval = toBooleanValue(step?.requiresApproval) ?? toBooleanValue(args.requiresApproval) ?? false;
-      const validationPassed = !failed && (toBooleanValue(step?.lastValidateSucceeded) ?? true);
+      const requiresApproval = asBoolean(step?.requiresApproval) ?? asBoolean(args.requiresApproval) ?? false;
+      const validationPassed = !failed && (asBoolean(step?.lastValidateSucceeded) ?? true);
       return {
         currentStage: 'validate_outcome',
         nextStage: 'validate_outcome',
@@ -654,8 +632,8 @@ function buildLangGraphPatch(
       };
     }
     case 'commit_transformation_step': {
-      const approvedArg = toBooleanValue(args.approved);
-      const reasonCode = toStringValue(output?.reasonCode);
+      const approvedArg = asBoolean(args.approved);
+      const reasonCode = asString(output?.reasonCode);
       return {
         currentStage: 'commit_or_revise',
         nextStage: 'commit_or_revise',
@@ -811,7 +789,7 @@ function createPreprocessingCellMetadataStore(): PreprocessingCellMetadataStore 
         }
 
         await updateNotebookCell(cellId, {
-          metadata: buildPreprocessingCellMetadata(toRecord(existing.metadata), binding)
+          metadata: buildPreprocessingCellMetadata(asRecord(existing.metadata), binding)
         });
       }
     }
@@ -831,7 +809,7 @@ function createPreprocessingCellInspector(): PreprocessingCellInspector {
       return {
         cellId: cell.cellId,
         content: cell.content,
-        metadata: toRecord(cell.metadata) ?? {}
+        metadata: asRecord(cell.metadata) ?? {}
       };
     }
   };
@@ -874,16 +852,16 @@ async function computeStepDivergence(
       reconciledCode = inspected.content;
     }
 
-    const preprocessingMetadata = toRecord(inspected.metadata.preprocessing);
-    const metadataStepId = toStringValue(preprocessingMetadata?.stepId);
-    const metadataRunId = toStringValue(preprocessingMetadata?.runId);
+    const preprocessingMetadata = asRecord(inspected.metadata.preprocessing);
+    const metadataStepId = asString(preprocessingMetadata?.stepId);
+    const metadataRunId = asString(preprocessingMetadata?.runId);
     if (metadataStepId !== step.stepId || metadataRunId !== run.runId) {
       details.push({
         stepId: step.stepId,
         cellId,
         issue: 'binding_mismatch',
         expectedCodeHash: step.codeHash,
-        actualCodeHash: toStringValue(preprocessingMetadata?.codeHash)
+        actualCodeHash: asString(preprocessingMetadata?.codeHash)
       });
       continue;
     }
@@ -915,12 +893,12 @@ export function createPreprocessingLangGraphSynchronizer(deps: PreprocessingLang
     args: Record<string, unknown>,
     result: { output?: unknown; error?: string }
   ): Promise<{ output?: unknown; error?: string }> {
-    const output = toRecord(result.output);
+    const output = asRecord(result.output);
     if (!output) {
       return result;
     }
 
-    const runId = toStringValue(output.runId) ?? toStringValue(args.runId);
+    const runId = asString(output.runId) ?? asString(args.runId);
     if (!runId) {
       return result;
     }
@@ -997,8 +975,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
     toolName: PreprocessingToolName,
     args: Record<string, unknown>
   ): Promise<{ output?: unknown; error?: string }> {
-    const explicitRunId = toStringValue(args.runId);
-    const toolCallId = toStringValue(args.toolCallId);
+    const explicitRunId = asString(args.runId);
+    const toolCallId = asString(args.toolCallId);
     const resolvedRun = await resolveExecutionRun(deps.runRepository, projectId, explicitRunId);
     if ('error' in resolvedRun) {
       return resolvedRun;
@@ -1018,7 +996,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'set_active_dataset': {
-          const datasetRef = toStringValue(args.datasetId);
+          const datasetRef = asString(args.datasetId);
           if (!datasetRef) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'set_active_dataset requires datasetId');
           }
@@ -1045,7 +1023,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'profile_active_dataset': {
-          const datasetRef = toStringValue(args.datasetId) ?? run.activeDatasetId;
+          const datasetRef = asString(args.datasetId) ?? run.activeDatasetId;
           if (!datasetRef) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'No active dataset set for this preprocessing run.');
           }
@@ -1065,7 +1043,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'checkpoint_dataset': {
-          const datasetRef = toStringValue(args.datasetId) ?? run.activeDatasetId;
+          const datasetRef = asString(args.datasetId) ?? run.activeDatasetId;
           if (!datasetRef) {
             return fail(
               run.runId,
@@ -1083,7 +1061,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           const checkpointId = `ckpt-${randomUUID()}`;
           const checkpoint = {
             checkpointId,
-            label: toStringValue(args.label) ?? `Checkpoint ${run.checkpoints.length + 1}`,
+            label: asString(args.label) ?? `Checkpoint ${run.checkpoints.length + 1}`,
             datasetId: dataset.datasetId,
             stepIds: toStringArray(args.stepIds),
             createdAt: nowIso(),
@@ -1112,7 +1090,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'register_derived_dataset': {
-          const datasetRef = toStringValue(args.datasetId);
+          const datasetRef = asString(args.datasetId);
           if (!datasetRef) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'register_derived_dataset requires datasetId');
           }
@@ -1142,8 +1120,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'restore_checkpoint': {
-          const checkpointId = toStringValue(args.checkpointId);
-          const operation = toStringValue(args.operation) ?? 'restore';
+          const checkpointId = asString(args.checkpointId);
+          const operation = asString(args.operation) ?? 'restore';
           if (!checkpointId) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'restore_checkpoint requires checkpointId');
           }
@@ -1161,7 +1139,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           const replayEvents = collectReplayEvents(run, checkpoint.replayUntilEventSequence);
-          const targetDatasetRef = toStringValue(args.replayDatasetId) ?? run.activeDatasetId;
+          const targetDatasetRef = asString(args.replayDatasetId) ?? run.activeDatasetId;
           if (operation !== 'restore' && !targetDatasetRef) {
             return fail(
               run.runId,
@@ -1272,7 +1250,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'propose_transformation_step': {
-          const requestedStepId = toStringValue(args.stepId);
+          const requestedStepId = asString(args.stepId);
           const blockingStep = findIncompleteBlockingStep(run, requestedStepId);
           if (blockingStep) {
             return fail(
@@ -1288,12 +1266,12 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           const step = getOrCreateStep(run, requestedStepId);
-          step.title = toStringValue(args.title) ?? step.title;
-          step.rationale = toStringValue(args.rationale) ?? step.rationale;
-          step.intentType = toStringValue(args.intentType) ?? step.intentType;
+          step.title = asString(args.title) ?? step.title;
+          step.rationale = asString(args.rationale) ?? step.rationale;
+          step.intentType = asString(args.intentType) ?? step.intentType;
           step.toolCallId = toolCallId ?? step.toolCallId;
           step.status = 'pending';
-          step.requiresApproval = toBooleanValue(args.requiresApproval) ?? inferRiskyIntent(step.intentType);
+          step.requiresApproval = asBoolean(args.requiresApproval) ?? inferRiskyIntent(step.intentType);
           step.updatedAt = nowIso();
 
           appendEvent(run, {
@@ -1318,8 +1296,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'materialize_step_code': {
-          const stepId = toStringValue(args.stepId);
-          const code = toStringValue(args.code);
+          const stepId = asString(args.stepId);
+          const code = asString(args.code);
           if (!stepId || !code) {
             return fail(run.runId, 'MISSING_REQUIRED_ARG', 'materialize_step_code requires stepId and code', {
               stepId
@@ -1367,7 +1345,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'execute_transformation_step': {
-          const stepId = toStringValue(args.stepId);
+          const stepId = asString(args.stepId);
           const maybeStep = ensureStepExists(run, run.runId, stepId);
           if ('error' in maybeStep) {
             return maybeStep;
@@ -1380,9 +1358,9 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             });
           }
 
-          const singleCellId = toStringValue(args.cellId);
+          const singleCellId = asString(args.cellId);
           const providedCells = mergeUniqueStrings(step.cellIds, toStringArray(args.cellIds), singleCellId ? [singleCellId] : []);
-          const succeeded = toBooleanValue(args.succeeded) ?? true;
+          const succeeded = asBoolean(args.succeeded) ?? true;
           step.cellIds = providedCells;
           step.toolCallId = toolCallId ?? step.toolCallId;
           step.lastExecuteSucceeded = succeeded;
@@ -1422,7 +1400,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'validate_step_result': {
-          const stepId = toStringValue(args.stepId);
+          const stepId = asString(args.stepId);
           const maybeStep = ensureStepExists(run, run.runId, stepId);
           if ('error' in maybeStep) {
             return maybeStep;
@@ -1447,14 +1425,14 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             );
           }
 
-          const requiresApproval = toBooleanValue(args.requiresApproval) ?? step.requiresApproval;
+          const requiresApproval = asBoolean(args.requiresApproval) ?? step.requiresApproval;
           const validation: ValidationMetrics = {
-            rowCountBefore: toNumberValue(args.rowCountBefore),
-            rowCountAfter: toNumberValue(args.rowCountAfter),
-            nullCountBefore: toNumberValue(args.nullCountBefore),
-            nullCountAfter: toNumberValue(args.nullCountAfter),
-            schemaDrift: toBooleanValue(args.schemaDrift),
-            notes: toStringValue(args.notes)
+            rowCountBefore: asNumber(args.rowCountBefore),
+            rowCountAfter: asNumber(args.rowCountAfter),
+            nullCountBefore: asNumber(args.nullCountBefore),
+            nullCountAfter: asNumber(args.nullCountAfter),
+            schemaDrift: asBoolean(args.schemaDrift),
+            notes: asString(args.notes)
           };
 
           step.requiresApproval = requiresApproval;
@@ -1490,7 +1468,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'commit_transformation_step': {
-          const stepId = toStringValue(args.stepId);
+          const stepId = asString(args.stepId);
           const maybeStep = ensureStepExists(run, run.runId, stepId);
           if ('error' in maybeStep) {
             return maybeStep;
@@ -1515,8 +1493,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             );
           }
 
-          const approved = toBooleanValue(args.approved);
-          const approvalSource = toStringValue(args.approvalSource);
+          const approved = asBoolean(args.approved);
+          const approvalSource = asString(args.approvalSource);
           if (step.status === 'awaiting_approval' && typeof approved === 'undefined') {
             return fail(
               run.runId,
@@ -1535,7 +1513,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           }
 
           if (approved === false) {
-            const decisionReason = toStringValue(args.rejectionReason) ?? 'Rejected by user';
+            const decisionReason = asString(args.rejectionReason) ?? 'Rejected by user';
             step.status = 'failed';
             step.approvalDecision = 'rejected';
             step.decisionReason = decisionReason;
@@ -1564,7 +1542,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             });
           }
 
-          const datasetRef = toStringValue(args.datasetId) ?? run.activeDatasetId;
+          const datasetRef = asString(args.datasetId) ?? run.activeDatasetId;
           if (!datasetRef) {
             return fail(
               run.runId,
@@ -1609,7 +1587,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           const checkpointId = `ckpt-${randomUUID()}`;
           const checkpoint = {
             checkpointId,
-            label: toStringValue(args.label) ?? `Committed ${step.title}`,
+            label: asString(args.label) ?? `Committed ${step.title}`,
             datasetId: dataset.datasetId,
             stepIds: [step.stepId],
             createdAt: nowIso(),
@@ -1641,8 +1619,8 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'detect_step_divergence': {
-          const scopedStepId = toStringValue(args.stepId);
-          const scopedCellId = toStringValue(args.cellId);
+          const scopedStepId = asString(args.stepId);
+          const scopedCellId = asString(args.cellId);
           if (scopedStepId && !run.steps[scopedStepId]) {
             return fail(run.runId, 'STEP_NOT_FOUND', `Step ${scopedStepId} not found for run ${run.runId}`, {
               stepId: scopedStepId
@@ -1702,7 +1680,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
         }
 
         case 'reconcile_diverged_step': {
-          const stepId = toStringValue(args.stepId);
+          const stepId = asString(args.stepId);
           const maybeStep = ensureStepExists(run, run.runId, stepId);
           if ('error' in maybeStep) {
             return maybeStep;
@@ -1728,7 +1706,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
             );
           }
 
-          const strategy = toStringValue(args.strategy) ?? 'absorb_edit';
+          const strategy = asString(args.strategy) ?? 'absorb_edit';
           if (!['absorb_edit', 'create_linked_step'].includes(strategy)) {
             return fail(
               run.runId,
@@ -1784,7 +1762,7 @@ export function createPreprocessingToolExecutor(deps: PreprocessingGraphDependen
           const linkedStepId = `step-${randomUUID()}`;
           const linkedStep = createStep(linkedStepId);
           linkedStep.linkedFromStepId = step.stepId;
-          linkedStep.title = toStringValue(args.title) ?? `${step.title} (reconciled)`;
+          linkedStep.title = asString(args.title) ?? `${step.title} (reconciled)`;
           linkedStep.rationale = step.rationale;
           linkedStep.intentType = step.intentType;
           linkedStep.requiresApproval = step.requiresApproval;

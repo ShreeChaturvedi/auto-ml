@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { createDatasetRepository, type DatasetRepository } from '../repositories/datasetRepository.js';
+import { asNumber, asRecord, asString } from '../utils/typeCoercion.js';
 
 import {
   type LlmClient,
@@ -222,42 +223,9 @@ const PASS2_FALLBACK_SCHEMA = z.object({
   confidence: z.number().min(0).max(1).default(0.6)
 });
 
-function asRecord(value: unknown): JsonRecord | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as JsonRecord;
-}
-
-function asString(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  return null;
-}
-
-function asNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
 function normalizeConfidenceValue(value: unknown, fallback: number): number {
   const numeric = asNumber(value);
-  if (numeric === null) {
+  if (numeric === undefined) {
     return fallback;
   }
   if (numeric > 1 && numeric <= 100) {
@@ -425,7 +393,7 @@ function normalizeRepairOutput(value: unknown): unknown {
     rationale: normalizeStringLike(record.rationale ?? record.reasoning ?? record.explanation) ?? 'Adjusted SQL after execution error.',
     assumptions: normalizeStringArray(record.assumptions),
     validationNotes: normalizeStringArray(record.validationNotes ?? record.validation),
-    confidence: asNumber(record.confidence) === null
+    confidence: asNumber(record.confidence) === undefined
       ? undefined
       : normalizeConfidenceValue(record.confidence, 0.5)
   };

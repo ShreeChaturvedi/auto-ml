@@ -5,6 +5,7 @@
  */
 
 import { apiRequest, getApiBaseUrl } from './client';
+import { readNdjsonStream } from './streamReader';
 import { useAuthStore } from '@/stores/authStore';
 
 // ============================================================
@@ -163,39 +164,10 @@ export async function installPackageStream(
         throw new Error(fallback || `Failed to install package (${response.status})`);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
     let finalResult: { success: boolean; message: string } | null = null;
 
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            try {
-                const event = JSON.parse(trimmed) as PackageInstallEvent;
-                if (event.type === 'done') {
-                    finalResult = {
-                        success: Boolean(event.success),
-                        message: event.message ?? ''
-                    };
-                }
-                onEvent(event);
-            } catch {
-                // Ignore malformed lines
-            }
-        }
-    }
-
-    if (buffer.trim()) {
-        try {
-            const event = JSON.parse(buffer.trim()) as PackageInstallEvent;
+    try {
+        for await (const event of readNdjsonStream<PackageInstallEvent>(response)) {
             if (event.type === 'done') {
                 finalResult = {
                     success: Boolean(event.success),
@@ -203,9 +175,9 @@ export async function installPackageStream(
                 };
             }
             onEvent(event);
-        } catch {
-            // Ignore malformed tail
         }
+    } catch {
+        // Ignore malformed lines/tail
     }
 
     if (finalResult) {

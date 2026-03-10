@@ -1,4 +1,5 @@
 import { apiRequest, getApiBaseUrl } from './client';
+import { readNdjsonStream } from './streamReader';
 import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
 import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
 import type { PreprocessingRunSnapshot, PreprocessingRunSummary } from '@/types/preprocessing';
@@ -153,55 +154,10 @@ async function streamLlm(
     throw new Error(message || `LLM request failed (${response.status})`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
   let sawDone = false;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const payload = JSON.parse(trimmed) as LlmStreamEvent;
-        if (payload.type === 'envelope') {
-          const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
-          if (parsed.success) {
-            onEvent({ type: 'envelope', envelope: parsed.data });
-            if (parsed.data.ask_user?.questions?.length) {
-              onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
-            }
-            if (parsed.data.plan_exit?.planMarkdown) {
-              onEvent({
-                type: 'plan_exit',
-                planName: parsed.data.plan_exit.planName,
-                planMarkdown: parsed.data.plan_exit.planMarkdown
-              });
-            }
-          } else {
-            onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
-          }
-          continue;
-        }
-        if (payload.type === 'done') {
-          sawDone = true;
-        }
-        onEvent(payload);
-      } catch {
-        onEvent({ type: 'error', message: 'Failed to parse LLM stream.' });
-      }
-    }
-  }
-
-  if (buffer.trim()) {
+  for await (const payload of readNdjsonStream<LlmStreamEvent>(response)) {
     try {
-      const payload = JSON.parse(buffer.trim()) as LlmStreamEvent;
       if (payload.type === 'envelope') {
         const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
         if (parsed.success) {
@@ -219,14 +175,14 @@ async function streamLlm(
         } else {
           onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
         }
-      } else {
-        if (payload.type === 'done') {
-          sawDone = true;
-        }
-        onEvent(payload);
+        continue;
       }
+      if (payload.type === 'done') {
+        sawDone = true;
+      }
+      onEvent(payload);
     } catch {
-      onEvent({ type: 'error', message: 'Failed to parse LLM stream tail.' });
+      onEvent({ type: 'error', message: 'Failed to parse LLM stream.' });
     }
   }
 

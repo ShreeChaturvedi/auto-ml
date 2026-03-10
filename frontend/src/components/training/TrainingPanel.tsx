@@ -19,12 +19,10 @@ import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
-import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createTrainingAdapter } from './TrainingAdapter';
-import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
-import { ThinkingBlock } from '@/components/training/ThinkingBlock';
+import { ChatMessageList } from '@/components/llm/ChatMessageList';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
@@ -281,48 +279,14 @@ export function TrainingPanel() {
 
         {error && <div className="text-sm text-red-500">{error}</div>}
 
-        <div className="space-y-4">
-          {messages.map((msg) => {
-            if (msg.type === 'user') {
-              return (
-                <div key={msg.id} className="flex flex-col items-end group">
-                  <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
-                    {msg.content}
-                  </div>
-                </div>
-              );
-            }
-            if (msg.type === 'assistant_text') {
-              const cleaned = sanitizeAssistantText(msg.content);
-              if (!cleaned) return null;
-              return (
-                <div key={msg.id} className="flex items-start gap-3 w-full">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
-                    <Wand2 className="h-3 w-3 text-emerald-600" />
-                  </div>
-                  <ProgressiveMessageText
-                    messageId={msg.id}
-                    text={cleaned}
-                    isLive={activeTextMessageId === msg.id}
-                    mode="markdown"
-                    animateOnMount={!hydratedMessageIds.has(msg.id)}
-                    className="llm-assistant-markdown prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
-                  />
-                </div>
-              );
-            }
-            if (msg.type === 'thinking') {
-              return (
-                <ThinkingBlock
-                  key={msg.id}
-                  messageId={msg.id}
-                  content={msg.content}
-                  isComplete={msg.isComplete}
-                  isLive={activeThinkingMessageId === msg.id}
-                  animateOnMount={!hydratedMessageIds.has(msg.id)}
-                />
-              );
-            }
+        <ChatMessageList
+          messages={messages}
+          activeTextMessageId={activeTextMessageId}
+          activeThinkingMessageId={activeThinkingMessageId}
+          hydratedMessageIds={hydratedMessageIds}
+          showAssistantAvatar
+          className="space-y-4"
+          renderExtra={(msg) => {
             if (msg.type === 'ui') {
               return (
                 <div key={msg.id} className="space-y-4 ml-9">
@@ -337,16 +301,9 @@ export function TrainingPanel() {
                 </div>
               );
             }
-            if (msg.type === 'error') {
-              return (
-                <div key={msg.id} className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {msg.message}
-                </div>
-              );
-            }
             return null;
-          })}
-        </div>
+          }}
+        />
 
         {isGenerating && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground ml-9 animate-pulse">

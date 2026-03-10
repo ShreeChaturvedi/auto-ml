@@ -1098,7 +1098,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
               );
             }
 
-            if (msg.type === 'assistant_text') {
             if (msg.type === 'ask_user' && !msg.answered) {
               return (
                 <div key={msg.id} className="space-y-2">

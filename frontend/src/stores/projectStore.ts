@@ -89,12 +89,15 @@ function isProjectColor(value: unknown): value is ProjectColor {
 function normalizeProject(apiProject: ApiProject): Project {
   const phaseState = buildPhaseState(apiProject.metadata);
 
+  const customColor = apiProject.metadata?.customColor;
+
   return {
     id: apiProject.id,
     title: apiProject.name,
     description: apiProject.description,
     icon: apiProject.icon ?? 'Folder',
     color: isProjectColor(apiProject.color) ? apiProject.color : 'blue',
+    ...(typeof customColor === 'string' && customColor ? { customColor } : {}),
     createdAt: new Date(apiProject.createdAt),
     updatedAt: new Date(apiProject.updatedAt),
     ...phaseState,
@@ -120,7 +123,8 @@ function toCreatePayload(form: ProjectFormData): ApiProjectPayload {
     icon: form.icon,
     color: form.color,
     metadata: {
-      ...DEFAULT_PHASE_STATE
+      ...DEFAULT_PHASE_STATE,
+      ...(form.color === 'custom' && form.customColor ? { customColor: form.customColor } : {})
     }
   };
 }
@@ -250,12 +254,23 @@ export const useProjectStore = create<ProjectState>()(
 
           set({ error: undefined });
 
+          const mergedColor = (data.color ?? existing.color) as ProjectColor;
+          const mergedProject = { ...existing, ...data };
+          const apiMeta = toApiMetadata(mergedProject);
+
+          // Persist or clear customColor in metadata
+          if (mergedColor === 'custom' && (data as Partial<Project>).customColor) {
+            apiMeta.customColor = (data as Partial<Project>).customColor;
+          } else if (mergedColor !== 'custom') {
+            delete apiMeta.customColor;
+          }
+
           const payload: Partial<ApiProjectPayload> = {
             name: data.title ?? existing.title,
             description: data.description ?? existing.description,
             icon: data.icon ?? existing.icon,
-            color: (data.color ?? existing.color) as ProjectColor,
-            metadata: toApiMetadata({ ...existing, ...data })
+            color: mergedColor,
+            metadata: apiMeta
           };
 
           try {

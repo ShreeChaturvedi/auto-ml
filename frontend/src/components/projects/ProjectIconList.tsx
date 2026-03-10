@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { PanelLeft } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
+import { resolveProjectColor } from '@/types/project';
 import { cn } from '@/lib/utils';
 import {
     Tooltip,
@@ -61,7 +61,7 @@ export function ProjectIconList({ onToggleCollapse }: ProjectIconListProps) {
             {/* Project items - analogous to PhaseList collapsed items */}
             <div className="space-y-0.5">
                 {projects.map((project) => {
-                    const colorClasses = projectColorClasses[project.color];
+                    const colorClasses = resolveProjectColor(project.color, project.customColor);
                     const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
                         project.icon
                     ];
@@ -79,9 +79,10 @@ export function ProjectIconList({ onToggleCollapse }: ProjectIconListProps) {
                                         <div
                                             className={cn(
                                                 'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
-                                                colorClasses.bg,
-                                                colorClasses.text
+                                                !colorClasses.style && colorClasses.bg,
+                                                !colorClasses.style && colorClasses.text
                                             )}
+                                            style={colorClasses.style}
                                         >
                                             {IconComponent && <IconComponent className="h-3.5 w-3.5" />}
                                         </div>

@@ -8,6 +8,7 @@
  * - Training jobs
  */
 
+import type React from 'react';
 import type { Phase } from './phase';
 
 export interface Project {
@@ -16,6 +17,7 @@ export interface Project {
   description?: string;
   icon: string; // lucide-react icon name
   color: ProjectColor; // Predefined color for icon background
+  customColor?: string; // Hex color when color === 'custom'
   createdAt: Date;
   updatedAt: Date;
 
@@ -41,7 +43,8 @@ export type ProjectColor =
   | 'yellow'
   | 'indigo'
   | 'teal'
-  | 'cyan';
+  | 'cyan'
+  | 'custom';
 
 /**
  * Form data for creating/editing projects
@@ -51,6 +54,7 @@ export interface ProjectFormData {
   description?: string;
   icon: string;
   color: ProjectColor;
+  customColor?: string;
 }
 
 /**
@@ -136,5 +140,43 @@ export const projectColorClasses: Record<ProjectColor, {
     hover: 'hover:bg-cyan-200 dark:hover:bg-cyan-500/30',
     border: 'border-cyan-300 dark:border-cyan-500/40',
     borderAccent: 'border-cyan-700 dark:border-cyan-400'
+  },
+  custom: {
+    bg: 'bg-muted',
+    text: 'text-foreground',
+    hover: 'hover:bg-muted',
+    border: 'border-border',
+    borderAccent: 'border-foreground'
   }
 };
+
+/**
+ * Resolve project color classes, returning inline styles for custom hex colors.
+ * For preset colors, returns the Tailwind classes from `projectColorClasses`.
+ * For custom colors, returns neutral fallback classes plus a `style` object
+ * with the custom hex color applied as background (12% opacity) and border (40% opacity).
+ */
+export function resolveProjectColor(
+  color: ProjectColor,
+  customColor?: string
+): {
+  bg: string;
+  text: string;
+  hover: string;
+  border: string;
+  borderAccent: string;
+  style?: React.CSSProperties;
+} {
+  if (color !== 'custom' || !customColor) {
+    return projectColorClasses[color];
+  }
+
+  return {
+    ...projectColorClasses.custom,
+    style: {
+      backgroundColor: `${customColor}1F`, // ~12% opacity
+      color: customColor,
+      borderColor: `${customColor}66`, // ~40% opacity
+    }
+  };
+}

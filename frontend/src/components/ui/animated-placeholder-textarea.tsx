@@ -23,6 +23,7 @@ interface AnimatedPlaceholderTextareaProps
   extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'placeholder'> {
   placeholders: string[];
   interval?: number;
+  autoResize?: boolean;
 }
 
 // 25% faster than the original 300 ms slide.
@@ -60,7 +61,8 @@ function hasTextareaValue(
 const AnimatedPlaceholderTextarea = forwardRef<
   HTMLTextAreaElement,
   AnimatedPlaceholderTextareaProps
->(({ placeholders, interval = 3000, className, value, style, onFocus, onBlur, disabled, readOnly, ...props }, ref) => {
+>(({ placeholders, interval = 3000, autoResize = false, className, value, style, onFocus, onBlur, disabled, readOnly, ...props }, ref) => {
+  const internalRef = useRef<HTMLTextAreaElement | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -75,6 +77,14 @@ const AnimatedPlaceholderTextarea = forwardRef<
 
   const hasValue = hasTextareaValue(value);
   const prefersReducedMotion = usePrefersReducedMotion();
+
+  // Auto-resize: adjust textarea height to match content
+  useEffect(() => {
+    if (!autoResize || !internalRef.current) return;
+    const el = internalRef.current;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [autoResize, value]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
@@ -172,7 +182,11 @@ const AnimatedPlaceholderTextarea = forwardRef<
   return (
     <div className="relative w-full h-full">
       <textarea
-        ref={ref}
+        ref={(node) => {
+          internalRef.current = node;
+          if (typeof ref === 'function') ref(node);
+          else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = node;
+        }}
         value={value}
         disabled={disabled}
         readOnly={readOnly}
@@ -183,6 +197,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
         style={{
           ...style,
           caretColor: showOverlayCaret ? 'transparent' : style?.caretColor,
+          ...(autoResize ? { overflow: 'hidden' } : {}),
         }}
         onFocus={(event) => {
           setIsFocused(true);

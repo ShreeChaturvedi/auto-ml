@@ -1,6 +1,7 @@
 import type { RichOutput } from '@/lib/api/execution';
 import { parseOutputRefUrl } from '@/lib/api/notebooks';
 import { PlotlyOutput } from '@/components/notebook/PlotlyOutput';
+import { ShadowHtml } from '@/components/notebook/ShadowHtml';
 import { cn } from '@/lib/utils';
 import { Table2 } from 'lucide-react';
 import { formatValue, parseTableData, type TableData } from './cellOutputUtils';
@@ -60,24 +61,7 @@ function OutputBody({ output }: { output: RichOutput }) {
         }
 
         case 'html':
-            return (
-                <iframe
-                    srcDoc={output.content}
-                    sandbox="allow-scripts"
-                    className="w-full border-0 min-h-[100px]"
-                    style={{ height: 'auto' }}
-                    onLoad={(e) => {
-                        const iframe = e.currentTarget;
-                        try {
-                            if (iframe.contentDocument) {
-                                iframe.style.height = iframe.contentDocument.documentElement.scrollHeight + 'px';
-                            }
-                        } catch {
-                            // Cross-origin access may be restricted
-                        }
-                    }}
-                />
-            );
+            return <ShadowHtml html={output.content} />;
 
         case 'chart':
             return <PlotlyOutput data={output.data} />;

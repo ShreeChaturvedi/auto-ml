@@ -167,30 +167,19 @@ describe('CellOutputRenderer', () => {
     });
   });
 
-  // 6. HTML output
+  // 6. HTML output (rendered via Shadow DOM)
   describe('html output', () => {
-    it('renders an <iframe> with srcDoc set to the HTML content', () => {
-      const htmlContent = '<h1>Hello</h1><p>World</p>';
-      render(
+    it('renders a ShadowHtml host element for HTML content', () => {
+      const { container } = render(
         <CellOutputRenderer
-          outputs={[makeOutput({ type: 'html', content: htmlContent })]}
+          outputs={[makeOutput({ type: 'html', content: '<h1>Hello</h1>' })]}
         />
       );
 
-      const iframe = document.querySelector('iframe');
-      expect(iframe).toBeInTheDocument();
-      expect(iframe).toHaveAttribute('srcDoc', htmlContent);
-    });
-
-    it('sandboxes the iframe with allow-scripts only', () => {
-      render(
-        <CellOutputRenderer
-          outputs={[makeOutput({ type: 'html', content: '<p>safe</p>' })]}
-        />
-      );
-
-      const iframe = document.querySelector('iframe');
-      expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
+      // ShadowHtml renders a <div> host; no iframes
+      const host = container.querySelector('div > div');
+      expect(host).toBeInTheDocument();
+      expect(container.querySelector('iframe')).not.toBeInTheDocument();
     });
   });
 
@@ -518,23 +507,20 @@ describe('CellOutputRenderer', () => {
     });
   });
 
-  // 14. HTML output rendering - iframe attributes
-  describe('html output rendering (full attributes)', () => {
-    it('renders iframe with srcDoc and sandbox attributes for complex HTML', () => {
-      const htmlContent = '<div><strong>Bold</strong> text</div>';
-      render(
+  // 14. HTML output rendering — Shadow DOM host
+  describe('html output rendering (Shadow DOM)', () => {
+    it('renders a host div instead of an iframe for HTML output', () => {
+      const { container } = render(
         <CellOutputRenderer
-          outputs={[makeOutput({ type: 'html', content: htmlContent })]}
+          outputs={[makeOutput({ type: 'html', content: '<div><strong>Bold</strong> text</div>' })]}
         />
       );
 
-      const iframe = document.querySelector('iframe')!;
-      expect(iframe).toBeInTheDocument();
-      expect(iframe).toHaveAttribute('srcDoc', htmlContent);
-      expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
-      expect(iframe.className).toContain('w-full');
-      expect(iframe.className).toContain('border-0');
-      expect(iframe.className).toContain('min-h-[100px]');
+      // Should use Shadow DOM host, not iframe
+      expect(container.querySelector('iframe')).not.toBeInTheDocument();
+      // The host div is the ShadowHtml component root
+      const wrapper = container.firstElementChild!;
+      expect(wrapper.children.length).toBeGreaterThan(0);
     });
   });
 

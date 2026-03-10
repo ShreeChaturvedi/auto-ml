@@ -23,14 +23,7 @@ import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
-import {
-  buildInlineModelOptions,
-  DEFAULT_ASSISTANT_MODEL,
-  getDefaultReasoningEffort,
-  getReasoningEffortOptions,
-  type ReasoningEffort
-} from '@/components/llm/modelOptions';
-import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
+import { useModelSelection } from '@/hooks/useModelSelection';
 
 type LeftPaneRenderProps = {
   messages: ChatMessage[];
@@ -73,17 +66,16 @@ export function AgenticShell({
   renderLeftPane
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
-  const [assistantModel, setAssistantModel] = useState(DEFAULT_ASSISTANT_MODEL);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    'high'
-  );
-  const [dismissedModelPromptFor, setDismissedModelPromptFor] = useState<string | null>(null);
   const {
-    featuredModelOptions,
-    allModelOptions,
-    defaultModel,
-    defaultReasoningEffort
-  } = useLlmModelCatalog();
+    selectedModel: assistantModel,
+    reasoningEffort,
+    inlineModelOptions,
+    reasoningEffortOptions,
+    dismissedModelPromptFor,
+    setDismissedModelPromptFor,
+    handleModelChange,
+    setReasoningEffort
+  } = useModelSelection();
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
   const disconnectNotebook = useNotebookStore((s) => s.disconnect);
@@ -114,52 +106,15 @@ export function AgenticShell({
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
-  const inlineModelOptions = buildInlineModelOptions(featuredModelOptions);
   const modelSwitchOptions = inlineModelOptions
     .filter((option) => option.value !== assistantModel);
   const showModelSwitchPrompt = Boolean(modelSwitchError && dismissedModelPromptFor !== modelSwitchError);
-
-  const handleModelChange = (model: string) => {
-    setAssistantModel(model);
-    const nextDefault = getDefaultReasoningEffort(model, allModelOptions);
-    setReasoningEffort(nextDefault);
-  };
-
-  useEffect(() => {
-    if (!assistantModel && defaultModel) {
-      setAssistantModel(defaultModel);
-    }
-  }, [assistantModel, defaultModel]);
-
-  useEffect(() => {
-    if (!allModelOptions.length) {
-      return;
-    }
-
-    const nextModel = allModelOptions.some((option) => option.value === assistantModel)
-      ? assistantModel
-      : defaultModel;
-    if (nextModel !== assistantModel) {
-      setAssistantModel(nextModel);
-    }
-
-    const supportedReasoning = getReasoningEffortOptions(nextModel, allModelOptions);
-    if (!supportedReasoning.some((option) => option.value === reasoningEffort)) {
-      setReasoningEffort(getDefaultReasoningEffort(nextModel, allModelOptions));
-    }
-  }, [allModelOptions, assistantModel, defaultModel, reasoningEffort]);
-
-  useEffect(() => {
-    if (!allModelOptions.length && defaultReasoningEffort) {
-      setReasoningEffort(defaultReasoningEffort);
-    }
-  }, [allModelOptions.length, defaultReasoningEffort]);
 
   useEffect(() => {
     if (!modelSwitchError) {
       setDismissedModelPromptFor(null);
     }
-  }, [modelSwitchError]);
+  }, [modelSwitchError, setDismissedModelPromptFor]);
 
   const submitPrompt = (prompt: string) => {
     const trimmed = prompt.trim();
@@ -320,7 +275,7 @@ export function AgenticShell({
                   modelOptions={inlineModelOptions}
                   reasoningEffort={reasoningEffort}
                   onReasoningEffortChange={setReasoningEffort}
-                  reasoningOptions={getReasoningEffortOptions(assistantModel, allModelOptions)}
+                  reasoningOptions={reasoningEffortOptions}
                   metaSlot={chatMetaSlot}
                   maxWidthClassName="max-w-5xl"
                 />

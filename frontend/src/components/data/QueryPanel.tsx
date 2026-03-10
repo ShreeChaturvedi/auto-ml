@@ -12,7 +12,7 @@
  * docs/design-system.md
  */
 
-import { useState, useCallback, Suspense, lazy, useEffect, useRef, useId } from 'react';
+import { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,156 +20,20 @@ import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses, type ProjectColor } from '@/types/project';
-import { quoteSqlIdentifier } from './sqlIdentifiers';
 import { IconModeToggle } from './IconModeToggle';
 import { NlQueryWorkflow } from './NlQueryWorkflow';
 import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQueryWorkflow';
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
-
-// Generate the array of overlapping strokes for a smooth continuous gradient tail
-function generateTraceLayers() {
-  const layers = 20;
-  const L_max = 0.5;
-  const SUM = 1;
-  
-  return Array.from({ length: layers }).map((_, i) => {
-    const length = L_max - (i * L_max / layers);
-    const shift = L_max - length;
-
-    const ratio = i / (layers - 1);
-    
-    // In Light mode, we just want currentColor fading out via opacity.
-    // In Dark mode, we want a white-hot head that fades to currentColor and also fades out via opacity.
-    // This is cleanly handled purely via CSS variables defined on .execute-icon
-    const color = `color-mix(in srgb, currentColor, var(--comet-head-color) calc(var(--comet-head-max) * ${ratio}))`;
-
-    return {
-      key: i,
-      strokeDasharray: `${length} ${SUM - length}`,
-      stroke: color,
-      strokeOpacity: ratio,
-      animationDelay: `-${(shift / SUM) * 1.5}s`
-    };
-  });
-}
-
-const TRACE_LAYERS = generateTraceLayers();
-
-// Animated lightning bolt icon for execute button.
-// Uses perfectly overlapping layered strokes to create a true continuous metallic gradient shine
-// that flows precisely along the path contour without opacity blending or fixed-axis defects.
-function AnimatedExecuteIcon({
-  isExecuting,
-  colorClassName
-}: {
-  isExecuting: boolean;
-  colorClassName: string;
-}) {
-  if (isExecuting) {
-    return <Loader2 className="h-4 w-4 animate-spin" />;
-  }
-
-  const boltPath = 'M13 2L3 14h9l-1 8 10-12h-9l1-8z';
-
-  return (
-    <svg
-      className={cn('h-4 w-4 shrink-0 execute-icon', colorClassName)}
-      viewBox="0 0 24 24"
-      fill="none"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {/* Base stroke (translucent so the fully opaque shine pops) */}
-      <path
-        d={boltPath}
-        fill="currentColor"
-        fillOpacity="0.1"
-        stroke="currentColor"
-        strokeOpacity="0.3"
-        pathLength={1}
-      />
-      
-      {/* Gradient shimmer: layered traces flow along the path continuously */}
-      {TRACE_LAYERS.map((layer) => (
-        <path
-          key={layer.key}
-          d={boltPath}
-          fill="none"
-          pathLength={1}
-          className="execute-icon-trace-base"
-          style={{
-            stroke: layer.stroke,
-            strokeOpacity: layer.strokeOpacity,
-            strokeDasharray: layer.strokeDasharray,
-            animationDelay: layer.animationDelay
-          }}
-        />
-      ))}
-    </svg>
-  );
-}
-
-// Animated brain icon for English mode execute button.
-// Uses the exact same gradient tail logic to flow along each stroke.
-function AnimatedBrainIcon({
-  colorClassName
-}: {
-  colorClassName: string;
-}) {
-  const brainPaths = [
-    'M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z',
-    'M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z',
-    'M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4',
-    'M17.599 6.5a3 3 0 0 0 .399-1.375',
-    'M6.003 5.125A3 3 0 0 0 6.401 6.5',
-    'M3.477 10.896a4 4 0 0 1 .585-.396',
-    'M19.938 10.5a4 4 0 0 1 .585.396',
-    'M6 18a4 4 0 0 1-1.967-.516',
-    'M19.967 17.484A4 4 0 0 1 18 18',
-  ];
-
-  return (
-    <svg
-      className={cn('h-4 w-4 shrink-0 execute-icon', colorClassName)}
-      viewBox="0 0 24 24"
-      fill="none"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {/* Base strokes (translucent so the fully opaque shine pops) */}
-      <g stroke="currentColor" strokeOpacity="0.3">
-        {brainPaths.map((d, i) => (
-          <path key={`base-${i}`} d={d} pathLength={1} />
-        ))}
-      </g>
-      
-      {/* Gradient shimmer: layered traces flow along each stroke continuously */}
-      <g fill="none">
-        {brainPaths.map((d, pathIdx) => (
-          <g key={`trace-group-${pathIdx}`}>
-            {TRACE_LAYERS.map((layer) => (
-              <path
-                key={`trace-${pathIdx}-${layer.key}`}
-                d={d}
-                pathLength={1}
-                className="execute-icon-trace-base"
-                style={{
-                  stroke: layer.stroke,
-                  strokeOpacity: layer.strokeOpacity,
-                  strokeDasharray: layer.strokeDasharray,
-                  animationDelay: layer.animationDelay
-                }}
-              />
-            ))}
-          </g>
-        ))}
-      </g>
-    </svg>
-  );
-}
+import {
+  createSqlSuggestionCollector,
+  inferSqlSuggestionContext,
+  buildAliasToTableMap,
+  buildSqlMarkers,
+  sanitizeSuggestionToken,
+  getAliasBeforeDot
+} from './sqlIntelligence';
+import { AnimatedExecuteIcon, AnimatedBrainIcon } from './AnimatedQueryIcons';
 
 const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> = {
   blue: {
@@ -232,379 +96,8 @@ const Editor = lazy(() =>
 );
 
 // Import monaco types for completion registration
-import type { IDisposable, editor as MonacoEditor, languages } from 'monaco-editor';
+import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
-
-// SQL keywords for autocomplete
-const SQL_KEYWORDS = [
-  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN',
-  'ORDER BY', 'GROUP BY', 'HAVING', 'LIMIT', 'OFFSET', 'JOIN', 'LEFT JOIN',
-  'RIGHT JOIN', 'INNER JOIN', 'OUTER JOIN', 'ON', 'AS', 'DISTINCT', 'COUNT',
-  'SUM', 'AVG', 'MIN', 'MAX', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'NULL',
-  'IS NULL', 'IS NOT NULL', 'ASC', 'DESC', 'UNION', 'UNION ALL', 'EXCEPT',
-  'INTERSECT', 'EXISTS', 'ALL', 'ANY', 'WITH', 'OVER', 'PARTITION BY',
-  'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'COALESCE', 'NULLIF', 'CAST', 'CONVERT'
-];
-
-const SQL_FUNCTIONS = [
-  {
-    label: 'COUNT',
-    insertText: 'COUNT(${1:*})',
-    documentation: 'Returns the number of input rows matching the expression.'
-  },
-  {
-    label: 'SUM',
-    insertText: 'SUM(${1:column})',
-    documentation: 'Returns the sum of all non-null values.'
-  },
-  {
-    label: 'AVG',
-    insertText: 'AVG(${1:column})',
-    documentation: 'Returns the average of all non-null values.'
-  },
-  {
-    label: 'MIN',
-    insertText: 'MIN(${1:column})',
-    documentation: 'Returns the minimum value.'
-  },
-  {
-    label: 'MAX',
-    insertText: 'MAX(${1:column})',
-    documentation: 'Returns the maximum value.'
-  },
-  {
-    label: 'COALESCE',
-    insertText: 'COALESCE(${1:value}, ${2:fallback})',
-    documentation: 'Returns the first non-null argument.'
-  },
-  {
-    label: 'DATE_TRUNC',
-    insertText: "DATE_TRUNC('${1:day}', ${2:timestamp_column})",
-    documentation: 'Truncates a timestamp to a specified precision.'
-  }
-] as const;
-
-const SQL_SNIPPETS = [
-  {
-    label: 'SELECT template',
-    insertText: 'SELECT ${1:*}\nFROM ${2:table_name}\nLIMIT ${3:100};',
-    documentation: 'Basic SELECT query template.'
-  },
-  {
-    label: 'JOIN template',
-    insertText:
-      'SELECT ${1:t1.*}, ${2:t2.*}\nFROM ${3:table_one} ${4:t1}\nJOIN ${5:table_two} ${6:t2} ON ${7:t1.id} = ${8:t2.id}\nLIMIT ${9:100};',
-    documentation: 'SELECT with INNER JOIN template.'
-  },
-  {
-    label: 'GROUP BY template',
-    insertText:
-      'SELECT ${1:dimension}, ${2:COUNT(*)} AS ${3:metric}\nFROM ${4:table_name}\nGROUP BY ${5:dimension}\nORDER BY ${6:metric} DESC\nLIMIT ${7:100};',
-    documentation: 'Aggregation query template.'
-  }
-] as const;
-
-type SqlSuggestionContext = 'table' | 'alias-column' | 'general';
-
-function normalizeSqlIdentifier(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  return trimmed.replace(/^"(.*)"$/, '$1').replace(/""/g, '"');
-}
-
-function sanitizeSuggestionToken(raw: unknown): string | null {
-  if (typeof raw !== 'string') {
-    return null;
-  }
-
-  const trimmed = raw.trim();
-  return trimmed ? trimmed : null;
-}
-
-function resolveColumnsForTable(
-  tableName: string,
-  columnsByTable: Record<string, string[]>
-): string[] {
-  const normalizedTarget = normalizeSqlIdentifier(tableName).toLowerCase();
-  for (const [knownTableName, columns] of Object.entries(columnsByTable)) {
-    if (normalizeSqlIdentifier(knownTableName).toLowerCase() === normalizedTarget) {
-      return columns;
-    }
-  }
-  return [];
-}
-
-function inferSqlSuggestionContext(prefix: string): SqlSuggestionContext {
-  const trimmed = prefix.trimEnd();
-  if (/[a-zA-Z_][\w$]*\.\s*"?[\w$]*$/i.test(trimmed)) {
-    return 'alias-column';
-  }
-  if (/\b(from|join|update|into|table)\s+"?[\w$]*$/i.test(trimmed)) {
-    return 'table';
-  }
-  return 'general';
-}
-
-function getAliasBeforeDot(prefix: string): string | null {
-  const dotMatch = prefix.match(/([a-zA-Z_][\w$]*)\.\s*"?[\w$]*$/i);
-  return dotMatch?.[1]?.toLowerCase() ?? null;
-}
-
-function buildAliasToTableMap(
-  sqlText: string,
-  tableNames: string[]
-): Record<string, string> {
-  const aliasMap: Record<string, string> = {};
-  const tableRefPattern =
-    /\b(?:from|join)\s+((?:"[^"]+"|[a-zA-Z_][\w$]*)(?:\.(?:"[^"]+"|[a-zA-Z_][\w$]*))?)(?:\s+(?:as\s+)?([a-zA-Z_][\w$]*))?/gi;
-
-  let match = tableRefPattern.exec(sqlText);
-  while (match) {
-    const rawTableRef = match[1];
-    const rawAlias = match[2];
-    const segments = rawTableRef
-      .split('.')
-      .map((segment) => normalizeSqlIdentifier(segment))
-      .filter(Boolean);
-    const tableToken = segments[segments.length - 1] ?? normalizeSqlIdentifier(rawTableRef);
-    const resolvedTable =
-      tableNames.find(
-        (tableName) =>
-          normalizeSqlIdentifier(tableName).toLowerCase() === tableToken.toLowerCase()
-      ) ?? rawTableRef;
-
-    aliasMap[tableToken.toLowerCase()] = resolvedTable;
-    if (rawAlias) {
-      aliasMap[rawAlias.toLowerCase()] = resolvedTable;
-    }
-
-    match = tableRefPattern.exec(sqlText);
-  }
-
-  return aliasMap;
-}
-
-function buildSqlMarkers(sqlText: string): MonacoEditor.IMarkerData[] {
-  const markers: MonacoEditor.IMarkerData[] = [];
-  const openParenStack: Array<{ lineNumber: number; column: number }> = [];
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let singleQuoteStart: { lineNumber: number; column: number } | null = null;
-  let doubleQuoteStart: { lineNumber: number; column: number } | null = null;
-  let lineNumber = 1;
-  let column = 1;
-
-  for (let index = 0; index < sqlText.length; index += 1) {
-    const char = sqlText[index];
-    const nextChar = sqlText[index + 1];
-
-    if (char === '\n') {
-      lineNumber += 1;
-      column = 1;
-      continue;
-    }
-
-    if (!inDoubleQuote && char === '\'') {
-      if (inSingleQuote && nextChar === '\'') {
-        index += 1;
-        column += 2;
-        continue;
-      }
-      inSingleQuote = !inSingleQuote;
-      singleQuoteStart = inSingleQuote ? { lineNumber, column } : null;
-      column += 1;
-      continue;
-    }
-
-    if (!inSingleQuote && char === '"') {
-      if (inDoubleQuote && nextChar === '"') {
-        index += 1;
-        column += 2;
-        continue;
-      }
-      inDoubleQuote = !inDoubleQuote;
-      doubleQuoteStart = inDoubleQuote ? { lineNumber, column } : null;
-      column += 1;
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote) {
-      if (char === '(') {
-        openParenStack.push({ lineNumber, column });
-      } else if (char === ')') {
-        const openParen = openParenStack.pop();
-        if (!openParen) {
-          markers.push({
-            severity: 8,
-            message: 'Unmatched closing parenthesis',
-            startLineNumber: lineNumber,
-            startColumn: column,
-            endLineNumber: lineNumber,
-            endColumn: column + 1
-          });
-        }
-      }
-    }
-
-    column += 1;
-  }
-
-  for (const openParen of openParenStack) {
-    markers.push({
-      severity: 8,
-      message: 'Unclosed opening parenthesis',
-      startLineNumber: openParen.lineNumber,
-      startColumn: openParen.column,
-      endLineNumber: openParen.lineNumber,
-      endColumn: openParen.column + 1
-    });
-  }
-
-  if (singleQuoteStart) {
-    markers.push({
-      severity: 8,
-      message: 'Unclosed single quote',
-      startLineNumber: singleQuoteStart.lineNumber,
-      startColumn: singleQuoteStart.column,
-      endLineNumber: singleQuoteStart.lineNumber,
-      endColumn: singleQuoteStart.column + 1
-    });
-  }
-
-  if (doubleQuoteStart) {
-    markers.push({
-      severity: 8,
-      message: 'Unclosed double quote',
-      startLineNumber: doubleQuoteStart.lineNumber,
-      startColumn: doubleQuoteStart.column,
-      endLineNumber: doubleQuoteStart.lineNumber,
-      endColumn: doubleQuoteStart.column + 1
-    });
-  }
-
-  return markers;
-}
-
-type SqlCompletionRange = NonNullable<languages.CompletionItem['range']>;
-
-function createSqlSuggestionCollector({
-  monaco,
-  range,
-  safeTableNames,
-  columnsByTable
-}: {
-  monaco: Monaco;
-  range: SqlCompletionRange;
-  safeTableNames: string[];
-  columnsByTable: Record<string, string[]>;
-}) {
-  const suggestions: languages.CompletionItem[] = [];
-
-  const addKeywordSuggestions = (priority: string) => {
-    SQL_KEYWORDS.forEach((keyword) => {
-      suggestions.push({
-        label: keyword,
-        kind: monaco.languages.CompletionItemKind.Keyword,
-        insertText: keyword,
-        range,
-        detail: 'SQL Keyword',
-        sortText: `${priority}${keyword}`
-      });
-    });
-  };
-
-  const addFunctionSuggestions = (priority: string) => {
-    SQL_FUNCTIONS.forEach((fn) => {
-      suggestions.push({
-        label: fn.label,
-        kind: monaco.languages.CompletionItemKind.Function,
-        insertText: fn.insertText,
-        insertTextRules:
-          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        range,
-        detail: 'SQL Function',
-        documentation: fn.documentation,
-        sortText: `${priority}${fn.label}`
-      });
-    });
-  };
-
-  const addTableSuggestions = (priority: string) => {
-    safeTableNames.forEach((tableName) => {
-      const safeTableName = quoteSqlIdentifier(tableName);
-      suggestions.push({
-        label: tableName,
-        kind: monaco.languages.CompletionItemKind.Class,
-        insertText: safeTableName,
-        range,
-        detail: 'Table',
-        documentation: `Database table: ${safeTableName}`,
-        filterText: tableName,
-        sortText: `${priority}${tableName}`
-      });
-    });
-  };
-
-  const addColumnSuggestionsForTable = (tableName: string, priority: string) => {
-    const columns = resolveColumnsForTable(tableName, columnsByTable);
-    columns.forEach((rawColumnName) => {
-      const columnName = sanitizeSuggestionToken(rawColumnName);
-      if (!columnName) {
-        return;
-      }
-
-      suggestions.push({
-        label: columnName,
-        kind: monaco.languages.CompletionItemKind.Field,
-        insertText: quoteSqlIdentifier(columnName),
-        range,
-        detail: `Column in ${tableName}`,
-        documentation: `Column from ${tableName}`,
-        filterText: columnName,
-        sortText: `${priority}${tableName}.${columnName}`
-      });
-    });
-  };
-
-  const addSnippetSuggestions = (priority: string) => {
-    SQL_SNIPPETS.forEach((snippet) => {
-      suggestions.push({
-        label: snippet.label,
-        kind: monaco.languages.CompletionItemKind.Snippet,
-        insertText: snippet.insertText,
-        insertTextRules:
-          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        range,
-        documentation: snippet.documentation,
-        sortText: `${priority}${snippet.label}`
-      });
-    });
-  };
-
-  const addBaselineSuggestions = () => {
-    addSnippetSuggestions('0');
-    addKeywordSuggestions('1');
-    addFunctionSuggestions('2');
-    addTableSuggestions('3');
-    Object.keys(columnsByTable).forEach((tableName) => {
-      const safeTableName = sanitizeSuggestionToken(tableName);
-      if (!safeTableName) {
-        return;
-      }
-      addColumnSuggestionsForTable(safeTableName, '4');
-    });
-  };
-
-  return {
-    suggestions,
-    addKeywordSuggestions,
-    addFunctionSuggestions,
-    addTableSuggestions,
-    addColumnSuggestionsForTable,
-    addSnippetSuggestions,
-    addBaselineSuggestions
-  };
-}
 
 interface QueryPanelProps {
   onExecute: (query: string, mode: QueryMode) => void;
@@ -665,10 +158,10 @@ function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-export function QueryPanel({ 
-  onExecute, 
-  isExecuting = false, 
-  className, 
+export function QueryPanel({
+  onExecute,
+  isExecuting = false,
+  className,
   tableNames = [],
   columnsByTable = {},
   collapsed = false,
@@ -725,8 +218,6 @@ export function QueryPanel({
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
     resolveEditorTheme(appTheme)
   );
-  const iconGradientIdSeed = useId();
-  const iconGradientId = `executeGradient-${iconGradientIdSeed.replace(/:/g, '')}`;
   const { activeProjectId, projects } = useProjectStore();
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const executeIconColorClass = activeProject
@@ -737,12 +228,12 @@ export function QueryPanel({
     : undefined;
   const monacoRef = useRef<Monaco | null>(null);
   const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
-  
+
   // Store completion provider disposable for cleanup
   const completionProviderRef = useRef<IDisposable | null>(null);
   const validationSubscriptionRef = useRef<IDisposable | null>(null);
   const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
-  
+
   // Cleanup completion provider on unmount
   useEffect(() => {
     return () => {
@@ -1116,7 +607,6 @@ export function QueryPanel({
           >
             <AnimatedExecuteIcon
               isExecuting={isExecuting}
-              gradientId={iconGradientId}
               colorClassName={executeIconColorClass}
             />
             {isExecuting ? 'Executing...' : 'Execute'}
@@ -1140,7 +630,6 @@ export function QueryPanel({
             ) : (
               <>
                 <AnimatedBrainIcon
-                  gradientId={iconGradientId}
                   colorClassName={executeIconColorClass}
                 />
                 Execute

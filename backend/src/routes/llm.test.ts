@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../config.js';
 import { canListen } from '../tests/canListen.js';
 
-import { createLlmRouter } from './llm.js';
+import { createLlmRouter } from './llm/index.js';
 
 const {
   createLlmClientMock,

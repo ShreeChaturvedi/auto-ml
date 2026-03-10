@@ -13,7 +13,7 @@ import { createDocumentRouter } from './routes/documents.js';
 import executionRouter from './routes/execution.js';
 import { createFeatureEngineeringRouter } from './routes/featureEngineering.js';
 import { registerHealthRoutes } from './routes/health.js';
-import { createLlmRouter } from './routes/llm.js';
+import { createLlmRouter } from './routes/llm/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import modelRouter from './routes/models.js';
 import notebookRouter from './routes/notebooks.js';

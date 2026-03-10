@@ -2,7 +2,7 @@ import type { RichOutput } from '@/lib/api/execution';
 import { parseOutputRefUrl } from '@/lib/api/notebooks';
 import { PlotlyOutput } from '@/components/notebook/PlotlyOutput';
 import { cn } from '@/lib/utils';
-import { AlertCircle, Table2 } from 'lucide-react';
+import { Table2 } from 'lucide-react';
 import { formatValue, parseTableData, type TableData } from './cellOutputUtils';
 
 interface CellOutputRendererProps {
@@ -31,15 +31,9 @@ function OutputBody({ output }: { output: RichOutput }) {
 
         case 'error':
             return (
-                <div className="space-y-1">
-                    <div className="flex items-center gap-1 text-[11px] text-red-500">
-                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="font-semibold">Error</span>
-                    </div>
-                    <pre className="whitespace-pre-wrap break-words border-l-2 border-red-500/30 pl-3 font-mono text-[12px] leading-5 text-red-400">
-                        {output.content}
-                    </pre>
-                </div>
+                <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-red-400">
+                    {output.content}
+                </pre>
             );
 
         case 'table':

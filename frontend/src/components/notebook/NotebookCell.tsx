@@ -19,7 +19,6 @@ import {
   Square,
   Trash2,
   Loader2,
-  AlertCircle,
   Copy,
   ChevronDown,
   ChevronUp,
@@ -290,11 +289,6 @@ export function NotebookCellComponent({
               <span className="text-xs text-muted-foreground/60">
                 · {formatExecutionTime(cell.executionDurationMs)}
               </span>
-            )}
-
-            {/* Error icon (no text) — only when error with no output */}
-            {cell.executionStatus === 'error' && richOutputs.length === 0 && (
-              <AlertCircle className="h-3.5 w-3.5 text-destructive" />
             )}
 
             {/* Lock badges */}

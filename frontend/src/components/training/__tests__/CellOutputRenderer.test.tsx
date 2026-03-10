@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { RichOutput } from '@/lib/api/execution';
@@ -73,17 +73,7 @@ describe('CellOutputRenderer', () => {
 
   // 2. Error output
   describe('error output', () => {
-    it('renders an error header with "Error" text', () => {
-      render(
-        <CellOutputRenderer
-          outputs={[makeOutput({ type: 'error', content: 'Traceback (most recent call last):\n  TypeError: bad' })]}
-        />
-      );
-
-      expect(screen.getByText('Error')).toBeInTheDocument();
-    });
-
-    it('renders the traceback content in a <pre> element', () => {
+    it('renders error content in a red <pre> element', () => {
       const traceback = 'Traceback (most recent call last):\n  File "main.py", line 1\nValueError: oops';
       render(
         <CellOutputRenderer
@@ -91,43 +81,14 @@ describe('CellOutputRenderer', () => {
         />
       );
 
-      // Use custom matcher since getByText normalizes whitespace in multiline strings
       const pre = screen.getByText((_content, element) => {
         return element?.tagName === 'PRE' && element.textContent === traceback;
       });
       expect(pre).toBeInTheDocument();
       expect(pre.tagName).toBe('PRE');
-    });
-
-    it('applies red styling to the error container', () => {
-      render(
-        <CellOutputRenderer
-          outputs={[makeOutput({ type: 'error', content: 'err' })]}
-        />
-      );
-
-      // The "Error" label span lives inside a div with text-red-500
-      const errorLabel = screen.getByText('Error');
-      const labelContainer = errorLabel.closest('div');
-      expect(labelContainer?.className).toContain('text-red-500');
-
-      // The traceback pre has text-red-400 and border-red styling
-      const pre = screen.getByText('err');
       expect(pre.className).toContain('text-red-400');
-      expect(pre.className).toContain('border-red-500/30');
-    });
-
-    it('renders an AlertCircle icon (svg) beside the error label', () => {
-      render(
-        <CellOutputRenderer
-          outputs={[makeOutput({ type: 'error', content: 'fail' })]}
-        />
-      );
-
-      // lucide-react renders an <svg> element within the error header
-      const errorHeader = screen.getByText('Error').closest('div')!;
-      const svg = errorHeader.querySelector('svg');
-      expect(svg).toBeInTheDocument();
+      // No separate "Error" label — the card's left border signals error status
+      expect(screen.queryByText('Error')).not.toBeInTheDocument();
     });
   });
 
@@ -477,7 +438,6 @@ describe('CellOutputRenderer', () => {
       expect(img).toHaveAttribute('src', 'data:image/png;base64,abc123');
 
       // Error output
-      expect(screen.getByText('Error')).toBeInTheDocument();
       expect(screen.getByText('RuntimeError: division by zero')).toBeInTheDocument();
 
       // Verify order: text comes before image, image before error
@@ -492,8 +452,9 @@ describe('CellOutputRenderer', () => {
       // Second child is the <img>
       expect(children[1].tagName).toBe('IMG');
 
-      // Third child is the error <div>
-      expect(within(children[2] as HTMLElement).getByText('Error')).toBeInTheDocument();
+      // Third child is the error <pre>
+      expect(children[2].tagName).toBe('PRE');
+      expect(children[2].textContent).toBe('RuntimeError: division by zero');
     });
 
     it('renders text + table + chart together', () => {
@@ -541,7 +502,7 @@ describe('CellOutputRenderer', () => {
 
   // 13. Error output rendering - full integration check
   describe('error output rendering (full integration)', () => {
-    it('renders error with AlertCircle icon, "Error" text, and error message in red pre block', () => {
+    it('renders error message as red pre without header label or icon', () => {
       const errorMessage = 'NameError: name "foo" is not defined';
       render(
         <CellOutputRenderer
@@ -549,20 +510,11 @@ describe('CellOutputRenderer', () => {
         />
       );
 
-      // "Error" label text is present
-      const errorLabel = screen.getByText('Error');
-      expect(errorLabel).toBeInTheDocument();
-
-      // AlertCircle renders as an <svg> sibling of the error label
-      const errorHeader = errorLabel.closest('div')!;
-      const svg = errorHeader.querySelector('svg');
-      expect(svg).toBeInTheDocument();
-
-      // Error message is rendered in a <pre> with red styling
       const pre = screen.getByText(errorMessage);
       expect(pre.tagName).toBe('PRE');
       expect(pre.className).toContain('text-red-400');
-      expect(pre.className).toContain('border-red-500/30');
+      // Red left border on the card is the error signal — no label/icon here
+      expect(screen.queryByText('Error')).not.toBeInTheDocument();
     });
   });
 

@@ -222,11 +222,11 @@ describe('NotebookCellComponent', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Error badge suppression when richOutputs contain error outputs
+  // Error status — red left border is the sole indicator
   // -----------------------------------------------------------------------
 
-  describe('error status badge suppression', () => {
-    it('does NOT show header Error badge when executionStatus is error AND richOutputs has error outputs', () => {
+  describe('error status indicators', () => {
+    it('renders error output without redundant Error label', () => {
       renderCell(
         createCell({
           executionStatus: 'error',
@@ -240,23 +240,13 @@ describe('NotebookCellComponent', () => {
         })
       );
 
-      // The output area should be rendered with the error content
       expect(screen.getByText('OUTPUT')).toBeInTheDocument();
       expect(screen.getByText('ValueError: something went wrong')).toBeInTheDocument();
-
-      // The header Error badge should NOT be present because richOutputs.length > 0
-      // The condition is: cell.executionStatus === 'error' && richOutputs.length === 0
-      // Find all elements with "Error" text - the one in the output area is from CellOutputRenderer
-      const errorElements = screen.getAllByText('Error');
-      // Only the CellOutputRenderer error label should exist, not the header badge
-      errorElements.forEach((el) => {
-        // The header badge uses text-destructive class, the output renderer uses text-red-500
-        const parentDiv = el.closest('div');
-        expect(parentDiv?.className).not.toContain('text-destructive');
-      });
+      // No "Error" label — the red left border on the card is the indicator
+      expect(screen.queryByText('Error')).not.toBeInTheDocument();
     });
 
-    it('shows header error icon when executionStatus is error AND richOutputs is empty', () => {
+    it('shows no error icon in header when error has no output', () => {
       const { container } = render(
         <ThemeProvider defaultTheme="light">
           <NotebookCellComponent
@@ -275,9 +265,9 @@ describe('NotebookCellComponent', () => {
         </ThemeProvider>
       );
 
-      // Error indicator is now icon-only (AlertCircle SVG with text-destructive)
+      // Red left border is the only error signal — no icons or badges in header
       const errorIcon = container.querySelector('svg.text-destructive');
-      expect(errorIcon).toBeInTheDocument();
+      expect(errorIcon).not.toBeInTheDocument();
     });
   });
 

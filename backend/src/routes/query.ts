@@ -11,7 +11,7 @@ import {
   type NlModelWorkEvent,
   type NlProgressEvent,
   type NlProgressStatus
-} from '../services/nlToSqlV2.js';
+} from '../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 

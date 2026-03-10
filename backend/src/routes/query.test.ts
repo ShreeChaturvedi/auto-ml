@@ -19,7 +19,7 @@ vi.mock('../services/sqlExecutor.js', () => ({
   executeReadOnlyQuery: vi.fn()
 }));
 
-vi.mock('../services/nlToSqlV2.js', () => ({
+vi.mock('../services/nlToSql/index.js', () => ({
   generateSqlFromNaturalLanguageV2: vi.fn(),
   repairSqlFromExecutionErrorV2: vi.fn()
 }));
@@ -30,7 +30,7 @@ vi.mock('../services/nlSuggestions.js', () => ({
 
 import { hasDatabaseConfiguration } from '../db.js';
 import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
-import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
+import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
 import { canListen } from '../tests/canListen.js';

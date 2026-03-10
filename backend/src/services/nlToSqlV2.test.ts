@@ -4,7 +4,7 @@ import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile } from '../types/dataset.js';
  
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from './llm/llmClient.js';
-import { createNl2SqlService } from './nlToSqlV2.js';
+import { createNl2SqlService } from './nlToSql/index.js';
 
 function buildDataset(overrides: Partial<DatasetProfile> = {}): DatasetProfile {
   return {

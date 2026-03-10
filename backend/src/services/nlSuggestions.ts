@@ -7,6 +7,8 @@ import { createDatasetRepository, type DatasetRepository } from '../repositories
 import type { DatasetProfile } from '../types/dataset.js';
 
 import { createLlmClient, type LlmClient, type LlmMessage } from './llm/llmClient.js';
+import { extractJson } from './nlToSql/jsonNormalization.js';
+import { fallbackTableName, normalizeTableName } from './nlToSql/tableResolution.js';
 
 const DEFAULT_SUGGESTION_COUNT = 8;
 const MAX_TABLES_IN_PROMPT = 24;
@@ -74,29 +76,6 @@ const SUGGESTION_SCHEMA = z.object({
 
 const suggestionCache = new Map<string, NlSuggestionCacheEntry>();
 
-function normalizeTableName(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return '';
-  }
-  return trimmed.replace(/^"(.*)"$/, '$1').replace(/""/g, '"');
-}
-
-function fallbackTableName(filename: string, datasetId: string): string {
-  const baseName = filename.replace(/\.[^/.]+$/, '');
-  const safe = baseName
-    .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/_$/, '')
-    .replace(/^[^a-zA-Z]/, `table_${datasetId.slice(0, 6)}_`)
-    .toLowerCase();
-
-  if (!safe) {
-    return `table_${datasetId.slice(0, 8)}`;
-  }
-
-  return safe.slice(0, 63);
-}
 
 function normalizeColumnType(value: string): string {
   const trimmed = value.trim().toLowerCase();
@@ -252,31 +231,6 @@ function buildPrompt(params: {
   ].join('\n');
 }
 
-function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    throw new Error('Suggestion model returned an empty response.');
-  }
-
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    // Continue to fenced parsing.
-  }
-
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    return JSON.parse(fenced[1].trim());
-  }
-
-  const start = trimmed.indexOf('{');
-  const end = trimmed.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    return JSON.parse(trimmed.slice(start, end + 1));
-  }
-
-  throw new Error('Suggestion response did not contain valid JSON.');
-}
 
 function normalizeSuggestionId(prompt: string, index: number): string {
   const base = prompt

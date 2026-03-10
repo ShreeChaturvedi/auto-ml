@@ -62,6 +62,54 @@ interface JupyterMessage {
 const kernels = new Map<string, KernelConnection>();
 
 /* ------------------------------------------------------------------ */
+/*  Kernel init code — runs once after a kernel is first connected    */
+/* ------------------------------------------------------------------ */
+
+const KERNEL_INIT_CODE = `
+import os, sys
+from pathlib import Path
+
+# Environment setup
+os.environ["MPLBACKEND"] = "Agg"
+os.environ.setdefault("PIP_TARGET", "/workspace/.python")
+if "/workspace/.python" not in sys.path:
+    sys.path.insert(0, "/workspace/.python")
+try:
+    os.chdir("/workspace")
+except OSError:
+    pass
+
+# Dataset path resolver
+def resolve_dataset_path(filename, dataset_id=None):
+    candidates = [
+        Path("/workspace") / filename,
+        Path("/workspace/datasets") / filename,
+        Path("/datasets") / filename,
+    ]
+    if dataset_id:
+        candidates.extend([
+            Path("/workspace/datasets") / dataset_id / filename,
+            Path("/datasets") / dataset_id / filename,
+        ])
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    for root in [Path("/workspace"), Path("/workspace/datasets"), Path("/datasets")]:
+        if root.exists():
+            matches = list(root.rglob(filename))
+            if matches:
+                return str(matches[0])
+    return str(candidates[0])
+
+# DataFrame display helper
+def _display_df(df):
+    from IPython.display import display, HTML
+    display(HTML(df.to_html(max_rows=100, max_cols=50, notebook=True)))
+
+print("Kernel initialized")
+`.trim();
+
+/* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -175,6 +223,16 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
         ws,
         sessionId,
     });
+
+    // Run kernel init code (environment setup, helpers)
+    try {
+        await execute(container, KERNEL_INIT_CODE, 30_000);
+    } catch (err) {
+        console.warn(
+            `[kernelManager] Kernel init failed for container ${container.id}:`,
+            err instanceof Error ? err.message : err,
+        );
+    }
 }
 
 /**
@@ -345,6 +403,17 @@ export async function execute(
 
                     if (content.execution_count != null) {
                         executionOrder = content.execution_count as number;
+                    }
+
+                    // Consolidate accumulated stdout/stderr into outputs
+                    // so they get persisted alongside rich outputs.
+                    if (stdout) {
+                        outputs.unshift({ type: 'text', content: stdout });
+                    }
+                    if (stderr && !errorMessage) {
+                        // Only add stderr as a separate output if it's not
+                        // already represented by an error traceback output.
+                        outputs.push({ type: 'error', content: stderr });
                     }
 
                     // Done — resolve

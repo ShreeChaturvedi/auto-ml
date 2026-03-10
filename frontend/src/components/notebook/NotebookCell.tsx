@@ -20,7 +20,6 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
-  Clock,
   Copy,
   ChevronDown,
   ChevronUp,
@@ -91,14 +90,11 @@ interface NotebookCellComponentProps {
   onInterrupt?: () => void;
 }
 
-function getExecutionPrompt(cell: NotebookCell): string {
-  if (cell.executionStatus === 'running') {
-    return '[*]';
-  }
-  if (cell.executionOrder == null) {
-    return '[ ]';
-  }
-  return `[${cell.executionOrder}${cell.isDirty ? '*' : ''}]`;
+function formatExecutionTime(ms: number): string {
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
 }
 
 export function NotebookCellComponent({
@@ -169,7 +165,6 @@ export function NotebookCellComponent({
   }, [projectId]);
 
   const isRunning = cell.executionStatus === 'running';
-  const executionPrompt = getExecutionPrompt(cell);
 
   const richOutputs = useMemo(() => {
     const baseOutputs = cell.output.map((output) => ({
@@ -239,62 +234,15 @@ export function NotebookCellComponent({
     <div
       className={cn(
         'group overflow-hidden rounded-lg border bg-card transition-colors duration-150',
-        isRunning && 'border-primary/40 ring-1 ring-primary/20',
-        cell.executionStatus === 'error' && 'border-destructive/50',
+        isRunning && 'border-l-2 border-l-primary',
+        cell.executionStatus === 'error' && 'border-l-2 border-l-destructive',
         isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20'
       )}
     >
-      <div className="flex h-9 items-center justify-between border-b px-3">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px]">
-            Python
-          </Badge>
-
-          <span className="font-mono text-[10px] text-muted-foreground">
-            In {executionPrompt}
-          </span>
-
-          {isRunning && (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Running
-            </span>
-          )}
-
-          {cell.executionStatus === 'error' && richOutputs.length === 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-destructive">
-              <AlertCircle className="h-3 w-3" />
-              Error
-            </span>
-          )}
-
-          {cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              {cell.executionDurationMs}ms
-            </span>
-          )}
-
-          {isLocked && lockOwner === 'ai' && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-purple-500/30 bg-purple-100/50 text-[10px] text-purple-600 dark:bg-purple-900/30"
-            >
-              <Bot className="h-3 w-3" />
-              AI editing
-            </Badge>
-          )}
-
-          {isLocked && lockOwner === 'user' && (
-            <Badge variant="outline" className="gap-1 text-[10px]">
-              <Lock className="h-3 w-3" />
-              Editing
-            </Badge>
-          )}
-        </div>
-
-        <TooltipProvider>
-          <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+      <div className="flex h-9 items-center justify-between border-b px-2">
+        <div className="flex items-center gap-1.5">
+          {/* Run/Stop button — always visible, left-aligned */}
+          <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 {isRunning ? (
@@ -321,9 +269,57 @@ export function NotebookCellComponent({
                   </Button>
                 )}
               </TooltipTrigger>
-              <TooltipContent>{isRunning ? 'Stop execution' : 'Run cell'}</TooltipContent>
+              <TooltipContent side="bottom">
+                {isRunning ? 'Stop execution' : 'Run cell (Shift+Enter)'}
+              </TooltipContent>
             </Tooltip>
+          </TooltipProvider>
 
+          {/* Execution count or spinner */}
+          {isRunning ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          ) : (
+            <span className="font-mono text-xs text-muted-foreground">
+              {cell.executionOrder != null
+                ? `[${cell.executionOrder}${cell.isDirty ? '*' : ''}]`
+                : '[ ]'}
+            </span>
+          )}
+
+          {/* Execution time — subtle, formatted */}
+          {!isRunning && cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
+            <span className="text-xs text-muted-foreground/60">
+              · {formatExecutionTime(cell.executionDurationMs)}
+            </span>
+          )}
+
+          {/* Error icon (no text) — only when error with no output */}
+          {cell.executionStatus === 'error' && richOutputs.length === 0 && (
+            <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+          )}
+
+          {/* Lock badges */}
+          {isLocked && lockOwner === 'ai' && (
+            <Badge
+              variant="outline"
+              className="gap-1 border-purple-500/30 bg-purple-100/50 text-[10px] text-purple-600 dark:bg-purple-900/30"
+            >
+              <Bot className="h-3 w-3" />
+              AI editing
+            </Badge>
+          )}
+
+          {isLocked && lockOwner === 'user' && (
+            <Badge variant="outline" className="gap-1 text-[10px]">
+              <Lock className="h-3 w-3" />
+              Editing
+            </Badge>
+          )}
+        </div>
+
+        {/* Delete — hover-reveal, neutral at rest */}
+        <TooltipProvider>
+          <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -331,13 +327,13 @@ export function NotebookCellComponent({
                   size="icon-xs"
                   onClick={onDelete}
                   disabled={isLocked}
-                  className="h-6 w-6 text-destructive hover:text-destructive"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
                   aria-label="Delete cell"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Delete cell</TooltipContent>
+              <TooltipContent side="bottom">Delete cell</TooltipContent>
             </Tooltip>
           </div>
         </TooltipProvider>

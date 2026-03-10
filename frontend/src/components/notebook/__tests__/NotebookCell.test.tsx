@@ -72,7 +72,7 @@ function renderCell(cell: NotebookCell) {
 }
 
 describe('NotebookCellComponent', () => {
-  it('shows running execution prompt and stop button', () => {
+  it('shows spinner and stop button when running', () => {
     const runningCell = createCell({
       executionStatus: 'running',
       executionOrder: 2
@@ -80,13 +80,13 @@ describe('NotebookCellComponent', () => {
 
     renderCell(runningCell);
 
-    expect(screen.getByText('In [*]')).toBeInTheDocument();
-    expect(screen.getByText('Running')).toBeInTheDocument();
+    // Spinner replaces execution count; no "Running" text
+    expect(screen.queryByText(/\[/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Stop execution' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Run cell' })).not.toBeInTheDocument();
   });
 
-  it('renders execution order and dirty marker like Jupyter prompts', () => {
+  it('renders execution order, formatted time, and dirty marker', () => {
     const cleanCell = createCell({
       executionStatus: 'success',
       executionOrder: 3,
@@ -107,8 +107,8 @@ describe('NotebookCellComponent', () => {
       </ThemeProvider>
     );
 
-    expect(screen.getByText('In [3]')).toBeInTheDocument();
-    expect(screen.getByText('120ms')).toBeInTheDocument();
+    expect(screen.getByText('[3]')).toBeInTheDocument();
+    expect(screen.getByText('· 0.1s')).toBeInTheDocument();
     expect(screen.queryByText('Success')).not.toBeInTheDocument();
 
     const dirtyCell = createCell({
@@ -131,15 +131,16 @@ describe('NotebookCellComponent', () => {
       </ThemeProvider>
     );
 
-    expect(screen.getByText('In [3*]')).toBeInTheDocument();
+    expect(screen.getByText('[3*]')).toBeInTheDocument();
   });
 
-  it('shows Python language badge and exposes code actions', () => {
+  it('exposes run and delete code actions', () => {
     renderCell(createCell());
 
-    expect(screen.getByText('Python')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run cell' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete cell' })).toBeInTheDocument();
+    // Python badge was removed — all code cells are Python
+    expect(screen.queryByText('Python')).not.toBeInTheDocument();
   });
 
   it('shows output controls and supports collapsing and copying output', async () => {
@@ -255,21 +256,28 @@ describe('NotebookCellComponent', () => {
       });
     });
 
-    it('shows header Error badge when executionStatus is error AND richOutputs is empty', () => {
-      renderCell(
-        createCell({
-          executionStatus: 'error',
-          output: []
-        })
+    it('shows header error icon when executionStatus is error AND richOutputs is empty', () => {
+      const { container } = render(
+        <ThemeProvider defaultTheme="light">
+          <NotebookCellComponent
+            cell={createCell({
+              executionStatus: 'error',
+              output: []
+            })}
+            isLocked={false}
+            lockOwner={null}
+            projectId="project-1"
+            onContentChange={vi.fn()}
+            onDelete={vi.fn()}
+            onRun={vi.fn()}
+            onInterrupt={vi.fn()}
+          />
+        </ThemeProvider>
       );
 
-      // The header Error badge should be present because richOutputs.length === 0
-      const errorBadge = screen.getByText('Error');
-      expect(errorBadge).toBeInTheDocument();
-
-      // Verify it's the header badge (uses text-destructive styling)
-      const parentSpan = errorBadge.closest('span');
-      expect(parentSpan?.className).toContain('text-destructive');
+      // Error indicator is now icon-only (AlertCircle SVG with text-destructive)
+      const errorIcon = container.querySelector('svg.text-destructive');
+      expect(errorIcon).toBeInTheDocument();
     });
   });
 

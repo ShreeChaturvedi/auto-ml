@@ -446,7 +446,7 @@ export function NotebookCellComponent({
             lineNumbersMinChars: 3,
             glyphMargin: false,
             folding: false,
-            lineDecorationsWidth: 0,
+            lineDecorationsWidth: 8,
             renderLineHighlight: 'line',
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,

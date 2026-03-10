@@ -27,6 +27,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-input';
 import { cn } from '@/lib/utils';
+import { formatFileSize } from '@/types/file';
 import { useExecutionStore } from '@/stores/executionStore';
 import { useDataStore } from '@/stores/dataStore';
 import { searchPackages, fetchPyPIPackageDetails, type PyPIPackageDetails, type PackageInfo } from '@/lib/api/execution';
@@ -52,14 +53,6 @@ const PACKAGE_PLACEHOLDERS = [
   'numpy', 'pandas', 'scikit-learn', 'matplotlib', 'seaborn',
   'xgboost', 'lightgbm', 'optuna', 'tensorflow', 'pytorch'
 ];
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
 
 /**
  * Clean up PyPI descriptions for rendering as markdown.
@@ -329,7 +322,7 @@ function PackageDialog({
               {displaySize > 0 && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Download className="h-3.5 w-3.5 shrink-0" />
-                  <span>{formatBytes(displaySize)}</span>
+                  <span>{formatFileSize(displaySize)}</span>
                 </div>
               )}
             </div>

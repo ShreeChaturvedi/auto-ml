@@ -68,7 +68,7 @@ function OutputBody({ output }: { output: RichOutput }) {
             return (
                 <iframe
                     srcDoc={output.content}
-                    sandbox="allow-scripts allow-same-origin"
+                    sandbox="allow-scripts"
                     className="w-full border-0 min-h-[100px]"
                     style={{ height: 'auto' }}
                     onLoad={(e) => {

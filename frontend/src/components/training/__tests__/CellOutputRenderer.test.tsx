@@ -221,7 +221,7 @@ describe('CellOutputRenderer', () => {
       expect(iframe).toHaveAttribute('srcDoc', htmlContent);
     });
 
-    it('sandboxes the iframe with allow-scripts and allow-same-origin', () => {
+    it('sandboxes the iframe with allow-scripts only', () => {
       render(
         <CellOutputRenderer
           outputs={[makeOutput({ type: 'html', content: '<p>safe</p>' })]}
@@ -229,7 +229,7 @@ describe('CellOutputRenderer', () => {
       );
 
       const iframe = document.querySelector('iframe');
-      expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin');
+      expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
     });
   });
 
@@ -579,7 +579,7 @@ describe('CellOutputRenderer', () => {
       const iframe = document.querySelector('iframe')!;
       expect(iframe).toBeInTheDocument();
       expect(iframe).toHaveAttribute('srcDoc', htmlContent);
-      expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin');
+      expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
       expect(iframe.className).toContain('w-full');
       expect(iframe.className).toContain('border-0');
       expect(iframe.className).toContain('min-h-[100px]');

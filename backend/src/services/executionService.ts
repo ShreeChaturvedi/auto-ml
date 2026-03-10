@@ -20,15 +20,17 @@ import { DEFAULT_PACKAGES } from '../types/execution.js';
 import {
     isDockerAvailable,
     getOrCreateContainer,
-    installPackage as containerInstallPackage,
-    installPackageStream as containerInstallPackageStream,
-    listPackages as containerListPackages,
     destroyContainer,
     getContainer,
-    type PackageInstallEvent
 } from './containerManager.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
+import {
+    installPackage as containerInstallPackage,
+    installPackageStream as containerInstallPackageStream,
+    listPackages as containerListPackages,
+    type PackageInstallEvent
+} from './packageManager.js';
 
 // Active sessions cache
 const sessions = new Map<string, ExecutionSession>();

@@ -4,10 +4,10 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { getCompletions } from '../services/containerManager.js';
 import * as kernelManager from '../services/kernelManager.js';
 import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
 import * as notebookService from '../services/notebook/notebookService.js';
+import { getCompletions } from '../services/pythonCompletions.js';
 import type { CellType } from '../types/notebook.js';
 
 const router = Router();

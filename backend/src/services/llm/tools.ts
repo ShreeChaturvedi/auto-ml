@@ -3,11 +3,11 @@ import { getDbPool, hasDatabaseConfiguration } from '../../db.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import type { ToolCall, ToolResult } from '../../types/llm.js';
 import type { CellType } from '../../types/notebook.js';
-import { installPackage, listPackages, uninstallPackage } from '../containerManager.js';
 import { searchDocuments } from '../documentSearchService.js';
 import { executeCell, getOrEnsureContainer } from '../notebook/cellExecutionService.js';
 import type { DatasetSyncMode } from '../notebook/datasetSyncMode.js';
 import * as notebookService from '../notebook/notebookService.js';
+import { installPackage, listPackages, uninstallPackage } from '../packageManager.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 

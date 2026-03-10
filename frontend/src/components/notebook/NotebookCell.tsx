@@ -239,10 +239,10 @@ export function NotebookCellComponent({
         isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20'
       )}
     >
-      <div className="flex h-9 items-center justify-between border-b px-2">
-        <div className="flex items-center gap-1.5">
-          {/* Run/Stop button — always visible, left-aligned */}
-          <TooltipProvider>
+      <TooltipProvider>
+        <div className="flex h-9 items-center justify-between border-b px-2">
+          <div className="flex items-center gap-1.5">
+            {/* Run/Stop button — always visible, left-aligned */}
             <Tooltip>
               <TooltipTrigger asChild>
                 {isRunning ? (
@@ -273,52 +273,50 @@ export function NotebookCellComponent({
                 {isRunning ? 'Stop execution' : 'Run cell (Shift+Enter)'}
               </TooltipContent>
             </Tooltip>
-          </TooltipProvider>
 
-          {/* Execution count or spinner */}
-          {isRunning ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-          ) : (
-            <span className="font-mono text-xs text-muted-foreground">
-              {cell.executionOrder != null
-                ? `[${cell.executionOrder}${cell.isDirty ? '*' : ''}]`
-                : '[ ]'}
-            </span>
-          )}
+            {/* Execution count or spinner */}
+            {isRunning ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            ) : (
+              <span className="font-mono text-xs text-muted-foreground">
+                {cell.executionOrder != null
+                  ? `[${cell.executionOrder}${cell.isDirty ? '*' : ''}]`
+                  : '[ ]'}
+              </span>
+            )}
 
-          {/* Execution time — subtle, formatted */}
-          {!isRunning && cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
-            <span className="text-xs text-muted-foreground/60">
-              · {formatExecutionTime(cell.executionDurationMs)}
-            </span>
-          )}
+            {/* Execution time — subtle, formatted */}
+            {!isRunning && cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
+              <span className="text-xs text-muted-foreground/60">
+                · {formatExecutionTime(cell.executionDurationMs)}
+              </span>
+            )}
 
-          {/* Error icon (no text) — only when error with no output */}
-          {cell.executionStatus === 'error' && richOutputs.length === 0 && (
-            <AlertCircle className="h-3.5 w-3.5 text-destructive" />
-          )}
+            {/* Error icon (no text) — only when error with no output */}
+            {cell.executionStatus === 'error' && richOutputs.length === 0 && (
+              <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+            )}
 
-          {/* Lock badges */}
-          {isLocked && lockOwner === 'ai' && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-purple-500/30 bg-purple-100/50 text-[10px] text-purple-600 dark:bg-purple-900/30"
-            >
-              <Bot className="h-3 w-3" />
-              AI editing
-            </Badge>
-          )}
+            {/* Lock badges */}
+            {isLocked && lockOwner === 'ai' && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-purple-500/30 bg-purple-100/50 text-[10px] text-purple-600 dark:bg-purple-900/30"
+              >
+                <Bot className="h-3 w-3" />
+                AI editing
+              </Badge>
+            )}
 
-          {isLocked && lockOwner === 'user' && (
-            <Badge variant="outline" className="gap-1 text-[10px]">
-              <Lock className="h-3 w-3" />
-              Editing
-            </Badge>
-          )}
-        </div>
+            {isLocked && lockOwner === 'user' && (
+              <Badge variant="outline" className="gap-1 text-[10px]">
+                <Lock className="h-3 w-3" />
+                Editing
+              </Badge>
+            )}
+          </div>
 
-        {/* Delete — hover-reveal, neutral at rest */}
-        <TooltipProvider>
+          {/* Delete — hover-reveal, neutral at rest */}
           <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -336,8 +334,8 @@ export function NotebookCellComponent({
               <TooltipContent side="bottom">Delete cell</TooltipContent>
             </Tooltip>
           </div>
-        </TooltipProvider>
-      </div>
+        </div>
+      </TooltipProvider>
 
       <Suspense
         fallback={

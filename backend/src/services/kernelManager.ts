@@ -152,6 +152,32 @@ function stripAnsi(text: string): string {
     return text.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+/**
+ * Fetch a Kernel Gateway REST endpoint, wrapping connection errors with
+ * context about the kernel/container involved.
+ */
+async function gatewayFetch(
+    conn: KernelConnection,
+    path: string,
+    method: 'POST' | 'DELETE',
+    action: string,
+): Promise<Response> {
+    let res: Response;
+    try {
+        res = await fetch(`${conn.gatewayUrl}${path}`, { method });
+    } catch (err) {
+        throw new Error(
+            `Cannot reach Kernel Gateway to ${action} kernel ${conn.kernelId}: ` +
+            `${err instanceof Error ? err.message : 'connection failed'}`,
+        );
+    }
+    if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Failed to ${action} kernel: ${res.status} ${body}`);
+    }
+    return res;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
@@ -483,22 +509,7 @@ export async function interruptKernel(container: KernelContainer): Promise<void>
         throw new Error(`No kernel connection for container ${container.id}`);
     }
 
-    let res: Response;
-    try {
-        res = await fetch(`${conn.gatewayUrl}/api/kernels/${conn.kernelId}/interrupt`, {
-            method: 'POST',
-        });
-    } catch (err) {
-        throw new Error(
-            `Cannot reach Kernel Gateway to interrupt kernel ${conn.kernelId}: ` +
-            `${err instanceof Error ? err.message : 'connection failed'}`,
-        );
-    }
-
-    if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Failed to interrupt kernel: ${res.status} ${body}`);
-    }
+    await gatewayFetch(conn, `/api/kernels/${conn.kernelId}/interrupt`, 'POST', 'interrupt');
 }
 
 /**
@@ -517,22 +528,7 @@ export async function restartKernel(container: KernelContainer): Promise<void> {
     }
     conn.ws = null;
 
-    let res: Response;
-    try {
-        res = await fetch(`${conn.gatewayUrl}/api/kernels/${conn.kernelId}/restart`, {
-            method: 'POST',
-        });
-    } catch (err) {
-        throw new Error(
-            `Cannot reach Kernel Gateway to restart kernel ${conn.kernelId}: ` +
-            `${err instanceof Error ? err.message : 'connection failed'}`,
-        );
-    }
-
-    if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Failed to restart kernel: ${res.status} ${body}`);
-    }
+    await gatewayFetch(conn, `/api/kernels/${conn.kernelId}/restart`, 'POST', 'restart');
 
     // Reconnect WebSocket with fresh session
     conn.sessionId = randomUUID();
@@ -556,17 +552,10 @@ export async function shutdownKernel(container: KernelContainer): Promise<void> 
         conn.ws = null;
     }
 
-    // DELETE the kernel via REST
+    // DELETE the kernel via REST (container may already be gone — log but don't throw)
     try {
-        const res = await fetch(`${conn.gatewayUrl}/api/kernels/${conn.kernelId}`, {
-            method: 'DELETE',
-        });
-        if (!res.ok) {
-            const body = await res.text().catch(() => '');
-            console.warn(`[kernelManager] Failed to DELETE kernel ${conn.kernelId}: ${res.status} ${body}`);
-        }
+        await gatewayFetch(conn, `/api/kernels/${conn.kernelId}`, 'DELETE', 'shut down');
     } catch (err) {
-        // Container may already be gone — log but don't throw
         console.warn(`[kernelManager] Error shutting down kernel ${conn.kernelId}:`, err);
     }
 

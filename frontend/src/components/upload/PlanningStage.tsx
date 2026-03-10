@@ -1,20 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import { cn } from '@/lib/utils';
+import { Markdown } from '@/components/ui/Markdown';
 import { Brain, Check, Database, FileText, Loader2 } from 'lucide-react';
 
 import { LlmChatComposer, type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
-import {
-  buildInlineModelOptions,
-  DEFAULT_ASSISTANT_MODEL,
-  getDefaultReasoningEffort,
-  getReasoningEffortOptions,
-  type ReasoningEffort
-} from '@/components/llm/modelOptions';
-import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
+import { useModelSelection } from '@/hooks/useModelSelection';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -28,10 +18,7 @@ import {
   appendThinkingDelta,
   markThinkingMessageComplete
 } from '@/lib/llm/streamMessageUtils';
-import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
-import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
-import { ThinkingBlock } from '@/components/training/ThinkingBlock';
-import { ToolIndicator } from '@/components/llm/ToolIndicator';
+import { ChatMessageList } from '@/components/llm/ChatMessageList';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { QuestionCards } from './QuestionCards';
@@ -373,10 +360,14 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const [inputValue, setInputValue] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_ASSISTANT_MODEL);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    'high'
-  );
+  const {
+    selectedModel,
+    reasoningEffort,
+    inlineModelOptions,
+    reasoningEffortOptions,
+    handleModelChange,
+    setReasoningEffort
+  } = useModelSelection();
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentFeedback, setAttachmentFeedback] = useState<{ status: AttachmentStatus; message: string } | null>(null);
   const [attachmentStatus, setAttachmentStatus] = useState<AttachmentStatus>('idle');
@@ -394,12 +385,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const toolCallHistoryRef = useRef<ToolCall[]>([]);
   const toolResultHistoryRef = useRef<ToolResult[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const {
-    featuredModelOptions,
-    allModelOptions,
-    defaultModel,
-    defaultReasoningEffort
-  } = useLlmModelCatalog();
   const project = useMemo(() => projects.find((entry) => entry.id === projectId), [projectId, projects]);
   const projectColor = project?.color ?? 'blue';
   const projectColorClass = projectColorClasses[projectColor];
@@ -410,14 +395,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
   const documentFiles = useMemo(
     () => projectFiles.filter((file) => file.metadata?.documentId),
     [projectFiles]
-  );
-  const inlineModelOptions = useMemo(
-    () => buildInlineModelOptions(featuredModelOptions),
-    [featuredModelOptions]
-  );
-  const reasoningEffortOptions = useMemo(
-    () => getReasoningEffortOptions(selectedModel, allModelOptions),
-    [allModelOptions, selectedModel]
   );
   const hasUserMessages = useMemo(
     () => messages.some((message) => message.type === 'user'),
@@ -447,39 +424,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     })),
     [pendingAttachments]
   );
-
-  const handleModelChange = useCallback((model: string) => {
-    setSelectedModel(model);
-    setReasoningEffort(getDefaultReasoningEffort(model, allModelOptions));
-  }, [allModelOptions]);
-
-  useEffect(() => {
-    if (!selectedModel && defaultModel) {
-      setSelectedModel(defaultModel);
-    }
-  }, [defaultModel, selectedModel]);
-
-  useEffect(() => {
-    if (!allModelOptions.length) {
-      setReasoningEffort(defaultReasoningEffort);
-      return;
-    }
-
-    const nextModel = allModelOptions.some((option) => option.value === selectedModel)
-      ? selectedModel
-      : defaultModel;
-
-    if (nextModel !== selectedModel) {
-      setSelectedModel(nextModel);
-      return;
-    }
-
-    const supportsCurrent = getReasoningEffortOptions(nextModel, allModelOptions)
-      .some((option) => option.value === reasoningEffort);
-    if (!supportsCurrent) {
-      setReasoningEffort(getDefaultReasoningEffort(nextModel, allModelOptions));
-    }
-  }, [allModelOptions, defaultModel, defaultReasoningEffort, reasoningEffort, selectedModel]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -1105,8 +1049,12 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             </div>
           </div>
         ) : (
-          <div className="w-full space-y-6 p-6 pb-12">
-            {messages.map((msg) => {
+          <ChatMessageList
+            messages={messages}
+            activeTextMessageId={activeTextMessageId}
+            activeThinkingMessageId={activeThinkingMessageId}
+            className="w-full space-y-6 p-6 pb-12"
+            renderExtra={(msg) => {
             if (msg.type === 'user') {
               const attachedFiles = userMessageAttachments[msg.id] ?? [];
               return (
@@ -1151,45 +1099,6 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
             }
 
             if (msg.type === 'assistant_text') {
-              const cleaned = sanitizeAssistantText(msg.content);
-              if (!cleaned) return null;
-              return (
-                <div key={msg.id} className="text-sm text-foreground">
-                  <ProgressiveMessageText
-                    messageId={msg.id}
-                    text={cleaned}
-                    isLive={activeTextMessageId === msg.id}
-                    mode="markdown"
-                    className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert"
-                  />
-                </div>
-              );
-            }
-
-            if (msg.type === 'thinking') {
-              return (
-                <ThinkingBlock
-                  key={msg.id}
-                  messageId={msg.id}
-                  content={msg.content}
-                  isComplete={msg.isComplete}
-                  isLive={activeThinkingMessageId === msg.id}
-                />
-              );
-            }
-
-            if (msg.type === 'tool_call') {
-              return (
-                <ToolIndicator
-                  key={msg.id}
-                  toolCalls={[msg.call]}
-                  results={msg.result ? [msg.result] : []}
-                  isRunning={!msg.result}
-                  autoExpandPreviewTools
-                />
-              );
-            }
-
             if (msg.type === 'ask_user' && !msg.answered) {
               return (
                 <div key={msg.id} className="space-y-2">
@@ -1261,11 +1170,9 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                         data-testid={`plan-view-${msg.id}`}
                         title="Click to edit this plan manually"
                       >
-                        <div className="prose prose-sm max-w-none dark:prose-invert">
-                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                            {msg.content}
-                          </ReactMarkdown>
-                        </div>
+                        <Markdown className="prose prose-sm max-w-none dark:prose-invert">
+                          {msg.content}
+                        </Markdown>
                       </button>
                     )}
                   </div>
@@ -1315,24 +1222,15 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
               );
             }
 
-            if (msg.type === 'error') {
-              return (
-                <div key={msg.id} className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                  {msg.message}
-                </div>
-              );
-            }
-
             return null;
-          })}
+            }}
+          />
+        )}
 
-          {isStreaming && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Thinking…
-            </div>
-          )}
-
+        {isStreaming && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground px-6">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Thinking…
           </div>
         )}
       </ScrollArea>

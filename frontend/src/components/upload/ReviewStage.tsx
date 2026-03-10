@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Check, Edit3, RefreshCcw } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
+import { Markdown } from '@/components/ui/Markdown';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,11 +47,9 @@ export function ReviewStage({
               className="min-h-[360px] font-mono"
             />
           ) : (
-            <div className="max-h-[420px] overflow-y-auto rounded-md border border-border/70 p-4 text-sm">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                {plan}
-              </ReactMarkdown>
-            </div>
+            <Markdown className="max-h-[420px] overflow-y-auto rounded-md border border-border/70 p-4 text-sm">
+              {plan}
+            </Markdown>
           )}
 
           <Textarea

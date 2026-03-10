@@ -46,8 +46,7 @@ import {
   Settings2,
   User
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
 
 const PACKAGE_PLACEHOLDERS = [
   'numpy', 'pandas', 'scikit-learn', 'matplotlib', 'seaborn',
@@ -380,8 +379,7 @@ function PackageDialog({
               </div>
             ) : displayDescription ? (
               <div className="text-sm text-foreground max-h-[250px] overflow-y-auto border-t pt-3">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                <Markdown
                   components={{
                     // Remove badges/images that won't render well
                     img: () => null,
@@ -424,7 +422,7 @@ function PackageDialog({
                   {displayDescription.length > 2500
                     ? displayDescription.slice(0, 2500) + '\n\n...'
                     : displayDescription}
-                </ReactMarkdown>
+                </Markdown>
               </div>
             ) : null}
 

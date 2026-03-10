@@ -20,11 +20,8 @@ import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import type { LockOwner, NotebookCell } from '@/types/notebook';
 import { initMonaco } from '@/lib/monaco/preloader';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { Markdown } from '@/components/ui/Markdown';
 
 const Editor = lazy(() =>
   import('@monaco-editor/react').then((module) => ({
@@ -164,9 +161,7 @@ export function NotebookMarkdownCell({
               onClick={() => !isLocked && setIsPreviewMode(false)}
             >
               {localContent.trim() ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
+                <Markdown
                   components={{
                     p: ({ children }) => <p className="mb-2 text-sm leading-relaxed last:mb-0">{children}</p>,
                     h1: ({ children }) => <h1 className="mb-2 mt-4 text-lg font-semibold first:mt-0">{children}</h1>,
@@ -193,7 +188,7 @@ export function NotebookMarkdownCell({
                   }}
                 >
                   {localContent}
-                </ReactMarkdown>
+                </Markdown>
               ) : (
                 <span className="italic text-muted-foreground">Write section notes...</span>
               )}

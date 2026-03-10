@@ -19,8 +19,7 @@ import {
   FileText,
   Loader2
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
 
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -366,11 +365,9 @@ export const DocumentViewer = memo(function DocumentViewer({
         {status === 'ready' && isMarkdown && (
           <ScrollArea className="h-full">
             {markdownViewMode === 'preview' ? (
-              <div className="markdown-content p-6">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {textContent}
-                </ReactMarkdown>
-              </div>
+              <Markdown className="markdown-content p-6">
+                {textContent}
+              </Markdown>
             ) : (
               <div className="whitespace-pre-wrap p-6 font-mono text-sm leading-relaxed text-foreground">
                 {textContent}

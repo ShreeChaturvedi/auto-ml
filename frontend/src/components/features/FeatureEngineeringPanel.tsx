@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
@@ -551,9 +550,9 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   {item.content}
                 </pre>
               ) : (
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown>
-                </div>
+                <Markdown className="prose prose-sm max-w-none dark:prose-invert">
+                  {item.content}
+                </Markdown>
               )}
             </CardContent>
           </Card>

@@ -8,8 +8,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { FileText, AlertCircle } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
 import { toast } from 'sonner';
 import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
@@ -453,11 +452,9 @@ export function DataViewerTab() {
       if (planContent) {
         return (
           <div className="h-full overflow-auto p-6">
-            <div className="mx-auto max-w-3xl prose prose-sm dark:prose-invert">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {planContent}
-              </ReactMarkdown>
-            </div>
+            <Markdown className="mx-auto max-w-3xl prose prose-sm dark:prose-invert">
+              {planContent}
+            </Markdown>
           </div>
         );
       }

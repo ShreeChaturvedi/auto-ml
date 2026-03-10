@@ -23,8 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Eye } from 'lucide-react';
 import { getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
 
 interface FilePreviewProps {
   file: UploadedFile;
@@ -135,11 +134,9 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
           const text = await blob.text();
           if (file.type === 'markdown') {
             setPreviewContent(
-              <div className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {text}
-                </ReactMarkdown>
-              </div>
+              <Markdown className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
+                {text}
+              </Markdown>
             );
           } else {
             setPreviewContent(
@@ -265,11 +262,9 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
       case 'markdown':
         file.file.text().then((text) => {
           setPreviewContent(
-            <div className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {text}
-              </ReactMarkdown>
-            </div>
+            <Markdown className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
+              {text}
+            </Markdown>
           );
           setIsLoading(false);
         }).catch(() => {

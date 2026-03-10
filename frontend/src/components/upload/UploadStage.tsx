@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import type { UploadedFile } from '@/types/file';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
 
 import { DataUploadPanel } from './DataUploadPanel';
 
@@ -87,9 +86,9 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
             
             <div className="flex-1 overflow-auto rounded-xl border border-border bg-card/50">
               <div className="p-6 prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <Markdown>
                   {currentPlan.content}
-                </ReactMarkdown>
+                </Markdown>
               </div>
             </div>
           </div>

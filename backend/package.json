@@ -42,7 +42,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
-    "@rollup/rollup-darwin-arm64": "^4.53.5",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",

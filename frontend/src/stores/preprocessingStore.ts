@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { executeToolCalls, getPreprocessingRunSnapshot } from '@/lib/api/llm';
 import { listAvailableTables } from '@/lib/api/preprocessing';
+import { asBoolean, asNumber, asRecord, asString, asStringArray } from '@/lib/typeCoercion';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { NotebookCell } from '@/types/notebook';
 import type {
@@ -39,29 +40,6 @@ function hashText(value: string): string {
     hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
   }
   return Math.abs(hash).toString(16);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
 function extractStepPayload(result: ToolResult): Record<string, unknown> | null {

@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { asBoolean, asNumber, asRecord, asString } from '@/lib/typeCoercion';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import {
   FileText,
@@ -53,22 +54,6 @@ function scoreColor(score: number): string {
   if (score >= 0.7) return 'bg-emerald-500';
   if (score >= 0.4) return 'bg-amber-500';
   return 'bg-rose-400';
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
-
-function asBoolean(value: unknown): boolean | null {
-  return typeof value === 'boolean' ? value : null;
-}
-
-function asNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /** Map dtype strings to a short badge label + icon hint */

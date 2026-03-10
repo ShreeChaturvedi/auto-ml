@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi';
 import { executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
+import { asRecordOrNull } from '@/lib/typeCoercion';
 import { useNotebookStore } from '@/stores/notebookStore';
 import {
   addAssistantTextMessage,
@@ -12,15 +13,8 @@ import {
   markThinkingMessageComplete
 } from '@/lib/llm/streamMessageUtils';
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
-
 function hasAwaitingApprovalStatus(result: ToolResult): boolean {
-  const output = asRecord(result.output);
+  const output = asRecordOrNull(result.output);
   if (!output) {
     return false;
   }
@@ -30,7 +24,7 @@ function hasAwaitingApprovalStatus(result: ToolResult): boolean {
     return true;
   }
 
-  const step = asRecord(output.step);
+  const step = asRecordOrNull(output.step);
   return step?.status === 'awaiting_approval';
 }
 
@@ -38,7 +32,7 @@ function shouldPauseAfterCommit(result: ToolResult): boolean {
   if (result.tool !== 'commit_transformation_step') {
     return false;
   }
-  const output = asRecord(result.output);
+  const output = asRecordOrNull(result.output);
   if (!output) {
     return false;
   }
@@ -49,7 +43,7 @@ function shouldPauseAfterCommit(result: ToolResult): boolean {
   }
 
   const outputStatus = typeof output.status === 'string' ? output.status : undefined;
-  const step = asRecord(output.step);
+  const step = asRecordOrNull(output.step);
   const stepStatus = typeof step?.status === 'string' ? step.status : undefined;
   const status = outputStatus ?? stepStatus;
 

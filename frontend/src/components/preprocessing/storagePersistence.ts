@@ -1,11 +1,5 @@
 import type { ChatMessage } from '@/types/llmUi';
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
+import { asRecordOrNull } from '@/lib/typeCoercion';
 
 export function buildProcessingStorageKey(tabId: string): string {
   return `preprocessing-messages-v5-${tabId}`;
@@ -40,7 +34,7 @@ export function parseStoredPreprocessingTabsState(
     const tabs = Array.isArray(parsed.tabs)
       ? parsed.tabs
           .map((tab) => {
-            const record = asRecord(tab);
+            const record = asRecordOrNull(tab);
             if (!record) {
               return null;
             }
@@ -104,7 +98,7 @@ export function extractRunIdFromStoredMessages(rawMessages: string | null): stri
       if (message.type !== 'tool_call' || !message.result) {
         continue;
       }
-      const output = asRecord(message.result.output);
+      const output = asRecordOrNull(message.result.output);
       const runId = output && typeof output.runId === 'string' ? output.runId : undefined;
       if (runId && runId.trim()) {
         return runId;

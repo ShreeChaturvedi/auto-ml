@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { cn } from '@/lib/utils';
-import { cn } from '@/lib/utils';
-import { cn } from '@/lib/utils';
-import { cn } from '@/lib/utils';
 
 interface CollapsibleSectionProps {
   title: string;

@@ -27,11 +27,12 @@ function OutputBody({ output }: { output: RichOutput }) {
 
     switch (output.type) {
         case 'text':
-            return <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5">{output.content}</pre>;
-
         case 'error':
             return (
-                <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-red-400">
+                <pre className={cn(
+                    'whitespace-pre-wrap break-words font-mono text-[12px] leading-5',
+                    output.type === 'error' && 'text-red-400'
+                )}>
                     {output.content}
                 </pre>
             );

@@ -43,7 +43,6 @@ import {
   CheckCircle2,
   GitBranch,
   Loader2,
-  PlayCircle,
   ShieldAlert,
   Wand2,
   XCircle

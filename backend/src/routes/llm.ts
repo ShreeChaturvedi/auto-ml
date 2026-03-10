@@ -22,7 +22,6 @@ import {
   listCatalogModels,
   listFeaturedModels,
   normalizeReasoningSelection,
-  resolveCatalogModel,
   type LlmReasoningEffort
 } from '../services/llm/modelCatalog.js';
 import {

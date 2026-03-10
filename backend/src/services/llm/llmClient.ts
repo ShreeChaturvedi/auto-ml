@@ -1,6 +1,6 @@
 import { env } from '../../config.js';
-import { resolveCatalogModel, type LlmReasoningEffort } from './modelCatalog.js';
 
+import { resolveCatalogModel, type LlmReasoningEffort } from './modelCatalog.js';
 import { OpenAiClient } from './providers/openaiClient.js';
 
 export type LlmRole = 'system' | 'user' | 'assistant';

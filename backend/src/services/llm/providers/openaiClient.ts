@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
 import type { Responses } from 'openai/resources/responses/responses';
 
-import { normalizeReasoningSelection, resolveCatalogModel } from '../modelCatalog.js';
 import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall } from '../llmClient.js';
+import { normalizeReasoningSelection, resolveCatalogModel } from '../modelCatalog.js';
 
 interface OpenAiClientOptions {
   apiKey: string;

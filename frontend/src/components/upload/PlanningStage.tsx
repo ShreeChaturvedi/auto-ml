@@ -42,7 +42,7 @@ import { projectColorClasses } from '@/types/project';
 
 const MAX_TOOL_PASSES = 3;
 const CONTEXT_ATTACHMENT_ACCEPT =
-  '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.xls,.html,.htm,.xml,.yml,.yaml,.rtf';
+  '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.html,.htm,.xml,.yml,.yaml,.rtf';
 
 type PendingAttachmentStatus = 'queued' | 'uploading' | 'success' | 'error';
 

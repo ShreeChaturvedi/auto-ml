@@ -26,7 +26,6 @@ const acceptedFileTypes = {
   'text/csv': ['.csv'],
   'application/json': ['.json'],
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  'application/vnd.ms-excel': ['.xls'],
   // Context/documentation files (for RAG and business context)
   'application/pdf': ['.pdf'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
@@ -248,7 +247,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           <p className="text-xs text-muted-foreground text-center max-w-sm px-4">
             {hasFiles
               ? 'Drop more files or click to browse'
-              : 'Drag and drop files here, or click anywhere. Supports CSV, JSON, Excel for data and PDF/Markdown/TXT for context.'}
+              : 'Drag and drop files here, or click anywhere. Supports CSV, JSON, and XLSX for data and PDF/Markdown/TXT for context.'}
           </p>
         </div>
 

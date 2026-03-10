@@ -189,7 +189,7 @@ describe('PlanningStage Accessibility', () => {
     expect(fileInput).toBeTruthy();
     expect(fileInput).toHaveAttribute(
       'accept',
-      '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.xls,.html,.htm,.xml,.yml,.yaml,.rtf'
+      '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.html,.htm,.xml,.yml,.yaml,.rtf'
     );
 
     const file = new File(['hello world'], 'context.md', { type: 'text/markdown' });

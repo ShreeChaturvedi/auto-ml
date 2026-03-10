@@ -2,7 +2,7 @@
  * FilePreview - Modal for previewing uploaded files
  *
  * Supports:
- * - PDF preview (using react-pdf-viewer)
+ * - PDF preview (using the browser's native PDF viewer)
  * - Image preview (full-size with zoom)
  * - CSV preview (first few rows in table)
  * - JSON preview (formatted JSON)
@@ -23,8 +23,6 @@ import { Badge } from '@/components/ui/badge';
 import { Eye } from 'lucide-react';
 import { getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
-import { Worker, Viewer, SpecialZoomLevel } from '@react-pdf-viewer/core';
-import '@react-pdf-viewer/core/lib/styles/index.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -45,6 +43,8 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
   const [rowInfo, setRowInfo] = useState<RowInfo | null>(null);
 
   useEffect(() => {
+    const objectUrls: string[] = [];
+
     if (!open) return;
 
     // For hydrated files from backend (no file object), fetch sample from API
@@ -103,16 +103,15 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
       void downloadDocument(file.metadata.documentId)
         .then((blob) => {
           const url = URL.createObjectURL(blob);
+          objectUrls.push(url);
           setPreviewContent(
-            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-              <div className="h-[600px] rounded-lg border overflow-hidden">
-                <Viewer
-                  fileUrl={url}
-                  defaultScale={SpecialZoomLevel.PageWidth}
-                  theme={{ theme: 'dark' }}
-                />
-              </div>
-            </Worker>
+            <div className="h-[600px] rounded-lg border overflow-hidden bg-black">
+              <iframe
+                src={`${url}#toolbar=1&navpanes=0&view=FitH`}
+                title={`PDF preview for ${file.name}`}
+                className="h-full w-full border-0 bg-black"
+              />
+            </div>
           );
           setIsLoading(false);
         })
@@ -182,16 +181,15 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
     switch (file.type) {
       case 'pdf': {
         const pdfUrl = URL.createObjectURL(file.file);
+        objectUrls.push(pdfUrl);
         setPreviewContent(
-          <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-            <div className="h-[600px] rounded-lg border overflow-hidden">
-              <Viewer
-                fileUrl={pdfUrl}
-                defaultScale={SpecialZoomLevel.PageWidth}
-                theme={{ theme: 'dark' }}
-              />
-            </div>
-          </Worker>
+          <div className="h-[600px] rounded-lg border overflow-hidden bg-black">
+            <iframe
+              src={`${pdfUrl}#toolbar=1&navpanes=0&view=FitH`}
+              title={`PDF preview for ${file.name}`}
+              className="h-full w-full border-0 bg-black"
+            />
+          </div>
         );
         setIsLoading(false);
         break;
@@ -311,6 +309,7 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
 
     // Cleanup
     return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
       setPreviewContent(null);
       setRowInfo(null);
     };

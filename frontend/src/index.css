@@ -126,33 +126,6 @@
   }
 }
 
-/* PDF Viewer styling to match our app theme */
-.pdf-viewer-container {
-  --rpv-default-layout__container-border-color: transparent;
-}
-
-.dark .pdf-viewer-container {
-  /* Override react-pdf-viewer dark theme colors to match our design */
-  --rpv-default-layout__body--background-color: hsl(0 0% 0%);
-  --rpv-default-layout__container--background-color: hsl(0 0% 0%);
-  --rpv-default-layout__sidebar--background-color: hsl(0 0% 4%);
-  --rpv-default-layout__toolbar--background-color: hsl(0 0% 4%);
-}
-
-/* Style the PDF page area to match our dark theme */
-.pdf-viewer-container .rpv-core__page-layer {
-  background-color: hsl(0 0% 0%);
-}
-
-.pdf-viewer-container .rpv-core__inner-pages {
-  background-color: hsl(0 0% 0%);
-}
-
-/* Hide the default toolbar since we use custom one */
-.pdf-viewer-container .rpv-toolbar {
-  display: none !important;
-}
-
 /* Markdown rendered content styling */
 .markdown-content {
   @apply text-sm leading-relaxed text-foreground;

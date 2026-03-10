@@ -206,7 +206,7 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
           set((state) => ({
             cells: state.cells.map((cell) =>
               cell.cellId === msg.cellId
-                ? { ...cell, executionStatus: 'running' as const }
+                ? { ...cell, executionStatus: 'running' as const, output: [], outputRefs: [] }
                 : cell
             )
           }));
@@ -216,6 +216,22 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       const unsubscribeCellExecuted = wsClient.on<WSServerMessage>('cell:executed', (msg) => {
         if (msg.type === 'cell:executed' && msg.cell.notebookId === get().activeNotebookId) {
           get().updateCellLocally(msg.cell);
+        }
+      });
+
+      const unsubscribeCellOutput = wsClient.on<WSServerMessage>('cell:output', (msg) => {
+        if (msg.type === 'cell:output') {
+          const state = get();
+          // Only update if this cell belongs to the active notebook's cell list
+          if (state.activeNotebookId && state.cells.some((c) => c.cellId === msg.cellId)) {
+            set((prev) => ({
+              cells: prev.cells.map((cell) =>
+                cell.cellId === msg.cellId
+                  ? { ...cell, output: [...cell.output, msg.output] }
+                  : cell
+              )
+            }));
+          }
         }
       });
 
@@ -241,6 +257,7 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
         unsubscribeCellUnlocked();
         unsubscribeCellExecuting();
         unsubscribeCellExecuted();
+        unsubscribeCellOutput();
         unsubscribeError();
         unsubscribeConnected();
         unsubscribeDisconnected();
@@ -470,9 +487,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
   loadCell: async (cellId: string) => {
     try {
       const cell = await notebooksApi.getCell(cellId);
-      // #region agent log
-      fetch('http://127.0.0.1:7423/ingest/1dd837bd-53e8-4d18-a531-7744aff0778c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6ee5c'},body:JSON.stringify({sessionId:'a6ee5c',location:'notebookStore.ts:loadCell',message:'loadCell GET result',data:{cellId,executionOrder:cell.executionOrder},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       get().updateCellLocally(cell);
       return cell;
     } catch (error) {
@@ -584,9 +598,6 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
 
     try {
       const result = await notebooksApi.runCell(cellId, projectId);
-      // #region agent log
-      fetch('http://127.0.0.1:7423/ingest/1dd837bd-53e8-4d18-a531-7744aff0778c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6ee5c'},body:JSON.stringify({sessionId:'a6ee5c',location:'notebookStore.ts:runCell',message:'runCell API result',data:{executionOrder:result.executionOrder,status:result.status,inResult:'executionOrder' in result},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
 
       const executionOrder = result.executionOrder ?? undefined;
 

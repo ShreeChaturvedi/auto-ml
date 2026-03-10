@@ -10,41 +10,7 @@ import type {
   ReorderCellsRequest,
   ExecutionResult
 } from '@/types/notebook';
-
-// Keep this aligned with the rest of the frontend API clients (see lib/api/client.ts).
-// This also avoids surprises where notebook output URLs point at localhost in non-local deployments.
-const API_BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api').replace(/\/$/, '');
-
-// ============================================================
-// Helper Functions
-// ============================================================
-
-async function apiRequest<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers
-    }
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.message ?? error.error ?? `HTTP ${response.status}`);
-  }
-
-  // Handle 204 No Content
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json();
-}
+import { apiRequest, getApiBaseUrl } from './client';
 
 // ============================================================
 // Notebook Endpoints
@@ -177,6 +143,34 @@ export async function runCell(
 }
 
 // ============================================================
+// Kernel Lifecycle Endpoints
+// ============================================================
+
+/**
+ * Interrupt a running cell's kernel execution.
+ */
+export async function interruptKernel(
+  cellId: string,
+  projectId: string
+): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>(`/cells/${cellId}/interrupt`, {
+    method: 'POST',
+    body: JSON.stringify({ projectId })
+  });
+}
+
+/**
+ * Restart the Jupyter kernel for a project.
+ */
+export async function restartKernel(
+  projectId: string
+): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>(`/projects/${projectId}/kernel/restart`, {
+    method: 'POST'
+  });
+}
+
+// ============================================================
 // Cell Reordering Endpoints
 // ============================================================
 
@@ -214,7 +208,7 @@ export async function getCellLock(
  * Get the URL for a cell output file.
  */
 export function getCellOutputUrl(cellId: string, filename: string): string {
-  return `${API_BASE}/cells/${cellId}/outputs/${encodeURIComponent(filename)}`;
+  return `${getApiBaseUrl()}/cells/${cellId}/outputs/${encodeURIComponent(filename)}`;
 }
 
 /**

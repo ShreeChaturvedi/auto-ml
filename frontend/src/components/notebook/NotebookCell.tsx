@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   Play,
+  Square,
   Trash2,
   Loader2,
   AlertCircle,
@@ -87,6 +88,7 @@ interface NotebookCellComponentProps {
   onContentChange: (content: string) => void;
   onDelete: () => void;
   onRun: () => void;
+  onInterrupt?: () => void;
 }
 
 function getExecutionPrompt(cell: NotebookCell): string {
@@ -106,7 +108,8 @@ export function NotebookCellComponent({
   projectId,
   onContentChange,
   onDelete,
-  onRun
+  onRun,
+  onInterrupt
 }: NotebookCellComponentProps) {
   const { theme } = useTheme();
   const resolvedTheme = theme === 'system'
@@ -258,7 +261,7 @@ export function NotebookCellComponent({
             </span>
           )}
 
-          {cell.executionStatus === 'error' && (
+          {cell.executionStatus === 'error' && richOutputs.length === 0 && (
             <span className="flex items-center gap-1 text-[10px] text-destructive">
               <AlertCircle className="h-3 w-3" />
               Error
@@ -290,30 +293,37 @@ export function NotebookCellComponent({
           )}
         </div>
 
-        <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-          <TooltipProvider>
+        <TooltipProvider>
+          <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={onRun}
-                  disabled={isRunning || isLocked}
-                  className="h-6 w-6"
-                  aria-label="Run cell"
-                >
-                  {isRunning ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
+                {isRunning ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={onInterrupt}
+                    disabled={!onInterrupt}
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    aria-label="Stop execution"
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={onRun}
+                    disabled={isLocked}
+                    className="h-6 w-6"
+                    aria-label="Run cell"
+                  >
                     <Play className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+                  </Button>
+                )}
               </TooltipTrigger>
-              <TooltipContent>Run cell</TooltipContent>
+              <TooltipContent>{isRunning ? 'Stop execution' : 'Run cell'}</TooltipContent>
             </Tooltip>
-          </TooltipProvider>
 
-          <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -329,8 +339,8 @@ export function NotebookCellComponent({
               </TooltipTrigger>
               <TooltipContent>Delete cell</TooltipContent>
             </Tooltip>
-          </TooltipProvider>
-        </div>
+          </div>
+        </TooltipProvider>
       </div>
 
       <Suspense

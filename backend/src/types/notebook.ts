@@ -111,6 +111,7 @@ export const WSEventTypeSchema = z.enum([
   'cell:unlocked',
   'cell:executing',
   'cell:executed',
+  'cell:output',
   'notebook:created',
   'notebook:updated',
   'error'
@@ -145,6 +146,7 @@ export const WSServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cell:unlocked'), cellId: z.string().uuid() }),
   z.object({ type: z.literal('cell:executing'), cellId: z.string().uuid() }),
   z.object({ type: z.literal('cell:executed'), cell: CellSchema }),
+  z.object({ type: z.literal('cell:output'), cellId: z.string().uuid(), output: CellOutputSchema }),
   z.object({ type: z.literal('error'), message: z.string() }),
   z.object({ type: z.literal('pong') })
 ]);

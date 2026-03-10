@@ -20,7 +20,6 @@ import { DEFAULT_PACKAGES } from '../types/execution.js';
 import {
     isDockerAvailable,
     getOrCreateContainer,
-    executeInContainer,
     installPackage as containerInstallPackage,
     installPackageStream as containerInstallPackageStream,
     listPackages as containerListPackages,
@@ -29,6 +28,7 @@ import {
     type PackageInstallEvent
 } from './containerManager.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
+import * as kernelManager from './kernelManager.js';
 
 // Active sessions cache
 const sessions = new Map<string, ExecutionSession>();
@@ -150,11 +150,10 @@ export async function executeCode(request: ExecutionRequest): Promise<ExecutionR
     }
 
     try {
-        return await executeInContainer(
+        return await kernelManager.execute(
             container,
             request.code,
-            request.timeout || env.executionTimeoutMs,
-            { executionId: randomUUID().slice(0, 8) }
+            request.timeout || env.executionTimeoutMs
         );
     } catch (error) {
         console.warn('[executionService] Container execution failed:', error);

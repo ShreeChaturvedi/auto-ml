@@ -32,15 +32,22 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExecutionStore } from '@/stores/executionStore';
+import { restartKernel } from '@/lib/api/notebooks';
 import { RuntimeManagerDialog } from '@/components/training/RuntimeManagerDialog';
 import {
   COMPACT_TOOLBAR_GROUP_CLASS,
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
   compactToolbarSelectClass
 } from '@/components/agentic/toolbarStyles';
-import { Code, Loader2, MoreHorizontal, Pencil, Plus, Trash2, Type } from 'lucide-react';
+import { Code, Loader2, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCellType } from '@/types/notebook';
 
@@ -70,6 +77,7 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
   const [createName, setCreateName] = useState('');
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameName, setRenameName] = useState('');
+  const [isRestarting, setIsRestarting] = useState(false);
 
   const canDeleteNotebook = useMemo(() => notebooks.length > 1, [notebooks.length]);
 
@@ -126,6 +134,19 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
     if (!window.confirm(`Delete notebook "${notebook.name}"?`)) return;
     await deleteNotebook(notebook.notebookId);
   }, [canDeleteNotebook, deleteNotebook, notebook]);
+
+  const handleRestartKernel = useCallback(async () => {
+    const pid = notebook?.projectId;
+    if (!pid) return;
+    setIsRestarting(true);
+    try {
+      await restartKernel(pid);
+    } catch (error) {
+      console.error('Failed to restart kernel:', error);
+    } finally {
+      setIsRestarting(false);
+    }
+  }, [notebook?.projectId]);
 
   return (
     <>
@@ -216,10 +237,33 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
           </DropdownMenu>
         </div>
 
-        {/* Right group: cloud badge */}
-        <RuntimeManagerDialog
-          projectId={projectId}
-          trigger={
+        {/* Right group: restart + cloud badge */}
+        <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+                  onClick={() => void handleRestartKernel()}
+                  disabled={isRestarting || !cloudAvailable}
+                  title="Restart Kernel"
+                >
+                  {isRestarting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Restart Kernel</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <RuntimeManagerDialog
+            projectId={projectId}
+            trigger={
             <Badge
               variant={cloudAvailable ? 'default' : 'secondary'}
               className={cn(
@@ -236,8 +280,9 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
               )}
               {cloudInitializing ? 'Connecting...' : cloudAvailable ? 'Cloud' : 'Unavailable'}
             </Badge>
-          }
-        />
+            }
+          />
+        </div>
       </div>
 
       {/* Create notebook dialog */}

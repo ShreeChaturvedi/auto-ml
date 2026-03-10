@@ -96,6 +96,10 @@ export const env = {
   executionAutoBuildImage: process.env.EXECUTION_AUTO_BUILD_IMAGE !== 'false',
   executionWorkspaceDir: resolveBackendPath(process.env.EXECUTION_WORKSPACE_DIR ?? 'storage/workspaces'),
 
+  // Kernel Gateway
+  kernelGatewayPort: parseInteger(process.env.KERNEL_GATEWAY_PORT, 8888),
+  kernelStartupTimeoutMs: parseInteger(process.env.KERNEL_STARTUP_TIMEOUT_MS, 15000),
+
   // Authentication
   jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
   bcryptRounds: parseInteger(process.env.BCRYPT_ROUNDS, 12),

@@ -111,6 +111,7 @@ export type WSServerMessageType =
   | 'cell:unlocked'
   | 'cell:executing'
   | 'cell:executed'
+  | 'cell:output'
   | 'error'
   | 'pong';
 
@@ -160,6 +161,12 @@ export interface WSCellExecutedMessage {
   cell: NotebookCell;
 }
 
+export interface WSCellOutputMessage {
+  type: 'cell:output';
+  cellId: string;
+  output: CellOutput;
+}
+
 export interface WSErrorMessage {
   type: 'error';
   message: string;
@@ -179,6 +186,7 @@ export type WSServerMessage =
   | WSCellUnlockedMessage
   | WSCellExecutingMessage
   | WSCellExecutedMessage
+  | WSCellOutputMessage
   | WSErrorMessage
   | WSPongMessage;
 

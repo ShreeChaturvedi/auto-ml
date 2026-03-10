@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
 import { NotebookMarkdownCell } from './NotebookMarkdownCell';
 import { useNotebookStore } from '@/stores/notebookStore';
+import { interruptKernel } from '@/lib/api/notebooks';
 import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
@@ -138,6 +139,17 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
     [runCell, projectId]
   );
 
+  const handleCellInterrupt = useCallback(
+    async (cellId: string) => {
+      try {
+        await interruptKernel(cellId, projectId);
+      } catch (error) {
+        console.error('[NotebookEditor] Failed to interrupt kernel:', error);
+      }
+    },
+    [projectId]
+  );
+
   useEffect(() => {
     const markdownIds = new Set(
       cells
@@ -262,6 +274,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                     onContentChange={(content) => handleCellContentChange(item.cell.cellId, content)}
                     onDelete={() => handleCellDelete(item.cell.cellId)}
                     onRun={() => handleCellRun(item.cell.cellId)}
+                    onInterrupt={() => handleCellInterrupt(item.cell.cellId)}
                   />
                 </div>
               )}

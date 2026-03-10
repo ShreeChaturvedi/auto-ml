@@ -1,5 +1,6 @@
 import type { RichOutput } from '@/lib/api/execution';
 import { parseOutputRefUrl } from '@/lib/api/notebooks';
+import { PlotlyOutput } from '@/components/notebook/PlotlyOutput';
 import { cn } from '@/lib/utils';
 import { AlertCircle, Table2 } from 'lucide-react';
 import { formatValue, parseTableData, type TableData } from './cellOutputUtils';
@@ -54,21 +55,37 @@ function OutputBody({ output }: { output: RichOutput }) {
                     alt="Output"
                     loading="lazy"
                     decoding="async"
-                    className="max-h-[360px] max-w-full rounded-md border object-contain"
+                    className="max-w-full rounded-md border object-contain"
                     onError={() => {
                         console.warn('[CellOutputRenderer] Failed to load image output:', { original: output.content, src: imageSrc });
                     }}
+                    style={{ minHeight: 60, background: 'var(--muted)' }}
                 />
             );
         }
 
         case 'html':
             return (
-                <div
-                    className="prose prose-sm max-w-none text-[13px] leading-relaxed dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: output.content }}
+                <iframe
+                    srcDoc={output.content}
+                    sandbox="allow-scripts allow-same-origin"
+                    className="w-full border-0 min-h-[100px]"
+                    style={{ height: 'auto' }}
+                    onLoad={(e) => {
+                        const iframe = e.currentTarget;
+                        try {
+                            if (iframe.contentDocument) {
+                                iframe.style.height = iframe.contentDocument.documentElement.scrollHeight + 'px';
+                            }
+                        } catch {
+                            // Cross-origin access may be restricted
+                        }
+                    }}
                 />
             );
+
+        case 'chart':
+            return <PlotlyOutput data={output.data} />;
 
         default:
             return (

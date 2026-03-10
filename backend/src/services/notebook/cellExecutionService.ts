@@ -1,17 +1,11 @@
-import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../../config.js';
 import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
-import { getOrCreateContainer, executeInContainer, type Container } from '../containerManager.js';
-import {
-  artifactExecDirRel,
-  containerWorkspaceRelativePath,
-  isAutomlArtifactPath,
-  resolveHostPathInWorkspace
-} from '../executionArtifacts.js';
+import { getOrCreateContainer, type Container } from '../containerManager.js';
+import * as kernelManager from '../kernelManager.js';
 
 import {
   resolveDatasetSyncMode,
@@ -104,17 +98,16 @@ export async function executeCell(
     // In continue mode, preserve edited working files across actions.
     await copyDatasetsToWorkspace(projectId, datasetSyncMode);
 
-    // Execute the code
-    const result = await executeInContainer(container, cell.content, env.executionTimeoutMs, {
-      sessionKey: cell.notebookId,
-      imageOutputMode: 'artifact_path'
+    // Execute the code via Jupyter kernel, streaming outputs to WebSocket
+    const result = await kernelManager.execute(container, cell.content, env.executionTimeoutMs, (output) => {
+      broadcast(cell.notebookId, 'cell:output', { cellId, output });
     });
 
     // Calculate execution time
     const executionMs = Date.now() - startTime;
 
     // Process outputs (inline vs external storage)
-    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs, container.workspacePath);
+    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs);
 
     // Determine final status
     const executionStatus = result.status === 'success' ? 'success' : 'error';
@@ -175,12 +168,10 @@ export async function executeCell(
  */
 async function processOutputs(
   cellId: string,
-  outputs: RichOutput[],
-  workspacePath: string
+  outputs: RichOutput[]
 ): Promise<{ inlineOutputs: CellOutput[]; outputRefs: OutputRef[] }> {
   const inlineOutputs: CellOutput[] = [];
   const outputRefs: OutputRef[] = [];
-  const execDirs = new Set<string>();
 
   for (let i = 0; i < outputs.length; i++) {
     const output = outputs[i];
@@ -204,43 +195,6 @@ async function processOutputs(
         });
         continue;
       }
-
-      if (isAutomlArtifactPath(output.content)) {
-        const relPath = containerWorkspaceRelativePath(output.content);
-        const execDirRel = artifactExecDirRel(relPath);
-        const hostPath = resolveHostPathInWorkspace(workspacePath, relPath);
-        const mimeType = output.mimeType ?? 'image/png';
-        if (!hostPath) {
-          inlineOutputs.push({
-            type: 'error',
-            content: `[image] Unsafe Matplotlib artifact path: ${output.content}`
-          });
-          continue;
-        }
-        let bytes: Buffer;
-        try {
-          bytes = await readFile(hostPath);
-        } catch (error) {
-          inlineOutputs.push({
-            type: 'error',
-            content: `[image] Failed to read Matplotlib artifact from ${output.content}: ${error instanceof Error ? error.message : 'Unknown error'}`
-          });
-          continue;
-        }
-        const filename = `image_${i}_${Date.now()}.${extensionForMimeType(mimeType)}`;
-        const ref = await repo.saveLargeOutput(cellId, 'image', bytes, filename, mimeType);
-        outputRefs.push(ref);
-        inlineOutputs.push({
-          type: 'image',
-          content: ref.ref,
-          mimeType
-        });
-        if (execDirRel) {
-          execDirs.add(execDirRel);
-        }
-        await rm(hostPath, { force: true }).catch(() => undefined);
-        continue;
-      }
     }
 
     const cellOutput: CellOutput = {
@@ -253,7 +207,6 @@ async function processOutputs(
     const contentSize = Buffer.byteLength(output.content, 'utf8');
 
     if (contentSize > env.notebookOutputMaxSize) {
-      // Store externally
       const filename = `output_${i}_${Date.now()}.${getExtension(output.type)}`;
       const ref = await repo.saveLargeOutput(
         cellId,
@@ -264,20 +217,9 @@ async function processOutputs(
       );
       outputRefs.push(ref);
     } else {
-      // Store inline
       inlineOutputs.push(cellOutput);
     }
   }
-
-  await Promise.all(
-    Array.from(execDirs).map((execDirRel) => {
-      const hostDir = resolveHostPathInWorkspace(workspacePath, execDirRel);
-      if (!hostDir) {
-        return Promise.resolve();
-      }
-      return rm(hostDir, { recursive: true, force: true }).catch(() => undefined);
-    })
-  );
 
   return { inlineOutputs, outputRefs };
 }

@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { hasDatabaseConfiguration } from '../db.js';
 import { getCompletions } from '../services/containerManager.js';
+import * as kernelManager from '../services/kernelManager.js';
 import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
 import * as notebookService from '../services/notebook/notebookService.js';
 import type { CellType } from '../types/notebook.js';
@@ -403,6 +404,50 @@ router.post('/cells/:cellId/run', async (req: Request, res: Response) => {
       error: 'Failed to run cell',
       message
     });
+  }
+});
+
+// ============================================================
+// Kernel Lifecycle Endpoints
+// ============================================================
+
+/**
+ * POST /api/cells/:cellId/interrupt
+ * Interrupt a running cell's kernel execution.
+ */
+router.post('/cells/:cellId/interrupt', async (req: Request, res: Response) => {
+  try {
+    const parsed = runCellSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
+      return;
+    }
+
+    const { projectId } = parsed.data;
+    const container = await getOrEnsureContainer(projectId);
+    await kernelManager.interruptKernel(container);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[notebooks] Error interrupting kernel:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to interrupt kernel', message });
+  }
+});
+
+/**
+ * POST /api/projects/:projectId/kernel/restart
+ * Restart the Jupyter kernel for a project's container.
+ */
+router.post('/projects/:projectId/kernel/restart', async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const container = await getOrEnsureContainer(projectId);
+    await kernelManager.restartKernel(container);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[notebooks] Error restarting kernel:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to restart kernel', message });
   }
 });
 

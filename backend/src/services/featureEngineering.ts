@@ -16,9 +16,10 @@ import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 import type { PythonVersion } from '../types/execution.js';
 
-import { executeInContainer, getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
 import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
+import * as kernelManager from './kernelManager.js';
 
 export const FEATURE_METHODS = [
   'log_transform',
@@ -450,7 +451,6 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     await syncWorkspaceDatasets(input.projectId, container.workspacePath).catch(() => undefined);
   }
 
-  const executionId = `feature_${randomUUID().slice(0, 8)}`;
   const script = buildFeatureEngineeringScript({
     datasetFilename: dataset.filename,
     datasetId: dataset.datasetId,
@@ -459,12 +459,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     features: enabledFeatures
   });
 
-  const result = await executeInContainer(
-    container,
-    script,
-    env.executionTimeoutMs,
-    { executionId }
-  );
+  const result = await kernelManager.execute(container, script, env.executionTimeoutMs);
 
   if (result.status !== 'success') {
     throw new Error(result.stderr || 'Feature engineering failed inside the runtime.');

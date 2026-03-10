@@ -8,32 +8,23 @@
 import { spawn, exec, execFile, type ExecFileOptions } from 'child_process';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
-import { mkdir, writeFile, rm, readFile } from 'fs/promises';
+import { mkdir, rm } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 
 import { env } from '../config.js';
-import type { PythonVersion, ExecutionResult, RichOutput, PackageInfo } from '../types/execution.js';
+import type { PythonVersion, PackageInfo } from '../types/execution.js';
 
-import {
-    AUTOML_ARTIFACT_ROOT,
-    artifactExecDirRel,
-    containerWorkspaceRelativePath,
-    isAutomlArtifactPath,
-    resolveHostPathInWorkspace,
-    CONTAINER_WORKSPACE_ROOT
-} from './executionArtifacts.js';
+import { shutdownKernel } from './kernelManager.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const PACKAGE_ALIASES = new Map<string, string>([['pytorch', 'torch']]);
-const MPL_MAX_FIGURES_PER_CELL = 10;
+const CONTAINER_WORKSPACE_ROOT = '/workspace';
 const CONTAINER_PYTHON_SITE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.python`;
 const CONTAINER_PIP_CACHE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.cache/pip`;
 const CONTAINER_TMP_DIR = `${CONTAINER_WORKSPACE_ROOT}/.tmp`;
-
-type ImageOutputMode = 'data_url' | 'artifact_path';
 
 async function execDocker(
     args: string[],
@@ -76,84 +67,13 @@ export interface Container {
     projectId: string;
     pythonVersion: PythonVersion;
     workspacePath: string;
+    kernelGatewayPort: number;
     createdAt: Date;
     lastUsedAt: Date;
 }
 
 // Active containers cache
 const containers = new Map<string, Container>();
-
-async function materializeImageArtifacts(
-    container: Container,
-    outputs: RichOutput[]
-): Promise<RichOutput[]> {
-    const execDirs = new Set<string>();
-
-    for (const output of outputs) {
-        if (output.type !== 'image') {
-            continue;
-        }
-        if (!isAutomlArtifactPath(output.content)) {
-            continue;
-        }
-
-        const containerPath = output.content;
-        const mimeType = output.mimeType || 'image/png';
-        const relPath = containerWorkspaceRelativePath(containerPath);
-        const execDirRel = artifactExecDirRel(relPath);
-        if (execDirRel) {
-            execDirs.add(execDirRel);
-        }
-
-        const hostPath = resolveHostPathInWorkspace(container.workspacePath, relPath);
-        if (!hostPath) {
-            output.type = 'text';
-            output.mimeType = 'text/plain';
-            output.content = `[rendering] Ignoring unsafe image artifact path: ${containerPath}\n`;
-            continue;
-        }
-
-        try {
-            const bytes = await readFile(hostPath);
-            output.content = `data:${mimeType};base64,${bytes.toString('base64')}`;
-            output.mimeType = mimeType;
-            await rm(hostPath, { force: true }).catch(() => { });
-            continue;
-        } catch {
-            // Fall back to reading the file inside the container if the host path isn't accessible.
-        }
-
-        try {
-            const script = [
-                'import base64, sys',
-                'data = open(sys.argv[1], "rb").read()',
-                'sys.stdout.write(base64.b64encode(data).decode("utf-8"))'
-            ].join('\n');
-            const { stdout } = await execDocker(
-                ['exec', container.containerId, 'python', '-c', script, containerPath],
-                { maxBuffer: 25 * 1024 * 1024 }
-            );
-            output.content = `data:${mimeType};base64,${stdout.trim()}`;
-            output.mimeType = mimeType;
-            await execDocker(['exec', container.containerId, 'rm', '-f', containerPath]).catch(() => { });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            output.type = 'text';
-            output.mimeType = 'text/plain';
-            output.content = `[rendering] Failed to materialize image output from ${containerPath}: ${message}\n`;
-        }
-    }
-
-    for (const execDirRel of execDirs) {
-        const hostDir = resolveHostPathInWorkspace(container.workspacePath, execDirRel);
-        if (!hostDir) {
-            continue;
-        }
-        await rm(hostDir, { recursive: true, force: true }).catch(() => { });
-    }
-
-    return outputs;
-}
 
 /**
  * Check if Docker is available and running
@@ -286,6 +206,10 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
         '--network', env.executionNetwork, // network policy
         '--read-only', // read-only root fs
         '--tmpfs', `/tmp:rw,nosuid,size=${env.executionTmpfsMb}m`, // writable tmp
+        '--tmpfs', '/home/sandbox/.local:rw,nosuid,size=100m',
+        '--tmpfs', '/home/sandbox/.jupyter:rw,nosuid,size=10m',
+        '--tmpfs', '/home/sandbox/.ipython:rw,nosuid,size=10m',
+        '--tmpfs', '/run/user:rw,nosuid,size=10m',
         '-v', `${absWorkspacePath}:/workspace:rw`, // mount workspace
         '-v', `${absDatasetsPath}:/datasets:ro`, // mount datasets read-only
         '-w', CONTAINER_WORKSPACE_ROOT,
@@ -296,13 +220,23 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
         '-e', 'PIP_DISABLE_PIP_VERSION_CHECK=1',
         '-e', `TMPDIR=${CONTAINER_TMP_DIR}`,
         ...(env.executionDockerPlatform ? ['--platform', env.executionDockerPlatform] : []),
-        imageName,
-        'tail', '-f', '/dev/null' // keep container running
+        '-p', '0:8888',
+        imageName
     ];
 
     try {
         const { stdout } = await execDocker(dockerArgs);
         const containerId = stdout.trim();
+
+        // Read the mapped Kernel Gateway port
+        let kernelGatewayPort = 0;
+        try {
+            const { stdout: portOutput } = await execDocker(['port', containerId.slice(0, 12), '8888']);
+            const portMatch = portOutput.match(/:(\d+)/);
+            kernelGatewayPort = portMatch ? parseInt(portMatch[1], 10) : 0;
+        } catch {
+            console.warn('[containerManager] Could not read Kernel Gateway port mapping');
+        }
 
         const container: Container = {
             id,
@@ -310,6 +244,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
             projectId: config.projectId,
             pythonVersion: config.pythonVersion,
             workspacePath: absWorkspacePath,
+            kernelGatewayPort,
             createdAt: new Date(),
             lastUsedAt: new Date()
         };
@@ -317,416 +252,28 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
         containers.set(id, container);
         console.log(`[containerManager] Created container ${containerName} (${containerId.slice(0, 12)})`);
 
+        // Wait for Kernel Gateway to be ready
+        if (kernelGatewayPort > 0) {
+            const maxWait = env.kernelStartupTimeoutMs;
+            const start = Date.now();
+            while (Date.now() - start < maxWait) {
+                try {
+                    const healthRes = await fetch(`http://127.0.0.1:${kernelGatewayPort}/api/kernelspecs`);
+                    // Drain response body to avoid socket leak
+                    await healthRes.text().catch(() => {});
+                    if (healthRes.ok) break;
+                } catch {
+                    // Not ready yet
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+
         return container;
     } catch (error) {
         // Clean up workspace on failure
         await rm(workspacePath, { recursive: true, force: true }).catch(() => { });
         throw new Error(`Failed to create container: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-}
-
-/**
- * Execute code in a container
- */
-export async function executeInContainer(
-    container: Container,
-    code: string,
-    timeoutMs: number = env.executionTimeoutMs,
-    options: { executionId?: string; sessionKey?: string; imageOutputMode?: ImageOutputMode } = {}
-): Promise<ExecutionResult> {
-    const startTime = Date.now();
-    // Ensure we always operate on an absolute workspace path.
-    const workspacePath = resolve(container.workspacePath);
-    container.workspacePath = workspacePath;
-    const safeId = options.executionId
-        ? options.executionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
-        : '';
-    const safeSessionKey = options.sessionKey
-        ? options.sessionKey.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
-        : '';
-    const suffix = safeId ? `_${safeId}` : '';
-    const sessionStateEnabled = safeSessionKey ? 'True' : 'False';
-    const sessionStateFilename = safeSessionKey ? `_state_${safeSessionKey}.pkl` : '';
-    const imageOutputMode: ImageOutputMode = options.imageOutputMode ?? 'data_url';
-
-    // Write code to a temporary file in the workspace. Some execution paths may
-    // delete workspaces unexpectedly (manual cleanup, crash recovery), so make
-    // sure the directory exists before writing.
-    await mkdir(workspacePath, { recursive: true });
-    const codePath = join(workspacePath, `_exec_code${suffix}.py`);
-    const outputFilename = `_outputs${suffix}.json`;
-
-    // Wrap code with output capturing
-    const userCodeBase64 = Buffer.from(code, 'utf8').toString('base64');
-    const wrappedCode = `
-import sys
-import json
-import traceback
-import pickle
-import base64
-from pathlib import Path
-
-# Capture outputs
-_outputs = []
-_capture_outputs = True
-
-# Override print to capture output
-_original_print = print
-def print(*args, **kwargs):
-    import io
-    output = io.StringIO()
-    _original_print(*args, file=output, **kwargs)
-    value = output.getvalue()
-    if _capture_outputs:
-        _outputs.append({"type": "text", "content": value})
-    _original_print(*args, **kwargs)
-
-# Helper to display dataframes nicely
-def _display_df(df, max_rows=20):
-    """Display DataFrame as table output"""
-    if _capture_outputs and hasattr(df, 'to_dict'):
-        data = df.head(max_rows).to_dict('records')
-        cols = list(df.columns)
-        _outputs.append({
-            "type": "table",
-            "content": f"DataFrame ({len(df)} rows, {len(cols)} cols)",
-            "data": {"columns": cols, "rows": data}
-        })
-
-# Make datasets accessible + user packages visible
-import os
-os.chdir('${CONTAINER_WORKSPACE_ROOT}')
-_AUTOML_PYTHON_PATH = '${CONTAINER_PYTHON_SITE_DIR}'
-if _AUTOML_PYTHON_PATH not in sys.path:
-    sys.path.insert(0, _AUTOML_PYTHON_PATH)
-
-# Matplotlib figure capture (Jupyter-like inline plots)
-# - Capture on plt.show()
-# - Capture any remaining figures at end-of-cell
-os.environ.setdefault("MPLBACKEND", "Agg")
-
-import uuid
-import builtins as _builtins
-
-_AUTOML_ARTIFACT_DIR = Path("${AUTOML_ARTIFACT_ROOT}") / str(uuid.uuid4())
-try:
-    _AUTOML_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-except Exception:
-    _AUTOML_ARTIFACT_DIR = None
-
-_MPL_CAPTURE_INDEX = 0
-_MPL_MAX_FIGURES_PER_CELL = ${MPL_MAX_FIGURES_PER_CELL}
-_MPL_PATCHED = False
-_MPL_CAPTURE_LIMIT_REACHED = False
-
-def _capture_matplotlib_figures(reason="show"):
-    global _MPL_CAPTURE_INDEX
-    global _MPL_CAPTURE_LIMIT_REACHED
-    if not _capture_outputs:
-        return
-    if _AUTOML_ARTIFACT_DIR is None:
-        return
-    if "matplotlib.pyplot" not in sys.modules:
-        return
-
-    try:
-        import matplotlib.pyplot as plt
-    except Exception:
-        return
-
-    try:
-        fignums = list(plt.get_fignums())
-    except Exception:
-        return
-
-    for fig_num in fignums:
-        if _MPL_CAPTURE_INDEX >= _MPL_MAX_FIGURES_PER_CELL:
-            if not _MPL_CAPTURE_LIMIT_REACHED:
-                _outputs.append({
-                    "type": "text",
-                    "content": f"[matplotlib] Too many figures; showing first {_MPL_MAX_FIGURES_PER_CELL} only.\\n"
-                })
-                _MPL_CAPTURE_LIMIT_REACHED = True
-            try:
-                plt.close(fig_num)
-            except Exception:
-                pass
-            continue
-
-        try:
-            fig = plt.figure(fig_num)
-            filename = f"mpl_{_MPL_CAPTURE_INDEX:03d}_{reason}_{fig_num}.png"
-            path = _AUTOML_ARTIFACT_DIR / filename
-            fig.savefig(str(path), format="png", bbox_inches="tight")
-            _outputs.append({
-                "type": "image",
-                "content": str(path),
-                "mimeType": "image/png"
-            })
-            _MPL_CAPTURE_INDEX += 1
-        except Exception:
-            _outputs.append({
-                "type": "text",
-                "content": "[matplotlib] Failed to capture figure output.\\n"
-            })
-        finally:
-            try:
-                plt.close(fig_num)
-            except Exception:
-                pass
-
-def _patch_matplotlib_pyplot():
-    global _MPL_PATCHED
-    if _MPL_PATCHED:
-        return
-    if "matplotlib.pyplot" not in sys.modules:
-        return
-
-    try:
-        import matplotlib.pyplot as plt
-    except Exception:
-        return
-
-    if getattr(plt.show, "__automl_patched__", False):
-        _MPL_PATCHED = True
-        return
-
-    def _automl_show(*args, **kwargs):
-        _capture_matplotlib_figures("show")
-        return None
-
-    _automl_show.__automl_patched__ = True
-    plt.show = _automl_show
-    _MPL_PATCHED = True
-
-_original_import = _builtins.__import__
-def _automl_import(name, globals=None, locals=None, fromlist=(), level=0):
-    module = _original_import(name, globals, locals, fromlist, level)
-    try:
-        if isinstance(name, str) and name.startswith("matplotlib"):
-            _patch_matplotlib_pyplot()
-    except Exception:
-        pass
-    return module
-
-_builtins.__import__ = _automl_import
-
-try:
-    _patch_matplotlib_pyplot()
-except Exception:
-    pass
-
-_SESSION_STATE_PATH = Path('${CONTAINER_WORKSPACE_ROOT}/${sessionStateFilename}') if ${sessionStateEnabled} else None
-
-def _restore_state():
-    if _SESSION_STATE_PATH is None or not _SESSION_STATE_PATH.exists():
-        return
-    try:
-        with _SESSION_STATE_PATH.open('rb') as _state_file:
-            _state = pickle.load(_state_file)
-        if isinstance(_state, dict):
-            for _name, _value in _state.items():
-                globals()[_name] = _value
-    except Exception:
-        # Ignore state restore failures and continue with a clean namespace.
-        pass
-
-def _persist_state():
-    if _SESSION_STATE_PATH is None:
-        return
-    _skip_names = {
-        'sys', 'json', 'traceback', 'pickle', 'Path', 'os',
-        '_outputs', '_capture_outputs', '_original_print', 'print', '_display_df',
-        '_SESSION_STATE_PATH', '_restore_state', '_persist_state', 'resolve_dataset_path'
-    }
-    _state = {}
-    for _name, _value in globals().items():
-        if _name.startswith('__') or _name.startswith('_') or _name in _skip_names:
-            continue
-        try:
-            pickle.dumps(_value)
-        except Exception:
-            continue
-        _state[_name] = _value
-    try:
-        with _SESSION_STATE_PATH.open('wb') as _state_file:
-            pickle.dump(_state, _state_file)
-    except Exception:
-        # Ignore state persistence failures to avoid masking user code results.
-        pass
-
-def resolve_dataset_path(filename, dataset_id=None):
-    """Resolve dataset path across cloud and browser mounts.
-
-    Checks multiple locations in order of priority:
-    1. Direct filename in workspace root (/workspace/{filename})
-    2. Workspace datasets dir (/workspace/datasets/{filename})
-    3. Mounted datasets dir (/datasets/{filename})
-    4. UUID-based paths if dataset_id provided
-    5. Fallback to recursive search
-    """
-    candidates = []
-
-    # First priority: direct filename access (workspace root and datasets dir)
-    candidates.extend([
-        Path('/workspace') / filename,
-        Path('/workspace/datasets') / filename,
-        Path('/datasets') / filename
-    ])
-
-    # UUID-based paths if dataset_id is provided
-    if dataset_id:
-        candidates.extend([
-            Path('/workspace/datasets') / dataset_id / filename,
-            Path('/datasets') / dataset_id / filename
-        ])
-
-        # Alias pattern with suffix
-        suffix = ''.join([c for c in str(dataset_id) if c.isalnum()])[:8]
-        if suffix:
-            stem = Path(filename).stem
-            ext = Path(filename).suffix
-            alias = f"{stem}__{suffix}{ext}"
-            candidates.extend([
-                Path('/workspace/datasets') / alias,
-                Path('/datasets') / alias
-            ])
-
-    # Check all candidates
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
-
-    # Fallback: recursive search
-    for root in [Path('/workspace'), Path('/workspace/datasets'), Path('/datasets')]:
-        if root.exists():
-            matches = list(root.rglob(filename))
-            if matches:
-                return str(matches[0])
-
-    # Return first candidate as fallback (will fail with clear error)
-    return str(candidates[0])
-
-_restore_state()
-
-_USER_CODE_B64 = "${userCodeBase64}"
-_user_code = base64.b64decode(_USER_CODE_B64).decode("utf-8")
-
-try:
-    exec(compile(_user_code, "<cell>", "exec"), globals(), globals())
-except Exception as e:
-    _outputs.append({
-        "type": "error",
-        "content": traceback.format_exc()
-    })
-finally:
-    try:
-        _capture_matplotlib_figures("end")
-    except Exception:
-        pass
-    _persist_state()
-
-# Write outputs to file
-with open('${CONTAINER_WORKSPACE_ROOT}/${outputFilename}', 'w') as f:
-    json.dump(_outputs, f)
-`;
-
-    await writeFile(codePath, wrappedCode);
-
-    // Execute in container
-    const execPath = `${CONTAINER_WORKSPACE_ROOT}/_exec_code${suffix}.py`;
-    const dockerExec = spawn('docker', [
-        'exec',
-        container.containerId,
-        'python',
-        execPath
-    ]);
-
-    let stdout = '';
-    let stderr = '';
-
-    dockerExec.stdout.on('data', (data) => {
-        stdout += data.toString();
-    });
-
-    dockerExec.stderr.on('data', (data) => {
-        stderr += data.toString();
-    });
-
-    // Handle timeout
-    const timeoutPromise = new Promise<ExecutionResult>((_, reject) => {
-        setTimeout(() => {
-            dockerExec.kill();
-            reject(new Error('Execution timeout'));
-        }, timeoutMs);
-    });
-
-    const executionPromise = new Promise<ExecutionResult>((resolve) => {
-        dockerExec.on('close', async (exitCode) => {
-            const executionMs = Date.now() - startTime;
-
-            // Try to read captured outputs
-            let outputs: RichOutput[] = [];
-            try {
-                const { stdout: outputJson } = await execDocker([
-                    'exec',
-                    container.containerId,
-                    'cat',
-                    `${CONTAINER_WORKSPACE_ROOT}/${outputFilename}`
-                ]);
-                outputs = JSON.parse(outputJson);
-                if (imageOutputMode === 'data_url') {
-                    outputs = await materializeImageArtifacts(container, outputs);
-                }
-            } catch {
-                // If no outputs file, use stdout as text output
-                if (stdout.trim()) {
-                    outputs.push({ type: 'text', content: stdout });
-                }
-            }
-
-            // Clean up temp files
-            await execDocker([
-                'exec',
-                container.containerId,
-                'rm',
-                '-f',
-                execPath,
-                `${CONTAINER_WORKSPACE_ROOT}/${outputFilename}`
-            ]).catch(() => { });
-
-            container.lastUsedAt = new Date();
-
-            const hasErrorOutput = outputs.some((output) => output.type === 'error');
-
-            if (exitCode !== 0 && stderr) {
-                outputs.push({ type: 'error', content: stderr });
-            }
-
-            resolve({
-                status: exitCode === 0 && !hasErrorOutput ? 'success' : 'error',
-                stdout,
-                stderr: hasErrorOutput && !stderr
-                    ? outputs.find((output) => output.type === 'error')?.content ?? ''
-                    : stderr,
-                outputs,
-                executionMs,
-                error: exitCode !== 0 || hasErrorOutput ? (stderr || outputs.find((output) => output.type === 'error')?.content) : undefined
-            });
-        });
-    });
-
-    try {
-        return await Promise.race([executionPromise, timeoutPromise]);
-    } catch {
-        return {
-            status: 'timeout',
-            stdout,
-            stderr,
-            outputs: [{ type: 'error', content: 'Execution timed out' }],
-            executionMs: timeoutMs,
-            error: 'Execution timed out'
-        };
     }
 }
 
@@ -1170,6 +717,9 @@ export async function destroyContainer(containerId: string): Promise<void> {
     if (!container) return;
 
     try {
+        // Shut down kernel before destroying container (keyed on container.id, not Docker containerId)
+        await shutdownKernel({ id: container.id, kernelGatewayPort: container.kernelGatewayPort }).catch(() => {});
+
         // Stop and remove container
         await execAsync(`docker rm -f ${container.containerId}`).catch(() => { });
 

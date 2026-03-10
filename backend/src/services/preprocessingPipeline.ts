@@ -9,10 +9,11 @@ import { hasDatabaseConfiguration } from '../db.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createProjectRepository } from '../repositories/projectRepository.js';
 
-import { executeInContainer, getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
 import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
 import { profileDataset } from './datasetProfiler.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
+import * as kernelManager from './kernelManager.js';
 import {
   createLlmClient,
   type LlmToolCall,
@@ -1012,9 +1013,7 @@ export async function executePreprocessingPipeline(
     steps
   });
 
-  const executionResult = await executeInContainer(container, script, env.executionTimeoutMs, {
-    executionId: randomUUID()
-  });
+  const executionResult = await kernelManager.execute(container, script, env.executionTimeoutMs);
 
   if (executionResult.status !== 'success') {
     throw new Error(executionResult.stderr || executionResult.error || 'Preprocessing execution failed');

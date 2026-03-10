@@ -1,0 +1,355 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage[table]{xcolor}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+
+% ── Styling ───────────────────────────────────────────────────────────────────
+\definecolor{ncblue}{HTML}{2563EB}
+\definecolor{ncgray}{HTML}{6B7280}
+\definecolor{lightgray}{HTML}{F3F4F6}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=ncblue,
+    urlcolor=ncblue,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{ncgray}{\small NovaCraft Analytics — Business Context}}
+\fancyhead[R]{\textcolor{ncgray}{\small\thepage}}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{ncblue}}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries}{}{0em}{}
+
+% ── Document ──────────────────────────────────────────────────────────────────
+\begin{document}
+
+\begin{center}
+    {\Huge\bfseries\textcolor{ncblue}{NovaCraft Inc.}}\\[0.5em]
+    {\Large Business Intelligence \& Data Context}\\[1em]
+    {\large\textcolor{ncgray}{Prepared for the AutoML Platform Demo}}\\[0.5em]
+    {\textcolor{ncgray}{March 2026}}
+\end{center}
+
+\vspace{1em}
+\hrule
+\vspace{1.5em}
+
+\section{Executive Summary}
+
+NovaCraft is a mid-market B2B SaaS company providing cloud-based project management
+and collaboration tools. Founded in 2018, the company serves approximately 2,500
+business customers across 35 countries, with a product suite spanning four
+subscription tiers (Free, Starter, Professional, Enterprise).
+
+This document describes the business context, data assets, and analytical
+opportunities available in the NovaCraft mock data package. The data is designed
+to exercise a full AutoML pipeline: profiling, preprocessing, feature engineering,
+model training, and evaluation.
+
+\subsection{Key Business Metrics}
+
+\begin{itemize}[nosep]
+    \item \textbf{Total Customers:} $\sim$2,500 active and churned accounts
+    \item \textbf{Active Rate:} $\sim$82\% of customers remain active
+    \item \textbf{Subscription Records:} $\sim$3,200 (1.3 per customer avg.)
+    \item \textbf{Support Tickets:} $\sim$6,800 lifetime tickets
+    \item \textbf{Usage Tracking:} $\sim$10,700 monthly usage snapshots
+    \item \textbf{Marketing Campaigns:} $\sim$500 campaigns (2022--2025)
+\end{itemize}
+
+\section{Business Context}
+
+\subsection{Product \& Pricing}
+
+NovaCraft offers a tiered SaaS model:
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{tabular}{llrl}
+    \toprule
+    \textbf{Tier} & \textbf{Target Segment} & \textbf{MRR Range} & \textbf{Mix} \\
+    \midrule
+    Free         & Solo / evaluation      & \$0           & 10\% \\
+    Starter      & Small teams            & \$29--99      & 30\% \\
+    Professional & Mid-size orgs          & \$99--499     & 35\% \\
+    Enterprise   & Large organizations    & \$499--2,500+ & 25\% \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+Revenue is primarily driven by seat-based pricing with annual and monthly billing
+cycles. Enterprise accounts negotiate custom pricing with dedicated account managers.
+
+\subsection{Customer Base}
+
+Customers span 12 industries, with Technology, Healthcare, and Finance representing
+the largest segments. Company sizes range from startups (1--10 employees) to large
+enterprises (1,000+), with the majority in the 11--200 employee band.
+
+Acquisition channels include organic search (25\%), paid search, social media,
+referrals, direct signups, partner channels, and content marketing.
+
+\subsection{Stakeholders}
+
+\begin{itemize}[nosep]
+    \item \textbf{Product Team} — Feature adoption, usage patterns, NPS analysis
+    \item \textbf{Customer Success} — Churn prediction, health scoring, escalation risk
+    \item \textbf{Sales} — MRR forecasting, upsell/cross-sell identification
+    \item \textbf{Marketing} — Campaign ROI, channel attribution, lead quality
+    \item \textbf{Support} — Resolution time optimization, agent performance, CSAT drivers
+\end{itemize}
+
+\section{Data Dictionary}
+
+\subsection{customers.csv}
+
+Core customer master data with 14 columns and $\sim$2,530 rows (including 30
+intentional duplicate rows for deduplication testing).
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{longtable}{lllp{5.5cm}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endhead
+    customer\_id          & string  & 0\%  & Primary key (NC-XXXXX) \\
+    company\_name         & string  & 0\%  & Business name (high cardinality) \\
+    industry              & string  & 0\%  & Business vertical (12 categories) \\
+    company\_size         & string  & 0\%  & Ordinal employee band \\
+    country               & string  & 0\%  & Country of headquarters \\
+    signup\_date          & date    & 0\%  & Account creation date \\
+    plan\_tier            & string  & 0\%  & Current subscription tier \\
+    annual\_revenue\_usd  & float   & 8\%  & Annual revenue (right-skewed, outliers) \\
+    employee\_count       & integer & 5\%  & Employee headcount (right-skewed) \\
+    acquisition\_channel  & string  & 0\%  & Marketing attribution channel \\
+    account\_manager      & string  & 12\% & Assigned account manager \\
+    is\_active            & boolean & 0\%  & \textbf{Classification target} \\
+    region\_code          & string  & 0\%  & Constant column (all ``GLOBAL'') \\
+    data\_source          & string  & 0\%  & Ingestion source ($<$20 unique) \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{subscriptions.csv}
+
+Subscription lifecycle records with 12 columns and $\sim$3,200 rows.
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{longtable}{lllp{5.5cm}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endhead
+    subscription\_id     & string  & 0\%  & Primary key \\
+    customer\_id         & string  & 0\%  & FK to customers \\
+    plan\_name           & string  & 0\%  & Plan tier at subscription time \\
+    billing\_cycle       & string  & 0\%  & monthly or annual \\
+    mrr\_usd             & float   & 3\%  & Monthly recurring revenue (right-skewed) \\
+    start\_date          & date    & 0\%  & Subscription start \\
+    end\_date            & date    & 39\% & Null if still active \\
+    cancellation\_reason & string  & 51\% & Reason for churn \\
+    discount\_pct        & float   & 15\% & Applied discount (outliers present) \\
+    seats\_purchased     & integer & 0\%  & License seat count \\
+    payment\_method      & string  & 0\%  & Payment type (4 categories) \\
+    auto\_renew          & boolean & 2\%  & Auto-renewal flag \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{support\_tickets.csv}
+
+Customer support interactions with 11 columns and $\sim$6,800 rows.
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{longtable}{lllp{5.5cm}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endhead
+    ticket\_id           & string  & 0\%  & Primary key \\
+    customer\_id         & string  & 0\%  & FK to customers \\
+    created\_at          & date    & 0\%  & Ticket creation timestamp \\
+    resolved\_at         & date    & 20\% & Resolution date (correlated missing) \\
+    category             & string  & 0\%  & 8 ticket categories \\
+    priority             & string  & 0\%  & low / medium / high / critical \\
+    resolution\_hours    & float   & 20\% & Hours to resolve (correlated missing) \\
+    satisfaction\_score  & integer & 25\% & CSAT 1--5 (left-skewed) \\
+    agent\_id            & string  & 0\%  & Support agent identifier \\
+    escalated            & boolean & 0\%  & \textbf{Classification target} \\
+    description\_length  & integer & 0\%  & Ticket text length (right-skewed) \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{usage\_metrics.csv}
+
+Monthly product usage aggregates with 13 columns and $\sim$10,700 rows.
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{longtable}{lllp{5.5cm}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endhead
+    customer\_id          & string  & 0\%  & FK to customers \\
+    month                 & date    & 0\%  & First-of-month date \\
+    active\_users         & integer & 0\%  & Monthly active users \\
+    total\_logins         & integer & 0\%  & Total login count (right-skewed) \\
+    projects\_created     & integer & 0\%  & New projects created \\
+    tasks\_completed      & integer & 0\%  & Completed tasks (outliers) \\
+    storage\_used\_gb     & float   & 7\%  & Storage consumption in GB \\
+    api\_calls            & integer & 0\%  & API requests (extreme right-skew) \\
+    integrations\_active  & integer & 0\%  & Active third-party integrations \\
+    avg\_session\_minutes & float   & 10\% & Average session duration \\
+    feature\_adoption\_pct& float   & 5\%  & Percentage of features used \\
+    nps\_response         & integer & 50\% & NPS score 0--10 (\textbf{critical missing}) \\
+    export\_count         & integer & 0\%  & Data exports (near-constant, 95\% = 0) \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{marketing\_campaigns.csv}
+
+Campaign performance data with 10 columns and $\sim$505 rows (including 5 duplicates).
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{longtable}{lllp{5.5cm}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Missing} & \textbf{Description} \\
+    \midrule
+    \endhead
+    campaign\_id      & string  & 0\%  & Primary key \\
+    campaign\_name    & string  & 0\%  & Descriptive name (high cardinality) \\
+    channel           & string  & 0\%  & Marketing channel (6 categories) \\
+    start\_date       & date    & 0\%  & Campaign start date \\
+    end\_date         & date    & 0\%  & Campaign end date \\
+    budget\_usd       & float   & 0\%  & Campaign budget (right-skewed) \\
+    leads\_generated  & integer & 0\%  & Leads produced (outliers) \\
+    conversions       & integer & 0\%  & \textbf{Regression target} \\
+    cost\_per\_lead   & float   & 8\%  & Cost per lead metric \\
+    target\_industry  & string  & 0\%  & Target vertical (12 + ``All'') \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+\section{Data Quality Assessment}
+
+The datasets contain intentionally injected data quality issues to exercise the
+AutoML platform's profiling and preprocessing capabilities:
+
+\begin{center}
+\rowcolors{2}{lightgray}{white}
+\begin{longtable}{lll}
+    \toprule
+    \textbf{Issue} & \textbf{Affected Columns} & \textbf{Severity} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Issue} & \textbf{Affected Columns} & \textbf{Severity} \\
+    \midrule
+    \endhead
+    Missing values ($\sim$5\%)    & employee\_count, feature\_adoption\_pct & Low \\
+    Missing values ($\sim$10--25\%) & account\_manager, discount\_pct, satisfaction\_score & Medium \\
+    Missing values ($\sim$40--60\%) & end\_date, cancellation\_reason, nps\_response & High \\
+    Outliers (IQR)              & annual\_revenue, resolution\_hours, api\_calls & Medium \\
+    Right-skewed distributions  & mrr\_usd, api\_calls, tasks\_completed, budget\_usd & Medium \\
+    Left-skewed distribution    & satisfaction\_score & Low \\
+    Constant column             & region\_code (all ``GLOBAL'') & High \\
+    Near-constant column        & export\_count (95\% zeros) & Medium \\
+    Duplicate rows              & customers (30), marketing\_campaigns (5) & Medium \\
+    Type conversion candidate   & data\_source ($<$20 unique strings) & Low \\
+    Correlated missingness      & resolved\_at $\leftrightarrow$ resolution\_hours & Medium \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+\section{Recommended Analyses}
+
+\subsection{Customer Churn Prediction}
+
+\textbf{Target:} \texttt{is\_active} (binary classification)
+
+Join customers with aggregated usage metrics and support ticket counts.
+Key features: tenure (months since signup), plan tier, support ticket frequency,
+average satisfaction score, usage trends, and subscription changes.
+
+\subsection{Revenue Forecasting}
+
+\textbf{Target:} \texttt{mrr\_usd} (regression)
+
+Predict monthly recurring revenue from customer profile, company size,
+industry, usage intensity, and feature adoption metrics.
+
+\subsection{Support Escalation Prediction}
+
+\textbf{Target:} \texttt{escalated} (binary classification)
+
+Use ticket metadata (category, priority, description length) combined with
+customer history to predict which tickets will require escalation.
+
+\subsection{Marketing Campaign Optimization}
+
+\textbf{Target:} \texttt{conversions} (regression)
+
+Model campaign conversion rates as a function of channel, budget allocation,
+target industry, campaign duration, and historical performance.
+
+\subsection{Cross-Table Feature Engineering}
+
+The relational structure enables rich derived features:
+\begin{itemize}[nosep]
+    \item Tickets per customer per month
+    \item Average satisfaction trend over time
+    \item Usage growth rate (month-over-month)
+    \item Subscription upgrade/downgrade patterns
+    \item Days since last support interaction
+\end{itemize}
+
+\vspace{2em}
+\hrule
+\vspace{1em}
+
+\begin{center}
+    \textcolor{ncgray}{\small This document accompanies the NovaCraft mock data package
+    for the AutoML platform. Data is synthetically generated for demonstration
+    purposes and does not represent any real company or individuals.}
+\end{center}
+
+\end{document}

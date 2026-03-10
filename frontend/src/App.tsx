@@ -11,7 +11,7 @@
 
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, Link } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/sonner';
 import { UploadArea } from '@/components/upload/UploadArea';
@@ -28,9 +28,10 @@ import { ProfileSettings } from '@/components/auth/ProfileSettings';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
 import { SignupForm } from '@/components/auth/SignupForm';
+import { DocsPage } from '@/components/docs/DocsPage';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAuthStore } from '@/stores/authStore';
-import { ArrowUpRight, FolderOpen } from 'lucide-react';
+import { BookOpen, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import type { Phase } from '@/types/phase';
@@ -125,9 +126,9 @@ function HomePage() {
           className="text-muted-foreground"
           size="sm"
         >
-          <a href="https://github.com/ShreeChaturvedi/AutoML" target="_blank" rel="noreferrer">
-            Learn More <ArrowUpRight />
-          </a>
+          <Link to="/docs">
+            Learn More <BookOpen className="h-4 w-4" />
+          </Link>
         </Button>
         <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
       </Empty>
@@ -393,6 +394,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ProfileSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/docs"
+            element={
+              <ProtectedRoute>
+                <DocsPage />
               </ProtectedRoute>
             }
           />

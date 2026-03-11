@@ -11,7 +11,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { FeatureCategory, FeatureMethod, FeatureSpec, PipelineVersion } from '@/types/feature';
-import { FEATURE_TEMPLATES } from '@/types/feature';
+import { FEATURE_TEMPLATES } from '@/lib/features/featureTemplates';
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
 const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';

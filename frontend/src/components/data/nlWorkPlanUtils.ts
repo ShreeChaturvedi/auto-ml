@@ -9,8 +9,8 @@ import {
   Wrench
 } from 'lucide-react';
 
+import { getNlWorkPhaseLabel } from '@/lib/nlQuery/phaseStateMachine';
 import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
-import { getNlWorkPhaseLabel } from '@/types/nlQuery';
 
 export type WarningTone = {
   container: string;

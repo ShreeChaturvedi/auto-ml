@@ -30,12 +30,14 @@ import {
   createInitialNlWorkPhases,
   finalizeNlModelWorkBlocks,
   finalizeNlWorkPhasesWithoutStream,
-  markNlWorkPhasesFailed,
-  type NlGenerationResult,
-  type NlModelWorkBlockState,
-  type NlProviderInfo,
-  type NlQueryStreamEvent,
-  type NlWorkPhaseState
+  markNlWorkPhasesFailed
+} from '@/lib/nlQuery/phaseStateMachine';
+import type {
+  NlGenerationResult,
+  NlModelWorkBlockState,
+  NlProviderInfo,
+  NlQueryStreamEvent,
+  NlWorkPhaseState
 } from '@/types/nlQuery';
 
 export type ApproveThemeClasses = {

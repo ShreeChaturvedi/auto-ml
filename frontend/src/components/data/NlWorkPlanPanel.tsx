@@ -23,11 +23,8 @@ import {
 
 import type { NlProviderInfo, NlQueryExplanation } from '@/lib/api/query';
 import { cn } from '@/lib/utils';
-import {
-  getPrimaryNlWorkPhase,
-  type NlModelWorkBlockState,
-  type NlWorkPhaseState
-} from '@/types/nlQuery';
+import { getPrimaryNlWorkPhase } from '@/lib/nlQuery/phaseStateMachine';
+import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
 
 import { TranscriptTimeline } from './TranscriptTimeline';
 import {

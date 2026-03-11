@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
 
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
+import { getNlWorkPhaseLabel } from '@/lib/nlQuery/phaseStateMachine';
 import type { NlModelWorkBlockState } from '@/types/nlQuery';
-import { getNlWorkPhaseLabel } from '@/types/nlQuery';
 import { cn } from '@/lib/utils';
 
 import {

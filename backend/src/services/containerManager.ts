@@ -337,7 +337,7 @@ export async function getOrCreateContainer(config: ContainerConfig): Promise<Con
 /**
  * Clean up stale containers (older than 30 minutes of inactivity)
  */
-export async function cleanupStaleContainers(): Promise<void> {
+async function cleanupStaleContainers(): Promise<void> {
     const staleThreshold = 30 * 60 * 1000; // 30 minutes
     const now = Date.now();
 
@@ -355,7 +355,7 @@ setInterval(cleanupStaleContainers, 5 * 60 * 1000);
  * Kill all Docker containers matching our naming pattern.
  * Called on server startup to clean up orphaned containers from previous runs.
  */
-export async function killOrphanedContainers(): Promise<number> {
+async function killOrphanedContainers(): Promise<number> {
     try {
         // Find all containers matching our pattern (including stopped ones)
         const { stdout } = await execDocker([

@@ -47,7 +47,7 @@ function isInstallTimeoutError(details: string): boolean {
     return details.includes(INSTALL_TIMEOUT_MESSAGE);
 }
 
-export function normalizePackageInput(input: string): { requirements: string[]; aliasNotice: string } {
+function normalizePackageInput(input: string): { requirements: string[]; aliasNotice: string } {
     const trimmed = input.trim();
     if (!trimmed) {
         return { requirements: [], aliasNotice: '' };
@@ -78,7 +78,7 @@ export function normalizePackageInput(input: string): { requirements: string[]; 
     };
 }
 
-export function formatInstallError(details: string, requirements: string[]): string {
+function formatInstallError(details: string, requirements: string[]): string {
     if (!details) {
         return `Failed to install ${requirements.join(', ')}.`;
     }
@@ -103,7 +103,7 @@ export function formatInstallError(details: string, requirements: string[]): str
     return details.split('\n').slice(-6).join(' ');
 }
 
-export async function runPipInstall(args: string[]): Promise<{
+async function runPipInstall(args: string[]): Promise<{
     success: boolean;
     message?: string;
     details: string;
@@ -118,7 +118,7 @@ export async function runPipInstall(args: string[]): Promise<{
     }
 }
 
-export async function runPipInstallStream(
+async function runPipInstallStream(
     args: string[],
     onEvent: (event: PackageInstallEvent) => void,
     attemptLabel: 'binary-attempt' | 'source-attempt'

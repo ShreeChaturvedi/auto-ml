@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 
 /**
  * Renders arbitrary HTML inside an open Shadow DOM root.
@@ -72,23 +72,22 @@ interface ShadowHtmlProps {
 }
 
 export function ShadowHtml({ html, className }: ShadowHtmlProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
   const shadowRef = useRef<ShadowRoot | null>(null);
 
   // Attach the shadow root once on mount
   const attachShadow = useCallback((node: HTMLDivElement | null) => {
     if (!node || shadowRef.current) return;
     shadowRef.current = node.attachShadow({ mode: 'open' });
-    hostRef.current = node;
   }, []);
 
-  // Update shadow content whenever html changes
-  useEffect(() => {
+  // Attach shadow and set content via ref callback — avoids useEffect race
+  const setContent = useCallback((node: HTMLDivElement | null) => {
+    attachShadow(node);
     const shadow = shadowRef.current;
-    if (!shadow) return;
+    if (shadow) {
+      shadow.innerHTML = `<style>${SHADOW_STYLES}</style>${html}`;
+    }
+  }, [attachShadow, html]);
 
-    shadow.innerHTML = `<style>${SHADOW_STYLES}</style>${html}`;
-  }, [html]);
-
-  return <div ref={attachShadow} className={className} />;
+  return <div ref={setContent} className={className} />;
 }

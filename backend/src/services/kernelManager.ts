@@ -56,6 +56,13 @@ interface JupyterMessage {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const JUPYTER_PROTOCOL_VERSION = '5.3';
+const JUPYTER_USERNAME = 'automl';
+
+/* ------------------------------------------------------------------ */
 /*  Module-level cache                                                */
 /* ------------------------------------------------------------------ */
 
@@ -194,7 +201,11 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
         if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
             return;
         }
-        // WS is dead — reconnect
+        // WS is dead — terminate stale socket and reconnect
+        if (conn.ws) {
+            conn.ws.removeAllListeners();
+            conn.ws.terminate();
+        }
         conn.ws = await openWebSocket(wsUrl(container, conn.kernelId));
         return;
     }
@@ -291,8 +302,8 @@ export async function execute(
             msg_id: msgId,
             msg_type: 'execute_request',
             session: conn.sessionId,
-            username: 'automl',
-            version: '5.3',
+            username: JUPYTER_USERNAME,
+            version: JUPYTER_PROTOCOL_VERSION,
             date: new Date().toISOString(),
         },
         parent_header: {},
@@ -522,11 +533,12 @@ export async function restartKernel(container: KernelContainer): Promise<void> {
         throw new Error(`No kernel connection for container ${container.id}`);
     }
 
-    // Close existing WebSocket before restart
-    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
-        conn.ws.close();
+    // Tear down existing WebSocket before restart
+    if (conn.ws) {
+        conn.ws.removeAllListeners();
+        conn.ws.terminate();
+        conn.ws = null;
     }
-    conn.ws = null;
 
     await gatewayFetch(conn, `/api/kernels/${conn.kernelId}/restart`, 'POST', 'restart');
 

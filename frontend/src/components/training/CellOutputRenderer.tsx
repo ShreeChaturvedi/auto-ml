@@ -24,8 +24,6 @@ export function CellOutputRenderer({ outputs, className }: CellOutputRendererPro
 }
 
 function OutputBody({ output }: { output: RichOutput }) {
-    const tableData = parseTableData(output.data);
-
     switch (output.type) {
         case 'text':
         case 'error':
@@ -39,7 +37,7 @@ function OutputBody({ output }: { output: RichOutput }) {
             );
 
         case 'table':
-            return <TableOutput output={output} tableData={tableData} />;
+            return <TableOutput output={output} tableData={parseTableData(output.data)} />;
 
         case 'image': {
             const imageSrc = output.content.startsWith('outputs/')

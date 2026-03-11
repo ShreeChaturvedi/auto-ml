@@ -167,148 +167,180 @@ function numericParam(value: unknown, fallback: number): number {
   return Number.isFinite(num) ? num : fallback;
 }
 
-function buildFeatureCode(feature: FeatureSpec, dataframeName: string): string {
-  const src = pyString(feature.sourceColumn);
-  const dst = pyString(feature.featureName);
-  const secondary = feature.secondaryColumn ? pyString(feature.secondaryColumn) : undefined;
-  const params = feature.params ?? {};
+type CodegenFn = (
+  feature: FeatureSpec,
+  dataframeName: string,
+  src: string,
+  dst: string,
+  secondary: string | undefined
+) => string;
 
-  switch (feature.method) {
-    case 'log_transform': {
-      const offset = numericParam(params.offset, 1);
-      return `${dataframeName}[${dst}] = np.log(${dataframeName}[${src}] + ${offset})`;
-    }
-    case 'log1p_transform':
-      return `${dataframeName}[${dst}] = np.log1p(${dataframeName}[${src}])`;
-    case 'sqrt_transform':
-      return `${dataframeName}[${dst}] = np.sqrt(${dataframeName}[${src}])`;
-    case 'square_transform':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] ** 2`;
-    case 'reciprocal_transform':
-      return `${dataframeName}[${dst}] = 1 / ${dataframeName}[${src}].replace(0, np.nan)`;
-    case 'box_cox':
-      return `${dataframeName}[${dst}], _ = boxcox(${dataframeName}[${src}] + 1e-10)`;
-    case 'yeo_johnson':
-      return `${dataframeName}[${dst}], _ = yeojohnson(${dataframeName}[${src}])`;
-    case 'standardize':
-      return `${dataframeName}[${dst}] = (${dataframeName}[${src}] - ${dataframeName}[${src}].mean()) / ${dataframeName}[${src}].std()`;
-    case 'min_max_scale': {
-      const minVal = numericParam(params.min, 0);
-      const maxVal = numericParam(params.max, 1);
-      return `_min, _max = ${dataframeName}[${src}].min(), ${dataframeName}[${src}].max()
-${dataframeName}[${dst}] = (${dataframeName}[${src}] - _min) / (_max - _min) * ${maxVal - minVal} + ${minVal}`;
-    }
-    case 'robust_scale':
-      return `_median = ${dataframeName}[${src}].median()
-_q1, _q3 = ${dataframeName}[${src}].quantile(0.25), ${dataframeName}[${src}].quantile(0.75)
-${dataframeName}[${dst}] = (${dataframeName}[${src}] - _median) / (_q3 - _q1)`;
-    case 'max_abs_scale':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] / ${dataframeName}[${src}].abs().max()`;
-    case 'bucketize': {
-      const bins = numericParam(params.bins, 5);
-      return `${dataframeName}[${dst}] = pd.cut(${dataframeName}[${src}], bins=${bins}, labels=False)`;
-    }
-    case 'quantile_bin': {
-      const quantiles = numericParam(params.quantiles, 4);
-      return `${dataframeName}[${dst}] = pd.qcut(${dataframeName}[${src}], q=${quantiles}, labels=False, duplicates='drop')`;
-    }
-    case 'one_hot_encode': {
-      const dropFirst = pyBool(params.drop_first, false);
-      return `_dummies = pd.get_dummies(${dataframeName}[${src}], prefix=${dst}, drop_first=${dropFirst})
-${dataframeName} = pd.concat([${dataframeName}, _dummies], axis=1)`;
-    }
-    case 'label_encode':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype('category').cat.codes`;
-    case 'target_encode': {
-      const targetColumn = params.targetColumn ? pyString(String(params.targetColumn)) : undefined;
-      const smoothing = numericParam(params.smoothing, 1);
-      return `_target = ${targetColumn}
-_global_mean = ${dataframeName}[_target].mean()
-_stats = ${dataframeName}.groupby(${src})[_target].agg(['mean', 'count'])
+const FEATURE_CODEGEN_MAP = new Map<FeatureMethod, CodegenFn>([
+  ['log_transform', (feature, df, src, dst) => {
+    const offset = numericParam(feature.params?.offset, 1);
+    return `${df}[${dst}] = np.log(${df}[${src}] + ${offset})`;
+  }],
+  ['log1p_transform', (_feature, df, src, dst) =>
+    `${df}[${dst}] = np.log1p(${df}[${src}])`
+  ],
+  ['sqrt_transform', (_feature, df, src, dst) =>
+    `${df}[${dst}] = np.sqrt(${df}[${src}])`
+  ],
+  ['square_transform', (_feature, df, src, dst) =>
+    `${df}[${dst}] = ${df}[${src}] ** 2`
+  ],
+  ['reciprocal_transform', (_feature, df, src, dst) =>
+    `${df}[${dst}] = 1 / ${df}[${src}].replace(0, np.nan)`
+  ],
+  ['box_cox', (_feature, df, src, dst) =>
+    `${df}[${dst}], _ = boxcox(${df}[${src}] + 1e-10)`
+  ],
+  ['yeo_johnson', (_feature, df, src, dst) =>
+    `${df}[${dst}], _ = yeojohnson(${df}[${src}])`
+  ],
+  ['standardize', (_feature, df, src, dst) =>
+    `${df}[${dst}] = (${df}[${src}] - ${df}[${src}].mean()) / ${df}[${src}].std()`
+  ],
+  ['min_max_scale', (feature, df, src, dst) => {
+    const minVal = numericParam(feature.params?.min, 0);
+    const maxVal = numericParam(feature.params?.max, 1);
+    return `_min, _max = ${df}[${src}].min(), ${df}[${src}].max()
+${df}[${dst}] = (${df}[${src}] - _min) / (_max - _min) * ${maxVal - minVal} + ${minVal}`;
+  }],
+  ['robust_scale', (_feature, df, src, dst) =>
+    `_median = ${df}[${src}].median()
+_q1, _q3 = ${df}[${src}].quantile(0.25), ${df}[${src}].quantile(0.75)
+${df}[${dst}] = (${df}[${src}] - _median) / (_q3 - _q1)`
+  ],
+  ['max_abs_scale', (_feature, df, src, dst) =>
+    `${df}[${dst}] = ${df}[${src}] / ${df}[${src}].abs().max()`
+  ],
+  ['bucketize', (feature, df, src, dst) => {
+    const bins = numericParam(feature.params?.bins, 5);
+    return `${df}[${dst}] = pd.cut(${df}[${src}], bins=${bins}, labels=False)`;
+  }],
+  ['quantile_bin', (feature, df, src, dst) => {
+    const quantiles = numericParam(feature.params?.quantiles, 4);
+    return `${df}[${dst}] = pd.qcut(${df}[${src}], q=${quantiles}, labels=False, duplicates='drop')`;
+  }],
+  ['one_hot_encode', (feature, df, src, dst) => {
+    const dropFirst = pyBool(feature.params?.drop_first, false);
+    return `_dummies = pd.get_dummies(${df}[${src}], prefix=${dst}, drop_first=${dropFirst})
+${df} = pd.concat([${df}, _dummies], axis=1)`;
+  }],
+  ['label_encode', (_feature, df, src, dst) =>
+    `${df}[${dst}] = ${df}[${src}].astype('category').cat.codes`
+  ],
+  ['target_encode', (feature, df, src, dst) => {
+    const targetColumn = feature.params?.targetColumn ? pyString(String(feature.params.targetColumn)) : undefined;
+    const smoothing = numericParam(feature.params?.smoothing, 1);
+    return `_target = ${targetColumn}
+_global_mean = ${df}[_target].mean()
+_stats = ${df}.groupby(${src})[_target].agg(['mean', 'count'])
 _smooth = (_stats['mean'] * _stats['count'] + _global_mean * ${smoothing}) / (_stats['count'] + ${smoothing})
-${dataframeName}[${dst}] = ${dataframeName}[${src}].map(_smooth)`;
-    }
-    case 'frequency_encode': {
-      const normalize = pyBool(params.normalize, true);
-      return normalize === 'True'
-        ? `_counts = ${dataframeName}[${src}].value_counts(normalize=True)
-${dataframeName}[${dst}] = ${dataframeName}[${src}].map(_counts)`
-        : `_counts = ${dataframeName}[${src}].value_counts()
-${dataframeName}[${dst}] = ${dataframeName}[${src}].map(_counts)`;
-    }
-    case 'binary_encode': {
-      const prefix = pyString(feature.featureName);
-      return `_series = ${dataframeName}[${src}].astype('category')
+${df}[${dst}] = ${df}[${src}].map(_smooth)`;
+  }],
+  ['frequency_encode', (feature, df, src, dst) => {
+    const normalize = pyBool(feature.params?.normalize, true);
+    return normalize === 'True'
+      ? `_counts = ${df}[${src}].value_counts(normalize=True)
+${df}[${dst}] = ${df}[${src}].map(_counts)`
+      : `_counts = ${df}[${src}].value_counts()
+${df}[${dst}] = ${df}[${src}].map(_counts)`;
+  }],
+  ['binary_encode', (feature, df, src) => {
+    const prefix = pyString(feature.featureName);
+    return `_series = ${df}[${src}].astype('category')
 _codes = _series.cat.codes
 _codes = _codes.where(_codes >= 0, 0)
 _max = int(_codes.max()) if len(_codes) else 0
 _bits = int(np.ceil(np.log2(_max + 1))) if _max > 0 else 1
 for _i in range(_bits):
-    ${dataframeName}[${prefix} + '_bin' + str(_i)] = ((_codes >> _i) & 1).astype(int)`;
-    }
-    case 'extract_year':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.year`;
-    case 'extract_month':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.month`;
-    case 'extract_day':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.day`;
-    case 'extract_weekday':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.weekday`;
-    case 'extract_hour':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.hour`;
-    case 'cyclical_encode': {
-      const periodKey = String(params.period ?? 'month');
-      const periodMap: Record<string, { attr: string; period: number }> = {
-        hour: { attr: 'hour', period: 24 },
-        weekday: { attr: 'weekday', period: 7 },
-        month: { attr: 'month', period: 12 },
-        day_of_year: { attr: 'dayofyear', period: 365 }
-      };
-      const mapping = periodMap[periodKey] ?? periodMap.month;
-      const prefix = pyString(feature.featureName);
-      return `_val = pd.to_datetime(${dataframeName}[${src}]).dt.${mapping.attr}
-${dataframeName}[${prefix} + '_sin'] = np.sin(2 * np.pi * _val / ${mapping.period})
-${dataframeName}[${prefix} + '_cos'] = np.cos(2 * np.pi * _val / ${mapping.period})`;
-    }
-    case 'time_since': {
-      const unitMap: Record<string, string> = {
-        days: 'D',
-        hours: 'h',
-        weeks: 'W',
-        months: 'M'
-      };
-      const unit = unitMap[String(params.unit ?? 'days')] ?? 'D';
-      return `${dataframeName}[${dst}] = (pd.Timestamp.now() - pd.to_datetime(${dataframeName}[${src}])) / np.timedelta64(1, '${unit}')`;
-    }
-    case 'polynomial': {
-      const degree = Math.max(2, Math.round(numericParam(params.degree, 2)));
-      const prefix = pyString(feature.featureName);
-      return `for _i in range(2, ${degree + 1}):
-    ${dataframeName}[${prefix} + '_pow' + str(_i)] = ${dataframeName}[${src}] ** _i`;
-    }
-    case 'ratio':
-      if (!secondary) return '# Missing secondary column for ratio';
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] / ${dataframeName}[${secondary}].replace(0, np.nan)`;
-    case 'difference':
-      if (!secondary) return '# Missing secondary column for difference';
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] - ${dataframeName}[${secondary}]`;
-    case 'product':
-      if (!secondary) return '# Missing secondary column for product';
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] * ${dataframeName}[${secondary}]`;
-    case 'text_length':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype(str).str.len()`;
-    case 'word_count':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype(str).str.split().str.len()`;
-    case 'contains_pattern': {
-      const pattern = pyString(String(params.pattern ?? ''));
-      const caseSensitive = pyBool(params.case_sensitive, false);
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype(str).str.contains(${pattern}, case=${caseSensitive}, regex=False).astype(int)`;
-    }
-    case 'missing_indicator':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].isna().astype(int)`;
-    default:
-      return `# Unsupported method: ${feature.method}`;
+    ${df}[${prefix} + '_bin' + str(_i)] = ((_codes >> _i) & 1).astype(int)`;
+  }],
+  ['extract_year', (_feature, df, src, dst) =>
+    `${df}[${dst}] = pd.to_datetime(${df}[${src}]).dt.year`
+  ],
+  ['extract_month', (_feature, df, src, dst) =>
+    `${df}[${dst}] = pd.to_datetime(${df}[${src}]).dt.month`
+  ],
+  ['extract_day', (_feature, df, src, dst) =>
+    `${df}[${dst}] = pd.to_datetime(${df}[${src}]).dt.day`
+  ],
+  ['extract_weekday', (_feature, df, src, dst) =>
+    `${df}[${dst}] = pd.to_datetime(${df}[${src}]).dt.weekday`
+  ],
+  ['extract_hour', (_feature, df, src, dst) =>
+    `${df}[${dst}] = pd.to_datetime(${df}[${src}]).dt.hour`
+  ],
+  ['cyclical_encode', (feature, df, src) => {
+    const periodKey = String(feature.params?.period ?? 'month');
+    const periodMap: Record<string, { attr: string; period: number }> = {
+      hour: { attr: 'hour', period: 24 },
+      weekday: { attr: 'weekday', period: 7 },
+      month: { attr: 'month', period: 12 },
+      day_of_year: { attr: 'dayofyear', period: 365 }
+    };
+    const mapping = periodMap[periodKey] ?? periodMap.month;
+    const prefix = pyString(feature.featureName);
+    return `_val = pd.to_datetime(${df}[${src}]).dt.${mapping.attr}
+${df}[${prefix} + '_sin'] = np.sin(2 * np.pi * _val / ${mapping.period})
+${df}[${prefix} + '_cos'] = np.cos(2 * np.pi * _val / ${mapping.period})`;
+  }],
+  ['time_since', (feature, df, src, dst) => {
+    const unitMap: Record<string, string> = {
+      days: 'D',
+      hours: 'h',
+      weeks: 'W',
+      months: 'M'
+    };
+    const unit = unitMap[String(feature.params?.unit ?? 'days')] ?? 'D';
+    return `${df}[${dst}] = (pd.Timestamp.now() - pd.to_datetime(${df}[${src}])) / np.timedelta64(1, '${unit}')`;
+  }],
+  ['polynomial', (feature, df, src) => {
+    const degree = Math.max(2, Math.round(numericParam(feature.params?.degree, 2)));
+    const prefix = pyString(feature.featureName);
+    return `for _i in range(2, ${degree + 1}):
+    ${df}[${prefix} + '_pow' + str(_i)] = ${df}[${src}] ** _i`;
+  }],
+  ['ratio', (_feature, df, src, dst, secondary) => {
+    if (!secondary) return '# Missing secondary column for ratio';
+    return `${df}[${dst}] = ${df}[${src}] / ${df}[${secondary}].replace(0, np.nan)`;
+  }],
+  ['difference', (_feature, df, src, dst, secondary) => {
+    if (!secondary) return '# Missing secondary column for difference';
+    return `${df}[${dst}] = ${df}[${src}] - ${df}[${secondary}]`;
+  }],
+  ['product', (_feature, df, src, dst, secondary) => {
+    if (!secondary) return '# Missing secondary column for product';
+    return `${df}[${dst}] = ${df}[${src}] * ${df}[${secondary}]`;
+  }],
+  ['text_length', (_feature, df, src, dst) =>
+    `${df}[${dst}] = ${df}[${src}].astype(str).str.len()`
+  ],
+  ['word_count', (_feature, df, src, dst) =>
+    `${df}[${dst}] = ${df}[${src}].astype(str).str.split().str.len()`
+  ],
+  ['contains_pattern', (feature, df, src, dst) => {
+    const pattern = pyString(String(feature.params?.pattern ?? ''));
+    const caseSensitive = pyBool(feature.params?.case_sensitive, false);
+    return `${df}[${dst}] = ${df}[${src}].astype(str).str.contains(${pattern}, case=${caseSensitive}, regex=False).astype(int)`;
+  }],
+  ['missing_indicator', (_feature, df, src, dst) =>
+    `${df}[${dst}] = ${df}[${src}].isna().astype(int)`
+  ]
+]);
+
+function buildFeatureCode(feature: FeatureSpec, dataframeName: string): string {
+  const src = pyString(feature.sourceColumn);
+  const dst = pyString(feature.featureName);
+  const secondary = feature.secondaryColumn ? pyString(feature.secondaryColumn) : undefined;
+
+  const codegen = FEATURE_CODEGEN_MAP.get(feature.method);
+  if (!codegen) {
+    return `# Unsupported method: ${feature.method}`;
   }
+  return codegen(feature, dataframeName, src, dst, secondary);
 }
 
 function buildFeatureEngineeringScript(params: {

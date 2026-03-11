@@ -13,7 +13,7 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
 type ToolHandler = (projectId: string, args: ToolCall['args']) => Promise<unknown>;
 
-const toolHandlers: Map<string, ToolHandler> = new Map([
+const toolHandlers = new Map<string, ToolHandler>([
   // Data tools
   ['list_project_files', (projectId) => listProjectFiles(projectId)],
   ['get_dataset_profile', (_projectId, args) => getDatasetProfile(args)],

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { executeToolCalls, getPreprocessingRunSnapshot } from '@/lib/api/llm';
 import { listAvailableTables } from '@/lib/api/preprocessing';
-import { asBoolean, asNumber, asRecord, asString, asStringArray } from '@/lib/typeCoercion';
+import { asBoolean, asRecord, asString, asStringArray } from '@/lib/typeCoercion';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { NotebookCell } from '@/types/notebook';
 import type {
@@ -12,66 +12,18 @@ import type {
   TransformationEvent,
   TransformationStatus
 } from '@/types/preprocessing';
-
-const SEMANTIC_TOOL_NAMES = new Set([
-  'propose_transformation_step',
-  'materialize_step_code',
-  'execute_transformation_step',
-  'validate_step_result',
-  'commit_transformation_step',
-  'detect_step_divergence',
-  'reconcile_diverged_step'
-]);
-
-
-const PHASE_STATUS_BY_TOOL: Record<string, TransformationStatus> = {
-  propose_transformation_step: 'pending',
-  materialize_step_code: 'running',
-  execute_transformation_step: 'running',
-  validate_step_result: 'running',
-  commit_transformation_step: 'running',
-  detect_step_divergence: 'running',
-  reconcile_diverged_step: 'running'
-};
-
-function hashText(value: string): string {
-  let hash = 5381;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
-  }
-  return Math.abs(hash).toString(16);
-}
-
-function extractStepPayload(result: ToolResult): Record<string, unknown> | null {
-  const output = asRecord(result.output);
-  const step = asRecord(output.step);
-  if (!Object.keys(step).length) {
-    return null;
-  }
-  return {
-    ...step,
-    runId: asString(output.runId),
-    status: asString(output.status) ?? asString(step.status)
-  };
-}
-
-function getRunIdFromToolResult(result: ToolResult): string | undefined {
-  return asString(asRecord(result.output).runId);
-}
-
-function isSemanticTool(name: string): boolean {
-  return SEMANTIC_TOOL_NAMES.has(name);
-}
-
-
-
-function inferRiskyIntent(intentType: string | undefined): boolean {
-  if (!intentType) {
-    return false;
-  }
-  const lowered = intentType.toLowerCase();
-  return lowered.includes('drop') || lowered.includes('outlier') || lowered.includes('custom');
-}
+import {
+  buildEventFromToolCall,
+  buildEventFromToolResult,
+  buildStepBindingsFromSnapshot,
+  buildTimelineFromSnapshot,
+  extractReferencedColumns,
+  getLatestCheckpointId,
+  getRunIdFromToolResult,
+  hashText,
+  hashTextAuthoritative,
+  upsertTimelineEvent
+} from './preprocessing/eventBuilders';
 
 export interface PreprocessingChatMessage {
   id: string;
@@ -152,175 +104,105 @@ const initialState: PreprocessingStateData = {
   error: null
 };
 
+// ---------------------------------------------------------------------------
+// Shared step-decision helper (deduplicates approveStep / rejectStep)
+// ---------------------------------------------------------------------------
 
-function upsertTimelineEvent(timeline: TransformationEvent[], incoming: TransformationEvent): TransformationEvent[] {
-  const existingIndex = timeline.findIndex((event) => event.stepId === incoming.stepId);
-  if (existingIndex === -1) {
-    return [...timeline, incoming].sort((a, b) => a.createdAt - b.createdAt);
-  }
-
-  const existing = timeline[existingIndex];
-  const merged: TransformationEvent = {
-    ...existing,
-    ...incoming,
-    cellIds: [...new Set([...existing.cellIds, ...incoming.cellIds])],
-    createdAt: Math.min(existing.createdAt, incoming.createdAt),
-    updatedAt: Math.max(existing.updatedAt, incoming.updatedAt)
-  };
-
-  const next = [...timeline];
-  next[existingIndex] = merged;
-  return next;
+interface CommitStepDecisionArgs {
+  projectId: string;
+  stepId: string;
+  runId: string;
+  selectedDatasetId: string | null;
+  approved: boolean;
+  /** Only relevant when approved is false. */
+  rejectionReason?: string;
+  previousStatus: TransformationStatus;
+  set: (
+    partial:
+      | Partial<PreprocessingStateData>
+      | ((state: PreprocessingStateData) => Partial<PreprocessingStateData>)
+  ) => void;
+  hydrateRunById: (projectId: string, runId: string) => Promise<void>;
 }
 
-function buildEventFromToolCall(call: ToolCall, runId: string | null): TransformationEvent | null {
-  if (!isSemanticTool(call.tool)) {
-    return null;
-  }
+async function commitStepDecision({
+  projectId,
+  stepId,
+  runId,
+  selectedDatasetId,
+  approved,
+  rejectionReason,
+  previousStatus,
+  set,
+  hydrateRunById
+}: CommitStepDecisionArgs): Promise<void> {
+  const action = approved ? 'approve' : 'reject';
 
-  const args = asRecord(call.args);
-  const stepId = asString(args.stepId) ?? `step-${call.id}`;
-  const now = Date.now();
-  return {
-    id: `evt-${stepId}`,
-    runId: asString(args.runId) ?? runId ?? 'pending-run',
-    stepId,
-    toolName: call.tool,
-    title: asString(args.title) ?? asString(args.intentType) ?? 'Transformation step',
-    status: PHASE_STATUS_BY_TOOL[call.tool] ?? 'running',
-    rationale: asString(args.rationale),
-    intentType: asString(args.intentType),
-    code: asString(args.code),
-    codeHash: asString(args.code) ? hashText(asString(args.code) ?? '') : undefined,
-    version: asNumber(args.version),
-    cellIds: asStringArray(args.cellIds),
-    requiresApproval: asBoolean(args.requiresApproval) ?? inferRiskyIntent(asString(args.intentType)),
-    createdAt: now,
-    updatedAt: now
-  };
-}
+  // Optimistically mark the step as running.
+  set((current) => ({
+    timeline: current.timeline.map((candidate) =>
+      candidate.stepId === stepId
+        ? { ...candidate, status: 'running', error: undefined, updatedAt: Date.now() }
+        : candidate
+    ),
+    error: null
+  }));
 
-function buildEventFromToolResult(call: ToolCall, result: ToolResult, fallbackRunId: string | null): TransformationEvent | null {
-  if (!isSemanticTool(call.tool)) {
-    return null;
-  }
-
-  const step = extractStepPayload(result);
-  const args = asRecord(call.args);
-  const now = Date.now();
-  const stepId = asString(step?.stepId) ?? asString(args.stepId) ?? `step-${call.id}`;
-  const validation = step?.validation ? asRecord(step.validation) : {};
-
-  return {
-    id: `evt-${stepId}`,
-    runId: asString(step?.runId) ?? getRunIdFromToolResult(result) ?? asString(args.runId) ?? fallbackRunId ?? 'pending-run',
-    stepId,
-    toolName: call.tool,
-    title: asString(step?.title) ?? asString(args.title) ?? asString(args.intentType) ?? 'Transformation step',
-    status: result.error
-      ? 'failed'
-      : ((asString(step?.status) as TransformationStatus | undefined) ?? PHASE_STATUS_BY_TOOL[call.tool] ?? 'running'),
-    rationale: asString(step?.rationale) ?? asString(args.rationale),
-    intentType: asString(step?.intentType) ?? asString(args.intentType),
-    code: asString(step?.code) ?? asString(args.code),
-    codeHash: asString(step?.codeHash) ?? (asString(step?.code) ? hashText(asString(step?.code) ?? '') : undefined),
-    version: asNumber(step?.version),
-    cellIds: [
-      ...new Set([
-        ...asStringArray(step?.cellIds),
-        ...asStringArray(args.cellIds),
-        ...(asString(args.cellId) ? [asString(args.cellId) ?? ''] : [])
-      ])
-    ].filter(Boolean),
-    validation: {
-      rowCountBefore: asNumber(validation.rowCountBefore),
-      rowCountAfter: asNumber(validation.rowCountAfter),
-      nullCountBefore: asNumber(validation.nullCountBefore),
-      nullCountAfter: asNumber(validation.nullCountAfter),
-      schemaDrift: asBoolean(validation.schemaDrift),
-      notes: asString(validation.notes)
-    },
-    requiresApproval: asBoolean(step?.requiresApproval) ?? asBoolean(args.requiresApproval) ?? false,
-    approvalDecision: asString(step?.approvalDecision) as TransformationEvent['approvalDecision'],
-    decisionReason: asString(step?.decisionReason),
-    output: result.output,
-    error: result.error ?? asString(step?.decisionReason),
-    createdAt: now,
-    updatedAt: now
-  };
-}
-
-function toTimestamp(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function buildTimelineFromSnapshot(snapshot: PreprocessingRunSnapshot): TransformationEvent[] {
-  const fallbackTime = Date.now();
-  return snapshot.steps
-    .map((step) => ({
-      id: `evt-${step.stepId}`,
-      runId: snapshot.runId,
-      stepId: step.stepId,
-      toolName: 'snapshot_hydration',
-      title: step.title,
-      status: step.status,
-      approvalDecision: step.approvalDecision,
-      decisionReason: step.decisionReason,
-      rationale: step.rationale,
-      intentType: step.intentType,
-      code: step.code,
-      codeHash: step.codeHash,
-      version: step.version,
-      cellIds: step.cellIds ?? [],
-      validation: step.validation,
-      requiresApproval: step.requiresApproval,
-      error: step.status === 'failed' ? step.decisionReason : undefined,
-      createdAt: toTimestamp(step.createdAt, fallbackTime),
-      updatedAt: toTimestamp(step.updatedAt, fallbackTime)
-    }))
-    .sort((left, right) => left.createdAt - right.createdAt);
-}
-
-function buildStepBindingsFromSnapshot(snapshot: PreprocessingRunSnapshot): Record<string, StepCellBinding> {
-  const bindings: Record<string, StepCellBinding> = {};
-  const fallbackTime = Date.now();
-  for (const step of snapshot.steps) {
-    bindings[step.stepId] = {
-      stepId: step.stepId,
-      cellIds: step.cellIds ?? [],
-      codeHash: step.codeHash,
-      version: step.version,
-      lastSyncedAt: toTimestamp(step.updatedAt, fallbackTime)
+  try {
+    const toolArgs: Record<string, unknown> = {
+      runId,
+      stepId,
+      approved,
+      ...(approved && selectedDatasetId ? { datasetId: selectedDatasetId } : {}),
+      ...(!approved && rejectionReason ? { rejectionReason } : {})
     };
+
+    const response = await executeToolCalls(
+      projectId,
+      [{ id: `${action}-${stepId}-${Date.now()}`, tool: 'commit_transformation_step', args: toolArgs }],
+      undefined,
+      'user_approval'
+    );
+
+    const result = response.results[0];
+    const output = asRecord(result?.output);
+    const isError = Boolean(result?.error) || asBoolean(output?.isError) === true;
+
+    if (isError) {
+      const message =
+        result?.error ??
+        asString(output?.message) ??
+        asString(output?.reasonCode) ??
+        `Failed to ${action} step ${stepId}.`;
+      set((current) => ({
+        timeline: current.timeline.map((candidate) =>
+          candidate.stepId === stepId
+            ? { ...candidate, status: previousStatus, error: message, updatedAt: Date.now() }
+            : candidate
+        ),
+        error: message
+      }));
+      return;
+    }
+
+    const nextRunId = asString(output?.runId) ?? runId;
+    await hydrateRunById(projectId, nextRunId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `Failed to ${action} step ${stepId}.`;
+    set((current) => ({
+      timeline: current.timeline.map((candidate) =>
+        candidate.stepId === stepId
+          ? { ...candidate, status: previousStatus, error: message, updatedAt: Date.now() }
+          : candidate
+      ),
+      error: message
+    }));
   }
-  return bindings;
 }
 
-function getLatestCheckpointId(snapshot: PreprocessingRunSnapshot): string | null {
-  const latest = snapshot.checkpoints[snapshot.checkpoints.length - 1] as { checkpointId?: unknown } | undefined;
-  return typeof latest?.checkpointId === 'string' && latest.checkpointId.trim()
-    ? latest.checkpointId
-    : null;
-}
-
-function extractReferencedColumns(code: string): string[] {
-  const matches = [...code.matchAll(/\[['"]([A-Za-z0-9_ -]+)['"]\]/g)];
-  return [...new Set(matches.map((match) => match[1]).filter(Boolean))];
-}
-
-async function hashTextAuthoritative(value: string): Promise<string | null> {
-  if (!globalThis.crypto?.subtle) {
-    return null;
-  }
-  const encoded = new TextEncoder().encode(value);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded);
-  const hex = Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-  return hex.slice(0, 24);
-}
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
 
 export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   ...initialState,
@@ -449,83 +331,20 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
     const state = get();
     const event = state.timeline.find((candidate) => candidate.stepId === stepId);
     const runId = event?.runId ?? state.runId;
-    const selectedDatasetId = state.selectedDatasetId;
     if (!runId) {
       set({ error: 'Cannot approve step without an active preprocessing run.' });
       return;
     }
-
-    const previousStatus = event?.status ?? 'awaiting_approval';
-    set((current) => ({
-      timeline: current.timeline.map((candidate) =>
-        candidate.stepId === stepId
-          ? {
-              ...candidate,
-              status: 'running',
-              error: undefined,
-              updatedAt: Date.now()
-            }
-          : candidate
-      ),
-      error: null
-    }));
-
-    try {
-      const response = await executeToolCalls(projectId, [
-        {
-          id: `approval-${stepId}-${Date.now()}`,
-          tool: 'commit_transformation_step',
-          args: {
-            runId,
-            stepId,
-            approved: true,
-            ...(selectedDatasetId ? { datasetId: selectedDatasetId } : {})
-          }
-        }
-      ], undefined, 'user_approval');
-
-      const result = response.results[0];
-      const output = asRecord(result?.output);
-      const isError = Boolean(result?.error) || asBoolean(output?.isError) === true;
-      if (isError) {
-        const message = result?.error
-          ?? asString(output?.message)
-          ?? asString(output?.reasonCode)
-          ?? `Failed to approve step ${stepId}.`;
-        set((current) => ({
-          timeline: current.timeline.map((candidate) =>
-            candidate.stepId === stepId
-              ? {
-                  ...candidate,
-                  status: previousStatus,
-                  error: message,
-                  updatedAt: Date.now()
-                }
-              : candidate
-          ),
-          error: message
-        }));
-        return;
-      }
-
-      const nextRunId = asString(output?.runId) ?? runId;
-      await get().hydrateRunById(projectId, nextRunId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `Failed to approve step ${stepId}.`;
-      set((current) => ({
-        timeline: current.timeline.map((candidate) =>
-          candidate.stepId === stepId
-            ? {
-                ...candidate,
-                status: previousStatus,
-                error: message,
-                updatedAt: Date.now()
-              }
-            : candidate
-        ),
-        error: message
-      }));
-    }
+    await commitStepDecision({
+      projectId,
+      stepId,
+      runId,
+      selectedDatasetId: state.selectedDatasetId,
+      approved: true,
+      previousStatus: event?.status ?? 'awaiting_approval',
+      set,
+      hydrateRunById: get().hydrateRunById
+    });
   },
 
   rejectStep: async (projectId: string, stepId: string, reason?: string) => {
@@ -536,79 +355,17 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
       set({ error: 'Cannot reject step without an active preprocessing run.' });
       return;
     }
-
-    const rejectionReason = reason?.trim() || 'Rejected by user';
-    const previousStatus = event?.status ?? 'awaiting_approval';
-    set((current) => ({
-      timeline: current.timeline.map((candidate) =>
-        candidate.stepId === stepId
-          ? {
-              ...candidate,
-              status: 'running',
-              error: undefined,
-              updatedAt: Date.now()
-            }
-          : candidate
-      ),
-      error: null
-    }));
-
-    try {
-      const response = await executeToolCalls(projectId, [
-        {
-          id: `rejection-${stepId}-${Date.now()}`,
-          tool: 'commit_transformation_step',
-          args: {
-            runId,
-            stepId,
-            approved: false,
-            rejectionReason
-          }
-        }
-      ], undefined, 'user_approval');
-
-      const result = response.results[0];
-      const output = asRecord(result?.output);
-      const isError = Boolean(result?.error) || asBoolean(output?.isError) === true;
-      if (isError) {
-        const message = result?.error
-          ?? asString(output?.message)
-          ?? asString(output?.reasonCode)
-          ?? `Failed to reject step ${stepId}.`;
-        set((current) => ({
-          timeline: current.timeline.map((candidate) =>
-            candidate.stepId === stepId
-              ? {
-                  ...candidate,
-                  status: previousStatus,
-                  error: message,
-                  updatedAt: Date.now()
-                }
-              : candidate
-          ),
-          error: message
-        }));
-        return;
-      }
-
-      const nextRunId = asString(output?.runId) ?? runId;
-      await get().hydrateRunById(projectId, nextRunId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `Failed to reject step ${stepId}.`;
-      set((current) => ({
-        timeline: current.timeline.map((candidate) =>
-          candidate.stepId === stepId
-            ? {
-                ...candidate,
-                status: previousStatus,
-                error: message,
-                updatedAt: Date.now()
-              }
-            : candidate
-        ),
-        error: message
-      }));
-    }
+    await commitStepDecision({
+      projectId,
+      stepId,
+      runId,
+      selectedDatasetId: state.selectedDatasetId,
+      approved: false,
+      rejectionReason: reason?.trim() || 'Rejected by user',
+      previousStatus: event?.status ?? 'awaiting_approval',
+      set,
+      hydrateRunById: get().hydrateRunById
+    });
   },
 
   editStepCode: (stepId: string, code: string) => {
@@ -700,11 +457,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         }
 
         if (hasDiverged && event.status !== 'diverged') {
-          return {
-            ...event,
-            status: 'diverged',
-            updatedAt: Date.now()
-          };
+          return { ...event, status: 'diverged', updatedAt: Date.now() };
         }
 
         if (!hasDiverged && event.status === 'diverged') {
@@ -758,18 +511,19 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         const output = asRecord(result?.output);
         const compatibilityIssues = asStringArray(output?.compatibilityIssues).length
           ? asStringArray(output?.compatibilityIssues)
-          : (Array.isArray(output?.compatibilityIssues)
+          : Array.isArray(output?.compatibilityIssues)
             ? (output.compatibilityIssues as Array<Record<string, unknown>>).map((issue) => {
-                const stepId = asString(issue.stepId) ?? 'unknown-step';
+                const issueStepId = asString(issue.stepId) ?? 'unknown-step';
                 const column = asString(issue.column) ?? 'unknown-column';
                 const issueType = asString(issue.issue) ?? 'incompatibility';
-                return `${stepId}: ${issueType} on ${column}`;
+                return `${issueStepId}: ${issueType} on ${column}`;
               })
-            : []);
+            : [];
 
-        const backendIncompatible = Boolean(result?.error)
-          || asBoolean(output?.isError) === true
-          || asString(output?.reasonCode) === 'REPLAY_INCOMPATIBLE_DATASET';
+        const backendIncompatible =
+          Boolean(result?.error) ||
+          asBoolean(output?.isError) === true ||
+          asString(output?.reasonCode) === 'REPLAY_INCOMPATIBLE_DATASET';
 
         set({
           replayReport: {
@@ -806,7 +560,6 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         if (event.status !== 'pending' && event.status !== 'running') {
           return event;
         }
-
         return {
           ...event,
           status: 'failed' as TransformationStatus,
@@ -815,18 +568,14 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         };
       });
 
-      return {
-        timeline: nextTimeline,
-        error: message
-      };
+      return { timeline: nextTimeline, error: message };
     });
   },
 
-  
   processToolCall: (call, fallbackRunId) => {
     const event = buildEventFromToolCall(call, fallbackRunId || null);
     if (!event) return;
-    set(state => ({
+    set((state) => ({
       timeline: upsertTimelineEvent(state.timeline, event)
     }));
   },
@@ -834,15 +583,15 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   processToolResult: (call, result, fallbackRunId) => {
     const event = buildEventFromToolResult(call, result, fallbackRunId || null);
     if (!event) return;
-    
-    set(state => {
+
+    set((state) => {
       let nextRunId = state.runId;
       const resultRunId = getRunIdFromToolResult(result);
       if (resultRunId) nextRunId = resultRunId;
-      
+
       const timeline = upsertTimelineEvent(state.timeline, event);
       const bindings = { ...state.stepBindings };
-      
+
       const previousBinding = bindings[event.stepId];
       bindings[event.stepId] = {
         stepId: event.stepId,
@@ -851,7 +600,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         version: event.version ?? previousBinding?.version,
         lastSyncedAt: Date.now()
       };
-      
+
       const output = asRecord(result.output);
       const checkpointId = asString(output.checkpointId);
 
@@ -863,6 +612,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
       };
     });
   },
+
   clearRun: () => {
     set({
       runId: null,

@@ -7,20 +7,18 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { FileText, AlertCircle } from 'lucide-react';
-import { Markdown } from '@/components/ui/Markdown';
+import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
-import { FileTabBar } from './FileTabBar';
-import { DataTable } from './DataTable';
-import { DocumentViewer } from './DocumentViewer';
+import { DataViewerTabBar } from './DataViewerTabBar';
+import { DataViewerContent } from './DataViewerContent';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ApiError } from '@/lib/api/client';
 import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
 import type { QueryResultPayload } from '@/lib/api/query';
-import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
+import type { QueryMode, DataPreview } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
 import { extractColumnTypesFromQuery } from '@/lib/sql/sqlColumnTypes';
@@ -346,6 +344,8 @@ export function DataViewerTab() {
 
   const activeControlsPortalTarget = controlsPortalTarget;
 
+  const handleDismissError = useCallback(() => setQueryError(null), []);
+
   useEffect(() => {
     if (!queryPanelIsTransitioning) {
       return;
@@ -375,127 +375,35 @@ export function DataViewerTab() {
     );
   }
 
-  // Get active tab content
-  const getActiveTabContent = () => {
-    if (!activeFileTabId) return null;
-
-    if (fileTabType === 'file') {
-      const file = files.find((f) => f.id === activeFileTabId);
-      if (!file) return null;
-
-      if (['csv', 'json', 'excel'].includes(file.type)) {
-        const preview = previews.find((p) => p.fileId === activeFileTabId);
-        if (preview) {
-          const columnTypes = file.metadata?.datasetProfile?.dtypes;
-          const datasetId = file.metadata?.datasetId;
-          return (
-            <DataTable
-              preview={preview}
-              columnTypes={columnTypes}
-              typeColorClassName={projectTypeColorClassName}
-              controlsPortalTarget={activeControlsPortalTarget}
-              onColumnTypeChange={
-                datasetId
-                  ? async (columnName: string, nextType: ColumnDataType) => {
-                      try {
-                        await updateColumnType(datasetId, columnName, nextType);
-                        toast.success(`Updated ${columnName} to ${nextType}`);
-                      } catch (error) {
-                        const message = extractApiErrorMessage(error);
-                        toast.error('Failed to update column type', {
-                          description: message
-                        });
-                      }
-                    }
-                  : undefined
-              }
-            />
-          );
-        }
-        return (
-          <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-            No preview available for this dataset yet.
-          </div>
-        );
-      }
-
-      return <DocumentViewer file={file} controlsPortalTarget={activeControlsPortalTarget} />;
-    } else if (fileTabType === 'artifact') {
-      const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
-      if (artifact) {
-        // Extract column types from the query result metadata
-        const columnTypes = artifact.result.columnTypes;
-        return (
-            <DataTable
-              preview={artifact.result}
-              columnTypes={columnTypes}
-              typeColorClassName={projectTypeColorClassName}
-              controlsPortalTarget={activeControlsPortalTarget}
-              queryInfo={{
-                query: artifact.query,
-                mode: artifact.mode,
-              timestamp: artifact.timestamp,
-              eda: artifact.eda,
-              cached: artifact.cached,
-              executionMs: artifact.executionMs,
-              cacheTimestamp: artifact.cacheTimestamp,
-              generatedSql: artifact.generatedSql,
-              rationale: artifact.rationale,
-              explanation: artifact.explanation
-            }}
-          />
-        );
-      }
-    } else if (fileTabType === 'plan') {
-      // Render plan markdown from project metadata
-      const planContent = (activeProject?.metadata as Record<string, unknown> | undefined)?.projectPlan as string | undefined;
-      if (planContent) {
-        return (
-          <div className="h-full overflow-auto p-6">
-            <Markdown className="mx-auto max-w-3xl prose prose-sm dark:prose-invert">
-              {planContent}
-            </Markdown>
-          </div>
-        );
-      }
-    }
-
-    return null;
-  };
-
   return (
     <div className="flex h-full overflow-hidden">
       {/* Main Content Area (left side) */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* File Tab Bar */}
         {projectId && (
-          <FileTabBar
+          <DataViewerTabBar
             projectId={projectId}
             queryIconColorClassName={projectTypeColorClassName}
+            queryError={queryError}
+            onDismissError={handleDismissError}
           />
-        )}
-
-        {/* Error Banner */}
-        {queryError && (
-          <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-destructive">Query Error</p>
-              <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap">{queryError}</p>
-            </div>
-            <button
-              onClick={() => setQueryError(null)}
-              className="text-destructive/70 hover:text-destructive transition-colors"
-              aria-label="Dismiss error"
-            >
-              ×
-            </button>
-          </div>
         )}
 
         {/* Data Display */}
         <div className="flex-1 min-w-0 overflow-auto bg-background">
-          {getActiveTabContent() ?? (
+          {activeFileTabId ? (
+            <DataViewerContent
+              activeFileTabId={activeFileTabId}
+              fileTabType={fileTabType}
+              files={files}
+              previews={previews}
+              queryArtifacts={queryArtifacts}
+              activeProject={activeProject}
+              projectTypeColorClassName={projectTypeColorClassName}
+              controlsPortalTarget={activeControlsPortalTarget}
+              updateColumnType={updateColumnType}
+              extractApiErrorMessage={extractApiErrorMessage}
+            />
+          ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a file from the sidebar to open it here.
             </div>

@@ -1,7 +1,7 @@
 /**
  * NlQueryWorkflow
  *
- * Orchestrates the natural-language → SQL generation and review flow.
+ * Orchestrates the natural-language -> SQL generation and review flow.
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   useRef,
   useCallback,
   useMemo,
+  useReducer,
   forwardRef,
   useImperativeHandle,
   useState,
@@ -18,9 +19,6 @@ import {
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { fetchNlSuggestions, type NlSuggestion } from '@/lib/api/query';
-import { NlFlowConnector } from './NlFlowConnector';
-import { NlWorkPlanPanel } from './NlWorkPlanPanel';
-import { SqlRevealBlock } from './SqlRevealBlock';
 import { tokenizeSql } from './sqlTokenize';
 import { useTypewriter } from './hooks/useTypewriter';
 import {
@@ -32,10 +30,10 @@ import {
   finalizeNlWorkPhasesWithoutStream,
   markNlWorkPhasesFailed
 } from '@/lib/nlQuery/phaseStateMachine';
+import { NlWorkflowSteps } from './NlWorkflowSteps';
 import type {
   NlGenerationResult,
   NlModelWorkBlockState,
-  NlProviderInfo,
   NlQueryStreamEvent,
   NlWorkPhaseState
 } from '@/types/nlQuery';
@@ -45,19 +43,6 @@ export type ApproveThemeClasses = {
   hoverBorder: string;
   hoverBg: string;
 };
-
-const AUTO_COLLAPSE_HEIGHT_PX = 920;
-
-function isNlProviderInfo(value: unknown): value is NlProviderInfo {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.id === 'string'
-    && typeof candidate.label === 'string'
-    && typeof candidate.model === 'string';
-}
 
 export type NlPhase =
   | 'idle'
@@ -162,11 +147,10 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   const [nlSuggestions, setNlSuggestions] = useState<NlSuggestion[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
-  const [manualPanelExpanded, setManualPanelExpanded] = useState<boolean | null>(null);
-  const [containerHeight, setContainerHeight] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
 
   const { phase, result, editedSql, errorMessage } = state;
 
@@ -211,12 +195,6 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
       streamAbortRef.current?.abort();
     };
   }, []);
-
-  useEffect(() => {
-    if (phase === 'idle' || phase === 'error') {
-      setManualPanelExpanded(null);
-    }
-  }, [phase]);
 
   useEffect(() => {
     if (!projectId) {
@@ -288,7 +266,6 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
     setWorkPhases(createInitialNlWorkPhases());
     setModelWorkBlocks([]);
-    setManualPanelExpanded(null);
     dispatch({ type: 'GENERATE' });
 
     const handleScopedStreamEvent = (event: NlQueryStreamEvent) => {
@@ -411,40 +388,6 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   );
 
   const isIdle = phase === 'idle' || phase === 'error';
-  const showConnector = phase !== 'idle' && phase !== 'error';
-  const topConnectorState: 'active' | 'settled' = phase === 'submitting' ? 'active' : 'settled';
-  const bottomConnectorState: 'active' | 'settled' = phase === 'revealing' ? 'active' : 'settled';
-  const panelPhase: 'submitting' | 'revealing' | 'reviewing' = phase === 'reviewing' ? 'reviewing' : phase === 'revealing' ? 'revealing' : 'submitting';
-  const showPlanPanel = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
-  const showSqlBlock = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
-
-  const autoCollapsed = showPlanPanel
-    && phase === 'reviewing'
-    && containerHeight > 0
-    && containerHeight < AUTO_COLLAPSE_HEIGHT_PX;
-  const isPanelExpanded = manualPanelExpanded ?? !autoCollapsed;
-  const activeProvider = useMemo(() => {
-    if (result?.provider) {
-      return result.provider;
-    }
-
-    for (let index = modelWorkBlocks.length - 1; index >= 0; index -= 1) {
-      const details = modelWorkBlocks[index]?.details;
-      const provider = details ? (details as Record<string, unknown>).provider : null;
-      if (isNlProviderInfo(provider)) {
-        return provider;
-      }
-    }
-
-    return null;
-  }, [modelWorkBlocks, result?.provider]);
-
-  const togglePanelExpanded = useCallback(() => {
-    setManualPanelExpanded((previous) => {
-      const current = previous ?? !autoCollapsed;
-      return !current;
-    });
-  }, [autoCollapsed]);
 
   return (
     <div
@@ -526,105 +469,23 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         </div>
       </div>
 
-      {(showPlanPanel || showSqlBlock) && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col justify-center">
-            <div
-              data-testid="nl-flow-connector-top"
-              className={cn(
-                'overflow-hidden transition-[opacity,flex] ease-out motion-reduce:transition-none',
-                showConnector
-                  ? 'flex min-h-[2.75rem] flex-1 items-end justify-center opacity-100 duration-400'
-                  : 'h-0 opacity-0 duration-200 pointer-events-none',
-              )}
-            >
-              <NlFlowConnector
-                stretch
-                state={topConnectorState}
-                variant="fan-in"
-                className={cn('h-full', connectorColorClassName)}
-              />
-            </div>
-
-            {showPlanPanel && (
-              <NlWorkPlanPanel
-                explanation={result?.explanation}
-                provider={activeProvider}
-                phase={panelPhase}
-                workPhases={workPhases}
-                modelWorkBlocks={modelWorkBlocks}
-                isStreaming={phase === 'submitting'}
-                isExpanded={isPanelExpanded}
-                autoCollapsed={autoCollapsed}
-                onToggleExpanded={togglePanelExpanded}
-                className="mx-auto w-full max-w-[44rem] shrink-0"
-              />
-            )}
-
-            <div
-              data-testid="nl-flow-connector-bottom"
-              className={cn(
-                'overflow-hidden transition-[opacity,flex] ease-out motion-reduce:transition-none',
-                showConnector
-                  ? 'flex min-h-[2.75rem] flex-1 items-start justify-center opacity-100 duration-400'
-                  : 'h-0 opacity-0 duration-200 pointer-events-none',
-              )}
-            >
-              <NlFlowConnector
-                stretch
-                state={bottomConnectorState}
-                variant="fan-out"
-                className={cn('h-full', connectorColorClassName)}
-              />
-            </div>
-          </div>
-
-          {showSqlBlock && (
-            <div
-              className={cn(
-                'mt-auto shrink-0 min-h-[12rem]',
-                'animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out',
-              )}
-            >
-              <SqlRevealBlock
-                sql={result?.sql ?? ''}
-                queryExecutionError={result?.queryExecutionError}
-                isRevealing={phase === 'revealing'}
-                visibleTokenCount={visibleTokenCount}
-                isRevealComplete={phase === 'reviewing'}
-                editedSql={editedSql}
-                onSqlChange={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}
-                originalSql={result?.sql ?? ''}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                approveThemeClasses={approveThemeClasses}
-                className="h-full"
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {phase === 'error' && errorMessage && (
-        <div
-          className={cn(
-            'mt-2 rounded-md border border-destructive/30 bg-destructive/5',
-            'px-3 py-2 text-xs text-destructive',
-            'animate-in fade-in slide-in-from-bottom-1 duration-200',
-          )}
-          role="alert"
-        >
-          <p className="font-medium">Generation failed</p>
-          <p className="mt-0.5 opacity-80">{errorMessage}</p>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'DISMISS_ERROR' })}
-            className="mt-1.5 underline underline-offset-2 hover:no-underline"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      <NlWorkflowSteps
+        phase={phase}
+        result={result}
+        editedSql={editedSql}
+        onSqlEdit={(v) => dispatch({ type: 'SQL_EDIT', payload: v })}
+        errorMessage={errorMessage}
+        onDismissError={() => dispatch({ type: 'DISMISS_ERROR' })}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        workPhases={workPhases}
+        modelWorkBlocks={modelWorkBlocks}
+        visibleTokenCount={visibleTokenCount}
+        isRevealComplete={phase === 'reviewing'}
+        approveThemeClasses={approveThemeClasses}
+        connectorColorClassName={connectorColorClassName}
+        containerHeight={containerHeight}
+      />
     </div>
   );
 });

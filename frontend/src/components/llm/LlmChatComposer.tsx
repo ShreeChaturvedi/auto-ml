@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
 
 import { MentionInput, type MentionInputHandle } from '@/components/llm/MentionInput';
 import type { LlmUsage } from '@/types/llmUi';
@@ -6,43 +6,23 @@ import type { LlmUsage } from '@/types/llmUi';
 import { useMetallicBorder } from '@/hooks/useMetallicBorder';
 import {
   ArrowUp,
-  Ban,
-  Brain,
-  Code2,
   CornerDownLeft,
-  Crown,
-  Flame,
-  Gauge,
-  Info,
   Loader2,
   Paperclip,
-  RefreshCw,
-  Rocket,
-  Square,
-  X,
-  Zap
+  Square
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 import {
-  DEFAULT_ASSISTANT_MODEL,
-  getModelOption,
   type AssistantModelOption,
   type ReasoningEffort,
-  type ReasoningEffortOption,
-  type ReasoningIcon
+  type ReasoningEffortOption
 } from './modelOptions';
-import { ContextUsageIndicator } from './ContextUsageIndicator';
-
-/** Compact dropdown group label; smaller than option text (text-sm). */
-const SELECT_GROUP_LABEL_CLASS =
-  'px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider';
+import { ComposerModelBar } from './ComposerModelBar';
+import { ComposerAttachments } from './ComposerAttachments';
 
 export type AttachmentStatus = 'idle' | 'queued' | 'uploading' | 'success' | 'error';
 
@@ -53,7 +33,7 @@ export interface ComposerAttachmentItem {
   message?: string | null;
 }
 
-interface AttachmentConfig {
+export interface AttachmentConfig {
   onAttachFile: (event: ChangeEvent<HTMLInputElement>) => void;
   status: AttachmentStatus;
   message: string | null;
@@ -123,38 +103,6 @@ interface LlmChatComposerProps {
   slots?: ComposerSlots;
 }
 
-function renderModelIcon(option: AssistantModelOption, iconColorClass?: string): ReactNode {
-  const cls = cn('h-3 w-3', iconColorClass);
-
-  if (option.value === DEFAULT_ASSISTANT_MODEL) {
-    return <Crown className={cls} />;
-  }
-
-  switch (option.kind) {
-    case 'codex':
-      return <Code2 className={cls} />;
-    case 'mini':
-      return <Zap className={cls} />;
-    case 'nano':
-      return <Gauge className={cls} />;
-    case 'base':
-    default:
-      return <Crown className={cls} />;
-  }
-}
-
-function renderReasoningIcon(icon: ReasoningIcon, iconColorClass?: string): ReactNode {
-  const cls = cn('h-3 w-3', iconColorClass);
-  switch (icon) {
-    case 'slash': return <Ban className={cls} />;
-    case 'zap': return <Zap className={cls} />;
-    case 'gauge': return <Gauge className={cls} />;
-    case 'brain': return <Brain className={cls} />;
-    case 'flame': return <Flame className={cls} />;
-    case 'rocket': return <Rocket className={cls} />;
-  }
-}
-
 export function LlmChatComposer({
   chatInput,
   modelConfig,
@@ -173,8 +121,6 @@ export function LlmChatComposer({
     onStop
   } = chatInput;
 
-  const { model, onModelChange, modelOptions } = modelConfig;
-  const { reasoningEffort, onReasoningEffortChange, reasoningOptions } = reasoningConfig;
   const {
     leftSlot,
     metaSlot,
@@ -193,63 +139,10 @@ export function LlmChatComposer({
 
   const { wrapperRef, isFocused, onFocusCapture, onBlurCapture } = useMetallicBorder();
 
-  const activeProject = useProjectStore((s) => s.getActiveProject());
-  const projectIconColorClass = activeProject
-    ? projectColorClasses[activeProject.color]?.text
-    : undefined;
-
-  const currentModelOption = useMemo(
-    () => getModelOption(model, modelOptions),
-    [model, modelOptions]
-  );
-
   return (
     <div className={cn('mx-auto w-full space-y-2', maxWidthClassName)}>
-      {attachmentItems.length > 0 ? (
-        <div className="flex flex-wrap gap-2 px-1" aria-label="Attachment queue">
-          {attachmentItems.map((item) => (
-            <div
-              key={item.id}
-              className={cn(
-                'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs',
-                item.status === 'queued' && 'border-muted-foreground/30 bg-muted/40 text-foreground',
-                item.status === 'uploading' && 'border-blue-500/30 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
-                item.status === 'success' && 'border-green-500/30 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
-                item.status === 'error' && 'border-destructive/30 bg-destructive/10 text-destructive',
-              )}
-            >
-              <span className="truncate max-w-[220px]" title={item.name}>
-                {item.name}
-              </span>
-              {item.status === 'uploading' ? (
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-              ) : null}
-              {item.status === 'error' && attachment?.onRetryItem ? (
-                <button
-                  type="button"
-                  onClick={() => attachment.onRetryItem?.(item.id)}
-                  className="rounded p-0.5 transition-colors hover:bg-destructive/10"
-                  aria-label={`Retry ${item.name}`}
-                  title="Retry upload"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </button>
-              ) : null}
-              {attachment?.onRemoveItem ? (
-                <button
-                  type="button"
-                  onClick={() => attachment.onRemoveItem?.(item.id)}
-                  className="rounded p-0.5 transition-colors hover:bg-foreground/10"
-                  aria-label={`Remove ${item.name}`}
-                  title="Remove attachment"
-                  disabled={item.status === 'uploading'}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
+      {attachment && attachmentItems.length > 0 ? (
+        <ComposerAttachments items={attachmentItems} attachment={attachment} />
       ) : null}
 
       <div
@@ -289,93 +182,11 @@ export function LlmChatComposer({
           <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {leftSlot}
-              <div className="hidden lg:flex shrink-0 flex-nowrap items-center gap-2">
-                <Select value={currentModelOption.value} onValueChange={onModelChange}>
-                  <SelectTrigger className="flex h-7 w-fit min-w-[8.25rem] max-w-none shrink-0 flex-nowrap gap-2 px-2.5 text-xs [&>div]:flex [&>div]:flex-nowrap [&>div]:min-w-0 [&>div]:overflow-hidden">
-                    <div className="flex min-w-0 shrink flex-nowrap items-center gap-2 whitespace-nowrap">
-                      <span className="shrink-0">{renderModelIcon(currentModelOption, projectIconColorClass)}</span>
-                      <span className="min-w-0 truncate">{currentModelOption.label}</span>
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectLabel className={SELECT_GROUP_LABEL_CLASS}>
-                        Model
-                      </SelectLabel>
-                      {modelOptions.map((option) => {
-                        const isSelected = option.value === model;
-                        return (
-                        <SelectItem key={option.value} value={option.value} indicatorClassName={isSelected ? projectIconColorClass : undefined}>
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="shrink-0">{renderModelIcon(option, isSelected ? projectIconColorClass : undefined)}</span>
-                          <span className="truncate">{option.label}</span>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  aria-label={`${option.label} usage tip`}
-                                  className="inline-flex shrink-0 text-muted-foreground"
-                                >
-                                  <Info className="h-3 w-3" />
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" className="max-w-xs text-xs">
-                                {option.description}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      </SelectItem>
-                    );})}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-
-                {reasoningOptions.length > 0 ? (
-                  <Select value={reasoningEffort} onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort)}>
-                    <SelectTrigger className="h-7 w-fit min-w-[7.5rem] gap-2 px-2.5 text-xs">
-                      <SelectValue placeholder="Reasoning">
-                        {(() => {
-                          const opt = reasoningOptions.find((o) => o.value === reasoningEffort);
-                          return opt ? (
-                            <span className="flex items-center gap-1.5">
-                              {renderReasoningIcon(opt.icon, projectIconColorClass)}
-                              {opt.label}
-                            </span>
-                          ) : null;
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectLabel className={SELECT_GROUP_LABEL_CLASS}>
-                          Reasoning
-                        </SelectLabel>
-                        {reasoningOptions.map((option) => {
-                          const isSelected = option.value === reasoningEffort;
-                          return (
-                          <SelectItem key={option.value} value={option.value} indicatorClassName={isSelected ? projectIconColorClass : undefined}>
-                            <span className="flex items-center gap-1.5">
-                              {renderReasoningIcon(option.icon, isSelected ? projectIconColorClass : undefined)}
-                              {option.label}
-                            </span>
-                          </SelectItem>
-                        );})}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                ) : null}
-
-                {usageConfig && usageConfig.sessionUsages.length > 0 ? (
-                  <ContextUsageIndicator
-                    sessionUsages={usageConfig.sessionUsages}
-                    model={usageConfig.model}
-                    projectColorClass={projectIconColorClass}
-                    projectBgColorClass={activeProject ? projectColorClasses[activeProject.color]?.bg : undefined}
-                    projectColor={activeProject?.color === 'custom' ? activeProject.customColor : undefined}
-                  />
-                ) : null}
-              </div>
+              <ComposerModelBar
+                modelConfig={modelConfig}
+                reasoningConfig={reasoningConfig}
+                usageConfig={usageConfig}
+              />
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">

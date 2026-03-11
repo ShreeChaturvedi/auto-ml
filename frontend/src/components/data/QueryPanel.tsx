@@ -2,7 +2,7 @@
  * QueryPanel - Query input interface with dual-mode support
  *
  * Features:
- * - Mode toggle: English ↔ SQL (using ToggleGroup)
+ * - Mode toggle: English <-> SQL (using ToggleGroup)
  * - Separate state for English and SQL inputs
  * - SQL syntax highlighting (Monaco Editor) with theme detection
  * - Default SQL template
@@ -12,9 +12,9 @@
  * docs/design-system.md
  */
 
-import { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
+import { MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
@@ -25,15 +25,8 @@ import { NlQueryWorkflow } from './NlQueryWorkflow';
 import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQueryWorkflow';
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
-import {
-  createSqlSuggestionCollector,
-  inferSqlSuggestionContext,
-  buildAliasToTableMap,
-  buildSqlMarkers,
-  sanitizeSuggestionToken,
-  getAliasBeforeDot
-} from './sqlIntelligence';
-import { AnimatedExecuteIcon, AnimatedBrainIcon } from './AnimatedQueryIcons';
+import { QuerySqlEditor } from './QuerySqlEditor';
+import { QueryResults } from './QueryResults';
 
 const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> = {
   blue: {
@@ -87,17 +80,6 @@ const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> 
     hoverBg: 'hover:bg-cyan-500/15 dark:hover:bg-cyan-500/20'
   }
 };
-
-// Lazy load Monaco Editor to reduce initial bundle size
-const Editor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
-    default: module.default
-  }))
-);
-
-// Import monaco types for completion registration
-import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
-import type { Monaco } from '@monaco-editor/react';
 
 interface QueryPanelProps {
   onExecute: (query: string, mode: QueryMode) => void;
@@ -226,53 +208,7 @@ export function QueryPanel({
   const approveThemeClasses = activeProject
     ? APPROVE_THEME_BY_PROJECT_COLOR[activeProject.color]
     : undefined;
-  const monacoRef = useRef<Monaco | null>(null);
-  const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
-
-  // Store completion provider disposable for cleanup
-  const completionProviderRef = useRef<IDisposable | null>(null);
-  const validationSubscriptionRef = useRef<IDisposable | null>(null);
   const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
-
-  // Cleanup completion provider on unmount
-  useEffect(() => {
-    return () => {
-      if (completionProviderRef.current) {
-        completionProviderRef.current.dispose();
-      }
-      if (validationSubscriptionRef.current) {
-        validationSubscriptionRef.current.dispose();
-      }
-      editorInstanceRef.current = null;
-      monacoRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (collapsed || isExpanding || mode !== 'sql') {
-      return;
-    }
-
-    const editorInstance = editorInstanceRef.current;
-    if (!editorInstance) {
-      return;
-    }
-
-    let firstFrame = 0;
-    let secondFrame = 0;
-
-    firstFrame = window.requestAnimationFrame(() => {
-      editorInstance.layout();
-      secondFrame = window.requestAnimationFrame(() => {
-        editorInstance.layout();
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-    };
-  }, [collapsed, isExpanding, mode]);
 
   // Resolve system theme preference
   useEffect(() => {
@@ -290,14 +226,6 @@ export function QueryPanel({
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
   }, [appTheme]);
-
-  useEffect(() => {
-    if (!monacoRef.current) {
-      return;
-    }
-
-    monacoRef.current.editor.setTheme(monacoTheme);
-  }, [monacoTheme]);
 
   const showExpandedContent = !collapsed;
 
@@ -323,7 +251,6 @@ export function QueryPanel({
   // Detect if user is on Mac for keyboard shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const modKey = isMac ? '⌘' : '⌃';
-  const isNlGenerating = nlPhase === 'submitting' || nlPhase === 'revealing';
   const handleExpandFromCollapsed = useCallback(() => {
     onCollapsedChange?.(false);
   }, [onCollapsedChange]);
@@ -420,224 +347,46 @@ export function QueryPanel({
         <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
           {mode === 'sql' ? (
             // SQL Mode: Monaco Editor with syntax highlighting
-            <div
-              className={cn(
-                'relative flex-1 rounded-md overflow-hidden bg-background',
-                'border border-input transition-colors duration-200',
-                'focus-within:border-ring'
-              )}
-            >
-              <Suspense
-              fallback={
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              }
-            >
-              <Editor
-                height="100%"
-                language="sql"
-                value={sqlQuery}
-                onChange={(value) => handleQueryChange(value || '')}
-                onMount={(editorInstance, monaco: Monaco) => {
-                  editorInstanceRef.current = editorInstance;
-                  monacoRef.current = monaco;
-
-                  // Apply the preloaded SQL theme.
-                  monaco.editor.setTheme(monacoTheme);
-
-                  // Focus editor on mount
-                  editorInstance.focus();
-                  // Set up keyboard shortcuts
-                  editorInstance.addCommand(
-                    // Cmd/Ctrl + Enter
-                    (window.navigator.platform.toLowerCase().includes('mac') ? 2048 : 2176) | 3,
-                    handleExecute
-                  );
-
-                  const model = editorInstance.getModel();
-                  if (model && model.getLanguageId() !== 'sql') {
-                    monaco.editor.setModelLanguage(model, 'sql');
-                  }
-
-                  // Clean up previous completion provider if it exists
-                  if (completionProviderRef.current) {
-                    completionProviderRef.current.dispose();
-                  }
-                  if (validationSubscriptionRef.current) {
-                    validationSubscriptionRef.current.dispose();
-                  }
-
-                  // Register context-aware SQL completion provider.
-                  completionProviderRef.current = monaco.languages.registerCompletionItemProvider('sql', {
-                    triggerCharacters: [' ', '.', ',', '"', '('],
-                    provideCompletionItems: (model, position) => {
-                      const word = model.getWordUntilPosition(position);
-                      const range = {
-                        startLineNumber: position.lineNumber,
-                        endLineNumber: position.lineNumber,
-                        startColumn: word.startColumn,
-                        endColumn: word.endColumn
-                      };
-                      const safeTableNames = tableNames
-                        .map((tableName) => sanitizeSuggestionToken(tableName))
-                        .filter((tableName): tableName is string => Boolean(tableName));
-                      const collector = createSqlSuggestionCollector({
-                        monaco,
-                        range,
-                        safeTableNames,
-                        columnsByTable
-                      });
-
-                      try {
-                        const textUntilPosition = model.getValueInRange({
-                          startLineNumber: 1,
-                          startColumn: 1,
-                          endLineNumber: position.lineNumber,
-                          endColumn: position.column
-                        });
-                        const suggestionContext = inferSqlSuggestionContext(textUntilPosition);
-                        const aliasToTableMap = buildAliasToTableMap(model.getValue(), safeTableNames);
-                        const activeAlias = getAliasBeforeDot(textUntilPosition);
-
-                        if (suggestionContext === 'table') {
-                          collector.addTableSuggestions('0');
-                          collector.addKeywordSuggestions('1');
-                          collector.addFunctionSuggestions('2');
-                          collector.addSnippetSuggestions('3');
-                        } else if (suggestionContext === 'alias-column' && activeAlias) {
-                          const tableFromAlias = aliasToTableMap[activeAlias];
-                          if (tableFromAlias) {
-                            collector.addColumnSuggestionsForTable(tableFromAlias, '0');
-                          }
-                          collector.addFunctionSuggestions('1');
-                          collector.addKeywordSuggestions('2');
-                          collector.addTableSuggestions('3');
-                        } else {
-                          collector.addBaselineSuggestions();
-                        }
-                      } catch (error) {
-                        console.error('SQL autocomplete suggestion generation failed:', error);
-                      }
-
-                      if (collector.suggestions.length === 0) {
-                        collector.addBaselineSuggestions();
-                      }
-
-                      return { suggestions: collector.suggestions };
-                    }
-                  });
-
-                  if (!model) {
-                    return;
-                  }
-
-                  const validateSql = () => {
-                    const markers = buildSqlMarkers(model.getValue());
-                    monaco.editor.setModelMarkers(model, 'sql-lint', markers);
-                  };
-
-                  validateSql();
-                  validationSubscriptionRef.current = model.onDidChangeContent(() => {
-                    validateSql();
-                  });
-                }}
-                // Use custom themes defined in onMount
-                theme={monacoTheme}
-                options={{
-                  minimap: { enabled: false },
-                  lineNumbers: 'on',
-                  lineNumbersMinChars: 2, // Narrower line numbers column
-                  glyphMargin: false, // Remove extra glyph margin
-                  folding: false, // Remove folding margin
-                  lineDecorationsWidth: 8, // Spacing between line numbers and code
-                  roundedSelection: false,
-                  scrollBeyondLastLine: false,
-                  readOnly: isExecuting,
-                  fontSize: 13,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                  wordWrap: 'on',
-                  automaticLayout: true,
-                  quickSuggestions: true,
-                  suggestOnTriggerCharacters: true,
-                  padding: { top: 8, bottom: 8 },
-                  fixedOverflowWidgets: true,
-                  suggest: {
-                    showKeywords: true,
-                    showSnippets: true,
-                    insertMode: 'replace',
-                    filterGraceful: true,
-                    localityBonus: true
-                  },
-                  cursorBlinking: 'smooth',
-                  cursorSmoothCaretAnimation: 'on'
-                }}
-              />
-            </Suspense>
-            {/* Keyboard shortcut hint */}
-            <span className="absolute bottom-2 right-2 text-xs text-muted-foreground/50 pointer-events-none select-none">
-              {modKey} + ⏎
-            </span>
-          </div>
-        ) : (
-          // English Mode: NL workflow — animated input → connector → SQL reveal
-          <NlQueryWorkflow
-            projectId={activeProject?.id ?? activeProjectId}
-            englishQuery={englishQuery}
-            onQueryChange={(v) => handleQueryChange(v)}
-            onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
-            onApprove={onNlApprove ?? (() => {})}
-            isExpanding={isExpanding}
-            onPhaseChange={setNlPhase}
-            approveThemeClasses={approveThemeClasses}
-            connectorColorClassName={executeIconColorClass}
-            ref={nlWorkflowRef}
-          />
-        )}
-      </div>
-
-      {/* Execute / NL Workflow footer buttons — phase-aware */}
-      <div className="px-3 pb-3">
-        {mode === 'sql' ? (
-          <Button
-            variant="secondary"
-            onClick={handleExecute}
-            disabled={isExecuting || !sqlQuery.trim()}
-            className="group/execute w-full h-9 text-sm gap-2"
-          >
-            <AnimatedExecuteIcon
+            <QuerySqlEditor
+              sqlQuery={sqlQuery}
+              onQueryChange={(value) => handleQueryChange(value)}
+              onExecute={handleExecute}
               isExecuting={isExecuting}
-              colorClassName={executeIconColorClass}
+              monacoTheme={monacoTheme}
+              tableNames={tableNames}
+              columnsByTable={columnsByTable}
+              collapsed={collapsed}
+              isExpanding={isExpanding}
+              modKey={modKey}
             />
-            {isExecuting ? 'Executing...' : 'Execute'}
-          </Button>
-        ) : nlPhase !== 'reviewing' ? (
-          /* English idle / submitting / revealing / error — trigger generation */
-          <Button
-            variant="secondary"
-            onClick={() => nlWorkflowRef.current?.triggerGenerate()}
-            disabled={
-              isNlGenerating ||
-              !englishQuery.trim()
-            }
-            className="group/execute w-full h-9 text-sm gap-2"
-          >
-            {isNlGenerating ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <AnimatedBrainIcon
-                  colorClassName={executeIconColorClass}
-                />
-                Execute
-              </>
-            )}
-          </Button>
-        ) : null}
-      </div>
+          ) : (
+            // English Mode: NL workflow — animated input -> connector -> SQL reveal
+            <NlQueryWorkflow
+              projectId={activeProject?.id ?? activeProjectId}
+              englishQuery={englishQuery}
+              onQueryChange={(v) => handleQueryChange(v)}
+              onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
+              onApprove={onNlApprove ?? (() => {})}
+              isExpanding={isExpanding}
+              onPhaseChange={setNlPhase}
+              approveThemeClasses={approveThemeClasses}
+              connectorColorClassName={executeIconColorClass}
+              ref={nlWorkflowRef}
+            />
+          )}
+        </div>
+
+        {/* Execute / NL Workflow footer buttons — phase-aware */}
+        <QueryResults
+          mode={mode}
+          isExecuting={isExecuting}
+          isSqlEmpty={!sqlQuery.trim()}
+          isEnglishEmpty={!englishQuery.trim()}
+          onExecute={handleExecute}
+          nlPhase={nlPhase}
+          nlWorkflowRef={nlWorkflowRef}
+          executeIconColorClass={executeIconColorClass}
+        />
       </div>
     </div>
   );

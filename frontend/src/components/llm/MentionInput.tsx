@@ -7,7 +7,7 @@ import {
   type KeyboardEvent
 } from 'react';
 import { cn } from '@/lib/utils';
-import { fileIconColorByType } from '@/lib/fileUtils';
+import { fileIconColorByType, tailwindColorToHex, THEME_ICON_TYPES } from '@/lib/fileUtils';
 import type { FileType } from '@/types/file';
 
 export interface MentionInputHandle {
@@ -30,24 +30,11 @@ interface MentionInputProps {
   className?: string;
 }
 
-/** Tailwind color class → CSS color value for inline DOM styles. */
-const COLOR_MAP: Record<string, string> = {
-  'text-green-500': '#22c55e',
-  'text-blue-500': '#3b82f6',
-  'text-emerald-500': '#10b981',
-  'text-red-500': '#ef4444',
-  'text-purple-500': '#a855f7',
-  'text-muted-foreground': '#a1a1aa',
-};
-
-/** CSV/XLS types that use the project theme color instead of their generic color. */
-const THEME_COLORED_TYPES = new Set(['csv', 'excel']);
-
 function getChipDotColor(fileType?: string, themeColor?: string): string {
-  if (!fileType) return COLOR_MAP['text-muted-foreground'];
-  if (themeColor && THEME_COLORED_TYPES.has(fileType)) return themeColor;
+  if (!fileType) return tailwindColorToHex('text-muted-foreground');
+  if (themeColor && THEME_ICON_TYPES.has(fileType as FileType)) return themeColor;
   const twClass = fileIconColorByType[fileType as FileType] ?? 'text-muted-foreground';
-  return COLOR_MAP[twClass] ?? COLOR_MAP['text-muted-foreground'];
+  return tailwindColorToHex(twClass);
 }
 
 /** Walk child nodes and serialize contentEditable DOM → plain string with @mentions. */
@@ -230,7 +217,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
           el.appendChild(buildDOM(value, mentionNames, mentionTypes, themeColor));
         }
       }
-    }, [value, mentionNames, mentionTypes]);
+    }, [value, mentionNames, mentionTypes, themeColor]);
 
     const handleInput = useCallback(() => {
       if (composingRef.current) return;

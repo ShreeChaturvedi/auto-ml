@@ -27,6 +27,7 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
+import { tailwindColorToHex } from '@/lib/fileUtils';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
 import { useModelSelection } from '@/hooks/useModelSelection';
@@ -73,7 +74,6 @@ export function AgenticShell({
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
-  const mentionAnchorRef = useRef<HTMLElement>(null);
   const {
     selectedModel: assistantModel,
     reasoningEffort,
@@ -102,12 +102,6 @@ export function AgenticShell({
     [files, projectId]
   );
 
-  // Keep anchor ref in sync with MentionInput's underlying DOM element
-  useEffect(() => {
-    const el = mentionInputRef.current?.element() ?? null;
-    (mentionAnchorRef as React.MutableRefObject<HTMLElement | null>).current = el;
-  }, []);
-
   const mentionNames = useMemo(
     () => new Set(mentionCandidates.map((c) => c.name.toLowerCase())),
     [mentionCandidates]
@@ -121,16 +115,10 @@ export function AgenticShell({
   // Resolve project theme color for CSV/XLS icons (same as FileExplorer sidebar)
   const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
   const themeColorClass = project ? projectColorClasses[project.color]?.text : undefined;
-  // Convert Tailwind class to CSS color for inline chip dot styling
-  const themeColor = useMemo(() => {
-    if (!themeColorClass) return undefined;
-    const el = document.createElement('span');
-    el.className = themeColorClass;
-    document.body.appendChild(el);
-    const color = getComputedStyle(el).color;
-    document.body.removeChild(el);
-    return color;
-  }, [themeColorClass]);
+  const themeColor = useMemo(
+    () => themeColorClass ? tailwindColorToHex(themeColorClass) : undefined,
+    [themeColorClass]
+  );
 
   const mention = useMentionAutocomplete({
     candidates: mentionCandidates,
@@ -165,7 +153,10 @@ export function AgenticShell({
     domainLockReason
   });
 
-  const suggestions = domainAdapter.suggestionProvider(messages, isGenerating);
+  const suggestions = useMemo(
+    () => domainAdapter.suggestionProvider(messages, isGenerating),
+    [domainAdapter, messages, isGenerating]
+  );
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
@@ -265,7 +256,7 @@ export function AgenticShell({
                 {leftPaneContent}
               </div>
             )}
-            
+
             <div className="border-t bg-background">
               {showModelSwitchPrompt ? (
                 <div className="border-b px-4 py-2">
@@ -370,7 +361,7 @@ export function AgenticShell({
                           isOpen={mention.isOpen}
                           filtered={mention.filtered}
                           activeIndex={mention.activeIndex}
-                          anchorRef={mentionAnchorRef}
+                          anchorRef={mentionInputRef}
                           onSelect={mention.selectCandidate}
                           themeColorClass={themeColorClass}
                         />

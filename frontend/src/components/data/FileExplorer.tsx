@@ -5,8 +5,7 @@ import {
   Download,
   Trash2,
   ClipboardList,
-  Plus,
-  File
+  Plus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -23,10 +22,8 @@ import { phaseConfig } from '@/types/phase';
 import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
-import { fileIconByType, fileIconColorByType } from '@/lib/fileUtils';
+import { resolveFileIcon, DATA_FILE_TYPES } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
-import { CsvIcon } from './CsvIcon';
-import { XlsIcon } from './XlsIcon';
 import { projectColorClasses } from '@/types/project';
 
 interface FileExplorerProps {
@@ -44,13 +41,8 @@ interface FileItemProps {
 }
 
 function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownload }: FileItemProps) {
-  const isCsv = file.type === 'csv';
-  const isXls = file.type === 'excel';
-  const isThemeIcon = isCsv || isXls;
-  const Icon = isCsv ? CsvIcon : isXls ? XlsIcon : (fileIconByType[file.type] ?? File);
-  const iconColor = isActive
-    ? fileIconColorByType[file.type] ?? 'text-muted-foreground'
-    : 'text-muted-foreground';
+  const { Icon, colorClass, usesTheme } = resolveFileIcon(file.type);
+  const iconColor = isActive ? colorClass : 'text-muted-foreground';
 
   return (
     <div
@@ -63,8 +55,8 @@ function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownloa
       onClick={onOpen}
     >
       <Icon
-        className={cn('h-3.5 w-3.5 shrink-0', !isThemeIcon && iconColor)}
-        {...(isThemeIcon ? { themeColorClass, isActive } : {})}
+        className={cn('h-3.5 w-3.5 shrink-0', !usesTheme && iconColor)}
+        {...(usesTheme ? { themeColorClass, isActive } : {})}
       />
       <span className="text-workflow truncate flex-1">{file.name}</span>
 
@@ -138,12 +130,12 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   );
 
   const dataFiles = useMemo(
-    () => projectFiles.filter((file) => ['csv', 'json', 'excel'].includes(file.type)),
+    () => projectFiles.filter((file) => DATA_FILE_TYPES.has(file.type)),
     [projectFiles]
   );
 
   const contextFiles = useMemo(
-    () => projectFiles.filter((file) => !['csv', 'json', 'excel'].includes(file.type)),
+    () => projectFiles.filter((file) => !DATA_FILE_TYPES.has(file.type)),
     [projectFiles]
   );
 

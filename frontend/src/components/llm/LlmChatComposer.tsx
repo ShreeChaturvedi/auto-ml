@@ -1,6 +1,7 @@
 import { useMemo, useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
 
 import { MentionInput, type MentionInputHandle } from '@/components/llm/MentionInput';
+import type { LlmUsage } from '@/types/llmUi';
 
 import { useMetallicBorder } from '@/hooks/useMetallicBorder';
 import {
@@ -110,7 +111,7 @@ export interface ComposerSlots {
 }
 
 export interface UsageConfig {
-  sessionUsages: Record<string, unknown>[];
+  sessionUsages: LlmUsage[];
   model: string;
 }
 

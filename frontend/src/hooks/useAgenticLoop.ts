@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { ChatMessage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi';
+import type { ChatMessage, LlmUsage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi';
 import { executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
 import { asRecordOrNull } from '@/lib/typeCoercion';
@@ -66,7 +66,7 @@ export function useAgenticLoop({
   domainLockReason
 }: UseAgenticLoopOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessionUsages, setSessionUsages] = useState<Record<string, unknown>[]>([]);
+  const [sessionUsages, setSessionUsages] = useState<LlmUsage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);

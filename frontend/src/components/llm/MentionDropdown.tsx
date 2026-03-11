@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState, useMemo, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { fileIconByType, fileIconColorByType, DATA_FILE_TYPES } from '@/lib/fileUtils';
-import { CsvIcon } from '@/components/data/CsvIcon';
-import { XlsIcon } from '@/components/data/XlsIcon';
+import { resolveFileIcon, DATA_FILE_TYPES } from '@/lib/fileUtils';
 import { cn } from '@/lib/utils';
+import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
-import type { FileType } from '@/types/file';
 
 interface MentionDropdownProps {
   isOpen: boolean;
   filtered: MentionCandidate[];
   activeIndex: number;
-  anchorRef: RefObject<HTMLElement | null>;
+  anchorRef: RefObject<MentionInputHandle | null>;
   onSelect: (candidate: MentionCandidate) => void;
   /** Project theme color class (e.g. 'text-blue-500') for CSV/XLS icons */
   themeColorClass?: string;
@@ -65,19 +63,21 @@ export function MentionDropdown({
     }
   };
 
-  // Anchor dropdown directly above the input element, overlaying suggestion pills
+  // Anchor dropdown directly above the input element, overlaying suggestion pills.
+  // Only recompute when isOpen transitions — the input element doesn't move while typing.
   useEffect(() => {
-    if (!isOpen || !anchorRef.current) {
+    const el = anchorRef.current?.element() ?? null;
+    if (!isOpen || !el) {
       if (!isClosing) setPosition(null);
       return;
     }
-    const inputRect = anchorRef.current.getBoundingClientRect();
+    const inputRect = el.getBoundingClientRect();
     setPosition({
       bottom: window.innerHeight - inputRect.top + 4,
       left: inputRect.left,
       width: Math.min(Math.max(inputRect.width, 240), 400)
     });
-  }, [isOpen, anchorRef, filtered, isClosing]);
+  }, [isOpen, anchorRef, isClosing]);
 
   // Scroll active item into view
   useEffect(() => {
@@ -96,11 +96,7 @@ export function MentionDropdown({
 
   /** Render a single candidate item. globalIndex is its position in the flat filtered array. */
   const renderItem = (candidate: MentionCandidate, globalIndex: number) => {
-    const isCsv = candidate.type === 'csv';
-    const isXls = candidate.type === 'excel';
-    const isThemeIcon = isCsv || isXls;
-    const Icon = isCsv ? CsvIcon : isXls ? XlsIcon : (fileIconByType[candidate.type as FileType] ?? fileIconByType.other);
-    const iconColor = fileIconColorByType[candidate.type as FileType] ?? fileIconColorByType.other;
+    const { Icon, colorClass, usesTheme } = resolveFileIcon(candidate.type);
 
     return (
       <li
@@ -120,8 +116,8 @@ export function MentionDropdown({
         }}
       >
         <Icon
-          className={cn('h-3.5 w-3.5 shrink-0', !isThemeIcon && iconColor)}
-          {...(isThemeIcon ? { themeColorClass, isActive: true } : {})}
+          className={cn('h-3.5 w-3.5 shrink-0', !usesTheme && colorClass)}
+          {...(usesTheme ? { themeColorClass, isActive: true } : {})}
         />
         <span className="truncate">{candidate.name}</span>
       </li>

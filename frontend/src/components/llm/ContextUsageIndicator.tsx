@@ -5,9 +5,10 @@ import {
   HoverCardContent
 } from '@/components/ui/hover-card';
 import { cn } from '@/lib/utils';
+import type { LlmUsage } from '@/types/llmUi';
 
 export interface ContextUsageIndicatorProps {
-  sessionUsages: Record<string, unknown>[];
+  sessionUsages: LlmUsage[];
   model: string;
   projectColorClass?: string;
   projectBgColorClass?: string;
@@ -83,22 +84,17 @@ interface SummedUsage {
   cached: number;
 }
 
-function sumUsages(usages: Record<string, unknown>[]): SummedUsage {
+function sumUsages(usages: LlmUsage[]): SummedUsage {
   let input = 0;
   let output = 0;
   let reasoning = 0;
   let cached = 0;
 
-  for (const raw of usages) {
-    const r = raw as Record<string, unknown>;
-    input += typeof r.input_tokens === 'number' ? r.input_tokens : 0;
-    output += typeof r.output_tokens === 'number' ? r.output_tokens : 0;
-
-    const inDetails = r.input_tokens_details as Record<string, unknown> | undefined;
-    cached += typeof inDetails?.cached_tokens === 'number' ? inDetails.cached_tokens : 0;
-
-    const outDetails = r.output_tokens_details as Record<string, unknown> | undefined;
-    reasoning += typeof outDetails?.reasoning_tokens === 'number' ? outDetails.reasoning_tokens : 0;
+  for (const u of usages) {
+    input += u.input_tokens;
+    output += u.output_tokens;
+    cached += u.input_tokens_details?.cached_tokens ?? 0;
+    reasoning += u.output_tokens_details?.reasoning_tokens ?? 0;
   }
 
   return { input, output, total: input + output, reasoning, cached };

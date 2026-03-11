@@ -52,11 +52,50 @@ export const fileIconColorByType: Record<FileType, string> = {
   other: 'text-muted-foreground'
 };
 
+/** File types whose icons accept themeColorClass/isActive props (CsvIcon, XlsIcon). */
+export const THEME_ICON_TYPES = new Set<FileType>(['csv', 'excel']);
+
 /** Data file types that represent tabular datasets. */
 export const DATA_FILE_TYPES = new Set<FileType>(['csv', 'json', 'excel']);
 
 /** Document file types ingested for RAG context. */
 export const DOC_FILE_TYPES = new Set<FileType>(['pdf', 'markdown', 'word', 'text']);
+
+/**
+ * Resolve the icon component and color metadata for a file type.
+ * Centralizes the CsvIcon/XlsIcon special-casing so consumers don't repeat it.
+ */
+export function resolveFileIcon(type: FileType | string): {
+  Icon: ComponentType<{ className?: string; themeColorClass?: string; isActive?: boolean }>;
+  colorClass: string;
+  usesTheme: boolean;
+} {
+  const ft = type as FileType;
+  const usesTheme = THEME_ICON_TYPES.has(ft);
+  return {
+    Icon: fileIconByType[ft] ?? fileIconByType.other,
+    colorClass: fileIconColorByType[ft] ?? fileIconColorByType.other,
+    usesTheme,
+  };
+}
+
+/** Map of Tailwind color classes used in this codebase → CSS hex values. */
+const TAILWIND_HEX: Record<string, string> = {
+  'text-green-500': '#22c55e',
+  'text-blue-500': '#3b82f6',
+  'text-emerald-500': '#10b981',
+  'text-red-500': '#ef4444',
+  'text-purple-500': '#a855f7',
+  'text-muted-foreground': '#a1a1aa',
+};
+
+/**
+ * Resolve a Tailwind color class to a CSS hex value.
+ * Falls back to `#a1a1aa` (muted-foreground) for unknown classes.
+ */
+export function tailwindColorToHex(twClass: string): string {
+  return TAILWIND_HEX[twClass] ?? TAILWIND_HEX['text-muted-foreground'];
+}
 
 /**
  * Format file size for display

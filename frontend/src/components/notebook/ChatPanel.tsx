@@ -43,7 +43,7 @@ import {
 } from '@/lib/llm/streamMessageUtils';
 import { getFileType, fileIconByType, fileIconColorByType } from '@/lib/fileUtils';
 import type { UploadedFile, FileType } from '@/types/file';
-import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
+import type { ChatMessage, LlmUsage, ToolCall, ToolResult } from '@/types/llmUi';
 import { cn } from '@/lib/utils';
 
 interface ChatPanelProps {
@@ -59,14 +59,13 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('high');
   const [attachmentStatus, setAttachmentStatus] = useState<AttachmentStatus>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
-  const [sessionUsages, setSessionUsages] = useState<Record<string, unknown>[]>([]);
+  const [sessionUsages, setSessionUsages] = useState<LlmUsage[]>([]);
   const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
   const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
   const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const mentionInputRef = useRef<MentionInputHandle>(null);
-  const mentionAnchorRef = useRef<HTMLElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
   const currentTextIdRef = useRef<string | null>(null);
@@ -136,12 +135,6 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     onValueChange: setChatInput,
     inputRef: mentionInputRef
   });
-
-  // Keep anchor ref in sync with MentionInput's underlying DOM element
-  useEffect(() => {
-    const el = mentionInputRef.current?.element() ?? null;
-    (mentionAnchorRef as React.MutableRefObject<HTMLElement | null>).current = el;
-  }, []);
 
   // Load messages from localStorage
   useEffect(() => {
@@ -651,7 +644,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
                   isOpen={mentionIsOpen}
                   filtered={mentionFiltered}
                   activeIndex={mentionActiveIndex}
-                  anchorRef={mentionAnchorRef}
+                  anchorRef={mentionInputRef}
                   onSelect={mentionSelectCandidate}
                 />
               ),

@@ -249,6 +249,15 @@ export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
 
 export type { ResolvedMention as ChatMention } from '@/hooks/useMentionAutocomplete';
 
+/** Token usage data from the OpenAI Responses API, passed through as-is from the backend. */
+export interface LlmUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  input_tokens_details?: { cached_tokens?: number };
+  output_tokens_details?: { reasoning_tokens?: number };
+}
+
 // ChatMessage type for interleaved rendering in Training tab and Onboarding chat
 export type ChatMessage =
   | { id: string; type: 'user'; content: string; mentions?: ChatMention[]; timestamp: number }

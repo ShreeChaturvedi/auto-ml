@@ -9,17 +9,11 @@
  * TODO: Add more routes as features are built (settings, profile, etc.)
  */
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/sonner';
-import { UploadArea } from '@/components/upload/UploadArea';
-import { DataViewerTab } from '@/components/data/DataViewerTab';
-import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPanel';
-import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
-import { TrainingPanel } from '@/components/training/TrainingPanel';
-import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 import { GoogleOAuthCallback } from '@/components/auth/GoogleOAuthCallback';
@@ -30,222 +24,14 @@ import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
 import { SignupForm } from '@/components/auth/SignupForm';
 import { DocsPage } from '@/components/docs/DocsPage';
 import { useProjectStore } from '@/stores/projectStore';
-import { useAuthStore } from '@/stores/authStore';
-import { BookOpen, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ProjectDialog } from '@/components/projects/ProjectDialog';
-import type { Phase } from '@/types/phase';
-import { getCurrentUser } from '@/lib/api/auth';
-import { isJwtExpired } from '@/lib/auth/jwt';
+import { HomePage } from '@/pages/HomePage';
+import { ProjectRedirect, ProjectWorkspace } from '@/pages/ProjectWorkspace';
+import { useAuthBootstrap } from '@/hooks/useAuthBootstrap';
 import { initMonaco } from '@/lib/monaco/preloader';
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle
-} from '@/components/ui/empty';
-import { ShootingStars } from '@/components/ui/shooting-stars';
-import { StarsBackground } from '@/components/ui/stars-background';
 
 // Pre-load Monaco editor in the background to eliminate flash on code cells
 initMonaco().catch(console.error);
-
-// Home page - shown when no project is selected
-function HomePage() {
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  // Fix: Use individual selectors to avoid creating new objects on every render
-  const projects = useProjectStore((state) => state.projects);
-  const activeProjectId = useProjectStore((state) => state.activeProjectId);
-  const setActiveProject = useProjectStore((state) => state.setActiveProject);
-  const isInitialized = useProjectStore((state) => state.isInitialized);
-  const isLoading = useProjectStore((state) => state.isLoading);
-  const error = useProjectStore((state) => state.error);
-
-  // Clear active project when HomePage mounts (fixes navigation bug)
-  useEffect(() => {
-    if (activeProjectId !== null) {
-      setActiveProject(null);
-    }
-  }, [activeProjectId, setActiveProject]);
-
-  if (!isInitialized && isLoading && projects.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading projects...</p>
-      </div>
-    );
-  }
-
-  if (error && projects.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-4">
-          <p className="text-sm text-destructive">{error}</p>
-          <Button size="sm" variant="outline" onClick={() => setIsCreateDialogOpen(true)}>
-            <FolderOpen className="h-4 w-4 mr-2" />
-            Create Project
-          </Button>
-          <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative h-full overflow-hidden">
-      {/* Background visual effects — absolutely positioned, pointer-events disabled */}
-      <StarsBackground />
-      <ShootingStars />
-
-      {/* Page content — sits above background layers via z-index stacking context */}
-      <Empty className="relative z-10 h-full">
-        <EmptyHeader>
-          <EmptyMedia variant="icon" className="rounded-lg">
-            <FolderOpen />
-          </EmptyMedia>
-          <EmptyTitle>
-            {projects.length === 0 ? 'No Projects Yet' : 'No Project Selected'}
-          </EmptyTitle>
-          <EmptyDescription>
-            {projects.length === 0
-              ? 'Start your first ML workflow by creating a new project or importing one.'
-              : 'Select a project from the sidebar to continue working, or create/import a new one.'}
-          </EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent>
-          <div className="flex gap-2">
-            <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
-            <Button variant="outline">Import Project</Button>
-          </div>
-        </EmptyContent>
-        <Button
-          variant="link"
-          asChild
-          className="text-muted-foreground"
-          size="sm"
-        >
-          <Link to="/docs">
-            Learn More <BookOpen className="h-4 w-4" />
-          </Link>
-        </Button>
-        <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
-      </Empty>
-    </div>
-  );
-}
-
-// Redirect to current phase
-function ProjectRedirect() {
-  const { projectId } = useParams();
-  const projects = useProjectStore((state) => state.projects);
-  const isInitialized = useProjectStore((state) => state.isInitialized);
-  const isLoading = useProjectStore((state) => state.isLoading);
-
-  if (!isInitialized) {
-    return isLoading ? null : <Navigate to="/" replace />;
-  }
-
-  const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
-
-  if (!project) {
-    return <Navigate to="/" replace />;
-  }
-
-  // Redirect to current phase (or upload if not set)
-  return <Navigate to={`/project/${project.id}/${project.currentPhase || 'upload'}`} replace />;
-}
-
-// Project workspace - shown when a project and phase are selected
-function ProjectWorkspace() {
-  const { projectId, phase } = useParams<{ projectId: string; phase: Phase }>();
-  const projects = useProjectStore((state) => state.projects);
-  const activeProjectId = useProjectStore((state) => state.activeProjectId);
-  const setCurrentPhase = useProjectStore((state) => state.setCurrentPhase);
-  const isPhaseUnlocked = useProjectStore((state) => state.isPhaseUnlocked);
-  const setActiveProject = useProjectStore((state) => state.setActiveProject);
-  const isInitialized = useProjectStore((state) => state.isInitialized);
-
-  const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
-
-  useEffect(() => {
-    if (!isInitialized || !projectId) return;
-    if (projectId !== activeProjectId) {
-      setActiveProject(projectId);
-    }
-  }, [isInitialized, projectId, activeProjectId, setActiveProject]);
-
-  useEffect(() => {
-    if (!isInitialized || !project || !phase) return;
-    if (project.currentPhase !== phase) {
-      setCurrentPhase(project.id, phase as Phase);
-    }
-  }, [isInitialized, project, phase, setCurrentPhase]);
-
-  if (!isInitialized) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">
-          Loading project workspace...
-        </p>
-      </div>
-    );
-  }
-
-  if (!project) {
-    return <Navigate to="/" replace />;
-  }
-
-  if (!phase) {
-    return <Navigate to={`/project/${project.id}/${project.currentPhase || 'upload'}`} replace />;
-  }
-
-  // Check if phase is unlocked
-  if (!isPhaseUnlocked(project.id, phase as Phase)) {
-    // Redirect to current phase if locked
-    return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
-  }
-
-  // Render content based on phase
-  switch (phase as Phase) {
-    case 'upload':
-      return <UploadArea />;
-
-    case 'data-viewer':
-      return <DataViewerTab />;
-
-    case 'preprocessing':
-      return <PreprocessingPanel />;
-
-    case 'feature-engineering':
-      return <FeatureEngineeringPanel projectId={projectId!} />;
-
-    case 'training':
-      return <TrainingPanel />;
-
-    case 'experiments':
-      return <ExperimentsPanel />;
-
-    case 'deployment':
-      return (
-        <div className="flex h-full items-center justify-center p-6">
-          <div className="text-center space-y-2">
-            <h3 className="text-lg font-semibold text-foreground">Deployment</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Model deployment interface with containerization and API endpoint management.
-            </p>
-            <p className="text-xs text-muted-foreground italic">
-              TODO: Implement deployment UI.
-            </p>
-          </div>
-        </div>
-      );
-
-    default:
-      return <Navigate to={`/project/${project.id}/upload`} replace />;
-  }
-}
 
 function MainApp() {
   const isInitialized = useProjectStore((state) => state.isInitialized);
@@ -298,75 +84,7 @@ function MainApp() {
 }
 
 function App() {
-  const [authReady, setAuthReady] = useState(false);
-  const setUser = useAuthStore((state) => state.setUser);
-  const clearAuth = useAuthStore((state) => state.clearAuth);
-  const setLoading = useAuthStore((state) => state.setLoading);
-
-  useEffect(() => {
-    let isMounted = true;
-    let unsubscribeHydration: (() => void) | null = null;
-
-    const waitForAuthHydration = async () => {
-      if (useAuthStore.persist.hasHydrated()) {
-        return;
-      }
-
-      await new Promise<void>((resolve) => {
-        unsubscribeHydration = useAuthStore.persist.onFinishHydration(() => {
-          unsubscribeHydration?.();
-          unsubscribeHydration = null;
-          resolve();
-        });
-      });
-    };
-
-    const bootstrapAuth = async () => {
-      await waitForAuthHydration();
-      if (!isMounted) return;
-
-      const { accessToken, refreshToken } = useAuthStore.getState();
-      if (!accessToken && !refreshToken) {
-        if (useAuthStore.getState().user) {
-          clearAuth();
-        }
-        setLoading(false);
-        setAuthReady(true);
-        return;
-      }
-      if (!accessToken || isJwtExpired(accessToken)) {
-        clearAuth();
-        setLoading(false);
-        setAuthReady(true);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const response = await getCurrentUser();
-        if (isMounted) {
-          setUser(response.user);
-        }
-      } catch {
-        if (isMounted) {
-          clearAuth();
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-          setAuthReady(true);
-        }
-      }
-    };
-
-    void bootstrapAuth();
-
-    return () => {
-      isMounted = false;
-      unsubscribeHydration?.();
-      unsubscribeHydration = null;
-    };
-  }, [setUser, clearAuth, setLoading]);
+  const authReady = useAuthBootstrap();
 
   if (!authReady) {
     return (

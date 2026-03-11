@@ -7,7 +7,9 @@ import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText'
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
 import { buildDatasetContinuityPrompt } from './continuityPrompt';
-import { DatasetChooserDialog, RenameTabDialog } from './PreprocessingDialogs';
+import { RenameTabDialog } from './PreprocessingDialogs';
+import { DatasetSelector } from './DatasetSelector';
+import { useDatasetSelectorTrigger } from './useDatasetSelectorTrigger';
 import {
   PreprocessingToolbarLeft,
   PreprocessingToolbarRight
@@ -82,11 +84,11 @@ export function PreprocessingPanel() {
   const lastHydratedRunIdRef = useRef<string | null>(null);
   const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
 
-  const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
-  const [datasetSearch, setDatasetSearch] = useState('');
-  const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
   const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
   const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
+
+  const { forceOpen: datasetSelectorForceOpen, openSelector: openDatasetSelector } =
+    useDatasetSelectorTrigger();
 
   const {
     tabs,
@@ -104,10 +106,9 @@ export function PreprocessingPanel() {
     resetActiveTab
   } = usePreprocessingTabs({
     projectId,
-    onNeedsDatasetSelection: useCallback((firstDatasetId: string) => {
-      setCandidateDatasetId(firstDatasetId);
-      setDatasetModalOpen(true);
-    }, [])
+    onNeedsDatasetSelection: useCallback(() => {
+      openDatasetSelector();
+    }, [openDatasetSelector])
   });
 
   useEffect(() => {
@@ -115,18 +116,6 @@ export function PreprocessingPanel() {
       void loadTables(projectId);
     }
   }, [projectId, loadTables]);
-
-  useEffect(() => {
-    if (!selectedDatasetId && tables.length > 0) {
-      setDatasetModalOpen(true);
-      const candidateStillExists = candidateDatasetId
-        ? tables.some((table) => table.datasetId === candidateDatasetId)
-        : false;
-      if (!candidateStillExists) {
-        setCandidateDatasetId(tables[0].datasetId);
-      }
-    }
-  }, [candidateDatasetId, selectedDatasetId, tables]);
 
   useEffect(() => {
     if (!projectId || !runId) {
@@ -161,7 +150,7 @@ export function PreprocessingPanel() {
 
   const requestDatasetContinuityChoice = (prompt: string): Promise<string | null> => {
     if (!selectedDatasetId) {
-      setDatasetModalOpen(true);
+      openDatasetSelector();
       return Promise.resolve(null);
     }
     return new Promise<string | null>((resolve) => {
@@ -195,16 +184,6 @@ export function PreprocessingPanel() {
       }
     ));
   };
-
-  const filteredTables = useMemo(() => {
-    const query = datasetSearch.trim().toLowerCase();
-    if (!query) return tables;
-    return tables.filter((table) => {
-      return table.filename.toLowerCase().includes(query)
-        || table.name.toLowerCase().includes(query)
-        || table.datasetId.toLowerCase().includes(query);
-    });
-  }, [datasetSearch, tables]);
 
   const sortedTimeline = useMemo(
     () => [...timeline].sort((a, b) => a.createdAt - b.createdAt),
@@ -317,16 +296,9 @@ export function PreprocessingPanel() {
     void rejectStep(projectId, stepId, 'Rejected by user');
   }, [projectId, rejectStep]);
 
-  const handleDatasetStart = () => {
-    if (!candidateDatasetId) return;
-    selectDataset(candidateDatasetId);
-    setDatasetModalOpen(false);
-  };
-
   const handleDatasetSelect = (datasetId: string) => {
     selectDataset(datasetId);
     clearRun();
-    setCandidateDatasetId(datasetId);
   };
 
   const domainAdapter = useMemo(() => {
@@ -465,16 +437,11 @@ export function PreprocessingPanel() {
         }}
       />
 
-      <DatasetChooserDialog
-        open={isDatasetModalOpen}
-        onOpenChange={setDatasetModalOpen}
-        datasetSearch={datasetSearch}
-        onDatasetSearchChange={setDatasetSearch}
-        allTables={tables}
-        filteredTables={filteredTables}
-        candidateDatasetId={candidateDatasetId}
-        onCandidateDatasetChange={setCandidateDatasetId}
-        onStart={handleDatasetStart}
+      <DatasetSelector
+        tables={tables}
+        selectedDatasetId={selectedDatasetId}
+        onSelectDataset={selectDataset}
+        forceOpen={datasetSelectorForceOpen}
       />
 
       <RenameTabDialog

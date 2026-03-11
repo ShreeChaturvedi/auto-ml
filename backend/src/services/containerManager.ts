@@ -16,15 +16,12 @@ import { promisify } from 'util';
 import { env } from '../config.js';
 import type { PythonVersion } from '../types/execution.js';
 
+import { buildDockerRunArgs } from './container/dockerBuilder.js';
 import { execDocker } from './dockerUtils.js';
 import { shutdownKernel } from './kernelManager.js';
 import { clearJediInstallState } from './pythonCompletions.js';
 
 const execAsync = promisify(exec);
-const CONTAINER_WORKSPACE_ROOT = '/workspace';
-const CONTAINER_PYTHON_SITE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.python`;
-const CONTAINER_PIP_CACHE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.cache/pip`;
-const CONTAINER_TMP_DIR = `${CONTAINER_WORKSPACE_ROOT}/.tmp`;
 
 function resolveRuntimeDockerfilePath(): string {
     const candidates = [
@@ -179,37 +176,11 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
     const imageName = await ensureRuntimeImage(config.pythonVersion);
     const containerName = `automl-exec-${id.slice(0, 8)}`;
 
-    // Docker requires absolute host paths for bind mounts.
-    const absWorkspacePath = workspacePath;
-    const absDatasetsPath = resolve(env.datasetStorageDir);
-
-    const dockerArgs = [
-        'run',
-        '-d', // detached
-        '--name', containerName,
-        '--memory', `${env.executionMaxMemoryMb}m`,
-        '--cpus', `${env.executionMaxCpuPercent / 100}`,
-        '--network', env.executionNetwork, // network policy
-        '--read-only', // read-only root fs
-        '--tmpfs', `/tmp:rw,nosuid,size=${env.executionTmpfsMb}m,mode=1777`, // writable tmp
-        '--tmpfs', '/home/sandbox/.local:rw,nosuid,size=100m,mode=1777',
-        '--tmpfs', '/home/sandbox/.jupyter:rw,nosuid,size=10m,mode=1777',
-        '--tmpfs', '/home/sandbox/.ipython:rw,nosuid,size=10m,mode=1777',
-        '--tmpfs', '/run/user:rw,nosuid,size=10m,mode=1777',
-        '-v', `${absWorkspacePath}:/workspace:rw`, // mount workspace
-        '-v', `${absDatasetsPath}:/datasets:ro`, // mount datasets read-only
-        '-w', CONTAINER_WORKSPACE_ROOT,
-        '--user', 'sandbox',
-        '-e', `HOME=${CONTAINER_WORKSPACE_ROOT}`,
-        '-e', `PYTHONPATH=${CONTAINER_PYTHON_SITE_DIR}`,
-        '-e', `PIP_CACHE_DIR=${CONTAINER_PIP_CACHE_DIR}`,
-        '-e', 'PIP_DISABLE_PIP_VERSION_CHECK=1',
-        '-e', `TMPDIR=${CONTAINER_TMP_DIR}`,
-        '-e', 'MPLCONFIGDIR=/tmp/matplotlib',
-        ...(env.executionDockerPlatform ? ['--platform', env.executionDockerPlatform] : []),
-        '-p', '0:8888',
-        imageName
-    ];
+    const dockerArgs = buildDockerRunArgs({
+        containerName,
+        imageName,
+        workspacePath,
+    });
 
     try {
         const { stdout } = await execDocker(dockerArgs);
@@ -230,7 +201,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
             containerId,
             projectId: config.projectId,
             pythonVersion: config.pythonVersion,
-            workspacePath: absWorkspacePath,
+            workspacePath,
             kernelGatewayPort,
             createdAt: new Date(),
             lastUsedAt: new Date()

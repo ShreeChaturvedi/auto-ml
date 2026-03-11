@@ -23,7 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UploadedFile } from '@/types/file';
-import { getFileIcon, formatFileSize } from '@/types/file';
+import { getFileIcon, formatFileSize } from '@/lib/fileUtils';
 import { FilePreview } from './FilePreview';
 import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';

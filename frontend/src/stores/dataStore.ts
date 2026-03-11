@@ -20,7 +20,7 @@ import type {
 } from '@/types/file';
 import { listDatasets, deleteDataset, updateDatasetColumnType } from '@/lib/api/datasets';
 import { listDocuments, deleteDocument } from '@/lib/api/documents';
-import { getFileType } from '@/types/file';
+import { getFileType } from '@/lib/fileUtils';
 
 interface DataState {
   files: UploadedFile[];

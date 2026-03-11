@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
-import { getFileType, type UploadedFile } from '@/types/file';
+import { getFileType } from '@/lib/fileUtils';
+import type { UploadedFile } from '@/types/file';
 import { useDataStore } from '@/stores/dataStore';
 
 export const CONTEXT_ATTACHMENT_ACCEPT =

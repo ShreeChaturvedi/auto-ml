@@ -38,7 +38,8 @@ import {
   appendThinkingDelta,
   markThinkingMessageComplete
 } from '@/lib/llm/streamMessageUtils';
-import { getFileType, type UploadedFile } from '@/types/file';
+import { getFileType } from '@/lib/fileUtils';
+import type { UploadedFile } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { cn } from '@/lib/utils';
 

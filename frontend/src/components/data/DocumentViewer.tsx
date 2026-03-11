@@ -27,7 +27,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { downloadDocument } from '@/lib/api/documents';
 import type { UploadedFile } from '@/types/file';
-import { formatFileSize } from '@/types/file';
+import { formatFileSize } from '@/lib/fileUtils';
 
 type ViewerStatus = 'loading' | 'ready' | 'error';
 type MarkdownViewMode = 'source' | 'preview';

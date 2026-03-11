@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
-import { getFileType } from '@/types/file';
+import { getFileType } from '@/lib/fileUtils';
 import { FileRow } from './FileRow';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';

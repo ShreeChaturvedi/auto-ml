@@ -17,7 +17,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import type { UploadedFile } from '@/types/file';
-import { formatFileSize } from '@/types/file';
+import { formatFileSize } from '@/lib/fileUtils';
 import Papa from 'papaparse';
 import { Badge } from '@/components/ui/badge';
 import { Eye } from 'lucide-react';

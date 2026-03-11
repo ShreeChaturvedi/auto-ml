@@ -8,7 +8,7 @@
  * single ribbon split by the resizable divider.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -18,9 +18,15 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
 import { NotebookEditor } from '@/components/notebook/NotebookEditor';
-import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
+import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots, type MentionSlotConfig, type UsageConfig } from '@/components/llm/LlmChatComposer';
+import { MentionDropdown } from '@/components/llm/MentionDropdown';
+import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
+import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import { useNotebookStore } from '@/stores/notebookStore';
+import { useDataStore } from '@/stores/dataStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
 import { useModelSelection } from '@/hooks/useModelSelection';
@@ -66,6 +72,8 @@ export function AgenticShell({
   renderLeftPane
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
+  const mentionInputRef = useRef<MentionInputHandle>(null);
+  const mentionAnchorRef = useRef<HTMLElement>(null);
   const {
     selectedModel: assistantModel,
     reasoningEffort,
@@ -76,6 +84,60 @@ export function AgenticShell({
     handleModelChange,
     setReasoningEffort
   } = useModelSelection();
+
+  const files = useDataStore((s) => s.files);
+  const mentionCandidates = useMemo<MentionCandidate[]>(
+    () =>
+      files
+        .filter((f) => f.projectId === projectId)
+        .map((f) => ({
+          id: f.id,
+          name: f.name,
+          type: f.type,
+          meta: {
+            datasetId: f.metadata?.datasetId,
+            documentId: f.metadata?.documentId
+          }
+        })),
+    [files, projectId]
+  );
+
+  // Keep anchor ref in sync with MentionInput's underlying DOM element
+  useEffect(() => {
+    const el = mentionInputRef.current?.element() ?? null;
+    (mentionAnchorRef as React.MutableRefObject<HTMLElement | null>).current = el;
+  }, []);
+
+  const mentionNames = useMemo(
+    () => new Set(mentionCandidates.map((c) => c.name.toLowerCase())),
+    [mentionCandidates]
+  );
+
+  const mentionTypes = useMemo(
+    () => new Map(mentionCandidates.map((c) => [c.name.toLowerCase(), c.type])),
+    [mentionCandidates]
+  );
+
+  // Resolve project theme color for CSV/XLS icons (same as FileExplorer sidebar)
+  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
+  const themeColorClass = project ? projectColorClasses[project.color]?.text : undefined;
+  // Convert Tailwind class to CSS color for inline chip dot styling
+  const themeColor = useMemo(() => {
+    if (!themeColorClass) return undefined;
+    const el = document.createElement('span');
+    el.className = themeColorClass;
+    document.body.appendChild(el);
+    const color = getComputedStyle(el).color;
+    document.body.removeChild(el);
+    return color;
+  }, [themeColorClass]);
+
+  const mention = useMentionAutocomplete({
+    candidates: mentionCandidates,
+    value: chatInput,
+    onValueChange: setChatInput,
+    inputRef: mentionInputRef
+  });
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
   const disconnectNotebook = useNotebookStore((s) => s.disconnect);
@@ -89,6 +151,7 @@ export function AgenticShell({
     messages,
     isGenerating,
     error,
+    sessionUsages,
     activeTextMessageId,
     activeThinkingMessageId,
     hydratedMessageIds,
@@ -120,10 +183,20 @@ export function AgenticShell({
     const trimmed = prompt.trim();
     if (!trimmed || !projectId || isGenerating || domainLockReason) return;
 
+    // Capture mentions before clearing input
+    const currentMentions = mention.resolvedMentions;
+
     const startRun = async () => {
       let preparedPrompt = trimmed;
+
+      // Append file mention context
+      if (currentMentions.length > 0) {
+        const fileList = currentMentions.map((m) => m.name).join(', ');
+        preparedPrompt += `\n\n[Referenced files: ${fileList}]`;
+      }
+
       if (beforeSubmit) {
-        const nextPrompt = await beforeSubmit(trimmed);
+        const nextPrompt = await beforeSubmit(preparedPrompt);
         if (!nextPrompt?.trim()) {
           return;
         }
@@ -139,6 +212,7 @@ export function AgenticShell({
         reasoningEffort
       });
       setChatInput('');
+      mention.dismiss();
     };
 
     void startRun();
@@ -259,14 +333,15 @@ export function AgenticShell({
                 <LlmChatComposer
                   chatInput={{
                     value: chatInput,
-                    onValueChange: setChatInput,
+                    onValueChange: (v) => mention.handleValueChange(v),
                     onKeyDown: (e) => {
+                      if (mention.handleKeyDown(e as React.KeyboardEvent<HTMLDivElement>)) return;
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         submitPrompt(chatInput);
                       }
                     },
-                    placeholder: "Ask the agent to plan, execute, and validate...",
+                    placeholder: "Ask the agent to plan, execute, and validate... (@ to mention files)",
                     disabled: isGenerating || !!domainLockReason,
                     isStreaming: isGenerating,
                     onSend: () => submitPrompt(chatInput),
@@ -282,9 +357,30 @@ export function AgenticShell({
                     onReasoningEffortChange: setReasoningEffort,
                     reasoningOptions: reasoningEffortOptions,
                   } satisfies ReasoningConfig}
+                  usageConfig={{
+                    sessionUsages,
+                    model: assistantModel,
+                  } satisfies UsageConfig}
                   slots={{
                     metaSlot: chatMetaSlot,
                     maxWidthClassName: "max-w-5xl",
+                    mentionSlot: {
+                      dropdown: (
+                        <MentionDropdown
+                          isOpen={mention.isOpen}
+                          filtered={mention.filtered}
+                          activeIndex={mention.activeIndex}
+                          anchorRef={mentionAnchorRef}
+                          onSelect={mention.selectCandidate}
+                          themeColorClass={themeColorClass}
+                        />
+                      ),
+                      inputRef: mentionInputRef,
+                      mentionNames,
+                      mentionTypes,
+                      themeColor,
+                      onValueChange: mention.handleValueChange,
+                    } satisfies MentionSlotConfig,
                   } satisfies ComposerSlots}
                 />
               </div>

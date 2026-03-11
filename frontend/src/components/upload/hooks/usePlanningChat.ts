@@ -41,7 +41,7 @@ interface UsePlanningChatReturn {
   handleStartPlanEdit: (planId: string, currentContent: string) => void;
   handleCancelPlanEdit: (planId: string, currentContent: string) => void;
   handleSavePlanEdit: (planId: string) => void;
-  handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  handleKeyDown: (e: React.KeyboardEvent<HTMLElement>) => void;
 }
 
 export function usePlanningChat({
@@ -442,7 +442,7 @@ export function usePlanningChat({
     setEditingPlanId(null);
   }, [planDrafts]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();

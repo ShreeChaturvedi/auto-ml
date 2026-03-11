@@ -66,6 +66,7 @@ export function useAgenticLoop({
   domainLockReason
 }: UseAgenticLoopOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionUsages, setSessionUsages] = useState<Record<string, unknown>[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
@@ -158,6 +159,7 @@ export function useAgenticLoop({
 
   const clearMessages = useCallback(() => {
     setMessages([]);
+    setSessionUsages([]);
     toolHistoryRef.current = { calls: [], results: [] };
     setUiSchema(null);
     setHydratedMessageIds(new Set());
@@ -345,6 +347,9 @@ export function useAgenticLoop({
             setActiveTextMessageId(null);
             setIsGenerating(false);
           }
+          if (event.type === 'usage') {
+            setSessionUsages((prev) => [...prev, event.usage]);
+          }
           if (event.type === 'thinking') {
             currentTextIdRef.current = null;
             setActiveTextMessageId(null);
@@ -407,6 +412,7 @@ export function useAgenticLoop({
     isGenerating,
     error,
     uiSchema,
+    sessionUsages,
     activeTextMessageId,
     activeThinkingMessageId,
     hydratedMessageIds,

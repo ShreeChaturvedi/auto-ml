@@ -142,9 +142,12 @@ describe('Notebook ChatPanel progressive rendering', () => {
 
     const { container } = render(<ChatPanel projectId="p1" />);
 
-    const input = screen.getByPlaceholderText(/ask ai for help/i);
+    const input = screen.getByRole('textbox', { name: 'Message input' });
     await act(async () => {
-      fireEvent.change(input, { target: { value: 'help me' } });
+      input.textContent = 'help me';
+      fireEvent.input(input);
+    });
+    await act(async () => {
       fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
       await Promise.resolve();
     });
@@ -168,9 +171,12 @@ describe('Notebook ChatPanel progressive rendering', () => {
 
     render(<ChatPanel projectId="p1" />);
 
-    const input = screen.getByPlaceholderText(/ask ai for help/i);
+    const input = screen.getByRole('textbox', { name: 'Message input' });
     await act(async () => {
-      fireEvent.change(input, { target: { value: 'reason this out' } });
+      input.textContent = 'reason this out';
+      fireEvent.input(input);
+    });
+    await act(async () => {
       fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
       await Promise.resolve();
     });
@@ -212,9 +218,12 @@ describe('Notebook ChatPanel progressive rendering', () => {
 
     render(<ChatPanel projectId="p-sanitize" />);
 
-    const input = screen.getByPlaceholderText(/ask ai for help/i);
+    const input = screen.getByRole('textbox', { name: 'Message input' });
     await act(async () => {
-      fireEvent.change(input, { target: { value: 'show output' } });
+      input.textContent = 'show output';
+      fireEvent.input(input);
+    });
+    await act(async () => {
       fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
       await Promise.resolve();
     });
@@ -235,9 +244,12 @@ describe('Notebook ChatPanel progressive rendering', () => {
 
     render(<ChatPanel projectId="p1" />);
 
-    const input = screen.getByPlaceholderText(/ask ai for help/i);
+    const input = screen.getByRole('textbox', { name: 'Message input' });
     await act(async () => {
-      fireEvent.change(input, { target: { value: 'help me debug this notebook' } });
+      input.textContent = 'help me debug this notebook';
+      fireEvent.input(input);
+    });
+    await act(async () => {
       fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
       await Promise.resolve();
     });

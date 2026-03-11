@@ -1,4 +1,6 @@
-import { useMemo, useRef, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useMemo, useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
+
+import { MentionInput, type MentionInputHandle } from '@/components/llm/MentionInput';
 
 import { useMetallicBorder } from '@/hooks/useMetallicBorder';
 import {
@@ -35,6 +37,7 @@ import {
   type ReasoningEffortOption,
   type ReasoningIcon
 } from './modelOptions';
+import { ContextUsageIndicator } from './ContextUsageIndicator';
 
 /** Compact dropdown group label; smaller than option text (text-sm). */
 const SELECT_GROUP_LABEL_CLASS =
@@ -63,7 +66,7 @@ interface AttachmentConfig {
 export interface ChatInputConfig {
   value: string;
   onValueChange: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
   placeholder: string;
   disabled: boolean;
   isStreaming: boolean;
@@ -85,19 +88,37 @@ export interface ReasoningConfig {
   reasoningOptions: readonly ReasoningEffortOption[];
 }
 
+/** Slot for rendering mention dropdown + input ref alongside the composer. */
+export interface MentionSlotConfig {
+  dropdown: ReactNode;
+  inputRef: RefObject<MentionInputHandle | null>;
+  mentionNames: Set<string>;
+  mentionTypes?: Map<string, string>;
+  /** Resolved CSS color string for project theme (for chip dots) */
+  themeColor?: string;
+  onValueChange: (value: string, cursorPos?: number) => void;
+}
+
 /** Optional slots and layout overrides for the composer shell. */
 export interface ComposerSlots {
   leftSlot?: ReactNode;
   metaSlot?: ReactNode;
   attachment?: AttachmentConfig;
+  mentionSlot?: MentionSlotConfig;
   maxWidthClassName?: string;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+}
+
+export interface UsageConfig {
+  sessionUsages: Record<string, unknown>[];
+  model: string;
 }
 
 interface LlmChatComposerProps {
   chatInput: ChatInputConfig;
   modelConfig: ModelConfig;
   reasoningConfig: ReasoningConfig;
+  usageConfig?: UsageConfig;
   slots?: ComposerSlots;
 }
 
@@ -137,6 +158,7 @@ export function LlmChatComposer({
   chatInput,
   modelConfig,
   reasoningConfig,
+  usageConfig,
   slots = {}
 }: LlmChatComposerProps) {
   const {
@@ -156,6 +178,7 @@ export function LlmChatComposer({
     leftSlot,
     metaSlot,
     attachment,
+    mentionSlot,
     maxWidthClassName = 'max-w-5xl',
     textareaRef
   } = slots;
@@ -236,16 +259,31 @@ export function LlmChatComposer({
         onBlurCapture={onBlurCapture}
       >
         <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-          <InputGroupTextarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          aria-label="Message input"
-          disabled={disabled}
-          className="min-h-[60px]"
-        />
+          {mentionSlot ? (
+            <MentionInput
+              ref={mentionSlot.inputRef}
+              value={value}
+              onValueChange={mentionSlot.onValueChange}
+              onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLDivElement>) => void}
+              mentionNames={mentionSlot.mentionNames}
+              mentionTypes={mentionSlot.mentionTypes}
+              themeColor={mentionSlot.themeColor}
+              placeholder={placeholder}
+              disabled={disabled}
+              className="min-h-[60px]"
+            />
+          ) : (
+            <InputGroupTextarea
+              ref={textareaRef}
+              value={value}
+              onChange={(event) => onValueChange(event.target.value)}
+              onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void}
+              placeholder={placeholder}
+              aria-label="Message input"
+              disabled={disabled}
+              className="min-h-[60px]"
+            />
+          )}
         <InputGroupAddon align="block-end">
           <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -326,6 +364,16 @@ export function LlmChatComposer({
                     </SelectContent>
                   </Select>
                 ) : null}
+
+                {usageConfig && usageConfig.sessionUsages.length > 0 ? (
+                  <ContextUsageIndicator
+                    sessionUsages={usageConfig.sessionUsages}
+                    model={usageConfig.model}
+                    projectColorClass={projectIconColorClass}
+                    projectBgColorClass={activeProject ? projectColorClasses[activeProject.color]?.bg : undefined}
+                    projectColor={activeProject?.color === 'custom' ? activeProject.customColor : undefined}
+                  />
+                ) : null}
               </div>
             </div>
 
@@ -405,6 +453,8 @@ export function LlmChatComposer({
           {attachment.message}
         </div>
       ) : null}
+
+      {mentionSlot?.dropdown}
     </div>
   );
 }

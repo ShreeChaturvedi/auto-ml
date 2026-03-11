@@ -8,14 +8,17 @@
  * - Context file attachments
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2,
   Brain,
 } from 'lucide-react';
-import { LlmChatComposer, type AttachmentStatus, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
+import { LlmChatComposer, type AttachmentStatus, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots, type MentionSlotConfig, type UsageConfig } from '@/components/llm/LlmChatComposer';
+import { MentionDropdown } from '@/components/llm/MentionDropdown';
+import type { MentionInputHandle } from '@/components/llm/MentionInput';
+import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
@@ -38,8 +41,8 @@ import {
   appendThinkingDelta,
   markThinkingMessageComplete
 } from '@/lib/llm/streamMessageUtils';
-import { getFileType } from '@/lib/fileUtils';
-import type { UploadedFile } from '@/types/file';
+import { getFileType, fileIconByType, fileIconColorByType } from '@/lib/fileUtils';
+import type { UploadedFile, FileType } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { cn } from '@/lib/utils';
 
@@ -56,12 +59,14 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('high');
   const [attachmentStatus, setAttachmentStatus] = useState<AttachmentStatus>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
+  const [sessionUsages, setSessionUsages] = useState<Record<string, unknown>[]>([]);
   const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
   const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
   const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionInputRef = useRef<MentionInputHandle>(null);
+  const mentionAnchorRef = useRef<HTMLElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const currentThinkingIdRef = useRef<string | null>(null);
   const currentTextIdRef = useRef<string | null>(null);
@@ -79,12 +84,64 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   const documentFiles = files.filter(
     (f) => f.projectId === projectId && f.metadata?.documentId
   );
+
+  const projectFiles = useMemo(
+    () => files.filter((f) => f.projectId === projectId),
+    [files, projectId]
+  );
+
+  const mentionCandidates = useMemo<MentionCandidate[]>(
+    () =>
+      projectFiles.map((f) => ({
+        id: f.id,
+        name: f.name,
+        type: f.type,
+        meta: {
+          datasetId: f.metadata?.datasetId,
+          documentId: f.metadata?.documentId
+        }
+      })),
+    [projectFiles]
+  );
+
   const inlineModelOptions = buildInlineModelOptions(featuredModelOptions);
 
   const handleModelChange = useCallback((model: string) => {
     setAssistantModel(model);
     setReasoningEffort(getDefaultReasoningEffort(model, allModelOptions));
   }, [allModelOptions]);
+
+  const mentionNames = useMemo(
+    () => new Set(mentionCandidates.map((c) => c.name.toLowerCase())),
+    [mentionCandidates]
+  );
+
+  const mentionTypes = useMemo(
+    () => new Map(mentionCandidates.map((c) => [c.name.toLowerCase(), c.type])),
+    [mentionCandidates]
+  );
+
+  const {
+    isOpen: mentionIsOpen,
+    filtered: mentionFiltered,
+    activeIndex: mentionActiveIndex,
+    handleKeyDown: mentionHandleKeyDown,
+    handleValueChange: mentionHandleValueChange,
+    selectCandidate: mentionSelectCandidate,
+    dismiss: mentionDismiss,
+    resolvedMentions
+  } = useMentionAutocomplete({
+    candidates: mentionCandidates,
+    value: chatInput,
+    onValueChange: setChatInput,
+    inputRef: mentionInputRef
+  });
+
+  // Keep anchor ref in sync with MentionInput's underlying DOM element
+  useEffect(() => {
+    const el = mentionInputRef.current?.element() ?? null;
+    (mentionAnchorRef as React.MutableRefObject<HTMLElement | null>).current = el;
+  }, []);
 
   // Load messages from localStorage
   useEffect(() => {
@@ -110,14 +167,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     localStorage.setItem(`notebook-messages-${projectId}`, JSON.stringify(messages));
   }, [projectId, messages]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = '0px';
-    const nextHeight = Math.min(220, Math.max(80, textarea.scrollHeight));
-    textarea.style.height = `${nextHeight}px`;
-  }, [chatInput]);
+  // Note: MentionInput (contentEditable) auto-sizes naturally via min-h constraint
 
   // Clear attachment message after timeout
   useEffect(() => {
@@ -261,6 +311,11 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
           return;
         }
 
+        if (event.type === 'usage') {
+          setSessionUsages((prev) => [...prev, event.usage]);
+          return;
+        }
+
         if (event.type === 'envelope') {
           if (event.envelope.tool_calls?.length) {
             closeTextStream();
@@ -339,23 +394,34 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     if (!chatInput.trim() || isGenerating) return;
 
     const userMessage = chatInput.trim();
+    const currentMentions = resolvedMentions;
+
     setChatInput('');
+    mentionDismiss();
     setIsGenerating(true);
 
     const userChatMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       type: 'user',
       content: userMessage,
+      mentions: currentMentions.length > 0 ? currentMentions : undefined,
       timestamp: Date.now()
     };
     setMessages((prev) => [...prev, userChatMessage]);
+
+    // Append referenced files context to prompt for the LLM
+    let prompt = userMessage;
+    if (currentMentions.length > 0) {
+      const fileList = currentMentions.map((m) => m.name).join(', ');
+      prompt += `\n\n[Referenced files: ${fileList}]`;
+    }
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
-      await runStream({ prompt: userMessage }, controller);
+      await runStream({ prompt }, controller);
     } catch (error) {
       if ((error as Error).name === 'AbortError') return;
       setMessages((prev) => [
@@ -368,9 +434,9 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
       ]);
       setIsGenerating(false);
     } finally {
-      textareaRef.current?.focus();
+      mentionInputRef.current?.focus();
     }
-  }, [chatInput, isGenerating, runStream]);
+  }, [chatInput, isGenerating, resolvedMentions, mentionDismiss, runStream]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -380,13 +446,16 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
   }, [closeTextStream, completeThinking]);
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      // Let mention autocomplete handle keys first
+      if (mentionHandleKeyDown(event)) return;
+
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         void handleSend();
       }
     },
-    [handleSend]
+    [handleSend, mentionHandleKeyDown]
   );
 
   const handleAttachFile = useCallback(
@@ -455,6 +524,20 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
                   <div key={msg.id} className="flex justify-end">
                     <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%]">
                       {msg.content}
+                      {msg.mentions && msg.mentions.length > 0 ? (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {msg.mentions.map((m) => {
+                            const MIcon = fileIconByType[m.type as FileType] ?? fileIconByType.other;
+                            const mColor = fileIconColorByType[m.type as FileType] ?? fileIconColorByType.other;
+                            return (
+                              <Badge key={m.id} variant="secondary" className="gap-1 text-[10px] py-0">
+                                <MIcon className={cn('h-2.5 w-2.5', mColor)} />
+                                {m.name}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -526,9 +609,9 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
         <LlmChatComposer
           chatInput={{
             value: chatInput,
-            onValueChange: setChatInput,
-            onKeyDown: handleKeyDown,
-            placeholder: "Ask AI for help...",
+            onValueChange: (v) => mentionHandleValueChange(v),
+            onKeyDown: handleKeyDown as (event: React.KeyboardEvent<HTMLElement>) => void,
+            placeholder: "Ask AI for help... (type @ to mention files)",
             disabled: isGenerating,
             isStreaming: isGenerating,
             onSend: () => void handleSend(),
@@ -544,6 +627,10 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
             onReasoningEffortChange: setReasoningEffort,
             reasoningOptions: getReasoningEffortOptions(assistantModel, allModelOptions),
           } satisfies ReasoningConfig}
+          usageConfig={{
+            sessionUsages,
+            model: assistantModel,
+          } satisfies UsageConfig}
           slots={{
             metaSlot: (
               <Badge variant="outline" className="text-[11px] gap-1">
@@ -558,7 +645,21 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
               items: [],
               accept: '.pdf,.md,.txt',
             },
-            textareaRef,
+            mentionSlot: {
+              dropdown: (
+                <MentionDropdown
+                  isOpen={mentionIsOpen}
+                  filtered={mentionFiltered}
+                  activeIndex={mentionActiveIndex}
+                  anchorRef={mentionAnchorRef}
+                  onSelect={mentionSelectCandidate}
+                />
+              ),
+              inputRef: mentionInputRef,
+              mentionNames,
+              mentionTypes,
+              onValueChange: mentionHandleValueChange,
+            } satisfies MentionSlotConfig,
           } satisfies ComposerSlots}
         />
       </div>

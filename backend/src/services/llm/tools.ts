@@ -11,54 +11,42 @@ import { installPackage, listPackages, uninstallPackage } from '../packageManage
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
+type ToolHandler = (projectId: string, args: ToolCall['args']) => Promise<unknown>;
+
+const toolHandlers: Map<string, ToolHandler> = new Map([
+  // Data tools
+  ['list_project_files', (projectId) => listProjectFiles(projectId)],
+  ['get_dataset_profile', (_projectId, args) => getDatasetProfile(args)],
+  ['get_dataset_sample', (_projectId, args) => getDatasetSample(args)],
+  ['search_documents', (projectId, args) => searchProjectDocuments(projectId, args)],
+
+  // Cell tools
+  ['list_cells', (projectId, args) => listCells(projectId, args)],
+  ['read_cell', (_projectId, args) => readCell(args)],
+  ['write_cell', (projectId, args) => writeCell(projectId, args)],
+  ['edit_cell', (_projectId, args) => editCell(args)],
+  ['run_cell', (projectId, args) => runCell(projectId, args)],
+  ['delete_cell', (_projectId, args) => deleteCell(args)],
+  ['reorder_cells', (projectId, args) => reorderCells(projectId, args)],
+  ['insert_cell', (projectId, args) => insertCell(projectId, args)],
+
+  // User interaction tools
+  ['ask_user', () => Promise.resolve({ type: 'user_interaction', message: 'Awaiting user response' })],
+  ['plan_exit', () => Promise.resolve({ type: 'plan_artifact', message: 'Plan finalized by model' })],
+
+  // Package management tools
+  ['install_package', (projectId, args) => handleInstallPackage(projectId, args)],
+  ['uninstall_package', (projectId, args) => handleUninstallPackage(projectId, args)],
+  ['list_packages', (projectId) => handleListPackages(projectId)],
+]);
+
 export async function executeToolCall(projectId: string, call: ToolCall): Promise<ToolResult> {
   try {
-    switch (call.tool) {
-      // Data tools
-      case 'list_project_files':
-        return { id: call.id, tool: call.tool, output: await listProjectFiles(projectId) };
-      case 'get_dataset_profile':
-        return { id: call.id, tool: call.tool, output: await getDatasetProfile(call.args) };
-      case 'get_dataset_sample':
-        return { id: call.id, tool: call.tool, output: await getDatasetSample(call.args) };
-      case 'search_documents':
-        return { id: call.id, tool: call.tool, output: await searchProjectDocuments(projectId, call.args) };
-
-      // Cell tools
-      case 'list_cells':
-        return { id: call.id, tool: call.tool, output: await listCells(projectId, call.args) };
-      case 'read_cell':
-        return { id: call.id, tool: call.tool, output: await readCell(call.args) };
-      case 'write_cell':
-        return { id: call.id, tool: call.tool, output: await writeCell(projectId, call.args) };
-      case 'edit_cell':
-        return { id: call.id, tool: call.tool, output: await editCell(call.args) };
-      case 'run_cell':
-        return { id: call.id, tool: call.tool, output: await runCell(projectId, call.args) };
-      case 'delete_cell':
-        return { id: call.id, tool: call.tool, output: await deleteCell(call.args) };
-      case 'reorder_cells':
-        return { id: call.id, tool: call.tool, output: await reorderCells(projectId, call.args) };
-      case 'insert_cell':
-        return { id: call.id, tool: call.tool, output: await insertCell(projectId, call.args) };
-
-      // User interaction tools
-      case 'ask_user':
-        return { id: call.id, tool: call.tool, output: { type: 'user_interaction', message: 'Awaiting user response' } };
-      case 'plan_exit':
-        return { id: call.id, tool: call.tool, output: { type: 'plan_artifact', message: 'Plan finalized by model' } };
-
-      // Package management tools
-      case 'install_package':
-        return { id: call.id, tool: call.tool, output: await handleInstallPackage(projectId, call.args) };
-      case 'uninstall_package':
-        return { id: call.id, tool: call.tool, output: await handleUninstallPackage(projectId, call.args) };
-      case 'list_packages':
-        return { id: call.id, tool: call.tool, output: await handleListPackages(projectId) };
-
-      default:
-        return { id: call.id, tool: call.tool, output: null, error: 'Unsupported tool' };
+    const handler = toolHandlers.get(call.tool);
+    if (!handler) {
+      return { id: call.id, tool: call.tool, output: null, error: 'Unsupported tool' };
     }
+    return { id: call.id, tool: call.tool, output: await handler(projectId, call.args) };
   } catch (error) {
     return {
       id: call.id,

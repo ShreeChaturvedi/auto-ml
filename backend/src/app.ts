@@ -25,6 +25,7 @@ export function createApp() {
   const app = express();
   const projectRepository = createProjectRepository(env.storagePath);
   const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+  const isVitestRuntime = Boolean(process.env.VITEST);
 
   app.set('trust proxy', true);
   app.use(
@@ -35,7 +36,9 @@ export function createApp() {
   );
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+  if (!isVitestRuntime) {
+    app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+  }
 
   const router = Router();
   registerHealthRoutes(router);

@@ -195,16 +195,12 @@ describe('PlanningStage Accessibility', () => {
     const file = new File(['hello world'], 'context.md', { type: 'text/markdown' });
     fireEvent.change(fileInput!, { target: { files: [file] } });
 
-    await waitFor(() => {
-      expect(screen.getByText('context.md')).toBeInTheDocument();
-      expect(screen.getByText('1 attachment ready to send.')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('context.md')).toBeInTheDocument();
+    expect(screen.getByText('1 attachment ready to send.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove context.md' }));
 
-    await waitFor(() => {
-      expect(screen.queryByText('context.md')).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.queryByText('context.md')).not.toBeInTheDocument());
   });
 
   it('uploads queued attachments on send and shows them in the sent message', async () => {
@@ -232,17 +228,13 @@ describe('PlanningStage Accessibility', () => {
     fireEvent.change(input, { target: { value: 'use this new document in the plan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
-    await waitFor(() => {
-      expect(uploadDocument).toHaveBeenCalledWith('p1', file);
-      expect(addFileMock).toHaveBeenCalledTimes(1);
-      expect(setFileMetadataMock).toHaveBeenCalledTimes(1);
-      expect(addPreviewMock).not.toHaveBeenCalled();
-    });
+    await waitFor(() => expect(uploadDocument).toHaveBeenCalledWith('p1', file));
+    expect(addFileMock).toHaveBeenCalledTimes(1);
+    expect(setFileMetadataMock).toHaveBeenCalledTimes(1);
+    expect(addPreviewMock).not.toHaveBeenCalled();
 
-    await waitFor(() => {
-      expect(screen.getByText('use this new document in the plan')).toBeInTheDocument();
-      expect(screen.getByText('notes.md')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('use this new document in the plan')).toBeInTheDocument();
+    expect(screen.getByText('notes.md')).toBeInTheDocument();
   });
 
   it('routes csv attachments through dataset upload so planning can use the new dataset', async () => {
@@ -280,11 +272,9 @@ describe('PlanningStage Accessibility', () => {
     fireEvent.change(input, { target: { value: 'build a quick analysis plan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
-    await waitFor(() => {
-      expect(uploadDatasetFile).toHaveBeenCalledWith(csvFile, 'p1');
-      expect(uploadDocument).not.toHaveBeenCalled();
-      expect(addPreviewMock).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(uploadDatasetFile).toHaveBeenCalledWith(csvFile, 'p1'));
+    expect(uploadDocument).not.toHaveBeenCalled();
+    expect(addPreviewMock).toHaveBeenCalledTimes(1);
 
     await waitFor(() => {
       const calls = (streamOnboardingPlan as Mock).mock.calls;

@@ -1,8 +1,8 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { createPreprocessingRouter } from './preprocessing.js';
 
@@ -16,9 +16,6 @@ vi.mock('../repositories/datasetRepository.js', () => ({
   }))
 }));
 
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
-
 function createTestApp() {
   const app = express();
   app.use(express.json());
@@ -26,7 +23,7 @@ function createTestApp() {
   return app;
 }
 
-describeIf('preprocessing routes', () => {
+describeRouteSuite('preprocessing routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listMock.mockResolvedValue([]);

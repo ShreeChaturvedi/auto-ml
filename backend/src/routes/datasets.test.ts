@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 
 import { createDatasetUploadRouter } from './datasets.js';
@@ -59,9 +59,6 @@ vi.mock('../db.js', () => ({
 }));
 
 const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
-
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
 
 // In-memory dataset repository for testing
 class InMemoryDatasetRepository implements DatasetRepository {
@@ -153,7 +150,7 @@ function createMockDataset(overrides?: Partial<DatasetProfile>): DatasetProfile 
   };
 }
 
-describeIf('dataset routes', () => {
+describeRouteSuite('dataset routes', () => {
   let repository: InMemoryDatasetRepository;
 
   beforeEach(() => {

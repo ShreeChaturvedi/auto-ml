@@ -1,6 +1,8 @@
 import express, { Router } from 'express';
 import request from 'supertest';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { it, expect, beforeEach, vi } from 'vitest';
+
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 const { mockTemplates, mockModel } = vi.hoisted(() => ({
   mockTemplates: [
@@ -41,12 +43,7 @@ vi.mock('../services/modelTraining.js', () => ({
   trainModel: vi.fn(async () => ({ model: mockModel, success: true, message: 'ok' }))
 }));
 
-import { canListen } from '../tests/canListen.js';
-
 import modelRouter from './models.js';
-
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
 
 function createTestApp() {
   const app = express();
@@ -57,7 +54,7 @@ function createTestApp() {
   return app;
 }
 
-describeIf('model routes', () => {
+describeRouteSuite('model routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

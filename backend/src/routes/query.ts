@@ -42,15 +42,20 @@ const nlSuggestionQuerySchema = z.object({
 
 export function createQueryRouter() {
   const router = Router();
+  const isVitestRuntime = Boolean(process.env.VITEST);
 
   // POST /query/sql — execute a raw SQL query (cached when possible)
   router.post(
     '/query/sql',
     asyncHandler(async (req, res) => {
-      console.log('[query/sql] Request body:', req.body);
+      if (!isVitestRuntime) {
+        console.log('[query/sql] Request body:', req.body);
+      }
       const result = sqlQuerySchema.safeParse(req.body);
       if (!result.success) {
-        console.log('[query/sql] Validation error:', result.error.flatten());
+        if (!isVitestRuntime) {
+          console.log('[query/sql] Validation error:', result.error.flatten());
+        }
         return res.status(400).json({ errors: result.error.flatten() });
       }
 

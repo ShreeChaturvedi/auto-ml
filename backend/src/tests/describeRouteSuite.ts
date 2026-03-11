@@ -1,6 +1,10 @@
 import net from 'node:net';
 
-export async function canListen(): Promise<boolean> {
+import { describe } from 'vitest';
+
+let bindCheckPromise: Promise<boolean> | null = null;
+
+async function canListen(): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
 
@@ -13,3 +17,7 @@ export async function canListen(): Promise<boolean> {
     });
   });
 }
+
+const canBind = await (bindCheckPromise ??= canListen());
+
+export const describeRouteSuite = canBind ? describe : describe.skip;

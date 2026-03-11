@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EmailService } from './emailService.js';
+import {
+  buildPasswordResetUrl,
+  buildVerificationUrl,
+  EmailService
+} from './emailService.js';
 
 // Mock nodemailer
 vi.mock('nodemailer', () => ({
@@ -26,17 +30,6 @@ vi.mock('../config.js', () => ({
 }));
 
 describe('EmailService', () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    consoleSpy.mockRestore();
-    vi.clearAllMocks();
-  });
-
   describe('when SMTP is not configured', () => {
     let service: EmailService;
 
@@ -48,29 +41,16 @@ describe('EmailService', () => {
       expect(service.isConfigured()).toBe(false);
     });
 
-    it('sendPasswordResetEmail logs to console', async () => {
-      await service.sendPasswordResetEmail('user@example.com', 'reset-token-123');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Password reset requested for user@example.com')
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('reset-token-123')
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('SMTP not configured')
-      );
+    it('sendPasswordResetEmail resolves without throwing', async () => {
+      await expect(
+        service.sendPasswordResetEmail('user@example.com', 'reset-token-123')
+      ).resolves.toBeUndefined();
     });
 
-    it('sendVerificationEmail logs to console', async () => {
-      await service.sendVerificationEmail('user@example.com', 'verify-token-456');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Email verification requested for user@example.com')
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('verify-token-456')
-      );
+    it('sendVerificationEmail resolves without throwing', async () => {
+      await expect(
+        service.sendVerificationEmail('user@example.com', 'verify-token-456')
+      ).resolves.toBeUndefined();
     });
 
     it('verifyConnection returns false', async () => {
@@ -78,19 +58,15 @@ describe('EmailService', () => {
       expect(result).toBe(false);
     });
 
-    it('generates correct reset URL', async () => {
-      await service.sendPasswordResetEmail('test@example.com', 'my-token');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/reset-password?token=my-token')
+    it('builds the correct reset URL', () => {
+      expect(buildPasswordResetUrl('my-token')).toBe(
+        'http://localhost:5173/reset-password?token=my-token'
       );
     });
 
-    it('generates correct verification URL', async () => {
-      await service.sendVerificationEmail('test@example.com', 'verify-token');
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('http://localhost:5173/verify-email?token=verify-token')
+    it('builds the correct verification URL', () => {
+      expect(buildVerificationUrl('verify-token')).toBe(
+        'http://localhost:5173/verify-email?token=verify-token'
       );
     });
   });

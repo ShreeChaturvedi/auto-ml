@@ -29,6 +29,8 @@ const projectInputSchema = z
   .catchall(z.unknown());
 
 export function registerProjectRoutes(router: Router, repository: ProjectRepository) {
+  const isVitestRuntime = Boolean(process.env.VITEST);
+
   router.get('/projects', async (_req, res) => {
     const projects = await repository.list();
     res.json({ projects });
@@ -55,7 +57,9 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     }
 
     const project = await repository.create(result.data);
-    console.log(`[projects] created ${project.id} (${project.name})`);
+    if (!isVitestRuntime) {
+      console.log(`[projects] created ${project.id} (${project.name})`);
+    }
     return res.status(201).json({ project });
   });
 
@@ -70,7 +74,9 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    console.log(`[projects] updated ${project.id}`);
+    if (!isVitestRuntime) {
+      console.log(`[projects] updated ${project.id}`);
+    }
     return res.json({ project });
   });
 
@@ -80,7 +86,9 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    console.log(`[projects] deleted ${req.params.id}`);
+    if (!isVitestRuntime) {
+      console.log(`[projects] deleted ${req.params.id}`);
+    }
     return res.status(204).send();
   });
 }

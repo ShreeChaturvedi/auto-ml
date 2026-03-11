@@ -3,7 +3,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { env } from '../config.js';
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { createLlmRouter } from './llm/index.js';
 
@@ -64,9 +64,6 @@ vi.mock('../services/documentSearchService.js', () => ({
   searchDocuments: vi.fn(async () => [])
 }));
 
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
-
 function createTestApp() {
   const app = express();
   app.use(express.json());
@@ -74,7 +71,7 @@ function createTestApp() {
   return app;
 }
 
-describeIf('llm routes', () => {
+describeRouteSuite('llm routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     llmCompleteMock.mockResolvedValue('');

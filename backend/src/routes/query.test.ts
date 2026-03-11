@@ -33,12 +33,9 @@ import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.j
 import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { createQueryRouter } from './query.js';
-
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
 
 const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
 const mockGetCachedQueryResult = vi.mocked(getCachedQueryResult);
@@ -81,7 +78,7 @@ function createTestApp() {
   return app;
 }
 
-describeIf('query routes', () => {
+describeRouteSuite('query routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHasDatabaseConfiguration.mockReturnValue(true);

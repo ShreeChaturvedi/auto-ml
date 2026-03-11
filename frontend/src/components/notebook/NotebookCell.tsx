@@ -5,7 +5,7 @@
  * behavior is rendered by NotebookMarkdownCell + NotebookEditor section logic.
  */
 
-import { useState, useCallback, Suspense, lazy, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, Suspense, lazy, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -29,48 +29,7 @@ import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
 import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
 import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
-import { useTheme } from '@/components/theme-provider';
-import { initMonaco } from '@/lib/monaco/preloader';
-import { getPythonCompletions, type PythonCompletion } from '@/lib/api/notebooks';
-import type { languages, IDisposable, editor, Position } from 'monaco-editor';
-
-const PYTHON_COMPLETIONS: Array<{ label: string; kind: 'keyword' | 'function' | 'module' }> = [
-  { label: 'import', kind: 'keyword' },
-  { label: 'from', kind: 'keyword' },
-  { label: 'def', kind: 'keyword' },
-  { label: 'class', kind: 'keyword' },
-  { label: 'return', kind: 'keyword' },
-  { label: 'if', kind: 'keyword' },
-  { label: 'elif', kind: 'keyword' },
-  { label: 'else', kind: 'keyword' },
-  { label: 'for', kind: 'keyword' },
-  { label: 'while', kind: 'keyword' },
-  { label: 'try', kind: 'keyword' },
-  { label: 'except', kind: 'keyword' },
-  { label: 'with', kind: 'keyword' },
-  { label: 'as', kind: 'keyword' },
-  { label: 'True', kind: 'keyword' },
-  { label: 'False', kind: 'keyword' },
-  { label: 'None', kind: 'keyword' },
-  { label: 'print', kind: 'function' },
-  { label: 'len', kind: 'function' },
-  { label: 'range', kind: 'function' },
-  { label: 'list', kind: 'function' },
-  { label: 'dict', kind: 'function' },
-  { label: 'str', kind: 'function' },
-  { label: 'int', kind: 'function' },
-  { label: 'float', kind: 'function' },
-  { label: 'pandas', kind: 'module' },
-  { label: 'numpy', kind: 'module' },
-  { label: 'matplotlib', kind: 'module' },
-  { label: 'sklearn', kind: 'module' },
-  { label: 'pd', kind: 'module' },
-  { label: 'np', kind: 'module' },
-  { label: 'plt', kind: 'module' }
-];
-
-let completionProviderDisposable: IDisposable | null = null;
-let currentProjectId = '';
+import { usePythonEditor } from '@/hooks/usePythonEditor';
 
 const Editor = lazy(() =>
   import('@monaco-editor/react').then((module) => ({
@@ -106,62 +65,27 @@ export function NotebookCellComponent({
   onRun,
   onInterrupt
 }: NotebookCellComponentProps) {
-  const { theme } = useTheme();
-  const resolvedTheme = theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : theme;
-
-  const [localContent, setLocalContent] = useState(cell.content);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showOutput, setShowOutput] = useState(true);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (!hasUnsavedChanges) {
-      setLocalContent(cell.content);
-    }
-  }, [cell.content, hasUnsavedChanges]);
-
-  const handleContentChange = useCallback(
-    (value: string | undefined) => {
-      const content = value ?? '';
-      setLocalContent(content);
-      setHasUnsavedChanges(true);
-
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      saveTimeoutRef.current = setTimeout(() => {
-        onContentChange(content);
-        setHasUnsavedChanges(false);
-      }, 1000);
-    },
-    [onContentChange]
+  const completionOptions = useMemo(
+    () => ({ projectId }),
+    [projectId]
   );
 
-  const handleBlur = useCallback(() => {
-    if (!hasUnsavedChanges) {
-      return;
-    }
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    onContentChange(localContent);
-    setHasUnsavedChanges(false);
-  }, [hasUnsavedChanges, localContent, onContentChange]);
-
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    currentProjectId = projectId;
-  }, [projectId]);
+  const {
+    localContent,
+    resolvedTheme,
+    handleContentChange,
+    handleEditorMount,
+    handleBeforeMount
+  } = usePythonEditor({
+    content: cell.content,
+    onContentChange,
+    onRun,
+    autosaveDelay: 1000,
+    completionOptions,
+    preloadMonaco: true
+  });
 
   const isRunning = cell.executionStatus === 'running';
 
@@ -344,99 +268,7 @@ export function NotebookCellComponent({
           language="python"
           value={localContent}
           onChange={handleContentChange}
-          onMount={(editor, monaco) => {
-            editor.onDidBlurEditorWidget(handleBlur);
-            monaco.editor.setTheme(resolvedTheme === 'dark' ? 'python-dark' : 'python-light');
-
-            if (!completionProviderDisposable) {
-              completionProviderDisposable = monaco.languages.registerCompletionItemProvider('python', {
-                triggerCharacters: ['.', ' ', '/', '"', "'", '('],
-                provideCompletionItems: async (
-                  model: editor.ITextModel,
-                  position: Position
-                ): Promise<languages.CompletionList> => {
-                  const word = model.getWordUntilPosition(position);
-                  const range = {
-                    startLineNumber: position.lineNumber,
-                    endLineNumber: position.lineNumber,
-                    startColumn: word.startColumn,
-                    endColumn: word.endColumn
-                  };
-
-                  const staticSuggestions: languages.CompletionItem[] = PYTHON_COMPLETIONS.map((item, idx) => ({
-                    label: item.label,
-                    kind: item.kind === 'keyword'
-                      ? monaco.languages.CompletionItemKind.Keyword
-                      : item.kind === 'function'
-                        ? monaco.languages.CompletionItemKind.Function
-                        : monaco.languages.CompletionItemKind.Module,
-                    insertText: item.label,
-                    range,
-                    sortText: `1${String(idx).padStart(4, '0')}`
-                  }));
-
-                  if (!currentProjectId) {
-                    return { suggestions: staticSuggestions };
-                  }
-
-                  try {
-                    const code = model.getValue();
-                    const line = position.lineNumber;
-                    const column = position.column - 1;
-                    const jediCompletions = await getPythonCompletions(code, line, column, currentProjectId);
-
-                    const dynamicSuggestions: languages.CompletionItem[] = jediCompletions.map((comp: PythonCompletion, idx: number) => {
-                      let kind: languages.CompletionItemKind;
-                      switch (comp.type) {
-                        case 'function':
-                          kind = monaco.languages.CompletionItemKind.Function;
-                          break;
-                        case 'class':
-                          kind = monaco.languages.CompletionItemKind.Class;
-                          break;
-                        case 'module':
-                          kind = monaco.languages.CompletionItemKind.Module;
-                          break;
-                        case 'variable':
-                          kind = monaco.languages.CompletionItemKind.Variable;
-                          break;
-                        case 'keyword':
-                          kind = monaco.languages.CompletionItemKind.Keyword;
-                          break;
-                        case 'param':
-                          kind = monaco.languages.CompletionItemKind.Variable;
-                          break;
-                        case 'property':
-                          kind = monaco.languages.CompletionItemKind.Property;
-                          break;
-                        default:
-                          kind = monaco.languages.CompletionItemKind.Text;
-                      }
-
-                      return {
-                        label: comp.name,
-                        kind,
-                        insertText: comp.name,
-                        range,
-                        detail: comp.module ? `${comp.module}` : undefined,
-                        documentation: comp.docstring || comp.signature,
-                        sortText: `0${String(idx).padStart(4, '0')}`
-                      };
-                    });
-
-                    return { suggestions: [...dynamicSuggestions, ...staticSuggestions] };
-                  } catch {
-                    return { suggestions: staticSuggestions };
-                  }
-                }
-              });
-            }
-
-            editor.addCommand(
-              monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-              () => onRun()
-            );
-          }}
+          onMount={handleEditorMount}
           options={{
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
@@ -462,9 +294,7 @@ export function NotebookCellComponent({
             suggestOnTriggerCharacters: true
           }}
           theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
-          beforeMount={async () => {
-            await initMonaco();
-          }}
+          beforeMount={handleBeforeMount}
         />
       </Suspense>
 

@@ -34,16 +34,10 @@ import {
 } from '@/components/llm/modelOptions';
 import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
 import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
-import {
-  addAssistantTextMessage,
-  addThinkingMessage,
-  appendAssistantTextDelta,
-  appendThinkingDelta,
-  markThinkingMessageComplete
-} from '@/lib/llm/streamMessageUtils';
+import { useLlmStreamState } from '@/hooks/useLlmStreamState';
 import { getFileType, fileIconByType, fileIconColorByType } from '@/lib/fileUtils';
 import type { UploadedFile, FileType } from '@/types/file';
-import type { ChatMessage, LlmUsage, ToolCall, ToolResult } from '@/types/llmUi';
+import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { cn } from '@/lib/utils';
 
 interface ChatPanelProps {
@@ -52,23 +46,30 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ projectId, className }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const {
+    messages,
+    setMessages,
+    isStreaming: isGenerating,
+    setIsStreaming: setIsGenerating,
+    sessionUsages,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    appendToken,
+    completeThinking,
+    closeTextStream,
+    handleStreamEvent
+  } = useLlmStreamState();
+
   const [chatInput, setChatInput] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
   const [assistantModel, setAssistantModel] = useState(DEFAULT_ASSISTANT_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('high');
   const [attachmentStatus, setAttachmentStatus] = useState<AttachmentStatus>('idle');
   const [attachmentMessage, setAttachmentMessage] = useState<string | null>(null);
-  const [sessionUsages, setSessionUsages] = useState<LlmUsage[]>([]);
-  const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
-  const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
   const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const mentionInputRef = useRef<MentionInputHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const currentThinkingIdRef = useRef<string | null>(null);
-  const currentTextIdRef = useRef<string | null>(null);
   const {
     featuredModelOptions,
     allModelOptions,
@@ -152,15 +153,13 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     } else {
       setHydratedMessageIds(new Set());
     }
-  }, [projectId]);
+  }, [projectId, setMessages]);
 
   // Save messages to localStorage
   useEffect(() => {
     if (!projectId || messages.length === 0) return;
     localStorage.setItem(`notebook-messages-${projectId}`, JSON.stringify(messages));
   }, [projectId, messages]);
-
-  // Note: MentionInput (contentEditable) auto-sizes naturally via min-h constraint
 
   // Clear attachment message after timeout
   useEffect(() => {
@@ -206,47 +205,6 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     }
   }, [allModelOptions, assistantModel, defaultModel, defaultReasoningEffort, reasoningEffort]);
 
-  const completeThinking = useCallback(() => {
-    const thinkingId = currentThinkingIdRef.current;
-    if (!thinkingId) return;
-    setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
-    currentThinkingIdRef.current = null;
-    setActiveThinkingMessageId(null);
-  }, []);
-
-  const closeTextStream = useCallback(() => {
-    currentTextIdRef.current = null;
-    setActiveTextMessageId(null);
-  }, []);
-
-  const appendToken = useCallback((token: string) => {
-    completeThinking();
-    if (!currentTextIdRef.current) {
-      const id = `text-${Date.now()}`;
-      currentTextIdRef.current = id;
-      setActiveTextMessageId(id);
-      setMessages((prev) => addAssistantTextMessage(prev, id, token));
-      return;
-    }
-
-    const targetId = currentTextIdRef.current;
-    setMessages((prev) => appendAssistantTextDelta(prev, targetId, token));
-  }, [completeThinking]);
-
-  const appendThinking = useCallback((text: string) => {
-    closeTextStream();
-    if (!currentThinkingIdRef.current) {
-      const id = `thinking-${Date.now()}`;
-      currentThinkingIdRef.current = id;
-      setActiveThinkingMessageId(id);
-      setMessages((prev) => addThinkingMessage(prev, id, text, Date.now()));
-      return;
-    }
-
-    const targetId = currentThinkingIdRef.current;
-    setMessages((prev) => appendThinkingDelta(prev, targetId, text));
-  }, [closeTextStream]);
-
   const markToolsCompleteFallback = useCallback((toolCalls: ToolCall[]) => {
     const toolIds = new Set(toolCalls.map((tc) => tc.id));
     setMessages((prev) =>
@@ -264,7 +222,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
         return msg;
       })
     );
-  }, []);
+  }, [setMessages]);
 
   const applyToolResults = useCallback((results: ToolResult[]) => {
     setMessages((prev) =>
@@ -274,7 +232,7 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
         return result ? { ...msg, result } : msg;
       })
     );
-  }, []);
+  }, [setMessages]);
 
   const runStream = useCallback(async (
     request: {
@@ -294,21 +252,10 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
         reasoningEffort
       },
       async (event: LlmStreamEvent) => {
-        if (event.type === 'token') {
-          appendToken(event.text);
-          return;
-        }
+        // Let the shared hook handle token, thinking, usage, error, done
+        if (handleStreamEvent(event)) return;
 
-        if (event.type === 'thinking') {
-          appendThinking(event.text);
-          return;
-        }
-
-        if (event.type === 'usage') {
-          setSessionUsages((prev) => [...prev, event.usage]);
-          return;
-        }
-
+        // Handle envelope events (tool calls + fallback message)
         if (event.type === 'envelope') {
           if (event.envelope.tool_calls?.length) {
             closeTextStream();
@@ -349,38 +296,20 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
           if (event.envelope.message?.trim()) {
             appendToken(event.envelope.message);
           }
-          return;
-        }
-
-        if (event.type === 'error') {
-          setMessages((prev) => [
-            ...prev,
-            { id: `error-${Date.now()}`, type: 'error', message: event.message }
-          ]);
-          completeThinking();
-          closeTextStream();
-          setIsGenerating(false);
-          return;
-        }
-
-        if (event.type === 'done') {
-          completeThinking();
-          closeTextStream();
-          setIsGenerating(false);
         }
       },
       controller.signal
     );
   }, [
-    appendThinking,
     appendToken,
     applyToolResults,
     closeTextStream,
-    completeThinking,
-    assistantModel,
+    handleStreamEvent,
     markToolsCompleteFallback,
+    assistantModel,
     projectId,
-    reasoningEffort
+    reasoningEffort,
+    setMessages
   ]);
 
   const handleSend = useCallback(async () => {
@@ -429,14 +358,14 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     } finally {
       mentionInputRef.current?.focus();
     }
-  }, [chatInput, isGenerating, resolvedMentions, mentionDismiss, runStream]);
+  }, [chatInput, isGenerating, resolvedMentions, mentionDismiss, setIsGenerating, setMessages, runStream]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     completeThinking();
     closeTextStream();
     setIsGenerating(false);
-  }, [closeTextStream, completeThinking]);
+  }, [closeTextStream, completeThinking, setIsGenerating]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {

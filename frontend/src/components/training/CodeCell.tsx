@@ -9,7 +9,7 @@
  * - No loading flash due to Monaco pre-loading
  */
 
-import { useState, Suspense, lazy, useEffect, useRef, useCallback } from 'react';
+import { useState, Suspense, lazy, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -28,12 +28,10 @@ import {
 } from 'lucide-react';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
-import { useTheme } from '@/components/theme-provider';
 import { CellOutputRenderer } from './CellOutputRenderer';
 import { buildOutputCopyText } from './cellOutputUtils';
-import type { languages, IDisposable } from 'monaco-editor';
-import type { Monaco } from '@monaco-editor/react';
 import type { RichOutput } from '@/lib/api/execution';
+import { usePythonEditor } from '@/hooks/usePythonEditor';
 
 // Lazy load Monaco Editor
 const Editor = lazy(() =>
@@ -42,27 +40,7 @@ const Editor = lazy(() =>
   }))
 );
 
-// Python autocomplete items
-const PYTHON_COMPLETIONS = [
-  // Keywords
-  ...['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
-    'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally',
-    'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal',
-    'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'
-  ].map(k => ({ label: k, kind: 'keyword' as const })),
-  // Builtins
-  ...['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set',
-    'tuple', 'bool', 'type', 'isinstance', 'open', 'sum', 'min', 'max', 'abs',
-    'round', 'sorted', 'enumerate', 'zip', 'map', 'filter', 'any', 'all'
-  ].map(b => ({ label: b, kind: 'function' as const })),
-  // ML/DS
-  ...['numpy', 'np', 'pandas', 'pd', 'DataFrame', 'Series', 'read_csv',
-    'sklearn', 'train_test_split', 'fit', 'predict', 'transform',
-    'matplotlib', 'plt', 'pyplot', 'figure', 'plot', 'show'
-  ].map(m => ({ label: m, kind: 'module' as const }))
-];
-
-let completionProviderDisposable: IDisposable | null = null;
+const PLACEHOLDER = '# Enter Python code...';
 
 interface CodeCellProps {
   cell: Cell;
@@ -83,134 +61,57 @@ export function CodeCell({
   isRunning,
   datasetFiles = []
 }: CodeCellProps) {
-  const [content, setContent] = useState(cell.content);
   const [copied, setCopied] = useState(false);
   const [outputCopied, setOutputCopied] = useState(false);
   const [showOutput, setShowOutput] = useState(true);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const outputCopyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { theme: appTheme } = useTheme();
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
-  const themeDefinedRef = useRef(false);
+  const completionOptions = useMemo(
+    () => ({ datasetFiles }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(datasetFiles)]
+  );
 
-  // Resolve theme
-  useEffect(() => {
-    if (appTheme === 'system') {
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setResolvedTheme(isDark ? 'dark' : 'light');
-      const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = (e: MediaQueryListEvent) => setResolvedTheme(e.matches ? 'dark' : 'light');
-      mq.addEventListener('change', handler);
-      return () => mq.removeEventListener('change', handler);
-    } else {
-      setResolvedTheme(appTheme as 'light' | 'dark');
-    }
-  }, [appTheme]);
-
-  // Sync with cell content
-  useEffect(() => {
-    setContent(cell.content);
-  }, [cell.content]);
-
-  // Autosave with debounce - don't save placeholder
-  const PLACEHOLDER = '# Enter Python code...';
-
-  const handleContentChange = useCallback((newContent: string) => {
-    // Don't save the placeholder
-    if (newContent === PLACEHOLDER) return;
-
-    setContent(newContent);
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = setTimeout(() => {
-      onContentChange?.(newContent);
-    }, 500);
-  }, [onContentChange]);
+  const {
+    localContent,
+    resolvedTheme,
+    handleContentChange,
+    handleEditorMount
+  } = usePythonEditor({
+    content: cell.content,
+    onContentChange: onContentChange ?? (() => {}),
+    onRun: onRun ?? (() => {}),
+    autosaveDelay: 500,
+    alwaysSync: true,
+    ignoreSaveContent: PLACEHOLDER,
+    completionOptions,
+    preloadMonaco: false
+  });
 
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
       if (outputCopyTimeoutRef.current) {
         clearTimeout(outputCopyTimeoutRef.current);
       }
     };
   }, []);
 
-  // Cleanup completion provider
-  useEffect(() => {
-    return () => {
-      if (completionProviderDisposable) {
-        completionProviderDisposable.dispose();
-        completionProviderDisposable = null;
-      }
-    };
-  }, []);
-
-  const setupMonaco = (monaco: Monaco) => {
-    // Themes are pre-loaded via @/lib/monaco/preloader - no need to define here
-    // Just mark as ready to avoid any redundant checks
-    themeDefinedRef.current = true;
-
-    if (completionProviderDisposable) {
-      completionProviderDisposable.dispose();
-    }
-
-    completionProviderDisposable = monaco.languages.registerCompletionItemProvider('python', {
-      triggerCharacters: ['.', ' ', '/', '"', "'"],
-      provideCompletionItems: (model, position) => {
-        const word = model.getWordUntilPosition(position);
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn
-        };
-
-        const suggestions: languages.CompletionItem[] = PYTHON_COMPLETIONS.map((item, idx) => ({
-          label: item.label,
-          kind: item.kind === 'keyword'
-            ? monaco.languages.CompletionItemKind.Keyword
-            : item.kind === 'function'
-              ? monaco.languages.CompletionItemKind.Function
-              : monaco.languages.CompletionItemKind.Module,
-          insertText: item.label,
-          range,
-          sortText: String(idx).padStart(4, '0')
-        }));
-
-        // Add dataset files
-        datasetFiles.forEach((file, idx) => {
-          suggestions.push({
-            label: file,
-            kind: monaco.languages.CompletionItemKind.File,
-            insertText: `/workspace/datasets/${file}`,
-            range,
-            detail: 'Dataset',
-            sortText: `9${String(idx).padStart(3, '0')}`
-          });
-        });
-
-        return { suggestions };
-      }
-    });
-  };
-
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(localContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard access can be denied by browser privacy settings.
     }
   };
+
+  const richOutputs: RichOutput[] = cell.output?.data
+    ? (Array.isArray(cell.output.data) ? cell.output.data : [cell.output])
+    : cell.output
+      ? [{ type: cell.output.type as RichOutput['type'], content: cell.output.content }]
+      : [];
 
   const handleCopyOutput = async () => {
     const text = buildOutputCopyText(richOutputs);
@@ -268,13 +169,7 @@ export function CodeCell({
     }
   };
 
-  const richOutputs: RichOutput[] = cell.output?.data
-    ? (Array.isArray(cell.output.data) ? cell.output.data : [cell.output])
-    : cell.output
-      ? [{ type: cell.output.type as RichOutput['type'], content: cell.output.content }]
-      : [];
-
-  const lineCount = (content || '# Enter Python code...').split('\n').length;
+  const lineCount = (localContent || PLACEHOLDER).split('\n').length;
   const editorHeight = Math.max(60, Math.min(300, lineCount * 18 + 16));
 
   return (
@@ -383,19 +278,10 @@ export function CodeCell({
           <Editor
             height="100%"
             defaultLanguage="python"
-            value={content}
-            onChange={(value) => handleContentChange(value || '')}
+            value={localContent}
+            onChange={handleContentChange}
             theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
-            onMount={(editor, monaco) => {
-              setupMonaco(monaco);
-              monaco.editor.setTheme(resolvedTheme === 'dark' ? 'python-dark' : 'python-light');
-
-              // Shift+Enter to run
-              editor.addCommand(
-                monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-                () => onRun?.()
-              );
-            }}
+            onMount={handleEditorMount}
             options={{
               minimap: { enabled: false },
               lineNumbers: 'on',

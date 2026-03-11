@@ -13,11 +13,25 @@ import type {
   CellLock,
   LockOwner,
   CreateCellRequest,
-  UpdateCellRequest,
-  WSServerMessage
+  UpdateCellRequest
 } from '@/types/notebook';
 import * as notebooksApi from '@/lib/api/notebooks';
 import { getNotebookWSClient, type NotebookWSClient } from '@/lib/websocket/notebookClient';
+import { setupWSHandlers } from './notebook/wsHandlers';
+export {
+  selectNotebook,
+  selectNotebooks,
+  selectActiveNotebookId,
+  selectCells,
+  selectCodeCells,
+  selectMarkdownCells,
+  selectIsLoading,
+  selectIsConnected,
+  selectError,
+  selectLockedCells,
+  selectHasAiLockedCells,
+  selectCellById
+} from './notebook/selectors';
 
 // ============================================================
 // Types
@@ -171,97 +185,7 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
       wsListenersCleanup?.();
 
       // Set up WebSocket event handlers
-      const unsubscribeCellCreated = wsClient.on<WSServerMessage>('cell:created', (msg) => {
-        if (msg.type === 'cell:created' && msg.cell.notebookId === get().activeNotebookId) {
-          get().updateCellLocally(msg.cell);
-        }
-      });
-
-      const unsubscribeCellUpdated = wsClient.on<WSServerMessage>('cell:updated', (msg) => {
-        if (msg.type === 'cell:updated' && msg.cell.notebookId === get().activeNotebookId) {
-          get().updateCellLocally(msg.cell);
-        }
-      });
-
-      const unsubscribeCellDeleted = wsClient.on<WSServerMessage>('cell:deleted', (msg) => {
-        if (msg.type === 'cell:deleted') {
-          get().removeCellLocally(msg.cellId);
-        }
-      });
-
-      const unsubscribeCellLocked = wsClient.on<WSServerMessage>('cell:locked', (msg) => {
-        if (msg.type === 'cell:locked') {
-          get().setCellLock(msg.cellId, msg.lockedBy as LockOwner);
-        }
-      });
-
-      const unsubscribeCellUnlocked = wsClient.on<WSServerMessage>('cell:unlocked', (msg) => {
-        if (msg.type === 'cell:unlocked') {
-          get().clearCellLock(msg.cellId);
-        }
-      });
-
-      const unsubscribeCellExecuting = wsClient.on<WSServerMessage>('cell:executing', (msg) => {
-        if (msg.type === 'cell:executing') {
-          set((state) => ({
-            cells: state.cells.map((cell) =>
-              cell.cellId === msg.cellId
-                ? { ...cell, executionStatus: 'running' as const, output: [], outputRefs: [] }
-                : cell
-            )
-          }));
-        }
-      });
-
-      const unsubscribeCellExecuted = wsClient.on<WSServerMessage>('cell:executed', (msg) => {
-        if (msg.type === 'cell:executed' && msg.cell.notebookId === get().activeNotebookId) {
-          get().updateCellLocally(msg.cell);
-        }
-      });
-
-      const unsubscribeCellOutput = wsClient.on<WSServerMessage>('cell:output', (msg) => {
-        if (msg.type === 'cell:output') {
-          const state = get();
-          // Only update if this cell belongs to the active notebook's cell list
-          if (state.activeNotebookId && state.cells.some((c) => c.cellId === msg.cellId)) {
-            set((prev) => ({
-              cells: prev.cells.map((cell) =>
-                cell.cellId === msg.cellId
-                  ? { ...cell, output: [...cell.output, msg.output] }
-                  : cell
-              )
-            }));
-          }
-        }
-      });
-
-      const unsubscribeError = wsClient.on<WSServerMessage>('error', (msg) => {
-        if (msg.type === 'error') {
-          set({ error: msg.message });
-        }
-      });
-
-      const unsubscribeConnected = wsClient.on('connected', () => {
-        set({ isConnected: true, isConnecting: false });
-      });
-
-      const unsubscribeDisconnected = wsClient.on('disconnected', () => {
-        set({ isConnected: false });
-      });
-
-      wsListenersCleanup = () => {
-        unsubscribeCellCreated();
-        unsubscribeCellUpdated();
-        unsubscribeCellDeleted();
-        unsubscribeCellLocked();
-        unsubscribeCellUnlocked();
-        unsubscribeCellExecuting();
-        unsubscribeCellExecuted();
-        unsubscribeCellOutput();
-        unsubscribeError();
-        unsubscribeConnected();
-        unsubscribeDisconnected();
-      };
+      wsListenersCleanup = setupWSHandlers(wsClient, get, set);
 
       await wsClient.connect();
       if (resolvedNotebookId) {
@@ -785,29 +709,3 @@ export const useNotebookStore = create<NotebookState>((set, get) => ({
   }
 }));
 
-// ============================================================
-// Selectors
-// ============================================================
-
-export const selectNotebook = (state: NotebookState) => state.notebook;
-export const selectNotebooks = (state: NotebookState) => state.notebooks;
-export const selectActiveNotebookId = (state: NotebookState) => state.activeNotebookId;
-export const selectCells = (state: NotebookState) => state.cells;
-export const selectCodeCells = (state: NotebookState) =>
-  state.cells.filter((c) => c.cellType === 'code');
-export const selectMarkdownCells = (state: NotebookState) =>
-  state.cells.filter((c) => c.cellType === 'markdown');
-export const selectIsLoading = (state: NotebookState) => state.isLoading;
-export const selectIsConnected = (state: NotebookState) => state.isConnected;
-export const selectError = (state: NotebookState) => state.error;
-export const selectLockedCells = (state: NotebookState) => state.lockedCells;
-
-export const selectHasAiLockedCells = (state: NotebookState) => {
-  for (const lock of state.lockedCells.values()) {
-    if (lock.lockedBy === 'ai') return true;
-  }
-  return false;
-};
-
-export const selectCellById = (cellId: string) => (state: NotebookState) =>
-  state.cells.find((c) => c.cellId === cellId);

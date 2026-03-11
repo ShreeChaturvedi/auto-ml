@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
-import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 import {
   generateSqlFromNaturalLanguageV2,
   repairSqlFromExecutionErrorV2,

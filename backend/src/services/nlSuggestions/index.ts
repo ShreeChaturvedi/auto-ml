@@ -1,195 +1,35 @@
-import { createHash } from 'node:crypto';
+import { env } from '../../config.js';
+import { createDatasetRepository } from '../../repositories/datasetRepository.js';
+import { createLlmClient, type LlmClient, type LlmMessage } from '../llm/llmClient.js';
+import { extractJson } from '../nlToSql/jsonNormalization.js';
 
-import { z } from 'zod';
+import { getCacheEntry, setCacheEntry } from './cache.js';
+import { inferRelationshipHints } from './relationshipHints.js';
+import {
+  buildSchemaFingerprint,
+  buildSchemaSummary,
+  findColumn,
+  findDimensionColumn,
+  isNumericLikeColumn,
+  isTimeLikeColumn
+} from './schemaBuilder.js';
+import {
+  buildSuggestion,
+  normalizeSuggestions,
+  SUGGESTION_SCHEMA
+} from './suggestionParser.js';
+import type {
+  GetNlSuggestionsOptions,
+  NlSuggestion,
+  NlSuggestionServiceDeps,
+  RelationshipHint,
+  SchemaTableSummary
+} from './types.js';
 
-import { env } from '../config.js';
-import { createDatasetRepository, type DatasetRepository } from '../repositories/datasetRepository.js';
-import type { DatasetProfile } from '../types/dataset.js';
-
-import { createLlmClient, type LlmClient, type LlmMessage } from './llm/llmClient.js';
-import { extractJson } from './nlToSql/jsonNormalization.js';
-import { fallbackTableName, normalizeTableName } from './nlToSql/tableResolution.js';
+export type { GetNlSuggestionsOptions, NlSuggestion } from './types.js';
 
 const DEFAULT_SUGGESTION_COUNT = 8;
-const MAX_TABLES_IN_PROMPT = 24;
-const MAX_COLUMNS_PER_TABLE = 18;
 const CACHE_TTL_MS = 15 * 60 * 1000;
-
-export interface NlSuggestion {
-  id: string;
-  prompt: string;
-  label: string;
-  category: string;
-  tables: string[];
-  rationale: string;
-}
-
-export interface GetNlSuggestionsOptions {
-  projectId: string;
-  limit?: number;
-}
-
-interface NlSuggestionCacheEntry {
-  expiresAt: number;
-  suggestions: NlSuggestion[];
-}
-
-interface SchemaColumnSummary {
-  name: string;
-  dtype: string;
-}
-
-interface SchemaTableSummary {
-  tableName: string;
-  sourceFilename: string;
-  rowCount: number;
-  columns: SchemaColumnSummary[];
-}
-
-interface RelationshipHint {
-  fromTable: string;
-  fromColumn: string;
-  toTable: string;
-  toColumn: string;
-  strength: number;
-  reason: string;
-}
-
-interface NlSuggestionServiceDeps {
-  datasetRepository: DatasetRepository;
-  getClient: (model: string) => LlmClient;
-  now: () => number;
-  cacheTtlMs: number;
-}
-
-const SUGGESTION_SCHEMA = z.object({
-  suggestions: z.array(
-    z.object({
-      prompt: z.string().min(20).max(240),
-      label: z.string().min(6).max(80),
-      category: z.string().min(3).max(40),
-      tables: z.array(z.string().min(1)).min(1).max(4),
-      rationale: z.string().min(12).max(180)
-    })
-  ).min(4).max(12)
-});
-
-const suggestionCache = new Map<string, NlSuggestionCacheEntry>();
-
-
-function normalizeColumnType(value: string): string {
-  const trimmed = value.trim().toLowerCase();
-  return trimmed || 'unknown';
-}
-
-function buildSchemaSummary(datasets: DatasetProfile[], projectId: string): SchemaTableSummary[] {
-  return datasets
-    .filter((dataset) => dataset.projectId === projectId)
-    .map((dataset) => {
-      const metadata = dataset.metadata && typeof dataset.metadata === 'object'
-        ? dataset.metadata as Record<string, unknown>
-        : {};
-      const metadataTableName = typeof metadata.tableName === 'string' ? metadata.tableName : '';
-
-      return {
-        tableName: normalizeTableName(metadataTableName) || fallbackTableName(dataset.filename, dataset.datasetId),
-        sourceFilename: dataset.filename,
-        rowCount: dataset.nRows,
-        columns: dataset.columns
-          .slice(0, MAX_COLUMNS_PER_TABLE)
-          .map((column) => ({
-            name: column.name,
-            dtype: normalizeColumnType(column.dtype)
-          }))
-      } satisfies SchemaTableSummary;
-    })
-    .slice(0, MAX_TABLES_IN_PROMPT);
-}
-
-function normalizeToken(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function inferRelationshipHints(tables: SchemaTableSummary[]): RelationshipHint[] {
-  const hints: RelationshipHint[] = [];
-
-  for (let leftIndex = 0; leftIndex < tables.length; leftIndex += 1) {
-    for (let rightIndex = 0; rightIndex < tables.length; rightIndex += 1) {
-      if (leftIndex === rightIndex) {
-        continue;
-      }
-
-      const leftTable = tables[leftIndex];
-      const rightTable = tables[rightIndex];
-      const rightColumns = new Map(
-        rightTable.columns.map((column) => [normalizeToken(column.name), column.name])
-      );
-      const rightTableToken = normalizeToken(rightTable.tableName).replace(/s$/, '');
-      const rightId = rightColumns.get('id');
-
-      for (const leftColumn of leftTable.columns) {
-        const leftToken = normalizeToken(leftColumn.name);
-
-        if (leftToken.endsWith('_id') && rightId) {
-          const targetToken = leftToken.slice(0, -3);
-          if (
-            targetToken === rightTableToken
-            || targetToken === normalizeToken(rightTable.tableName)
-            || normalizeToken(rightTable.tableName).includes(targetToken)
-          ) {
-            hints.push({
-              fromTable: leftTable.tableName,
-              fromColumn: leftColumn.name,
-              toTable: rightTable.tableName,
-              toColumn: rightId,
-              strength: 0.86,
-              reason: `Foreign-key style match from ${leftColumn.name} to ${rightTable.tableName}.id`
-            });
-          }
-        }
-
-        const exactRightColumn = rightColumns.get(leftToken);
-        if (exactRightColumn && leftToken !== 'id' && leftToken.endsWith('_id')) {
-          hints.push({
-            fromTable: leftTable.tableName,
-            fromColumn: leftColumn.name,
-            toTable: rightTable.tableName,
-            toColumn: exactRightColumn,
-            strength: 0.7,
-            reason: `Both tables expose ${leftColumn.name}, suggesting a shared entity key.`
-          });
-        }
-      }
-    }
-  }
-
-  const deduped = new Map<string, RelationshipHint>();
-  for (const hint of hints) {
-    const key = `${hint.fromTable}|${hint.fromColumn}|${hint.toTable}|${hint.toColumn}`;
-    const existing = deduped.get(key);
-    if (!existing || hint.strength > existing.strength) {
-      deduped.set(key, hint);
-    }
-  }
-
-  return Array.from(deduped.values())
-    .sort((left, right) => right.strength - left.strength)
-    .slice(0, 16);
-}
-
-function buildSchemaFingerprint(tables: SchemaTableSummary[]): string {
-  const payload = tables
-    .map((table) => ({
-      tableName: table.tableName,
-      rowCount: table.rowCount,
-      columns: table.columns.map((column) => `${column.name}:${column.dtype}`)
-    }))
-    .sort((left, right) => left.tableName.localeCompare(right.tableName));
-
-  return createHash('sha256')
-    .update(JSON.stringify(payload))
-    .digest('hex');
-}
 
 function buildPrompt(params: {
   projectId: string;
@@ -229,98 +69,6 @@ function buildPrompt(params: {
     'Relationship hints:',
     relationshipSummary
   ].join('\n');
-}
-
-
-function normalizeSuggestionId(prompt: string, index: number): string {
-  const base = prompt
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  return `${base || 'suggestion'}-${index + 1}`;
-}
-
-function normalizeSuggestions(raw: z.infer<typeof SUGGESTION_SCHEMA>, limit: number): NlSuggestion[] {
-  const seen = new Set<string>();
-  const normalized: NlSuggestion[] = [];
-
-  for (const [index, suggestion] of raw.suggestions.entries()) {
-    const prompt = suggestion.prompt.trim().replace(/\s+/g, ' ');
-    const promptKey = prompt.toLowerCase();
-    if (!prompt || seen.has(promptKey)) {
-      continue;
-    }
-
-    seen.add(promptKey);
-    normalized.push({
-      id: normalizeSuggestionId(prompt, index),
-      prompt,
-      label: suggestion.label.trim(),
-      category: suggestion.category.trim(),
-      tables: Array.from(new Set(suggestion.tables.map((table) => table.trim()).filter(Boolean))),
-      rationale: suggestion.rationale.trim()
-    });
-
-    if (normalized.length >= limit) {
-      break;
-    }
-  }
-
-  if (normalized.length === 0) {
-    throw new Error('Suggestion model returned no usable suggestions.');
-  }
-
-  return normalized;
-}
-
-function isNumericLikeColumn(column: SchemaColumnSummary): boolean {
-  const dtype = column.dtype.toLowerCase();
-  const name = column.name.toLowerCase();
-  return /(int|float|double|decimal|numeric|real|number)/.test(dtype)
-    || /(amount|revenue|score|count|total|value|price|points|rate|percent|pct|n_correct|n_possible|response|eoc)/.test(name);
-}
-
-function isTimeLikeColumn(column: SchemaColumnSummary): boolean {
-  const dtype = column.dtype.toLowerCase();
-  const name = column.name.toLowerCase();
-  return /(date|time|timestamp)/.test(dtype)
-    || /(date|time|timestamp|created_at|updated_at|day|week|month|year)/.test(name);
-}
-
-function findColumn(table: SchemaTableSummary, matcher: (column: SchemaColumnSummary) => boolean): SchemaColumnSummary | null {
-  return table.columns.find(matcher) ?? null;
-}
-
-function findDimensionColumn(table: SchemaTableSummary): SchemaColumnSummary | null {
-  return table.columns.find((column) => {
-    const name = column.name.toLowerCase();
-    if (isNumericLikeColumn(column) || isTimeLikeColumn(column)) {
-      return false;
-    }
-    return /(category|type|status|segment|group|class|institution|book|release|chapter|page|region|country|state)/.test(name);
-  }) ?? table.columns.find((column) => {
-    const name = column.name.toLowerCase();
-    return !isNumericLikeColumn(column) && !isTimeLikeColumn(column) && !/^(id|.*_id)$/.test(name);
-  }) ?? null;
-}
-
-function buildSuggestion(
-  prompt: string,
-  label: string,
-  category: string,
-  tables: string[],
-  rationale: string,
-  index: number
-): NlSuggestion {
-  return {
-    id: normalizeSuggestionId(prompt, index),
-    prompt,
-    label,
-    category,
-    tables,
-    rationale
-  };
 }
 
 function buildDeterministicSuggestions(params: {
@@ -464,7 +212,7 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
 
     const schemaFingerprint = buildSchemaFingerprint(tables);
     const cacheKey = `${projectId}:${schemaFingerprint}:${Math.max(1, Math.min(limit, DEFAULT_SUGGESTION_COUNT + 4))}`;
-    const cached = suggestionCache.get(cacheKey);
+    const cached = getCacheEntry(cacheKey);
     const timestamp = now();
 
     if (cached && cached.expiresAt > timestamp) {
@@ -502,7 +250,7 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
       });
     }
 
-    suggestionCache.set(cacheKey, {
+    setCacheEntry(cacheKey, {
       suggestions,
       expiresAt: timestamp + cacheTtlMs
     });

@@ -24,12 +24,12 @@ vi.mock('../services/nlToSql/index.js', () => ({
   repairSqlFromExecutionErrorV2: vi.fn()
 }));
 
-vi.mock('../services/nlSuggestions.js', () => ({
+vi.mock('../services/nlSuggestions/index.js', () => ({
   getNaturalLanguageSuggestions: vi.fn()
 }));
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';

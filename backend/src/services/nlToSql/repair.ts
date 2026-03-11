@@ -4,18 +4,14 @@ import { env } from '../../config.js';
 import { getDefaultLlmModel } from '../llm/modelCatalog.js';
 import { validateReadOnlySql } from '../sqlValidator.js';
 
-import { normalizeRepairOutput } from './jsonNormalization.js';
 import {
-  createModelWorkBlock,
   deriveReliabilityTier,
   deriveWarningLevel,
-  emitNlProgress,
-  getNl2SqlReasoningEffort,
-  getNlProviderInfo,
-  requestStructuredJson,
-  resolveWarnConfidenceThreshold,
-  summarizeError
-} from './pipeline.js';
+  resolveWarnConfidenceThreshold
+} from './confidence.js';
+import { normalizeRepairOutput } from './jsonNormalization.js';
+import { getNl2SqlReasoningEffort, getNlProviderInfo } from './pipeline.js';
+import { createModelWorkBlock, emitNlProgress } from './progressEmitter.js';
 import {
   buildCaseNormalizationValidationNote,
   buildRepairPrompt,
@@ -25,6 +21,7 @@ import {
   formatSchemaContextMarkdown,
   normalizeCaseSensitiveIdentifiers
 } from './schemaContext.js';
+import { requestStructuredJson, summarizeError } from './structuredRequest.js';
 import type {
   GeneratedSqlV2,
   NlConfidenceMode,

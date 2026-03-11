@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  buildReadinessReport,
   buildSuggestionDefaults,
-  hasRequiredReadinessEvidence,
   type FeatureSuggestionItem
 } from '../featureEngineeringUtils';
 import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
-import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
-import { useNotebookStore } from '@/stores/notebookStore';
-import type { FeatureCategory, FeatureMethod, FeatureSpec, PipelineVersion } from '@/types/feature';
+import type { FeatureCategory, FeatureMethod, FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { FEATURE_TEMPLATES } from '@/lib/features/featureTemplates';
+import { useFeatureReadiness } from './useFeatureReadiness';
+import { useFeatureCodeGen } from './useFeatureCodeGen';
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
-const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';
 
 const methodCategoryMap = new Map<FeatureMethod, FeatureCategory>(
   FEATURE_TEMPLATES.map((template) => [template.method, template.category])
@@ -51,7 +48,7 @@ interface UseFeaturePipelineStateReturn {
   featureById: Map<string, FeatureSpec>;
 
   // Readiness
-  readinessReport: ReturnType<typeof buildReadinessReport>;
+  readinessReport: ReadinessReport;
   isReadyForApproval: boolean;
   readinessReportUnlocked: boolean;
   isReadinessExpanded: boolean;
@@ -86,11 +83,6 @@ interface UseFeaturePipelineStateReturn {
 }
 
 export function useFeaturePipelineState(projectId: string): UseFeaturePipelineStateReturn {
-  // --- Notebook store ---
-  const notebookCells = useNotebookStore((state) => state.cells);
-  const createNotebookCell = useNotebookStore((state) => state.createCell);
-  const updateNotebookCell = useNotebookStore((state) => state.updateCell);
-
   // --- Data store ---
   const allFiles = useDataStore((state) => state.files);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
@@ -114,7 +106,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   const renameVersion = useFeatureStore((state) => state.renameVersion);
   const approveVersion = useFeatureStore((state) => state.approveVersion);
   const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
-  const updateReadinessReport = useFeatureStore((state) => state.updateReadinessReport);
 
   // --- Local state ---
   const [selectedDataset, setSelectedDataset] = useState<string | null>(null);
@@ -124,13 +115,10 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   const [applyStatus, setApplyStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
-  const [isReadinessExpanded, setIsReadinessExpanded] = useState(false);
   const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>({});
 
   // --- Refs ---
   const hydratedProjectRef = useRef<string | null>(null);
-  const lastPersistedReadinessRef = useRef(new Map<string, string>());
-  const lastSyncedCodePreviewRef = useRef('');
 
   // --- Hydration effect ---
   useEffect(() => {
@@ -224,26 +212,17 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   const isCurrentVersionDraft = currentVersion?.status === 'draft';
   const canDeleteCurrentDraft = Boolean(isCurrentVersionDraft);
 
-  // --- Readiness report ---
-  const computedReadinessReport = useMemo(
-    () => buildReadinessReport(activeFeatures, datasetColumns),
-    [activeFeatures, datasetColumns]
-  );
+  // --- Readiness (extracted hook) ---
+  const {
+    readinessReport,
+    isReadyForApproval,
+    readinessReportUnlocked,
+    isReadinessExpanded,
+    setIsReadinessExpanded
+  } = useFeatureReadiness(projectId, activeFeatures, datasetColumns, currentVersion);
 
-  const readinessReport = currentVersion?.readinessReport ?? computedReadinessReport;
-
-  const isReadyForApproval = Boolean(currentVersion)
-    && activeFeatures.length > 0
-    && hasRequiredReadinessEvidence(readinessReport);
-
-  const readinessReportUnlocked = activeFeatures.length > 0;
-
-  // --- Readiness collapse effect ---
-  useEffect(() => {
-    if (!readinessReportUnlocked && isReadinessExpanded) {
-      setIsReadinessExpanded(false);
-    }
-  }, [isReadinessExpanded, readinessReportUnlocked]);
+  // --- Code preview sync (extracted hook) ---
+  useFeatureCodeGen(activeFeatures, selectedDatasetFile);
 
   // --- Default dataset selection effect ---
   useEffect(() => {
@@ -279,77 +258,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
       setTargetColumn(columns[0]);
     }
   }, [selectedDatasetFile, targetColumn]);
-
-  // --- Readiness report persist effect ---
-  useEffect(() => {
-    if (!currentVersion) return;
-
-    const versionKey = currentVersion.id;
-    const nextSerialized = JSON.stringify(computedReadinessReport);
-    const persistedSerialized = lastPersistedReadinessRef.current.get(versionKey);
-
-    if (persistedSerialized === nextSerialized) return;
-
-    const currentSerialized = JSON.stringify(currentVersion.readinessReport);
-    if (currentSerialized === nextSerialized) {
-      lastPersistedReadinessRef.current.set(versionKey, nextSerialized);
-      return;
-    }
-
-    lastPersistedReadinessRef.current.set(versionKey, nextSerialized);
-    updateReadinessReport(projectId, currentVersion.id, computedReadinessReport);
-  }, [computedReadinessReport, currentVersion, projectId, updateReadinessReport]);
-
-  // --- Code preview sync ---
-  const codePreview = useMemo(() => {
-    if (!selectedDatasetFile) return '';
-    if (activeFeatures.length === 0) return '';
-
-    return generateFeatureEngineeringCode(activeFeatures, selectedDatasetFile.name, {
-      datasetId: selectedDatasetFile.metadata?.datasetId,
-      includeComments: true
-    });
-  }, [activeFeatures, selectedDatasetFile]);
-
-  useEffect(() => {
-    if (!codePreview.trim()) return;
-    if (lastSyncedCodePreviewRef.current === codePreview) return;
-
-    const existingPreviewCell = notebookCells.find(
-      (cell) => cell.cellType === 'code' && cell.title === FEATURE_PREVIEW_CELL_TITLE
-    );
-
-    const syncCodePreview = async () => {
-      if (existingPreviewCell) {
-        if (existingPreviewCell.content === codePreview) {
-          lastSyncedCodePreviewRef.current = codePreview;
-          return;
-        }
-
-        const updated = await updateNotebookCell(existingPreviewCell.cellId, {
-          title: FEATURE_PREVIEW_CELL_TITLE,
-          content: codePreview
-        });
-
-        if (updated) {
-          lastSyncedCodePreviewRef.current = codePreview;
-        }
-        return;
-      }
-
-      const created = await createNotebookCell({
-        cellType: 'code',
-        title: FEATURE_PREVIEW_CELL_TITLE,
-        content: codePreview
-      });
-
-      if (created) {
-        lastSyncedCodePreviewRef.current = codePreview;
-      }
-    };
-
-    void syncCodePreview();
-  }, [codePreview, createNotebookCell, notebookCells, updateNotebookCell]);
 
   // --- Suggestion sync helper ---
   const syncSuggestionToFeatureStore = useCallback(

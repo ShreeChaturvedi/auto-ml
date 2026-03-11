@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  addAssistantTextMessage,
-  addThinkingMessage,
-  appendAssistantTextDelta,
-  appendThinkingDelta,
-  markThinkingMessageComplete
-} from '@/lib/llm/streamMessageUtils';
 import { streamOnboardingPlan, executeToolCalls } from '@/lib/api/llm';
 import type { ChatMessage, ToolCall, ToolResult, QuestionAnswer } from '@/types/llmUi';
+import { addAssistantTextMessage } from '@/lib/llm/streamMessageUtils';
+import { useLlmStreamState } from '@/hooks/useLlmStreamState';
+import { usePlanEditor } from './usePlanEditor';
 import { normalizePlanFileName } from '../planningUtils';
 import type { UploadedAttachmentPreview } from './useAttachmentUploader';
 
@@ -52,36 +48,32 @@ export function usePlanningChat({
   pendingAttachmentsCount,
   onPlanApproved,
 }: UsePlanningChatProps): UsePlanningChatReturn {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const stream = useLlmStreamState();
+  const {
+    messages, setMessages,
+    isStreaming, setIsStreaming,
+    activeTextMessageId, activeThinkingMessageId,
+    handleStreamEvent,
+    completeThinking, closeTextStream,
+    currentTextIdRef,
+  } = stream;
+
+  const planEditor = usePlanEditor();
+  const {
+    editingPlanId, setEditingPlanId,
+    planDrafts, setPlanDrafts,
+    handleStartPlanEdit, handleCancelPlanEdit,
+    handleSavePlanEdit: planEditorSave,
+  } = planEditor;
+
   const [inputValue, setInputValue] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
-  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
-  const [planDrafts, setPlanDrafts] = useState<Record<string, string>>({});
   const [userMessageAttachments, setUserMessageAttachments] = useState<Record<string, UploadedAttachmentPreview[]>>({});
-  const [activeTextMessageId, setActiveTextMessageId] = useState<string | null>(null);
-  const [activeThinkingMessageId, setActiveThinkingMessageId] = useState<string | null>(null);
 
   const controllerRef = useRef<AbortController | null>(null);
-  const currentThinkingIdRef = useRef<string | null>(null);
-  const currentTextIdRef = useRef<string | null>(null);
   const answerHistoryRef = useRef<QuestionAnswer[]>([]);
   const toolCallHistoryRef = useRef<ToolCall[]>([]);
   const toolResultHistoryRef = useRef<ToolResult[]>([]);
-
-  const endThinking = useCallback(() => {
-    const id = currentThinkingIdRef.current;
-    if (id) {
-      setMessages((prev) => markThinkingMessageComplete(prev, id));
-      currentThinkingIdRef.current = null;
-      setActiveThinkingMessageId(null);
-    }
-  }, []);
-
-  const endText = useCallback(() => {
-    currentTextIdRef.current = null;
-    setActiveTextMessageId(null);
-  }, []);
 
   const requestStream = useCallback(
     async (userIntent?: string, round?: number) => {
@@ -92,8 +84,8 @@ export function usePlanningChat({
       const effectiveRound = round ?? currentRound;
       setCurrentRound(effectiveRound);
       setIsStreaming(true);
-      endThinking();
-      endText();
+      completeThinking();
+      closeTextStream();
 
       let sawAskUser = false;
       let sawPlanExit = false;
@@ -101,9 +93,7 @@ export function usePlanningChat({
       let requestUserIntent = userIntent || undefined;
 
       const executePendingToolCalls = async (pendingToolCalls: ToolCall[]) => {
-        if (pendingToolCalls.length === 0) {
-          return;
-        }
+        if (pendingToolCalls.length === 0) return;
 
         const { results } = await executeToolCalls(projectId, pendingToolCalls);
         toolCallHistoryRef.current = [...toolCallHistoryRef.current, ...pendingToolCalls];
@@ -139,42 +129,37 @@ export function usePlanningChat({
               model: selectedModel,
             },
             (event) => {
-              // Thinking events
-              if (event.type === 'thinking') {
-                endText();
-                if (!currentThinkingIdRef.current) {
-                  const id = `thinking-${Date.now()}`;
-                  currentThinkingIdRef.current = id;
-                  setActiveThinkingMessageId(id);
-                  setMessages((prev) => addThinkingMessage(prev, id, event.text, Date.now()));
-                } else {
-                  const tid = currentThinkingIdRef.current;
-                  setMessages((prev) => appendThinkingDelta(prev, tid, event.text));
-                }
-              }
-
-              // Token events (assistant text or plan)
+              // Let the shared hook handle token, thinking, usage, error, done
               if (event.type === 'token') {
-                endThinking();
+                handleStreamEvent(event);
                 streamedText += event.text;
                 passProducedPlainText = true;
-                if (!currentTextIdRef.current) {
-                  const id = `text-${Date.now()}`;
-                  currentTextIdRef.current = id;
-                  setActiveTextMessageId(id);
-                  passTextMessageId = id;
-                  setMessages((prev) => addAssistantTextMessage(prev, id, event.text));
-                } else {
-                  const tid = currentTextIdRef.current;
-                  passTextMessageId = tid;
-                  setMessages((prev) => appendAssistantTextDelta(prev, tid, event.text));
-                }
+                passTextMessageId = currentTextIdRef.current;
+                return;
               }
 
-              // Ask user questions
+              if (event.type === 'thinking' || event.type === 'usage') {
+                handleStreamEvent(event);
+                return;
+              }
+
+              if (event.type === 'error') {
+                handleStreamEvent(event);
+                return;
+              }
+
+              if (event.type === 'done') {
+                // Don't let shared hook set isStreaming=false mid-loop;
+                // we handle that in finally. Just clean up thinking/text.
+                completeThinking();
+                closeTextStream();
+                return;
+              }
+
+              // Domain-specific: ask_user
               if (event.type === 'ask_user') {
-                endThinking();
-                endText();
+                completeThinking();
+                closeTextStream();
                 sawAskUser = true;
                 setMessages((prev) => [
                   ...prev,
@@ -182,10 +167,11 @@ export function usePlanningChat({
                 ]);
               }
 
+              // Domain-specific: plan_exit
               if (event.type === 'plan_exit') {
                 const streamingTextId = currentTextIdRef.current;
-                endThinking();
-                endText();
+                completeThinking();
+                closeTextStream();
                 sawPlanExit = true;
                 setEditingPlanId(null);
 
@@ -209,11 +195,11 @@ export function usePlanningChat({
                 });
               }
 
-              // Envelope with tool calls
+              // Domain-specific: envelope with tool calls
               if (event.type === 'envelope') {
                 if (event.envelope.tool_calls?.length) {
-                  endThinking();
-                  endText();
+                  completeThinking();
+                  closeTextStream();
 
                   const nextCalls = event.envelope.tool_calls.filter(
                     (call) => !pendingToolCalls.some((pending) => pending.id === call.id)
@@ -246,27 +232,13 @@ export function usePlanningChat({
                   setMessages((prev) => addAssistantTextMessage(prev, id, fallback));
                 }
               }
-
-              if (event.type === 'error') {
-                setMessages((prev) => [
-                  ...prev,
-                  { id: `error-${Date.now()}`, type: 'error', message: event.message },
-                ]);
-              }
-
-              if (event.type === 'done') {
-                endThinking();
-                endText();
-              }
             },
             controller.signal
           );
 
           requestUserIntent = undefined;
 
-          if (sawPlanExit) {
-            break;
-          }
+          if (sawPlanExit) break;
 
           await executePendingToolCalls(pendingToolCalls);
 
@@ -296,9 +268,7 @@ export function usePlanningChat({
             continue;
           }
 
-          if (sawAskUser || pendingToolCalls.length === 0) {
-            break;
-          }
+          if (sawAskUser || pendingToolCalls.length === 0) break;
         }
 
       } catch (err) {
@@ -307,12 +277,12 @@ export function usePlanningChat({
           setMessages((prev) => [...prev, { id: `error-${Date.now()}`, type: 'error', message: msg }]);
         }
       } finally {
-        endThinking();
-        endText();
+        completeThinking();
+        closeTextStream();
         setIsStreaming(false);
       }
     },
-    [projectId, currentRound, selectedModel, reasoningEffort, endThinking, endText]
+    [projectId, currentRound, selectedModel, reasoningEffort, handleStreamEvent, completeThinking, closeTextStream, setIsStreaming, setMessages, currentTextIdRef, setEditingPlanId, setPlanDrafts]
   );
 
   useEffect(() => {
@@ -358,11 +328,9 @@ export function usePlanningChat({
       ? `${text}\n\nUse and prioritize these newly attached files for this response: ${uploadedNames.join(', ')}.`
       : text;
 
-    // Use current round for the request, then advance for next interaction.
-    // Round 0 = first user message (triggers data inspection + first questions).
     void requestStream(requestText, currentRound);
     setCurrentRound((prev) => Math.min(prev + 1, 5));
-  }, [isStreaming, pendingAttachmentsCount, uploadPendingAttachments, currentRound, requestStream]);
+  }, [isStreaming, pendingAttachmentsCount, uploadPendingAttachments, currentRound, requestStream, setEditingPlanId, setMessages]);
 
   const handleSend = useCallback(() => {
     void submitUserMessage(inputValue);
@@ -376,12 +344,10 @@ export function usePlanningChat({
     (msgId: string, answers: QuestionAnswer[]) => {
       answerHistoryRef.current = [...answerHistoryRef.current, ...answers];
 
-      // Mark questions as answered
       setMessages((prev) =>
         prev.map((m) => (m.id === msgId && m.type === 'ask_user' ? { ...m, answered: true } : m))
       );
 
-      // Add a user message summarizing answers
       const summary = answers
         .map((a) => (Array.isArray(a.answer) ? a.answer.join(', ') : a.answer))
         .join('; ');
@@ -393,54 +359,26 @@ export function usePlanningChat({
       void requestStream(undefined, currentRound);
       setCurrentRound((prev) => Math.min(prev + 1, 5));
     },
-    [currentRound, requestStream]
+    [currentRound, requestStream, setMessages]
   );
 
   const handleApprove = useCallback(
     (planContent: string, planName: string, planId: string) => {
       setMessages((prev) =>
         prev.map((m) => {
-          if (m.type !== 'plan') {
-            return m;
-          }
-
-          if (m.id !== planId) {
-            return { ...m, hidden: true };
-          }
-
+          if (m.type !== 'plan') return m;
+          if (m.id !== planId) return { ...m, hidden: true };
           return { ...m, approved: true, hidden: false, content: planContent, planName };
         })
       );
       onPlanApproved(planContent, normalizePlanFileName(planName));
     },
-    [onPlanApproved]
+    [onPlanApproved, setMessages]
   );
 
-  const handleStartPlanEdit = useCallback((planId: string, currentContent: string) => {
-    setEditingPlanId(planId);
-    setPlanDrafts((prev) => ({ ...prev, [planId]: prev[planId] ?? currentContent }));
-  }, []);
-
-  const handleCancelPlanEdit = useCallback((planId: string, currentContent: string) => {
-    setEditingPlanId(null);
-    setPlanDrafts((prev) => ({ ...prev, [planId]: currentContent }));
-  }, []);
-
   const handleSavePlanEdit = useCallback((planId: string) => {
-    const draft = planDrafts[planId];
-    if (!draft?.trim()) {
-      return;
-    }
-
-    const nextContent = draft.trim();
-    setMessages((prev) =>
-      prev.map((message) =>
-        message.type === 'plan' && message.id === planId ? { ...message, content: nextContent } : message
-      )
-    );
-    setPlanDrafts((prev) => ({ ...prev, [planId]: nextContent }));
-    setEditingPlanId(null);
-  }, [planDrafts]);
+    planEditorSave(planId, setMessages);
+  }, [planEditorSave, setMessages]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

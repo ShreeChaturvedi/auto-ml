@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 
-import { executeToolCalls, getPreprocessingRunSnapshot } from '@/lib/api/llm';
+import { getPreprocessingRunSnapshot } from '@/lib/api/llm';
 import { listAvailableTables } from '@/lib/api/preprocessing';
-import { asBoolean, asRecord, asString, asStringArray } from '@/lib/typeCoercion';
+import { asRecord, asString } from '@/lib/typeCoercion';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { NotebookCell } from '@/types/notebook';
 import type {
@@ -17,13 +17,14 @@ import {
   buildEventFromToolResult,
   buildStepBindingsFromSnapshot,
   buildTimelineFromSnapshot,
-  extractReferencedColumns,
   getLatestCheckpointId,
   getRunIdFromToolResult,
   hashText,
-  hashTextAuthoritative,
   upsertTimelineEvent
 } from './preprocessing/eventBuilders';
+import { applyDivergence, computeDivergenceUpdate } from './preprocessing/divergenceSync';
+import { evaluateReplayCompat } from './preprocessing/replayCompat';
+import { commitStepDecision } from './preprocessing/stepDecision';
 
 export interface PreprocessingChatMessage {
   id: string;
@@ -103,102 +104,6 @@ const initialState: PreprocessingStateData = {
   isLoadingTables: false,
   error: null
 };
-
-// ---------------------------------------------------------------------------
-// Shared step-decision helper (deduplicates approveStep / rejectStep)
-// ---------------------------------------------------------------------------
-
-interface CommitStepDecisionArgs {
-  projectId: string;
-  stepId: string;
-  runId: string;
-  selectedDatasetId: string | null;
-  approved: boolean;
-  /** Only relevant when approved is false. */
-  rejectionReason?: string;
-  previousStatus: TransformationStatus;
-  set: (
-    partial:
-      | Partial<PreprocessingStateData>
-      | ((state: PreprocessingStateData) => Partial<PreprocessingStateData>)
-  ) => void;
-  hydrateRunById: (projectId: string, runId: string) => Promise<void>;
-}
-
-async function commitStepDecision({
-  projectId,
-  stepId,
-  runId,
-  selectedDatasetId,
-  approved,
-  rejectionReason,
-  previousStatus,
-  set,
-  hydrateRunById
-}: CommitStepDecisionArgs): Promise<void> {
-  const action = approved ? 'approve' : 'reject';
-
-  // Optimistically mark the step as running.
-  set((current) => ({
-    timeline: current.timeline.map((candidate) =>
-      candidate.stepId === stepId
-        ? { ...candidate, status: 'running', error: undefined, updatedAt: Date.now() }
-        : candidate
-    ),
-    error: null
-  }));
-
-  try {
-    const toolArgs: Record<string, unknown> = {
-      runId,
-      stepId,
-      approved,
-      ...(approved && selectedDatasetId ? { datasetId: selectedDatasetId } : {}),
-      ...(!approved && rejectionReason ? { rejectionReason } : {})
-    };
-
-    const response = await executeToolCalls(
-      projectId,
-      [{ id: `${action}-${stepId}-${Date.now()}`, tool: 'commit_transformation_step', args: toolArgs }],
-      undefined,
-      'user_approval'
-    );
-
-    const result = response.results[0];
-    const output = asRecord(result?.output);
-    const isError = Boolean(result?.error) || asBoolean(output?.isError) === true;
-
-    if (isError) {
-      const message =
-        result?.error ??
-        asString(output?.message) ??
-        asString(output?.reasonCode) ??
-        `Failed to ${action} step ${stepId}.`;
-      set((current) => ({
-        timeline: current.timeline.map((candidate) =>
-          candidate.stepId === stepId
-            ? { ...candidate, status: previousStatus, error: message, updatedAt: Date.now() }
-            : candidate
-        ),
-        error: message
-      }));
-      return;
-    }
-
-    const nextRunId = asString(output?.runId) ?? runId;
-    await hydrateRunById(projectId, nextRunId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : `Failed to ${action} step ${stepId}.`;
-    set((current) => ({
-      timeline: current.timeline.map((candidate) =>
-        candidate.stepId === stepId
-          ? { ...candidate, status: previousStatus, error: message, updatedAt: Date.now() }
-          : candidate
-      ),
-      error: message
-    }));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -397,160 +302,33 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   },
 
   syncDivergence: async (cells: NotebookCell[]) => {
-    if (!cells.length) {
-      return;
-    }
-
     const stateSnapshot = get();
-    const contentByCellId = new Map(cells.map((cell) => [cell.cellId, cell.content]));
-    const boundCellIdsToHash = new Set<string>();
-    Object.values(stateSnapshot.stepBindings).forEach((binding) => {
-      if (!binding?.codeHash || binding.cellIds.length === 0) {
-        return;
-      }
-      binding.cellIds.forEach((cellId) => {
-        const content = contentByCellId.get(cellId);
-        if (typeof content === 'string') {
-          boundCellIdsToHash.add(cellId);
-        }
-      });
+    const hashByCellId = await computeDivergenceUpdate({
+      cells,
+      stepBindings: stateSnapshot.stepBindings
     });
 
-    if (boundCellIdsToHash.size === 0) {
-      return;
-    }
-
-    const hashedEntries = await Promise.all(
-      [...boundCellIdsToHash].map(async (cellId) => {
-        const content = contentByCellId.get(cellId);
-        if (typeof content !== 'string') {
-          return [cellId, null] as const;
-        }
-        const hash = await hashTextAuthoritative(content);
-        return [cellId, hash] as const;
-      })
-    );
-    const hashByCellId = new Map(hashedEntries.filter((entry): entry is [string, string] => Boolean(entry[1])));
-    if (hashByCellId.size === 0) {
+    if (!hashByCellId) {
       return;
     }
 
     set((state) => ({
-      timeline: state.timeline.map((event) => {
-        const binding = state.stepBindings[event.stepId];
-        if (!binding?.codeHash || binding.cellIds.length === 0) {
-          return event;
-        }
-
-        let comparedAnyBoundCell = false;
-        const hasDiverged = binding.cellIds.some((cellId) => {
-          const actualHash = hashByCellId.get(cellId);
-          if (!actualHash) {
-            return false;
-          }
-          comparedAnyBoundCell = true;
-          return actualHash !== binding.codeHash;
-        });
-
-        if (!comparedAnyBoundCell) {
-          return event;
-        }
-
-        if (hasDiverged && event.status !== 'diverged') {
-          return { ...event, status: 'diverged', updatedAt: Date.now() };
-        }
-
-        if (!hasDiverged && event.status === 'diverged') {
-          return {
-            ...event,
-            status: event.requiresApproval ? 'awaiting_approval' : 'applied',
-            updatedAt: Date.now()
-          };
-        }
-
-        return event;
-      })
+      timeline: applyDivergence(state.timeline, state.stepBindings, hashByCellId)
     }));
   },
 
   evaluateReplayCompatibility: async (projectId: string) => {
     const state = get();
-    const selectedTable = state.tables.find((table) => table.datasetId === state.selectedDatasetId);
-    const availableColumns = new Set(selectedTable?.columns?.map((column) => column.name) ?? []);
-    const localIssues: string[] = [];
-
-    state.timeline.forEach((event) => {
-      if (!event.code) {
-        return;
-      }
-      const referencedColumns = extractReferencedColumns(event.code);
-      const missingColumns = referencedColumns.filter((column) => !availableColumns.has(column));
-      if (missingColumns.length > 0) {
-        localIssues.push(`${event.title}: missing columns (${missingColumns.join(', ')})`);
-      }
-      if (event.validation?.schemaDrift) {
-        localIssues.push(`${event.title}: schema drift detected in validation.`);
-      }
+    const report = await evaluateReplayCompat({
+      projectId,
+      tables: state.tables,
+      selectedDatasetId: state.selectedDatasetId,
+      timeline: state.timeline,
+      runId: state.runId,
+      latestCheckpointId: state.latestCheckpointId
     });
 
-    if (state.runId && state.latestCheckpointId && state.selectedDatasetId) {
-      try {
-        const response = await executeToolCalls(projectId, [
-          {
-            id: `replay-check-${Date.now()}`,
-            tool: 'restore_checkpoint',
-            args: {
-              runId: state.runId,
-              checkpointId: state.latestCheckpointId,
-              operation: 'compatibility_check',
-              replayDatasetId: state.selectedDatasetId
-            }
-          }
-        ]);
-        const result = response.results[0];
-        const output = asRecord(result?.output);
-        const compatibilityIssues = asStringArray(output?.compatibilityIssues).length
-          ? asStringArray(output?.compatibilityIssues)
-          : Array.isArray(output?.compatibilityIssues)
-            ? (output.compatibilityIssues as Array<Record<string, unknown>>).map((issue) => {
-                const issueStepId = asString(issue.stepId) ?? 'unknown-step';
-                const column = asString(issue.column) ?? 'unknown-column';
-                const issueType = asString(issue.issue) ?? 'incompatibility';
-                return `${issueStepId}: ${issueType} on ${column}`;
-              })
-            : [];
-
-        const backendIncompatible =
-          Boolean(result?.error) ||
-          asBoolean(output?.isError) === true ||
-          asString(output?.reasonCode) === 'REPLAY_INCOMPATIBLE_DATASET';
-
-        set({
-          replayReport: {
-            checkedAt: Date.now(),
-            compatible: !backendIncompatible,
-            issues: backendIncompatible ? compatibilityIssues : [],
-            source: 'backend_authoritative',
-            precheckIssues: localIssues,
-            checkpointId: state.latestCheckpointId
-          },
-          error: null
-        });
-        return;
-      } catch (error) {
-        console.error('[preprocessingStore] Backend replay compatibility check failed:', error);
-      }
-    }
-
-    set({
-      replayReport: {
-        checkedAt: Date.now(),
-        compatible: localIssues.length === 0,
-        issues: localIssues,
-        source: 'local_precheck',
-        precheckIssues: localIssues
-      }
-    });
+    set({ replayReport: report, error: null });
   },
 
   markInterruptedSteps: (reason: string) => {

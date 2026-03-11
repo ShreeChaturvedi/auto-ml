@@ -52,6 +52,7 @@ export type LlmStreamEvent =
   | { type: 'envelope'; envelope: LlmEnvelope }
   | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
   | { type: 'plan_exit'; planName?: string; planMarkdown: string }
+  | { type: 'usage'; usage: Record<string, unknown> }
   | { type: 'error'; message: string }
   | { type: 'done' };
 

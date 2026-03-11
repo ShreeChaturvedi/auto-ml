@@ -51,10 +51,20 @@ export interface LlmRequest {
   contextId?: string;
 }
 
+/** Raw OpenAI Responses API usage shape — passed through as-is to the frontend. */
+export interface RawLlmUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  input_tokens_details?: { cached_tokens?: number };
+  output_tokens_details?: { reasoning_tokens?: number };
+}
+
 export interface LlmStreamHandlers {
   onToken: (token: string) => void;
   onToolCall?: (call: LlmToolCall) => void;
   onThinking?: (text: string) => void;
+  onUsage?: (usage: RawLlmUsage) => void;
 }
 
 export interface LlmClient {

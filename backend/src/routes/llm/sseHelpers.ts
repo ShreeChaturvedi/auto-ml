@@ -6,7 +6,8 @@ import { z } from 'zod';
 import {
   createLlmClient,
   type LlmClient,
-  type LlmRequest
+  type LlmRequest,
+  type RawLlmUsage
 } from '../../services/llm/llmClient.js';
 import { LLM_RENDER_UI_TOOL } from '../../services/llm/toolRegistry.js';
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
@@ -400,6 +401,7 @@ export async function streamLlmResponse(
   let tokenChars = 0;
   let tokenPreview = '';
   let streamClosed = false;
+  let latestUsage: RawLlmUsage | null = null;
   const suppressTokenStreaming = kind === 'preprocessing';
 
   const collectLlmAttempt = async (attemptRequest: LlmRequest): Promise<void> => {
@@ -415,6 +417,9 @@ export async function streamLlmResponse(
       },
       onThinking: (text) => {
         writeEvent({ type: 'thinking', text });
+      },
+      onUsage: (usage) => {
+        latestUsage = usage;
       },
       onToolCall: (call) => {
         if (call.name === 'ask_user') {
@@ -566,6 +571,9 @@ export async function streamLlmResponse(
     if (streamClosed || res.destroyed || res.writableEnded) {
       streamClosed = true;
       return;
+    }
+    if (latestUsage) {
+      writeEvent({ type: 'usage', usage: latestUsage });
     }
     res.write(`${JSON.stringify({ type: 'done' })}\n`);
     streamClosed = true;

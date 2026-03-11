@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type { Responses } from 'openai/resources/responses/responses';
 
-import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall } from '../llmClient.js';
+import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall, RawLlmUsage } from '../llmClient.js';
 import { normalizeReasoningSelection, resolveCatalogModel } from '../modelCatalog.js';
 
 interface OpenAiClientOptions {
@@ -50,6 +50,10 @@ export class OpenAiClient implements LlmClient {
 
     const response = await stream.finalResponse();
     emitToolCalls(response, handlers);
+
+    if (handlers.onUsage && response.usage) {
+      handlers.onUsage(response.usage as RawLlmUsage);
+    }
 
     return fullText || response.output_text || '';
   }

@@ -15,7 +15,7 @@ import {
   Loader2,
   Brain,
 } from 'lucide-react';
-import { LlmChatComposer, type AttachmentStatus } from '@/components/llm/LlmChatComposer';
+import { LlmChatComposer, type AttachmentStatus, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
@@ -524,34 +524,42 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
       {/* Input */}
       <div className="border-t bg-background p-4">
         <LlmChatComposer
-          value={chatInput}
-          onValueChange={setChatInput}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask AI for help..."
-          disabled={isGenerating}
-          isStreaming={isGenerating}
-          onSend={() => void handleSend()}
-          onStop={handleStop}
-          model={assistantModel}
-          onModelChange={handleModelChange}
-          modelOptions={inlineModelOptions}
-          reasoningEffort={reasoningEffort}
-          onReasoningEffortChange={setReasoningEffort}
-          reasoningOptions={getReasoningEffortOptions(assistantModel, allModelOptions)}
-          metaSlot={(
-            <Badge variant="outline" className="text-[11px] gap-1">
-              <Brain className="h-3 w-3" />
-              {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
-            </Badge>
-          )}
-          attachment={{
-            onAttachFile: handleAttachFile,
-            status: attachmentStatus,
-            message: attachmentMessage,
-            items: [],
-            accept: '.pdf,.md,.txt'
-          }}
-          textareaRef={textareaRef}
+          chatInput={{
+            value: chatInput,
+            onValueChange: setChatInput,
+            onKeyDown: handleKeyDown,
+            placeholder: "Ask AI for help...",
+            disabled: isGenerating,
+            isStreaming: isGenerating,
+            onSend: () => void handleSend(),
+            onStop: handleStop,
+          } satisfies ChatInputConfig}
+          modelConfig={{
+            model: assistantModel,
+            onModelChange: handleModelChange,
+            modelOptions: inlineModelOptions,
+          } satisfies ModelConfig}
+          reasoningConfig={{
+            reasoningEffort,
+            onReasoningEffortChange: setReasoningEffort,
+            reasoningOptions: getReasoningEffortOptions(assistantModel, allModelOptions),
+          } satisfies ReasoningConfig}
+          slots={{
+            metaSlot: (
+              <Badge variant="outline" className="text-[11px] gap-1">
+                <Brain className="h-3 w-3" />
+                {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
+              </Badge>
+            ),
+            attachment: {
+              onAttachFile: handleAttachFile,
+              status: attachmentStatus,
+              message: attachmentMessage,
+              items: [],
+              accept: '.pdf,.md,.txt',
+            },
+            textareaRef,
+          } satisfies ComposerSlots}
         />
       </div>
     </div>

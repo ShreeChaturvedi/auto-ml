@@ -59,7 +59,8 @@ interface AttachmentConfig {
   onRetryItem?: (itemId: string) => void;
 }
 
-interface LlmChatComposerProps {
+/** Controls the textarea input, send/stop actions, and disabled/streaming state. */
+export interface ChatInputConfig {
   value: string;
   onValueChange: (value: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -68,17 +69,36 @@ interface LlmChatComposerProps {
   isStreaming: boolean;
   onSend: () => void;
   onStop: () => void;
+}
+
+/** Controls which model is selected and which options are available. */
+export interface ModelConfig {
   model: string;
   onModelChange: (model: string) => void;
   modelOptions: readonly AssistantModelOption[];
+}
+
+/** Controls reasoning effort selection and available options. */
+export interface ReasoningConfig {
   reasoningEffort: ReasoningEffort;
   onReasoningEffortChange: (effort: ReasoningEffort) => void;
   reasoningOptions: readonly ReasoningEffortOption[];
+}
+
+/** Optional slots and layout overrides for the composer shell. */
+export interface ComposerSlots {
   leftSlot?: ReactNode;
   metaSlot?: ReactNode;
   attachment?: AttachmentConfig;
   maxWidthClassName?: string;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+}
+
+interface LlmChatComposerProps {
+  chatInput: ChatInputConfig;
+  modelConfig: ModelConfig;
+  reasoningConfig: ReasoningConfig;
+  slots?: ComposerSlots;
 }
 
 function renderModelIcon(option: AssistantModelOption, iconColorClass?: string): ReactNode {
@@ -114,26 +134,32 @@ function renderReasoningIcon(icon: ReasoningIcon, iconColorClass?: string): Reac
 }
 
 export function LlmChatComposer({
-  value,
-  onValueChange,
-  onKeyDown,
-  placeholder,
-  disabled,
-  isStreaming,
-  onSend,
-  onStop,
-  model,
-  onModelChange,
-  modelOptions,
-  reasoningEffort,
-  onReasoningEffortChange,
-  reasoningOptions,
-  leftSlot,
-  metaSlot,
-  attachment,
-  maxWidthClassName = 'max-w-5xl',
-  textareaRef
+  chatInput,
+  modelConfig,
+  reasoningConfig,
+  slots = {}
 }: LlmChatComposerProps) {
+  const {
+    value,
+    onValueChange,
+    onKeyDown,
+    placeholder,
+    disabled,
+    isStreaming,
+    onSend,
+    onStop
+  } = chatInput;
+
+  const { model, onModelChange, modelOptions } = modelConfig;
+  const { reasoningEffort, onReasoningEffortChange, reasoningOptions } = reasoningConfig;
+  const {
+    leftSlot,
+    metaSlot,
+    attachment,
+    maxWidthClassName = 'max-w-5xl',
+    textareaRef
+  } = slots;
+
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const canSend = value.trim().length > 0;
   const attachmentItems = attachment?.items ?? [];

@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
 import { NotebookEditor } from '@/components/notebook/NotebookEditor';
-import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
+import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { DomainAdapter } from '@/types/agentic';
@@ -257,27 +257,35 @@ export function AgenticShell({
 
               <div className="p-4">
                 <LlmChatComposer
-                  value={chatInput}
-                  onValueChange={setChatInput}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      submitPrompt(chatInput);
-                    }
-                  }}
-                  placeholder="Ask the agent to plan, execute, and validate..."
-                  disabled={isGenerating || !!domainLockReason}
-                  isStreaming={isGenerating}
-                  onSend={() => submitPrompt(chatInput)}
-                  onStop={handleStop}
-                  model={assistantModel}
-                  onModelChange={handleModelChange}
-                  modelOptions={inlineModelOptions}
-                  reasoningEffort={reasoningEffort}
-                  onReasoningEffortChange={setReasoningEffort}
-                  reasoningOptions={reasoningEffortOptions}
-                  metaSlot={chatMetaSlot}
-                  maxWidthClassName="max-w-5xl"
+                  chatInput={{
+                    value: chatInput,
+                    onValueChange: setChatInput,
+                    onKeyDown: (e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        submitPrompt(chatInput);
+                      }
+                    },
+                    placeholder: "Ask the agent to plan, execute, and validate...",
+                    disabled: isGenerating || !!domainLockReason,
+                    isStreaming: isGenerating,
+                    onSend: () => submitPrompt(chatInput),
+                    onStop: handleStop,
+                  } satisfies ChatInputConfig}
+                  modelConfig={{
+                    model: assistantModel,
+                    onModelChange: handleModelChange,
+                    modelOptions: inlineModelOptions,
+                  } satisfies ModelConfig}
+                  reasoningConfig={{
+                    reasoningEffort,
+                    onReasoningEffortChange: setReasoningEffort,
+                    reasoningOptions: reasoningEffortOptions,
+                  } satisfies ReasoningConfig}
+                  slots={{
+                    metaSlot: chatMetaSlot,
+                    maxWidthClassName: "max-w-5xl",
+                  } satisfies ComposerSlots}
                 />
               </div>
             </div>

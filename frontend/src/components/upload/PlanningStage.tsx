@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { Markdown } from '@/components/ui/Markdown';
 import { Brain, Check, Database, FileText, Loader2 } from 'lucide-react';
 
-import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
+import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
 import { useModelSelection } from '@/hooks/useModelSelection';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -337,36 +337,44 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
 
         <div className="px-4 pt-2 pb-4">
           <LlmChatComposer
-            value={inputValue}
-            onValueChange={setInputValue}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe your goal or request changes..."
-            disabled={isStreaming}
-            isStreaming={isStreaming}
-            onSend={handleSend}
-            onStop={() => controllerRef.current?.abort()}
-            model={selectedModel}
-            onModelChange={handleModelChange}
-            modelOptions={inlineModelOptions}
-            reasoningEffort={reasoningEffort}
-            onReasoningEffortChange={setReasoningEffort}
-            reasoningOptions={reasoningEffortOptions}
-            metaSlot={(
-              <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
-                <Brain className="mr-1 h-3 w-3" />
-                {documentFiles.length} docs
-              </Badge>
-            )}
-            attachment={{
-              onAttachFile: handleAttachFile,
-              status: attachmentStatus,
-              message: attachmentMessage,
-              items: composerAttachmentItems,
-              onRemoveItem: handleRemoveAttachment,
-              onRetryItem: handleRetryAttachment,
-              accept: CONTEXT_ATTACHMENT_ACCEPT
-            }}
-            maxWidthClassName="max-w-5xl"
+            chatInput={{
+              value: inputValue,
+              onValueChange: setInputValue,
+              onKeyDown: handleKeyDown,
+              placeholder: "Describe your goal or request changes...",
+              disabled: isStreaming,
+              isStreaming,
+              onSend: handleSend,
+              onStop: () => controllerRef.current?.abort(),
+            } satisfies ChatInputConfig}
+            modelConfig={{
+              model: selectedModel,
+              onModelChange: handleModelChange,
+              modelOptions: inlineModelOptions,
+            } satisfies ModelConfig}
+            reasoningConfig={{
+              reasoningEffort,
+              onReasoningEffortChange: setReasoningEffort,
+              reasoningOptions: reasoningEffortOptions,
+            } satisfies ReasoningConfig}
+            slots={{
+              metaSlot: (
+                <Badge variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                  <Brain className="mr-1 h-3 w-3" />
+                  {documentFiles.length} docs
+                </Badge>
+              ),
+              attachment: {
+                onAttachFile: handleAttachFile,
+                status: attachmentStatus,
+                message: attachmentMessage,
+                items: composerAttachmentItems,
+                onRemoveItem: handleRemoveAttachment,
+                onRetryItem: handleRetryAttachment,
+                accept: CONTEXT_ATTACHMENT_ACCEPT,
+              },
+              maxWidthClassName: "max-w-5xl",
+            } satisfies ComposerSlots}
           />
         </div>
       </div>

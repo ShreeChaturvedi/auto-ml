@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 
-import { LlmChatComposer } from '../LlmChatComposer';
+import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig } from '../LlmChatComposer';
 import {
   buildInlineModelOptions,
   getDefaultReasoningEffort,
@@ -63,20 +63,26 @@ function ComposerHarness({ initialReasoningEffort = 'high' }: { initialReasoning
   return (
     <>
       <LlmChatComposer
-        value="hello"
-        onValueChange={() => undefined}
-        onKeyDown={() => undefined}
-        placeholder="Ask something"
-        disabled={false}
-        isStreaming={false}
-        onSend={() => undefined}
-        onStop={() => undefined}
-        model={model}
-        onModelChange={handleModelChange}
-        modelOptions={inlineModelOptions}
-        reasoningEffort={reasoningEffort}
-        onReasoningEffortChange={setReasoningEffort}
-        reasoningOptions={getReasoningEffortOptions(model, MODEL_OPTIONS)}
+        chatInput={{
+          value: "hello",
+          onValueChange: () => undefined,
+          onKeyDown: () => undefined,
+          placeholder: "Ask something",
+          disabled: false,
+          isStreaming: false,
+          onSend: () => undefined,
+          onStop: () => undefined,
+        } satisfies ChatInputConfig}
+        modelConfig={{
+          model,
+          onModelChange: handleModelChange,
+          modelOptions: inlineModelOptions,
+        } satisfies ModelConfig}
+        reasoningConfig={{
+          reasoningEffort,
+          onReasoningEffortChange: setReasoningEffort,
+          reasoningOptions: getReasoningEffortOptions(model, MODEL_OPTIONS),
+        } satisfies ReasoningConfig}
       />
       <div data-testid="selection-state">{`${model}:${reasoningEffort}`}</div>
     </>

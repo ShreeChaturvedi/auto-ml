@@ -112,6 +112,19 @@
   }
 }
 
+/* ContentEditable placeholder for MentionInput */
+[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+
+/* Mention chip inside contentEditable */
+.mention-chip {
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+}
+
 /* Dialog focus states */
 @layer components {
   [role="dialog"] input:focus:not(:focus-visible),

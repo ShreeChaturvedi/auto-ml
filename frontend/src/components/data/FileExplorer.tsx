@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import type { ComponentType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileCode,
-  FileText,
-  FileSpreadsheet,
-  FileType,
-  File,
   MoreVertical,
   Download,
   Trash2,
   ClipboardList,
-  Plus
+  Plus,
+  File
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -28,7 +23,8 @@ import { phaseConfig } from '@/types/phase';
 import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
-import type { FileType as UploadedFileType, UploadedFile } from '@/types/file';
+import { fileIconByType, fileIconColorByType } from '@/lib/fileUtils';
+import type { UploadedFile } from '@/types/file';
 import { CsvIcon } from './CsvIcon';
 import { XlsIcon } from './XlsIcon';
 import { projectColorClasses } from '@/types/project';
@@ -37,27 +33,6 @@ interface FileExplorerProps {
   projectId: string;
 }
 
-const iconByType: Record<UploadedFileType, ComponentType<{ className?: string }>> = {
-  csv: FileSpreadsheet,
-  json: FileSpreadsheet,
-  excel: FileSpreadsheet,
-  pdf: FileText,
-  markdown: FileCode,
-  word: FileType,
-  text: FileText,
-  other: File
-};
-
-const activeIconColorByType: Record<UploadedFileType, string> = {
-  csv: 'text-green-500',
-  json: 'text-blue-500',
-  excel: 'text-emerald-500',
-  pdf: 'text-red-500',
-  markdown: 'text-purple-500',
-  word: 'text-blue-500',
-  text: 'text-muted-foreground',
-  other: 'text-muted-foreground'
-};
 
 interface FileItemProps {
   file: UploadedFile;
@@ -72,9 +47,9 @@ function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownloa
   const isCsv = file.type === 'csv';
   const isXls = file.type === 'excel';
   const isThemeIcon = isCsv || isXls;
-  const Icon = isCsv ? CsvIcon : isXls ? XlsIcon : (iconByType[file.type] ?? File);
+  const Icon = isCsv ? CsvIcon : isXls ? XlsIcon : (fileIconByType[file.type] ?? File);
   const iconColor = isActive
-    ? activeIconColorByType[file.type] ?? 'text-muted-foreground'
+    ? fileIconColorByType[file.type] ?? 'text-muted-foreground'
     : 'text-muted-foreground';
 
   return (

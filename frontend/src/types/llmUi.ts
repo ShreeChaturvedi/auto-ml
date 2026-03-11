@@ -247,9 +247,11 @@ export const LlmEnvelopeSchema = z.object({
 
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
 
+export type { ResolvedMention as ChatMention } from '@/hooks/useMentionAutocomplete';
+
 // ChatMessage type for interleaved rendering in Training tab and Onboarding chat
 export type ChatMessage =
-  | { id: string; type: 'user'; content: string; timestamp: number }
+  | { id: string; type: 'user'; content: string; mentions?: ChatMention[]; timestamp: number }
   | { id: string; type: 'assistant_text'; content: string }
   | { id: string; type: 'thinking'; content: string; isComplete: boolean; startTime: number }
   | { id: string; type: 'tool_call'; call: ToolCall; result?: ToolResult }

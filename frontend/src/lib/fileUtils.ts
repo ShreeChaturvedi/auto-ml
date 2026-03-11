@@ -1,3 +1,13 @@
+import type { ComponentType } from 'react';
+import {
+  FileCode,
+  FileText,
+  FileSpreadsheet,
+  FileType as FileTypeIcon,
+  File
+} from 'lucide-react';
+import { CsvIcon } from '@/components/data/CsvIcon';
+import { XlsIcon } from '@/components/data/XlsIcon';
 import type { FileType } from '@/types/file';
 
 /**
@@ -17,6 +27,36 @@ export const getFileIcon = (type: FileType): string => {
   };
   return iconMap[type];
 };
+
+/** Lucide icon component for each file type. */
+export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
+  csv: CsvIcon,
+  json: FileSpreadsheet,
+  excel: XlsIcon,
+  pdf: FileText,
+  markdown: FileCode,
+  word: FileTypeIcon,
+  text: FileText,
+  other: File
+};
+
+/** Tailwind color class applied to file icons when active / prominent. */
+export const fileIconColorByType: Record<FileType, string> = {
+  csv: 'text-green-500',
+  json: 'text-blue-500',
+  excel: 'text-emerald-500',
+  pdf: 'text-red-500',
+  markdown: 'text-purple-500',
+  word: 'text-blue-500',
+  text: 'text-muted-foreground',
+  other: 'text-muted-foreground'
+};
+
+/** Data file types that represent tabular datasets. */
+export const DATA_FILE_TYPES = new Set<FileType>(['csv', 'json', 'excel']);
+
+/** Document file types ingested for RAG context. */
+export const DOC_FILE_TYPES = new Set<FileType>(['pdf', 'markdown', 'word', 'text']);
 
 /**
  * Format file size for display

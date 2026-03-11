@@ -8,12 +8,7 @@
 
 import type { UploadedFile } from '@/types/file';
 import type { ProcessingResult } from '@/types/processing';
-
-/** Data file extensions that represent tabular datasets */
-const DATA_FILE_TYPES = new Set(['csv', 'json', 'excel']);
-
-/** Document file extensions that are ingested for RAG */
-const DOC_FILE_TYPES = new Set(['pdf', 'markdown', 'word', 'text']);
+import { DATA_FILE_TYPES, DOC_FILE_TYPES } from '@/lib/fileUtils';
 
 /**
  * Gather processing results from already-uploaded files.

@@ -23,7 +23,7 @@ import type { QueryResultPayload } from '@/lib/api/query';
 import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
-import { extractColumnTypesFromQuery } from './sqlColumnTypes';
+import { extractColumnTypesFromQuery } from '@/lib/sql/sqlColumnTypes';
 import { cn } from '@/lib/utils';
 
 function extractApiErrorMessage(error: unknown): string {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile } from '../types/dataset.js';
@@ -70,6 +70,16 @@ function createClientFromResponses(responses: Array<string | Error>): LlmClient 
 }
 
 describe('nlToSqlV2 service', () => {
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleWarnSpy.mockRestore();
+  });
+
   it('generates SQL + structured explanation in two-pass flow', async () => {
     const repo = createDatasetRepository([
       buildDataset(),

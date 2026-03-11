@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NotebookCell, ExecutionResult, CellOutput } from '../../types/notebook';
 import { useNotebookStore } from '../notebookStore';
@@ -87,9 +87,16 @@ function seedCells(cells: NotebookCell[]) {
 // ============================================================
 
 describe('notebookStore', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     useNotebookStore.getState().reset();
     vi.clearAllMocks();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
   });
 
   // ==========================================================

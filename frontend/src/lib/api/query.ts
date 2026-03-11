@@ -194,11 +194,14 @@ export async function streamNlQuery(
       onEvent(payload);
       if (payload.type === 'done') sawDone = true;
     }
-  } catch {
+  } catch (error) {
+    const summary = error instanceof SyntaxError && error.message.includes('tail')
+      ? 'Failed to parse NL stream tail response.'
+      : 'Failed to parse NL stream response.';
     onEvent({
       type: 'phase_failed',
       phaseId: 'done',
-      summary: 'Failed to parse NL stream response.',
+      summary,
       timestamp: new Date().toISOString()
     });
   }

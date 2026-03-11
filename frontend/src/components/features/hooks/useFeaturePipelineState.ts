@@ -3,15 +3,14 @@ import {
   buildSuggestionDefaults,
   type FeatureSuggestionItem
 } from '../featureEngineeringUtils';
-import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import type { FeatureCategory, FeatureMethod, FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { FEATURE_TEMPLATES } from '@/lib/features/featureTemplates';
 import { useFeatureReadiness } from './useFeatureReadiness';
 import { useFeatureCodeGen } from './useFeatureCodeGen';
-
-const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
+import { useFeatureVersioning } from './useFeatureVersioning';
+import { useFeatureApply } from './useFeatureApply';
 
 const methodCategoryMap = new Map<FeatureMethod, FeatureCategory>(
   FEATURE_TEMPLATES.map((template) => [template.method, template.category])
@@ -91,29 +90,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   const features = useFeatureStore((state) => state.features);
   const upsertFeature = useFeatureStore((state) => state.upsertFeature);
   const removeFeature = useFeatureStore((state) => state.removeFeature);
-  const clearProjectFeatures = useFeatureStore((state) => state.clearProjectFeatures);
   const hydrateFeatures = useFeatureStore((state) => state.hydrateFromProject);
-  const versions = useFeatureStore((state) => state.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS);
-  const hasHydratedVersions = useFeatureStore((state) =>
-    Object.prototype.hasOwnProperty.call(state.versions, projectId)
-  );
-  const hasHydratedCurrentVersion = useFeatureStore((state) =>
-    Object.prototype.hasOwnProperty.call(state.currentVersionId, projectId)
-  );
-  const currentVersionId = useFeatureStore((state) => state.currentVersionId[projectId]);
-  const createDraftVersion = useFeatureStore((state) => state.createDraftVersion);
-  const removeVersion = useFeatureStore((state) => state.removeVersion);
-  const renameVersion = useFeatureStore((state) => state.renameVersion);
-  const approveVersion = useFeatureStore((state) => state.approveVersion);
-  const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
 
   // --- Local state ---
   const [selectedDataset, setSelectedDataset] = useState<string | null>(null);
   const [targetColumn, setTargetColumn] = useState<string | undefined>();
-  const [outputName, setOutputName] = useState('');
-  const [outputFormat, setOutputFormat] = useState<'csv' | 'json' | 'xlsx'>('csv');
-  const [applyStatus, setApplyStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>({});
 
@@ -127,38 +108,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     hydrateFromBackend(projectId);
     hydrateFeatures(projectId, { force: true });
   }, [hydrateFeatures, hydrateFromBackend, projectId]);
-
-  // --- Version bootstrap effect ---
-  useEffect(() => {
-    if (!hasHydratedVersions || !hasHydratedCurrentVersion) return;
-
-    if (versions.length === 0) {
-      createDraftVersion(projectId, 'Draft Pipeline v1');
-      return;
-    }
-
-    if (!currentVersionId && versions[0]) {
-      setCurrentVersion(projectId, versions[0].id);
-    }
-  }, [
-    createDraftVersion,
-    currentVersionId,
-    hasHydratedCurrentVersion,
-    hasHydratedVersions,
-    projectId,
-    setCurrentVersion,
-    versions
-  ]);
-
-  // --- Apply message auto-dismiss effect ---
-  useEffect(() => {
-    if (!applyMessage) return;
-    const timer = setTimeout(() => {
-      setApplyMessage(null);
-      setApplyStatus('idle');
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [applyMessage]);
 
   // --- Derived file data ---
   const files = useMemo(
@@ -202,15 +151,44 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     [projectFeatures]
   );
 
-  // --- Derived version data ---
-  const currentVersion = useMemo(() => {
-    if (!currentVersionId) return versions[0];
-    return versions.find((version) => version.id === currentVersionId) ?? versions[0];
-  }, [currentVersionId, versions]);
+  // --- Apply (extracted hook) ---
+  const {
+    outputName,
+    setOutputName,
+    outputFormat,
+    setOutputFormat,
+    applyStatus,
+    setApplyStatus,
+    applyMessage,
+    setApplyMessage,
+    handleApplyFeatures,
+  } = useFeatureApply({
+    projectId,
+    projectFeatures,
+    selectedDatasetFile,
+    setSelectedDataset,
+  });
 
-  const isApproved = currentVersion?.status === 'approved';
-  const isCurrentVersionDraft = currentVersion?.status === 'draft';
-  const canDeleteCurrentDraft = Boolean(isCurrentVersionDraft);
+  // --- Versioning (extracted hook) ---
+  const {
+    versions,
+    currentVersionId,
+    currentVersion,
+    isApproved,
+    isCurrentVersionDraft,
+    canDeleteCurrentDraft,
+    approveVersion,
+    handleVersionSwitch,
+    handleNewDraft,
+    handleDeleteDraft,
+    handleRenameDraft,
+  } = useFeatureVersioning({
+    projectId,
+    setSuggestionDrafts,
+    setPanelError,
+    setApplyStatus,
+    setApplyMessage,
+  });
 
   // --- Readiness (extracted hook) ---
   const {
@@ -230,23 +208,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
       setSelectedDataset(datasetFiles[0].id);
     }
   }, [datasetFiles, selectedDataset]);
-
-  // --- Output format sync effect ---
-  useEffect(() => {
-    if (!selectedDatasetFile) return;
-
-    if (selectedDatasetFile.type === 'excel') {
-      setOutputFormat('xlsx');
-      return;
-    }
-
-    if (selectedDatasetFile.type === 'json') {
-      setOutputFormat('json');
-      return;
-    }
-
-    setOutputFormat('csv');
-  }, [selectedDatasetFile]);
 
   // --- Target column sync effect ---
   useEffect(() => {
@@ -332,117 +293,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     },
     [featureById, syncSuggestionToFeatureStore]
   );
-
-  // --- Apply features handler ---
-  const handleApplyFeatures = useCallback(async () => {
-    if (!selectedDatasetFile?.metadata?.datasetId) return;
-
-    const enabledFeatures = projectFeatures.filter((feature) => feature.enabled);
-    if (enabledFeatures.length === 0) {
-      setApplyStatus('error');
-      setApplyMessage('Select at least one feature.');
-      return;
-    }
-
-    const missingSecondary = enabledFeatures.find(
-      (feature) =>
-        ['ratio', 'difference', 'product'].includes(feature.method) && !feature.secondaryColumn
-    );
-
-    if (missingSecondary) {
-      setApplyStatus('error');
-      setApplyMessage(`"${missingSecondary.featureName}" needs a secondary column.`);
-      return;
-    }
-
-    const missingTarget = enabledFeatures.find(
-      (feature) =>
-        feature.method === 'target_encode' && typeof feature.params?.targetColumn !== 'string'
-    );
-
-    if (missingTarget) {
-      setApplyStatus('error');
-      setApplyMessage(`"${missingTarget.featureName}" needs a target column.`);
-      return;
-    }
-
-    setApplyStatus('loading');
-    setApplyMessage(null);
-
-    try {
-      const response = await applyFeatureEngineering({
-        projectId,
-        datasetId: selectedDatasetFile.metadata.datasetId,
-        outputName: outputName.trim() || undefined,
-        outputFormat,
-        features: enabledFeatures
-      });
-
-      await hydrateFromBackend(projectId, { force: true });
-      setSelectedDataset(response.dataset.datasetId);
-      setApplyStatus('success');
-      setApplyMessage(`Created ${response.dataset.filename}`);
-      setOutputName('');
-    } catch (error) {
-      setApplyStatus('error');
-      setApplyMessage(error instanceof Error ? error.message : 'Failed to apply features.');
-    }
-  }, [hydrateFromBackend, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile]);
-
-  // --- Version actions ---
-  const handleVersionSwitch = useCallback(
-    (value: string) => {
-      setPanelError(null);
-      setCurrentVersion(projectId, value);
-    },
-    [projectId, setCurrentVersion]
-  );
-
-  const handleNewDraft = useCallback(() => {
-    createDraftVersion(projectId, 'New Draft Pipeline');
-    clearProjectFeatures(projectId);
-    setSuggestionDrafts({});
-    setPanelError(null);
-    setApplyStatus('idle');
-    setApplyMessage(null);
-  }, [clearProjectFeatures, createDraftVersion, projectId]);
-
-  const handleDeleteDraft = useCallback(() => {
-    if (!currentVersion || currentVersion.status !== 'draft') return;
-
-    const shouldDelete = window.confirm(
-      versions.length <= 1
-        ? `Delete draft "${currentVersion.name}"? A fresh blank draft will be created.`
-        : `Delete draft "${currentVersion.name}"?`
-    );
-    if (!shouldDelete) return;
-
-    if (versions.length <= 1) {
-      const deletedVersionId = currentVersion.id;
-      createDraftVersion(projectId, 'Draft Pipeline v1');
-      removeVersion(projectId, deletedVersionId);
-    } else {
-      removeVersion(projectId, currentVersion.id);
-    }
-    clearProjectFeatures(projectId);
-    setSuggestionDrafts({});
-    setApplyStatus('idle');
-    setApplyMessage(null);
-    setPanelError(null);
-  }, [clearProjectFeatures, createDraftVersion, currentVersion, projectId, removeVersion, versions.length]);
-
-  const handleRenameDraft = useCallback(() => {
-    if (!currentVersion || currentVersion.status !== 'draft') return;
-    const nextName = window.prompt('Rename current draft pipeline:', currentVersion.name);
-    if (!nextName) return;
-    const trimmed = nextName.trim();
-    if (!trimmed) {
-      setPanelError('Draft name cannot be empty.');
-      return;
-    }
-    renameVersion(projectId, currentVersion.id, trimmed);
-    setPanelError(null);
-  }, [currentVersion, projectId, renameVersion]);
 
   return {
     // Dataset state

@@ -29,7 +29,13 @@ export async function* readNdjsonStream<T>(response: Response): AsyncGenerator<T
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        yield JSON.parse(trimmed) as T;
+        try {
+          yield JSON.parse(trimmed) as T;
+        } catch (error) {
+          throw new SyntaxError(
+            `Failed to parse NDJSON line: ${error instanceof Error ? error.message : 'unknown error'}`
+          );
+        }
       }
     }
 
@@ -38,7 +44,13 @@ export async function* readNdjsonStream<T>(response: Response): AsyncGenerator<T
     buffer += decoder.decode();
     const tail = buffer.trim();
     if (tail) {
-      yield JSON.parse(tail) as T;
+      try {
+        yield JSON.parse(tail) as T;
+      } catch (error) {
+        throw new SyntaxError(
+          `Failed to parse NDJSON tail: ${error instanceof Error ? error.message : 'unknown error'}`
+        );
+      }
     }
   } finally {
     reader.releaseLock();

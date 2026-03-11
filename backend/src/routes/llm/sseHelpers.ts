@@ -1,22 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Response } from 'express';
-import { z } from 'zod';
 
 import {
   createLlmClient,
   type LlmClient,
-  type LlmRequest,
-  type RawLlmUsage
+  type LlmRequest
 } from '../../services/llm/llmClient.js';
-import { LLM_RENDER_UI_TOOL } from '../../services/llm/toolRegistry.js';
-import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
-import type { LlmEnvelope } from '../../types/llm.js';
-import { UiSchema } from '../../types/llmUi.js';
 
-import { normalizePlanExitPayload } from './planValidation.js';
-import { normalizeLlmStreamErrorMessage } from './streamErrors.js';
-import { buildFeatureEngineeringFallbackEnvelope, normalizeUiPayload } from './uiNormalization.js';
+import { emitFallbackEnvelope, handleStreamError } from './streaming/errorRecovery.js';
+import { collectLlmAttempt } from './streaming/tokenHandler.js';
+import type { EventWriter, StreamContext, StreamHooks, StreamKind } from './streaming/types.js';
 
 /* ── re-exports so existing consumers keep working ── */
 export { createLlmClient };
@@ -25,232 +19,73 @@ export { extractNormalizedPlanMarkdown, normalizePlanFilename, normalizePlanExit
 export { buildFeatureEngineeringFallbackEnvelope, coerceLegacyUiItems, normalizeUiPayload } from './uiNormalization.js';
 export { normalizeLlmStreamErrorMessage } from './streamErrors.js';
 
-const EMPTY_RENDER_UI_FALLBACK_MESSAGE =
-  'AI plan finished without visible output. Try again or refine your goal.';
-const EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE =
-  'LLM did not return actionable output for this turn. Please retry with a more specific instruction.';
+/* ── orchestrator ─────────────────────────────────────────────── */
 
 export async function streamLlmResponse(
   res: Response,
   client: LlmClient,
   request: LlmRequest,
-  kind: 'feature_engineering' | 'training' | 'onboarding' | 'preprocessing',
-  hooks?: {
-    onError?: (message: string) => Promise<void> | void;
-    onAborted?: (message: string) => Promise<void> | void;
-  }
+  kind: StreamKind,
+  hooks?: StreamHooks
 ) {
   res.setHeader('Content-Type', 'application/x-ndjson');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  const requestId = randomUUID().slice(0, 8);
-  const toolCalls: z.infer<typeof ToolCallSchema>[] = [];
-  let askUserPayload: z.infer<typeof AskUserPayloadSchema> | null = null;
-  let planExitPayload: z.infer<typeof PlanExitPayloadSchema> | null = null;
-  let terminalToolConflict = false;
-  let uiEnvelope: LlmEnvelope | null = null;
-  let tokenChars = 0;
-  let tokenPreview = '';
-  let streamClosed = false;
-  let latestUsage: RawLlmUsage | null = null;
-  const suppressTokenStreaming = kind === 'preprocessing';
+  /* ── mutable context shared across helpers ── */
+  const ctx: StreamContext = {
+    kind,
+    requestId: randomUUID().slice(0, 8),
+    suppressTokenStreaming: kind === 'preprocessing',
+    toolCalls: [],
+    askUserPayload: null,
+    planExitPayload: null,
+    terminalToolConflict: false,
+    uiEnvelope: null,
+    tokenChars: 0,
+    tokenPreview: '',
+    streamClosed: false,
+    latestUsage: null
+  };
 
-  const collectLlmAttempt = async (attemptRequest: LlmRequest): Promise<void> => {
-    await client.stream(attemptRequest, {
-      onToken: (token) => {
-        tokenChars += token.length;
-        if (tokenPreview.length < 600) {
-          tokenPreview = `${tokenPreview}${token}`.slice(0, 600);
-        }
-        if (!suppressTokenStreaming) {
-          writeEvent({ type: 'token', text: token });
-        }
-      },
-      onThinking: (text) => {
-        writeEvent({ type: 'thinking', text });
-      },
-      onUsage: (usage) => {
-        latestUsage = usage;
-      },
-      onToolCall: (call) => {
-        if (call.name === 'ask_user') {
-          if (planExitPayload) {
-            terminalToolConflict = true;
-            writeEvent({ type: 'error', message: 'Model emitted both ask_user and plan_exit in one response.' });
-            return;
-          }
-
-          const parsedAskUser = AskUserPayloadSchema.safeParse(call.args);
-          if (!parsedAskUser.success) {
-            writeEvent({ type: 'error', message: 'ask_user payload failed validation.' });
-            return;
-          }
-          askUserPayload = parsedAskUser.data;
-          return;
-        }
-
-        if (call.name === 'plan_exit') {
-          if (askUserPayload) {
-            terminalToolConflict = true;
-            writeEvent({ type: 'error', message: 'Model emitted both ask_user and plan_exit in one response.' });
-            return;
-          }
-
-          const parsedPlanExit = PlanExitPayloadSchema.safeParse(call.args);
-          if (!parsedPlanExit.success) {
-            writeEvent({ type: 'error', message: 'plan_exit payload failed validation.' });
-            return;
-          }
-
-          const normalizedPlanExit = normalizePlanExitPayload(parsedPlanExit.data);
-          if (!normalizedPlanExit) {
-            writeEvent({ type: 'error', message: 'plan_exit payload does not contain a valid plan.' });
-            return;
-          }
-
-          planExitPayload = normalizedPlanExit;
-          return;
-        }
-
-        if (call.name === LLM_RENDER_UI_TOOL.name) {
-          const rawArgs = call.args ?? {};
-          let uiPayload: unknown = undefined;
-
-          // Step 1: Prefer payload (stringified JSON) - this is the expected path now
-          if (typeof rawArgs.payload === 'string' && rawArgs.payload.trim()) {
-            try {
-              uiPayload = JSON.parse(rawArgs.payload);
-            } catch (parseErr) {
-              console.warn('[llm] render_ui payload JSON parse failed:', parseErr);
-            }
-          }
-
-          // Step 2: Fallback to ui object if payload parsing failed
-          if (!uiPayload && rawArgs.ui) {
-            uiPayload = rawArgs.ui;
-          }
-
-          // Step 3: Check if rawArgs itself looks like a UI schema (defensive)
-          if (!uiPayload && typeof rawArgs === 'object' && rawArgs !== null) {
-            const maybeUi = rawArgs as Record<string, unknown>;
-            if ('version' in maybeUi && 'sections' in maybeUi) {
-              uiPayload = rawArgs;
-            }
-          }
-
-          // Step 4: If uiPayload is still a string, try parsing again
-          if (typeof uiPayload === 'string') {
-            try {
-              uiPayload = JSON.parse(uiPayload);
-            } catch {
-              console.warn('[llm] render_ui double-string parse failed');
-              uiPayload = undefined;
-            }
-          }
-          const normalizedUi = normalizeUiPayload(uiPayload, kind);
-          const parsed = z
-            .object({
-              ui: UiSchema,
-              message: z.string().optional()
-            })
-            .safeParse({
-              ui: normalizedUi,
-              message: typeof rawArgs.message === 'string' ? rawArgs.message : undefined
-            });
-          if (!parsed.success) {
-            console.warn(`[llm] ${kind} render_ui validation failed`, {
-              error: parsed.error.issues.map((issue) => issue.message),
-              payloadPreview: JSON.stringify(call.args).slice(0, 1200)
-            });
-            writeEvent({ type: 'error', message: 'LLM render_ui payload failed validation.' });
-            return;
-          }
-          const uiHasItems = parsed.data.ui.sections.some((section) => section.items.length > 0);
-          const hasFallbackMessage = Boolean(parsed.data.message?.trim());
-          if (!uiHasItems && !hasFallbackMessage) {
-            if (kind === 'feature_engineering') {
-              uiEnvelope = buildFeatureEngineeringFallbackEnvelope('empty_render_ui');
-              return;
-            }
-            uiEnvelope = {
-              version: '1',
-              kind,
-              message: EMPTY_RENDER_UI_FALLBACK_MESSAGE,
-              ui: null
-            };
-            return;
-          }
-          uiEnvelope = {
-            version: '1',
-            kind,
-            message: parsed.data.message,
-            ui: parsed.data.ui
-          };
-          return;
-        }
-
-        const normalizedArgs =
-          call.args && typeof call.args === 'object' ? { ...(call.args as Record<string, unknown>) } : {};
-        const rationale =
-          typeof normalizedArgs.rationale === 'string' ? normalizedArgs.rationale : undefined;
-        if ('rationale' in normalizedArgs) {
-          delete normalizedArgs.rationale;
-        }
-        const parsed = ToolCallSchema.safeParse({
-          id: randomUUID(),
-          tool: call.name,
-          args: normalizedArgs,
-          rationale,
-          thoughtSignature: call.thoughtSignature
-        });
-        if (!parsed.success) {
-          writeEvent({ type: 'error', message: `Unsupported tool call: ${call.name}` });
-          return;
-        }
-        toolCalls.push(parsed.data);
+  /* ── writer / closer tied to this response ── */
+  const writer: EventWriter = {
+    writeEvent(payload: Record<string, unknown>) {
+      if (ctx.streamClosed || res.destroyed || res.writableEnded) return;
+      res.write(`${JSON.stringify(payload)}\n`);
+    },
+    closeStream() {
+      if (ctx.streamClosed || res.destroyed || res.writableEnded) {
+        ctx.streamClosed = true;
+        return;
       }
-    });
-  };
-
-  const writeEvent = (payload: Record<string, unknown>) => {
-    if (streamClosed || res.destroyed || res.writableEnded) {
-      return;
+      if (ctx.latestUsage) {
+        writer.writeEvent({ type: 'usage', usage: ctx.latestUsage });
+      }
+      res.write(`${JSON.stringify({ type: 'done' })}\n`);
+      ctx.streamClosed = true;
+      res.end();
     }
-    res.write(`${JSON.stringify(payload)}\n`);
-  };
-  const closeStream = () => {
-    if (streamClosed || res.destroyed || res.writableEnded) {
-      streamClosed = true;
-      return;
-    }
-    if (latestUsage) {
-      writeEvent({ type: 'usage', usage: latestUsage });
-    }
-    res.write(`${JSON.stringify({ type: 'done' })}\n`);
-    streamClosed = true;
-    res.end();
   };
 
   res.on('close', () => {
-    if (streamClosed) {
-      return;
-    }
-    streamClosed = true;
+    if (ctx.streamClosed) return;
+    ctx.streamClosed = true;
     void hooks?.onAborted?.('Preprocessing request stream was aborted before completion.');
   });
 
   try {
-    await collectLlmAttempt(request);
+    await collectLlmAttempt(client, request, ctx, writer);
 
-    const shouldRetryNoToolsPreprocessing = kind === 'preprocessing'
-      && !uiEnvelope
-      && !askUserPayload
-      && !planExitPayload
-      && toolCalls.length === 0
-      && tokenPreview.trim().length > 0;
-
-    if (shouldRetryNoToolsPreprocessing) {
+    /* ── preprocessing retry: text-only response without tool calls ── */
+    if (
+      kind === 'preprocessing'
+      && !ctx.uiEnvelope
+      && !ctx.askUserPayload
+      && !ctx.planExitPayload
+      && ctx.toolCalls.length === 0
+      && ctx.tokenPreview.trim().length > 0
+    ) {
       console.warn('[llm] preprocessing text-only response detected; retrying once with stricter tool-call directive');
       const retryRequest: LlmRequest = {
         ...request,
@@ -262,115 +97,45 @@ export async function streamLlmResponse(
           }
         ]
       };
-      await collectLlmAttempt(retryRequest);
+      await collectLlmAttempt(client, retryRequest, ctx, writer);
     }
 
-    if (terminalToolConflict) {
-      closeStream();
+    if (ctx.terminalToolConflict) {
+      writer.closeStream();
       return;
     }
 
-    if (askUserPayload) {
-      writeEvent({
+    /* ── emit the final envelope based on what was collected ── */
+    if (ctx.askUserPayload) {
+      writer.writeEvent({
         type: 'envelope',
         envelope: {
           version: '1',
           kind,
-          ask_user: askUserPayload,
-          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+          ask_user: ctx.askUserPayload,
+          tool_calls: ctx.toolCalls.length > 0 ? ctx.toolCalls : undefined,
           ui: null
         }
       });
-    } else if (planExitPayload) {
-      writeEvent({
+    } else if (ctx.planExitPayload) {
+      writer.writeEvent({
         type: 'envelope',
-        envelope: {
-          version: '1',
-          kind,
-          plan_exit: planExitPayload,
-          ui: null
-        }
+        envelope: { version: '1', kind, plan_exit: ctx.planExitPayload, ui: null }
       });
-    } else if (uiEnvelope) {
-      writeEvent({ type: 'envelope', envelope: uiEnvelope });
-    } else if (toolCalls.length > 0) {
-      writeEvent({
+    } else if (ctx.uiEnvelope) {
+      writer.writeEvent({ type: 'envelope', envelope: ctx.uiEnvelope });
+    } else if (ctx.toolCalls.length > 0) {
+      writer.writeEvent({
         type: 'envelope',
-        envelope: {
-          version: '1',
-          kind,
-          tool_calls: toolCalls,
-          ui: null
-        }
-      });
-    } else if (tokenChars > 0) {
-      const trimmedPreview = tokenPreview.trim();
-      if (!trimmedPreview) {
-        if (kind === 'feature_engineering') {
-          writeEvent({ type: 'envelope', envelope: buildFeatureEngineeringFallbackEnvelope('blank_text') });
-        } else {
-          writeEvent({
-            type: 'envelope',
-            envelope: {
-              version: '1',
-              kind,
-              message: EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE,
-              ui: null
-            }
-          });
-        }
-        closeStream();
-        return;
-      }
-      if (kind === 'preprocessing') {
-        writeEvent({
-          type: 'error',
-          message: 'Model returned text without tool calls, so no preprocessing action was executed. Please retry the action.'
-        });
-        closeStream();
-        return;
-      }
-      writeEvent({
-        type: 'envelope',
-        envelope: {
-          version: '1',
-          kind,
-          message: trimmedPreview,
-          tool_calls: undefined,
-          ui: null
-        }
+        envelope: { version: '1', kind, tool_calls: ctx.toolCalls, ui: null }
       });
     } else {
-      console.warn(`[llm] ${kind} ${requestId} empty response`, { tokenChars });
-      if (kind === 'feature_engineering') {
-        writeEvent({ type: 'envelope', envelope: buildFeatureEngineeringFallbackEnvelope('empty_response') });
-      } else {
-        writeEvent({
-          type: 'envelope',
-          envelope: {
-            version: '1',
-            kind,
-            message: EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE,
-            ui: null
-          }
-        });
-      }
+      const closedEarly = emitFallbackEnvelope(ctx, writer);
+      if (closedEarly) return;
     }
-    closeStream();
+
+    writer.closeStream();
   } catch (error) {
-    if (streamClosed) {
-      return;
-    }
-    const normalizedMessage = normalizeLlmStreamErrorMessage(error, kind);
-    try {
-      await hooks?.onError?.(normalizedMessage);
-    } catch (hookError) {
-      console.error('[llm] Failed to persist stream interruption state:', hookError);
-    }
-    writeEvent({
-      type: 'error',
-      message: normalizedMessage
-    });
-    closeStream();
+    await handleStreamError(error, ctx, writer, hooks);
   }
 }

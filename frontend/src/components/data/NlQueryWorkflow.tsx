@@ -31,74 +31,19 @@ import {
   markNlWorkPhasesFailed
 } from '@/lib/nlQuery/phaseStateMachine';
 import { NlWorkflowSteps } from './NlWorkflowSteps';
+import { NlApprovalDialog } from './NlApprovalDialog';
+import {
+  nlReducer,
+  initialNlState,
+  type ApproveThemeClasses,
+  type NlPhase,
+} from './NlQueryReducer';
 import type {
   NlGenerationResult,
   NlModelWorkBlockState,
   NlQueryStreamEvent,
   NlWorkPhaseState
 } from '@/types/nlQuery';
-
-export type ApproveThemeClasses = {
-  hoverText: string;
-  hoverBorder: string;
-  hoverBg: string;
-};
-
-export type NlPhase =
-  | 'idle'
-  | 'submitting'
-  | 'revealing'
-  | 'reviewing'
-  | 'error';
-
-interface NlState {
-  phase: NlPhase;
-  result: NlGenerationResult | null;
-  editedSql: string;
-  errorMessage: string | null;
-}
-
-type NlAction =
-  | { type: 'GENERATE' }
-  | { type: 'RESULT'; payload: NlGenerationResult }
-  | { type: 'REVEAL_COMPLETE' }
-  | { type: 'SQL_EDIT'; payload: string }
-  | { type: 'REJECT' }
-  | { type: 'ERROR'; payload: string }
-  | { type: 'DISMISS_ERROR' };
-
-function nlReducer(state: NlState, action: NlAction): NlState {
-  switch (action.type) {
-    case 'GENERATE':
-      return { ...state, phase: 'submitting', result: null, editedSql: '', errorMessage: null };
-    case 'RESULT':
-      return {
-        ...state,
-        phase: 'revealing',
-        result: action.payload,
-        editedSql: action.payload.sql,
-      };
-    case 'REVEAL_COMPLETE':
-      return { ...state, phase: 'reviewing' };
-    case 'SQL_EDIT':
-      return { ...state, editedSql: action.payload };
-    case 'REJECT':
-      return { ...state, phase: 'idle', result: null, editedSql: '', errorMessage: null };
-    case 'ERROR':
-      return { ...state, phase: 'error', errorMessage: action.payload };
-    case 'DISMISS_ERROR':
-      return { ...state, phase: 'idle', errorMessage: null };
-    default:
-      return state;
-  }
-}
-
-const initialState: NlState = {
-  phase: 'idle',
-  result: null,
-  editedSql: '',
-  errorMessage: null,
-};
 
 const MAX_VISIBLE_SUGGESTIONS = 6;
 
@@ -141,7 +86,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   }: NlQueryWorkflowProps,
   ref: Ref<NlQueryWorkflowHandle>
 ) {
-  const [state, dispatch] = useReducer(nlReducer, initialState);
+  const [state, dispatch] = useReducer(nlReducer, initialNlState);
   const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
   const [modelWorkBlocks, setModelWorkBlocks] = useState<NlModelWorkBlockState[]>([]);
   const [nlSuggestions, setNlSuggestions] = useState<NlSuggestion[]>([]);
@@ -439,32 +384,11 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           />
 
           {isIdle && suggestionsOpen && filteredSuggestions.length > 0 && (
-            <div className="absolute inset-x-0 top-full z-20 mt-2 rounded-xl border border-border/70 bg-background/95 p-2 shadow-xl backdrop-blur-sm">
-              <div className="mb-1 px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                Suggested analyses
-              </div>
-              <div className="space-y-1">
-                {filteredSuggestions.map((suggestion, index) => (
-                  <button
-                    key={suggestion.id}
-                    type="button"
-                    className={cn(
-                      'flex w-full flex-col rounded-lg border px-3 py-2 text-left transition-colors',
-                      index === activeSuggestionIndex
-                        ? 'border-foreground/15 bg-muted/80'
-                        : 'border-transparent hover:border-border/70 hover:bg-muted/50'
-                    )}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={() => applySuggestion(suggestion)}
-                  >
-                    <span className="text-[11px] font-medium text-foreground/95">{suggestion.label}</span>
-                    <span className="mt-1 text-xs leading-relaxed text-muted-foreground">{suggestion.prompt}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <NlApprovalDialog
+              suggestions={filteredSuggestions}
+              activeSuggestionIndex={activeSuggestionIndex}
+              onApplySuggestion={applySuggestion}
+            />
           )}
         </div>
       </div>
@@ -494,3 +418,4 @@ NlQueryWorkflow.displayName = 'NlQueryWorkflow';
 
 export { NlQueryWorkflow };
 export type { NlQueryWorkflowProps };
+export { type ApproveThemeClasses, type NlPhase } from './NlQueryReducer';

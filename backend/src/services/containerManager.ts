@@ -9,51 +9,25 @@ import { exec } from 'child_process';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
 import { mkdir, rm } from 'fs/promises';
-import { dirname, join, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { join, resolve } from 'path';
 import { promisify } from 'util';
 
 import { env } from '../config.js';
-import type { PythonVersion } from '../types/execution.js';
 
+import {
+    cleanupStaleContainers,
+    cleanupOrphanedWorkspaces,
+    destroyAllContainers as destroyAllContainersImpl,
+    killOrphanedContainers,
+} from './container/containerCleanup.js';
 import { buildDockerRunArgs } from './container/dockerBuilder.js';
+import { ensureRuntimeImage } from './container/imageManager.js';
+export type { Container, ContainerConfig } from './container/types.js';
+import type { Container, ContainerConfig } from './container/types.js';
 import { execDocker } from './dockerUtils.js';
 import { shutdownKernel } from './kernelManager.js';
-import { clearJediInstallState } from './pythonCompletions.js';
 
 const execAsync = promisify(exec);
-
-function resolveRuntimeDockerfilePath(): string {
-    const candidates = [
-        resolve(process.cwd(), 'docker', 'Dockerfile.python-runtime'),
-        resolve(process.cwd(), 'backend', 'docker', 'Dockerfile.python-runtime'),
-        fileURLToPath(new URL('../../docker/Dockerfile.python-runtime', import.meta.url))
-    ];
-
-    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
-}
-
-const runtimeDockerfilePath = resolveRuntimeDockerfilePath();
-const runtimeDockerContext = resolve(dirname(runtimeDockerfilePath));
-const imageBuilds = new Map<string, Promise<void>>();
-
-export interface ContainerConfig {
-    projectId: string;
-    pythonVersion: PythonVersion;
-    datasetPaths?: string[];
-    workspacePath: string;
-}
-
-export interface Container {
-    id: string;
-    containerId: string;
-    projectId: string;
-    pythonVersion: PythonVersion;
-    workspacePath: string;
-    kernelGatewayPort: number;
-    createdAt: Date;
-    lastUsedAt: Date;
-}
 
 // Active containers cache
 const containers = new Map<string, Container>();
@@ -70,87 +44,6 @@ export async function isDockerAvailable(): Promise<boolean> {
     } catch {
         return false;
     }
-}
-
-/**
- * Get Docker image name for Python version
- */
-function getImageName(pythonVersion: PythonVersion): string {
-    const image = env.dockerImage;
-    if (image.includes('{pythonVersion}')) {
-        return image.replace('{pythonVersion}', pythonVersion);
-    }
-
-    if (image.includes(':')) {
-        const [repo, tag] = image.split(':');
-        if (tag === 'latest') {
-            return `${repo}:${pythonVersion}`;
-        }
-        return image;
-    }
-
-    return `${image}:${pythonVersion}`;
-}
-
-function getLatestTag(imageName: string): string | null {
-    if (!imageName.includes(':')) return null;
-    const [repo, tag] = imageName.split(':');
-    if (tag === 'latest') return imageName;
-    return `${repo}:latest`;
-}
-
-async function isImageAvailable(imageName: string): Promise<boolean> {
-    try {
-        await execDocker(['image', 'inspect', imageName]);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-async function ensureRuntimeImage(pythonVersion: PythonVersion): Promise<string> {
-    const imageName = getImageName(pythonVersion);
-    const available = await isImageAvailable(imageName);
-    if (available) return imageName;
-
-    if (!env.executionAutoBuildImage) {
-        throw new Error(`Docker image "${imageName}" is missing. Build it with backend/docker/build-runtime.sh.`);
-    }
-
-    const existingBuild = imageBuilds.get(imageName);
-    if (existingBuild) {
-        await existingBuild;
-        return imageName;
-    }
-
-    const buildPromise = (async () => {
-        const tags = new Set<string>([imageName]);
-        const latestTag = getLatestTag(imageName);
-        if (latestTag) {
-            tags.add(latestTag);
-        }
-
-        console.log(`[containerManager] Building runtime image: ${imageName}`);
-        const buildArgs = ['build', '--build-arg', `PYTHON_VERSION=${pythonVersion}`];
-        if (env.executionDockerPlatform) {
-            buildArgs.push('--platform', env.executionDockerPlatform);
-        }
-        Array.from(tags).forEach((tag) => {
-            buildArgs.push('-t', tag);
-        });
-        buildArgs.push('-f', runtimeDockerfilePath, runtimeDockerContext);
-        await execDocker(buildArgs);
-    })();
-
-    imageBuilds.set(imageName, buildPromise);
-
-    try {
-        await buildPromise;
-    } finally {
-        imageBuilds.delete(imageName);
-    }
-
-    return imageName;
 }
 
 /**
@@ -306,106 +199,14 @@ export async function getOrCreateContainer(config: ContainerConfig): Promise<Con
 }
 
 /**
- * Clean up stale containers (older than 30 minutes of inactivity)
- */
-async function cleanupStaleContainers(): Promise<void> {
-    const staleThreshold = 30 * 60 * 1000; // 30 minutes
-    const now = Date.now();
-
-    for (const [id, container] of containers.entries()) {
-        if (now - container.lastUsedAt.getTime() > staleThreshold) {
-            await destroyContainer(id);
-        }
-    }
-}
-
-// Run cleanup every 5 minutes
-setInterval(cleanupStaleContainers, 5 * 60 * 1000);
-
-/**
- * Kill all Docker containers matching our naming pattern.
- * Called on server startup to clean up orphaned containers from previous runs.
- */
-async function killOrphanedContainers(): Promise<number> {
-    try {
-        // Find all containers matching our pattern (including stopped ones)
-        const { stdout } = await execDocker([
-            'ps', '-a', '-q',
-            '--filter', 'name=automl-exec-'
-        ]);
-
-        const containerIds = stdout.trim().split('\n').filter(Boolean);
-
-        if (containerIds.length === 0) {
-            console.log('[containerManager] No orphaned containers found');
-            return 0;
-        }
-
-        console.log(`[containerManager] Found ${containerIds.length} orphaned container(s), cleaning up...`);
-
-        // Force remove all matching containers
-        await execDocker(['rm', '-f', ...containerIds]);
-
-        console.log(`[containerManager] Cleaned up ${containerIds.length} orphaned container(s)`);
-        return containerIds.length;
-    } catch (error) {
-        // Ignore errors - containers may already be gone or Docker unavailable
-        console.warn('[containerManager] Error cleaning up orphaned containers:', error);
-        return 0;
-    }
-}
-
-/**
  * Destroy all tracked containers. Called on server shutdown.
  */
 export async function destroyAllContainers(): Promise<void> {
-    const containerList = Array.from(containers.entries());
-
-    if (containerList.length === 0) {
-        return;
-    }
-
-    console.log(`[containerManager] Destroying ${containerList.length} active container(s)...`);
-
-    await Promise.all(
-        containerList.map(([id]) => destroyContainer(id).catch(() => {}))
-    );
-
-    // Clear the jedi tracking set too
-    clearJediInstallState();
-
-    console.log('[containerManager] All containers destroyed');
+    await destroyAllContainersImpl(containers, destroyContainer);
 }
 
-/**
- * Clean up workspace directories that have no associated running container.
- */
-async function cleanupOrphanedWorkspaces(): Promise<void> {
-    try {
-        const workspacesDir = resolve(env.executionWorkspaceDir);
-        const { readdir } = await import('fs/promises');
-
-        if (!existsSync(workspacesDir)) {
-            return;
-        }
-
-        const entries = await readdir(workspacesDir);
-
-        if (entries.length === 0) {
-            return;
-        }
-
-        // Remove all workspace directories since we just cleaned all containers
-        for (const entry of entries) {
-            const entryPath = join(workspacesDir, entry);
-            await rm(entryPath, { recursive: true, force: true }).catch(() => {});
-        }
-
-        console.log(`[containerManager] Cleaned up ${entries.length} orphaned workspace(s)`);
-    } catch (error) {
-        console.warn('[containerManager] Error cleaning up orphaned workspaces:', error);
-    }
-}
+// Run cleanup every 5 minutes
+setInterval(() => cleanupStaleContainers(containers, destroyContainer), 5 * 60 * 1000);
 
 /**
  * Initialize container manager - cleans up orphaned containers and workspaces.

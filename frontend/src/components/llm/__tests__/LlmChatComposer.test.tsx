@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 
@@ -89,10 +89,12 @@ function ComposerHarness({ initialReasoningEffort = 'high' }: { initialReasoning
   );
 }
 
-function openSelect(index: number) {
+async function openSelect(index: number) {
   const trigger = screen.getAllByRole('combobox')[index];
-  trigger.focus();
-  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+  await act(async () => {
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+  });
 }
 
 describe('LlmChatComposer', () => {
@@ -109,7 +111,7 @@ describe('LlmChatComposer', () => {
     expect(screen.getAllByRole('combobox')[0]).toHaveTextContent('GPT 5.4');
     expect(screen.queryByLabelText('GPT 5.4 usage tip')).not.toBeInTheDocument();
 
-    openSelect(0);
+    await openSelect(0);
     const listbox = await screen.findByRole('listbox');
 
     expect(within(listbox).getByText('GPT 5.4')).toBeInTheDocument();
@@ -124,7 +126,7 @@ describe('LlmChatComposer', () => {
   it('renders the top reasoning label as Extra High', async () => {
     render(<ComposerHarness initialReasoningEffort="xhigh" />);
 
-    openSelect(1);
+    await openSelect(1);
     const listbox = await screen.findByRole('listbox');
 
     expect(within(listbox).getByText('Extra High')).toBeInTheDocument();
@@ -136,8 +138,10 @@ describe('LlmChatComposer', () => {
 
     expect(screen.getByTestId('selection-state')).toHaveTextContent('gpt-5.4:xhigh');
 
-    openSelect(0);
-    fireEvent.click(await screen.findByText('GPT 5 Mini'));
+    await openSelect(0);
+    await act(async () => {
+      fireEvent.click(await screen.findByText('GPT 5 Mini'));
+    });
 
     expect(screen.getByTestId('selection-state')).toHaveTextContent('gpt-5-mini:medium');
   });

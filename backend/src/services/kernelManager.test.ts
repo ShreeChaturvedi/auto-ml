@@ -27,6 +27,7 @@ const hoisted = vi.hoisted(() => {
         once: (event: string, fn: (...args: unknown[]) => void) => void;
         emit: (event: string, ...args: unknown[]) => void;
         removeListener: (event: string, fn: (...args: unknown[]) => void) => void;
+        removeAllListeners: (event?: string) => void;
     }> = [];
     const uuidState = { counter: 0 };
 
@@ -45,7 +46,39 @@ vi.mock('ws', () => {
         _listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
         readyState = 1; // OPEN
         url: string;
-        send = vi.fn();
+        send = vi.fn((payload: string) => {
+            try {
+                const parsed = JSON.parse(payload) as {
+                    header?: { msg_id?: string; msg_type?: string };
+                    content?: { code?: string };
+                };
+                const msgId = parsed.header?.msg_id;
+                const code = parsed.content?.code ?? '';
+                if (
+                    parsed.header?.msg_type === 'execute_request'
+                    && msgId
+                    && code.includes('Kernel initialized')
+                ) {
+                    queueMicrotask(() => {
+                        this.emit('message', JSON.stringify({
+                            header: {
+                                msg_id: `reply-${msgId}`,
+                                msg_type: 'execute_reply',
+                                session: 's',
+                                username: 'u',
+                                version: '5.3',
+                            },
+                            parent_header: { msg_id: msgId },
+                            metadata: {},
+                            content: { status: 'ok', execution_count: 1 },
+                            channel: 'shell',
+                        }));
+                    });
+                }
+            } catch {
+                // Test helpers sometimes assert on raw send payloads; ignore parse failures.
+            }
+        });
         close = vi.fn(function (this: MockWebSocket) {
             this.readyState = 3; // CLOSED
         });
@@ -93,6 +126,15 @@ vi.mock('ws', () => {
                 this._listeners[event] = fns.filter(
                     (f) => f !== fn && (f as Record<string, unknown>)._original !== fn,
                 );
+            }
+            return this;
+        }
+
+        removeAllListeners(event?: string) {
+            if (event) {
+                delete this._listeners[event];
+            } else {
+                this._listeners = {};
             }
             return this;
         }
@@ -342,9 +384,9 @@ describe('execute', () => {
     async function setupExecution(ctr?: KernelContainer) {
         const container = track(ctr ?? makeContainer());
         const ws = await connectDefault(container);
+        ws.send.mockClear();
 
-        // The next randomUUID call inside `execute` will produce
-        // uuid-(current counter + 1). connectKernel used uuid-1 for sessionId.
+        // The next randomUUID call inside `execute` will produce the execution msg_id.
         const expectedMsgId = `uuid-${uuidState.counter + 1}`;
 
         return { container, ws, expectedMsgId };
@@ -642,8 +684,8 @@ describe('restartKernel', () => {
         mockFetch.mockResolvedValueOnce(okResponse({})); // restart response
         await restartKernel(ctr);
 
-        // Old WS should have been closed
-        expect(oldWs.close).toHaveBeenCalled();
+        // Old WS should have been torn down before reconnecting
+        expect(oldWs.terminate).toHaveBeenCalled();
 
         // REST POST to restart endpoint
         const restartCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];

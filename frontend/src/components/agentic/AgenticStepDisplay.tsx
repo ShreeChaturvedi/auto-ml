@@ -123,15 +123,9 @@ export function AgenticStepDisplay({
           </div>
         </div>
       ) : null}
-      {composerStatusSlot ? (
-        <div className="border-b px-4 py-2">
-          <div className="mx-auto w-full max-w-5xl">
-            {composerStatusSlot}
-          </div>
-        </div>
-      ) : null}
+      {composerStatusSlot}
       {suggestions.length > 0 && !domainLockReason ? (
-        <div className="min-w-0 overflow-x-auto px-4 py-2 scrollbar-hide">
+        <div className="min-w-0 overflow-x-auto px-4 pt-2 scrollbar-hide">
           <div className="flex min-w-max flex-nowrap gap-2">
             {suggestions.map((suggestion) => (
               <Button
@@ -150,7 +144,7 @@ export function AgenticStepDisplay({
         </div>
       ) : null}
 
-      <div className="p-4">
+      <div className="px-4 pb-4 pt-2">
         <LlmChatComposer
           chatInput={{
             value: chatInput,

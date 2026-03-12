@@ -113,5 +113,13 @@ export function PreprocessingResultsSection({
     );
   }, [divergedAccentClassName, latestTimelineEvent, storeError]);
 
-  return composerStatusNotice;
+  if (!composerStatusNotice) return null;
+
+  return (
+    <div className="border-b px-4 py-2">
+      <div className="mx-auto w-full max-w-5xl">
+        {composerStatusNotice}
+      </div>
+    </div>
+  );
 }

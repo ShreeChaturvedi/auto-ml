@@ -2,29 +2,28 @@ import { create } from 'zustand';
 
 import { getPreprocessingRunSnapshot } from '@/lib/api/llm';
 import { listAvailableTables } from '@/lib/api/preprocessing';
-import { asRecord, asString } from '@/lib/typeCoercion';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { NotebookCell } from '@/types/notebook';
 import type {
   AvailableTable,
   PreprocessingRunSnapshot,
   StepCellBinding,
-  TransformationEvent,
-  TransformationStatus
+  TransformationEvent
 } from '@/types/preprocessing';
 import {
-  buildEventFromToolCall,
-  buildEventFromToolResult,
   buildStepBindingsFromSnapshot,
   buildTimelineFromSnapshot,
-  getLatestCheckpointId,
-  getRunIdFromToolResult,
-  hashText,
-  upsertTimelineEvent
+  getLatestCheckpointId
 } from './preprocessing/eventBuilders';
 import { applyDivergence, computeDivergenceUpdate } from './preprocessing/divergenceSync';
 import { evaluateReplayCompat } from './preprocessing/replayCompat';
 import { commitStepDecision } from './preprocessing/stepDecision';
+import {
+  applyEditStepCode,
+  applyMarkInterrupted,
+  applyProcessToolCall,
+  applyProcessToolResult
+} from './preprocessing/timelineOps';
 
 export interface PreprocessingChatMessage {
   id: string;
@@ -274,31 +273,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   },
 
   editStepCode: (stepId: string, code: string) => {
-    set((state) => ({
-      timeline: state.timeline.map((event) =>
-        event.stepId === stepId
-          ? {
-              ...event,
-              code,
-              codeHash: hashText(code),
-              status: 'pending',
-              updatedAt: Date.now()
-            }
-          : event
-      ),
-      stepBindings: {
-        ...state.stepBindings,
-        [stepId]: {
-          ...(state.stepBindings[stepId] ?? {
-            stepId,
-            cellIds: [],
-            lastSyncedAt: Date.now()
-          }),
-          codeHash: hashText(code),
-          lastSyncedAt: Date.now()
-        }
-      }
-    }));
+    set((state) => applyEditStepCode(state.timeline, state.stepBindings, stepId, code));
   },
 
   syncDivergence: async (cells: NotebookCell[]) => {
@@ -332,62 +307,29 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   },
 
   markInterruptedSteps: (reason: string) => {
-    const message = reason.trim() || 'Preprocessing run was interrupted before completion.';
-    set((state) => {
-      const nextTimeline = state.timeline.map((event) => {
-        if (event.status !== 'pending' && event.status !== 'running') {
-          return event;
-        }
-        return {
-          ...event,
-          status: 'failed' as TransformationStatus,
-          error: event.error ?? `Interrupted before completion: ${message}`,
-          updatedAt: Date.now()
-        };
-      });
-
-      return { timeline: nextTimeline, error: message };
-    });
+    set((state) => applyMarkInterrupted(state.timeline, reason));
   },
 
   processToolCall: (call, fallbackRunId) => {
-    const event = buildEventFromToolCall(call, fallbackRunId || null);
-    if (!event) return;
-    set((state) => ({
-      timeline: upsertTimelineEvent(state.timeline, event)
-    }));
+    const update = applyProcessToolCall(get().timeline, call, fallbackRunId || null);
+    if (!update) return;
+    set(update);
   },
 
   processToolResult: (call, result, fallbackRunId) => {
-    const event = buildEventFromToolResult(call, result, fallbackRunId || null);
-    if (!event) return;
-
     set((state) => {
-      let nextRunId = state.runId;
-      const resultRunId = getRunIdFromToolResult(result);
-      if (resultRunId) nextRunId = resultRunId;
-
-      const timeline = upsertTimelineEvent(state.timeline, event);
-      const bindings = { ...state.stepBindings };
-
-      const previousBinding = bindings[event.stepId];
-      bindings[event.stepId] = {
-        stepId: event.stepId,
-        cellIds: [...new Set([...(previousBinding?.cellIds ?? []), ...event.cellIds])],
-        codeHash: event.codeHash ?? previousBinding?.codeHash,
-        version: event.version ?? previousBinding?.version,
-        lastSyncedAt: Date.now()
-      };
-
-      const output = asRecord(result.output);
-      const checkpointId = asString(output.checkpointId);
-
-      return {
-        runId: nextRunId,
-        latestCheckpointId: checkpointId ?? state.latestCheckpointId,
-        timeline,
-        stepBindings: bindings
-      };
+      const update = applyProcessToolResult(
+        {
+          runId: state.runId,
+          latestCheckpointId: state.latestCheckpointId,
+          timeline: state.timeline,
+          stepBindings: state.stepBindings
+        },
+        call,
+        result,
+        fallbackRunId || null
+      );
+      return update ?? {};
     });
   },
 

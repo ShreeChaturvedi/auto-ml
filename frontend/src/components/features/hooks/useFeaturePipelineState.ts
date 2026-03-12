@@ -1,25 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  buildSuggestionDefaults,
-  type FeatureSuggestionItem
-} from '../featureEngineeringUtils';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
-import type { FeatureCategory, FeatureMethod, FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
-import { FEATURE_TEMPLATES } from '@/lib/features/featureTemplates';
+import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useFeatureReadiness } from './useFeatureReadiness';
 import { useFeatureCodeGen } from './useFeatureCodeGen';
 import { useFeatureVersioning } from './useFeatureVersioning';
 import { useFeatureApply } from './useFeatureApply';
+import { useSuggestionDrafts } from './useSuggestionDrafts';
+import type { FeatureSuggestionItem } from '../featureEngineeringUtils';
 
-const methodCategoryMap = new Map<FeatureMethod, FeatureCategory>(
-  FEATURE_TEMPLATES.map((template) => [template.method, template.category])
-);
-
-export type SuggestionDraft = {
-  enabled: boolean;
-  params: Record<string, unknown>;
-};
+export type { SuggestionDraft } from './useSuggestionDrafts';
 
 interface UseFeaturePipelineStateReturn {
   // Dataset state
@@ -66,7 +56,7 @@ interface UseFeaturePipelineStateReturn {
   setPanelError: (error: string | null) => void;
 
   // Suggestion drafts
-  suggestionDrafts: Record<string, SuggestionDraft>;
+  suggestionDrafts: Record<string, { enabled: boolean; params: Record<string, unknown> }>;
   toggleSuggestion: (item: FeatureSuggestionItem, enabled: boolean) => void;
   updateSuggestionControl: (item: FeatureSuggestionItem, key: string, value: unknown) => void;
 
@@ -88,15 +78,12 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
 
   // --- Feature store selectors ---
   const features = useFeatureStore((state) => state.features);
-  const upsertFeature = useFeatureStore((state) => state.upsertFeature);
-  const removeFeature = useFeatureStore((state) => state.removeFeature);
   const hydrateFeatures = useFeatureStore((state) => state.hydrateFromProject);
 
   // --- Local state ---
   const [selectedDataset, setSelectedDataset] = useState<string | null>(null);
   const [targetColumn, setTargetColumn] = useState<string | undefined>();
   const [panelError, setPanelError] = useState<string | null>(null);
-  const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>({});
 
   // --- Refs ---
   const hydratedProjectRef = useRef<string | null>(null);
@@ -169,6 +156,18 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     setSelectedDataset,
   });
 
+  // --- Suggestion drafts (extracted hook) ---
+  const {
+    suggestionDrafts,
+    setSuggestionDrafts,
+    toggleSuggestion,
+    updateSuggestionControl,
+  } = useSuggestionDrafts({
+    projectId,
+    featureById,
+    setPanelError,
+  });
+
   // --- Versioning (extracted hook) ---
   const {
     versions,
@@ -220,82 +219,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     }
   }, [selectedDatasetFile, targetColumn]);
 
-  // --- Suggestion sync helper ---
-  const syncSuggestionToFeatureStore = useCallback(
-    (item: FeatureSuggestionItem, draft: SuggestionDraft) => {
-      const method = item.feature.method as FeatureMethod;
-      const category = methodCategoryMap.get(method);
-      if (!category) {
-        setPanelError(`Unsupported feature method: ${item.feature.method}`);
-        return;
-      }
-
-      setPanelError(null);
-
-      if (!draft.enabled) {
-        removeFeature(item.id);
-        return;
-      }
-
-      const feature: FeatureSpec = {
-        id: item.id,
-        projectId,
-        sourceColumn: item.feature.sourceColumn,
-        secondaryColumn: item.feature.secondaryColumn,
-        featureName: item.feature.featureName,
-        description: item.feature.description ?? item.rationale,
-        method,
-        category,
-        params: draft.params,
-        enabled: true,
-        createdAt: featureById.get(item.id)?.createdAt ?? new Date().toISOString()
-      };
-
-      upsertFeature(feature);
-    },
-    [featureById, projectId, removeFeature, upsertFeature]
-  );
-
-  // --- Toggle / update suggestion ---
-  const toggleSuggestion = useCallback(
-    (item: FeatureSuggestionItem, enabled: boolean) => {
-      setSuggestionDrafts((previous) => {
-        const current = previous[item.id] ?? {
-          enabled: featureById.get(item.id)?.enabled ?? false,
-          params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
-        };
-        const next: SuggestionDraft = { ...current, enabled };
-        syncSuggestionToFeatureStore(item, next);
-        return { ...previous, [item.id]: next };
-      });
-    },
-    [featureById, syncSuggestionToFeatureStore]
-  );
-
-  const updateSuggestionControl = useCallback(
-    (item: FeatureSuggestionItem, key: string, value: unknown) => {
-      setSuggestionDrafts((previous) => {
-        const current = previous[item.id] ?? {
-          enabled: featureById.get(item.id)?.enabled ?? false,
-          params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
-        };
-        const next: SuggestionDraft = {
-          ...current,
-          params: { ...current.params, [key]: value }
-        };
-
-        if (next.enabled) {
-          syncSuggestionToFeatureStore(item, next);
-        }
-
-        return { ...previous, [item.id]: next };
-      });
-    },
-    [featureById, syncSuggestionToFeatureStore]
-  );
-
   return {
-    // Dataset state
     selectedDataset,
     setSelectedDataset,
     targetColumn,
@@ -305,52 +229,36 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     documentFiles,
     selectedDatasetFile,
     datasetColumns,
-
-    // Version state
     versions,
     currentVersionId,
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
     canDeleteCurrentDraft,
-
-    // Feature state
     projectFeatures,
     activeFeatures,
     featureById,
-
-    // Readiness
     readinessReport,
     isReadyForApproval,
     readinessReportUnlocked,
     isReadinessExpanded,
     setIsReadinessExpanded,
-
-    // Apply state
     outputName,
     setOutputName,
     outputFormat,
     setOutputFormat,
     applyStatus,
     applyMessage,
-
-    // Errors
     panelError,
     setPanelError,
-
-    // Suggestion drafts
     suggestionDrafts,
     toggleSuggestion,
     updateSuggestionControl,
-
-    // Actions
     handleApplyFeatures,
     handleVersionSwitch,
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
-
-    // Store actions
     approveVersion
   };
 }

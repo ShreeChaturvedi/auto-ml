@@ -18,9 +18,9 @@ import {
 } from 'react';
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
-import { fetchNlSuggestions, type NlSuggestion } from '@/lib/api/query';
 import { tokenizeSql } from './sqlTokenize';
 import { useTypewriter } from './hooks/useTypewriter';
+import { useNlSuggestions } from './hooks/useNlSuggestions';
 import {
   applyNlModelWorkEvent,
   applyNlWorkPhaseEvent,
@@ -44,8 +44,6 @@ import type {
   NlQueryStreamEvent,
   NlWorkPhaseState
 } from '@/types/nlQuery';
-
-const MAX_VISIBLE_SUGGESTIONS = 6;
 
 export interface NlQueryWorkflowHandle {
   phase: NlPhase;
@@ -89,11 +87,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   const [state, dispatch] = useReducer(nlReducer, initialNlState);
   const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
   const [modelWorkBlocks, setModelWorkBlocks] = useState<NlModelWorkBlockState[]>([]);
-  const [nlSuggestions, setNlSuggestions] = useState<NlSuggestion[]>([]);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
 
@@ -141,65 +135,21 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     };
   }, []);
 
-  useEffect(() => {
-    if (!projectId) {
-      setNlSuggestions([]);
-      return;
-    }
+  const isIdle = phase === 'idle' || phase === 'error';
 
-    let cancelled = false;
-    void fetchNlSuggestions(projectId, 8)
-      .then((response) => {
-        if (!cancelled) {
-          setNlSuggestions(response.suggestions);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to load NL suggestions:', error);
-        if (!cancelled) {
-          setNlSuggestions([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  const filteredSuggestions = useMemo(() => {
-    const input = englishQuery.trim().toLowerCase();
-    const suggestions = input
-      ? nlSuggestions.filter((suggestion) => (
-          suggestion.prompt.toLowerCase().includes(input)
-          || suggestion.label.toLowerCase().includes(input)
-          || suggestion.category.toLowerCase().includes(input)
-        ))
-      : nlSuggestions;
-
-    return suggestions.slice(0, MAX_VISIBLE_SUGGESTIONS);
-  }, [englishQuery, nlSuggestions]);
-
-  const placeholderPrompts = useMemo(
-    () => nlSuggestions
-      .map((suggestion) => suggestion.prompt.trim())
-      .filter((prompt) => prompt.length > 0),
-    [nlSuggestions]
-  );
-
-  useEffect(() => {
-    if (activeSuggestionIndex >= filteredSuggestions.length) {
-      setActiveSuggestionIndex(0);
-    }
-  }, [activeSuggestionIndex, filteredSuggestions.length]);
-
-  const applySuggestion = useCallback((suggestion: NlSuggestion) => {
-    onQueryChange(suggestion.prompt);
-    setSuggestionsOpen(false);
-    setActiveSuggestionIndex(0);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-    });
-  }, [onQueryChange]);
+  const {
+    textareaRef,
+    filteredSuggestions,
+    placeholderPrompts,
+    suggestionsOpen,
+    setSuggestionsOpen,
+    activeSuggestionIndex,
+    setActiveSuggestionIndex,
+    applySuggestion,
+    openSuggestions,
+    closeSuggestionsDelayed,
+    handleInputChange,
+  } = useNlSuggestions({ projectId, englishQuery, isIdle, onQueryChange });
 
   const handleGenerate = useCallback(async () => {
     const query = englishQuery.trim();
@@ -329,10 +279,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         }
       }
     },
-    [phase, suggestionsOpen, filteredSuggestions, activeSuggestionIndex, applySuggestion, englishQuery, handleGenerate]
+    [phase, suggestionsOpen, filteredSuggestions, activeSuggestionIndex, applySuggestion, setSuggestionsOpen, setActiveSuggestionIndex, englishQuery, handleGenerate]
   );
-
-  const isIdle = phase === 'idle' || phase === 'error';
 
   return (
     <div
@@ -357,18 +305,11 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             onChange={(e) => {
               if (isIdle) {
                 onQueryChange(e.target.value);
-                setSuggestionsOpen(true);
-                setActiveSuggestionIndex(0);
+                handleInputChange();
               }
             }}
-            onFocus={() => {
-              if (isIdle && filteredSuggestions.length > 0) {
-                setSuggestionsOpen(true);
-              }
-            }}
-            onBlur={() => {
-              window.setTimeout(() => setSuggestionsOpen(false), 120);
-            }}
+            onFocus={openSuggestions}
+            onBlur={closeSuggestionsDelayed}
             onKeyDown={handleKeyDown}
             readOnly={!isIdle}
             disabled={phase === 'submitting'}

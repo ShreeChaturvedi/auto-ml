@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { cn } from '@/lib/utils';
-import { Markdown } from '@/components/ui/Markdown';
-import { Brain, Check, Database, FileText, Loader2 } from 'lucide-react';
+import { Brain, Database, FileText, Loader2 } from 'lucide-react';
+import { PlanMessageCard } from './PlanMessageCard';
 
 import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
 import { useModelSelection } from '@/hooks/useModelSelection';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,7 +12,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { QuestionCards } from './QuestionCards';
 import { projectColorClasses } from '@/types/project';
-import { buildInitialSuggestions, buildFollowUpSuggestions, toPlanPath } from './planningUtils';
+import { buildInitialSuggestions, buildFollowUpSuggestions } from './planningUtils';
 import { usePlanningChat } from './hooks/usePlanningChat';
 import { useAttachmentUploader, CONTEXT_ATTACHMENT_ACCEPT } from './hooks/useAttachmentUploader';
 import { CenteredSuggestionPills, FollowUpSuggestionPills } from './PlanSuggestionPills';
@@ -217,99 +215,22 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
                 return null;
               }
 
-              const planPath = toPlanPath(msg.planName);
-              const isEditing = editingPlanId === msg.id;
-              const draftValue = planDrafts[msg.id] ?? msg.content;
-
               return (
-                <div key={msg.id} className="space-y-3 animate-in fade-in zoom-in-95 duration-300">
-                  <div className={cn(
-                    "overflow-hidden rounded-lg transition-all",
-                    isEditing
-                      ? "border border-primary/50 shadow-sm ring-1 ring-primary/20 bg-background"
-                      : "border border-primary/30 bg-primary/5 hover:border-primary/50"
-                  )}>
-                    <div className={cn(
-                      "flex items-center justify-between border-b px-3 py-1.5",
-                      isEditing ? "bg-muted/30 border-primary/20" : "border-primary/20 bg-muted/40"
-                    )}>
-                      <div className="font-mono text-[11px] text-muted-foreground" title={planPath}>
-                        <span className="block truncate">{planPath}</span>
-                      </div>
-                      {isEditing && (
-                        <div className="text-[10px] uppercase tracking-wider text-primary font-medium">
-                          Editing Mode
-                        </div>
-                      )}
-                    </div>
-                    {isEditing ? (
-                      <textarea
-                        value={draftValue}
-                        onChange={(event) => {
-                          setPlanDrafts((prev) => ({ ...prev, [msg.id]: event.target.value }));
-                        }}
-                        aria-label={`Edit plan ${planPath}`}
-                        className="min-h-[350px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed outline-none"
-                        placeholder="Edit the proposed plan here..."
-                        data-testid={`plan-editor-${msg.id}`}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleStartPlanEdit(msg.id, msg.content)}
-                        className="w-full text-left p-4 outline-none focus-visible:bg-primary/10 transition-colors"
-                        data-testid={`plan-view-${msg.id}`}
-                        title="Click to edit this plan manually"
-                      >
-                        <Markdown className="prose prose-sm max-w-none dark:prose-invert">
-                          {msg.content}
-                        </Markdown>
-                      </button>
-                    )}
-                  </div>
-                  {!msg.approved ? (
-                    <div className="flex flex-wrap items-center justify-between gap-4 mt-2">
-                      <div className="flex items-center gap-2">
-                        {isEditing ? (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => handleCancelPlanEdit(msg.id, msg.content)}>
-                              Cancel
-                            </Button>
-                            <Button size="sm" variant="default" onClick={() => handleSavePlanEdit(msg.id)}>
-                              Save Edit
-                            </Button>
-                          </>
-                        ) : null}
-                        {!isEditing ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className={cn('gap-1.5', projectColorClass.bg, projectColorClass.border, projectColorClass.hover, projectColorClass.text)}
-                            onClick={() => handleApprove(msg.content, msg.planName, msg.id)}
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                            Approve Plan
-                          </Button>
-                        ) : null}
-                      </div>
-                      {!isEditing && (
-                        <span className="text-xs text-muted-foreground italic">
-                          Click the plan above to edit, or ask for changes below
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className={cn(
-                      'flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium',
-                      projectColorClass.bg,
-                      projectColorClass.border,
-                      projectColorClass.text,
-                    )}>
-                      <Check className="h-4 w-4" />
-                      Plan approved
-                    </div>
-                  )}
-                </div>
+                <PlanMessageCard
+                  key={msg.id}
+                  msgId={msg.id}
+                  content={msg.content}
+                  planName={msg.planName}
+                  approved={!!msg.approved}
+                  editingPlanId={editingPlanId}
+                  draftValue={planDrafts[msg.id] ?? msg.content}
+                  projectColorClass={projectColorClass}
+                  onSetDraft={(id, value) => setPlanDrafts((prev) => ({ ...prev, [id]: value }))}
+                  onStartEdit={handleStartPlanEdit}
+                  onCancelEdit={handleCancelPlanEdit}
+                  onSaveEdit={handleSavePlanEdit}
+                  onApprove={handleApprove}
+                />
               );
             }
 

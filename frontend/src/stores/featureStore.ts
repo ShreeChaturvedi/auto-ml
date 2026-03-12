@@ -1,20 +1,14 @@
 import { create } from 'zustand';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useProjectStore } from './projectStore';
-
-function buildEmptyReadinessReport(): ReadinessReport {
-  return {
-    dataSummary: {
-      addedColumns: [],
-      removedColumns: [],
-      renamedColumns: [],
-      typeChanges: [],
-      nullDeltas: [],
-      warnings: []
-    },
-    steps: []
-  };
-}
+import {
+  makeId,
+  createDraftVersionRecord,
+  removeVersionFromList,
+  renameVersionInList,
+  updateReadinessInList,
+  approveVersionInList
+} from './featureVersionSlice';
 
 interface FeatureState {
   features: FeatureSpec[];
@@ -38,13 +32,6 @@ interface FeatureState {
   updateReadinessReport: (projectId: string, versionId: string, report: Partial<ReadinessReport>) => void;
   approveVersion: (projectId: string, versionId: string) => void;
   setCurrentVersion: (projectId: string, versionId: string) => void;
-}
-
-function makeId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `feature-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export const useFeatureStore = create<FeatureState>()((set, get) => ({
@@ -72,7 +59,7 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
     const rawVersions = Array.isArray(project?.metadata?.pipelineVersions)
       ? (project?.metadata?.pipelineVersions as PipelineVersion[])
       : [];
-      
+
     const currentVid = (project?.metadata?.currentPipelineVersionId as string) || '';
 
     const normalized = rawFeatures
@@ -208,16 +195,7 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   createDraftVersion(projectId, name) {
     const projectVersions = get().versions[projectId] || [];
     const draftCount = projectVersions.filter((version) => version.status === 'draft').length;
-    const generatedName = name?.trim() || `Draft Pipeline v${draftCount + 1}`;
-
-    const newVersion: PipelineVersion = {
-      id: makeId(),
-      projectId,
-      name: generatedName,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      readinessReport: buildEmptyReadinessReport()
-    };
+    const newVersion = createDraftVersionRecord(projectId, draftCount, name);
 
     set((state) => {
       const existingVersions = state.versions[projectId] || [];
@@ -240,20 +218,17 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   removeVersion(projectId, versionId) {
     set((state) => {
       const existingVersions = state.versions[projectId] || [];
-      const remainingVersions = existingVersions.filter((version) => version.id !== versionId);
-      const currentVersionId = state.currentVersionId[projectId];
-      const nextCurrentVersionId = currentVersionId === versionId
-        ? (remainingVersions[0]?.id ?? '')
-        : (currentVersionId ?? '');
+      const currentVid = state.currentVersionId[projectId] ?? '';
+      const result = removeVersionFromList(existingVersions, versionId, currentVid);
 
       return {
         versions: {
           ...state.versions,
-          [projectId]: remainingVersions
+          [projectId]: result.versions
         },
         currentVersionId: {
           ...state.currentVersionId,
-          [projectId]: nextCurrentVersionId
+          [projectId]: result.nextCurrentVersionId
         }
       };
     });
@@ -262,21 +237,14 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   },
 
   renameVersion(projectId, versionId, name) {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      return;
-    }
+    if (!name.trim()) return;
 
     set((state) => {
       const projectVersions = state.versions[projectId] || [];
       return {
         versions: {
           ...state.versions,
-          [projectId]: projectVersions.map((version) =>
-            version.id === versionId
-              ? { ...version, name: trimmedName }
-              : version
-          )
+          [projectId]: renameVersionInList(projectVersions, versionId, name)
         }
       };
     });
@@ -290,18 +258,7 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
       return {
         versions: {
           ...state.versions,
-          [projectId]: projectVersions.map((version) => {
-            if (version.id === versionId) {
-              return {
-                ...version,
-                readinessReport: {
-                  ...version.readinessReport,
-                  ...report
-                }
-              };
-            }
-            return version;
-          })
+          [projectId]: updateReadinessInList(projectVersions, versionId, report)
         }
       };
     });
@@ -314,15 +271,7 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
       return {
         versions: {
           ...state.versions,
-          [projectId]: projectVersions.map((version) => {
-            if (version.id === versionId) {
-              return { ...version, status: 'approved', approvedAt: new Date().toISOString() };
-            }
-            if (version.status === 'approved') {
-              return { ...version, status: 'deprecated' };
-            }
-            return version;
-          })
+          [projectId]: approveVersionInList(projectVersions, versionId)
         },
         currentVersionId: {
           ...state.currentVersionId,
@@ -369,3 +318,5 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
     }
   }
 }));
+
+export { buildEmptyReadinessReport } from './featureVersionSlice';

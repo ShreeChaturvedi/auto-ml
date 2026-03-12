@@ -27,6 +27,7 @@ import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { QuerySqlEditor } from './QuerySqlEditor';
 import { QueryResults } from './QueryResults';
+import { useQueryExecution } from './useQueryExecution';
 
 const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> = {
   blue: {
@@ -81,6 +82,18 @@ const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> 
   }
 };
 
+function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
+  if (theme !== 'system') {
+    return theme;
+  }
+
+  if (typeof window === 'undefined') {
+    return 'light';
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 interface QueryPanelProps {
   onExecute: (query: string, mode: QueryMode) => void;
   isExecuting?: boolean;
@@ -119,27 +132,6 @@ interface QueryPanelProps {
   onNlApprove?: (result: NlGenerationResult, approvedSql: string) => void;
 }
 
-const DEFAULT_SQL = `-- Enter your SQL query
--- Use the table name from your uploaded dataset
--- Wrap names with spaces in double quotes (example: "First Name")
--- Press Ctrl+Space for autocomplete suggestions
-
-SELECT * FROM your_table LIMIT 100`;
-
-const DEFAULT_ENGLISH = '';
-
-function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
-  if (theme !== 'system') {
-    return theme;
-  }
-
-  if (typeof window === 'undefined') {
-    return 'light';
-  }
-
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
 export function QueryPanel({
   onExecute,
   isExecuting = false,
@@ -156,13 +148,14 @@ export function QueryPanel({
   onNlGenerate,
   onNlApprove,
 }: QueryPanelProps) {
-  // Use external mode if provided, otherwise use internal state
-  const [internalMode, setInternalMode] = useState<QueryMode>('sql');
-  const mode = externalMode ?? internalMode;
-
-  // Separate state for each mode to preserve inputs when switching
-  const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
-  const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
+  const {
+    mode,
+    sqlQuery,
+    englishQuery,
+    handleModeChange,
+    handleQueryChange,
+    handleExecute
+  } = useQueryExecution({ onExecute, externalMode, onModeChange });
 
   // NL workflow ref & phase — phase is a local mirror updated via onPhaseChange
   // so footer buttons re-render reactively without holding workflow state here.
@@ -182,18 +175,6 @@ export function QueryPanel({
       onMountPortalTarget(controlsMountRef.current);
     }
   }, [onMountPortalTarget, controlsPortalTarget]);
-
-  const handleModeChange = useCallback(
-    (nextMode: QueryMode) => {
-      if (externalMode !== undefined) {
-        onModeChange?.(nextMode);
-        return;
-      }
-      setInternalMode(nextMode);
-      onModeChange?.(nextMode);
-    },
-    [externalMode, onModeChange]
-  );
 
   // Theme detection for Monaco Editor
   const { theme: appTheme } = useTheme();
@@ -228,25 +209,6 @@ export function QueryPanel({
   }, [appTheme]);
 
   const showExpandedContent = !collapsed;
-
-  // Get current query based on mode
-  const currentQuery = mode === 'sql' ? sqlQuery : englishQuery;
-
-  // Handle query text change
-  const handleQueryChange = useCallback((value: string) => {
-    if (mode === 'sql') {
-      setSqlQuery(value);
-    } else {
-      setEnglishQuery(value);
-    }
-  }, [mode]);
-
-  // Handle query execution
-  const handleExecute = useCallback(() => {
-    if (currentQuery.trim()) {
-      onExecute(currentQuery, mode);
-    }
-  }, [currentQuery, mode, onExecute]);
 
   // Detect if user is on Mac for keyboard shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);

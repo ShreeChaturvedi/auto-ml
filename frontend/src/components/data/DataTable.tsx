@@ -14,88 +14,33 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useState, useMemo, useCallback, useRef } from 'react';
 import {
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Type,
-  Hash,
-  Calculator,
-  ToggleLeft,
-  Calendar,
-  CircleHelp,
-  Check
-} from 'lucide-react';
-import {
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
 
 import { cn } from '@/lib/utils';
-import type { ColumnDataType, DataPreview } from '@/types/file';
+import type { DataPreview } from '@/types/file';
 import { EDAPanel } from './EDAPanel';
 import { DataTableControls } from './DataTableControls';
 import type { QueryInfo } from './QueryInfoDialog';
 import Papa from 'papaparse';
+import { DataTableHeaderCell } from './DataTableHeader';
+import { useColumnTypeEditor } from './useColumnTypeEditor';
 
 export type { QueryInfo };
 
 interface DataTableProps {
   preview: DataPreview;
   onSave?: () => void;
-  columnTypes?: Record<string, ColumnDataType>;
-  onColumnTypeChange?: (columnName: string, nextType: ColumnDataType) => Promise<void> | void;
+  columnTypes?: Record<string, import('@/types/file').ColumnDataType>;
+  onColumnTypeChange?: (columnName: string, nextType: import('@/types/file').ColumnDataType) => Promise<void> | void;
   typeColorClassName?: string;
   queryInfo?: QueryInfo;
   className?: string;
   controlsPortalTarget?: HTMLElement | null;
-}
-
-const TYPE_OPTIONS: ColumnDataType[] = ['string', 'integer', 'float', 'boolean', 'date'];
-
-function getTypeLabel(type: ColumnDataType): string {
-  switch (type) {
-    case 'string':
-      return 'String';
-    case 'integer':
-      return 'Integer';
-    case 'float':
-      return 'Float';
-    case 'boolean':
-      return 'Boolean';
-    case 'date':
-      return 'Date';
-    case 'unknown':
-    default:
-      return 'Unknown';
-  }
-}
-
-function TypeIcon({ type, className }: { type: ColumnDataType; className?: string }) {
-  switch (type) {
-    case 'string':
-      return <Type className={className} />;
-    case 'integer':
-      return <Hash className={className} />;
-    case 'float':
-      return <Calculator className={className} />;
-    case 'boolean':
-      return <ToggleLeft className={className} />;
-    case 'date':
-      return <Calendar className={className} />;
-    case 'unknown':
-    default:
-      return <CircleHelp className={className} />;
-  }
 }
 
 export function DataTable({
@@ -111,116 +56,30 @@ export function DataTable({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [searchExpanded, setSearchExpanded] = useState(false);
-  const [updatingColumnName, setUpdatingColumnName] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [edaView, setEdaView] = useState<'table' | 'eda'>('table');
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
 
-  const handleColumnTypeSelect = useCallback(
-    async (columnName: string, nextType: ColumnDataType) => {
-      if (!onColumnTypeChange) {
-        return;
-      }
-      setUpdatingColumnName(columnName);
-      try {
-        await onColumnTypeChange(columnName, nextType);
-      } finally {
-        setUpdatingColumnName((current) => (current === columnName ? null : current));
-      }
-    },
-    [onColumnTypeChange]
-  );
+  const { updatingColumnName, handleColumnTypeSelect } = useColumnTypeEditor({ onColumnTypeChange });
 
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(
     () =>
       preview.headers.map((header) => ({
         accessorKey: header,
         header: ({ column }) => {
-          const isSorted = column.getIsSorted();
           const currentType = columnTypes?.[header] ?? 'unknown';
           const isUpdatingType = updatingColumnName === header;
           return (
-            <div className="-ml-3 flex items-center gap-1">
-              {onColumnTypeChange ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-7 w-7 bg-transparent transition-colors',
-                        typeColorClassName ?? 'text-primary',
-                        'hover:bg-accent/70 focus-visible:bg-accent/70 data-[state=open]:bg-accent/70 active:bg-accent/70'
-                      )}
-                      disabled={isUpdatingType}
-                      title={`Column type: ${getTypeLabel(currentType)}`}
-                    >
-                      <TypeIcon type={currentType} className="h-3.5 w-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-44">
-                    {TYPE_OPTIONS.map((typeOption) => {
-                      const selected = currentType === typeOption;
-                      return (
-                        <DropdownMenuItem
-                          key={`${header}-${typeOption}`}
-                          onClick={() => {
-                            if (!selected) {
-                              void handleColumnTypeSelect(header, typeOption);
-                            }
-                          }}
-                          className={cn(
-                            'flex items-center justify-between gap-2'
-                          )}
-                        >
-                          <span className="flex items-center gap-2">
-                            <TypeIcon
-                              type={typeOption}
-                              className={cn(
-                                'h-3.5 w-3.5',
-                                selected
-                                  ? (typeColorClassName ?? 'text-primary')
-                                  : 'text-muted-foreground'
-                              )}
-                            />
-                            {getTypeLabel(typeOption)}
-                          </span>
-                          {selected ? (
-                            <Check
-                              className={cn('h-3.5 w-3.5', typeColorClassName ?? 'text-primary')}
-                            />
-                          ) : null}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <span
-                  className={cn(typeColorClassName ?? 'text-primary')}
-                  title={`Column type: ${getTypeLabel(currentType)}`}
-                >
-                  <TypeIcon type={currentType} className="h-3.5 w-3.5" />
-                </span>
-              )}
-
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 font-medium"
-                onClick={() => column.toggleSorting()}
-              >
-                {header}
-                {isSorted === 'asc' ? (
-                  <ArrowUp className="ml-2 h-3 w-3" />
-                ) : isSorted === 'desc' ? (
-                  <ArrowDown className="ml-2 h-3 w-3" />
-                ) : (
-                  <ArrowUpDown className="ml-2 h-3 w-3 opacity-50" />
-                )}
-              </Button>
-            </div>
+            <DataTableHeaderCell
+              header={header}
+              column={column}
+              currentType={currentType}
+              isUpdatingType={isUpdatingType}
+              onColumnTypeChange={onColumnTypeChange}
+              handleColumnTypeSelect={handleColumnTypeSelect}
+              typeColorClassName={typeColorClassName}
+            />
           );
         },
         cell: ({ getValue }) => {

@@ -14,13 +14,11 @@ import {
   ResizablePanel,
   ResizableHandle
 } from '@/components/ui/resizable';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
 import { NotebookEditor } from '@/components/notebook/NotebookEditor';
-import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots, type MentionSlotConfig, type UsageConfig } from '@/components/llm/LlmChatComposer';
-import { MentionDropdown } from '@/components/llm/MentionDropdown';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
+import { AgenticStepDisplay } from './AgenticStepDisplay';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import { useNotebookStore } from '@/stores/notebookStore';
@@ -257,125 +255,33 @@ export function AgenticShell({
               </div>
             )}
 
-            <div className="border-t bg-background">
-              {showModelSwitchPrompt ? (
-                <div className="border-b px-4 py-2">
-                  <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                    <span className="font-medium">Model availability issue detected.</span>
-                    <span className="text-amber-800">Switch model and retry?</span>
-                    <div className="ml-auto flex flex-wrap gap-2">
-                      {modelSwitchOptions.map((option) => (
-                        <Button
-                          key={option.value}
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            handleModelChange(option.value);
-                            setDismissedModelPromptFor(modelSwitchError);
-                          }}
-                          disabled={isGenerating}
-                        >
-                          {option.label}
-                        </Button>
-                      ))}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        onClick={() => setDismissedModelPromptFor(modelSwitchError)}
-                      >
-                        Keep current
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-              {composerStatusSlot ? (
-                <div className="border-b px-4 py-2">
-                  <div className="mx-auto w-full max-w-5xl">
-                    {composerStatusSlot}
-                  </div>
-                </div>
-              ) : null}
-              {suggestions.length > 0 && !domainLockReason ? (
-                <div className="min-w-0 overflow-x-auto px-4 py-2 scrollbar-hide">
-                  <div className="flex min-w-max flex-nowrap gap-2">
-                    {suggestions.map((suggestion) => (
-                      <Button
-                        key={suggestion.id}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 shrink-0 text-xs"
-                        onClick={() => submitPrompt(suggestion.prompt)}
-                        disabled={isGenerating}
-                      >
-                        {suggestion.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="p-4">
-                <LlmChatComposer
-                  chatInput={{
-                    value: chatInput,
-                    onValueChange: (v) => mention.handleValueChange(v),
-                    onKeyDown: (e) => {
-                      if (mention.handleKeyDown(e as React.KeyboardEvent<HTMLDivElement>)) return;
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        submitPrompt(chatInput);
-                      }
-                    },
-                    placeholder: "Ask the agent to plan, execute, and validate... (@ to mention files)",
-                    disabled: isGenerating || !!domainLockReason,
-                    isStreaming: isGenerating,
-                    onSend: () => submitPrompt(chatInput),
-                    onStop: handleStop,
-                  } satisfies ChatInputConfig}
-                  modelConfig={{
-                    model: assistantModel,
-                    onModelChange: handleModelChange,
-                    modelOptions: inlineModelOptions,
-                  } satisfies ModelConfig}
-                  reasoningConfig={{
-                    reasoningEffort,
-                    onReasoningEffortChange: setReasoningEffort,
-                    reasoningOptions: reasoningEffortOptions,
-                  } satisfies ReasoningConfig}
-                  usageConfig={{
-                    sessionUsages,
-                    model: assistantModel,
-                  } satisfies UsageConfig}
-                  slots={{
-                    metaSlot: chatMetaSlot,
-                    maxWidthClassName: "max-w-5xl",
-                    mentionSlot: {
-                      dropdown: (
-                        <MentionDropdown
-                          isOpen={mention.isOpen}
-                          filtered={mention.filtered}
-                          activeIndex={mention.activeIndex}
-                          anchorRef={mentionInputRef}
-                          onSelect={mention.selectCandidate}
-                          themeColorClass={themeColorClass}
-                        />
-                      ),
-                      inputRef: mentionInputRef,
-                      mentionNames,
-                      mentionTypes,
-                      themeColor,
-                      onValueChange: mention.handleValueChange,
-                    } satisfies MentionSlotConfig,
-                  } satisfies ComposerSlots}
-                />
-              </div>
-            </div>
+            <AgenticStepDisplay
+              showModelSwitchPrompt={showModelSwitchPrompt}
+              modelSwitchError={modelSwitchError}
+              modelSwitchOptions={modelSwitchOptions}
+              handleModelChange={handleModelChange}
+              setDismissedModelPromptFor={setDismissedModelPromptFor}
+              isGenerating={isGenerating}
+              composerStatusSlot={composerStatusSlot}
+              suggestions={suggestions}
+              domainLockReason={domainLockReason}
+              submitPrompt={submitPrompt}
+              chatInput={chatInput}
+              mention={mention}
+              mentionInputRef={mentionInputRef}
+              mentionNames={mentionNames}
+              mentionTypes={mentionTypes}
+              themeColor={themeColor}
+              themeColorClass={themeColorClass}
+              assistantModel={assistantModel}
+              inlineModelOptions={inlineModelOptions}
+              reasoningEffort={reasoningEffort}
+              setReasoningEffort={setReasoningEffort}
+              reasoningEffortOptions={reasoningEffortOptions}
+              sessionUsages={sessionUsages}
+              handleStop={handleStop}
+              chatMetaSlot={chatMetaSlot}
+            />
           </div>
         </ResizablePanel>
 

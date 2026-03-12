@@ -19,31 +19,13 @@ import Editor from '@monaco-editor/react';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType } from 'monaco-editor';
 import type { ApproveThemeClasses } from './NlQueryWorkflow';
-import { tokenizeSql, type SqlTokenType } from './sqlTokenize';
-
-const TOKEN_CLASS_BY_TYPE: Record<SqlTokenType, string> = {
-  keyword: 'sql-tk-kw',
-  function: 'sql-tk-fn',
-  string: 'sql-tk-str',
-  number: 'sql-tk-num',
-  operator: 'sql-tk-op',
-  punctuation: 'sql-tk-punc',
-  identifier: 'sql-tk-id',
-  whitespace: ''
-};
-
-const GENERATION_STATUS_STEPS = [
-  'Interpreting intent and target metrics',
-  'Mapping schema entities and relationships',
-  'Synthesizing read-only SQL draft',
-  'Running safety and syntax validation',
-] as const;
-
-const GENERATION_SKELETON_WIDTHS = [92, 74, 86, 62, 79, 68] as const;
-
-function tokenClassName(type: SqlTokenType): string {
-  return TOKEN_CLASS_BY_TYPE[type] ?? '';
-}
+import { tokenizeSql } from './sqlTokenize';
+import {
+  tokenClassName,
+  GENERATION_STATUS_STEPS,
+  GENERATION_SKELETON_WIDTHS,
+  useResolvedEditorTheme,
+} from './sqlRevealUtils';
 
 interface SqlRevealBlockProps {
   sql: string;
@@ -58,39 +40,6 @@ interface SqlRevealBlockProps {
   onReject?: () => void;
   approveThemeClasses?: ApproveThemeClasses;
   className?: string;
-}
-
-function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
-  if (theme !== 'system') {
-    return theme;
-  }
-
-  if (typeof window === 'undefined') {
-    return 'light';
-  }
-
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function useResolvedEditorTheme(theme: 'light' | 'dark' | 'system') {
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveEditorTheme(theme));
-
-  useEffect(() => {
-    setResolvedTheme(resolveEditorTheme(theme));
-
-    if (theme !== 'system') {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      setResolvedTheme(e.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, [theme]);
-
-  return resolvedTheme;
 }
 
 function SqlRevealBlock({

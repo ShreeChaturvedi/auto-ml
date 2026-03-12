@@ -19,12 +19,11 @@ import { cn } from '@/lib/utils';
 import { getPrimaryNlWorkPhase } from '@/lib/nlQuery/phaseStateMachine';
 import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
 
-import { TranscriptTimeline } from './TranscriptTimeline';
 import { WorkPlanCard } from './WorkPlanCard';
+import { TranscriptSection } from './TranscriptSection';
 import {
   distanceFromViewportBottom,
   liveSubtitle,
-  pluralize,
   scrollViewportToBottom,
   toneForWarningLevel
 } from './nlWorkPlanUtils';
@@ -300,48 +299,14 @@ function NlWorkPlanPanel({
                   <WorkPlanCard explanation={explanation} />
                 )}
 
-                {isReviewMode ? (
-                  <section className="rounded-xl border border-border/70 bg-background/55 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Transcript</p>
-                        <p className="mt-1 text-[12px] text-muted-foreground">
-                          {modelWorkBlocks.length > 0
-                            ? `${pluralize('block', modelWorkBlocks.length)} captured`
-                            : 'No model transcript was captured.'}
-                        </p>
-                      </div>
-
-                      {modelWorkBlocks.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setTranscriptExpanded((previous) => !previous)}
-                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                          aria-label={transcriptExpanded ? 'Hide transcript' : 'Show transcript'}
-                        >
-                          {transcriptExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          {transcriptExpanded ? 'Hide transcript' : 'Show transcript'}
-                        </button>
-                      )}
-                    </div>
-
-                    {transcriptExpanded && (
-                      <div className="mt-3 border-t border-border/70 pt-3">
-                        <TranscriptTimeline
-                          modelWorkBlocks={modelWorkBlocks}
-                          active={active}
-                          isLive={false}
-                        />
-                      </div>
-                    )}
-                  </section>
-                ) : (
-                  <TranscriptTimeline
-                    modelWorkBlocks={modelWorkBlocks}
-                    active={active}
-                    isLive={shouldKeepTranscriptLive}
-                  />
-                )}
+                <TranscriptSection
+                  modelWorkBlocks={modelWorkBlocks}
+                  active={active}
+                  transcriptExpanded={transcriptExpanded}
+                  onToggleTranscript={() => setTranscriptExpanded((previous) => !previous)}
+                  isReviewMode={isReviewMode}
+                  shouldKeepTranscriptLive={shouldKeepTranscriptLive}
+                />
               </div>
             </div>
           </div>

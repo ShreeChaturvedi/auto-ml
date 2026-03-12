@@ -68,8 +68,8 @@ export function NotebookCellComponent({
   const [showOutput, setShowOutput] = useState(true);
 
   const completionOptions = useMemo(
-    () => ({ projectId }),
-    [projectId]
+    () => ({ projectId, cellId: cell.cellId }),
+    [projectId, cell.cellId]
   );
 
   const {
@@ -264,12 +264,14 @@ export function NotebookCellComponent({
         }
       >
         <Editor
+          path={`cell-${cell.cellId}.py`}
           height={Math.max(60, localContent.split('\n').length * 20 + 20)}
           language="python"
           value={localContent}
           onChange={handleContentChange}
           onMount={handleEditorMount}
           options={{
+            fixedOverflowWidgets: true,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fontSize: 13,

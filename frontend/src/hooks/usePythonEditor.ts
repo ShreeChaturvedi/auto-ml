@@ -14,6 +14,8 @@ import {
   setCurrentProjectId,
   type CompletionProviderOptions
 } from '@/lib/monaco/completionProvider';
+import { registerModelCellId, unregisterModelCellId } from '@/lib/monaco/notebookContext';
+import { attachDiagnostics } from '@/lib/monaco/pythonProviders';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 
@@ -67,17 +69,34 @@ export function usePythonEditor({
 
   const [localContent, setLocalContent] = useState(content);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const localContentRef = useRef(content);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const diagnosticsRef = useRef<{ dispose(): void } | null>(null);
   // Keep latest callbacks in refs so mount handler closure stays stable.
   const onRunRef = useRef(onRun);
   onRunRef.current = onRun;
   const onContentChangeRef = useRef(onContentChange);
   onContentChangeRef.current = onContentChange;
 
-  // Sync incoming content when there are no local unsaved changes.
+  // Sync incoming content — only overwrite local when safe to do so.
   useEffect(() => {
-    if (alwaysSync || !hasUnsavedChanges) {
+    if (alwaysSync) {
       setLocalContent(content);
+      localContentRef.current = content;
+      return;
+    }
+    if (hasUnsavedChanges) {
+      // Prop caught up to local → save acknowledged via WebSocket round-trip.
+      if (content === localContentRef.current) {
+        setHasUnsavedChanges(false);
+      }
+    } else {
+      // No local edits — sync from prop if it changed externally.
+      if (content !== localContentRef.current) {
+        setLocalContent(content);
+        localContentRef.current = content;
+      }
     }
   }, [content, hasUnsavedChanges, alwaysSync]);
 
@@ -88,13 +107,22 @@ export function usePythonEditor({
     }
   }, [completionOptions.projectId]);
 
-  // Cleanup save timeout on unmount.
+  // Cleanup save timeout, diagnostics, and model registration on unmount.
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
+      if (diagnosticsRef.current) {
+        diagnosticsRef.current.dispose();
+        diagnosticsRef.current = null;
+      }
+      if (editorRef.current && completionOptions.cellId) {
+        const uri = editorRef.current.getModel()?.uri.toString();
+        if (uri) unregisterModelCellId(uri);
+      }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- onChange handler (debounced autosave) ---------------------------------
@@ -106,6 +134,7 @@ export function usePythonEditor({
       if (ignoreSaveContent && newContent === ignoreSaveContent) return;
 
       setLocalContent(newContent);
+      localContentRef.current = newContent;
       setHasUnsavedChanges(true);
 
       if (saveTimeoutRef.current) {
@@ -114,7 +143,6 @@ export function usePythonEditor({
 
       saveTimeoutRef.current = setTimeout(() => {
         onContentChangeRef.current(newContent);
-        setHasUnsavedChanges(false);
       }, autosaveDelay);
     },
     [autosaveDelay, ignoreSaveContent]
@@ -123,6 +151,8 @@ export function usePythonEditor({
   // --- onMount handler ------------------------------------------------------
   const handleEditorMount = useCallback(
     (editor: MonacoEditor.IStandaloneCodeEditor, monaco: Monaco) => {
+      editorRef.current = editor;
+
       // Blur → flush unsaved changes.
       editor.onDidBlurEditorWidget(() => {
         // Inline the flush logic to capture latest localContent via ref-like
@@ -134,7 +164,6 @@ export function usePythonEditor({
         const currentValue = editor.getModel()?.getValue() ?? '';
         if (ignoreSaveContent && currentValue === ignoreSaveContent) return;
         onContentChangeRef.current(currentValue);
-        setHasUnsavedChanges(false);
       });
 
       // Apply theme.
@@ -142,6 +171,16 @@ export function usePythonEditor({
 
       // Register completion provider.
       registerPythonCompletionProvider(monaco, completionOptions);
+
+      // Register model-to-cell mapping for notebook context.
+      if (completionOptions.cellId) {
+        registerModelCellId(editor.getModel()!.uri.toString(), completionOptions.cellId);
+      }
+
+      // Attach per-editor diagnostics.
+      if (completionOptions.projectId) {
+        diagnosticsRef.current = attachDiagnostics(monaco, editor, completionOptions.projectId);
+      }
 
       // Shift+Enter → run.
       editor.addCommand(
@@ -151,7 +190,7 @@ export function usePythonEditor({
     },
     // We intentionally keep a minimal dep list; callbacks are captured via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resolvedTheme, completionOptions.projectId]
+    [resolvedTheme, completionOptions.projectId, completionOptions.cellId]
   );
 
   // --- beforeMount handler --------------------------------------------------

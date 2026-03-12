@@ -237,6 +237,35 @@ export interface PythonCompletion {
   docstring?: string;
 }
 
+export interface CellContext {
+  cellId: string;
+  content: string;
+  position: number;
+}
+
+export interface HoverResult {
+  name: string;
+  type: string;
+  docstring: string;
+  fullName?: string;
+}
+
+export interface SignatureResult {
+  name: string;
+  docstring: string;
+  params: { name: string; description: string; default?: string }[];
+  activeParam: number;
+}
+
+export interface DiagnosticResult {
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+  message: string;
+  severity: 'error';
+}
+
 /**
  * Get Python code completions using Jedi LSP
  */
@@ -244,16 +273,87 @@ export async function getPythonCompletions(
   code: string,
   line: number,
   column: number,
-  projectId: string
+  projectId: string,
+  cells?: CellContext[],
+  currentCellId?: string
 ): Promise<PythonCompletion[]> {
   try {
     const response = await apiRequest<{ completions: PythonCompletion[] }>('/python/completions', {
       method: 'POST',
-      body: JSON.stringify({ code, line, column, projectId })
+      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
     });
     return response.completions;
   } catch (error) {
     console.warn('[notebooks] Failed to get completions:', error);
+    return [];
+  }
+}
+
+/**
+ * Get Python hover information using Jedi LSP
+ */
+export async function getPythonHover(
+  code: string,
+  line: number,
+  column: number,
+  projectId: string,
+  cells?: CellContext[],
+  currentCellId?: string
+): Promise<HoverResult | null> {
+  try {
+    const response = await apiRequest<{ hover: HoverResult }>('/python/hover', {
+      method: 'POST',
+      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+    });
+    return response.hover;
+  } catch (error) {
+    console.warn('[notebooks] Failed to get hover:', error);
+    return null;
+  }
+}
+
+/**
+ * Get Python signature help using Jedi LSP
+ */
+export async function getPythonSignatures(
+  code: string,
+  line: number,
+  column: number,
+  projectId: string,
+  cells?: CellContext[],
+  currentCellId?: string
+): Promise<SignatureResult[]> {
+  try {
+    const response = await apiRequest<{ signatures: SignatureResult[] }>('/python/signatures', {
+      method: 'POST',
+      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+    });
+    return response.signatures;
+  } catch (error) {
+    console.warn('[notebooks] Failed to get signatures:', error);
+    return [];
+  }
+}
+
+/**
+ * Get Python diagnostics using Jedi LSP
+ */
+export async function getPythonDiagnostics(
+  code: string,
+  line: number,
+  column: number,
+  projectId: string,
+  cells?: CellContext[],
+  currentCellId?: string
+): Promise<DiagnosticResult[]> {
+  try {
+    const response = await apiRequest<{ diagnostics: DiagnosticResult[] }>('/python/diagnostics', {
+      method: 'POST',
+      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+    });
+    return response.diagnostics;
+  } catch (error) {
+    console.warn('[notebooks] Failed to get diagnostics:', error);
     return [];
   }
 }

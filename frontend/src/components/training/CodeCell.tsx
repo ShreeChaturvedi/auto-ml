@@ -225,6 +225,7 @@ export function CodeCell({
             theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
             onMount={handleEditorMount}
             options={{
+              fixedOverflowWidgets: true,
               minimap: { enabled: false },
               lineNumbers: 'on',
               lineNumbersMinChars: 3,

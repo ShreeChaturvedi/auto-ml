@@ -130,7 +130,6 @@ export function MentionDropdown({
 
   const hasDataFiles = groups.dataFiles.length > 0;
   const hasContextFiles = groups.contextFiles.length > 0;
-  const showGroupHeaders = hasDataFiles && hasContextFiles;
 
   return createPortal(
     <ul
@@ -150,7 +149,7 @@ export function MentionDropdown({
       onAnimationEnd={handleAnimationEnd}
     >
       {/* Header */}
-      <li className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider select-none" aria-hidden>
+      <li className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider select-none" aria-hidden>
         Files
       </li>
 
@@ -161,25 +160,13 @@ export function MentionDropdown({
       ) : (
         <>
           {hasDataFiles ? (
-            <>
-              {showGroupHeaders ? (
-                <li className="px-2 pt-1.5 pb-0.5 text-[9px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none" aria-hidden>
-                  Data Files
-                </li>
-              ) : null}
-              {groups.dataFiles.map((c) => renderItem(c, globalIndexMap.get(c.id)!))}
-            </>
+            groups.dataFiles.map((c) => renderItem(c, globalIndexMap.get(c.id)!))
           ) : null}
 
           {hasContextFiles ? (
             <>
-              {showGroupHeaders ? (
-                <li className={cn(
-                  'px-2 pb-0.5 text-[9px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none',
-                  hasDataFiles && 'pt-2 mt-1 border-t border-border/50'
-                )} aria-hidden>
-                  Context Files
-                </li>
+              {hasDataFiles ? (
+                <li className="my-1 border-t border-border/50" aria-hidden />
               ) : null}
               {groups.contextFiles.map((c) => renderItem(c, globalIndexMap.get(c.id)!))}
             </>

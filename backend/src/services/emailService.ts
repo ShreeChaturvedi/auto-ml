@@ -20,11 +20,11 @@ function isSmtpConfigured(): boolean {
   return !!(env.smtpHost && env.smtpUser && env.smtpPassword);
 }
 
-export function buildPasswordResetUrl(resetToken: string): string {
+function buildPasswordResetUrl(resetToken: string): string {
   return `${env.frontendUrl}/reset-password?token=${resetToken}`;
 }
 
-export function buildVerificationUrl(verificationToken: string): string {
+function buildVerificationUrl(verificationToken: string): string {
   return `${env.frontendUrl}/verify-email?token=${verificationToken}`;
 }
 

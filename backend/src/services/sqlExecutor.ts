@@ -10,7 +10,7 @@ import type { QueryResultPayload } from '../types/query.js';
 import { buildEdaSummary } from './edaSummary.js';
 import { validateReadOnlySql } from './sqlValidator.js';
 
-export interface PgTypeCatalogRow {
+interface PgTypeCatalogRow {
   oid: number;
   typname: string;
   typtype: string;
@@ -33,7 +33,7 @@ function normalizeArrayTypeName(typeName: string, elementTypeName: string | null
   return normalizedTypeName;
 }
 
-export function resolveTypeNameFromPgCatalog(row: PgTypeCatalogRow): string {
+function resolveTypeNameFromPgCatalog(row: PgTypeCatalogRow): string {
   const typeName = row.typname?.trim();
   if (!typeName) {
     return 'unknown';

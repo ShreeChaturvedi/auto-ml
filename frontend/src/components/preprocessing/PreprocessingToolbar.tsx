@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { AvailableTable } from '@/types/preprocessing';
-import { Database, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { Database, ListChecks, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 
 interface ProcessingTabOption {
   id: string;
@@ -31,6 +31,9 @@ interface PreprocessingToolbarLeftProps {
   onDeleteTab: () => void;
   canDeleteTab: boolean;
   selectedDatasetId: string;
+  onOpenTimeline: () => void;
+  timelineStepCount: number;
+  hasAwaitingApproval: boolean;
 }
 
 interface PreprocessingToolbarRightProps {
@@ -50,7 +53,10 @@ export function PreprocessingToolbarLeft({
   onResetTab,
   onDeleteTab,
   canDeleteTab,
-  selectedDatasetId
+  selectedDatasetId,
+  onOpenTimeline,
+  timelineStepCount,
+  hasAwaitingApproval
 }: PreprocessingToolbarLeftProps) {
   return (
     <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
@@ -75,6 +81,26 @@ export function PreprocessingToolbarLeft({
         title="New processing tab"
       >
         <Plus className="h-3.5 w-3.5" />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+        onClick={onOpenTimeline}
+        title="Transformation Timeline"
+      >
+        <div className="relative">
+          <ListChecks className="h-3.5 w-3.5" />
+          {timelineStepCount > 0 && (
+            <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-muted-foreground/80 px-0.5 text-[9px] font-medium text-background">
+              {timelineStepCount}
+            </span>
+          )}
+          {hasAwaitingApproval && (
+            <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 timeline-dot-pulse" />
+          )}
+        </div>
       </Button>
 
       <DropdownMenu>

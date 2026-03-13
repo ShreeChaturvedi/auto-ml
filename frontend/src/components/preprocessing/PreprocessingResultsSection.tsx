@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronRight,
   Loader2,
   ShieldAlert
 } from 'lucide-react';
@@ -24,12 +25,14 @@ export interface PreprocessingResultsSectionProps {
   storeError: string | null;
   latestTimelineEvent: TransformationEvent | null;
   divergedAccentClassName: string;
+  onOpenTimeline?: () => void;
 }
 
 export function PreprocessingResultsSection({
   storeError,
   latestTimelineEvent,
-  divergedAccentClassName
+  divergedAccentClassName,
+  onOpenTimeline
 }: PreprocessingResultsSectionProps) {
   const composerStatusNotice = useMemo(() => {
     if (!storeError && !latestTimelineEvent) {
@@ -71,8 +74,13 @@ export function PreprocessingResultsSection({
       ?? summarizeValidation(latestTimelineEvent)
       ?? (status === 'awaiting_approval' ? 'Waiting for your approve/reject decision.' : undefined);
 
+    const isClickable = Boolean(onOpenTimeline);
+
     return (
-      <Card className={baseClass}>
+      <Card
+        className={`${baseClass}${isClickable ? ' cursor-pointer hover:brightness-105 transition' : ''}`}
+        onClick={isClickable ? onOpenTimeline : undefined}
+      >
         <CardContent className="flex items-center gap-2 p-2 text-xs">
           {status === 'failed' ? (
             <AlertTriangle className="h-4 w-4" />
@@ -108,10 +116,11 @@ export function PreprocessingResultsSection({
             </span>
           ) : null}
           {!hasRowCountSummary && detail ? <span className="text-[11px] opacity-90">{detail}</span> : null}
+          {isClickable && <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
         </CardContent>
       </Card>
     );
-  }, [divergedAccentClassName, latestTimelineEvent, storeError]);
+  }, [divergedAccentClassName, latestTimelineEvent, onOpenTimeline, storeError]);
 
   if (!composerStatusNotice) return null;
 

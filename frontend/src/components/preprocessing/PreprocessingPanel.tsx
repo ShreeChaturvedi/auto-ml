@@ -13,6 +13,7 @@ import {
 } from './PreprocessingToolbar';
 import { PreprocessingChatSection } from './PreprocessingChatSection';
 import { PreprocessingResultsSection } from './PreprocessingResultsSection';
+import { TransformationTimelineSheet } from './TransformationTimelineSheet';
 import { cn } from '@/lib/utils';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -57,6 +58,7 @@ export function PreprocessingPanel() {
 
   const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
   const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
+  const [timelineSheetOpen, setTimelineSheetOpen] = useState(false);
 
   const { forceOpen: datasetSelectorForceOpen, openSelector: openDatasetSelector } =
     useDatasetSelectorTrigger();
@@ -215,6 +217,9 @@ export function PreprocessingPanel() {
             onDeleteTab={handleDeleteTab}
             canDeleteTab={tabs.length > 1}
             selectedDatasetId={selectedDatasetId ?? ''}
+            onOpenTimeline={() => setTimelineSheetOpen(true)}
+            timelineStepCount={sortedTimeline.length}
+            hasAwaitingApproval={sortedTimeline.some((e) => e.status === 'awaiting_approval')}
           />
         }
         toolbarRight={
@@ -230,6 +235,7 @@ export function PreprocessingPanel() {
             storeError={storeError}
             latestTimelineEvent={latestTimelineEvent}
             divergedAccentClassName={divergedAccentClassName}
+            onOpenTimeline={() => setTimelineSheetOpen(true)}
           />
         }
         LeftPaneComponent={(renderProps) => (
@@ -237,11 +243,7 @@ export function PreprocessingPanel() {
             {...renderProps}
             storeError={storeError}
             sortedTimeline={sortedTimeline}
-            replayReport={replayReport}
-            divergedAccentClassName={divergedAccentClassName}
-            projectAccentBorderClass={projectAccentClasses.border}
-            onApproveStep={handleApproveStep}
-            onRejectStep={handleRejectStep}
+            onOpenTimeline={() => setTimelineSheetOpen(true)}
           />
         )}
       />
@@ -268,6 +270,18 @@ export function PreprocessingPanel() {
         onUseCurrentDataset={handleUseCurrentDataset}
         onUseOriginalDataset={handleUseOriginalDataset}
         onCancel={() => resolvePendingSubmitPrompt(null)}
+      />
+
+      <TransformationTimelineSheet
+        sortedTimeline={sortedTimeline}
+        replayReport={replayReport}
+        divergedAccentClassName={divergedAccentClassName}
+        projectAccentBorderClass={projectAccentClasses.border}
+        isGenerating={sortedTimeline.some((e) => e.status === 'running')}
+        onApproveStep={handleApproveStep}
+        onRejectStep={handleRejectStep}
+        open={timelineSheetOpen}
+        onOpenChange={setTimelineSheetOpen}
       />
     </>
   );

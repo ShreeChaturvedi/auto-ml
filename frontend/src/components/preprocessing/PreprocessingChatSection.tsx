@@ -3,16 +3,26 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
-import { TransformationTimeline } from './TransformationTimeline';
+import { TimelineProgressBar } from './TimelineProgressBar';
+import { PreprocessingToolCard } from './PreprocessingToolCard';
 import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import { AlertTriangle, Wand2 } from 'lucide-react';
 import type { TransformationEvent } from '@/types/preprocessing';
-import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 
 const HIDDEN_ACTIVITY_TOOLS = new Set([
   'set_active_dataset',
   'list_project_datasets',
   'profile_active_dataset'
+]);
+
+const SEMANTIC_PREPROCESSING_TOOLS = new Set([
+  'propose_transformation_step',
+  'materialize_step_code',
+  'execute_transformation_step',
+  'validate_step_result',
+  'commit_transformation_step',
+  'detect_step_divergence',
+  'reconcile_diverged_step'
 ]);
 
 export interface PreprocessingChatSectionProps {
@@ -24,11 +34,7 @@ export interface PreprocessingChatSectionProps {
   hydratedMessageIds: Set<string>;
   storeError: string | null;
   sortedTimeline: TransformationEvent[];
-  replayReport: ReplayCompatibilityReport | null;
-  divergedAccentClassName: string;
-  projectAccentBorderClass: string;
-  onApproveStep: (stepId: string) => void;
-  onRejectStep: (stepId: string) => void;
+  onOpenTimeline: () => void;
 }
 
 export function PreprocessingChatSection({
@@ -40,11 +46,7 @@ export function PreprocessingChatSection({
   hydratedMessageIds,
   storeError,
   sortedTimeline,
-  replayReport,
-  divergedAccentClassName,
-  projectAccentBorderClass,
-  onApproveStep,
-  onRejectStep
+  onOpenTimeline
 }: PreprocessingChatSectionProps) {
   const visibleActivityMessages = messages.filter((message) => (
     message.type !== 'tool_call' || !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool)
@@ -63,7 +65,6 @@ export function PreprocessingChatSection({
 
       {visibleActivityMessages.length > 0 ? (
         <div className="space-y-2 mt-6">
-          <h2 className="text-sm font-semibold">Agent Activity</h2>
           {visibleActivityMessages.map((message) => {
             if (message.type === 'user') {
               return (
@@ -109,6 +110,17 @@ export function PreprocessingChatSection({
             }
 
             if (message.type === 'tool_call') {
+              if (SEMANTIC_PREPROCESSING_TOOLS.has(message.call.tool)) {
+                return (
+                  <PreprocessingToolCard
+                    key={message.id}
+                    call={message.call}
+                    result={message.result}
+                    sortedTimeline={sortedTimeline}
+                    onOpenTimeline={onOpenTimeline}
+                  />
+                );
+              }
               return (
                 <ToolIndicator
                   key={message.id}
@@ -125,14 +137,10 @@ export function PreprocessingChatSection({
         </div>
       ) : null}
 
-      <TransformationTimeline
+      <TimelineProgressBar
         sortedTimeline={sortedTimeline}
-        replayReport={replayReport}
-        divergedAccentClassName={divergedAccentClassName}
-        projectAccentBorderClass={projectAccentBorderClass}
         isGenerating={isGenerating}
-        onApproveStep={onApproveStep}
-        onRejectStep={onRejectStep}
+        onOpenTimeline={onOpenTimeline}
       />
     </div>
   );

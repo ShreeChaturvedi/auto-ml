@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useNotebookStore } from '@/stores/notebookStore';
+import type { NotebookPhaseMetadata } from '@/types/notebook';
 import type { PreprocessingTab } from '../preprocessingTabUtils';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function buildPreprocessingMetadata(tab: PreprocessingTab): NotebookPhaseMetadata {
+  return { phase: 'preprocessing', tabId: tab.id, tabName: tab.name };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +54,7 @@ export function useTabNotebookSync({
   const renameNotebook = useNotebookStore((state) => state.renameNotebook);
   const setActiveNotebook = useNotebookStore((state) => state.setActiveNotebook);
   const deleteNotebook = useNotebookStore((state) => state.deleteNotebook);
+  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
 
   const notebookEnsureLocksRef = useRef(new Map<string, Promise<string | null>>());
   const notebookReconcileLockRef = useRef<Promise<void> | null>(null);
@@ -101,8 +111,9 @@ export function useTabNotebookSync({
           if (adopted.name !== tab.name) {
             await renameNotebook(adopted.notebookId, tab.name);
           }
+          await updateNotebookMetadata(adopted.notebookId, buildPreprocessingMetadata(tab));
         } else {
-          const created = await createNotebook(tab.name);
+          const created = await createNotebook(tab.name, buildPreprocessingMetadata(tab));
           assignedNotebookId = created?.notebookId ?? null;
           if (assignedNotebookId) {
             await loadNotebooksInStore();
@@ -124,9 +135,20 @@ export function useTabNotebookSync({
         }
       }
 
-      // 3) Delete orphan notebooks (not referenced by any existing processing tab).
+      // 2.5) Ensure all mapped notebooks have correct phase metadata.
+      //      Refresh from store so we see metadata set during step 2.
       await loadNotebooksInStore();
       notebooks = useNotebookStore.getState().notebooks;
+      for (const tab of nextTabs) {
+        if (!tab.notebookId) continue;
+        const nb = notebooks.find((entry) => entry.notebookId === tab.notebookId);
+        const meta = nb?.metadata as Record<string, unknown> | undefined;
+        if (nb && (!meta?.phase || meta.tabId !== tab.id)) {
+          await updateNotebookMetadata(tab.notebookId, buildPreprocessingMetadata(tab));
+        }
+      }
+
+      // 3) Delete orphan notebooks (not referenced by any existing processing tab).
       const finalMappedNotebookIds = new Set(
         tabsRef.current
           .map((tab) => tab.notebookId)
@@ -163,7 +185,8 @@ export function useTabNotebookSync({
     setActiveNotebook,
     setTabNotebookId,
     tabsRef,
-    tabsReady
+    tabsReady,
+    updateNotebookMetadata
   ]);
 
   // ---- ensureNotebookForTab ------------------------------------------------
@@ -226,12 +249,14 @@ export function useTabNotebookSync({
             if (adopted.name !== latestTabState.name) {
               await renameNotebook(adopted.notebookId, latestTabState.name);
             }
+            await updateNotebookMetadata(adopted.notebookId, buildPreprocessingMetadata(latestTabState));
             return adopted.notebookId;
           }
         }
       }
 
-      const created = await createNotebook((tabsRef.current.find((entry) => entry.id === currentTab.id) ?? currentTab).name);
+      const tabForCreate = tabsRef.current.find((entry) => entry.id === currentTab.id) ?? currentTab;
+      const created = await createNotebook(tabForCreate.name, buildPreprocessingMetadata(tabForCreate));
       const createdNotebookId = created?.notebookId ?? null;
       if (createdNotebookId) {
         setTabNotebookId(currentTab.id, createdNotebookId);
@@ -251,7 +276,8 @@ export function useTabNotebookSync({
     renameNotebook,
     setActiveNotebook,
     setTabNotebookId,
-    tabsRef
+    tabsRef,
+    updateNotebookMetadata
   ]);
 
   // ---- Trigger notebook reconciliation when tabs change --------------------

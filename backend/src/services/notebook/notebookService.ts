@@ -24,6 +24,7 @@ export {
   listProjectNotebooks,
   createProjectNotebook,
   renameProjectNotebook,
+  updateProjectNotebook,
   deleteProjectNotebook,
   getNotebook,
   getNotebookByProject

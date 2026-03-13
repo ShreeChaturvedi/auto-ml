@@ -1,41 +1,35 @@
 import type { ComponentType } from 'react';
 import {
-  FileCode,
+  Braces,
   FileText,
-  FileSpreadsheet,
-  FileType as FileTypeIcon,
   File
 } from 'lucide-react';
-import { CsvIcon } from '@/components/data/CsvIcon';
-import { XlsIcon } from '@/components/data/XlsIcon';
+import { CsvIcon, XlsIcon, PdfIcon, DocIcon, MarkdownIcon } from '@/components/data/CsvIcon';
 import type { FileType } from '@/types/file';
 
-/** Lucide icon component for each file type. */
+/** Icon component for each file type. */
 export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
   csv: CsvIcon,
-  json: FileSpreadsheet,
+  json: Braces,
   excel: XlsIcon,
-  pdf: FileText,
-  markdown: FileCode,
-  word: FileTypeIcon,
+  pdf: PdfIcon,
+  markdown: MarkdownIcon,
+  word: DocIcon,
   text: FileText,
   other: File
 };
 
-/** Tailwind color class applied to file icons when active / prominent. */
+/** Tailwind color class applied to file icons (theme-responsive). */
 export const fileIconColorByType: Record<FileType, string> = {
-  csv: 'text-green-500',
-  json: 'text-blue-500',
-  excel: 'text-emerald-500',
-  pdf: 'text-red-500',
-  markdown: 'text-purple-500',
-  word: 'text-blue-500',
+  csv: 'text-green-600 dark:text-green-400',
+  json: 'text-blue-600 dark:text-blue-400',
+  excel: 'text-emerald-600 dark:text-emerald-400',
+  pdf: 'text-red-600 dark:text-red-400',
+  markdown: 'text-foreground',
+  word: 'text-blue-700 dark:text-blue-400',
   text: 'text-muted-foreground',
   other: 'text-muted-foreground'
 };
-
-/** File types whose icons accept themeColorClass/isActive props (CsvIcon, XlsIcon). */
-export const THEME_ICON_TYPES = new Set<FileType>(['csv', 'excel']);
 
 /** Data file types that represent tabular datasets. */
 export const DATA_FILE_TYPES = new Set<FileType>(['csv', 'json', 'excel']);
@@ -44,30 +38,27 @@ export const DATA_FILE_TYPES = new Set<FileType>(['csv', 'json', 'excel']);
 export const DOC_FILE_TYPES = new Set<FileType>(['pdf', 'markdown', 'word', 'text']);
 
 /**
- * Resolve the icon component and color metadata for a file type.
- * Centralizes the CsvIcon/XlsIcon special-casing so consumers don't repeat it.
+ * Resolve the icon component and color class for a file type.
  */
 export function resolveFileIcon(type: FileType | string): {
-  Icon: ComponentType<{ className?: string; themeColorClass?: string; isActive?: boolean }>;
+  Icon: ComponentType<{ className?: string }>;
   colorClass: string;
-  usesTheme: boolean;
 } {
   const ft = type as FileType;
-  const usesTheme = THEME_ICON_TYPES.has(ft);
   return {
     Icon: fileIconByType[ft] ?? fileIconByType.other,
     colorClass: fileIconColorByType[ft] ?? fileIconColorByType.other,
-    usesTheme,
   };
 }
 
-/** Map of Tailwind color classes used in this codebase → CSS hex values. */
+/** Map of compound Tailwind color classes → CSS hex values (uses the dark-mode shade). */
 const TAILWIND_HEX: Record<string, string> = {
-  'text-green-500': '#22c55e',
-  'text-blue-500': '#3b82f6',
-  'text-emerald-500': '#10b981',
-  'text-red-500': '#ef4444',
-  'text-purple-500': '#a855f7',
+  'text-green-600 dark:text-green-400': '#4ade80',
+  'text-blue-600 dark:text-blue-400': '#60a5fa',
+  'text-blue-700 dark:text-blue-400': '#60a5fa',
+  'text-emerald-600 dark:text-emerald-400': '#34d399',
+  'text-red-600 dark:text-red-400': '#f87171',
+  'text-foreground': '#fafafa',
   'text-muted-foreground': '#a1a1aa',
 };
 
@@ -79,9 +70,7 @@ export function tailwindColorToHex(twClass: string): string {
   return TAILWIND_HEX[twClass] ?? TAILWIND_HEX['text-muted-foreground'];
 }
 
-/**
- * Format file size for display
- */
+/** Format file size for display. */
 export const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -90,9 +79,7 @@ export const formatFileSize = (bytes: number): string => {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 };
 
-/**
- * Determine file type from File object
- */
+/** Determine file type from File object. */
 export const getFileType = (file: File): FileType => {
   const extension = file.name.split('.').pop()?.toLowerCase();
 

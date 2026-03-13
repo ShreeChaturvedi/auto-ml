@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   MoreVertical,
   Download,
@@ -19,12 +19,12 @@ import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { phaseConfig } from '@/types/phase';
+import { projectColorClasses } from '@/types/project';
 import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
 import { deleteDocument, downloadDocument } from '@/lib/api/documents';
 import { cn } from '@/lib/utils';
 import { resolveFileIcon, DATA_FILE_TYPES } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
-import { projectColorClasses } from '@/types/project';
 
 interface FileExplorerProps {
   projectId: string;
@@ -34,15 +34,20 @@ interface FileExplorerProps {
 interface FileItemProps {
   file: UploadedFile;
   isActive: boolean;
-  themeColorClass?: string;
   onOpen: () => void;
   onDelete: () => void;
   onDownload: () => void;
 }
 
-function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownload }: FileItemProps) {
-  const { Icon, colorClass, usesTheme } = resolveFileIcon(file.type);
-  const iconColor = isActive ? colorClass : 'text-muted-foreground';
+function FileItem({ file, isActive, onOpen, onDelete, onDownload }: FileItemProps) {
+  const { Icon, colorClass } = resolveFileIcon(file.type);
+  const [hovered, setHovered] = useState(false);
+
+  const iconColor = isActive
+    ? colorClass
+    : hovered
+      ? colorClass
+      : 'text-muted-foreground';
 
   return (
     <div
@@ -53,11 +58,10 @@ function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownloa
           : 'text-foreground hover:bg-muted'
       )}
       onClick={onOpen}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <Icon
-        className={cn('h-3.5 w-3.5 shrink-0', !usesTheme && iconColor)}
-        {...(usesTheme ? { themeColorClass, isActive } : {})}
-      />
+      <Icon className={cn('h-3.5 w-3.5 shrink-0 transition-colors duration-200', iconColor)} />
       <span className="text-workflow truncate flex-1">{file.name}</span>
 
       <DropdownMenu>
@@ -98,8 +102,43 @@ function FileItem({ file, isActive, themeColorClass, onOpen, onDelete, onDownloa
   );
 }
 
+interface PlanItemProps {
+  name: string;
+  isActive: boolean;
+  themeColorClass: string;
+  onOpen: () => void;
+}
+
+function PlanItem({ name, isActive, themeColorClass, onOpen }: PlanItemProps) {
+  const [hovered, setHovered] = useState(false);
+
+  const iconColor = isActive
+    ? themeColorClass
+    : hovered
+      ? themeColorClass
+      : 'text-muted-foreground';
+
+  return (
+    <div
+      className={cn(
+        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
+        isActive
+          ? 'bg-muted text-foreground font-medium'
+          : 'text-foreground hover:bg-muted'
+      )}
+      onClick={onOpen}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <ClipboardList className={cn('h-3.5 w-3.5 shrink-0 transition-colors duration-200', iconColor)} />
+      <span className="text-workflow truncate flex-1">{name}</span>
+    </div>
+  );
+}
+
 export function FileExplorer({ projectId }: FileExplorerProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const files = useDataStore((state) => state.files);
   const activeFileTabId = useDataStore((state) => state.activeFileTabId);
   const openFileTab = useDataStore((state) => state.openFileTab);
@@ -113,10 +152,6 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const project = useProjectStore((state) =>
     state.projects.find((p) => p.id === projectId)
   );
-
-  const themeColorClass = project
-    ? projectColorClasses[project.color]?.text
-    : undefined;
 
   useEffect(() => {
     if (projectId) {
@@ -155,6 +190,9 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
     return plansArray;
   }, [metadata]);
   const selectedPlanId = activePlanId ?? plans[0]?.id;
+  const isOnDataViewer = location.pathname.endsWith('/data-viewer');
+  const isOnUpload = location.pathname.endsWith('/upload');
+  const themeColorClass = project ? projectColorClasses[project.color]?.text ?? '' : '';
   const currentPhase = project?.currentPhase;
   const currentPhaseConfig = currentPhase ? phaseConfig[currentPhase] : undefined;
   const currentPhaseLabel = currentPhaseConfig?.label ?? 'the current step';
@@ -254,8 +292,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
           <FileItem
             key={file.id}
             file={file}
-            isActive={file.id === activeFileTabId}
-            themeColorClass={themeColorClass}
+            isActive={isOnDataViewer && file.id === activeFileTabId}
             onOpen={() => handleOpenFile(file.id)}
             onDelete={() => handleDeleteFile(file)}
             onDownload={() => handleDownloadFile(file)}
@@ -292,24 +329,13 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
         {plans.length > 0 ? (
           <div className="space-y-0.5">
             {plans.map((plan) => (
-              <div
+              <PlanItem
                 key={plan.id}
-                className={cn(
-                  'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
-                  plan.id === selectedPlanId
-                    ? 'bg-muted text-foreground font-medium'
-                    : 'text-foreground hover:bg-muted'
-                )}
-                onClick={() => handleOpenPlan(plan.id)}
-              >
-                <ClipboardList className={cn(
-                  'h-3.5 w-3.5 shrink-0',
-                  plan.id === selectedPlanId
-                    ? 'text-primary'
-                    : 'text-muted-foreground'
-                )} />
-                <span className="text-workflow truncate flex-1">{plan.name}</span>
-              </div>
+                name={plan.name}
+                isActive={isOnUpload && plan.id === selectedPlanId}
+                themeColorClass={themeColorClass}
+                onOpen={() => handleOpenPlan(plan.id)}
+              />
             ))}
           </div>
         ) : (

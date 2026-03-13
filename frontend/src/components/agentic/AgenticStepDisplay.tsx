@@ -7,15 +7,19 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots, type MentionSlotConfig, type UsageConfig } from '@/components/llm/LlmChatComposer';
 import { MentionDropdown } from '@/components/llm/MentionDropdown';
+import { VoiceInputButton } from '@/components/llm/VoiceInputButton';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
+import type { VoiceState } from '@/hooks/useVoiceInput';
 import type { SuggestionPill } from '@/types/agentic';
 import type { LlmUsage } from '@/types/llmUi';
+import type {
+  AssistantModelOption,
+  ReasoningEffort,
+  ReasoningEffortOption,
+} from '@/components/llm/modelOptions';
 
-export interface ModelSwitchOption {
-  value: string;
-  label: string;
-}
+export type ModelSwitchOption = AssistantModelOption;
 
 export interface AgenticStepDisplayProps {
   /* Model switch prompt */
@@ -49,11 +53,18 @@ export interface AgenticStepDisplayProps {
   mentionTypes: Map<string, string>;
   themeColor?: string;
   themeColorClass?: string;
+  voiceConfig?: {
+    state: VoiceState;
+    analyserRef: React.RefObject<AnalyserNode | null>;
+    onToggle: () => void;
+    handleKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => boolean;
+    handleKeyUp: (event: React.KeyboardEvent<HTMLDivElement>) => boolean;
+  };
   assistantModel: string;
-  inlineModelOptions: ModelSwitchOption[];
-  reasoningEffort: string;
-  setReasoningEffort: (effort: string) => void;
-  reasoningEffortOptions: ModelSwitchOption[];
+  inlineModelOptions: AssistantModelOption[];
+  reasoningEffort: ReasoningEffort;
+  setReasoningEffort: (effort: ReasoningEffort) => void;
+  reasoningEffortOptions: ReasoningEffortOption[];
   sessionUsages: LlmUsage[];
   handleStop: () => void;
   chatMetaSlot?: React.ReactNode;
@@ -77,6 +88,7 @@ export function AgenticStepDisplay({
   mentionTypes,
   themeColor,
   themeColorClass,
+  voiceConfig,
   assistantModel,
   inlineModelOptions,
   reasoningEffort,
@@ -144,13 +156,26 @@ export function AgenticStepDisplay({
         </div>
       ) : null}
 
-      <div className="px-4 pb-4 pt-2">
+      <div
+        className="px-4 pb-4 pt-2"
+        style={
+          voiceConfig?.state === 'listening' && themeColor
+            ? { '--voice-theme-color': themeColor } as React.CSSProperties
+            : undefined
+        }
+        onKeyUp={(event) => {
+          voiceConfig?.handleKeyUp(event);
+        }}
+      >
         <LlmChatComposer
           chatInput={{
             value: chatInput,
             onValueChange: (v) => mention.handleValueChange(v),
             onKeyDown: (e) => {
               if (mention.handleKeyDown(e as React.KeyboardEvent<HTMLDivElement>)) return;
+              if (voiceConfig?.handleKeyDown(e as React.KeyboardEvent<HTMLDivElement>)) {
+                return;
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 submitPrompt(chatInput);
@@ -179,6 +204,17 @@ export function AgenticStepDisplay({
           slots={{
             metaSlot: chatMetaSlot,
             maxWidthClassName: "max-w-5xl",
+            voiceSlot: voiceConfig ? (
+              <div className="group/voice">
+                <VoiceInputButton
+                  state={voiceConfig.state}
+                  analyserRef={voiceConfig.analyserRef}
+                  onToggle={voiceConfig.onToggle}
+                  themeColor={themeColor}
+                  disabled={isGenerating || !!domainLockReason}
+                />
+              </div>
+            ) : undefined,
             mentionSlot: {
               dropdown: (
                 <MentionDropdown
@@ -194,6 +230,7 @@ export function AgenticStepDisplay({
               mentionNames,
               mentionTypes,
               themeColor,
+              voiceActive: voiceConfig?.state === 'listening',
               onValueChange: mention.handleValueChange,
             } satisfies MentionSlotConfig,
           } satisfies ComposerSlots}

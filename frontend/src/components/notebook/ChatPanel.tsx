@@ -19,9 +19,12 @@ import { Badge } from '@/components/ui/badge';
 import { Brain } from 'lucide-react';
 import { LlmChatComposer, type AttachmentStatus, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots, type MentionSlotConfig, type UsageConfig } from '@/components/llm/LlmChatComposer';
 import { MentionDropdown } from '@/components/llm/MentionDropdown';
+import { VoiceInputButton } from '@/components/llm/VoiceInputButton';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
+import { useComposerVoiceInput } from '@/hooks/useComposerVoiceInput';
 import { useDataStore } from '@/stores/dataStore';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { uploadDocument } from '@/lib/api/documents';
 import {
   buildInlineModelOptions,
@@ -135,6 +138,21 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
     inputRef: mentionInputRef
   });
 
+  const { themeColor } = useProjectThemeColor(projectId);
+
+  const {
+    state: voiceState,
+    analyserRef: voiceAnalyserRef,
+    toggleRecording: voiceToggle,
+    handlePushToTalkKeyDown,
+    handlePushToTalkKeyUp,
+  } = useComposerVoiceInput({
+    value: chatInput,
+    inputRef: mentionInputRef,
+    onValueChange: mentionHandleValueChange,
+    disabled: isGenerating,
+  });
+
   // ── Extracted hooks ──────────────────────────────────────────────────
 
   const { hydratedMessageIds } = useMessagePersistence({
@@ -213,12 +231,23 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
       // Let mention autocomplete handle keys first
       if (mentionHandleKeyDown(event)) return;
 
+      if (handlePushToTalkKeyDown(event)) {
+        return;
+      }
+
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         void handleSend();
       }
     },
-    [handleSend, mentionHandleKeyDown]
+    [handlePushToTalkKeyDown, handleSend, mentionHandleKeyDown]
+  );
+
+  const handleKeyUp = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      handlePushToTalkKeyUp(event);
+    },
+    [handlePushToTalkKeyUp]
   );
 
   const handleAttachFile = useCallback(
@@ -276,7 +305,11 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
       />
 
       {/* Input */}
-      <div className="border-t bg-background p-4">
+      <div
+        className="border-t bg-background p-4"
+        style={voiceState === 'listening' && themeColor ? { '--voice-theme-color': themeColor } as React.CSSProperties : undefined}
+        onKeyUp={handleKeyUp}
+      >
         <LlmChatComposer
           chatInput={{
             value: chatInput,
@@ -309,6 +342,17 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
                 {documentFiles.length} doc{documentFiles.length === 1 ? '' : 's'}
               </Badge>
             ),
+            voiceSlot: (
+              <div className="group/voice">
+                <VoiceInputButton
+                  state={voiceState}
+                  analyserRef={voiceAnalyserRef}
+                  onToggle={voiceToggle}
+                  themeColor={themeColor}
+                  disabled={isGenerating}
+                />
+              </div>
+            ),
             attachment: {
               onAttachFile: handleAttachFile,
               status: attachmentStatus,
@@ -329,6 +373,8 @@ export function ChatPanel({ projectId, className }: ChatPanelProps) {
               inputRef: mentionInputRef,
               mentionNames,
               mentionTypes,
+              themeColor,
+              voiceActive: voiceState === 'listening',
               onValueChange: mentionHandleValueChange,
             } satisfies MentionSlotConfig,
           } satisfies ComposerSlots}

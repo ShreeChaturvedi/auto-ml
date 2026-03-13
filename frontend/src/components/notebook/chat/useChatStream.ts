@@ -12,11 +12,12 @@ import { streamTrainingPlan, executeToolCalls, type LlmStreamEvent } from '@/lib
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import type { ResolvedMention } from '@/hooks/useMentionAutocomplete';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
+import type { ReasoningEffort } from '@/components/llm/modelOptions';
 
 interface UseChatStreamOptions {
   projectId: string;
   assistantModel: string;
-  reasoningEffort: string;
+  reasoningEffort: ReasoningEffort;
   chatInput: string;
   isGenerating: boolean;
   resolvedMentions: ResolvedMention[];

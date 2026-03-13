@@ -155,4 +155,5 @@ describe('LlmChatComposer', () => {
 
     expect(screen.getByTestId('selection-state')).toHaveTextContent('gpt-5-mini:medium');
   });
+
 });

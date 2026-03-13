@@ -23,9 +23,8 @@ import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
-import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
-import { tailwindColorToHex } from '@/lib/fileUtils';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { useComposerVoiceInput } from '@/hooks/useComposerVoiceInput';
 import type { DomainAdapter } from '@/types/agentic';
 import type { ChatMessage } from '@/types/llmUi';
 import { useModelSelection } from '@/hooks/useModelSelection';
@@ -110,13 +109,7 @@ export function AgenticShell({
     [mentionCandidates]
   );
 
-  // Resolve project theme color for CSV/XLS icons (same as FileExplorer sidebar)
-  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
-  const themeColorClass = project ? projectColorClasses[project.color]?.text : undefined;
-  const themeColor = useMemo(
-    () => themeColorClass ? tailwindColorToHex(themeColorClass) : undefined,
-    [themeColorClass]
-  );
+  const { themeColor, themeColorClass } = useProjectThemeColor(projectId);
 
   const mention = useMentionAutocomplete({
     candidates: mentionCandidates,
@@ -149,6 +142,19 @@ export function AgenticShell({
     sessionVersion,
     domainAdapter,
     domainLockReason
+  });
+
+  const {
+    state: voiceState,
+    analyserRef: voiceAnalyserRef,
+    toggleRecording: voiceToggle,
+    handlePushToTalkKeyDown,
+    handlePushToTalkKeyUp,
+  } = useComposerVoiceInput({
+    value: chatInput,
+    inputRef: mentionInputRef,
+    onValueChange: mention.handleValueChange,
+    disabled: isGenerating,
   });
 
   const suggestions = useMemo(
@@ -273,6 +279,13 @@ export function AgenticShell({
               mentionTypes={mentionTypes}
               themeColor={themeColor}
               themeColorClass={themeColorClass}
+              voiceConfig={{
+                state: voiceState,
+                analyserRef: voiceAnalyserRef,
+                onToggle: voiceToggle,
+                handleKeyDown: handlePushToTalkKeyDown,
+                handleKeyUp: handlePushToTalkKeyUp,
+              }}
               assistantModel={assistantModel}
               inlineModelOptions={inlineModelOptions}
               reasoningEffort={reasoningEffort}

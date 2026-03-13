@@ -91,6 +91,10 @@ export default {
           '0%': { opacity: '1', transform: 'translateY(0) scale(1)' },
           '100%': { opacity: '0', transform: 'translateY(4px) scale(0.98)' },
         },
+        'waveform-dance': {
+          '0%, 100%': { transform: 'scaleY(1)' },
+          '50%': { transform: 'scaleY(1.5)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -99,6 +103,7 @@ export default {
         'slide-in-right': 'slide-in-right 0.2s ease-out',
         'mention-in': 'mention-in 150ms ease-out',
         'mention-out': 'mention-out 100ms ease-in',
+        'waveform-dance': 'waveform-dance 0.8s ease-in-out infinite',
       },
     },
   },

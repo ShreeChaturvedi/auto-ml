@@ -77,6 +77,7 @@ export interface MentionSlotConfig {
   mentionTypes?: Map<string, string>;
   /** Resolved CSS color string for project theme (for chip dots) */
   themeColor?: string;
+  voiceActive?: boolean;
   onValueChange: (value: string, cursorPos?: number) => void;
 }
 
@@ -84,6 +85,7 @@ export interface MentionSlotConfig {
 export interface ComposerSlots {
   leftSlot?: ReactNode;
   metaSlot?: ReactNode;
+  voiceSlot?: ReactNode;
   attachment?: AttachmentConfig;
   mentionSlot?: MentionSlotConfig;
   maxWidthClassName?: string;
@@ -124,6 +126,7 @@ export function LlmChatComposer({
   const {
     leftSlot,
     metaSlot,
+    voiceSlot,
     attachment,
     mentionSlot,
     maxWidthClassName = 'max-w-5xl',
@@ -162,6 +165,7 @@ export function LlmChatComposer({
               mentionNames={mentionSlot.mentionNames}
               mentionTypes={mentionSlot.mentionTypes}
               themeColor={mentionSlot.themeColor}
+              voiceActive={mentionSlot.voiceActive}
               placeholder={placeholder}
               disabled={disabled}
               className="min-h-[60px]"
@@ -234,6 +238,8 @@ export function LlmChatComposer({
                   />
                 </>
               ) : null}
+
+              {voiceSlot}
 
               <InputGroupButton
                 size="sm"

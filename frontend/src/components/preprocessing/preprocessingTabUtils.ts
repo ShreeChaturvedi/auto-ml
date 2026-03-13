@@ -99,6 +99,24 @@ export function statusClassName(status: TransformationEvent['status'], divergedC
   return 'border-muted bg-muted/50 text-muted-foreground';
 }
 
+export const STATUS_LABELS: Record<TransformationEvent['status'], string> = {
+  pending: 'Pending',
+  running: 'Running',
+  awaiting_approval: 'Awaiting approval',
+  applied: 'Applied',
+  failed: 'Failed',
+  diverged: 'Diverged'
+};
+
+export const STATUS_DOT_COLOR: Record<TransformationEvent['status'], string> = {
+  applied: 'bg-emerald-500',
+  failed: 'bg-red-500',
+  awaiting_approval: 'bg-amber-500',
+  running: 'bg-sky-500',
+  diverged: 'bg-violet-500',
+  pending: 'bg-muted-foreground/40'
+};
+
 export function stepTypeIcon(intentType?: string): LucideIcon {
   switch (intentType) {
     case 'drop_columns': return Columns3;

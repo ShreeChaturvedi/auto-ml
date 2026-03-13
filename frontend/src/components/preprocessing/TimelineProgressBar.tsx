@@ -1,16 +1,7 @@
 import { ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TransformationEvent } from '@/types/preprocessing';
-import { stepTypeIcon } from './preprocessingTabUtils';
-
-const STATUS_DOT_COLOR: Record<TransformationEvent['status'], string> = {
-  applied: 'bg-emerald-500',
-  failed: 'bg-red-500',
-  awaiting_approval: 'bg-amber-500',
-  running: 'bg-sky-500',
-  diverged: 'bg-violet-500',
-  pending: 'bg-muted-foreground/40'
-};
+import { STATUS_DOT_COLOR, stepTypeIcon } from './preprocessingTabUtils';
 
 interface TimelineProgressBarProps {
   sortedTimeline: TransformationEvent[];
@@ -40,7 +31,7 @@ export function TimelineProgressBar({
     text = <span className="shimmer-text text-sm">Analyzing dataset...</span>;
   } else if (isGenerating && sortedTimeline.length > 0) {
     const activeStep =
-      [...sortedTimeline].reverse().find((e) => e.status === 'running') ??
+      sortedTimeline.findLast((e) => e.status === 'running') ??
       sortedTimeline[sortedTimeline.length - 1];
     const activeIndex = sortedTimeline.indexOf(activeStep);
     const Icon = stepTypeIcon(activeStep.intentType);
@@ -52,9 +43,10 @@ export function TimelineProgressBar({
       </span>
     );
   } else {
-    const latestEvent = [...sortedTimeline].sort(
-      (a, b) => b.updatedAt - a.updatedAt
-    )[0];
+    const latestEvent = sortedTimeline.reduce<TransformationEvent | undefined>(
+      (best, e) => (!best || e.updatedAt > best.updatedAt ? e : best),
+      undefined
+    );
     const Icon = stepTypeIcon(latestEvent?.intentType);
     icon = <Icon className="h-4 w-4 text-muted-foreground" />;
     text = (

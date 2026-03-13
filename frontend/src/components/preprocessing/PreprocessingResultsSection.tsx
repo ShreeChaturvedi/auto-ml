@@ -9,17 +9,9 @@ import {
   Loader2,
   ShieldAlert
 } from 'lucide-react';
-import { getRowCountSummary, summarizeValidation } from './preprocessingTabUtils';
+import { cn } from '@/lib/utils';
+import { STATUS_LABELS, getRowCountSummary, summarizeValidation } from './preprocessingTabUtils';
 import type { TransformationEvent } from '@/types/preprocessing';
-
-const STATUS_LABELS: Record<TransformationEvent['status'], string> = {
-  pending: 'Pending',
-  running: 'Running',
-  awaiting_approval: 'Awaiting approval',
-  applied: 'Applied',
-  failed: 'Failed',
-  diverged: 'Diverged'
-};
 
 export interface PreprocessingResultsSectionProps {
   storeError: string | null;
@@ -78,7 +70,7 @@ export function PreprocessingResultsSection({
 
     return (
       <Card
-        className={`${baseClass}${isClickable ? ' cursor-pointer hover:brightness-105 transition' : ''}`}
+        className={cn(baseClass, isClickable && 'cursor-pointer hover:brightness-105 transition')}
         onClick={isClickable ? onOpenTimeline : undefined}
       >
         <CardContent className="flex items-center gap-2 p-2 text-xs">

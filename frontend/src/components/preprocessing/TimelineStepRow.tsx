@@ -5,25 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { TransformationEvent } from '@/types/preprocessing';
-import { getRowCountSummary, statusClassName, stepTypeIcon, summarizeValidation } from './preprocessingTabUtils';
-
-const STATUS_LABELS: Record<TransformationEvent['status'], string> = {
-  pending: 'Pending',
-  running: 'Running',
-  awaiting_approval: 'Awaiting approval',
-  applied: 'Applied',
-  failed: 'Failed',
-  diverged: 'Diverged'
-};
-
-const STATUS_DOT_COLOR: Record<TransformationEvent['status'], string> = {
-  applied: 'bg-emerald-500',
-  failed: 'bg-red-500',
-  awaiting_approval: 'bg-amber-500',
-  running: 'bg-sky-500',
-  diverged: 'bg-violet-500',
-  pending: 'bg-muted-foreground/40'
-};
+import { STATUS_DOT_COLOR, STATUS_LABELS, getRowCountSummary, statusClassName, stepTypeIcon, summarizeValidation } from './preprocessingTabUtils';
 
 interface TimelineStepRowProps {
   event: TransformationEvent;

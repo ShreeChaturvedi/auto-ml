@@ -19,7 +19,6 @@ interface TransformationTimelineSheetProps {
   sortedTimeline: TransformationEvent[];
   replayReport: ReplayCompatibilityReport | null;
   divergedAccentClassName: string;
-  projectAccentBorderClass: string;
   isGenerating: boolean;
   onApproveStep: (stepId: string) => void;
   onRejectStep: (stepId: string) => void;
@@ -32,7 +31,6 @@ export function TransformationTimelineSheet(props: TransformationTimelineSheetPr
     sortedTimeline,
     replayReport,
     divergedAccentClassName,
-    // projectAccentBorderClass — reserved for future per-card border theming
     isGenerating,
     onApproveStep,
     onRejectStep,

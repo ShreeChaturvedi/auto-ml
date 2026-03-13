@@ -2,25 +2,7 @@ import { ArrowRight, ChevronRight, Loader2, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { TransformationEvent } from '@/types/preprocessing';
-import { getRowCountSummary, stepTypeIcon } from './preprocessingTabUtils';
-
-const STATUS_DOT_COLOR: Record<TransformationEvent['status'], string> = {
-  applied: 'bg-emerald-500',
-  failed: 'bg-red-500',
-  awaiting_approval: 'bg-amber-500',
-  running: 'bg-sky-500',
-  diverged: 'bg-violet-500',
-  pending: 'bg-muted-foreground/40'
-};
-
-const STATUS_LABELS: Record<TransformationEvent['status'], string> = {
-  pending: 'Pending',
-  running: 'Running',
-  awaiting_approval: 'Awaiting approval',
-  applied: 'Applied',
-  failed: 'Failed',
-  diverged: 'Diverged'
-};
+import { STATUS_DOT_COLOR, STATUS_LABELS, getRowCountSummary, stepTypeIcon } from './preprocessingTabUtils';
 
 const TOOL_HUMAN_LABELS: Record<string, string> = {
   propose_transformation_step: 'Propose step',

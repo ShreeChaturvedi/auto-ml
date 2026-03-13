@@ -1,12 +1,3 @@
-/**
- * Feature Engineering Types
- *
- * Pure type definitions only. Runtime data and helper functions
- * live in `lib/features/featureTemplates.ts`.
- */
-
-import type { ColumnStatistics } from './file';
-
 // Feature categories for grouping in UI
 export type FeatureCategory =
   | 'numeric_transform'
@@ -58,28 +49,6 @@ export type FeatureMethod =
   | 'word_count'
   | 'contains_pattern'
   | 'missing_indicator';
-
-export interface FeatureTemplate {
-  id: string;
-  method: FeatureMethod;
-  category: FeatureCategory;
-  displayName: string;
-  description: string;
-  rationale: string;
-  params: Record<string, {
-    type: 'number' | 'string' | 'boolean' | 'select' | 'column';
-    label: string;
-    default: unknown;
-    options?: Array<{ value: string; label: string }>;
-    min?: number;
-    max?: number;
-    step?: number;
-  }>;
-  suggestedFor: Array<ColumnStatistics['dataType']>;
-  suggestedWhen?: (col: ColumnStatistics) => boolean;
-  estimatedImpact: 'high' | 'medium' | 'low';
-  previewFormula?: string; // e.g., "log(x + 1)"
-}
 
 export interface FeatureSpec {
   id: string;

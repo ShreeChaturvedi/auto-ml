@@ -20,6 +20,7 @@ import notebookRouter from './routes/notebooks.js';
 import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
+import { createRealtimeSessionRouter } from './routes/realtimeSession.js';
 
 export function createApp() {
   const app = express();
@@ -61,6 +62,7 @@ export function createApp() {
   router.use('/models', modelRouter);
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
+  router.use(createRealtimeSessionRouter());
 
   app.use('/api', router);
 

@@ -1,25 +1,12 @@
-/**
- * FileRow - Simple file display row without card borders
- *
- * Features:
- * - Minimal row layout (icon, name, metadata, actions)
- * - No card borders or heavy styling
- * - Hover actions (preview, delete)
- * - Status indicators for upload state
- */
-
 import { useState } from 'react';
 import { Trash2, Eye, Loader2, Check, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UploadedFile } from '@/types/file';
-import { getFileIcon, formatFileSize } from '@/lib/fileUtils';
+import { resolveFileIcon, formatFileSize } from '@/lib/fileUtils';
 import { FilePreview } from './FilePreview';
-import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { CsvIcon } from '@/components/data/CsvIcon';
-import { XlsIcon } from '@/components/data/XlsIcon';
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 
@@ -33,68 +20,39 @@ interface FileRowProps {
 export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) {
   const [showPreview, setShowPreview] = useState(false);
 
-  // Get project theme color
   const { projects } = useProjectStore();
   const activeProject = projects.find((project) => project.id === file.projectId);
   const themeColorClass = activeProject
     ? projectColorClasses[activeProject.color]?.text
     : undefined;
 
-  const iconName = getFileIcon(file.type);
-  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    iconName
-  ];
-
-  const typeColorMap: Record<typeof file.type, string> = {
-    csv: 'text-green-500',
-    json: 'text-blue-500',
-    excel: 'text-emerald-500',
-    pdf: 'text-red-500',
-    markdown: 'text-cyan-500',
-    word: 'text-indigo-500',
-    text: 'text-slate-500',
-    other: 'text-gray-500'
-  };
-
-  // Truncate file name if longer than 35 characters
-  const shouldTruncate = file.name.length > 35;
-  const displayName = shouldTruncate ? `${file.name.slice(0, 32)}...` : file.name;
+  const { Icon, colorClass, usesTheme } = resolveFileIcon(file.type);
 
   return (
     <>
       <div className="group flex items-center gap-3 py-2 px-1 rounded-md hover:bg-accent/30 transition-colors">
         {/* Icon */}
-        <div className={cn('flex-shrink-0', file.type !== 'csv' && file.type !== 'excel' && typeColorMap[file.type])}>
-          {file.type === 'csv' ? (
-            <CsvIcon className="h-5 w-5" themeColorClass={themeColorClass} />
-          ) : file.type === 'excel' ? (
-            <XlsIcon className="h-5 w-5" themeColorClass={themeColorClass} />
-          ) : (
-            IconComponent && <IconComponent className="h-5 w-5" />
-          )}
+        <div className={cn('flex-shrink-0', !usesTheme && colorClass)}>
+          <Icon
+            className="h-5 w-5"
+            {...(usesTheme ? { themeColorClass, isActive: true } : {})}
+          />
         </div>
 
         {/* File Info */}
         <div className="flex-1 min-w-0">
-          {/* File Name */}
-          {shouldTruncate ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <p className="text-sm font-medium text-foreground truncate cursor-help">
-                    {displayName}
-                  </p>
-                </TooltipTrigger>
-                <TooltipContent side="top" align="start" className="max-w-sm">
-                  <p className="text-xs break-all">{file.name}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : (
-            <p className="text-sm font-medium text-foreground truncate">
-              {displayName}
-            </p>
-          )}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="text-sm font-medium text-foreground truncate">
+                  {file.name}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="start" className="max-w-sm">
+                <p className="text-xs break-all">{file.name}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           {/* Metadata row */}
           <div className="flex items-center gap-2 mt-0.5">

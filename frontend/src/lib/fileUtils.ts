@@ -10,24 +10,6 @@ import { CsvIcon } from '@/components/data/CsvIcon';
 import { XlsIcon } from '@/components/data/XlsIcon';
 import type { FileType } from '@/types/file';
 
-/**
- * File icon mapping based on file type
- * Returns lucide-react icon name
- */
-export const getFileIcon = (type: FileType): string => {
-  const iconMap: Record<FileType, string> = {
-    csv: 'Table',
-    json: 'Braces',
-    excel: 'Sheet',
-    pdf: 'FileText',
-    markdown: 'FileCode',
-    word: 'FileType',
-    text: 'FileText',
-    other: 'File'
-  };
-  return iconMap[type];
-};
-
 /** Lucide icon component for each file type. */
 export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
   csv: CsvIcon,

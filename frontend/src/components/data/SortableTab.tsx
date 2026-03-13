@@ -1,9 +1,8 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { X, FileText, Database, FileCode, FileType, File } from 'lucide-react';
+import { X, FileText, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CsvIcon } from './CsvIcon';
-import { XlsIcon } from './XlsIcon';
+import { resolveFileIcon } from '@/lib/fileUtils';
 import { cn } from '@/lib/utils';
 
 export interface SortableTabProps {
@@ -60,23 +59,13 @@ export function SortableTab({
       );
     }
 
-    switch (fileType) {
-      case 'csv':
-        return <CsvIcon className="h-4 w-4" themeColorClass={themeColorClass} isActive={isActive} />;
-      case 'excel':
-        return <XlsIcon className="h-4 w-4" themeColorClass={themeColorClass} isActive={isActive} />;
-      case 'json':
-      case 'pdf':
-        return <FileText className="h-4 w-4 text-rose-500" />;
-      case 'markdown':
-        return <FileCode className="h-4 w-4 text-purple-500" />;
-      case 'word':
-        return <FileType className="h-4 w-4 text-sky-500" />;
-      case 'text':
-        return <FileText className="h-4 w-4 text-slate-500" />;
-      default:
-        return <File className="h-4 w-4 text-gray-500" />;
-    }
+    const { Icon, colorClass, usesTheme } = resolveFileIcon(fileType ?? 'other');
+    return (
+      <Icon
+        className={cn('h-4 w-4', !usesTheme && colorClass)}
+        {...(usesTheme ? { themeColorClass, isActive } : {})}
+      />
+    );
   };
 
   const handleClick = () => {

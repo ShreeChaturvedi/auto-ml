@@ -1,21 +1,3 @@
-/**
- * FileCard - Display uploaded file information
- *
- * Features:
- * - File icon with type-specific colors
- * - Truncated file name with tooltip for full name
- * - File type badge and size display
- * - Hover actions (preview, remove)
- * - Smooth animations and transitions
- * - Proper overflow handling for long names
- *
- * Design Philosophy:
- * - Clean, card-based layout
- * - Visual feedback on hover
- * - Accessible with tooltips
- * - Professional aesthetic
- */
-
 import { useState } from 'react';
 import { Trash2, Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,10 +5,22 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UploadedFile } from '@/types/file';
-import { getFileIcon, formatFileSize } from '@/lib/fileUtils';
+import { resolveFileIcon, formatFileSize } from '@/lib/fileUtils';
 import { FilePreview } from './FilePreview';
-import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { FileType } from '@/types/file';
+
+/** Background/text/border color classes for the icon container in card view. */
+const cardIconColorMap: Record<FileType, string> = {
+  csv: 'bg-green-500/10 text-green-500 border-green-500/20',
+  json: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  excel: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+  pdf: 'bg-red-500/10 text-red-500 border-red-500/20',
+  markdown: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+  word: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  text: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
+  other: 'bg-gray-500/10 text-gray-500 border-gray-500/20'
+};
 
 interface FileCardProps {
   file: UploadedFile;
@@ -38,25 +32,7 @@ interface FileCardProps {
 export function FileCard({ file, onRemove, status, errorMessage }: FileCardProps) {
   const [showPreview, setShowPreview] = useState(false);
 
-  const iconName = getFileIcon(file.type);
-  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    iconName
-  ];
-
-  const typeColorMap: Record<typeof file.type, string> = {
-    csv: 'bg-green-500/10 text-green-500 border-green-500/20',
-    json: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-    excel: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-    pdf: 'bg-red-500/10 text-red-500 border-red-500/20',
-    markdown: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
-    word: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
-    text: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
-    other: 'bg-gray-500/10 text-gray-500 border-gray-500/20'
-  };
-
-  // Truncate file name if longer than 40 characters
-  const shouldTruncate = file.name.length > 40;
-  const displayName = shouldTruncate ? `${file.name.slice(0, 37)}...` : file.name;
+  const { Icon } = resolveFileIcon(file.type);
 
   return (
     <>
@@ -70,34 +46,27 @@ export function FileCard({ file, onRemove, status, errorMessage }: FileCardProps
             <div
               className={cn(
                 'flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border transition-all duration-200',
-                typeColorMap[file.type],
+                cardIconColorMap[file.type as FileType] ?? cardIconColorMap.other,
                 'group-hover:scale-105'
               )}
             >
-              {IconComponent && <IconComponent className="h-5 w-5" />}
+              <Icon className="h-5 w-5" />
             </div>
 
             {/* File Info */}
             <div className="flex-1 min-w-0 space-y-1.5">
-              {/* File Name - With tooltip for long names */}
-              {shouldTruncate ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <p className="text-sm font-medium text-foreground cursor-help leading-tight">
-                        {displayName}
-                      </p>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" align="start" className="max-w-sm">
-                      <p className="text-xs break-all">{file.name}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <p className="text-sm font-medium text-foreground leading-tight">
-                  {displayName}
-                </p>
-              )}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-sm font-medium text-foreground truncate leading-tight">
+                      {file.name}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start" className="max-w-sm">
+                    <p className="text-xs break-all">{file.name}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
               {/* File Metadata */}
               <div className="flex items-center gap-2 flex-wrap">

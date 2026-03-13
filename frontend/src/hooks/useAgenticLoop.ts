@@ -133,6 +133,8 @@ export function useAgenticLoop({
     const requestId = ++activeRequestIdRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
+    completeThinking();
+    closeTextStream();
 
     const isRestream = Boolean(toolResultsOverride?.length);
 
@@ -178,6 +180,9 @@ export function useAgenticLoop({
           // Domain-specific: envelope handling
           if (event.type === 'envelope') {
             completeThinking();
+            if (event.envelope.controller) {
+              domainAdapter.onControllerUpdate?.(event.envelope.controller);
+            }
 
             if (event.envelope.tool_calls?.length) {
               closeTextStream();
@@ -229,7 +234,10 @@ export function useAgenticLoop({
           }
         },
         controller.signal,
-        requestOptions
+        {
+          ...requestOptions,
+          continuation: isRestream
+        }
       );
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;

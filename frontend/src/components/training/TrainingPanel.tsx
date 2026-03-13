@@ -2,7 +2,7 @@
  * TrainingPanel - Jupyter-style training interface with AI assistance
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,7 @@ import { CodeCell } from './CodeCell';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -29,6 +30,8 @@ const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
 
   const [cells, setCells] = useState<Cell[]>([]);
   const cellsRef = useRef<Cell[]>(cells);
@@ -39,6 +42,21 @@ export function TrainingPanel() {
 
   const { executeCode: executeWithStore } = useExecutionStore();
 
+  // Apply initial notebook from URL search params
+  useEffect(() => {
+    if (initialNotebookIdRef.current) {
+      void useNotebookStore.getState().setActiveNotebook(initialNotebookIdRef.current);
+    }
+  }, []);
+
+  // Tag notebook with training phase metadata
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
+  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
+
+  useEffect(() => {
+    if (!activeNotebookId) return;
+    void updateNotebookMetadata(activeNotebookId, { phase: 'training' });
+  }, [activeNotebookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Files
   const files = useDataStore((s) => s.files);

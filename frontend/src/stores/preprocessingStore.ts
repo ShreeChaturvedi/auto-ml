@@ -6,6 +6,7 @@ import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { NotebookCell } from '@/types/notebook';
 import type {
   AvailableTable,
+  PreprocessingControllerSummary,
   PreprocessingRunSnapshot,
   StepCellBinding,
   TransformationEvent
@@ -53,6 +54,7 @@ interface PreprocessingState {
   timeline: TransformationEvent[];
   stepBindings: Record<string, StepCellBinding>;
   replayReport: ReplayCompatibilityReport | null;
+  controllerSummary: PreprocessingControllerSummary | null;
   isLoadingTables: boolean;
   error: string | null;
   loadTables: (projectId: string) => Promise<void>;
@@ -60,6 +62,13 @@ interface PreprocessingState {
   setRunId: (runId: string | null) => void;
   setNextRunCellMode: (mode: DatasetContinuityMode) => void;
   consumeRunCellMode: () => DatasetContinuityMode;
+  applyTabSnapshot: (snapshot: {
+    selectedDatasetId: string | null;
+    runId: string | null;
+    timeline: TransformationEvent[];
+    stepBindings: Record<string, StepCellBinding>;
+    replayReport: ReplayCompatibilityReport | null;
+  }) => void;
   hydrateRunSnapshot: (snapshot: PreprocessingRunSnapshot) => void;
   hydrateRunById: (projectId: string, runId: string) => Promise<void>;
   approveStep: (projectId: string, stepId: string) => Promise<void>;
@@ -71,6 +80,7 @@ interface PreprocessingState {
   markInterruptedSteps: (reason: string) => void;
   processToolCall: (call: ToolCall, fallbackRunId?: string) => void;
   processToolResult: (call: ToolCall, result: ToolResult, fallbackRunId?: string) => void;
+  setControllerSummary: (summary: PreprocessingControllerSummary | null) => void;
 }
 
 type PreprocessingStateData = Pick<
@@ -85,6 +95,7 @@ type PreprocessingStateData = Pick<
   | 'timeline'
   | 'stepBindings'
   | 'replayReport'
+  | 'controllerSummary'
   | 'isLoadingTables'
   | 'error'
 >;
@@ -100,6 +111,7 @@ const initialState: PreprocessingStateData = {
   timeline: [],
   stepBindings: {},
   replayReport: null,
+  controllerSummary: null,
   isLoadingTables: false,
   error: null
 };
@@ -127,6 +139,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         timeline: [],
         stepBindings: {},
         replayReport: null,
+        controllerSummary: null,
         isLoadingTables: true,
         error: null
       });
@@ -155,6 +168,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
           timeline: [],
           stepBindings: {},
           replayReport: null,
+          controllerSummary: null,
           isLoadingTables: false,
           error: null
         };
@@ -186,6 +200,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         timeline: [],
         stepBindings: {},
         replayReport: null,
+        controllerSummary: null,
         error: null
       };
     });
@@ -207,6 +222,21 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
     return mode;
   },
 
+  applyTabSnapshot: (snapshot) => {
+    set({
+      selectedDatasetId: snapshot.selectedDatasetId,
+      runId: snapshot.runId,
+      nextRunCellMode: 'continue',
+      latestCheckpointId: null,
+      assistantMessages: [],
+      timeline: snapshot.timeline,
+      stepBindings: snapshot.stepBindings,
+      replayReport: snapshot.replayReport,
+      controllerSummary: null,
+      error: null
+    });
+  },
+
   hydrateRunSnapshot: (snapshot) => {
     set((state) => ({
       runId: snapshot.runId,
@@ -215,6 +245,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
       timeline: buildTimelineFromSnapshot(snapshot),
       stepBindings: buildStepBindingsFromSnapshot(snapshot),
       replayReport: null,
+      controllerSummary: null,
       error: null
     }));
   },
@@ -333,6 +364,10 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
     });
   },
 
+  setControllerSummary: (controllerSummary) => {
+    set({ controllerSummary });
+  },
+
   clearRun: () => {
     set({
       runId: null,
@@ -342,6 +377,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
       timeline: [],
       stepBindings: {},
       replayReport: null,
+      controllerSummary: null,
       error: null
     });
   }

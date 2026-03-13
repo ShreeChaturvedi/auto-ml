@@ -327,6 +327,10 @@ describeRouteSuite('llm routes', () => {
     });
 
     it('emits an error when preprocessing stream returns text-only response without tool calls', async () => {
+      llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
+        turnMode: 'action_required',
+        rationale: 'The user asked for a transformation.'
+      }));
       llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
         const handlers = args[1] as { onToken: (token: string) => void };
         handlers.onToken('```python\nprint("hello")\n```');
@@ -352,6 +356,234 @@ describeRouteSuite('llm routes', () => {
       const errorEvent = events.find((event) => event.type === 'error') as { message?: string } | undefined;
       expect(errorEvent?.message).toContain('text without tool calls');
       expect(events[events.length - 1]?.type).toBe('done');
+    });
+
+    it('allows answer-only preprocessing turns when the classifier routes to answer mode', async () => {
+      llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
+        turnMode: 'answer_only',
+        rationale: 'The user asked for explanation only.'
+      }));
+      llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const handlers = args[1] as { onToken: (token: string) => void };
+        handlers.onToken('Scaling keeps features on a comparable range.');
+        return 'Scaling keeps features on a comparable range.';
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'Why would scaling help here?'
+        });
+
+      expect(response.status).toBe(200);
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const errorEvent = events.find((event) => event.type === 'error');
+      const envelope = events.find((event) => event.type === 'envelope') as {
+        envelope?: { message?: string; controller?: { turnMode?: string; currentNode?: string } };
+      } | undefined;
+
+      expect(errorEvent).toBeUndefined();
+      expect(envelope?.envelope?.message).toContain('Scaling keeps features');
+      expect(envelope?.envelope?.controller?.turnMode).toBe('answer_only');
+      expect(envelope?.envelope?.controller?.currentNode).toBe('answer');
+    });
+
+    it('keeps free-answer behavior for a new question even when prior tool history exists', async () => {
+      llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
+        turnMode: 'answer_only',
+        rationale: 'The user asked a follow-up question.'
+      }));
+      llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const handlers = args[1] as { onToken: (token: string) => void };
+        handlers.onToken('We validate row counts to catch accidental data loss.');
+        return 'We validate row counts to catch accidental data loss.';
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'Why did we validate row counts?',
+          toolResults: [
+            {
+              id: 'result-1',
+              tool: 'commit_transformation_step',
+              output: {
+                runId: 'prep-run-1',
+                stepId: 'step-1',
+                status: 'applied'
+              }
+            }
+          ]
+        });
+
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const errorEvent = events.find((event) => event.type === 'error');
+      const envelope = events.find((event) => event.type === 'envelope') as {
+        envelope?: { message?: string; controller?: { turnMode?: string } };
+      } | undefined;
+
+      expect(errorEvent).toBeUndefined();
+      expect(envelope?.envelope?.message).toContain('validate row counts');
+      expect(envelope?.envelope?.controller?.turnMode).toBe('answer_only');
+    });
+
+    it('routes explicit approval prompts into the commit state when a step is awaiting approval', async () => {
+      llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const handlers = args[1] as {
+          onToken: (token: string) => void;
+          onToolCall: (call: { name: string; args: Record<string, unknown> }) => void;
+        };
+        handlers.onToken('Approving the pending step.');
+        handlers.onToolCall({
+          name: 'commit_transformation_step',
+          args: {
+            runId: 'prep-run-1',
+            stepId: 'step-1',
+            approved: true
+          }
+        });
+        return '';
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'Approve it.',
+          toolResults: [
+            {
+              id: 'result-1',
+              tool: 'validate_step_result',
+              output: {
+                runId: 'prep-run-1',
+                stepId: 'step-1',
+                status: 'awaiting_approval'
+              }
+            }
+          ]
+        });
+
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const envelope = events.find((event) => event.type === 'envelope') as {
+        envelope?: {
+          message?: string;
+          tool_calls?: Array<{ tool?: string }>;
+          controller?: { currentNode?: string };
+        };
+      } | undefined;
+
+      expect(llmCompleteMock).not.toHaveBeenCalled();
+      expect(envelope?.envelope?.message).toContain('Approving the pending step');
+      expect(envelope?.envelope?.tool_calls?.[0]?.tool).toBe('commit_transformation_step');
+      expect(envelope?.envelope?.controller?.currentNode).toBe('commit');
+    });
+
+    it('includes both message text and tool calls for action turns', async () => {
+      llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
+        turnMode: 'action_required',
+        rationale: 'The user asked for a preprocessing change.'
+      }));
+      llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const handlers = args[1] as {
+          onToken: (token: string) => void;
+          onToolCall: (call: { name: string; args: Record<string, unknown> }) => void;
+        };
+        handlers.onToken('I will add a scaling step.');
+        handlers.onToolCall({
+          name: 'propose_transformation_step',
+          args: {
+            title: 'Scale numeric features',
+            intentType: 'scale_numeric'
+          }
+        });
+        return '';
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'Scale the numeric columns.'
+        });
+
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const envelope = events.find((event) => event.type === 'envelope') as {
+        envelope?: { message?: string; tool_calls?: Array<{ tool?: string }>; controller?: { turnMode?: string } };
+      } | undefined;
+
+      expect(envelope?.envelope?.message).toContain('I will add a scaling step.');
+      expect(envelope?.envelope?.tool_calls?.[0]?.tool).toBe('propose_transformation_step');
+      expect(envelope?.envelope?.controller?.turnMode).toBe('action_required');
+    });
+
+    it('treats tool continuations as action-required without reclassifying', async () => {
+      llmStreamMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const handlers = args[1] as { onToken: (token: string) => void };
+        handlers.onToken('Continue by updating the notebook cell.');
+        return 'Continue by updating the notebook cell.';
+      });
+
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/preprocessing/stream')
+        .send({
+          projectId: 'project-1',
+          datasetId: 'ds-1',
+          prompt: 'Scale the numeric columns.',
+          continuation: true,
+          toolResults: [
+            {
+              id: 'result-1',
+              tool: 'propose_transformation_step',
+              output: {
+                runId: 'prep-run-1',
+                stepId: 'step-1',
+                status: 'pending'
+              }
+            }
+          ]
+        });
+
+      const events = response.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      const errorEvent = events.find((event) => event.type === 'error') as { message?: string } | undefined;
+
+      expect(llmCompleteMock).not.toHaveBeenCalled();
+      expect(errorEvent?.message).toContain('text without tool calls');
     });
 
     it('persists interrupted run state as failed when provider stream errors', async () => {

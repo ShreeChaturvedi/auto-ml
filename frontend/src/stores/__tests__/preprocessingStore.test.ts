@@ -24,6 +24,7 @@ function resetPreprocessingStore() {
     timeline: [],
     stepBindings: {},
     replayReport: null,
+    controllerSummary: null,
     isLoadingTables: false,
     error: null
   });
@@ -93,6 +94,60 @@ describe('preprocessingStore hydration', () => {
       codeHash: 'abc123',
       version: 2
     });
+    expect(state.controllerSummary).toBeNull();
+  });
+
+  it('clears stale controller state when hydrating an authoritative run snapshot', () => {
+    usePreprocessingStore.setState({
+      controllerSummary: {
+        threadId: 'prep-thread:stale',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().hydrateRunSnapshot(buildSnapshot());
+
+    expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
+  });
+
+  it('applies tab snapshots with a clean controller and continuity state', () => {
+    usePreprocessingStore.setState({
+      nextRunCellMode: 'restart_from_original',
+      latestCheckpointId: 'ckpt-stale',
+      controllerSummary: {
+        threadId: 'prep-thread:stale',
+        turnMode: 'action_required',
+        currentNode: 'write_code',
+        allowedTools: ['run_cell'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      },
+      error: 'stale error'
+    });
+
+    usePreprocessingStore.getState().applyTabSnapshot({
+      selectedDatasetId: 'dataset-2',
+      runId: 'prep-run-2',
+      timeline: [],
+      stepBindings: {},
+      replayReport: null
+    });
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('dataset-2');
+    expect(state.runId).toBe('prep-run-2');
+    expect(state.nextRunCellMode).toBe('continue');
+    expect(state.latestCheckpointId).toBeNull();
+    expect(state.controllerSummary).toBeNull();
+    expect(state.error).toBeNull();
   });
 
   it('consumes restart run-cell mode once and resets to continue', () => {
@@ -103,6 +158,107 @@ describe('preprocessingStore hydration', () => {
 
     expect(first).toBe('restart_from_original');
     expect(second).toBe('continue');
+  });
+
+  it('rejects selecting a dataset that is not available in the project', () => {
+    usePreprocessingStore.setState({
+      tables: [
+        {
+          datasetId: 'dataset-1',
+          name: 'dataset_1',
+          filename: 'dataset.csv',
+          sizeBytes: 123
+        }
+      ],
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().selectDataset('missing-dataset');
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBeNull();
+    expect(state.controllerSummary).not.toBeNull();
+    expect(state.error).toContain('Selected dataset is unavailable');
+  });
+
+  it('clears stale run state when selecting a valid dataset', () => {
+    usePreprocessingStore.setState({
+      tables: [
+        {
+          datasetId: 'dataset-1',
+          name: 'dataset_1',
+          filename: 'dataset.csv',
+          sizeBytes: 123
+        }
+      ],
+      runId: 'prep-run-1',
+      nextRunCellMode: 'restart_from_original',
+      latestCheckpointId: 'ckpt-1',
+      timeline: [
+        {
+          id: 'evt-1',
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          toolName: 'propose_transformation_step',
+          title: 'Scale',
+          status: 'pending',
+          requiresApproval: false,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ],
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().selectDataset('dataset-1');
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('dataset-1');
+    expect(state.runId).toBeNull();
+    expect(state.nextRunCellMode).toBe('continue');
+    expect(state.latestCheckpointId).toBeNull();
+    expect(state.timeline).toEqual([]);
+    expect(state.controllerSummary).toBeNull();
+  });
+
+  it('clears controller summary when the active run is cleared', () => {
+    usePreprocessingStore.setState({
+      runId: 'prep-run-1',
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().clearRun();
+
+    expect(usePreprocessingStore.getState().runId).toBeNull();
+    expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
   });
 
   it('does not flag divergence when cell content hash matches backend codeHash', async () => {
@@ -173,6 +329,14 @@ describe('preprocessingStore hydration', () => {
     expect(state.runId).toBe('prep-run-1');
     expect(state.timeline).toHaveLength(1);
     expect(state.error).toBeNull();
+  });
+
+  it('surfaces backend hydration errors when snapshot fetch fails', async () => {
+    getPreprocessingRunSnapshotMock.mockRejectedValue(new Error('snapshot fetch failed'));
+
+    await usePreprocessingStore.getState().hydrateRunById('project-1', 'prep-run-1');
+
+    expect(usePreprocessingStore.getState().error).toContain('snapshot fetch failed');
   });
 
   it('uses backend as source of truth when local pre-check passes but backend fails', async () => {

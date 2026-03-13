@@ -87,6 +87,7 @@ export const LlmEnvelopeSchema = z.object({
   tool_calls: z.array(ToolCallSchema).optional(),
   ask_user: AskUserPayloadSchema.optional(),
   plan_exit: PlanExitPayloadSchema.optional(),
+  controller: z.record(z.unknown()).optional(),
   ui: z.unknown().optional()
 });
 

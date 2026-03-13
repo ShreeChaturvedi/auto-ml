@@ -18,12 +18,15 @@ export interface StreamContext {
   readonly kind: StreamKind;
   readonly requestId: string;
   readonly suppressTokenStreaming: boolean;
+  readonly allowTextOnlyResponse: boolean;
 
   toolCalls: z.infer<typeof ToolCallSchema>[];
   askUserPayload: z.infer<typeof AskUserPayloadSchema> | null;
   planExitPayload: z.infer<typeof PlanExitPayloadSchema> | null;
   terminalToolConflict: boolean;
   uiEnvelope: LlmEnvelope | null;
+  controllerSummary?: Record<string, unknown>;
+  sawToollessTextAttempt: boolean;
   tokenChars: number;
   tokenPreview: string;
   streamClosed: boolean;
@@ -37,3 +40,9 @@ export interface EventWriter {
 }
 
 export type { LlmRequest };
+
+export interface StreamResponseOptions {
+  suppressTokenStreaming?: boolean;
+  allowTextOnlyResponse?: boolean;
+  controllerSummary?: Record<string, unknown>;
+}

@@ -2,7 +2,11 @@ import { apiRequest, getApiBaseUrl } from './client';
 import { readNdjsonStream } from './streamReader';
 import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
 import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
-import type { PreprocessingRunSnapshot, PreprocessingRunSummary } from '@/types/preprocessing';
+import type {
+  PreprocessingControllerSummary,
+  PreprocessingRunSnapshot,
+  PreprocessingRunSummary
+} from '@/types/preprocessing';
 
 export interface LlmModelCatalogEntry {
   id: string;
@@ -26,6 +30,8 @@ export interface LlmModelCatalogResponse {
 export interface LlmPlanRequest {
   projectId: string;
   datasetId?: string;
+  threadId?: string;
+  continuation?: boolean;
   targetColumn?: string;
   prompt?: string;
   toolCalls?: ToolCall[];
@@ -55,6 +61,8 @@ export type LlmStreamEvent =
   | { type: 'usage'; usage: Record<string, unknown> }
   | { type: 'error'; message: string }
   | { type: 'done' };
+
+export type { PreprocessingControllerSummary };
 
 export async function streamFeaturePlan(
   request: LlmPlanRequest,
@@ -92,11 +100,12 @@ export async function executeToolCalls(
   projectId: string,
   toolCalls: ToolCall[],
   notebookId?: string,
-  executionMode: 'agent' | 'user_approval' = 'agent'
+  executionMode: 'agent' | 'user_approval' = 'agent',
+  datasetId?: string
 ) {
   return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
     method: 'POST',
-    body: JSON.stringify({ projectId, toolCalls, notebookId, executionMode })
+    body: JSON.stringify({ projectId, toolCalls, notebookId, executionMode, datasetId })
   });
 }
 

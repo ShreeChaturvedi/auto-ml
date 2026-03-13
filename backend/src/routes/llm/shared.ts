@@ -21,6 +21,8 @@ const reasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh
 export const planSchema = z.object({
   projectId: z.string().min(1),
   datasetId: z.string().optional(),
+  threadId: z.string().min(1).optional(),
+  continuation: z.boolean().optional(),
   targetColumn: z.string().optional(),
   prompt: z.string().optional(),
   toolCalls: z.array(ToolCallSchema).optional(),

@@ -85,8 +85,15 @@ export function useToolExecution(projectId?: string) {
       if (!projectId) return null;
 
       const activeNotebookId = useNotebookStore.getState().activeNotebookId ?? undefined;
+      const executionRequest = domainAdapter.resolveToolExecutionRequest?.(toolCalls);
       try {
-        const { results } = await executeToolCalls(projectId, toolCalls, activeNotebookId);
+        const { results } = await executeToolCalls(
+          projectId,
+          toolCalls,
+          activeNotebookId,
+          executionRequest?.executionMode ?? 'agent',
+          executionRequest?.datasetId
+        );
         if (requestId !== activeRequestIdRef.current) return null;
 
         setMessages((prev) =>

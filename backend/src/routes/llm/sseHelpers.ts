@@ -10,7 +10,13 @@ import {
 
 import { emitFallbackEnvelope, handleStreamError } from './streaming/errorRecovery.js';
 import { collectLlmAttempt } from './streaming/tokenHandler.js';
-import type { EventWriter, StreamContext, StreamHooks, StreamKind } from './streaming/types.js';
+import type {
+  EventWriter,
+  StreamContext,
+  StreamHooks,
+  StreamKind,
+  StreamResponseOptions
+} from './streaming/types.js';
 
 /* ── re-exports so existing consumers keep working ── */
 export { createLlmClient };
@@ -26,7 +32,8 @@ export async function streamLlmResponse(
   client: LlmClient,
   request: LlmRequest,
   kind: StreamKind,
-  hooks?: StreamHooks
+  hooks?: StreamHooks,
+  options?: StreamResponseOptions
 ) {
   res.setHeader('Content-Type', 'application/x-ndjson');
   res.setHeader('Cache-Control', 'no-cache');
@@ -36,12 +43,15 @@ export async function streamLlmResponse(
   const ctx: StreamContext = {
     kind,
     requestId: randomUUID().slice(0, 8),
-    suppressTokenStreaming: kind === 'preprocessing',
+    suppressTokenStreaming: options?.suppressTokenStreaming ?? (kind === 'preprocessing'),
+    allowTextOnlyResponse: options?.allowTextOnlyResponse ?? false,
     toolCalls: [],
     askUserPayload: null,
     planExitPayload: null,
     terminalToolConflict: false,
     uiEnvelope: null,
+    controllerSummary: options?.controllerSummary,
+    sawToollessTextAttempt: false,
     tokenChars: 0,
     tokenPreview: '',
     streamClosed: false,
@@ -80,6 +90,7 @@ export async function streamLlmResponse(
     /* ── preprocessing retry: text-only response without tool calls ── */
     if (
       kind === 'preprocessing'
+      && !ctx.allowTextOnlyResponse
       && !ctx.uiEnvelope
       && !ctx.askUserPayload
       && !ctx.planExitPayload
@@ -87,6 +98,10 @@ export async function streamLlmResponse(
       && ctx.tokenPreview.trim().length > 0
     ) {
       console.warn('[llm] preprocessing text-only response detected; retrying once with stricter tool-call directive');
+      ctx.sawToollessTextAttempt = true;
+      ctx.tokenChars = 0;
+      ctx.tokenPreview = '';
+      ctx.latestUsage = null;
       const retryRequest: LlmRequest = {
         ...request,
         messages: [
@@ -114,20 +129,35 @@ export async function streamLlmResponse(
           kind,
           ask_user: ctx.askUserPayload,
           tool_calls: ctx.toolCalls.length > 0 ? ctx.toolCalls : undefined,
+          controller: ctx.controllerSummary,
           ui: null
         }
       });
     } else if (ctx.planExitPayload) {
       writer.writeEvent({
         type: 'envelope',
-        envelope: { version: '1', kind, plan_exit: ctx.planExitPayload, ui: null }
+        envelope: { version: '1', kind, plan_exit: ctx.planExitPayload, controller: ctx.controllerSummary, ui: null }
       });
     } else if (ctx.uiEnvelope) {
-      writer.writeEvent({ type: 'envelope', envelope: ctx.uiEnvelope });
-    } else if (ctx.toolCalls.length > 0) {
       writer.writeEvent({
         type: 'envelope',
-        envelope: { version: '1', kind, tool_calls: ctx.toolCalls, ui: null }
+        envelope: {
+          ...ctx.uiEnvelope,
+          controller: ctx.controllerSummary
+        }
+      });
+    } else if (ctx.toolCalls.length > 0) {
+      const message = ctx.tokenPreview.trim() || undefined;
+      writer.writeEvent({
+        type: 'envelope',
+        envelope: {
+          version: '1',
+          kind,
+          message,
+          tool_calls: ctx.toolCalls,
+          controller: ctx.controllerSummary,
+          ui: null
+        }
       });
     } else {
       const closedEarly = emitFallbackEnvelope(ctx, writer);

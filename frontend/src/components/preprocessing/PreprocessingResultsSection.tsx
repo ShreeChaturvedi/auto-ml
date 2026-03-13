@@ -11,11 +11,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { STATUS_LABELS, getRowCountSummary, summarizeValidation } from './preprocessingTabUtils';
-import type { TransformationEvent } from '@/types/preprocessing';
+import type { PreprocessingControllerSummary, TransformationEvent } from '@/types/preprocessing';
 
 export interface PreprocessingResultsSectionProps {
   storeError: string | null;
   latestTimelineEvent: TransformationEvent | null;
+  controllerSummary: PreprocessingControllerSummary | null;
   divergedAccentClassName: string;
   onOpenTimeline?: () => void;
 }
@@ -23,11 +24,13 @@ export interface PreprocessingResultsSectionProps {
 export function PreprocessingResultsSection({
   storeError,
   latestTimelineEvent,
+  controllerSummary,
   divergedAccentClassName,
   onOpenTimeline
 }: PreprocessingResultsSectionProps) {
   const composerStatusNotice = useMemo(() => {
-    if (!storeError && !latestTimelineEvent) {
+    const event = latestTimelineEvent;
+    if (!storeError && !latestTimelineEvent && !controllerSummary) {
       return null;
     }
 
@@ -43,14 +46,35 @@ export function PreprocessingResultsSection({
       );
     }
 
-    if (!latestTimelineEvent) {
+    if (!event && controllerSummary) {
+      return (
+        <Card className="border-slate-300/80 bg-slate-50/80 text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+          <CardContent className="flex items-center gap-2 p-2 text-xs">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="font-medium">Controller:</span>
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] uppercase tracking-wide">
+              {controllerSummary.currentNode.replace(/_/g, ' ')}
+            </Badge>
+            <span className="opacity-90">
+              {controllerSummary.turnMode === 'answer_only'
+                ? 'Answering directly.'
+                : controllerSummary.pendingApproval
+                  ? 'Waiting for approval before continuing.'
+                  : 'Preparing the next preprocessing action.'}
+            </span>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (!event) {
       return null;
     }
 
-    const status = latestTimelineEvent.status;
-    const rowCountSummary = getRowCountSummary(latestTimelineEvent);
+    const status = event.status;
+    const rowCountSummary = getRowCountSummary(event);
     const hasRowCountSummary = Boolean(
-      rowCountSummary && !latestTimelineEvent.error && !latestTimelineEvent.decisionReason
+      rowCountSummary && !event.error && !event.decisionReason
     );
     const baseClass = status === 'failed'
       ? 'border-red-300 dark:border-red-500/40 bg-red-50/80 dark:bg-red-950/30 text-red-700 dark:text-red-400'
@@ -61,9 +85,9 @@ export function PreprocessingResultsSection({
           : status === 'applied'
             ? 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
             : 'border-sky-300 dark:border-sky-500/40 bg-sky-50/80 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400';
-    const detail = latestTimelineEvent.error
-      ?? latestTimelineEvent.decisionReason
-      ?? summarizeValidation(latestTimelineEvent)
+    const detail = event.error
+      ?? event.decisionReason
+      ?? summarizeValidation(event)
       ?? (status === 'awaiting_approval' ? 'Waiting for your approve/reject decision.' : undefined);
 
     const isClickable = Boolean(onOpenTimeline);
@@ -83,7 +107,7 @@ export function PreprocessingResultsSection({
           ) : (
             <Loader2 className="h-4 w-4 animate-spin" />
           )}
-          <span className="min-w-0 flex-1 truncate font-medium">{latestTimelineEvent.title}</span>
+            <span className="min-w-0 flex-1 truncate font-medium">{event.title}</span>
           <Badge
             variant="outline"
             className="h-5 border-current/30 bg-background/20 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-current"
@@ -112,7 +136,7 @@ export function PreprocessingResultsSection({
         </CardContent>
       </Card>
     );
-  }, [divergedAccentClassName, latestTimelineEvent, onOpenTimeline, storeError]);
+  }, [controllerSummary, divergedAccentClassName, latestTimelineEvent, onOpenTimeline, storeError]);
 
   if (!composerStatusNotice) return null;
 

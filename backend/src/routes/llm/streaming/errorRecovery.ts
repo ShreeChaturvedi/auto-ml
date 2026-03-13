@@ -30,6 +30,7 @@ export function emitFallbackEnvelope(ctx: StreamContext, writer: EventWriter): b
             version: '1',
             kind: ctx.kind,
             message: EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE,
+            controller: ctx.controllerSummary,
             ui: null
           }
         });
@@ -38,7 +39,7 @@ export function emitFallbackEnvelope(ctx: StreamContext, writer: EventWriter): b
       return true;
     }
 
-    if (ctx.kind === 'preprocessing') {
+    if (ctx.kind === 'preprocessing' && !ctx.allowTextOnlyResponse) {
       writer.writeEvent({
         type: 'error',
         message: 'Model returned text without tool calls, so no preprocessing action was executed. Please retry the action.'
@@ -54,6 +55,7 @@ export function emitFallbackEnvelope(ctx: StreamContext, writer: EventWriter): b
         kind: ctx.kind,
         message: trimmedPreview,
         tool_calls: undefined,
+        controller: ctx.controllerSummary,
         ui: null
       }
     });
@@ -62,6 +64,17 @@ export function emitFallbackEnvelope(ctx: StreamContext, writer: EventWriter): b
 
   // Completely empty response
   console.warn(`[llm] ${ctx.kind} ${ctx.requestId} empty response`, { tokenChars: ctx.tokenChars });
+  if (ctx.kind === 'preprocessing' && !ctx.allowTextOnlyResponse) {
+    writer.writeEvent({
+      type: 'error',
+      message: ctx.sawToollessTextAttempt
+        ? 'Model returned text without tool calls, so no preprocessing action was executed. Please retry the action.'
+        : 'Model returned no actionable preprocessing output, so no preprocessing action was executed. Please retry the action.'
+    });
+    writer.closeStream();
+    return true;
+  }
+
   if (ctx.kind === 'feature_engineering') {
     writer.writeEvent({ type: 'envelope', envelope: buildFeatureEngineeringFallbackEnvelope('empty_response') });
   } else {
@@ -71,6 +84,7 @@ export function emitFallbackEnvelope(ctx: StreamContext, writer: EventWriter): b
         version: '1',
         kind: ctx.kind,
         message: EMPTY_LLM_RESPONSE_FALLBACK_MESSAGE,
+        controller: ctx.controllerSummary,
         ui: null
       }
     });

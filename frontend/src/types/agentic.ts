@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import type { ChatMessage, ToolCall, ToolResult } from './llmUi';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
+import type { PreprocessingControllerSummary } from './preprocessing';
 
 export interface SuggestionPill {
   id: string;
@@ -11,11 +12,17 @@ export interface SuggestionPill {
 export interface BuildRequestOptions {
   model: string;
   reasoningEffort: ReasoningEffort;
+  continuation?: boolean;
 }
 
 export interface ToolHandlers {
   onCall?: (call: ToolCall) => void;
   onResult?: (call: ToolCall, result: ToolResult) => void;
+}
+
+export interface ToolExecutionRequest {
+  datasetId?: string;
+  executionMode?: 'agent' | 'user_approval';
 }
 
 export interface DomainAdapter {
@@ -31,6 +38,8 @@ export interface DomainAdapter {
   prepareToolCalls?: (toolCalls: ToolCall[]) => ToolCall[];
   onStreamError?: (message: string) => void;
   onStop?: (reason: string) => void;
+  onControllerUpdate?: (controller: PreprocessingControllerSummary) => void;
+  resolveToolExecutionRequest?: (toolCalls: ToolCall[]) => ToolExecutionRequest;
   preserveToolHistoryBetweenPrompts?: boolean;
 
   toolRegistry: Record<string, ToolHandlers>;

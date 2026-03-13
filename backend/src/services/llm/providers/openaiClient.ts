@@ -32,6 +32,7 @@ export class OpenAiClient implements LlmClient {
 
   async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
     let fullText = '';
+    const streamedToolItemIds = new Set<string>();
     const stream = this.client.responses.stream(buildOpenAiStreamBody(request, this.model));
 
     stream.on('response.output_text.delta', (event) => {
@@ -48,8 +49,19 @@ export class OpenAiClient implements LlmClient {
       }
     });
 
+    stream.on('response.function_call_arguments.done', (event) => {
+      if (!handlers.onToolCall || streamedToolItemIds.has(event.item_id)) {
+        return;
+      }
+      streamedToolItemIds.add(event.item_id);
+      handlers.onToolCall({
+        name: event.name,
+        args: parseToolArguments(event.arguments)
+      });
+    });
+
     const response = await stream.finalResponse();
-    emitToolCalls(response, handlers);
+    emitToolCalls(response, handlers, streamedToolItemIds);
 
     if (handlers.onUsage && response.usage) {
       handlers.onUsage(response.usage as RawLlmUsage);
@@ -187,13 +199,20 @@ function supportsReasoningValue(modelId: string, value: string): boolean {
   return model.reasoningEfforts.includes(value as (typeof model.reasoningEfforts)[number]);
 }
 
-function emitToolCalls(response: Responses.Response, handlers: LlmStreamHandlers) {
+function emitToolCalls(
+  response: Responses.Response,
+  handlers: LlmStreamHandlers,
+  streamedToolItemIds: Set<string>
+) {
   if (!handlers.onToolCall) {
     return;
   }
 
   for (const item of response.output ?? []) {
     if (item.type !== 'function_call') {
+      continue;
+    }
+    if (item.id && streamedToolItemIds.has(item.id)) {
       continue;
     }
 
@@ -205,7 +224,10 @@ function emitToolCalls(response: Responses.Response, handlers: LlmStreamHandlers
   }
 }
 
-function parseToolArguments(argumentsJson: string): Record<string, unknown> {
+function parseToolArguments(argumentsJson: string | undefined): Record<string, unknown> {
+  if (!argumentsJson) {
+    return {};
+  }
   try {
     const parsed = JSON.parse(argumentsJson) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {

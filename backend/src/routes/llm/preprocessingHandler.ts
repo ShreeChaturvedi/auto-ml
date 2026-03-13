@@ -7,6 +7,9 @@ import { env } from '../../config.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import { createProjectRepository } from '../../repositories/projectRepository.js';
 import {
+  resolvePreprocessingControllerTurn
+} from '../../services/llm/preprocessing/controller.js';
+import {
   executePreprocessingTool,
   getPreprocessingRunSnapshot,
   isPreprocessingToolName,
@@ -14,8 +17,6 @@ import {
   markPreprocessingRunsInterrupted,
   syncPreprocessingLangGraphState
 } from '../../services/llm/preprocessingGraph.js';
-import { buildPreprocessingRequest } from '../../services/llm/prompts.js';
-import { LLM_PREPROCESSING_TOOLS } from '../../services/llm/toolRegistry.js';
 import { executeMcpTool } from '../../services/mcp/mcpAdapter.js';
 import { ToolCallSchema } from '../../types/llm.js';
 
@@ -27,6 +28,7 @@ const projectRepository = createProjectRepository(env.storagePath);
 
 const executeToolsSchema = z.object({
   projectId: z.string().min(1),
+  datasetId: z.string().min(1).optional(),
   notebookId: z.string().optional(),
   executionMode: z.enum(['agent', 'user_approval']).optional(),
   toolCalls: z.array(ToolCallSchema)
@@ -86,12 +88,13 @@ export function createPreprocessingHandlerRouter(): Router {
       return res.status(400).json({ error: 'Invalid tool payload', details: parsed.error.issues });
     }
 
-    const { projectId, notebookId, toolCalls, executionMode } = parsed.data;
+    const { projectId, datasetId, notebookId, toolCalls, executionMode } = parsed.data;
 
     const results = [];
     for (const call of toolCalls) {
       const preprocessingArgs = {
         ...(call.args ?? {}),
+        ...(datasetId && call.tool !== 'set_active_dataset' ? { datasetId } : {}),
         toolCallId: call.id,
         approvalSource: executionMode === 'user_approval' ? 'user' : 'agent'
       };
@@ -181,19 +184,6 @@ export function createPreprocessingHandlerRouter(): Router {
       response: result.error ? { error: result.error } : { output: result.output }
     }));
 
-    const request = buildPreprocessingRequest({
-      dataset,
-      prompt: parsed.data.prompt,
-      projectPlan,
-      ragSnippets,
-      toolResults: parsed.data.toolResults,
-      toolCallHistory,
-      toolResultHistory,
-      toolDefinitions: LLM_PREPROCESSING_TOOLS,
-      reasoningEffort: normalizeReasoningEffortInput(parsed.data)
-    });
-    const hintedRunIds = extractPreprocessingRunIdsFromHistory(parsed.data.toolCalls, parsed.data.toolResults);
-
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'
       ? parsed.data.model
       : undefined;
@@ -203,17 +193,37 @@ export function createPreprocessingHandlerRouter(): Router {
         ? env.preprocessingThinkingLlmTimeoutMs
         : env.preprocessingLlmTimeoutMs
     );
+    const controllerDecision = await resolvePreprocessingControllerTurn({
+      client,
+      dataset,
+      prompt: parsed.data.prompt,
+      continuation: parsed.data.continuation,
+      projectPlan,
+      ragSnippets,
+      toolResults: parsed.data.toolResults,
+      toolCallHistory,
+      toolResultHistory,
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
+      threadId: parsed.data.threadId
+    });
+    const request = controllerDecision.request;
+    const hintedRunIds = new Set(
+      extractPreprocessingRunIdsFromHistory(parsed.data.toolCalls, parsed.data.toolResults)
+    );
+    if (controllerDecision.summary.runId) {
+      hintedRunIds.add(controllerDecision.summary.runId);
+    }
 
     const markInterruptedRuns = async (
       reason: string,
       source: 'provider_error' | 'stream_aborted'
     ): Promise<void> => {
-      if (hintedRunIds.length === 0) {
+      if (hintedRunIds.size === 0) {
         return;
       }
       await markPreprocessingRunsInterrupted({
         projectId: parsed.data.projectId,
-        runIds: hintedRunIds,
+        runIds: [...hintedRunIds],
         reason,
         source
       });
@@ -226,6 +236,9 @@ export function createPreprocessingHandlerRouter(): Router {
       onAborted: async (message) => {
         await markInterruptedRuns(message, 'stream_aborted');
       }
+    }, {
+      allowTextOnlyResponse: controllerDecision.summary.allowTextResponse,
+      controllerSummary: controllerDecision.summary as unknown as Record<string, unknown>
     });
   });
 

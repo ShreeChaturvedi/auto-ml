@@ -24,7 +24,7 @@ import type { ModelConfig, ReasoningConfig, UsageConfig } from './LlmChatCompose
 import {
   Brain,
   Code2,
-  Crown,
+
   Flame,
   Gauge,
   Rocket,
@@ -39,7 +39,7 @@ function renderModelIcon(option: AssistantModelOption, iconColorClass?: string):
   const cls = cn('h-3 w-3', iconColorClass);
 
   if (option.value === DEFAULT_ASSISTANT_MODEL) {
-    return <Crown className={cls} />;
+    return <Brain className={cls} />;
   }
 
   switch (option.kind) {
@@ -51,7 +51,7 @@ function renderModelIcon(option: AssistantModelOption, iconColorClass?: string):
       return <Gauge className={cls} />;
     case 'base':
     default:
-      return <Crown className={cls} />;
+      return <Brain className={cls} />;
   }
 }
 

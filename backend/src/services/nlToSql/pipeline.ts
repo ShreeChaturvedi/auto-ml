@@ -254,11 +254,7 @@ async function phaseSqlGenerationFallback(
       schema: PASS2_FALLBACK_SCHEMA_VAL,
       normalize: normalizePass2FallbackOutput,
       maxOutputTokens: 700,
-      reasoningEffort: normalizeReasoningSelection({
-        modelId: model,
-        enableThinking: false,
-        thinkingLevel: 'low'
-      }),
+      reasoningEffort: normalizeReasoningSelection({ modelId: model, reasoningEffort: 'low' }),
       systemPrompt: 'You are a senior SQL engineer. Return compact valid JSON only.',
       userPrompt: buildPass2FallbackPrompt({
         nlQuery: query,
@@ -441,4 +437,3 @@ export async function runGeneratePipeline(
     onProgress, onModelWork, provider
   );
 }
-

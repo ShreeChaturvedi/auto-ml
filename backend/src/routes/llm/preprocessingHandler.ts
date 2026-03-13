@@ -190,9 +190,7 @@ export function createPreprocessingHandlerRouter(): Router {
       toolCallHistory,
       toolResultHistory,
       toolDefinitions: LLM_PREPROCESSING_TOOLS,
-      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
-      enableThinking: parsed.data.enableThinking,
-      thinkingLevel: parsed.data.thinkingLevel
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data)
     });
     const hintedRunIds = extractPreprocessingRunIdsFromHistory(parsed.data.toolCalls, parsed.data.toolResults);
 

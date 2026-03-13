@@ -17,7 +17,7 @@ const MODEL_OPTIONS: AssistantModelOption[] = [
     label: 'GPT 5.4',
     kind: 'base',
     description: 'Strongest model for complex planning, tool orchestration, and high-stakes work.',
-    supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+    supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'high',
     featured: true,
   },
@@ -131,6 +131,16 @@ describe('LlmChatComposer', () => {
 
     expect(within(listbox).getByText('Extra High')).toBeInTheDocument();
     expect(within(listbox).queryByText('X-High')).not.toBeInTheDocument();
+  });
+
+  it('does not expose a None reasoning option for GPT models', async () => {
+    render(<ComposerHarness />);
+
+    await openSelect(1);
+    const listbox = await screen.findByRole('listbox');
+
+    expect(within(listbox).queryByText('None')).not.toBeInTheDocument();
+    expect(within(listbox).getByText('Low')).toBeInTheDocument();
   });
 
   it('resets reasoning to the selected model default when the model changes', async () => {

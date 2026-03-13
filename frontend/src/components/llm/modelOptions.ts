@@ -1,6 +1,6 @@
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-export type ReasoningIcon = 'slash' | 'zap' | 'gauge' | 'brain' | 'flame' | 'rocket';
+export type ReasoningIcon = 'zap' | 'gauge' | 'brain' | 'flame' | 'rocket';
 
 export type AssistantModelKind = 'base' | 'codex' | 'mini' | 'nano';
 
@@ -28,13 +28,12 @@ const DEFAULT_MODEL_OPTION: AssistantModelOption = {
   label: 'GPT 5.4',
   kind: 'base',
   description: 'Strongest model for complex planning, tool orchestration, and high-stakes work.',
-  supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+  supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
   defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
   featured: true
 };
 
 const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
-  none: { label: 'None', icon: 'slash' },
   minimal: { label: 'Minimal', icon: 'zap' },
   low: { label: 'Low', icon: 'gauge' },
   medium: { label: 'Medium', icon: 'brain' },

@@ -1,7 +1,6 @@
 import { env } from '../../config.js';
 
-export type LlmReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-export type LegacyThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
+export type LlmReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export type Gpt5ModelKind = 'base' | 'codex' | 'mini' | 'nano';
 
@@ -22,7 +21,7 @@ const CATALOG: readonly LlmModelCatalogEntry[] = [
     label: 'GPT 5.4',
     kind: 'base',
     description: 'Strongest model for complex planning, tool orchestration, and high-stakes work.',
-    reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'high',
     featured: true,
     featuredOrder: 0
@@ -117,28 +116,8 @@ export function coerceReasoningEffort(
 export function normalizeReasoningSelection(params: {
   modelId?: string | null;
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LegacyThinkingLevel;
 }): LlmReasoningEffort | undefined {
-  if (params.reasoningEffort) {
-    return coerceReasoningEffort(params.modelId, params.reasoningEffort);
-  }
-
-  const model = resolveCatalogModel(params.modelId);
-  if (params.enableThinking === false) {
-    return supportsReasoningEffort(model.id, 'none') ? 'none' : undefined;
-  }
-
-  switch (params.thinkingLevel) {
-    case 'low':
-      return coerceReasoningEffort(model.id, 'low');
-    case 'medium':
-      return coerceReasoningEffort(model.id, 'medium');
-    case 'high':
-      return coerceReasoningEffort(model.id, 'high');
-    default:
-      return params.enableThinking ? model.defaultReasoningEffort : undefined;
-  }
+  return coerceReasoningEffort(params.modelId, params.reasoningEffort);
 }
 
 export function isGpt5Model(modelId: string | undefined | null): boolean {

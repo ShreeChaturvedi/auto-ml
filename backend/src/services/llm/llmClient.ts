@@ -17,7 +17,6 @@ export interface LlmToolDefinition {
 }
 
 export type LlmToolChoice = 'auto' | 'any' | 'none';
-export type LlmThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
 
 export interface LlmToolCall {
   name: string;
@@ -46,8 +45,6 @@ export interface LlmRequest {
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
   contextId?: string;
 }
 

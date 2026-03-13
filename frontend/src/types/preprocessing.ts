@@ -48,7 +48,7 @@ export interface RefinePreprocessingRequest {
   message: string;
   draftSteps: PreprocessingStep[];
   model?: string;
-  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 }
 
 export interface RefinePreprocessingResponse {

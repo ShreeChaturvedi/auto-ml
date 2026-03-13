@@ -22,7 +22,6 @@ import { ContextUsageIndicator } from './ContextUsageIndicator';
 import type { ModelConfig, ReasoningConfig, UsageConfig } from './LlmChatComposer';
 
 import {
-  Ban,
   Brain,
   Code2,
   Crown,
@@ -59,7 +58,6 @@ function renderModelIcon(option: AssistantModelOption, iconColorClass?: string):
 function renderReasoningIcon(icon: ReasoningIcon, iconColorClass?: string): ReactNode {
   const cls = cn('h-3 w-3', iconColorClass);
   switch (icon) {
-    case 'slash': return <Ban className={cls} />;
     case 'zap': return <Zap className={cls} />;
     case 'gauge': return <Gauge className={cls} />;
     case 'brain': return <Brain className={cls} />;

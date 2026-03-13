@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 import { getDbPool, hasDatabaseConfiguration } from '../../db.js';
 import { searchDocuments } from '../../services/documentSearchService.js';
-import type { LlmThinkingLevel } from '../../services/llm/llmClient.js';
 import {
   getDefaultLlmModel,
   normalizeReasoningSelection,
@@ -17,8 +16,7 @@ export const toolResultSchema = z.object({
   error: z.string().optional()
 });
 
-const thinkingLevelSchema = z.enum(['dynamic', 'low', 'medium', 'high']);
-const reasoningEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const reasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
 
 export const planSchema = z.object({
   projectId: z.string().min(1),
@@ -29,8 +27,6 @@ export const planSchema = z.object({
   toolResults: z.array(toolResultSchema).optional(),
   featureSummary: z.string().optional(),
   reasoningEffort: reasoningEffortSchema.optional(),
-  enableThinking: z.boolean().optional(),
-  thinkingLevel: thinkingLevelSchema.optional(),
   model: z.string().optional()
 });
 
@@ -49,22 +45,16 @@ export const onboardingSchema = z.object({
   toolResults: z.array(toolResultSchema).optional(),
   round: z.number().int().min(0).max(5).default(0),
   reasoningEffort: reasoningEffortSchema.optional(),
-  enableThinking: z.boolean().optional(),
-  thinkingLevel: thinkingLevelSchema.optional(),
   model: z.string().optional()
 });
 
 export function normalizeReasoningEffortInput(params: {
   model?: string;
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
 }): LlmReasoningEffort | undefined {
   return normalizeReasoningSelection({
     modelId: params.model ?? getDefaultLlmModel(),
-    reasoningEffort: params.reasoningEffort,
-    enableThinking: params.enableThinking,
-    thinkingLevel: params.thinkingLevel
+    reasoningEffort: params.reasoningEffort
   });
 }
 

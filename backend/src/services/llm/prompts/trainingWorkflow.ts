@@ -6,7 +6,6 @@ import type { DatasetProfile } from '../../../types/dataset.js';
 import type { ToolResult } from '../../../types/llm.js';
 import type {
   LlmRequest,
-  LlmThinkingLevel,
   LlmToolDefinition,
   LlmToolCallHistory,
   LlmToolResultHistory
@@ -28,8 +27,6 @@ export function buildTrainingRequest(params: {
   toolResultHistory?: LlmToolResultHistory[];
   toolDefinitions?: LlmToolDefinition[];
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
   const {
     dataset,
@@ -42,9 +39,7 @@ export function buildTrainingRequest(params: {
     toolCallHistory,
     toolResultHistory,
     toolDefinitions,
-    reasoningEffort,
-    enableThinking,
-    thinkingLevel
+    reasoningEffort
   } = params;
   const tools = toolDefinitions ?? LLM_ALL_TOOLS;
   const systemPrompt = projectPlan?.trim()
@@ -83,8 +78,6 @@ export function buildTrainingRequest(params: {
     toolCallHistory,
     toolResultHistory,
     reasoningEffort,
-    enableThinking,
-    thinkingLevel,
     contextId: dataset.projectId ?? dataset.datasetId
   };
 }

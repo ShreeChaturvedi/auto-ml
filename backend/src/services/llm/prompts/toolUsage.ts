@@ -7,7 +7,6 @@ import type { DatasetProfile } from '../../../types/dataset.js';
 import type { ToolResult } from '../../../types/llm.js';
 import type {
   LlmRequest,
-  LlmThinkingLevel,
   LlmToolDefinition,
   LlmToolCallHistory,
   LlmToolResultHistory
@@ -81,8 +80,6 @@ export function buildPreprocessingRequest(params: {
   toolResultHistory?: LlmToolResultHistory[];
   toolDefinitions?: LlmToolDefinition[];
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
   const {
     dataset,
@@ -93,9 +90,7 @@ export function buildPreprocessingRequest(params: {
     toolCallHistory,
     toolResultHistory,
     toolDefinitions,
-    reasoningEffort,
-    enableThinking,
-    thinkingLevel
+    reasoningEffort
   } = params;
 
   const tools = toolDefinitions ?? LLM_ALL_TOOLS;
@@ -152,8 +147,6 @@ PREPROCESSING CONTRACT:
     toolCallHistory,
     toolResultHistory,
     reasoningEffort,
-    enableThinking,
-    thinkingLevel,
     contextId: dataset.projectId ?? dataset.datasetId
   };
 }
@@ -172,8 +165,6 @@ export function buildOnboardingRequest(opts: {
   toolResultHistory?: Array<{ name: string; response: Record<string, unknown> }>;
   toolDefinitions: LlmToolDefinition[];
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
   const systemPrompt = `You are an expert data scientist and ML engineer helping a user plan their machine learning project.
 
@@ -278,8 +269,6 @@ ${opts.round === 0
     toolCallHistory: opts.toolCallHistory,
     toolResultHistory: opts.toolResultHistory,
     reasoningEffort: opts.reasoningEffort,
-    enableThinking: opts.enableThinking,
-    thinkingLevel: opts.thinkingLevel,
     contextId: opts.projectTitle
   };
 }

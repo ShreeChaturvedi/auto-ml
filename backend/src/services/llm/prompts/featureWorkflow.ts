@@ -7,7 +7,6 @@ import type { ToolResult } from '../../../types/llm.js';
 import type { FeatureMethod } from '../../featureEngineering.js';
 import type {
   LlmRequest,
-  LlmThinkingLevel,
   LlmToolDefinition,
   LlmToolCallHistory,
   LlmToolResultHistory
@@ -36,8 +35,6 @@ export function buildFeatureEngineeringRequest(params: {
   featureMethods: FeatureMethod[];
   toolDefinitions?: LlmToolDefinition[];
   reasoningEffort?: LlmReasoningEffort;
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
 }): LlmRequest {
   const {
     dataset,
@@ -50,9 +47,7 @@ export function buildFeatureEngineeringRequest(params: {
     toolResultHistory,
     featureMethods,
     toolDefinitions,
-    reasoningEffort,
-    enableThinking,
-    thinkingLevel
+    reasoningEffort
   } = params;
   const tools = toolDefinitions ?? LLM_ALL_TOOLS;
   const trimmedProjectPlan = projectPlan?.trim()
@@ -111,8 +106,6 @@ FEATURE ENGINEERING CONTRACT:
     toolCallHistory,
     toolResultHistory,
     reasoningEffort,
-    enableThinking,
-    thinkingLevel,
     contextId: dataset.projectId ?? dataset.datasetId
   };
 }

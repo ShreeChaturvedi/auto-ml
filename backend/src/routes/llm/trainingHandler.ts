@@ -80,9 +80,7 @@ export function createTrainingHandlerRouter(): Router {
       toolCallHistory,
       toolResultHistory,
       toolDefinitions,
-      reasoningEffort: normalizeReasoningEffortInput(parsed.data),
-      enableThinking: parsed.data.enableThinking,
-      thinkingLevel: parsed.data.thinkingLevel
+      reasoningEffort: normalizeReasoningEffortInput(parsed.data)
     });
 
     const modelOverride = parsed.data.model && parsed.data.model !== 'auto'

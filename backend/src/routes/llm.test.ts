@@ -128,6 +128,20 @@ describeRouteSuite('llm routes', () => {
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('Invalid request');
     });
+
+    it('returns 400 when reasoningEffort is `none`', async () => {
+      const app = createTestApp();
+      const response = await request(app)
+        .post('/api/llm/onboarding/stream')
+        .send({
+          projectId: 'project-1',
+          round: 0,
+          reasoningEffort: 'none'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid request');
+    });
   });
 
   describe('GET /api/llm/models', () => {
@@ -151,6 +165,9 @@ describeRouteSuite('llm routes', () => {
         'gpt-5-nano'
       ]);
       expect(response.body.models.every((entry: { id: string }) => entry.id.startsWith('gpt-5'))).toBe(true);
+      expect(
+        response.body.models.every((entry: { reasoningEfforts: string[] }) => !entry.reasoningEfforts.includes('none'))
+      ).toBe(true);
     });
   });
 

@@ -9,26 +9,6 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 export function createPreprocessingRouter() {
   const router = Router();
 
-  const deprecatedResponse = {
-    error: 'Legacy preprocessing endpoint is deprecated.',
-    code: 'PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED',
-    migrationPath: '/api/llm/preprocessing/stream',
-    message:
-      'Use the tool-orchestrated preprocessing flow via /api/llm/preprocessing/stream and /api/llm/tools/execute.'
-  };
-
-  router.post('/preprocessing/analyze', (_req, res) => {
-    return res.status(410).json(deprecatedResponse);
-  });
-
-  router.post('/preprocessing/refine', (_req, res) => {
-    return res.status(410).json(deprecatedResponse);
-  });
-
-  router.post('/preprocessing/execute', (_req, res) => {
-    return res.status(410).json(deprecatedResponse);
-  });
-
   router.get('/preprocessing/tables', async (req, res) => {
 
     try {

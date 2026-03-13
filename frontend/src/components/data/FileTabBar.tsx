@@ -54,12 +54,8 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   const closeFileTab = useDataStore((state) => state.closeFileTab);
   const removeArtifact = useDataStore((state) => state.removeArtifact);
 
-  // Get project theme color
   const { projects } = useProjectStore();
   const activeProject = projects.find((project) => project.id === projectId);
-  const themeColorClass = activeProject
-    ? projectColorClasses[activeProject.color]?.text
-    : undefined;
   const themeBorderAccentClass = activeProject
     ? projectColorClasses[activeProject.color]?.borderAccent
     : undefined;
@@ -209,7 +205,6 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
                     fileType={tab.fileType}
                     queryMode={tab.queryMode}
                     queryIconColorClassName={queryIconColorClassName}
-                    themeColorClass={themeColorClass}
                     themeBorderAccentClass={themeBorderAccentClass}
                     onClose={() => handleCloseTab(tab)}
                     onClick={() => handleTabClick(tab)}

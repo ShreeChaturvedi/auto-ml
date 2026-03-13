@@ -12,7 +12,6 @@ export interface SortableTabProps {
   fileType?: string;
   queryMode?: 'english' | 'sql';
   queryIconColorClassName?: string;
-  themeColorClass?: string;
   themeBorderAccentClass?: string;
   onClose: () => void;
   onClick: () => void;
@@ -27,7 +26,6 @@ export function SortableTab({
   fileType,
   queryMode,
   queryIconColorClassName,
-  themeColorClass,
   themeBorderAccentClass,
   onClose,
   onClick,
@@ -59,13 +57,8 @@ export function SortableTab({
       );
     }
 
-    const { Icon, colorClass, usesTheme } = resolveFileIcon(fileType ?? 'other');
-    return (
-      <Icon
-        className={cn('h-4 w-4', !usesTheme && colorClass)}
-        {...(usesTheme ? { themeColorClass, isActive } : {})}
-      />
-    );
+    const { Icon, colorClass } = resolveFileIcon(fileType ?? 'other');
+    return <Icon className={cn('h-4 w-4', colorClass)} />;
   };
 
   const handleClick = () => {

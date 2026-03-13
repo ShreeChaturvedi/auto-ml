@@ -8,7 +8,7 @@ import {
   type KeyboardEvent
 } from 'react';
 import { cn } from '@/lib/utils';
-import { fileIconColorByType, tailwindColorToHex, THEME_ICON_TYPES } from '@/lib/fileUtils';
+import { fileIconColorByType, tailwindColorToHex } from '@/lib/fileUtils';
 import type { FileType } from '@/types/file';
 
 export interface AnimateCharRange { start: number; end: number }
@@ -28,7 +28,7 @@ interface MentionInputProps {
   mentionNames: Set<string>;
   /** Map from lowercase filename → file type (csv, json, etc.) for chip coloring */
   mentionTypes?: Map<string, string>;
-  /** Resolved CSS color string for CSV/XLS chip dots (project theme color) */
+  /** Resolved CSS color string for the voice-input caret */
   themeColor?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -39,9 +39,8 @@ interface MentionInputProps {
 const VOICE_CHAR_STAGGER_MS = 14;
 const VOICE_CHAR_ANIM_MS = 180;
 
-function getChipDotColor(fileType?: string, themeColor?: string): string {
+function getChipDotColor(fileType?: string): string {
   if (!fileType) return tailwindColorToHex('text-muted-foreground');
-  if (themeColor && THEME_ICON_TYPES.has(fileType as FileType)) return themeColor;
   const twClass = fileIconColorByType[fileType as FileType] ?? 'text-muted-foreground';
   return tailwindColorToHex(twClass);
 }
@@ -130,7 +129,7 @@ function getCursorPos(root: HTMLElement): number {
 }
 
 /** Create a styled mention chip span with colored dot + filename. */
-function createMentionSpan(name: string, mentionTypes?: Map<string, string>, themeColor?: string): HTMLSpanElement {
+function createMentionSpan(name: string, mentionTypes?: Map<string, string>): HTMLSpanElement {
   const span = document.createElement('span');
   span.setAttribute('contenteditable', 'false');
   span.setAttribute('data-mention', name);
@@ -142,7 +141,7 @@ function createMentionSpan(name: string, mentionTypes?: Map<string, string>, the
   // Colored dot indicator
   const dot = document.createElement('span');
   const fileType = mentionTypes?.get(name.toLowerCase());
-  const dotColor = getChipDotColor(fileType, themeColor);
+  const dotColor = getChipDotColor(fileType);
   dot.style.cssText = `display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${dotColor};`;
   span.appendChild(dot);
 
@@ -224,7 +223,6 @@ function buildDOM(
   value: string,
   mentionNames: Set<string>,
   mentionTypes?: Map<string, string>,
-  themeColor?: string,
   animateRange?: AnimateCharRange
 ): DocumentFragment {
   const frag = document.createDocumentFragment();
@@ -248,7 +246,7 @@ function buildDOM(
       }
 
       if (mentionNames.has(name.toLowerCase())) {
-        frag.appendChild(createMentionSpan(name, mentionTypes, themeColor));
+        frag.appendChild(createMentionSpan(name, mentionTypes));
       } else {
         appendTextSegment(frag, match[0], globalOffset, animateRange, animCharIndexRef);
       }
@@ -299,7 +297,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
       lastValueRef.current = nextValue;
       if (nextValue) {
         clearEditable(el);
-        el.appendChild(buildDOM(nextValue, mentionNames, mentionTypes, themeColor, animateRange));
+        el.appendChild(buildDOM(nextValue, mentionNames, mentionTypes, animateRange));
       } else {
         clearEditable(el);
       }
@@ -314,7 +312,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
       if (animateRange) {
         scheduleAnimationCleanup(el, cleanupTimerRef);
       }
-    }, [disabled, mentionNames, mentionTypes, themeColor]);
+    }, [disabled, mentionNames, mentionTypes]);
 
     useEffect(() => {
       return () => {

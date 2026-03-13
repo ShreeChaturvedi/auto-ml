@@ -52,7 +52,6 @@ export interface AgenticStepDisplayProps {
   mentionNames: Set<string>;
   mentionTypes: Map<string, string>;
   themeColor?: string;
-  themeColorClass?: string;
   voiceConfig?: {
     state: VoiceState;
     analyserRef: React.RefObject<AnalyserNode | null>;
@@ -87,7 +86,6 @@ export function AgenticStepDisplay({
   mentionNames,
   mentionTypes,
   themeColor,
-  themeColorClass,
   voiceConfig,
   assistantModel,
   inlineModelOptions,
@@ -223,7 +221,6 @@ export function AgenticStepDisplay({
                   activeIndex={mention.activeIndex}
                   anchorRef={mentionInputRef}
                   onSelect={mention.selectCandidate}
-                  themeColorClass={themeColorClass}
                 />
               ),
               inputRef: mentionInputRef,

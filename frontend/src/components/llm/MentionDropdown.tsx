@@ -11,8 +11,6 @@ interface MentionDropdownProps {
   activeIndex: number;
   anchorRef: RefObject<MentionInputHandle | null>;
   onSelect: (candidate: MentionCandidate) => void;
-  /** Project theme color class (e.g. 'text-blue-500') for CSV/XLS icons */
-  themeColorClass?: string;
 }
 
 interface GroupedCandidates {
@@ -38,8 +36,7 @@ export function MentionDropdown({
   filtered,
   activeIndex,
   anchorRef,
-  onSelect,
-  themeColorClass
+  onSelect
 }: MentionDropdownProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const [position, setPosition] = useState<{ bottom: number; left: number; width: number } | null>(null);
@@ -96,7 +93,7 @@ export function MentionDropdown({
 
   /** Render a single candidate item. globalIndex is its position in the flat filtered array. */
   const renderItem = (candidate: MentionCandidate, globalIndex: number) => {
-    const { Icon, colorClass, usesTheme } = resolveFileIcon(candidate.type);
+    const { Icon, colorClass } = resolveFileIcon(candidate.type);
 
     return (
       <li
@@ -115,10 +112,7 @@ export function MentionDropdown({
           onSelect(candidate);
         }}
       >
-        <Icon
-          className={cn('h-3.5 w-3.5 shrink-0', !usesTheme && colorClass)}
-          {...(usesTheme ? { themeColorClass, isActive: true } : {})}
-        />
+        <Icon className={cn('h-3.5 w-3.5 shrink-0', colorClass)} />
         <span className="truncate">{candidate.name}</span>
       </li>
     );

@@ -109,7 +109,7 @@ export function AgenticShell({
     [mentionCandidates]
   );
 
-  const { themeColor, themeColorClass } = useProjectThemeColor(projectId);
+  const { themeColor } = useProjectThemeColor(projectId);
 
   const mention = useMentionAutocomplete({
     candidates: mentionCandidates,
@@ -278,7 +278,6 @@ export function AgenticShell({
               mentionNames={mentionNames}
               mentionTypes={mentionTypes}
               themeColor={themeColor}
-              themeColorClass={themeColorClass}
               voiceConfig={{
                 state: voiceState,
                 analyserRef: voiceAnalyserRef,

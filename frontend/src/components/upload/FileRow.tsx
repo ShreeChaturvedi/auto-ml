@@ -7,8 +7,6 @@ import type { UploadedFile } from '@/types/file';
 import { resolveFileIcon, formatFileSize } from '@/lib/fileUtils';
 import { FilePreview } from './FilePreview';
 import { cn } from '@/lib/utils';
-import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 
 interface FileRowProps {
   file: UploadedFile;
@@ -20,23 +18,14 @@ interface FileRowProps {
 export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) {
   const [showPreview, setShowPreview] = useState(false);
 
-  const { projects } = useProjectStore();
-  const activeProject = projects.find((project) => project.id === file.projectId);
-  const themeColorClass = activeProject
-    ? projectColorClasses[activeProject.color]?.text
-    : undefined;
-
-  const { Icon, colorClass, usesTheme } = resolveFileIcon(file.type);
+  const { Icon, colorClass } = resolveFileIcon(file.type);
 
   return (
     <>
       <div className="group flex items-center gap-3 py-2 px-1 rounded-md hover:bg-accent/30 transition-colors">
         {/* Icon */}
-        <div className={cn('flex-shrink-0', !usesTheme && colorClass)}>
-          <Icon
-            className="h-5 w-5"
-            {...(usesTheme ? { themeColorClass, isActive: true } : {})}
-          />
+        <div className={cn('flex-shrink-0', colorClass)}>
+          <Icon className="h-5 w-5" />
         </div>
 
         {/* File Info */}

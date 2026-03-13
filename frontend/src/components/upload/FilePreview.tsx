@@ -17,10 +17,11 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import type { UploadedFile } from '@/types/file';
-import { formatFileSize } from '@/lib/fileUtils';
+import { formatFileSize, resolveFileIcon } from '@/lib/fileUtils';
 import Papa from 'papaparse';
 import { Badge } from '@/components/ui/badge';
 import { Eye } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
 import { Markdown } from '@/components/ui/Markdown';
@@ -310,26 +311,36 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
     };
   }, [file, open]);
 
+  const { Icon, colorClass } = resolveFileIcon(file.type);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>{file.name}</DialogTitle>
-          <DialogDescription className="flex items-center gap-2">
-            <Badge variant="outline" className="bg-muted/50">{file.type.charAt(0).toUpperCase() + file.type.slice(1)}</Badge>
-            <Badge variant="outline" className="bg-muted/50">{formatFileSize(file.size)}</Badge>
+          <DialogTitle className="flex items-center gap-2 min-w-0">
+            <div className={cn('flex-shrink-0', colorClass)}>
+              <Icon className="h-5 w-5" />
+            </div>
+            <span className="truncate">{file.name}</span>
+            <Badge variant="outline" className="bg-muted/50 font-normal text-xs flex-shrink-0">
+              {formatFileSize(file.size)}
+            </Badge>
             {rowInfo && (
-              <Badge variant="outline" className="gap-1 bg-muted/50">
+              <Badge variant="outline" className="gap-1 bg-muted/50 font-normal text-xs flex-shrink-0">
                 <Eye className="h-3 w-3" />
-                <span>
-                  {rowInfo.shown.toLocaleString()}
-                  {rowInfo.total > rowInfo.shown && (
-                    <span className="text-muted-foreground"> of {rowInfo.total.toLocaleString()}</span>
-                  )}
-                  {' '}rows
-                </span>
+                {rowInfo.shown.toLocaleString()}
+                {rowInfo.total > rowInfo.shown && ` of ${rowInfo.total.toLocaleString()}`}
+                {' '}rows
               </Badge>
             )}
+            {typeof file.metadata?.chunkCount === 'number' && (
+              <Badge variant="outline" className="bg-muted/50 font-normal text-xs flex-shrink-0">
+                {file.metadata.chunkCount} chunks
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Preview of {file.name}
           </DialogDescription>
         </DialogHeader>
 

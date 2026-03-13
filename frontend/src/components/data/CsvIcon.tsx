@@ -52,6 +52,14 @@ export function DocIcon(props: React.SVGProps<SVGSVGElement>) {
   return <FileTypeBadgeIcon label="DOC" {...props} />;
 }
 
+export function JsnIcon(props: React.SVGProps<SVGSVGElement>) {
+  return <FileTypeBadgeIcon label="JSN" {...props} />;
+}
+
+export function TxtIcon(props: React.SVGProps<SVGSVGElement>) {
+  return <FileTypeBadgeIcon label="TXT" {...props} />;
+}
+
 /** Standard markdown mark: rounded rectangle containing "M" glyph and down-arrow. */
 export function MarkdownIcon({ className, ...props }: React.SVGProps<SVGSVGElement>) {
   return (

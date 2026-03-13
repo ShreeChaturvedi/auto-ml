@@ -1,21 +1,17 @@
 import type { ComponentType } from 'react';
-import {
-  Braces,
-  FileText,
-  File
-} from 'lucide-react';
-import { CsvIcon, XlsIcon, PdfIcon, DocIcon, MarkdownIcon } from '@/components/data/CsvIcon';
+import { File } from 'lucide-react';
+import { CsvIcon, XlsIcon, PdfIcon, DocIcon, MarkdownIcon, JsnIcon, TxtIcon } from '@/components/data/CsvIcon';
 import type { FileType } from '@/types/file';
 
 /** Icon component for each file type. */
 export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
   csv: CsvIcon,
-  json: Braces,
+  json: JsnIcon,
   excel: XlsIcon,
   pdf: PdfIcon,
   markdown: MarkdownIcon,
   word: DocIcon,
-  text: FileText,
+  text: TxtIcon,
   other: File
 };
 

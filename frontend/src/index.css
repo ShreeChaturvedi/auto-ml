@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.animate-spin-slow {
+  animation: spin 1.1s linear infinite;
+}
+
 /* Registered property so --shine-angle is interpolable in @keyframes */
 @property --shine-angle {
   syntax: '<angle>';

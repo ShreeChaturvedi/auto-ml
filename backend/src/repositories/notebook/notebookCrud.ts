@@ -45,7 +45,11 @@ export async function listNotebooksByProject(projectId: string): Promise<Noteboo
 /**
  * Create a notebook in a project.
  */
-export async function createNotebook(projectId: string, name?: string): Promise<Notebook> {
+export async function createNotebook(
+  projectId: string,
+  name?: string,
+  metadata?: Record<string, unknown>
+): Promise<Notebook> {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Database configuration required for notebook operations');
   }
@@ -65,10 +69,10 @@ export async function createNotebook(projectId: string, name?: string): Promise<
   }
 
   const result = await pool.query<NotebookRow>(
-    `INSERT INTO notebooks (notebook_id, project_id, name)
-     VALUES ($1, $2, $3)
+    `INSERT INTO notebooks (notebook_id, project_id, name, metadata)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [notebookId, projectId, notebookName]
+    [notebookId, projectId, notebookName, metadata ?? {}]
   );
 
   return rowToNotebook(result.rows[0]);
@@ -128,6 +132,10 @@ export async function updateNotebook(
   }
 
   const pool = getDbPool();
+  const existingNotebook = await getNotebook(notebookId);
+  if (!existingNotebook) {
+    throw new Error('Notebook not found');
+  }
   const setClauses: string[] = [];
   const values: unknown[] = [notebookId];
   let paramIndex = 2;
@@ -139,13 +147,14 @@ export async function updateNotebook(
 
   if (updates.metadata !== undefined) {
     setClauses.push(`metadata = $${paramIndex++}`);
-    values.push(updates.metadata);
+    values.push({
+      ...(existingNotebook.metadata ?? {}),
+      ...updates.metadata
+    });
   }
 
   if (setClauses.length === 0) {
-    const existing = await getNotebook(notebookId);
-    if (!existing) throw new Error('Notebook not found');
-    return existing;
+    return existingNotebook;
   }
 
   const result = await pool.query<NotebookRow>(
@@ -155,10 +164,6 @@ export async function updateNotebook(
      RETURNING *`,
     values
   );
-
-  if (!result.rowCount || result.rowCount === 0) {
-    throw new Error('Notebook not found');
-  }
 
   return rowToNotebook(result.rows[0]);
 }

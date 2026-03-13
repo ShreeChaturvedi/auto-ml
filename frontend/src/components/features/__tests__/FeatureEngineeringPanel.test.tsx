@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FeatureEngineeringPanel } from '../FeatureEngineeringPanel';
@@ -56,6 +57,10 @@ const mockState = vi.hoisted(() => ({
   updateReadinessReportMock: vi.fn(),
   initializeNotebookMock: vi.fn(),
   disconnectNotebookMock: vi.fn(),
+  activeNotebookId: null as string | null,
+  currentProjectId: 'p1',
+  notebooks: [] as Array<{ notebookId: string }>,
+  updateNotebookMetadataMock: vi.fn(),
   notebookCells: [] as Array<{
     cellId: string;
     notebookId: string;
@@ -135,6 +140,10 @@ vi.mock('@/stores/notebookStore', () => ({
     selector({
       initializeNotebook: mockState.initializeNotebookMock,
       disconnect: mockState.disconnectNotebookMock,
+      activeNotebookId: mockState.activeNotebookId,
+      currentProjectId: mockState.currentProjectId,
+      notebooks: mockState.notebooks,
+      updateNotebookMetadata: mockState.updateNotebookMetadataMock,
       cells: mockState.notebookCells,
       createCell: mockState.createNotebookCellMock,
       updateCell: mockState.updateNotebookCellMock
@@ -200,14 +209,24 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.updateReadinessReportMock.mockReset();
     mockState.initializeNotebookMock.mockReset();
     mockState.disconnectNotebookMock.mockReset();
+    mockState.activeNotebookId = null;
+    mockState.currentProjectId = 'p1';
+    mockState.notebooks = [];
+    mockState.updateNotebookMetadataMock.mockReset();
     mockState.notebookCells = [];
     mockState.createNotebookCellMock.mockReset();
     mockState.updateNotebookCellMock.mockReset();
     mockState.applyFeatureEngineeringMock.mockReset();
   });
 
+  const renderPanel = () => render(
+    <MemoryRouter>
+      <FeatureEngineeringPanel projectId="p1" />
+    </MemoryRouter>
+  );
+
   it('renders agentic shell layout and keeps approval gated with no active features', () => {
-    render(<FeatureEngineeringPanel projectId="p1" />);
+    renderPanel();
 
     expect(screen.getByText('Approval Gate: Readiness Review')).toBeInTheDocument();
 
@@ -251,7 +270,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
       ]
     };
 
-    render(<FeatureEngineeringPanel projectId="p1" />);
+    renderPanel();
 
     const approveButton = screen.getByRole('button', { name: /Approve Pipeline/i });
     expect(approveButton).toBeEnabled();
@@ -266,7 +285,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
   it('locks editing for approved versions and provides start-new-draft action', async () => {
     mockState.versions.p1[0].status = 'approved';
 
-    render(<FeatureEngineeringPanel projectId="p1" />);
+    renderPanel();
 
     expect(screen.getByText('Pipeline Approved')).toBeInTheDocument();
     expect(screen.getByTestId('domain-lock')).toHaveTextContent('locked');
@@ -293,7 +312,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
       }
     }];
 
-    render(<FeatureEngineeringPanel projectId="p1" />);
+    renderPanel();
 
     const formatLabel = screen.getByText('Format');
     const formatContainer = formatLabel.closest('div');

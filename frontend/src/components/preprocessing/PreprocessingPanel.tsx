@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
@@ -24,6 +24,9 @@ import { DEFAULT_TAB_ID } from './preprocessingTabUtils';
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialTabIdRef = useRef(searchParams.get('tab') ?? undefined);
+  const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
   const projects = useProjectStore((state) => state.projects);
   const activeProjectColor = useMemo(() => {
     const activeProject = projectId
@@ -80,6 +83,8 @@ export function PreprocessingPanel() {
     resetActiveTab
   } = usePreprocessingTabs({
     projectId,
+    initialTabId: initialTabIdRef.current,
+    initialNotebookId: initialNotebookIdRef.current,
     onNeedsDatasetSelection: useCallback(() => {
       openDatasetSelector();
     }, [openDatasetSelector])

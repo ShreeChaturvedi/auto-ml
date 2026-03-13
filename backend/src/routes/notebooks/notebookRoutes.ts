@@ -7,11 +7,13 @@ import { getOrEnsureContainer } from '../../services/notebook/cellExecutionServi
 import * as notebookService from '../../services/notebook/notebookService.js';
 
 const createNotebookSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional()
+  name: z.string().trim().min(1).max(120).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
-const renameNotebookSchema = z.object({
-  name: z.string().trim().min(1).max(120)
+const updateNotebookSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
 export function createNotebookRoutes(): Router {
@@ -46,17 +48,17 @@ export function createNotebookRoutes(): Router {
       return;
     }
 
-    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name);
+    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name, parsed.data.metadata);
     res.status(201).json(notebook);
   }));
 
   /**
    * PATCH /api/notebooks/:notebookId
-   * Rename a notebook.
+   * Update a notebook (name and/or metadata).
    */
   router.patch('/notebooks/:notebookId', asyncHandler(async (req: Request, res: Response) => {
     const { notebookId } = req.params;
-    const parsed = renameNotebookSchema.safeParse(req.body);
+    const parsed = updateNotebookSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
         error: 'Invalid request body',
@@ -65,7 +67,7 @@ export function createNotebookRoutes(): Router {
       return;
     }
 
-    const notebook = await notebookService.renameProjectNotebook(notebookId, parsed.data.name);
+    const notebook = await notebookService.updateProjectNotebook(notebookId, parsed.data);
     res.json(notebook);
   }));
 

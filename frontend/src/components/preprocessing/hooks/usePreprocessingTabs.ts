@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
@@ -17,6 +17,10 @@ interface UsePreprocessingTabsOptions {
   projectId: string | undefined;
   /** Called when a tab switch/reset reveals a snapshot with no dataset selected. */
   onNeedsDatasetSelection: (firstDatasetId: string) => void;
+  /** Override the initial active tab (e.g., from URL search params). */
+  initialTabId?: string;
+  /** Notebook to activate after tab switch (e.g., from URL search params). */
+  initialNotebookId?: string;
 }
 
 export interface UsePreprocessingTabsResult {
@@ -47,7 +51,9 @@ export interface UsePreprocessingTabsResult {
 
 export function usePreprocessingTabs({
   projectId,
-  onNeedsDatasetSelection
+  onNeedsDatasetSelection,
+  initialTabId,
+  initialNotebookId
 }: UsePreprocessingTabsOptions): UsePreprocessingTabsResult {
   const notebookCells = useNotebookStore((state) => state.cells);
   const deleteNotebook = useNotebookStore((state) => state.deleteNotebook);
@@ -58,8 +64,12 @@ export function usePreprocessingTabs({
   const timeline = usePreprocessingStore((state) => state.timeline);
   const stepBindings = usePreprocessingStore((state) => state.stepBindings);
   const replayReport = usePreprocessingStore((state) => state.replayReport);
+  const applyTabSnapshotToStore = usePreprocessingStore((state) => state.applyTabSnapshot);
   const syncDivergence = usePreprocessingStore((state) => state.syncDivergence);
   const renameNotebook = useNotebookStore((state) => state.renameNotebook);
+  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
+  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
+  const notebooks = useNotebookStore((state) => state.notebooks);
 
   // ---- Persistence (localStorage, hydration, refs) -------------------------
 
@@ -74,6 +84,8 @@ export function usePreprocessingTabs({
     buildTabStorageKey,
     buildScopedTabStorageKey
   } = useTabPersistence({ projectId });
+
+  const initialAppliedRef = useRef(false);
 
   // ---- Rename dialog state -------------------------------------------------
 
@@ -120,18 +132,11 @@ export function usePreprocessingTabs({
   // ---- Snapshot helpers ----------------------------------------------------
 
   const applyTabSnapshot = useCallback((snapshot: PreprocessingTabSnapshot) => {
-    usePreprocessingStore.setState({
-      selectedDatasetId: snapshot.selectedDatasetId,
-      runId: snapshot.runId,
-      timeline: snapshot.timeline,
-      stepBindings: snapshot.stepBindings,
-      replayReport: snapshot.replayReport,
-      error: null
-    });
+    applyTabSnapshotToStore(snapshot);
     if (!snapshot.selectedDatasetId && tables.length > 0) {
       onNeedsDatasetSelection(tables[0].datasetId);
     }
-  }, [onNeedsDatasetSelection, tables]);
+  }, [applyTabSnapshotToStore, onNeedsDatasetSelection, tables]);
 
   const saveActiveSnapshot = useCallback(() => {
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
@@ -190,6 +195,27 @@ export function usePreprocessingTabs({
     applyTabSnapshot(targetTab.snapshot);
     void ensureNotebookForTab(targetTab);
   }, [activeTabIdRef, applyTabSnapshot, ensureNotebookForTab, saveActiveSnapshot, setActiveTabId, tabsRef]);
+
+  // ---- Apply initial tab/notebook from URL search params ------------------
+
+  useEffect(() => {
+    if (!tabsReady || initialAppliedRef.current) return;
+    if (!initialTabId && !initialNotebookId) return;
+
+    if (initialTabId) {
+      const targetTab = tabs.find((tab) => tab.id === initialTabId);
+      if (targetTab && targetTab.id !== activeTabId) {
+        handleTabSwitch(targetTab.id);
+      }
+    }
+
+    if (initialNotebookId) {
+      if (notebookProjectId !== projectId) return;
+      if (!notebooks.some((entry) => entry.notebookId === initialNotebookId)) return;
+      void useNotebookStore.getState().setActiveNotebook(initialNotebookId);
+    }
+    initialAppliedRef.current = true;
+  }, [activeTabId, handleTabSwitch, initialNotebookId, initialTabId, notebookProjectId, notebooks, projectId, tabs, tabsReady]);
 
   const handleNewTab = useCallback(() => {
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
@@ -265,9 +291,10 @@ export function usePreprocessingTabs({
     });
     if (notebookId) {
       void renameNotebook(notebookId, trimmed);
+      void updateNotebookMetadata(notebookId, { tabId: currentActiveTab.id, tabName: trimmed });
     }
     setRenameTabDialogOpen(false);
-  }, [activeTabIdRef, renameNotebook, renameTabName, setTabs, tabsRef]);
+  }, [activeTabIdRef, renameNotebook, renameTabName, setTabs, tabsRef, updateNotebookMetadata]);
 
   // ---- Reset active tab ----------------------------------------------------
 

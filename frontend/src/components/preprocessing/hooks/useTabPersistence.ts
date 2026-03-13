@@ -46,6 +46,7 @@ export function useTabPersistence({
 }: UseTabPersistenceOptions): UseTabPersistenceResult {
   const runId = usePreprocessingStore((state) => state.runId);
   const setRunId = usePreprocessingStore((state) => state.setRunId);
+  const applyTabSnapshot = usePreprocessingStore((state) => state.applyTabSnapshot);
 
   const [tabs, setTabs] = useState<PreprocessingTab[]>([createDefaultTab()]);
   const [activeTabId, setActiveTabId] = useState<string>(DEFAULT_TAB_ID);
@@ -133,16 +134,9 @@ export function useTabPersistence({
     setTabs(normalizedRecoveredTabs);
     tabsRef.current = normalizedRecoveredTabs;
     setActiveTabId(recoveredActiveTabId);
-    usePreprocessingStore.setState({
-      selectedDatasetId: activeRecoveredTab.snapshot.selectedDatasetId,
-      runId: activeRecoveredTab.snapshot.runId,
-      timeline: activeRecoveredTab.snapshot.timeline,
-      stepBindings: activeRecoveredTab.snapshot.stepBindings,
-      replayReport: activeRecoveredTab.snapshot.replayReport,
-      error: null
-    });
+    applyTabSnapshot(activeRecoveredTab.snapshot);
     setTabsReady(true);
-  }, [buildScopedTabStorageKey, projectId]);
+  }, [applyTabSnapshot, buildScopedTabStorageKey, projectId]);
 
   // ---- Keep refs in sync ---------------------------------------------------
 

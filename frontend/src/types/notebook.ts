@@ -231,12 +231,20 @@ export interface ReorderCellsRequest {
   cellIds: string[];
 }
 
+export interface NotebookPhaseMetadata {
+  phase?: 'preprocessing' | 'feature-engineering' | 'training';
+  tabId?: string;
+  tabName?: string;
+}
+
 export interface CreateNotebookRequest {
   name?: string;
+  metadata?: NotebookPhaseMetadata;
 }
 
 export interface UpdateNotebookRequest {
-  name: string;
+  name?: string;
+  metadata?: NotebookPhaseMetadata;
 }
 
 export interface DeleteNotebookResponse {

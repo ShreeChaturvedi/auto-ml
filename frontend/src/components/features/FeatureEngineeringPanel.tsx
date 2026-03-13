@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
@@ -18,6 +19,7 @@ import {
   stripAssistantArtifacts
 } from './featureEngineeringUtils';
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
+import { useNotebookStore } from '@/stores/notebookStore';
 
 import { cn } from '@/lib/utils';
 
@@ -31,6 +33,10 @@ interface FeatureEngineeringPanelProps {
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
+  const [searchParams] = useSearchParams();
+  const initialVersionId = searchParams.get('tab') ?? undefined;
+  const initialNotebookId = searchParams.get('notebook') ?? undefined;
+
   const {
     selectedDataset,
     setSelectedDataset,
@@ -69,6 +75,34 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     handleRenameDraft,
     approveVersion
   } = useFeaturePipelineState(projectId);
+
+  // Apply initial version/notebook from URL search params
+  useEffect(() => {
+    if (initialVersionId && initialVersionId !== currentVersion?.id) {
+      handleVersionSwitch(initialVersionId);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tag notebook with feature-engineering phase metadata
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
+  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
+  const notebooks = useNotebookStore((state) => state.notebooks);
+  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
+
+  useEffect(() => {
+    if (!activeNotebookId || !currentVersion) return;
+    void updateNotebookMetadata(activeNotebookId, {
+      phase: 'feature-engineering',
+      tabId: currentVersion.id,
+      tabName: currentVersion.name
+    });
+  }, [activeNotebookId, currentVersion?.id, currentVersion?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!initialNotebookId || notebookProjectId !== projectId) return;
+    if (!notebooks.some((entry) => entry.notebookId === initialNotebookId)) return;
+    void useNotebookStore.getState().setActiveNotebook(initialNotebookId);
+  }, [initialNotebookId, notebookProjectId, notebooks, projectId]);
 
   const adapter = useMemo(() => {
     return createFeatureEngineeringAdapter({

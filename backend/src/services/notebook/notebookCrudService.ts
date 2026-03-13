@@ -29,8 +29,12 @@ export async function listProjectNotebooks(projectId: string): Promise<Notebook[
 /**
  * Create a new notebook in a project.
  */
-export async function createProjectNotebook(projectId: string, name?: string): Promise<Notebook> {
-  return repo.createNotebook(projectId, name);
+export async function createProjectNotebook(
+  projectId: string,
+  name?: string,
+  metadata?: Record<string, unknown>
+): Promise<Notebook> {
+  return repo.createNotebook(projectId, name, metadata);
 }
 
 /**
@@ -43,6 +47,16 @@ export async function renameProjectNotebook(notebookId: string, name: string): P
   }
 
   return repo.updateNotebook(notebookId, { name: trimmedName });
+}
+
+/**
+ * Update a notebook's metadata and optionally its name.
+ */
+export async function updateProjectNotebook(
+  notebookId: string,
+  updates: { name?: string; metadata?: Record<string, unknown> }
+): Promise<Notebook> {
+  return repo.updateNotebook(notebookId, updates);
 }
 
 /**

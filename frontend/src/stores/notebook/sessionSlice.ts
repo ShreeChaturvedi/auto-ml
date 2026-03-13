@@ -5,7 +5,7 @@
  * notebook CRUD (create / rename / delete), and connection state.
  */
 
-import type { Notebook } from '@/types/notebook';
+import type { Notebook, NotebookPhaseMetadata } from '@/types/notebook';
 import type { NotebookWSClient } from '@/lib/websocket/notebookClient';
 import * as notebooksApi from '@/lib/api/notebooks';
 import { getNotebookWSClient } from '@/lib/websocket/notebookClient';
@@ -40,9 +40,10 @@ export interface SessionSlice {
   disconnect: () => void;
   loadNotebooks: (projectId?: string) => Promise<void>;
   setActiveNotebook: (notebookId: string) => Promise<void>;
-  createNotebook: (name?: string) => Promise<Notebook | null>;
+  createNotebook: (name?: string, metadata?: NotebookPhaseMetadata) => Promise<Notebook | null>;
   renameNotebook: (notebookId: string, name: string) => Promise<Notebook | null>;
   deleteNotebook: (notebookId: string) => Promise<boolean>;
+  updateNotebookMetadata: (notebookId: string, metadata: NotebookPhaseMetadata) => Promise<Notebook | null>;
   setError: (error: string | null) => void;
   reset: () => void;
 }
@@ -195,13 +196,23 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
   },
 
   setActiveNotebook: async (notebookId: string) => {
-    const { notebooks, notebook: currentNotebook, wsClient } = get();
+    const {
+      notebooks,
+      notebook: currentNotebook,
+      wsClient,
+      currentProjectId
+    } = get();
 
     if (currentNotebook?.notebookId === notebookId) {
       return;
     }
 
-    const targetNotebook = notebooks.find((entry) => entry.notebookId === notebookId);
+    let targetNotebook = notebooks.find((entry) => entry.notebookId === notebookId);
+    if (!targetNotebook && currentProjectId) {
+      await get().loadNotebooks(currentProjectId);
+      targetNotebook = get().notebooks.find((entry) => entry.notebookId === notebookId);
+    }
+
     if (!targetNotebook) {
       set({ error: 'Notebook not found' });
       return;
@@ -229,14 +240,14 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     set({ isLoading: false });
   },
 
-  createNotebook: async (name?: string) => {
+  createNotebook: async (name?: string, metadata?: NotebookPhaseMetadata) => {
     const projectId = get().currentProjectId;
     if (!projectId) return null;
 
     set({ isSaving: true, error: null });
 
     try {
-      const notebook = await notebooksApi.createNotebook(projectId, { name });
+      const notebook = await notebooksApi.createNotebook(projectId, { name, metadata });
 
       set((state: NotebookState) => ({
         notebooks: [...state.notebooks, notebook],
@@ -314,6 +325,33 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
         error: error instanceof Error ? error.message : 'Failed to delete notebook'
       });
       return false;
+    }
+  },
+
+  updateNotebookMetadata: async (notebookId: string, metadata: NotebookPhaseMetadata) => {
+    try {
+      const currentNotebook = get().notebooks.find((entry) => entry.notebookId === notebookId)
+        ?? (get().notebook?.notebookId === notebookId ? get().notebook : null);
+      const nextMetadata = {
+        ...((currentNotebook?.metadata as NotebookPhaseMetadata | undefined) ?? {}),
+        ...metadata
+      };
+      const notebook = await notebooksApi.updateNotebook(notebookId, { metadata: nextMetadata });
+
+      set((state: NotebookState) => {
+        const notebooks = state.notebooks.map((entry) =>
+          entry.notebookId === notebookId ? notebook : entry
+        );
+        const activeNotebook = state.notebook?.notebookId === notebookId
+          ? notebook
+          : state.notebook;
+        return { notebooks, notebook: activeNotebook };
+      });
+
+      return notebook;
+    } catch (error) {
+      console.error('[notebookStore] Failed to update notebook metadata:', error);
+      return null;
     }
   },
 

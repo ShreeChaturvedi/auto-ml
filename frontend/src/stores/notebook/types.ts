@@ -14,7 +14,8 @@ import type {
   CellLock,
   LockOwner,
   CreateCellRequest,
-  UpdateCellRequest
+  UpdateCellRequest,
+  NotebookPhaseMetadata
 } from '@/types/notebook';
 import type { NotebookWSClient } from '@/lib/websocket/notebookClient';
 
@@ -51,9 +52,10 @@ export interface NotebookState {
   // Actions - Notebook management
   loadNotebooks: (projectId?: string) => Promise<void>;
   setActiveNotebook: (notebookId: string) => Promise<void>;
-  createNotebook: (name?: string) => Promise<Notebook | null>;
+  createNotebook: (name?: string, metadata?: NotebookPhaseMetadata) => Promise<Notebook | null>;
   renameNotebook: (notebookId: string, name: string) => Promise<Notebook | null>;
   deleteNotebook: (notebookId: string) => Promise<boolean>;
+  updateNotebookMetadata: (notebookId: string, metadata: NotebookPhaseMetadata) => Promise<Notebook | null>;
 
   // Actions - Cell CRUD
   loadCells: () => Promise<void>;

@@ -134,36 +134,45 @@ export function WorkflowPhaseTree({ collapsed = false, onToggleCollapse }: Workf
           ];
 
           const phaseButton = (
-            <button
-              onClick={(e) => handlePhaseClick(e, phase)}
-              disabled={!isUnlocked}
+            <div
               className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left',
+                'flex items-center gap-1 rounded-lg',
                 !isUnlocked
-                  ? 'text-muted-foreground/50 cursor-default'
+                  ? 'text-muted-foreground/50'
                   : isActive
                     ? 'bg-muted font-medium'
-                    : 'text-foreground hover:bg-muted cursor-pointer'
+                    : 'text-foreground hover:bg-muted'
               )}
             >
-              <div className="shrink-0">
-                {IconComponent && (
-                  <IconComponent
-                    className={cn(
-                      'h-3.5 w-3.5 shrink-0',
-                      isActive && activeProject && projectColorClasses[activeProject.color]?.text
-                    )}
-                  />
-                )}
-              </div>
-              <span
+              <button
+                type="button"
+                onClick={(e) => handlePhaseClick(e, phase)}
+                disabled={!isUnlocked}
                 className={cn(
-                  'flex-1 text-workflow truncate transition-opacity duration-300',
-                  collapsed && 'opacity-0'
+                  'flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left rounded-lg',
+                  !isUnlocked && 'cursor-default',
+                  isUnlocked && 'cursor-pointer'
                 )}
               >
-                {config.label}
-              </span>
+                <div className="shrink-0">
+                  {IconComponent && (
+                    <IconComponent
+                      className={cn(
+                        'h-3.5 w-3.5 shrink-0',
+                        isActive && activeProject && projectColorClasses[activeProject.color]?.text
+                      )}
+                    />
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    'flex-1 text-workflow truncate transition-opacity duration-300',
+                    collapsed && 'opacity-0'
+                  )}
+                >
+                  {config.label}
+                </span>
+              </button>
               {/* Expand chevron for notebook phases */}
               {isExpandable && hasChildren && !collapsed && (
                 <button
@@ -181,7 +190,7 @@ export function WorkflowPhaseTree({ collapsed = false, onToggleCollapse }: Workf
                   )}
                 </button>
               )}
-            </button>
+            </div>
           );
 
           return (

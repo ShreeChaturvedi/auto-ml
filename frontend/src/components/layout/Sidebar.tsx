@@ -2,7 +2,7 @@
  * Sidebar - Left navigation panel
  *
  * Clean collapse animation:
- * - Collapse button is now inside PhaseList/ProjectIconList (replaces heading)
+ * - Collapse button is now inside WorkflowPhaseTree/ProjectIconList (replaces heading)
  * - Icons stay in EXACT same position
  * - Only width and opacity change
  */
@@ -16,7 +16,7 @@ import { Separator } from '@/components/ui/separator';
 import { Logo } from '@/components/ui/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FileExplorer } from '@/components/data/FileExplorer';
-import { PhaseList } from './PhaseList';
+import { WorkflowPhaseTree } from './WorkflowPhaseTree';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
 import { UserProfile } from '@/components/projects/UserProfile';
@@ -190,8 +190,8 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           <div className="p-3">
             {activeProject ? (
               <div className="space-y-4">
-                {/* PhaseList now handles the collapse button internally */}
-                <PhaseList collapsed={collapsed} onToggleCollapse={onToggleCollapse} />
+                {/* WorkflowPhaseTree handles collapse and expandable notebook sub-trees */}
+                <WorkflowPhaseTree collapsed={collapsed} onToggleCollapse={onToggleCollapse} />
                 {/* Hide file explorer when collapsed - grid-rows for smooth height animation */}
                 <div
                   className={cn(

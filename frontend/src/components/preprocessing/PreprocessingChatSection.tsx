@@ -53,8 +53,8 @@ export function PreprocessingChatSection({
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 p-6 pb-28">
       {storeError || shellError ? (
-        <Card className="border-red-300 bg-red-50/80">
-          <CardContent className="flex items-center gap-2 p-3 text-sm text-red-700">
+        <Card className="border-red-300 dark:border-red-500/40 bg-red-50/80 dark:bg-red-950/30">
+          <CardContent className="flex items-center gap-2 p-3 text-sm text-red-700 dark:text-red-400">
             <AlertTriangle className="h-4 w-4" />
             {storeError || shellError}
           </CardContent>

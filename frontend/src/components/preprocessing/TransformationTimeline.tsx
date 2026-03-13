@@ -115,9 +115,9 @@ export function TransformationTimeline({
                   ) : null}
 
                   {event.status === 'awaiting_approval' ? (
-                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2">
-                      <ShieldAlert className="h-4 w-4 text-amber-600" />
-                      <span className="text-amber-700">This step requires explicit approval.</span>
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 p-2">
+                      <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <span className="text-amber-700 dark:text-amber-400">This step requires explicit approval.</span>
                       <div className="ml-auto flex gap-2">
                         <Button size="sm" variant="outline" onClick={() => onRejectStep(event.stepId)}>
                           <XCircle className="mr-1 h-3.5 w-3.5" />
@@ -138,7 +138,7 @@ export function TransformationTimeline({
                   ) : null}
 
                   {event.error ? (
-                    <div className="rounded-md border border-red-300 bg-red-50 p-2 text-red-700">
+                    <div className="rounded-md border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-950/30 p-2 text-red-700 dark:text-red-400">
                       {event.error}
                     </div>
                   ) : null}
@@ -150,7 +150,7 @@ export function TransformationTimeline({
       ) : null}
 
       {replayReport ? (
-        <Card className={cn(replayReport.compatible ? 'border-emerald-300' : 'border-amber-300')}>
+        <Card className={cn(replayReport.compatible ? 'border-emerald-300 dark:border-emerald-500/40' : 'border-amber-300 dark:border-amber-500/40')}>
           <CardContent className="space-y-2 p-3 text-sm">
             <div className="flex items-center gap-2 font-medium">
               <GitBranch className="h-4 w-4" />

@@ -38,8 +38,8 @@ export function PreprocessingResultsSection({
 
     if (storeError) {
       return (
-        <Card className="border-red-300 bg-red-50/80">
-          <CardContent className="flex items-center gap-2 p-2 text-xs text-red-700">
+        <Card className="border-red-300 dark:border-red-500/40 bg-red-50/80 dark:bg-red-950/30">
+          <CardContent className="flex items-center gap-2 p-2 text-xs text-red-700 dark:text-red-400">
             <AlertTriangle className="h-4 w-4" />
             <span className="font-medium">Latest error:</span>
             <span>{storeError}</span>
@@ -58,14 +58,14 @@ export function PreprocessingResultsSection({
       rowCountSummary && !latestTimelineEvent.error && !latestTimelineEvent.decisionReason
     );
     const baseClass = status === 'failed'
-      ? 'border-red-300 bg-red-50/80 text-red-700'
+      ? 'border-red-300 dark:border-red-500/40 bg-red-50/80 dark:bg-red-950/30 text-red-700 dark:text-red-400'
       : status === 'awaiting_approval'
-        ? 'border-amber-300 bg-amber-50/80 text-amber-700'
+        ? 'border-amber-300 dark:border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
         : status === 'diverged'
           ? divergedAccentClassName
           : status === 'applied'
-            ? 'border-emerald-300 bg-emerald-50/80 text-emerald-700'
-            : 'border-sky-300 bg-sky-50/80 text-sky-700';
+            ? 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
+            : 'border-sky-300 dark:border-sky-500/40 bg-sky-50/80 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400';
     const detail = latestTimelineEvent.error
       ?? latestTimelineEvent.decisionReason
       ?? summarizeValidation(latestTimelineEvent)

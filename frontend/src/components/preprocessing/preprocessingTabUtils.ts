@@ -1,3 +1,4 @@
+import { Columns3, Eraser, ScalingIcon, Hash, FilterX, Code, Wrench, type LucideIcon } from 'lucide-react';
 import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
 
@@ -90,12 +91,24 @@ export function normalizeProcessingTabNames(tabs: PreprocessingTab[]): Preproces
 }
 
 export function statusClassName(status: TransformationEvent['status'], divergedClassName: string): string {
-  if (status === 'applied') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
-  if (status === 'failed') return 'border-red-300 bg-red-50 text-red-700';
-  if (status === 'awaiting_approval') return 'border-amber-300 bg-amber-50 text-amber-700';
+  if (status === 'applied') return 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400';
+  if (status === 'failed') return 'border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400';
+  if (status === 'awaiting_approval') return 'border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400';
   if (status === 'diverged') return divergedClassName;
-  if (status === 'running') return 'border-sky-300 bg-sky-50 text-sky-700';
+  if (status === 'running') return 'border-sky-300 dark:border-sky-500/40 bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400';
   return 'border-muted bg-muted/50 text-muted-foreground';
+}
+
+export function stepTypeIcon(intentType?: string): LucideIcon {
+  switch (intentType) {
+    case 'drop_columns': return Columns3;
+    case 'impute_missing': return Eraser;
+    case 'scale_features': return ScalingIcon;
+    case 'encode_categorical': return Hash;
+    case 'remove_outliers': return FilterX;
+    case 'custom_python': return Code;
+    default: return Wrench;
+  }
 }
 
 const ROW_COUNT_FORMATTER = new Intl.NumberFormat('en-US');

@@ -107,7 +107,7 @@ function TranscriptBlock({ block, isLive, isLast }: TranscriptBlockProps) {
         <div
           ref={bodyRef}
           className={cn(
-            'scrollbar-thin mt-2 overflow-y-auto pr-1 text-foreground/90',
+            'mt-2 overflow-y-auto pr-1 text-foreground/90',
             transcriptBodyClass(block.kind)
           )}
           data-testid={`nl-model-work-block-body-${block.blockId}`}

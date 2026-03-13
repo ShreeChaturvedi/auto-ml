@@ -187,7 +187,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   return (
     <div className="h-14 border-b border-border bg-card">
       <div className="flex h-full items-center">
-        <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex h-full items-center">
             <DndContext
               sensors={sensors}

@@ -93,7 +93,7 @@ export function QueryInfoDialog({ queryInfo, hasEda }: QueryInfoDialogProps) {
 
           <div>
             <p className="text-xs text-muted-foreground mb-1">User Query</p>
-            <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64 scrollbar-thin">
+            <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64">
               {queryInfo.query}
             </pre>
           </div>
@@ -101,7 +101,7 @@ export function QueryInfoDialog({ queryInfo, hasEda }: QueryInfoDialogProps) {
           {queryInfo.generatedSql && (
             <div>
               <p className="text-xs text-muted-foreground mb-1">Generated SQL</p>
-              <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64 scrollbar-thin">
+              <pre className="text-xs font-mono p-3 bg-muted rounded-md overflow-x-auto max-h-64">
                 {queryInfo.generatedSql}
               </pre>
             </div>

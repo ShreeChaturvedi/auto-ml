@@ -43,7 +43,7 @@ export function FollowUpSuggestionPills({ suggestions, isStreaming, onSuggestion
 
   return (
     <div className="px-4 pt-2 pb-1">
-      <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {suggestions.map((suggestion) => (
           <Button
             key={suggestion.id}

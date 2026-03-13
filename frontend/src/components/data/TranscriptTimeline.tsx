@@ -28,7 +28,7 @@ function TranscriptTimeline({ modelWorkBlocks, active, isLive }: TranscriptTimel
     return (
       <div className="rounded-xl border border-border/70 bg-background/70 p-3">
         <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Phase updates</p>
-        <div className="scrollbar-thin mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[12px] leading-relaxed text-muted-foreground">
+        <div className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[12px] leading-relaxed text-muted-foreground">
           {active.events.map((entry, index) => (
             <p key={`${entry.phaseId}-${entry.timestamp}-${index}`}>{entry.summary}</p>
           ))}

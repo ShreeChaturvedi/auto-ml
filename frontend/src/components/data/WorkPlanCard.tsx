@@ -96,7 +96,7 @@ export function WorkPlanCard({ explanation }: WorkPlanCardProps) {
               <summary className="cursor-pointer list-none text-xs font-medium text-foreground/90">
                 View details
               </summary>
-              <div className="scrollbar-thin mt-2 max-h-36 space-y-2 overflow-y-auto pr-1 text-[12px] text-foreground/90">
+              <div className="mt-2 max-h-36 space-y-2 overflow-y-auto pr-1 text-[12px] text-foreground/90">
                 {explanation.assumptions.map((item, index) => (
                   <p key={`assumption-${index}`}>{item}</p>
                 ))}
@@ -131,7 +131,7 @@ export function WorkPlanCard({ explanation }: WorkPlanCardProps) {
           <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground">
             Debug details
           </summary>
-          <div className="scrollbar-thin mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px] leading-relaxed text-muted-foreground">
+          <div className="mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px] leading-relaxed text-muted-foreground">
             {debugValidationNotes.map((note, idx) => (
               <p key={`${note}-${idx}`}>{note}</p>
             ))}

@@ -186,7 +186,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         className="flex-1 overflow-hidden"
         onClick={collapsed ? (e) => { e.stopPropagation(); onToggleCollapse(); } : undefined}
       >
-        <div className="h-full overflow-y-auto scrollbar-thin">
+        <div className="h-full overflow-y-auto">
           <div className="p-3">
             {activeProject ? (
               <div className="space-y-4">

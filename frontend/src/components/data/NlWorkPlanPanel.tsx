@@ -284,7 +284,7 @@ function NlWorkPlanPanel({
             <div
               ref={viewportRef}
               className={cn(
-                'nl-model-work-viewport scrollbar-thin space-y-3 overflow-y-auto pr-1',
+                'nl-model-work-viewport space-y-3 overflow-y-auto pr-1',
                 isReviewMode
                   ? 'max-h-[clamp(14rem,34vh,22rem)]'
                   : 'max-h-[clamp(12rem,28vh,18rem)]'

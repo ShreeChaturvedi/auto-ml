@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ControlSchema = z.object({
+const ControlSchema = z.object({
   key: z.string(),
   label: z.string(),
   type: z.enum(['number', 'boolean', 'select', 'text', 'column']),
@@ -11,7 +11,7 @@ export const ControlSchema = z.object({
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional()
 });
 
-export const FeatureSpecSchema = z.object({
+const FeatureSpecSchema = z.object({
   sourceColumn: z.string(),
   secondaryColumn: z.string().optional(),
   featureName: z.string(),
@@ -20,7 +20,7 @@ export const FeatureSpecSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional()
 });
 
-export const ModelParamSchema = z.object({
+const ModelParamSchema = z.object({
   key: z.string(),
   label: z.string(),
   type: z.enum(['number', 'string', 'boolean', 'select']),
@@ -31,7 +31,7 @@ export const ModelParamSchema = z.object({
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional()
 });
 
-export const ModelTemplateSchema = z.object({
+const ModelTemplateSchema = z.object({
   name: z.string(),
   taskType: z.enum(['classification', 'regression', 'clustering']),
   library: z.string(),
@@ -41,7 +41,7 @@ export const ModelTemplateSchema = z.object({
   metrics: z.array(z.string())
 });
 
-export const UiItemSchema = z.discriminatedUnion('type', [
+const UiItemSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('report'),
     id: z.string(),
@@ -94,7 +94,7 @@ export const UiItemSchema = z.discriminatedUnion('type', [
   })
 ]);
 
-export const UiSectionSchema = z.object({
+const UiSectionSchema = z.object({
   id: z.string(),
   title: z.string().optional(),
   layout: z.enum(['grid', 'column', 'row']).optional(),

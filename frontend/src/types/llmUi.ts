@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { PreprocessingControllerSummary } from './preprocessing';
+import type { ResolvedMention as ChatMention } from '@/hooks/useMentionAutocomplete';
 
 export const ToolNameSchema = z.enum([
   'list_project_files',
@@ -75,8 +77,6 @@ export const FeatureSpecSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional()
 });
 
-export type FeatureSpecDraft = z.infer<typeof FeatureSpecSchema>;
-
 export const ModelParamSchema = z.object({
   key: z.string(),
   label: z.string(),
@@ -88,8 +88,6 @@ export const ModelParamSchema = z.object({
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional()
 });
 
-export type ModelParam = z.infer<typeof ModelParamSchema>;
-
 export const ModelTemplateSchema = z.object({
   name: z.string(),
   taskType: z.enum(['classification', 'regression', 'clustering']),
@@ -99,8 +97,6 @@ export const ModelTemplateSchema = z.object({
   parameters: z.array(ModelParamSchema),
   metrics: z.array(z.string())
 });
-
-export type ModelTemplateDraft = z.infer<typeof ModelTemplateSchema>;
 
 export const UiItemSchema = z.discriminatedUnion('type', [
   // NEW TYPES - Primary UI elements
@@ -221,14 +217,10 @@ export const AskUserPayloadSchema = z.object({
   questions: z.array(AskUserQuestionSchema).min(1)
 });
 
-export type AskUserPayload = z.infer<typeof AskUserPayloadSchema>;
-
 export const PlanExitPayloadSchema = z.object({
   planName: z.string().min(1).max(120).optional(),
   planMarkdown: z.string().min(1).max(50000)
 });
-
-export type PlanExitPayload = z.infer<typeof PlanExitPayloadSchema>;
 
 export interface QuestionAnswer {
   questionId: string;
@@ -242,12 +234,11 @@ export const LlmEnvelopeSchema = z.object({
   tool_calls: z.array(ToolCallSchema).optional(),
   ask_user: AskUserPayloadSchema.optional(),
   plan_exit: PlanExitPayloadSchema.optional(),
+  controller: z.custom<PreprocessingControllerSummary>().optional(),
   ui: UiSchema.nullable().optional()
 });
 
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
-
-export type { ResolvedMention as ChatMention } from '@/hooks/useMentionAutocomplete';
 
 /** Token usage data from the OpenAI Responses API, passed through as-is from the backend. */
 export interface LlmUsage {

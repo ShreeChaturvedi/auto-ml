@@ -122,6 +122,7 @@ export interface EdaSummary {
   categoricalColumns: CategoricalColumnSummary[];
   dataQuality: DataQualitySummary[];
   histogram?: HistogramData;
+  histograms?: HistogramData[];    // all numeric columns (up to 20)
   scatter?: ScatterData;
   correlations?: CorrelationData[];
 }

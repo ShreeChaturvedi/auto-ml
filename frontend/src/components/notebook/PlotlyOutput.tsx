@@ -1,6 +1,5 @@
-import React, { Suspense, useMemo } from 'react';
-
-const Plot = React.lazy(() => import('react-plotly.js'));
+import { useMemo } from 'react';
+import { LazyPlot, PlotSuspense } from '@/components/data/eda/edaTheme';
 
 interface PlotlyOutputProps {
   data: unknown;
@@ -24,13 +23,13 @@ export function PlotlyOutput({ data }: PlotlyOutputProps) {
   }
 
   return (
-    <Suspense fallback={<div className="h-[300px] animate-pulse bg-muted/50 rounded-md" />}>
-      <Plot
+    <PlotSuspense height={360}>
+      <LazyPlot
         data={figure!.data}
         layout={layout}
         config={{ responsive: true, displayModeBar: true }}
         className="w-full"
       />
-    </Suspense>
+    </PlotSuspense>
   );
 }

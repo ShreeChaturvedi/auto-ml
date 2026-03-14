@@ -8,7 +8,7 @@
  * - Visualizations (histograms, scatter plots, correlations)
  */
 
-import type { EdaSummary, QueryRow } from '../../types/query.js';
+import type { EdaSummary, HistogramSummary, QueryRow } from '../../types/query.js';
 
 import { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
 import { detectColumnTypes } from './columnDetection.js';
@@ -23,7 +23,9 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     return undefined;
   }
 
-  const columns = Object.keys(rows[0]);
+  const columns = rows[0] ? Object.keys(rows[0]) : [];
+  if (columns.length === 0) return undefined;
+
   const columnTypes = detectColumnTypes(rows, columns);
 
   const numericCols = columns.filter(col => columnTypes[col] === 'numeric');
@@ -34,9 +36,8 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
   const dataQuality = computeDataQuality(rows, columns, columnTypes);
 
   // Generate visualizations
-  const histogram = numericCols.length > 0
-    ? buildHistogram(rows, numericCols[0])
-    : undefined;
+  const histograms = numericCols.slice(0, 20).map(col => buildHistogram(rows, col)).filter((h): h is HistogramSummary => h !== undefined);
+  const histogram = histograms[0]; // backward compat
 
   const scatter = numericCols.length >= 2
     ? buildScatter(rows, numericCols[0], numericCols[1])
@@ -51,6 +52,7 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     categoricalColumns: categoricalSummaries,
     dataQuality,
     histogram,
+    histograms: histograms.length > 0 ? histograms : undefined,
     scatter,
     correlations
   };

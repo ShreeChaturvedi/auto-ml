@@ -24,7 +24,8 @@ export interface EdaSummary {
   numericColumns: NumericSummary[];
   categoricalColumns: CategoricalSummary[];
   dataQuality: DataQualitySummary[];
-  histogram?: HistogramSummary;
+  histogram?: HistogramSummary;       // keep for backward compat
+  histograms?: HistogramSummary[];    // all numeric columns (up to 20)
   scatter?: ScatterSummary;
   correlations?: CorrelationSummary[];
 }

@@ -23,8 +23,12 @@ export function buildHistogram(rows: QueryRow[], column: string): HistogramSumma
 
   if (values.length === 0) return undefined;
 
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of values) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
 
   // Handle edge case where all values are the same
   if (min === max) {

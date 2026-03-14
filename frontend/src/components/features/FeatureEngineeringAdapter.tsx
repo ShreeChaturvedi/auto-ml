@@ -1,7 +1,9 @@
 import type { DomainAdapter, SuggestionPill } from '@/types/agentic';
-import { streamFeaturePlan } from '@/lib/api/llm';
+import { streamWorkflowTurn } from '@/lib/api/llm';
 import type { UploadedFile } from '@/types/file';
 import type { ChatMessage } from '@/types/llmUi';
+import { useNotebookStore } from '@/stores/notebookStore';
+import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
@@ -9,6 +11,7 @@ export interface FeatureEngineeringAdapterConfig {
   targetColumn: string | undefined;
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
+  sessionKey: string;
 }
 
 function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
@@ -120,25 +123,31 @@ export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
   return {
-    buildRequest: async (prompt, toolCalls, toolResults, onEvent, signal, options) => {
+    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) {
         throw new Error('Select a dataset before generating a feature plan.');
       }
 
-      await streamFeaturePlan(
+      const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
+      await streamWorkflowTurn(
         {
           projectId: config.projectId,
+          phase: 'feature_engineering',
           datasetId: config.datasetId,
+          runId: session?.runId,
+          threadId: session?.threadId,
+          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
           targetColumn: config.targetColumn,
           prompt,
-          toolCalls,
-          toolResults,
           model: options.model,
           reasoningEffort: options.reasoningEffort
         },
         onEvent,
         signal
       );
+    },
+    onWorkflowStateUpdate: (state) => {
+      useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
     },
     toolRegistry: {},
     toolUiRegistry: {},

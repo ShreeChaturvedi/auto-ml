@@ -180,6 +180,43 @@ describe('streamLlmResponse preprocessing behavior', () => {
     expect(envelope?.envelope?.tool_calls?.[0]?.tool).toBe('propose_transformation_step');
   });
 
+  it('retries reasoning-only preprocessing turns and accepts tool calls from the retry', async () => {
+    const res = new MockResponse();
+    let attempt = 0;
+    const client = createClient(async (_request, handlers) => {
+      attempt += 1;
+      if (attempt === 1) {
+        handlers.onThinking?.('I should inspect the dataset first.');
+        return '';
+      }
+
+      handlers.onToolCall?.({
+        name: 'profile_active_dataset',
+        args: {
+          datasetId: 'ds-1'
+        }
+      });
+      return '';
+    });
+
+    await streamLlmResponse(
+      res as never,
+      client,
+      { messages: [{ role: 'user', content: 'Profile missing values.' }] },
+      'preprocessing'
+    );
+
+    const events = parseEvents(res);
+    const envelope = events.find((event) => event.type === 'envelope') as {
+      envelope?: { tool_calls?: Array<Record<string, unknown>> };
+    } | undefined;
+    const error = events.find((event) => event.type === 'error');
+
+    expect(attempt).toBe(2);
+    expect(error).toBeUndefined();
+    expect(envelope?.envelope?.tool_calls?.[0]?.tool).toBe('profile_active_dataset');
+  });
+
   it('errors when preprocessing returns an empty action-required response', async () => {
     const res = new MockResponse();
     const client = createClient(async () => '');

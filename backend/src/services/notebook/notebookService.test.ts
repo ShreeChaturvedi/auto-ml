@@ -22,9 +22,10 @@ vi.mock('../../repositories/notebookRepository.js', () => ({
   deleteNotebook: vi.fn()
 }));
 
+import * as repo from '../../repositories/notebookRepository.js';
+
 // Import the barrel — this is the exact import the route uses
 import * as notebookService from './notebookService.js';
-import * as repo from '../../repositories/notebookRepository.js';
 
 const updateNotebookMock = vi.mocked(repo.updateNotebook);
 

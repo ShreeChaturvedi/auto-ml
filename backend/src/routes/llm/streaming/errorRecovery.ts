@@ -69,7 +69,9 @@ export function emitFallbackEnvelope(ctx: StreamContext, writer: EventWriter): b
       type: 'error',
       message: ctx.sawToollessTextAttempt
         ? 'Model returned text without tool calls, so no preprocessing action was executed. Please retry the action.'
-        : 'Model returned no actionable preprocessing output, so no preprocessing action was executed. Please retry the action.'
+        : ctx.sawReasoningOnlyAttempt
+          ? 'Model completed reasoning without returning a tool call or visible answer, so no preprocessing action was executed. Please retry the action.'
+          : 'Model returned no actionable preprocessing output, so no preprocessing action was executed. Please retry the action.'
     });
     writer.closeStream();
     return true;

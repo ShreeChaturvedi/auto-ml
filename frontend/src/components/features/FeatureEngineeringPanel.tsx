@@ -5,6 +5,7 @@ import { ToolIndicator } from '@/components/llm/ToolIndicator';
 import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
+import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 import { FeatureApprovalGate } from './FeatureApprovalGate';
 import { FeatureEngineeringFooter } from './FeatureEngineeringFooter';
 import {
@@ -105,14 +106,17 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   }, [initialNotebookId, notebookProjectId, notebooks, projectId]);
 
   const adapter = useMemo(() => {
+    const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
+    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
     return createFeatureEngineeringAdapter({
       projectId,
       datasetId: selectedDatasetFile?.metadata?.datasetId,
       targetColumn,
       datasetFiles,
-      documentFiles
+      documentFiles,
+      sessionKey
     });
-  }, [datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
+  }, [currentVersion?.id, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
   const renderLeftPane = ({
     messages,

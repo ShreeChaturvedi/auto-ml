@@ -2,6 +2,11 @@ import type { ComponentType } from 'react';
 import type { ChatMessage, ToolCall, ToolResult } from './llmUi';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
 import type { PreprocessingControllerSummary } from './preprocessing';
+import type {
+  WorkflowArtifact,
+  WorkflowPauseEvent,
+  WorkflowState
+} from './workflow';
 
 export interface SuggestionPill {
   id: string;
@@ -39,6 +44,9 @@ export interface DomainAdapter {
   onStreamError?: (message: string) => void;
   onStop?: (reason: string) => void;
   onControllerUpdate?: (controller: PreprocessingControllerSummary) => void;
+  onWorkflowStateUpdate?: (state: WorkflowState) => void;
+  onWorkflowPause?: (pause: WorkflowPauseEvent) => void;
+  onWorkflowArtifactUpdate?: (artifact: WorkflowArtifact, state?: WorkflowState) => void;
   resolveToolExecutionRequest?: (toolCalls: ToolCall[]) => ToolExecutionRequest;
   preserveToolHistoryBetweenPrompts?: boolean;
 

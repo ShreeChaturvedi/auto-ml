@@ -1,0 +1,210 @@
+import type { MutableRefObject } from 'react';
+
+import type { LlmStreamEvent } from '@/lib/api/llm';
+import { mergeToolCalls, type ToolExecutionResult } from '@/hooks/useToolExecution';
+import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
+import type { ChatMessage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi';
+import type { WorkflowState } from '@/types/workflow';
+
+interface CreateAgenticEventHandlerOptions {
+  requestId: number;
+  prompt: string;
+  requestOptions: BuildRequestOptions;
+  domainAdapter: DomainAdapter;
+  activeRequestIdRef: MutableRefObject<number>;
+  currentTextIdRef: MutableRefObject<string | null>;
+  toolHistoryRef: MutableRefObject<{ calls: ToolCall[]; results: ToolResult[] }>;
+  handleStreamEvent: (event: LlmStreamEvent) => boolean;
+  completeThinking: () => void;
+  closeTextStream: () => void;
+  appendToken: (token: string) => void;
+  appendUiSchema: (schema: UiSchema) => void;
+  appendBackendToolExecution: (call: ToolCall, result: ToolResult, nextState?: WorkflowState) => void;
+  executePending: (
+    toolCalls: ToolCall[],
+    requestId: number,
+    activeRequestIdRef: MutableRefObject<number>,
+    setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+    domainAdapter: DomainAdapter
+  ) => Promise<ToolExecutionResult | null>;
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  setError: (message: string | null) => void;
+  setIsStreaming: (value: boolean) => void;
+  onLegacyRestream: (result: ToolExecutionResult) => void;
+}
+
+function resolveArtifactMessage(event: Extract<LlmStreamEvent, { type: 'artifact_updated' }>): string | null {
+  if (typeof event.artifact.message === 'string') {
+    return event.artifact.message;
+  }
+
+  if (
+    event.artifact.payload
+    && typeof event.artifact.payload === 'object'
+    && !Array.isArray(event.artifact.payload)
+    && typeof (event.artifact.payload as { message?: unknown }).message === 'string'
+  ) {
+    return (event.artifact.payload as { message: string }).message;
+  }
+
+  return null;
+}
+
+export function createAgenticEventHandler({
+  requestId,
+  prompt,
+  requestOptions,
+  domainAdapter,
+  activeRequestIdRef,
+  currentTextIdRef,
+  toolHistoryRef,
+  handleStreamEvent,
+  completeThinking,
+  closeTextStream,
+  appendToken,
+  appendUiSchema,
+  appendBackendToolExecution,
+  executePending,
+  setMessages,
+  setError,
+  setIsStreaming,
+  onLegacyRestream
+}: CreateAgenticEventHandlerOptions) {
+  return (rawEvent: unknown) => {
+    const event = rawEvent as LlmStreamEvent;
+    if (requestId !== activeRequestIdRef.current) {
+      return;
+    }
+
+    const handled = handleStreamEvent(event);
+    if (handled) {
+      if (event.type === 'error') {
+        domainAdapter.onStreamError?.(event.message);
+      }
+      return;
+    }
+
+    if (event.type === 'envelope') {
+      completeThinking();
+      if (event.envelope.controller) {
+        domainAdapter.onControllerUpdate?.(event.envelope.controller);
+      }
+
+      if (event.envelope.tool_calls?.length) {
+        closeTextStream();
+        const preparedToolCalls = domainAdapter.prepareToolCalls
+          ? domainAdapter.prepareToolCalls(event.envelope.tool_calls)
+          : event.envelope.tool_calls;
+
+        toolHistoryRef.current.calls = mergeToolCalls(toolHistoryRef.current.calls, preparedToolCalls);
+
+        for (const call of preparedToolCalls) {
+          setMessages((prev) => [...prev, { id: `tool-${call.id}`, type: 'tool_call', call }]);
+          domainAdapter.toolRegistry[call.tool]?.onCall?.(call);
+        }
+
+        void executePending(
+          preparedToolCalls,
+          requestId,
+          activeRequestIdRef,
+          setMessages,
+          domainAdapter
+        ).then((result) => {
+          if (!result) {
+            return;
+          }
+          if (result.shouldPause) {
+            setIsStreaming(false);
+            return;
+          }
+          if (requestId !== activeRequestIdRef.current) {
+            return;
+          }
+          onLegacyRestream(result);
+        }).catch(() => {
+          // Tool execution already handled its own error surface.
+        });
+      }
+
+      if (event.envelope.ui) {
+        appendUiSchema(event.envelope.ui);
+      }
+
+      if (event.envelope.message?.trim() && !currentTextIdRef.current) {
+        appendToken(event.envelope.message);
+      }
+      return;
+    }
+
+    if (event.type === 'workflow_state') {
+      completeThinking();
+      domainAdapter.onWorkflowStateUpdate?.(event.state);
+      return;
+    }
+
+    if (event.type === 'tool_executed') {
+      completeThinking();
+      closeTextStream();
+      appendBackendToolExecution(event.call, event.result, event.state);
+      return;
+    }
+
+    if (event.type === 'artifact_updated') {
+      completeThinking();
+      if (event.state) {
+        domainAdapter.onWorkflowStateUpdate?.(event.state);
+      }
+      domainAdapter.onWorkflowArtifactUpdate?.(event.artifact, event.state);
+      const artifactMessage = resolveArtifactMessage(event);
+      if (artifactMessage?.trim() && !currentTextIdRef.current) {
+        appendToken(artifactMessage);
+      }
+      if (event.artifact.ui) {
+        appendUiSchema(event.artifact.ui);
+      }
+      return;
+    }
+
+    if (event.type === 'workflow_pause') {
+      completeThinking();
+      closeTextStream();
+      if (event.state) {
+        domainAdapter.onWorkflowStateUpdate?.(event.state);
+      }
+      domainAdapter.onWorkflowPause?.(event);
+      if (event.ui) {
+        appendUiSchema(event.ui);
+      }
+      if (event.message?.trim() && !currentTextIdRef.current) {
+        appendToken(event.message);
+      }
+      setIsStreaming(false);
+      return;
+    }
+
+    if (event.type === 'workflow_error') {
+      completeThinking();
+      closeTextStream();
+      if (event.state) {
+        domainAdapter.onWorkflowStateUpdate?.(event.state);
+      }
+      setError(event.message);
+      domainAdapter.onStreamError?.(event.message);
+      setMessages((prev) => [...prev, {
+        id: `workflow-error-${Date.now()}`,
+        type: 'error',
+        message: event.message
+      }]);
+      setIsStreaming(false);
+      return;
+    }
+
+    if (event.type === 'usage' || event.type === 'ask_user' || event.type === 'plan_exit' || event.type === 'done') {
+      return;
+    }
+
+    if (requestOptions.continuation && prompt.trim().length === 0) {
+      return;
+    }
+  };
+}

@@ -27,8 +27,10 @@ export interface StreamContext {
   uiEnvelope: LlmEnvelope | null;
   controllerSummary?: Record<string, unknown>;
   sawToollessTextAttempt: boolean;
+  sawReasoningOnlyAttempt: boolean;
   tokenChars: number;
   tokenPreview: string;
+  thinkingChars: number;
   streamClosed: boolean;
   latestUsage: RawLlmUsage | null;
 }

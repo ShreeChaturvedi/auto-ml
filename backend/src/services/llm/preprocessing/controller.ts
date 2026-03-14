@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
-import { MemorySaver } from '@langchain/langgraph-checkpoint';
 import { z } from 'zod';
 
 import type { DatasetProfile } from '../../../types/dataset.js';
@@ -399,9 +398,7 @@ function stageNode(
         return {
           currentNode: node,
           allowedTools: [
-            'materialize_step_code',
-            'list_cells',
-            'read_cell'
+            'materialize_step_code'
           ],
           allowTextResponse: false,
           requireToolCall: true,
@@ -484,8 +481,6 @@ function stageNode(
   };
 }
 
-const controllerCheckpointer = new MemorySaver();
-
 function buildControllerGraph(deps: { client: LlmClient; dataset: DatasetProfile; projectPlan?: string }) {
   return new StateGraph(ControllerAnnotation)
     .addNode('classify_turn', (state: ControllerState) => classifyTurnNode(state, deps))
@@ -510,8 +505,7 @@ function buildControllerGraph(deps: { client: LlmClient; dataset: DatasetProfile
     .addEdge('commit', END)
     .addEdge('summarize', END)
     .compile({
-      name: 'preprocessing-turn-controller',
-      checkpointer: controllerCheckpointer
+      name: 'preprocessing-turn-controller'
     });
 }
 
@@ -664,8 +658,14 @@ export async function resolvePreprocessingControllerTurn(
   const pendingApproval = inferPendingApproval(params.toolResults);
   const approvalDecision = inferApprovalDecision(params.prompt);
   const latestRunId = getLatestRunId(params.toolResults);
-  const latestStepId = getLatestStepId(params.toolResults);
-  const latestToolOutcome = getLatestToolOutcome(params.toolResults);
+  const latestStepId = params.continuation ? getLatestStepId(params.toolResults) : undefined;
+  const latestToolOutcome = params.continuation
+    ? getLatestToolOutcome(params.toolResults)
+    : {
+        latestToolName: undefined,
+        latestToolSucceeded: false,
+        latestOutputStatus: undefined
+      };
 
   if (pendingApproval) {
     const summary: PreprocessingControllerSummary = {
@@ -716,10 +716,6 @@ export async function resolvePreprocessingControllerTurn(
     latestToolSucceeded: latestToolOutcome.latestToolSucceeded,
     latestOutputStatus: latestToolOutcome.latestOutputStatus,
     updatedAt: nowIso()
-  }, {
-    configurable: {
-      thread_id: threadId
-    }
   }) as ControllerState;
 
   const summary: PreprocessingControllerSummary = {

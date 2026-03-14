@@ -52,8 +52,10 @@ export async function streamLlmResponse(
     uiEnvelope: null,
     controllerSummary: options?.controllerSummary,
     sawToollessTextAttempt: false,
+    sawReasoningOnlyAttempt: false,
     tokenChars: 0,
     tokenPreview: '',
+    thinkingChars: 0,
     streamClosed: false,
     latestUsage: null
   };
@@ -109,6 +111,33 @@ export async function streamLlmResponse(
           {
             role: 'user',
             content: 'Your previous response did not call tools. For preprocessing, you must execute actions via tool/function calls only (no plain markdown/code response). Continue this task now using tools.'
+          }
+        ]
+      };
+      await collectLlmAttempt(client, retryRequest, ctx, writer);
+    }
+
+    if (
+      kind === 'preprocessing'
+      && !ctx.allowTextOnlyResponse
+      && !ctx.uiEnvelope
+      && !ctx.askUserPayload
+      && !ctx.planExitPayload
+      && ctx.toolCalls.length === 0
+      && ctx.tokenPreview.trim().length === 0
+      && ctx.thinkingChars > 0
+    ) {
+      console.warn('[llm] preprocessing reasoning-only response detected; retrying once with strict tool-call directive');
+      ctx.sawReasoningOnlyAttempt = true;
+      ctx.thinkingChars = 0;
+      ctx.latestUsage = null;
+      const retryRequest: LlmRequest = {
+        ...request,
+        messages: [
+          ...request.messages,
+          {
+            role: 'user',
+            content: 'You finished reasoning but did not produce any visible answer or tool call. For this preprocessing turn, immediately call exactly one appropriate tool from the allowed set.'
           }
         ]
       };

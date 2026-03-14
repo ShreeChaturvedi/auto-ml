@@ -1,20 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createPreprocessingAdapter } from '../PreprocessingAdapter';
-import { streamPreprocessingPlan } from '@/lib/api/llm';
+import { streamWorkflowTurn } from '@/lib/api/llm';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { ToolCall } from '@/types/llmUi';
 
 vi.mock('@/lib/api/llm', () => ({
-  streamPreprocessingPlan: vi.fn(async () => undefined)
+  streamWorkflowTurn: vi.fn(async () => undefined)
 }));
 
 describe('PreprocessingAdapter prepareToolCalls', () => {
   beforeEach(() => {
     usePreprocessingStore.setState({
       nextRunCellMode: 'continue',
+      runId: null,
       controllerSummary: null
     });
+    useWorkflowSessionStore.setState({ sessions: {} });
   });
 
   it('injects continue mode into run_cell metadata by default', () => {
@@ -26,7 +29,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ], 'prep-thread:test');
+    ], 'prep-tab-a');
 
     const toolCalls: ToolCall[] = [
       {
@@ -56,7 +59,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ], 'prep-thread:test');
+    ], 'prep-tab-a');
 
     const firstBatch: ToolCall[] = [
       {
@@ -101,7 +104,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ], 'prep-thread:test');
+    ], 'prep-tab-a');
 
     const toolCalls: ToolCall[] = [
       {
@@ -118,7 +121,16 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     expect(usePreprocessingStore.getState().nextRunCellMode).toBe('restart_from_original');
   });
 
-  it('passes threadId and continuation through buildRequest', async () => {
+  it('passes workflow session state through buildRequest', async () => {
+    useWorkflowSessionStore.setState({
+      sessions: {
+        'prep-tab-a': {
+          runId: 'workflow-run-1',
+          threadId: 'workflow-thread-1'
+        }
+      }
+    });
+
     const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
       {
         datasetId: 'dataset-1',
@@ -127,7 +139,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ], 'prep-thread:test');
+    ], 'prep-tab-a');
 
     await adapter.buildRequest(
       'Continue preprocessing',
@@ -142,12 +154,13 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
       }
     );
 
-    expect(streamPreprocessingPlan).toHaveBeenCalledWith(
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: 'project-1',
+        phase: 'preprocessing',
         datasetId: 'dataset-1',
-        threadId: 'prep-thread:test',
-        continuation: true
+        runId: 'workflow-run-1',
+        threadId: 'workflow-thread-1'
       }),
       expect.any(Function),
       expect.any(AbortSignal)
@@ -182,7 +195,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     });
   });
 
-  it('requests dataset-scoped agent execution by default', () => {
+  it('stores workflow state updates in both preprocessing and workflow session stores', () => {
     const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
       {
         datasetId: 'dataset-1',
@@ -191,60 +204,32 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ], 'prep-thread:test');
+    ], 'prep-tab-a');
 
-    const execution = adapter.resolveToolExecutionRequest?.([
-      {
-        id: 'call-1',
-        tool: 'materialize_step_code',
-        args: {
-          stepId: 'step-1'
+    adapter.onWorkflowStateUpdate?.({
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1',
+      phase: 'preprocessing',
+      currentNode: 'plan_step',
+      status: 'running',
+      phaseContext: {
+        controller: {
+          threadId: 'workflow-thread-1',
+          turnMode: 'action_required',
+          currentNode: 'plan_step',
+          allowedTools: ['propose_transformation_step'],
+          allowTextResponse: false,
+          requireToolCall: true,
+          pendingApproval: false,
+          updatedAt: '2026-03-13T00:00:00.000Z'
         }
       }
-    ]);
-
-    expect(execution).toEqual({
-      datasetId: 'dataset-1',
-      executionMode: 'agent'
-    });
-  });
-
-  it('upgrades commit execution to user approval when pending approval is active', () => {
-    usePreprocessingStore.getState().setControllerSummary({
-      threadId: 'prep-thread:test',
-      turnMode: 'action_required',
-      currentNode: 'commit',
-      allowedTools: ['commit_transformation_step'],
-      allowTextResponse: false,
-      requireToolCall: true,
-      pendingApproval: true,
-      updatedAt: '2026-03-13T00:00:00.000Z'
     });
 
-    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
-      {
-        datasetId: 'dataset-1',
-        name: 'dataset',
-        filename: 'dataset.csv',
-        sizeBytes: 123,
-        columns: []
-      }
-    ], 'prep-thread:test');
-
-    const execution = adapter.resolveToolExecutionRequest?.([
-      {
-        id: 'call-1',
-        tool: 'commit_transformation_step',
-        args: {
-          stepId: 'step-1',
-          approved: true
-        }
-      }
-    ]);
-
-    expect(execution).toEqual({
-      datasetId: 'dataset-1',
-      executionMode: 'user_approval'
+    expect(usePreprocessingStore.getState().runId).toBe('workflow-run-1');
+    expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toMatchObject({
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1'
     });
   });
 

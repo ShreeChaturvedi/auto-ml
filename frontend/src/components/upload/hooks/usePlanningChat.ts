@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { ChatMessage, QuestionAnswer } from '@/types/llmUi';
+import type { ReasoningEffort } from '@/components/llm/modelOptions';
 import { useLlmStreamState } from '@/hooks/useLlmStreamState';
 import { usePlanEditor } from './usePlanEditor';
 import { usePlanningStream } from './usePlanningStream';
@@ -9,7 +10,7 @@ import type { UploadedAttachmentPreview } from './useAttachmentUploader';
 interface UsePlanningChatProps {
   projectId: string;
   selectedModel: string;
-  reasoningEffort: string;
+  reasoningEffort: ReasoningEffort;
   uploadPendingAttachments: (targetIds?: string[]) => Promise<{ uploaded: UploadedAttachmentPreview[]; failedCount: number }>;
   pendingAttachmentsCount: number;
   onPlanApproved: (plan: string, planName: string) => void;

@@ -17,6 +17,7 @@ import { TransformationTimelineSheet } from './TransformationTimelineSheet';
 import { cn } from '@/lib/utils';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { projectColorClasses } from '@/types/project';
 import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
@@ -56,6 +57,7 @@ export function PreprocessingPanel() {
   const evaluateReplayCompatibility = usePreprocessingStore((state) => state.evaluateReplayCompatibility);
   const clearRun = usePreprocessingStore((state) => state.clearRun);
   const replayReport = usePreprocessingStore((state) => state.replayReport);
+  const controllerSummary = usePreprocessingStore((state) => state.controllerSummary);
   const lastHydratedRunIdRef = useRef<string | null>(null);
   const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
 
@@ -203,13 +205,23 @@ export function PreprocessingPanel() {
   }, [projectId, rejectStep]);
 
   const handleDatasetSelect = (datasetId: string) => {
+    const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID);
+    if (projectId) {
+      useWorkflowSessionStore.getState().clearSession(buildWorkflowSessionKey(projectId, storageKey));
+    }
     selectDataset(datasetId);
     clearRun();
   };
 
   const domainAdapter = useMemo(() => {
-    return createPreprocessingAdapter(projectId ?? '', selectedDatasetId, tables);
-  }, [projectId, selectedDatasetId, tables]);
+    const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID);
+    return createPreprocessingAdapter(
+      projectId ?? '',
+      selectedDatasetId,
+      tables,
+      projectId ? buildWorkflowSessionKey(projectId, storageKey) : storageKey
+    );
+  }, [activeTab?.id, buildTabStorageKey, projectId, selectedDatasetId, tables]);
 
   return (
     <>
@@ -248,6 +260,7 @@ export function PreprocessingPanel() {
           <PreprocessingResultsSection
             storeError={storeError}
             latestTimelineEvent={latestTimelineEvent}
+            controllerSummary={controllerSummary}
             divergedAccentClassName={divergedAccentClassName}
             onOpenTimeline={handleOpenTimeline}
           />

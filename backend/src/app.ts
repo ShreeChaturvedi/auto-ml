@@ -21,6 +21,7 @@ import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
 import { createRealtimeSessionRouter } from './routes/realtimeSession.js';
+import { createWorkflowRouter } from './routes/workflows.js';
 
 export function createApp() {
   const app = express();
@@ -58,6 +59,7 @@ export function createApp() {
   router.use(createPreprocessingRouter());
   router.use(createFeatureEngineeringRouter());
   router.use(createLlmRouter());
+  router.use(createWorkflowRouter());
   router.use(createMcpRouter());
   router.use('/models', modelRouter);
   router.use('/execute', executionRouter);

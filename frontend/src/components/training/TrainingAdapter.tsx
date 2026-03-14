@@ -1,7 +1,9 @@
 import type { DomainAdapter, SuggestionPill } from '@/types/agentic';
-import { streamTrainingPlan } from '@/lib/api/llm';
+import { streamWorkflowTurn } from '@/lib/api/llm';
 import type { UploadedFile } from '@/types/file';
 import type { ChatMessage } from '@/types/llmUi';
+import { useNotebookStore } from '@/stores/notebookStore';
+import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 
 export interface TrainingAdapterConfig {
   projectId: string;
@@ -10,6 +12,7 @@ export interface TrainingAdapterConfig {
   featureSummary: string | undefined;
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
+  sessionKey: string;
 }
 
 function dedupeTrainingSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
@@ -135,16 +138,19 @@ function buildTrainingSuggestions(
 
 export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdapter {
   return {
-    buildRequest: async (prompt, toolCalls, toolResults, onEvent, signal, options) => {
+    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) return;
-      await streamTrainingPlan(
+      const session = useWorkflowSessionStore.getState().sessions[config.sessionKey];
+      await streamWorkflowTurn(
         {
           projectId: config.projectId,
+          phase: 'training',
           datasetId: config.datasetId,
+          runId: session?.runId,
+          threadId: session?.threadId,
+          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
           targetColumn: config.targetColumn,
           prompt,
-          toolCalls,
-          toolResults,
           featureSummary: config.featureSummary,
           reasoningEffort: options.reasoningEffort,
           model: options.model
@@ -152,6 +158,9 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
         onEvent,
         signal
       );
+    },
+    onWorkflowStateUpdate: (state) => {
+      useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
     },
     
     toolRegistry: {},

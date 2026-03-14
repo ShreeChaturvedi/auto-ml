@@ -24,6 +24,7 @@ import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { createTrainingAdapter } from './TrainingAdapter';
 import { ChatMessageList } from '@/components/llm/ChatMessageList';
+import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
@@ -333,19 +334,32 @@ export function TrainingPanel() {
     );
   };
 
+  const trainingAdapter = useMemo(() => createTrainingAdapter({
+    projectId: projectId ?? '',
+    datasetId: selectedTrainingFile?.metadata?.datasetId,
+    targetColumn: trainingTargetColumn,
+    featureSummary: buildFeatureSummary(),
+    datasetFiles,
+    documentFiles,
+    sessionKey: buildWorkflowSessionKey(
+      projectId ?? 'training',
+      `training-messages:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
+    )
+  }), [
+    buildFeatureSummary,
+    datasetFiles,
+    documentFiles,
+    projectId,
+    selectedTrainingFile?.metadata?.datasetId,
+    trainingTargetColumn
+  ]);
+
   return (
     <AgenticShell
       projectId={projectId ?? ''}
       storageKey="training-messages"
       domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
-      domainAdapter={createTrainingAdapter({
-        projectId: projectId ?? '',
-        datasetId: selectedTrainingFile?.metadata?.datasetId,
-        targetColumn: trainingTargetColumn,
-        featureSummary: buildFeatureSummary(),
-        datasetFiles,
-        documentFiles
-      })}
+      domainAdapter={trainingAdapter}
       LeftPaneComponent={LeftPaneComponent}
       toolbarLeft={undefined}
       toolbarRight={

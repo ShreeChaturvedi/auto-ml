@@ -7,7 +7,8 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import { streamOnboardingPlan, executeToolCalls } from '@/lib/api/llm';
+import type { ReasoningEffort } from '@/components/llm/modelOptions';
+import { streamOnboardingPlan, executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { addAssistantTextMessage } from '@/lib/llm/streamMessageUtils';
 import { normalizePlanFileName } from '../planningUtils';
@@ -17,18 +18,18 @@ const MAX_TOOL_PASSES = 3;
 interface UsePlanningStreamProps {
   projectId: string;
   selectedModel: string;
-  reasoningEffort: string;
+  reasoningEffort: ReasoningEffort;
   currentRound: number;
   setCurrentRound: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>;
   setEditingPlanId: (id: string | null) => void;
   setPlanDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  handleStreamEvent: (event: { type: string; text?: string; [key: string]: unknown }) => boolean;
+  handleStreamEvent: (event: LlmStreamEvent) => boolean;
   completeThinking: () => void;
   closeTextStream: () => void;
   currentTextIdRef: React.RefObject<string | null>;
-  getAnswerHistory: () => { question: string; answer: string | string[] }[];
+  getAnswerHistory: () => { questionId: string; answer: string | string[] }[];
 }
 
 export function usePlanningStream({

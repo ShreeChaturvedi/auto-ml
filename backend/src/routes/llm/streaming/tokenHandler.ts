@@ -24,6 +24,7 @@ export async function collectLlmAttempt(
       }
     },
     onThinking: (text) => {
+      ctx.thinkingChars += text.length;
       writer.writeEvent({ type: 'thinking', text });
     },
     onUsage: (usage) => {

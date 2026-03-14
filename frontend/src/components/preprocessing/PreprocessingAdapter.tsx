@@ -1,13 +1,18 @@
 import type { DomainAdapter } from '@/types/agentic';
-import { streamPreprocessingPlan } from '@/lib/api/llm';
+import { streamWorkflowTurn } from '@/lib/api/llm';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { AvailableTable } from '@/types/preprocessing';
+import { useNotebookStore } from '@/stores/notebookStore';
+import type { WorkflowState } from '@/types/workflow';
+import { getControllerSummaryFromWorkflowState } from './controllerSummaryParser';
 
 export function createPreprocessingAdapter(
   projectId: string,
   selectedDatasetId: string | null,
-  tables: AvailableTable[]
+  tables: AvailableTable[],
+  sessionKey: string
 ): DomainAdapter {
   const toolHandlers = {
     onCall: (call: ToolCall) => usePreprocessingStore.getState().processToolCall(call),
@@ -32,19 +37,32 @@ export function createPreprocessingAdapter(
     toolRegistry[tool] = toolHandlers;
   }
 
+  function syncWorkflowState(state: WorkflowState) {
+    useWorkflowSessionStore.getState().updateSession(sessionKey, state);
+    usePreprocessingStore.getState().setRunId(state.runId);
+    const controller = getControllerSummaryFromWorkflowState(state);
+    if (!controller) {
+      return;
+    }
+    usePreprocessingStore.getState().setControllerSummary(controller);
+  }
+
   return {
-    buildRequest: async (prompt, toolCalls, toolResults, onEvent, signal, options) => {
+    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       const selectedTable = tables.find((table) => table.datasetId === selectedDatasetId);
       if (!selectedDatasetId || !selectedTable) {
         throw new Error('Please select a valid dataset for this project before running preprocessing.');
       }
-      await streamPreprocessingPlan(
+      const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+      await streamWorkflowTurn(
         {
           projectId,
+          phase: 'preprocessing',
           datasetId: selectedTable.datasetId,
+          runId: session?.runId ?? usePreprocessingStore.getState().runId ?? undefined,
+          threadId: session?.threadId ?? usePreprocessingStore.getState().controllerSummary?.threadId ?? undefined,
+          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
           prompt,
-          toolCalls,
-          toolResults,
           model: options.model,
           reasoningEffort: options.reasoningEffort
         },
@@ -90,6 +108,10 @@ export function createPreprocessingAdapter(
     onStop: (reason: string) => {
       usePreprocessingStore.getState().markInterruptedSteps(reason);
     },
+    onControllerUpdate: (summary) => {
+      usePreprocessingStore.getState().setControllerSummary(summary);
+    },
+    onWorkflowStateUpdate: syncWorkflowState,
     preserveToolHistoryBetweenPrompts: true,
     toolRegistry,
 

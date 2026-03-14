@@ -1,11 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage, ToolCall, UiSchema } from '@/types/llmUi';
-import type { LlmStreamEvent } from '@/lib/api/llm';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
 import { markAllThinkingMessagesComplete } from '@/lib/llm/streamMessageUtils';
 import { useLlmStreamState } from '@/hooks/useLlmStreamState';
-import { useToolExecution, mergeToolCalls } from '@/hooks/useToolExecution';
-
+import { createAgenticEventHandler } from '@/hooks/agenticLoopEvents';
+import { hydrateStoredMessages, persistStoredMessages } from '@/hooks/agenticLoopStorage';
+import { applyBackendToolExecution } from '@/hooks/agenticToolMessages';
+import { useToolExecution } from '@/hooks/useToolExecution';
+import type { WorkflowState } from '@/types/workflow';
 export interface UseAgenticLoopOptions {
   projectId?: string;
   storageKey?: string;
@@ -47,7 +49,6 @@ export function useAgenticLoop({
     ? `${storageKey}-${projectId}`
     : null;
 
-  // Reset session state and hydrate messages whenever tab/session scope changes.
   useEffect(() => {
     skipPersistOnceRef.current = true;
     activeRequestIdRef.current += 1;
@@ -60,25 +61,9 @@ export function useAgenticLoop({
     setUiSchema(null);
     setHydratedMessageIds(new Set());
 
-    if (!messageStorageScope) {
-      setMessages([]);
-      return;
-    }
-
-    const stored = localStorage.getItem(messageStorageScope);
-    if (!stored) {
-      setMessages([]);
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(stored) as ChatMessage[];
-      setMessages(parsed);
-      setHydratedMessageIds(new Set(parsed.map((message) => message.id)));
-    } catch {
-      setMessages([]);
-      setHydratedMessageIds(new Set());
-    }
+    const hydrated = hydrateStoredMessages(messageStorageScope);
+    setMessages(hydrated.messages);
+    setHydratedMessageIds(hydrated.hydratedMessageIds);
   }, [messageStorageScope, sessionVersion, resetStreamRefs, resetToolHistory, setIsStreaming, setError, setMessages]);
 
   useEffect(() => {
@@ -87,11 +72,7 @@ export function useAgenticLoop({
       skipPersistOnceRef.current = false;
       return;
     }
-    if (messages.length === 0) {
-      localStorage.removeItem(messageStorageScope);
-      return;
-    }
-    localStorage.setItem(messageStorageScope, JSON.stringify(messages));
+    persistStoredMessages(messageStorageScope, messages);
   }, [messageStorageScope, messages]);
 
   const handleStop = useCallback(() => {
@@ -117,6 +98,20 @@ export function useAgenticLoop({
       localStorage.removeItem(messageStorageScope);
     }
   }, [messageStorageScope, setMessages, stream, resetToolHistory, resetStreamRefs]);
+
+  const appendUiSchema = useCallback((schema: UiSchema) => {
+    setUiSchema(schema);
+    const id = `ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setMessages((prev) => [...prev, { id, type: 'ui', schema }]);
+  }, [setMessages]);
+
+  const appendBackendToolExecution = useCallback((
+    call: ToolCall,
+    result: import('@/types/llmUi').ToolResult,
+    nextState?: WorkflowState
+  ) => {
+    applyBackendToolExecution(call, result, domainAdapter, toolHistoryRef, setMessages, nextState);
+  }, [domainAdapter, setMessages, toolHistoryRef]);
 
   const runLoop = useCallback(async (
     prompt: string,
@@ -163,76 +158,34 @@ export function useAgenticLoop({
         prompt,
         toolCallsOverride?.length ? toolCallsOverride : undefined,
         toolResultsOverride?.length ? toolResultsOverride : undefined,
-        (rawEvent: unknown) => {
-          const event = rawEvent as LlmStreamEvent;
-          if (requestId !== activeRequestIdRef.current) return;
-
-          // Let the shared hook handle token, thinking, usage, error, done
-          const handled = handleStreamEvent(event);
-          if (handled) {
-            // For error events, also fire the domain adapter callback
-            if (event.type === 'error') {
-              domainAdapter.onStreamError?.(event.message);
-            }
-            return;
+        createAgenticEventHandler({
+          requestId,
+          prompt,
+          requestOptions: {
+            ...requestOptions,
+            continuation: isRestream
+          },
+          domainAdapter,
+          activeRequestIdRef,
+          currentTextIdRef,
+          toolHistoryRef,
+          handleStreamEvent,
+          completeThinking,
+          closeTextStream,
+          appendToken,
+          appendUiSchema,
+          appendBackendToolExecution,
+          executePending,
+          setMessages,
+          setError,
+          setIsStreaming,
+          onLegacyRestream: (result) => {
+            setTimeout(() => {
+              if (requestId !== activeRequestIdRef.current) return;
+              void runLoop(prompt, requestOptions, result.results, toolHistoryRef.current.calls);
+            }, 100);
           }
-
-          // Domain-specific: envelope handling
-          if (event.type === 'envelope') {
-            completeThinking();
-            if (event.envelope.controller) {
-              domainAdapter.onControllerUpdate?.(event.envelope.controller);
-            }
-
-            if (event.envelope.tool_calls?.length) {
-              closeTextStream();
-              const preparedToolCalls = domainAdapter.prepareToolCalls
-                ? domainAdapter.prepareToolCalls(event.envelope.tool_calls)
-                : event.envelope.tool_calls;
-
-              toolHistoryRef.current.calls = mergeToolCalls(
-                toolHistoryRef.current.calls,
-                preparedToolCalls
-              );
-
-              for (const call of preparedToolCalls) {
-                setMessages((prev) => [...prev, { id: `tool-${call.id}`, type: 'tool_call', call }]);
-                domainAdapter.toolRegistry[call.tool]?.onCall?.(call);
-              }
-
-              const toolCalls = preparedToolCalls;
-              executePending(
-                toolCalls,
-                requestId,
-                activeRequestIdRef,
-                setMessages,
-                domainAdapter
-              ).then((result) => {
-                if (!result) return;
-                if (result.shouldPause) {
-                  setIsStreaming(false);
-                  return;
-                }
-                setTimeout(() => {
-                  if (requestId !== activeRequestIdRef.current) return;
-                  void runLoop(prompt, requestOptions, result.results, toolHistoryRef.current.calls);
-                }, 100);
-              }).catch(() => {
-                // Error already handled inside executePending
-              });
-            }
-            if (event.envelope.ui) {
-              setUiSchema(event.envelope.ui);
-              const id = `ui-${Date.now()}`;
-              setMessages((prev) => [...prev, { id, type: 'ui', schema: event.envelope.ui! }]);
-            }
-            if (event.envelope.message) {
-              if (!currentTextIdRef.current && event.envelope.message.trim()) {
-                appendToken(event.envelope.message);
-              }
-            }
-          }
-        },
+        }),
         controller.signal,
         {
           ...requestOptions,
@@ -253,15 +206,29 @@ export function useAgenticLoop({
         abortRef.current = null;
       }
     }
-  }, [domainAdapter, domainLockReason, setError, setIsStreaming, setMessages, handleStreamEvent, completeThinking, closeTextStream, appendToken, currentTextIdRef, toolHistoryRef, executePending, resetToolHistory]);
+  }, [
+    appendBackendToolExecution,
+    appendToken,
+    appendUiSchema,
+    closeTextStream,
+    completeThinking,
+    currentTextIdRef,
+    domainAdapter,
+    domainLockReason,
+    executePending,
+    handleStreamEvent,
+    resetToolHistory,
+    setError,
+    setIsStreaming,
+    setMessages,
+    toolHistoryRef
+  ]);
 
   const editMessage = useCallback((msgId: string, newContent: string) => {
     setMessages((prev) => {
       const idx = prev.findIndex(m => m.id === msgId);
       if (idx === -1) return prev;
-      const newMessages = prev.slice(0, idx);
-      newMessages.push({ ...prev[idx], content: newContent } as ChatMessage);
-      return newMessages;
+      return [...prev.slice(0, idx), { ...prev[idx], content: newContent } as ChatMessage];
     });
   }, [setMessages]);
 

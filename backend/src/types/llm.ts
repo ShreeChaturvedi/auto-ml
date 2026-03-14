@@ -93,6 +93,13 @@ export const LlmEnvelopeSchema = z.object({
 
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
 
+export const ToolResultSchema = z.object({
+  id: z.string().min(1),
+  tool: ToolNameSchema,
+  output: z.unknown().optional(),
+  error: z.string().optional()
+});
+
 export interface ToolResult {
   id: string;
   tool: ToolCall['tool'];

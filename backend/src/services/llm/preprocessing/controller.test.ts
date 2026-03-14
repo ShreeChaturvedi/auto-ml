@@ -75,6 +75,7 @@ describe('resolvePreprocessingControllerTurn', () => {
       dataset,
       prompt: 'Continue',
       toolResults,
+      continuation: true,
       threadId: 'prep-thread:test:generate'
     });
 
@@ -321,5 +322,36 @@ describe('resolvePreprocessingControllerTurn', () => {
     expect(decision.summary.allowTextResponse).toBe(true);
     expect(decision.summary.requireToolCall).toBe(false);
     expect(decision.request.tools).toBeUndefined();
+  });
+
+  it('starts a fresh action turn after a completed step when continuation is false', async () => {
+    const client = createClient({
+      turnMode: 'action_required',
+      rationale: 'The user asked for the next preprocessing action.'
+    });
+    const toolResults: ToolResult[] = [
+      {
+        id: 'result-1',
+        tool: 'commit_transformation_step',
+        output: {
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          status: 'applied'
+        }
+      }
+    ];
+
+    const decision = await resolvePreprocessingControllerTurn({
+      client,
+      dataset,
+      prompt: 'Propose the next safest missing-value fix.',
+      continuation: false,
+      toolResults,
+      threadId: 'prep-thread:test:fresh-action-after-complete'
+    });
+
+    expect(decision.summary.turnMode).toBe('action_required');
+    expect(decision.summary.currentNode).toBe('plan_step');
+    expect(decision.summary.requireToolCall).toBe(true);
   });
 });

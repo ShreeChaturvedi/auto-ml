@@ -5,6 +5,7 @@ import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import { executeToolCalls } from '@/lib/api/llm';
 import type { DomainAdapter } from '@/types/agentic';
 import type { PreprocessingControllerSummary } from '@/types/preprocessing';
+import type { WorkflowPauseEvent, WorkflowState } from '@/types/workflow';
 
 vi.mock('@/lib/api/llm', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/llm')>('@/lib/api/llm');
@@ -417,5 +418,125 @@ describe('useAgenticLoop', () => {
 
     expect(result.current.messages).toEqual([]);
     expect(result.current.hydratedMessageIds.size).toBe(0);
+  });
+
+  it('renders backend-owned workflow tool executions and pauses without calling the frontend tool executor', async () => {
+    const onWorkflowStateUpdate = vi.fn();
+    const onWorkflowPause = vi.fn();
+    const workflowState: WorkflowState = {
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1',
+      phase: 'preprocessing',
+      currentNode: 'validate_step',
+      status: 'running',
+      mode: 'action',
+      revision: 2
+    };
+    const pauseEvent: WorkflowPauseEvent = {
+      type: 'workflow_pause',
+      reason: 'awaiting_approval',
+      message: 'Approval is required before the workflow can commit this step.',
+      pendingInputKind: 'approval',
+      state: {
+        ...workflowState,
+        currentNode: 'await_user_approval',
+        status: 'paused',
+        mode: 'await_input'
+      }
+    };
+
+    const buildRequest = vi.fn(async (_prompt, _toolCalls, _toolResults, onEvent) => {
+      onEvent({ type: 'workflow_state', state: workflowState });
+      onEvent({
+        type: 'tool_executed',
+        call: {
+          id: 'workflow-call-1',
+          tool: 'validate_step_result',
+          args: { stepId: 'step-1' }
+        },
+        result: {
+          id: 'workflow-call-1',
+          tool: 'validate_step_result',
+          output: {
+            stepId: 'step-1',
+            status: 'awaiting_approval'
+          }
+        },
+        state: workflowState
+      });
+      onEvent(pauseEvent);
+      onEvent({ type: 'done' });
+    });
+
+    const onCall = vi.fn();
+    const onResult = vi.fn();
+    const domainAdapter = createDomainAdapter(buildRequest, {
+      onWorkflowStateUpdate,
+      onWorkflowPause,
+      toolRegistry: {
+        validate_step_result: {
+          onCall,
+          onResult
+        }
+      }
+    });
+
+    const { result } = renderHook(() => useAgenticLoop({
+      projectId: 'project-1',
+      storageKey: 'workflow-runtime',
+      domainAdapter
+    }));
+
+    await act(async () => {
+      await result.current.runLoop('Validate this step', {
+        model: 'gpt-5.4',
+        reasoningEffort: 'medium'
+      });
+    });
+
+    await waitFor(() => {
+      expect(onWorkflowStateUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        currentNode: 'await_user_approval',
+        status: 'paused'
+      }));
+    });
+
+    expect(onCall).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'workflow-call-1',
+      tool: 'validate_step_result'
+    }));
+    expect(onResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'workflow-call-1'
+      }),
+      expect.objectContaining({
+        output: expect.objectContaining({
+          status: 'awaiting_approval'
+        })
+      })
+    );
+    expect(onWorkflowPause).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'awaiting_approval',
+      pendingInputKind: 'approval'
+    }));
+    expect(executeToolCallsMock).not.toHaveBeenCalled();
+    expect(result.current.isGenerating).toBe(false);
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'tool_call',
+        call: expect.objectContaining({
+          tool: 'validate_step_result'
+        }),
+        result: expect.objectContaining({
+          output: expect.objectContaining({
+            status: 'awaiting_approval'
+          })
+        })
+      }),
+      expect.objectContaining({
+        type: 'assistant_text',
+        content: 'Approval is required before the workflow can commit this step.'
+      })
+    ]));
   });
 });

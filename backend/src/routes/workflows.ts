@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { NdjsonResponseSink } from '../services/workflows/eventSink.js';
-import { getPhaseConfig, registerPhaseConfig } from '../services/workflows/phaseConfig.js';
-import { onboardingPhaseConfig } from '../services/workflows/phases/onboarding.js';
+import { getPhaseConfig } from '../services/workflows/phaseConfig.js';
+// Phase configs self-register when imported
+import '../services/workflows/phases/onboarding.js';
+import '../services/workflows/phases/preprocessing.js';
+import '../services/workflows/phases/training.js';
 import { getWorkflowRepository } from '../services/workflows/repository/index.js';
 import { executeWorkflowTurn } from '../services/workflows/turnExecutor.js';
-
-// Register phase configs at module load time
-registerPhaseConfig(onboardingPhaseConfig);
 
 const workflowPhaseSchema = z.enum(['preprocessing', 'feature_engineering', 'training', 'onboarding']);
 const reasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);

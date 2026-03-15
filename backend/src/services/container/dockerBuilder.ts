@@ -9,9 +9,9 @@
 import { resolve } from 'path';
 
 import { env } from '../../config.js';
+import { CONTAINER_PYTHON_SITE_DIR } from '../packageManager/pipHelpers.js';
 
 const CONTAINER_WORKSPACE_ROOT = '/workspace';
-const CONTAINER_PYTHON_SITE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.python`;
 const CONTAINER_PIP_CACHE_DIR = `${CONTAINER_WORKSPACE_ROOT}/.cache/pip`;
 const CONTAINER_TMP_DIR = `${CONTAINER_WORKSPACE_ROOT}/.tmp`;
 

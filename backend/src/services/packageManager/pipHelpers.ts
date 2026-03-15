@@ -15,6 +15,14 @@ const PACKAGE_ALIASES = new Map<string, string>([['pytorch', 'torch']]);
 
 export const CONTAINER_PYTHON_SITE_DIR = '/workspace/.python';
 export const PIP_INSTALL_TIMEOUT_MS = 8 * 60 * 1000;
+
+/** Python preamble that ensures CONTAINER_PYTHON_SITE_DIR is on sys.path. */
+export const SITE_DIR_PREAMBLE = [
+    'import sys',
+    `site = "${CONTAINER_PYTHON_SITE_DIR}"`,
+    'if site not in sys.path:',
+    '    sys.path.insert(0, site)',
+];
 const INSTALL_TIMEOUT_MESSAGE = 'Install timed out while waiting for pip process to finish.';
 
 /** Build the common pip-install docker-exec argument prefix for a container. */

@@ -11,6 +11,7 @@ import type { Container } from './containerManager.js';
 import { execDocker } from './dockerUtils.js';
 import {
     CONTAINER_PYTHON_SITE_DIR,
+    SITE_DIR_PREAMBLE,
     formatInstallError,
     isMissingBinaryError,
     isInstallTimeoutError,
@@ -98,14 +99,13 @@ export async function uninstallPackage(
     try {
         const { stdout, stderr } = await execDocker([
             'exec',
+            '-e', `PYTHONPATH=${CONTAINER_PYTHON_SITE_DIR}`,
             container.containerId,
             'python',
             '-m',
             'pip',
             'uninstall',
             '-y',
-            '--target',
-            CONTAINER_PYTHON_SITE_DIR,
             trimmed
         ], { timeout: 60000 });
 
@@ -134,6 +134,7 @@ export async function uninstallPackage(
 export async function listPackages(container: Container): Promise<PackageInfo[]> {
     try {
         const script = [
+            ...SITE_DIR_PREAMBLE,
             "import importlib.metadata as m",
             "import json",
             "packages = []",
@@ -160,7 +161,8 @@ export async function listPackages(container: Container): Promise<PackageInfo[]>
             return [];
         }
         return parsed.filter((pkg) => Boolean(pkg?.name));
-    } catch {
+    } catch (error) {
+        console.warn('[packageManager] Failed to list packages:', error);
         return [];
     }
 }

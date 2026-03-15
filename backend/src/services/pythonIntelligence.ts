@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 
 import type { Container } from './containerManager.js';
 import { execDocker, execDockerWithStdin } from './dockerUtils.js';
+import { CONTAINER_PYTHON_SITE_DIR, SITE_DIR_PREAMBLE } from './packageManager/pipHelpers.js';
 
 // ── Result types ────────────────────────────────────────────────
 
@@ -57,7 +58,6 @@ export type IntelligenceResponse = {
 
 // ── Jedi installation tracking ──────────────────────────────────
 
-const CONTAINER_PYTHON_SITE_DIR = '/workspace/.python';
 const jediInstalledContainers = new Set<string>();
 
 /**
@@ -76,10 +76,11 @@ export async function ensureJediInstalled(container: Container): Promise<void> {
         return;
     }
 
-    // Check if jedi is already available
+    // Check if jedi is already available (include custom site dir in sys.path)
+    const jediCheckScript = [...SITE_DIR_PREAMBLE, 'import jedi'].join('\n');
     try {
         await execDocker(
-            ['exec', container.containerId, 'python', '-c', 'import jedi'],
+            ['exec', container.containerId, 'python', '-c', jediCheckScript],
             { timeout: 3000 }
         );
         jediInstalledContainers.add(container.containerId);

@@ -23,7 +23,7 @@ import { IconModeToggle } from '../IconModeToggle';
 type DistributionMode = 'histogram' | 'box' | 'violin';
 type ViewMode = 'heatmap' | 'pairplot' | '3d';
 
-const TAB_ITEMS: Array<{ id: TabId; label: string; icon: typeof Layers }> = [
+const TAB_ITEMS: Array<{ id: EdaTab; label: string; icon: typeof Layers }> = [
   { id: 'overview', label: 'Overview', icon: Layers },
   { id: 'distributions', label: 'Distributions', icon: BarChart3 },
   { id: 'correlations', label: 'Relationships', icon: Waypoints },
@@ -32,8 +32,8 @@ const TAB_ITEMS: Array<{ id: TabId; label: string; icon: typeof Layers }> = [
 
 interface EDAToolbarProps {
   eda: EdaSummary;
-  activeTab: TabId;
-  onActiveTabChange: (tab: TabId) => void;
+  activeTab: EdaTab;
+  onActiveTabChange: (tab: EdaTab) => void;
   selectorColumns: Array<{ name: string; type: import('@/types/file').DataQualitySummary['dataType'] }>;
   numericColumnNames: string[];
   distSelectedColumn: string | null;
@@ -72,7 +72,7 @@ export function EDAToolbar({
   const hasCorrelations = (eda.correlations?.length ?? 0) > 0;
   const hasQuality = (eda.dataQuality?.length ?? 0) > 0;
 
-  const isDisabled: Record<TabId, boolean> = {
+  const isDisabled: Record<EdaTab, boolean> = {
     overview: false,
     distributions: !hasNumeric && !hasCategorical,
     correlations: !hasCorrelations,

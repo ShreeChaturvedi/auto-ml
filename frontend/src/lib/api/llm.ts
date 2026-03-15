@@ -121,7 +121,11 @@ export async function streamOnboardingPlan(
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  return streamLlm('/llm/onboarding/stream', request, onEvent, signal);
+  return streamWorkflowTurn(
+    { ...request, projectId: request.projectId, phase: 'onboarding' as WorkflowPhase },
+    onEvent,
+    signal
+  );
 }
 
 export async function executeToolCalls(

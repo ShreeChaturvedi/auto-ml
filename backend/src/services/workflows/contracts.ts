@@ -46,6 +46,18 @@ export function resolveWorkflowNodeContract(state: WorkflowGraphState): Workflow
     };
   }
 
+  if (state.turn.phase === 'onboarding') {
+    return {
+      mode: 'text',
+      allowedTools: requestTools,
+      allowAssistantMessage: true,
+      allowAskUser: requestToolMap.has('ask_user'),
+      allowRenderUi: false,
+      allowPlanExit: requestToolMap.has('plan_exit'),
+      requireToolCall: false
+    };
+  }
+
   const allowedTools = requestTools.filter((tool) => !META_OUTPUT_TOOLS.has(tool.name));
 
   return {

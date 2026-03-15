@@ -1,12 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Response } from 'express';
-
+import type { WorkflowEventSink } from './eventSink.js';
 import {
   buildArtifactEvent,
   buildWorkflowErrorEvent,
-  buildWorkflowPauseEvent,
-  writeWorkflowEvent
+  buildWorkflowPauseEvent
 } from './eventWriter.js';
 import type { WorkflowGraphState } from './graphState.js';
 import type { WorkflowRepository } from './repository/types.js';
@@ -44,7 +42,7 @@ export async function persistNewToolExecutionEvents(
 
 async function emitUiArtifact(
   repository: WorkflowRepository,
-  res: Response,
+  sink: WorkflowEventSink,
   run: WorkflowRunState,
   turn: WorkflowTurnRequest,
   result: WorkflowGraphState,
@@ -62,7 +60,7 @@ async function emitUiArtifact(
     payload: result.uiPayload as unknown as Record<string, unknown>
   });
 
-  writeWorkflowEvent(res, buildArtifactEvent('ui', {
+  sink.emit(buildArtifactEvent('ui', {
     artifactId: artifact.artifactId,
     label: artifact.label,
     ui: result.uiPayload,
@@ -77,7 +75,7 @@ async function emitUiArtifact(
 
 async function emitPlanArtifact(
   repository: WorkflowRepository,
-  res: Response,
+  sink: WorkflowEventSink,
   run: WorkflowRunState,
   result: WorkflowGraphState,
   savedState: WorkflowStateEvent['state']
@@ -94,7 +92,7 @@ async function emitPlanArtifact(
     payload: result.planExitPayload as unknown as Record<string, unknown>
   });
 
-  writeWorkflowEvent(res, buildArtifactEvent('plan', {
+  sink.emit(buildArtifactEvent('plan', {
     artifactId: artifact.artifactId,
     label: artifact.label,
     payload: result.planExitPayload as unknown as Record<string, unknown>
@@ -108,7 +106,7 @@ async function emitPlanArtifact(
 
 async function emitSummaryArtifact(
   repository: WorkflowRepository,
-  res: Response,
+  sink: WorkflowEventSink,
   run: WorkflowRunState,
   turn: WorkflowTurnRequest,
   message: string,
@@ -122,7 +120,7 @@ async function emitSummaryArtifact(
     payload: buildSummaryArtifactPayload(message)
   });
 
-  writeWorkflowEvent(res, buildArtifactEvent('summary', {
+  sink.emit(buildArtifactEvent('summary', {
     artifactId: artifact.artifactId,
     label: artifact.label,
     payload: buildSummaryArtifactPayload(message)
@@ -137,7 +135,7 @@ async function emitSummaryArtifact(
 
 async function emitPause(
   repository: WorkflowRepository,
-  res: Response,
+  sink: WorkflowEventSink,
   run: WorkflowRunState,
   result: WorkflowGraphState,
   savedState: WorkflowStateEvent['state'],
@@ -145,11 +143,11 @@ async function emitPause(
   pendingInputKind: WorkflowRunState['pendingInputKind'] | undefined
 ) {
   if (result.askUserPayload) {
-    writeWorkflowEvent(res, buildWorkflowPauseEvent(
+    sink.emit(buildWorkflowPauseEvent(
       pauseReason ?? 'user_input_required',
       'clarification',
       result.latestMessage.trim() || undefined,
-      null,
+      { ask_user: result.askUserPayload },
       savedState
     ));
     await appendRunEvent(repository, run, 'workflow_paused', {
@@ -160,7 +158,7 @@ async function emitPause(
   }
 
   if (pendingInputKind === 'approval') {
-    writeWorkflowEvent(res, buildWorkflowPauseEvent(
+    sink.emit(buildWorkflowPauseEvent(
       pauseReason ?? 'awaiting_approval',
       'approval',
       result.latestMessage.trim() || undefined,
@@ -179,7 +177,7 @@ async function emitPause(
 
 async function emitFailure(
   repository: WorkflowRepository,
-  res: Response,
+  sink: WorkflowEventSink,
   run: WorkflowRunState,
   result: WorkflowGraphState,
   savedState: WorkflowStateEvent['state']
@@ -188,7 +186,7 @@ async function emitFailure(
     return false;
   }
 
-  writeWorkflowEvent(res, buildWorkflowErrorEvent(
+  sink.emit(buildWorkflowErrorEvent(
     result.errorMessage,
     run.status === 'failed_retryable',
     result.errorCode ?? undefined,
@@ -203,7 +201,7 @@ async function emitFailure(
 
 export async function finalizeWorkflowTurn(
   repository: WorkflowRepository,
-  res: Response,
+  sink: WorkflowEventSink,
   run: WorkflowRunState,
   turn: WorkflowTurnRequest,
   result: WorkflowGraphState,
@@ -211,21 +209,21 @@ export async function finalizeWorkflowTurn(
   pauseReason: string | undefined,
   pendingInputKind: WorkflowRunState['pendingInputKind'] | undefined
 ) {
-  await emitUiArtifact(repository, res, run, turn, result, savedState);
-  await emitPlanArtifact(repository, res, run, result, savedState);
+  await emitUiArtifact(repository, sink, run, turn, result, savedState);
+  await emitPlanArtifact(repository, sink, run, result, savedState);
 
-  if (await emitPause(repository, res, run, result, savedState, pauseReason, pendingInputKind)) {
+  if (await emitPause(repository, sink, run, result, savedState, pauseReason, pendingInputKind)) {
     return;
   }
 
-  if (await emitFailure(repository, res, run, result, savedState)) {
+  if (await emitFailure(repository, sink, run, result, savedState)) {
     return;
   }
 
   if (result.latestMessage.trim() && !result.uiPayload) {
     await emitSummaryArtifact(
       repository,
-      res,
+      sink,
       run,
       turn,
       result.latestMessage.trim(),

@@ -1,4 +1,4 @@
-export type WorkflowPhase = 'preprocessing' | 'feature_engineering' | 'training';
+export type WorkflowPhase = 'preprocessing' | 'feature_engineering' | 'training' | 'onboarding';
 
 export type WorkflowStatus =
   | 'running'
@@ -114,6 +114,10 @@ export interface WorkflowTurnRequest {
   featureSummary?: string;
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   model?: string;
+  // Onboarding-specific fields
+  userIntent?: string;
+  questionAnswers?: Array<{ questionId: string; answer: string | string[] }>;
+  round?: number;
 }
 
 export interface WorkflowStateEvent {

@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { apiRequest } from '../../lib/api/client';
 import { executeToolCalls, getPreprocessingRunSnapshot } from '../../lib/api/llm';
 import type { PreprocessingRunSnapshot } from '../../types/preprocessing';
 import { usePreprocessingStore } from '../preprocessingStore';
+
+vi.mock('../../lib/api/client', () => ({
+  apiRequest: vi.fn(),
+  getApiBaseUrl: vi.fn(() => 'http://localhost:4000/api')
+}));
 
 vi.mock('../../lib/api/llm', () => ({
   getPreprocessingRunSnapshot: vi.fn(),
   executeToolCalls: vi.fn()
 }));
 
+const apiRequestMock = vi.mocked(apiRequest);
 const getPreprocessingRunSnapshotMock = vi.mocked(getPreprocessingRunSnapshot);
 const executeToolCallsMock = vi.mocked(executeToolCalls);
 
@@ -340,24 +347,18 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('uses backend as source of truth when local pre-check passes but backend fails', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'replay-check-1',
-          tool: 'restore_checkpoint',
-          output: {
-            isError: true,
-            reasonCode: 'REPLAY_INCOMPATIBLE_DATASET',
-            compatibilityIssues: [
-              {
-                stepId: 'step-1',
-                column: 'income',
-                issue: 'missing_column'
-              }
-            ]
+    apiRequestMock.mockResolvedValue({
+      output: {
+        isError: true,
+        reasonCode: 'REPLAY_INCOMPATIBLE_DATASET',
+        compatibilityIssues: [
+          {
+            stepId: 'step-1',
+            column: 'income',
+            issue: 'missing_column'
           }
-        }
-      ]
+        ]
+      }
     });
 
     usePreprocessingStore.setState({
@@ -402,18 +403,12 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('keeps backend pass authoritative even when local pre-check warns', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'replay-check-2',
-          tool: 'restore_checkpoint',
-          output: {
-            isError: false,
-            compatible: true,
-            compatibilityIssues: []
-          }
-        }
-      ]
+    apiRequestMock.mockResolvedValue({
+      output: {
+        isError: false,
+        compatible: true,
+        compatibilityIssues: []
+      }
     });
 
     usePreprocessingStore.setState({

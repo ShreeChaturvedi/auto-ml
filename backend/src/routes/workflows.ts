@@ -1,10 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { NdjsonResponseSink } from '../services/workflows/eventSink.js';
+import { getPhaseConfig, registerPhaseConfig } from '../services/workflows/phaseConfig.js';
+import { onboardingPhaseConfig } from '../services/workflows/phases/onboarding.js';
 import { getWorkflowRepository } from '../services/workflows/repository/index.js';
 import { executeWorkflowTurn } from '../services/workflows/turnExecutor.js';
 
-const workflowPhaseSchema = z.enum(['preprocessing', 'feature_engineering', 'training']);
+// Register phase configs at module load time
+registerPhaseConfig(onboardingPhaseConfig);
+
+const workflowPhaseSchema = z.enum(['preprocessing', 'feature_engineering', 'training', 'onboarding']);
 const reasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
 
 const workflowTurnSchema = z.object({
@@ -18,7 +24,14 @@ const workflowTurnSchema = z.object({
   targetColumn: z.string().optional(),
   featureSummary: z.string().optional(),
   reasoningEffort: reasoningEffortSchema.optional(),
-  model: z.string().optional()
+  model: z.string().optional(),
+  // Onboarding-specific fields
+  userIntent: z.string().optional(),
+  questionAnswers: z.array(z.object({
+    questionId: z.string(),
+    answer: z.union([z.string(), z.array(z.string())])
+  })).optional(),
+  round: z.number().optional()
 });
 
 const workflowListQuerySchema = z.object({
@@ -44,15 +57,18 @@ export function createWorkflowRouter(): Router {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    const sink = new NdjsonResponseSink(res);
+    const phaseConfig = getPhaseConfig(parsed.data.phase);
+
     try {
-      await executeWorkflowTurn(res, parsed.data);
-      res.write(`${JSON.stringify({ type: 'done' })}\n`);
+      await executeWorkflowTurn(sink, parsed.data, phaseConfig);
+      sink.emit({ type: 'done' });
       res.end();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workflow execution failed';
       if (!res.writableEnded) {
-        res.write(`${JSON.stringify({ type: 'workflow_error', message, retryable: true })}\n`);
-        res.write(`${JSON.stringify({ type: 'done' })}\n`);
+        sink.emit({ type: 'workflow_error', message, retryable: true });
+        sink.emit({ type: 'done' });
         res.end();
       }
     }

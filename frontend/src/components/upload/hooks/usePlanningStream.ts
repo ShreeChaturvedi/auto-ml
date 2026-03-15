@@ -1,19 +1,16 @@
 /**
  * usePlanningStream - Stream execution loop for the planning chat.
  *
- * Extracted from usePlanningChat to isolate the multi-pass NDJSON
- * streaming logic, tool-call execution, and domain-specific event
- * handling (ask_user, plan_exit, envelope).
+ * Now routes through the unified workflow engine. Tool execution happens
+ * backend-side — the frontend just processes streaming events.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
-import { streamOnboardingPlan, executeToolCalls, type LlmStreamEvent } from '@/lib/api/llm';
-import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
+import { streamOnboardingPlan, type LlmStreamEvent } from '@/lib/api/llm';
+import type { AskUserQuestion, ChatMessage } from '@/types/llmUi';
 import { addAssistantTextMessage } from '@/lib/llm/streamMessageUtils';
 import { normalizePlanFileName } from '../planningUtils';
-
-const MAX_TOOL_PASSES = 3;
 
 interface UsePlanningStreamProps {
   projectId: string;
@@ -49,8 +46,6 @@ export function usePlanningStream({
   getAnswerHistory,
 }: UsePlanningStreamProps) {
   const controllerRef = useRef<AbortController | null>(null);
-  const toolCallHistoryRef = useRef<ToolCall[]>([]);
-  const toolResultHistoryRef = useRef<ToolResult[]>([]);
 
   const requestStream = useCallback(
     async (userIntent?: string, round?: number) => {
@@ -66,94 +61,93 @@ export function usePlanningStream({
 
       let sawAskUser = false;
       let sawPlanExit = false;
-      let recoveryAttempted = false;
-      let requestUserIntent = userIntent || undefined;
-
-      const executePendingToolCalls = async (pendingToolCalls: ToolCall[]) => {
-        if (pendingToolCalls.length === 0) return;
-
-        const { results } = await executeToolCalls(projectId, pendingToolCalls);
-        toolCallHistoryRef.current = [...toolCallHistoryRef.current, ...pendingToolCalls];
-        toolResultHistoryRef.current = [...toolResultHistoryRef.current, ...results];
-
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.type !== 'tool_call') return m;
-            const result = results.find((r) => r.id === m.call.id);
-            return result ? { ...m, result } : m;
-          })
-        );
-      };
 
       try {
-        for (let pass = 0; pass < MAX_TOOL_PASSES; pass++) {
-          if (controller.signal.aborted) return;
+        await streamOnboardingPlan(
+          {
+            projectId,
+            userIntent: userIntent || undefined,
+            questionAnswers: getAnswerHistory().length > 0 ? getAnswerHistory() : undefined,
+            round: effectiveRound,
+            reasoningEffort,
+            model: selectedModel,
+          },
+          (event) => {
+            if (event.type === 'token') {
+              handleStreamEvent(event);
+              return;
+            }
 
-          let streamedText = '';
-          let pendingToolCalls: ToolCall[] = [];
-          let passTextMessageId: string | null = null;
-          let passProducedPlainText = false;
+            if (event.type === 'thinking' || event.type === 'usage') {
+              handleStreamEvent(event);
+              return;
+            }
 
-          await streamOnboardingPlan(
-            {
-              projectId,
-              userIntent: requestUserIntent,
-              questionAnswers: getAnswerHistory().length > 0 ? getAnswerHistory() : undefined,
-              toolCalls: toolCallHistoryRef.current.length > 0 ? toolCallHistoryRef.current : undefined,
-              toolResults: toolResultHistoryRef.current.length > 0 ? toolResultHistoryRef.current : undefined,
-              round: effectiveRound,
-              reasoningEffort,
-              model: selectedModel,
-            },
-            (event) => {
-              // Let the shared hook handle token, thinking, usage, error, done
-              if (event.type === 'token') {
-                handleStreamEvent(event);
-                streamedText += event.text;
-                passProducedPlainText = true;
-                passTextMessageId = currentTextIdRef.current;
-                return;
-              }
+            if (event.type === 'error') {
+              handleStreamEvent(event);
+              return;
+            }
 
-              if (event.type === 'thinking' || event.type === 'usage') {
-                handleStreamEvent(event);
-                return;
-              }
+            if (event.type === 'done') {
+              completeThinking();
+              closeTextStream();
+              return;
+            }
 
-              if (event.type === 'error') {
-                handleStreamEvent(event);
-                return;
-              }
+            // Backend-executed tool results
+            if (event.type === 'tool_executed') {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `tool-${event.call.id}`,
+                  type: 'tool_call',
+                  call: event.call,
+                  result: event.result
+                } as ChatMessage
+              ]);
+              return;
+            }
 
-              if (event.type === 'done') {
-                // Don't let shared hook set isStreaming=false mid-loop;
-                // we handle that in finally. Just clean up thinking/text.
-                completeThinking();
-                closeTextStream();
-                return;
-              }
+            // Workflow pause — may include ask_user questions
+            if (event.type === 'workflow_pause') {
+              completeThinking();
+              closeTextStream();
 
-              // Domain-specific: ask_user
-              if (event.type === 'ask_user') {
-                completeThinking();
-                closeTextStream();
+              const ui = event.ui as Record<string, unknown> | null | undefined;
+              const askUserPayload = ui?.ask_user as { questions: AskUserQuestion[] } | undefined;
+
+              if (askUserPayload?.questions?.length) {
                 sawAskUser = true;
                 setMessages((prev) => [
                   ...prev,
-                  { id: `ask-${Date.now()}`, type: 'ask_user', questions: event.questions },
+                  { id: `ask-${Date.now()}`, type: 'ask_user' as const, questions: askUserPayload.questions },
                 ]);
+              } else if (event.message) {
+                setMessages((prev) => addAssistantTextMessage(prev, `pause-${Date.now()}`, event.message!));
               }
+              return;
+            }
 
-              // Domain-specific: plan_exit
-              if (event.type === 'plan_exit') {
+            // Artifact updated — handles plan_exit
+            if (event.type === 'artifact_updated') {
+              const artifact = event.artifact;
+              const payload = (artifact.payload ?? {}) as Record<string, unknown>;
+              if (artifact.kind === 'plan') {
                 const streamingTextId = currentTextIdRef.current;
                 completeThinking();
                 closeTextStream();
                 sawPlanExit = true;
                 setEditingPlanId(null);
 
-                const planContent = event.planMarkdown.trim();
-                const planName = normalizePlanFileName(event.planName);
+                const planMarkdown = typeof payload.planMarkdown === 'string'
+                  ? payload.planMarkdown
+                  : typeof payload.message === 'string'
+                    ? payload.message
+                    : '';
+                const planContent = planMarkdown.trim();
+                const planName = normalizePlanFileName(
+                  typeof payload.planName === 'string' ? payload.planName : undefined
+                );
                 const planMessageId = `plan-${Date.now()}`;
 
                 setPlanDrafts((prev) => ({ ...prev, [planMessageId]: planContent }));
@@ -170,84 +164,65 @@ export function usePlanningStream({
                     { id: planMessageId, type: 'plan', content: planContent, planName, hidden: false }
                   ];
                 });
-              }
-
-              // Domain-specific: envelope with tool calls
-              if (event.type === 'envelope') {
-                if (event.envelope.tool_calls?.length) {
-                  completeThinking();
-                  closeTextStream();
-
-                  const nextCalls = event.envelope.tool_calls.filter(
-                    (call: ToolCall) => !pendingToolCalls.some((pending) => pending.id === call.id)
-                  );
-                  pendingToolCalls = [...pendingToolCalls, ...nextCalls];
-
-                  for (const call of nextCalls) {
-                    setMessages((prev) => [
-                      ...prev,
-                      { id: `tool-${call.id}`, type: 'tool_call', call },
-                    ]);
-                  }
-                }
-                // Fallback message if no tokens were streamed
-                const fallback = event.envelope.message?.trim();
-                if (
-                  fallback
-                  && fallback !== 'Done.'
-                  && !streamedText
-                  && !sawAskUser
-                  && !sawPlanExit
-                  && !event.envelope.ask_user
-                  && !event.envelope.plan_exit
-                  && pendingToolCalls.length === 0
-                ) {
-                  streamedText = fallback;
-                  passProducedPlainText = true;
-                  const id = `text-fallback-${Date.now()}`;
-                  passTextMessageId = id;
-                  setMessages((prev) => addAssistantTextMessage(prev, id, fallback));
+              } else if (artifact.kind === 'summary' && typeof payload.message === 'string') {
+                const msg = payload.message;
+                if (msg.trim()) {
+                  setMessages((prev) => addAssistantTextMessage(prev, `summary-${Date.now()}`, msg));
                 }
               }
-            },
-            controller.signal
-          );
-
-          requestUserIntent = undefined;
-
-          if (sawPlanExit) break;
-
-          await executePendingToolCalls(pendingToolCalls);
-
-          if (
-            !sawAskUser
-            && !sawPlanExit
-            && pendingToolCalls.length === 0
-            && passProducedPlainText
-            && !recoveryAttempted
-            && pass < MAX_TOOL_PASSES - 1
-          ) {
-            recoveryAttempted = true;
-
-            if (passTextMessageId) {
-              setMessages((prev) =>
-                prev.filter((message) => !(message.type === 'assistant_text' && message.id === passTextMessageId))
-              );
+              return;
             }
 
-            requestUserIntent = [
-              userIntent,
-              'Continue now by using exactly one structured tool call. Use ask_user if clarification is needed, otherwise use plan_exit with complete markdown.'
-            ]
-              .filter(Boolean)
-              .join('\n\n');
+            // Legacy ask_user / plan_exit events (from stream parser envelope extraction)
+            if (event.type === 'ask_user') {
+              completeThinking();
+              closeTextStream();
+              sawAskUser = true;
+              setMessages((prev) => [
+                ...prev,
+                { id: `ask-${Date.now()}`, type: 'ask_user', questions: event.questions },
+              ]);
+              return;
+            }
 
-            continue;
-          }
+            if (event.type === 'plan_exit') {
+              const streamingTextId = currentTextIdRef.current;
+              completeThinking();
+              closeTextStream();
+              sawPlanExit = true;
+              setEditingPlanId(null);
 
-          if (sawAskUser || pendingToolCalls.length === 0) break;
-        }
+              const planContent = event.planMarkdown.trim();
+              const planName = normalizePlanFileName(event.planName);
+              const planMessageId = `plan-${Date.now()}`;
 
+              setPlanDrafts((prev) => ({ ...prev, [planMessageId]: planContent }));
+              setMessages((prev) => {
+                const withoutPlanText = prev.filter((message) =>
+                  !(streamingTextId && message.type === 'assistant_text' && message.id === streamingTextId)
+                );
+                const next = withoutPlanText.map((message) =>
+                  message.type === 'plan' && !message.approved ? { ...message, hidden: true } : message
+                );
+
+                return [
+                  ...next,
+                  { id: planMessageId, type: 'plan', content: planContent, planName, hidden: false }
+                ];
+              });
+              return;
+            }
+
+            // Envelope events (legacy compatibility — should no longer fire for onboarding)
+            if (event.type === 'envelope') {
+              const fallback = event.envelope.message?.trim();
+              if (fallback && fallback !== 'Done.' && !sawAskUser && !sawPlanExit) {
+                setMessages((prev) => addAssistantTextMessage(prev, `text-fallback-${Date.now()}`, fallback));
+              }
+            }
+          },
+          controller.signal
+        );
       } catch (err) {
         if (!controller.signal.aborted) {
           const msg = err instanceof Error ? err.message : 'Stream failed';

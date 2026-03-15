@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import type { z } from 'zod';
 
 import type { ToolResult } from '../../types/llm.js';
@@ -10,9 +10,23 @@ import {
 } from '../llm/preprocessingGraph.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
-import { buildToolEvent, writeWorkflowEvent } from './eventWriter.js';
+import type { WorkflowEventSink } from './eventSink.js';
+import { buildToolEvent } from './eventWriter.js';
 import { MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
+import type { PhaseConfig } from './phaseConfig.js';
+import type { WorkflowConfigurable } from './phases/types.js';
 import type { WorkflowPendingInputKind } from './types.js';
+
+function extractConfigurable(config?: RunnableConfig): {
+  sink: WorkflowEventSink | undefined;
+  phaseConfig: PhaseConfig | undefined;
+} {
+  const configurable = config?.configurable as WorkflowConfigurable | undefined;
+  return {
+    sink: configurable?.sink,
+    phaseConfig: configurable?.phaseConfig
+  };
+}
 
 function toolResultRequiresPause(result: ToolResult): boolean {
   const output = result.output;
@@ -50,22 +64,45 @@ function getPauseDetails(results: ToolResult[]): {
 
 async function executeWorkflowToolCall(
   state: WorkflowGraphState,
-  call: z.infer<typeof ToolCallSchema>
+  call: z.infer<typeof ToolCallSchema>,
+  phaseConfig: PhaseConfig | undefined
 ): Promise<ToolResult> {
   const approvalSource = resolveApprovalSource(state, call.tool);
-  const preprocessingArgs = {
+  const enrichedArgs = {
     ...(call.args ?? {}),
     ...(state.turn.datasetId && call.tool !== 'set_active_dataset' ? { datasetId: state.turn.datasetId } : {}),
     toolCallId: call.id,
     approvalSource
   };
 
+  // Use PhaseConfig dispatch if available, otherwise fall back to legacy branching
+  if (phaseConfig?.isPhaseSpecificTool(call.tool)) {
+    const phaseResult = await phaseConfig.executePhaseSpecificTool(
+      call.tool,
+      enrichedArgs,
+      {
+        projectId: state.turn.projectId,
+        toolCallId: call.id,
+        run: state.run,
+        args: enrichedArgs,
+        turn: state.turn
+      }
+    );
+    return {
+      id: call.id,
+      tool: call.tool,
+      output: phaseResult.output,
+      error: phaseResult.error
+    };
+  }
+
+  // Legacy fallback: direct preprocessing tool dispatch
   const result = isPreprocessingToolName(call.tool)
     ? await syncPreprocessingLangGraphState(
         state.turn.projectId,
         call.tool,
-        preprocessingArgs,
-        await executePreprocessingTool(state.turn.projectId, call.tool, preprocessingArgs)
+        enrichedArgs,
+        await executePreprocessingTool(state.turn.projectId, call.tool, enrichedArgs)
       )
     : await executeMcpTool(state.turn.projectId, call.tool, {
         ...(call.args ?? {}),
@@ -94,13 +131,16 @@ function resolveApprovalSource(
 
 export async function executeToolsNode(
   state: WorkflowGraphState,
-  res: Response
+  config?: RunnableConfig
 ): Promise<Partial<WorkflowGraphState>> {
+  const { sink, phaseConfig } = extractConfigurable(config);
+
   const nextResults: ToolResult[] = [];
   for (const call of state.pendingToolCalls) {
-    const result = await executeWorkflowToolCall(state, call);
+    const result = await executeWorkflowToolCall(state, call, phaseConfig);
     nextResults.push(result);
-    writeWorkflowEvent(res, buildToolEvent(
+
+    const toolEvent = buildToolEvent(
       call,
       {
         id: result.id,
@@ -112,7 +152,11 @@ export async function executeToolsNode(
         ...state.run,
         currentNode: state.run.currentNode
       }
-    ));
+    );
+
+    if (sink) {
+      sink.emit(toolEvent);
+    }
   }
 
   const pauseDetails = getPauseDetails(nextResults);

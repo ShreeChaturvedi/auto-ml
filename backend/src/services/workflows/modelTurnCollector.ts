@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Response } from 'express';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import type { z } from 'zod';
 
 import { env } from '../../config.js';
@@ -13,10 +13,22 @@ import { createLlmClient } from '../llm/llmClient.js';
 import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
 
 import { resolveWorkflowNodeContract } from './contracts.js';
-import { writeWorkflowEvent } from './eventWriter.js';
+import type { WorkflowEventSink } from './eventSink.js';
 import type { WorkflowGraphState } from './graphState.js';
+import type { WorkflowConfigurable } from './phases/types.js';
 import { planWorkflowAction } from './planner.js';
 import type { WorkflowTurnRequest } from './types.js';
+
+function extractSink(config?: RunnableConfig): WorkflowEventSink | undefined {
+  const configurable = config?.configurable as WorkflowConfigurable | undefined;
+  return configurable?.sink;
+}
+
+function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
+  if (sink) {
+    sink.emit(event);
+  }
+}
 
 function parseUiPayload(rawArgs: Record<string, unknown>, phase: WorkflowTurnRequest['phase']) {
   let uiPayload: unknown;
@@ -44,7 +56,7 @@ function parseUiPayload(rawArgs: Record<string, unknown>, phase: WorkflowTurnReq
 async function streamWorkflowText(
   client: LlmClient,
   state: WorkflowGraphState,
-  res: Response
+  sink: WorkflowEventSink | undefined
 ): Promise<Partial<WorkflowGraphState>> {
   const phase = state.turn.phase;
 
@@ -58,13 +70,13 @@ async function streamWorkflowText(
   await client.stream(state.request!, {
     onToken: (token) => {
       latestMessage += token;
-      writeWorkflowEvent(res, { type: 'token', text: token });
+      emitEvent(sink, { type: 'token', text: token });
     },
     onThinking: (text) => {
-      writeWorkflowEvent(res, { type: 'thinking', text });
+      emitEvent(sink, { type: 'thinking', text });
     },
     onUsage: (usage) => {
-      writeWorkflowEvent(res, { type: 'usage', usage });
+      emitEvent(sink, { type: 'usage', usage });
     },
     onToolCall: (call: LlmToolCall) => {
       if (call.name === 'ask_user') {
@@ -151,7 +163,7 @@ async function streamWorkflowText(
 
 export async function invokeModelNode(
   state: WorkflowGraphState,
-  res: Response
+  config?: RunnableConfig
 ): Promise<Partial<WorkflowGraphState>> {
   if (!state.request) {
     return {
@@ -161,6 +173,7 @@ export async function invokeModelNode(
     };
   }
 
+  const sink = extractSink(config);
   const contract = resolveWorkflowNodeContract(state);
   const modelOverride = state.turn.model && state.turn.model !== 'auto' ? state.turn.model : undefined;
   const client = createLlmClient(
@@ -172,5 +185,5 @@ export async function invokeModelNode(
     return planWorkflowAction(client, state, contract);
   }
 
-  return streamWorkflowText(client, state, res);
+  return streamWorkflowText(client, state, sink);
 }

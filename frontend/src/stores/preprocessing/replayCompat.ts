@@ -1,4 +1,4 @@
-import { executeToolCalls } from '@/lib/api/llm';
+import { apiRequest } from '@/lib/api/client';
 import { asBoolean, asRecord, asString, asStringArray } from '@/lib/typeCoercion';
 import type { AvailableTable, TransformationEvent } from '@/types/preprocessing';
 
@@ -8,7 +8,7 @@ import { extractReferencedColumns } from './eventBuilders';
 
 // ---------------------------------------------------------------------------
 // evaluateReplayCompatibility — performs a local pre-check then optionally
-// calls the backend `restore_checkpoint` tool to get an authoritative answer.
+// calls the dedicated backend compatibility endpoint for an authoritative answer.
 // ---------------------------------------------------------------------------
 
 interface ReplayCompatibilityInput {
@@ -18,6 +18,11 @@ interface ReplayCompatibilityInput {
   timeline: TransformationEvent[];
   runId: string | null;
   latestCheckpointId: string | null;
+}
+
+interface CompatibilityCheckResponse {
+  output?: unknown;
+  error?: string;
 }
 
 /**
@@ -49,20 +54,20 @@ export async function evaluateReplayCompat(
 
   if (runId && latestCheckpointId && selectedDatasetId) {
     try {
-      const response = await executeToolCalls(projectId, [
+      const response = await apiRequest<CompatibilityCheckResponse>(
+        '/preprocessing/check-compatibility',
         {
-          id: `replay-check-${Date.now()}`,
-          tool: 'restore_checkpoint',
-          args: {
+          method: 'POST',
+          body: JSON.stringify({
+            projectId,
             runId,
             checkpointId: latestCheckpointId,
-            operation: 'compatibility_check',
             replayDatasetId: selectedDatasetId
-          }
+          })
         }
-      ]);
-      const result = response.results[0];
-      const output = asRecord(result?.output);
+      );
+
+      const output = asRecord(response?.output);
       const compatibilityIssues = asStringArray(output?.compatibilityIssues).length
         ? asStringArray(output?.compatibilityIssues)
         : Array.isArray(output?.compatibilityIssues)
@@ -75,7 +80,7 @@ export async function evaluateReplayCompat(
           : [];
 
       const backendIncompatible =
-        Boolean(result?.error) ||
+        Boolean(response?.error) ||
         asBoolean(output?.isError) === true ||
         asString(output?.reasonCode) === 'REPLAY_INCOMPATIBLE_DATASET';
 

@@ -3,6 +3,7 @@ import { createDatasetRepository } from '../../repositories/datasetRepository.js
 import { createProjectRepository } from '../../repositories/projectRepository.js';
 import {
   getFeatureEngineeringGateState,
+  listProjectDocuments,
   loadRagSnippets
 } from '../../routes/llm/shared.js';
 import { FEATURE_METHODS } from '../featureEngineering.js';
@@ -10,9 +11,10 @@ import { createLlmClient } from '../llm/llmClient.js';
 import { resolvePreprocessingControllerTurn } from '../llm/preprocessing/controller.js';
 import {
   buildFeatureEngineeringRequest,
+  buildOnboardingRequest,
   buildTrainingRequest
 } from '../llm/prompts/index.js';
-import { LLM_ALL_TOOLS, LLM_FEATURE_ENGINEERING_TOOLS } from '../llm/toolRegistry.js';
+import { LLM_ALL_TOOLS, LLM_FEATURE_ENGINEERING_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
 import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
 
 import type { WorkflowGraphState } from './graphState.js';
@@ -94,6 +96,72 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         activeDatasetId: turn.datasetId,
         activeNotebookId: turn.notebookId,
         threadId: controllerDecision.summary.threadId
+      }
+    };
+  }
+
+  if (turn.phase === 'onboarding') {
+    const [datasets, documents] = await Promise.all([
+      datasetRepository.list(),
+      listProjectDocuments(turn.projectId)
+    ]);
+    const projectDatasets = datasets.filter((d) => d.projectId === turn.projectId);
+
+    const fileSummaries = [
+      ...projectDatasets.map((d) => ({
+        filename: d.filename,
+        type: 'dataset' as const,
+        stats: {
+          datasetId: d.datasetId,
+          nRows: d.nRows,
+          nCols: d.nCols,
+          columns: d.columns.map((c) => ({ name: c.name, dtype: c.dtype }))
+        }
+      })),
+      ...documents.map((d) => ({
+        filename: d.filename,
+        type: 'document' as const,
+        stats: {
+          documentId: d.documentId,
+          mimeType: d.mimeType
+        }
+      }))
+    ];
+
+    const ragQuery = [
+      turn.userIntent,
+      ...(turn.questionAnswers?.map((entry) =>
+        `${entry.questionId}: ${Array.isArray(entry.answer) ? entry.answer.join(', ') : entry.answer}`
+      ) ?? [])
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    const onboardingRagSnippets = documents.length > 0
+      ? await loadRagSnippets(turn.projectId, ragQuery)
+      : [];
+
+    const onboardingRequest = buildOnboardingRequest({
+      projectTitle: project?.name ?? '',
+      projectDescription: project?.description ?? '',
+      fileSummaries,
+      userIntent: turn.userIntent,
+      questionAnswers: turn.questionAnswers,
+      ragSnippets: onboardingRagSnippets,
+      round: turn.round ?? 0,
+      toolCallHistory,
+      toolResultHistory,
+      toolDefinitions: LLM_ONBOARDING_TOOLS,
+      reasoningEffort: turn.reasoningEffort
+    });
+
+    return {
+      nextStep: 'invoke_model',
+      request: onboardingRequest,
+      run: {
+        ...state.run,
+        currentNode: 'onboarding_converse'
       }
     };
   }

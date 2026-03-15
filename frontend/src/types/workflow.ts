@@ -5,7 +5,8 @@ import { ToolCallSchema, ToolResultSchema, UiSchema } from './llmUi';
 export const WorkflowPhaseSchema = z.enum([
   'preprocessing',
   'feature_engineering',
-  'training'
+  'training',
+  'onboarding'
 ]);
 
 export type WorkflowPhase = z.infer<typeof WorkflowPhaseSchema>;

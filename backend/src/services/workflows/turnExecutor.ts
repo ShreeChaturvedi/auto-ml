@@ -1,12 +1,12 @@
-import type { Response } from 'express';
-
-import { buildWorkflowStateEvent, writeWorkflowEvent } from './eventWriter.js';
-import { buildWorkflowGraph } from './graph.js';
+import type { WorkflowEventSink } from './eventSink.js';
+import { buildWorkflowStateEvent } from './eventWriter.js';
+import { getCompiledGraph } from './graph.js';
 import {
   WORKFLOW_GRAPH_RECURSION_LIMIT,
   type WorkflowGraphState
 } from './graphState.js';
 import { loadWorkflowHistory, persistWorkflowHistory } from './history.js';
+import type { PhaseConfig } from './phaseConfig.js';
 import { getWorkflowRepository } from './repository/index.js';
 import {
   appendRunEvent,
@@ -23,20 +23,24 @@ import {
 } from './turnState.js';
 import type { WorkflowTurnRequest } from './types.js';
 
-export async function executeWorkflowTurn(res: Response, turn: WorkflowTurnRequest): Promise<void> {
+export async function executeWorkflowTurn(
+  sink: WorkflowEventSink,
+  turn: WorkflowTurnRequest,
+  phaseConfig?: PhaseConfig
+): Promise<void> {
   const repository = getWorkflowRepository();
   const existing = turn.runId ? await repository.getRun(turn.runId) : undefined;
   const persistedRun = existing?.run ?? await repository.createRun(buildInitialRun(turn));
   const run = prepareRunForTurn(persistedRun, turn);
   const history = loadWorkflowHistory(run.metadata);
 
-  writeWorkflowEvent(res, buildWorkflowStateEvent(run, buildPhaseContext(turn)));
+  sink.emit(buildWorkflowStateEvent(run, buildPhaseContext(turn)));
   await appendRunEvent(repository, run, 'workflow_turn_started', {
     prompt: turn.prompt ?? '',
     phase: turn.phase
   });
 
-  const graph = buildWorkflowGraph(res);
+  const graph = getCompiledGraph();
   const result = await graph.invoke({
     turn,
     run,
@@ -56,7 +60,11 @@ export async function executeWorkflowTurn(res: Response, turn: WorkflowTurnReque
     errorMessage: null,
     errorCode: null
   }, {
-    recursionLimit: WORKFLOW_GRAPH_RECURSION_LIMIT
+    recursionLimit: WORKFLOW_GRAPH_RECURSION_LIMIT,
+    configurable: {
+      sink,
+      phaseConfig: phaseConfig ?? undefined
+    }
   }) as WorkflowGraphState;
 
   const pauseReason = result.nextStep === 'pause' ? resolvePauseReason(result) : undefined;
@@ -89,12 +97,12 @@ export async function executeWorkflowTurn(res: Response, turn: WorkflowTurnReque
   });
 
   const savedState = buildWorkflowStateEvent(savedRun, phaseContext).state;
-  writeWorkflowEvent(res, buildWorkflowStateEvent(savedRun, phaseContext));
+  sink.emit(buildWorkflowStateEvent(savedRun, phaseContext));
 
   await persistNewToolExecutionEvents(repository, savedRun, history, result);
   await finalizeWorkflowTurn(
     repository,
-    res,
+    sink,
     savedRun,
     turn,
     result,

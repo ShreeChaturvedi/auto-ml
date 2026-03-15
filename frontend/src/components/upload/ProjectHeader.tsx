@@ -46,7 +46,7 @@ export function ProjectHeader({
     }
 
     descriptionTimerRef.current = window.setTimeout(() => {
-      onUpdate({ description: nextDescription.trim() || undefined });
+      onUpdate({ description: nextDescription.trim() });
       descriptionTimerRef.current = null;
     }, SAVE_DEBOUNCE_MS);
   };
@@ -57,7 +57,7 @@ export function ProjectHeader({
       window.clearTimeout(descriptionTimerRef.current);
       descriptionTimerRef.current = null;
     }
-    onUpdate({ description: descriptionDraft.trim() || undefined });
+    onUpdate({ description: descriptionDraft.trim() });
   };
 
   if (collapsed) {

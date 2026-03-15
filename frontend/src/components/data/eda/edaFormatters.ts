@@ -3,6 +3,17 @@
  * Consolidates duplicated formatNumber/formatPercentage/truncateText.
  */
 
+import {
+  Hash,
+  Type,
+  Calendar,
+  ToggleLeft,
+  HelpCircle,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
+import type { DataQualitySummary } from '@/types/file';
+
 /**
  * Smart number formatting for data values.
  * Handles millions, thousands, small decimals, and scientific notation.
@@ -76,15 +87,6 @@ export function getCorrelationLabel(r: number): string {
   return 'No correlation';
 }
 
-import {
-  Hash,
-  Type,
-  Calendar,
-  ToggleLeft,
-  HelpCircle,
-} from 'lucide-react';
-import type { DataQualitySummary } from '@/types/file';
-
 /**
  * Shared data-type-to-icon mapping.
  * Used by EDAColumnSelector, QualityPanel, and OverviewColumnCards.
@@ -107,3 +109,82 @@ export const DATA_TYPE_COLORS: Record<DataQualitySummary['dataType'], string> = 
   boolean: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   mixed: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
 };
+
+/**
+ * Get severity label, color class, CSS variable, and icon for a completeness percentage.
+ *
+ * - 100%:       "Pristine" (green)
+ * - 95-99.9%:   "Clean"    (teal)
+ * - 80-94.9%:   "Fair"     (amber)
+ * - <80%:       "Poor"     (red)
+ */
+export function getSeverityLabel(completeness: number): {
+  label: string;
+  colorClass: string;
+  colorVar: string;
+  icon: typeof CheckCircle2;
+} {
+  if (completeness >= 100) {
+    return { label: 'Pristine', colorClass: 'text-green-500', colorVar: '--eda-pristine', icon: CheckCircle2 };
+  }
+  if (completeness >= 95) {
+    return { label: 'Clean', colorClass: 'text-teal-500', colorVar: '--eda-clean', icon: CheckCircle2 };
+  }
+  if (completeness >= 80) {
+    return { label: 'Fair', colorClass: 'text-amber-500', colorVar: '--eda-fair', icon: AlertTriangle };
+  }
+  return { label: 'Poor', colorClass: 'text-red-500', colorVar: '--eda-poor', icon: AlertTriangle };
+}
+
+/**
+ * Smart axis label formatting with thousands separators and compact suffixes.
+ *
+ * Examples:
+ * - 1234       -> "1,234"
+ * - 1234567    -> "1.23M"
+ * - 0.001      -> "0.001"
+ * - -5000      -> "-5,000"
+ * - 1500000000 -> "1.50B"
+ */
+export function formatAxis(value: number): string {
+  const abs = Math.abs(value);
+
+  if (abs >= 1_000_000_000) {
+    return (value / 1_000_000_000).toFixed(2) + 'B';
+  }
+  if (abs >= 1_000_000) {
+    return (value / 1_000_000).toFixed(2) + 'M';
+  }
+  if (abs >= 1_000) {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+  }
+  if (abs < 0.01 && value !== 0) {
+    return value.toExponential(1);
+  }
+  if (abs < 1 && value !== 0) {
+    // Keep meaningful decimal places (up to 3)
+    return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  }
+  if (Number.isInteger(value)) {
+    return value.toString();
+  }
+  return value.toFixed(1);
+}
+
+/**
+ * Deterministic subsampling using even step size.
+ * If rows.length <= maxRows, returns the original array.
+ * Otherwise takes every `step`-th row, capped at maxRows.
+ */
+export function subsampleRows(
+  rows: Record<string, unknown>[],
+  maxRows: number,
+): Record<string, unknown>[] {
+  if (rows.length <= maxRows) return rows;
+  const step = Math.floor(rows.length / maxRows);
+  const result: Record<string, unknown>[] = [];
+  for (let i = 0; i < rows.length && result.length < maxRows; i += step) {
+    result.push(rows[i]);
+  }
+  return result;
+}

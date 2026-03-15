@@ -12,6 +12,7 @@ export {
   buildScatter,
   buildScatterPairs,
   computeRegressionLine,
+  buildMissingMatrix,
   computeCategoricalSummaries,
   computeDataQuality,
   computeNumericSummaries,

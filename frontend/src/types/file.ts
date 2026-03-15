@@ -126,6 +126,7 @@ export interface EdaSummary {
   scatter?: ScatterData;
   correlations?: CorrelationData[];
   scatterPairs?: ScatterPairData[];
+  missingMatrix?: { columns: string[]; matrix: number[][] };
 }
 
 export interface NumericColumnSummary {

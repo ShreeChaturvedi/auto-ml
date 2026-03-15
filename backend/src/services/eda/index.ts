@@ -12,6 +12,7 @@ import type { EdaSummary, HistogramSummary, QueryRow } from '../../types/query.j
 
 import { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
 import { detectColumnTypes } from './columnDetection.js';
+import { buildMissingMatrix } from './missingMatrix.js';
 import { computeNumericSummaries } from './numericAnalysis.js';
 import { buildCorrelations, buildHistogram, buildScatter, buildScatterPairs } from './visualizations.js';
 
@@ -51,6 +52,8 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     ? buildScatterPairs(rows, numericCols, correlations, 15)
     : undefined;
 
+  const missingMatrix = buildMissingMatrix(rows, columns);
+
   return {
     numericColumns: numericSummaries,
     categoricalColumns: categoricalSummaries,
@@ -59,7 +62,8 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     histograms: histograms.length > 0 ? histograms : undefined,
     scatter,
     correlations,
-    scatterPairs
+    scatterPairs,
+    missingMatrix
   };
 }
 
@@ -69,3 +73,4 @@ export type { ColumnType } from './columnDetection.js';
 export { computeNumericSummaries, percentile } from './numericAnalysis.js';
 export { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
 export { buildHistogram, buildScatter, buildCorrelations, buildScatterPairs, computeRegressionLine } from './visualizations.js';
+export { buildMissingMatrix } from './missingMatrix.js';

@@ -29,6 +29,7 @@ export interface EdaSummary {
   scatter?: ScatterSummary;
   correlations?: CorrelationSummary[];
   scatterPairs?: ScatterPairData[];
+  missingMatrix?: { columns: string[]; matrix: number[][] };
 }
 
 export interface NumericSummary {

@@ -29,10 +29,11 @@ import { QualityPanel } from './QualityPanel';
 
 interface EDAPanelProps {
   eda: EdaSummary;
+  rows?: Record<string, unknown>[];
   className?: string;
 }
 
-export function EDAPanel({ eda, className }: EDAPanelProps) {
+export function EDAPanel({ eda, rows, className }: EDAPanelProps) {
   // ---------------------------------------------------------------------------
   // Local state (no Zustand — everything lives here)
   // ---------------------------------------------------------------------------
@@ -156,6 +157,7 @@ export function EDAPanel({ eda, className }: EDAPanelProps) {
         <TabsContent value="correlations" className="mt-0">
           <CorrelationsPanel
             eda={eda}
+            rows={rows}
             selectedCell={corrSelectedCell}
             onSelectedCellChange={setCorrSelectedCell}
           />

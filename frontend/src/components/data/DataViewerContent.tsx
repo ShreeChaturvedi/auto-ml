@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Markdown } from '@/components/ui/Markdown';
 import { DataTable } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
-import type { ColumnDataType, DataPreview, QueryMode } from '@/types/file';
+import type { ColumnDataType, DataPreview, EdaSummary, QueryMode } from '@/types/file';
 import type { NlQueryExplanation } from '@/lib/api/query';
 
 interface QueryArtifact {
@@ -17,7 +17,7 @@ interface QueryArtifact {
   mode: QueryMode;
   timestamp: number;
   result: DataPreview;
-  eda?: unknown;
+  eda?: EdaSummary;
   cached?: boolean;
   executionMs?: number;
   cacheTimestamp?: string;

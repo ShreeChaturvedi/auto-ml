@@ -8,6 +8,8 @@ import { CorrelationPairsList } from './CorrelationPairsList';
 
 interface CorrelationsPanelProps {
   eda: EdaSummary;
+  /** Raw dataset rows — threaded from DataTable for future scatter/pair plots */
+  rows?: Record<string, unknown>[];
   /** Lifted state from parent so it persists across tab switches */
   selectedCell: { a: string; b: string } | null;
   onSelectedCellChange: (cell: { a: string; b: string } | null) => void;

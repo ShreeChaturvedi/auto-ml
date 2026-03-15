@@ -256,7 +256,7 @@ export function DataTable({
       />
       {hasEda && edaView === 'eda' ? (
         <div className="flex-1 min-h-0 overflow-auto">
-          {eda && <EDAPanel eda={eda} />}
+          {eda && <EDAPanel eda={eda} rows={preview.rows} />}
         </div>
       ) : (
         tableView

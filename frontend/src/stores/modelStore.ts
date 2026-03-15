@@ -3,6 +3,15 @@ import { create } from 'zustand';
 import type { ModelRecord, ModelTemplate, TrainModelRequest } from '@/types/model';
 import * as modelApi from '@/lib/api/models';
 
+export interface ExperimentState {
+  experimentId: string;
+  experimentName: string;
+  modelType: string;
+  status: 'configured' | 'proposed' | 'training' | 'evaluated' | 'registered' | 'failed';
+  metrics?: Record<string, unknown>;
+  hyperparameters?: Record<string, unknown>;
+}
+
 interface ModelState {
   templates: ModelTemplate[];
   models: ModelRecord[];
@@ -10,9 +19,16 @@ interface ModelState {
   isLoadingModels: boolean;
   isTraining: boolean;
   error: string | null;
+  /** Training lifecycle state */
+  experiments: Record<string, ExperimentState>;
+  currentStage: string | null;
+  trainingRunId: string | null;
   fetchTemplates: () => Promise<void>;
   refreshModels: (projectId?: string) => Promise<void>;
   trainModel: (request: TrainModelRequest) => Promise<ModelRecord | null>;
+  updateExperiment: (experimentId: string, state: Partial<ExperimentState>) => void;
+  setCurrentStage: (stage: string | null) => void;
+  setTrainingRunId: (runId: string | null) => void;
 }
 
 export const useModelStore = create<ModelState>((set, get) => ({
@@ -22,6 +38,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
   isLoadingModels: false,
   isTraining: false,
   error: null,
+  experiments: {},
+  currentStage: null,
+  trainingRunId: null,
 
   fetchTemplates: async () => {
     if (get().isLoadingTemplates) return;
@@ -68,5 +87,25 @@ export const useModelStore = create<ModelState>((set, get) => ({
       });
       return null;
     }
+  },
+
+  updateExperiment: (experimentId, partial) => {
+    set((state) => ({
+      experiments: {
+        ...state.experiments,
+        [experimentId]: {
+          ...state.experiments[experimentId],
+          ...partial
+        } as ExperimentState
+      }
+    }));
+  },
+
+  setCurrentStage: (stage) => {
+    set({ currentStage: stage });
+  },
+
+  setTrainingRunId: (runId) => {
+    set({ trainingRunId: runId });
   }
 }));

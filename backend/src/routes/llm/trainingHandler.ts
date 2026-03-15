@@ -1,3 +1,9 @@
+/**
+ * @deprecated — Legacy training handler route. Superseded by the unified
+ * workflow system (PhaseConfig-based training lifecycle) in Phase 4.
+ * Scheduled for removal in Phase 6 of the LangGraph unification plan.
+ * New training requests should use POST /api/workflows/turns/stream with phase='training'.
+ */
 import { Router } from 'express';
 
 import { env } from '../../config.js';

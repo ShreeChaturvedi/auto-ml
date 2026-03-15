@@ -10,10 +10,27 @@ import {
   approveVersionInList
 } from './featureVersionSlice';
 
+/** Lifecycle step tracked during a feature engineering workflow run. */
+export interface FeatureLifecycleStep {
+  stepId: string;
+  name: string;
+  method: string;
+  status: string;
+  code?: string;
+  metrics?: Record<string, unknown>;
+}
+
 interface FeatureState {
   features: FeatureSpec[];
   versions: Record<string, PipelineVersion[]>;
   currentVersionId: Record<string, string>;
+
+  /** Lifecycle state: active feature steps keyed by stepId. */
+  featureSteps: Record<string, FeatureLifecycleStep>;
+  /** Current lifecycle stage name (e.g. 'propose_feature', 'execute_feature'). */
+  currentStage: string | null;
+  /** Active feature engineering workflow run ID. */
+  featureRunId: string | null;
 
   addFeature: (feature: Omit<FeatureSpec, 'id' | 'createdAt' | 'enabled'> & { enabled?: boolean }) => FeatureSpec;
   upsertFeature: (feature: FeatureSpec) => FeatureSpec;
@@ -24,6 +41,11 @@ interface FeatureState {
   getFeaturesByProject: (projectId: string) => FeatureSpec[];
   hydrateFromProject: (projectId: string, options?: { force?: boolean }) => void;
   syncFeaturesToProject: (projectId: string) => Promise<void>;
+
+  // Lifecycle actions
+  setFeatureStep: (stepId: string, step: FeatureLifecycleStep) => void;
+  setCurrentStage: (stage: string | null) => void;
+  setFeatureRunId: (runId: string | null) => void;
 
   // FE v2 actions
   createDraftVersion: (projectId: string, name?: string) => PipelineVersion;
@@ -38,6 +60,23 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   features: [],
   versions: {},
   currentVersionId: {},
+  featureSteps: {},
+  currentStage: null,
+  featureRunId: null,
+
+  setFeatureStep(stepId, step) {
+    set((state) => ({
+      featureSteps: { ...state.featureSteps, [stepId]: step }
+    }));
+  },
+
+  setCurrentStage(stage) {
+    set({ currentStage: stage });
+  },
+
+  setFeatureRunId(runId) {
+    set({ featureRunId: runId });
+  },
 
   hydrateFromProject(projectId, options) {
     const force = options?.force ?? false;

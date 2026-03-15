@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { createCatalogRouter } from './catalogRoutes.js';
+// TODO(Phase 6): Remove legacy feature handler — replaced by unified workflow PhaseConfig.
 import { createFeatureHandlerRouter } from './featureHandler.js';
 import { createOnboardingHandlerRouter } from './onboardingHandler.js';
 import { createPreprocessingHandlerRouter } from './preprocessingHandler.js';

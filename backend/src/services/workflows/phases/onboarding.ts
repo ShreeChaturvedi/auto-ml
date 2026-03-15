@@ -8,6 +8,7 @@ import type {
   ToolContext,
   ToolResult
 } from '../phaseConfig.js';
+import { registerPhaseConfig } from '../phaseConfig.js';
 
 // ---------------------------------------------------------------------------
 // Onboarding PhaseConfig — simple conversational phase that uses ask_user and
@@ -77,3 +78,6 @@ export const onboardingPhaseConfig: PhaseConfig = {
     return { error: 'Onboarding has no phase-specific tools.' };
   }
 };
+
+// Register at module load time (side-effect import pattern)
+registerPhaseConfig(onboardingPhaseConfig);

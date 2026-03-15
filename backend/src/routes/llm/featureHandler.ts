@@ -1,3 +1,7 @@
+// TODO(Phase 6): Delete this legacy feature handler route.
+// Feature engineering is now handled by the unified workflow graph via
+// featureEngineeringPhaseConfig in services/workflows/phases/featureEngineering.ts.
+
 import { Router } from 'express';
 
 import { env } from '../../config.js';

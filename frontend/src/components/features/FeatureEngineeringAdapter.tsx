@@ -1,7 +1,8 @@
-import type { DomainAdapter, SuggestionPill } from '@/types/agentic';
+import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agentic';
 import { streamWorkflowTurn } from '@/lib/api/llm';
+import { useFeatureStore } from '@/stores/featureStore';
 import type { UploadedFile } from '@/types/file';
-import type { ChatMessage } from '@/types/llmUi';
+import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 
@@ -119,9 +120,53 @@ function buildFeatureSuggestions(
   return dedupeSuggestions(suggestions).slice(0, 7);
 }
 
+/** Semantic feature lifecycle tools whose calls/results update the feature store. */
+const FEATURE_LIFECYCLE_SEMANTIC_TOOLS = [
+  'propose_feature',
+  'materialize_feature_code',
+  'execute_feature',
+  'validate_feature',
+  'register_feature',
+  'checkpoint_feature_pipeline'
+] as const;
+
+function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
+  const toolHandlers: ToolHandlers = {
+    onCall: (call: ToolCall) => {
+      const store = useFeatureStore.getState();
+      // Track current stage based on the tool being called
+      store.setCurrentStage(call.tool);
+    },
+    onResult: (call: ToolCall, result: ToolResult) => {
+      const store = useFeatureStore.getState();
+      const output = result.output as Record<string, unknown> | undefined;
+      const featureId = (output?.featureId ?? call.args?.featureId) as string | undefined;
+
+      if (featureId && output && !result.error) {
+        store.setFeatureStep(featureId, {
+          stepId: featureId,
+          name: (output.featureName ?? call.args?.featureName ?? featureId) as string,
+          method: (output.method ?? call.args?.method ?? call.tool) as string,
+          status: (output.status ?? 'ok') as string,
+          code: call.args?.code as string | undefined,
+          metrics: output.validation as Record<string, unknown> | undefined
+        });
+      }
+    }
+  };
+
+  const registry: DomainAdapter['toolRegistry'] = {};
+  for (const tool of FEATURE_LIFECYCLE_SEMANTIC_TOOLS) {
+    registry[tool] = toolHandlers;
+  }
+  return registry;
+}
+
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
+  const toolRegistry = buildFeatureToolRegistry();
+
   return {
     buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) {
@@ -148,8 +193,11 @@ export function createFeatureEngineeringAdapter(
     },
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
+      if (state.runId) {
+        useFeatureStore.getState().setFeatureRunId(state.runId);
+      }
     },
-    toolRegistry: {},
+    toolRegistry,
     toolUiRegistry: {},
     suggestionProvider: (messages, isGenerating) => buildFeatureSuggestions(config, messages, isGenerating)
   };

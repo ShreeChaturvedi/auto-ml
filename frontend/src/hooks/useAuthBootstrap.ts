@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { getCurrentUser } from '@/lib/api/auth';
+import { refreshAccessToken } from '@/lib/api/client';
 import { isJwtExpired } from '@/lib/auth/jwt';
 
 /**
@@ -37,7 +38,9 @@ export function useAuthBootstrap() {
       if (!isMounted) return;
 
       const { accessToken, refreshToken } = useAuthStore.getState();
-      if (!accessToken && !refreshToken) {
+
+      // No viable tokens — clear stale user state and finish.
+      if ((!accessToken || isJwtExpired(accessToken)) && !refreshToken) {
         if (useAuthStore.getState().user) {
           clearAuth();
         }
@@ -45,15 +48,19 @@ export function useAuthBootstrap() {
         setAuthReady(true);
         return;
       }
-      if (!accessToken || isJwtExpired(accessToken)) {
-        clearAuth();
-        setLoading(false);
-        setAuthReady(true);
-        return;
-      }
 
       setLoading(true);
       try {
+        // If the access token is expired, refresh it before calling /me
+        // to avoid a guaranteed-to-fail request followed by a retry.
+        if (!accessToken || isJwtExpired(accessToken)) {
+          const newToken = await refreshAccessToken(refreshToken);
+          if (!newToken) {
+            if (isMounted) clearAuth();
+            return;
+          }
+        }
+
         const response = await getCurrentUser();
         if (isMounted) {
           setUser(response.user);

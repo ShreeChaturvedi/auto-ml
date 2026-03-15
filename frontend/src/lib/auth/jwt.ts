@@ -22,7 +22,7 @@ export function decodeJwtPayload<T extends JwtPayload = JwtPayload>(token: strin
 
 export function isJwtExpired(token: string, bufferSeconds: number = 30): boolean {
   const payload = decodeJwtPayload(token);
-  if (!payload?.exp) return false;
+  if (!payload?.exp) return true;
   const now = Math.floor(Date.now() / 1000);
   return payload.exp <= now + bufferSeconds;
 }

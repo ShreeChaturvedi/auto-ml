@@ -8,13 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import type { DataQualitySummary } from '@/types/file';
 import { cn } from '@/lib/utils';
-import {
-  formatPercentage,
-  truncateText,
-  getSeverityLabel,
-  DATA_TYPE_ICONS,
-  DATA_TYPE_COLORS,
-} from './edaFormatters';
+import { formatPercentage, truncateText } from './edaFormatters';
+import { getSeverityLabel, DATA_TYPE_ICONS, DATA_TYPE_COLORS } from './edaConstants';
 
 /* ------------------------------------------------------------------ */
 /*  ColumnHealthCard                                                   */

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { getSeverityLabel, formatAxis, subsampleRows } from '../edaFormatters';
+import { formatAxis } from '../edaFormatters';
+import { getSeverityLabel } from '../edaConstants';
+import { subsampleRows } from '../edaDataUtils';
 
 describe('getSeverityLabel', () => {
   it('returns Pristine for 100%', () => {

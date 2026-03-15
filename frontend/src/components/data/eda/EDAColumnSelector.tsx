@@ -12,7 +12,8 @@ import {
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
-import { truncateText, DATA_TYPE_ICONS } from './edaFormatters';
+import { truncateText } from './edaFormatters';
+import { DATA_TYPE_ICONS } from './edaConstants';
 import type { DataQualitySummary } from '@/types/file';
 
 type ColumnType = DataQualitySummary['dataType'];

@@ -3,17 +3,6 @@
  * Consolidates duplicated formatNumber/formatPercentage/truncateText.
  */
 
-import {
-  Hash,
-  Type,
-  Calendar,
-  ToggleLeft,
-  HelpCircle,
-  CheckCircle2,
-  AlertTriangle,
-} from 'lucide-react';
-import type { DataQualitySummary } from '@/types/file';
-
 /**
  * Smart number formatting for data values.
  * Handles millions, thousands, small decimals, and scientific notation.
@@ -88,55 +77,6 @@ export function getCorrelationLabel(r: number): string {
 }
 
 /**
- * Shared data-type-to-icon mapping.
- * Used by EDAColumnSelector, QualityPanel, and OverviewColumnCards.
- */
-export const DATA_TYPE_ICONS: Record<DataQualitySummary['dataType'], typeof Hash> = {
-  numeric: Hash,
-  categorical: Type,
-  datetime: Calendar,
-  boolean: ToggleLeft,
-  mixed: HelpCircle,
-};
-
-/**
- * Shared data-type-to-color mapping for badges.
- */
-export const DATA_TYPE_COLORS: Record<DataQualitySummary['dataType'], string> = {
-  numeric: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  categorical: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  datetime: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  boolean: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  mixed: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-};
-
-/**
- * Get severity label, color class, CSS variable, and icon for a completeness percentage.
- *
- * - 100%:       "Pristine" (green)
- * - 95-99.9%:   "Clean"    (teal)
- * - 80-94.9%:   "Fair"     (amber)
- * - <80%:       "Poor"     (red)
- */
-export function getSeverityLabel(completeness: number): {
-  label: string;
-  colorClass: string;
-  colorVar: string;
-  icon: typeof CheckCircle2;
-} {
-  if (completeness >= 100) {
-    return { label: 'Pristine', colorClass: 'text-green-500', colorVar: '--eda-pristine', icon: CheckCircle2 };
-  }
-  if (completeness >= 95) {
-    return { label: 'Clean', colorClass: 'text-teal-500', colorVar: '--eda-clean', icon: CheckCircle2 };
-  }
-  if (completeness >= 80) {
-    return { label: 'Fair', colorClass: 'text-amber-500', colorVar: '--eda-fair', icon: AlertTriangle };
-  }
-  return { label: 'Poor', colorClass: 'text-red-500', colorVar: '--eda-poor', icon: AlertTriangle };
-}
-
-/**
  * Smart axis label formatting with thousands separators and compact suffixes.
  *
  * Examples:
@@ -169,42 +109,4 @@ export function formatAxis(value: number): string {
     return value.toString();
   }
   return value.toFixed(1);
-}
-
-/**
- * Extract {x, y} scatter points from raw row data for a given pair of columns.
- * Used as a client-side fallback when the pair is NOT in `scatterPairs`.
- */
-export function computeScatterFromRows(
-  rows: Record<string, unknown>[],
-  xCol: string,
-  yCol: string,
-): { x: number; y: number }[] {
-  const points: { x: number; y: number }[] = [];
-  for (const row of rows) {
-    const xVal = Number(row[xCol]);
-    const yVal = Number(row[yCol]);
-    if (Number.isFinite(xVal) && Number.isFinite(yVal)) {
-      points.push({ x: xVal, y: yVal });
-    }
-  }
-  return points;
-}
-
-/**
- * Deterministic subsampling using even step size.
- * If rows.length <= maxRows, returns the original array.
- * Otherwise takes every `step`-th row, capped at maxRows.
- */
-export function subsampleRows(
-  rows: Record<string, unknown>[],
-  maxRows: number,
-): Record<string, unknown>[] {
-  if (rows.length <= maxRows) return rows;
-  const step = Math.floor(rows.length / maxRows);
-  const result: Record<string, unknown>[] = [];
-  for (let i = 0; i < rows.length && result.length < maxRows; i += step) {
-    result.push(rows[i]);
-  }
-  return result;
 }

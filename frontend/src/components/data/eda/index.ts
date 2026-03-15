@@ -18,6 +18,7 @@ export { PlotlyParallelCoords } from './PlotlyParallelCoords';
 export { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
 export { ColumnHealthCard, ColumnHealthGrid } from './ColumnHealthCards';
 export { ChartErrorBoundary } from './ChartErrorBoundary';
+export { PlotEmptyState } from './PlotEmptyState';
 export { detectInsights, type EdaInsight } from './edaInsights';
 export { useIsDark, getPlotlyLayout, getEdaColors, PLOTLY_CONFIG, PLOTLY_CONFIG_INTERACTIVE, EDA_COLORSCALES, LazyPlot } from './edaTheme';
 export { PlotSuspense } from './PlotSuspense';
@@ -27,9 +28,7 @@ export {
   truncateText,
   getCorrelationColor,
   getCorrelationLabel,
-  getSeverityLabel,
   formatAxis,
-  subsampleRows,
-  DATA_TYPE_ICONS,
-  DATA_TYPE_COLORS,
 } from './edaFormatters';
+export { DATA_TYPE_ICONS, DATA_TYPE_COLORS, getSeverityLabel } from './edaConstants';
+export { computeScatterFromRows, subsampleRows } from './edaDataUtils';

@@ -11,7 +11,8 @@ import { CheckCircle2 } from 'lucide-react';
 import type { EdaSummary, DataQualitySummary } from '@/types/file';
 import { cn } from '@/lib/utils';
 import type { EdaInsight } from './edaInsights';
-import { formatPercentage, DATA_TYPE_ICONS, DATA_TYPE_COLORS } from './edaFormatters';
+import { formatPercentage } from './edaFormatters';
+import { DATA_TYPE_ICONS, DATA_TYPE_COLORS } from './edaConstants';
 import { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
 import { ColumnHealthGrid } from './ColumnHealthCards';
 

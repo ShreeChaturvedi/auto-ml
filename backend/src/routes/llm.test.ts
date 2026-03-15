@@ -102,47 +102,7 @@ describeRouteSuite('llm routes', () => {
     });
   });
 
-  describe('POST /api/llm/onboarding/stream', () => {
-    it('returns 400 when projectId is missing', async () => {
-      const app = createTestApp();
-      const response = await request(app)
-        .post('/api/llm/onboarding/stream')
-        .send({
-          userIntent: 'Predict churn',
-          round: 0
-        });
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toBe('Invalid request');
-    });
-
-    it('returns 400 when round is out of bounds', async () => {
-      const app = createTestApp();
-      const response = await request(app)
-        .post('/api/llm/onboarding/stream')
-        .send({
-          projectId: 'project-1',
-          round: 6
-        });
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toBe('Invalid request');
-    });
-
-    it('returns 400 when reasoningEffort is `none`', async () => {
-      const app = createTestApp();
-      const response = await request(app)
-        .post('/api/llm/onboarding/stream')
-        .send({
-          projectId: 'project-1',
-          round: 0,
-          reasoningEffort: 'none'
-        });
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toBe('Invalid request');
-    });
-  });
+  // Onboarding tests removed — endpoint migrated to /api/workflows/turns/stream (Phase 0)
 
   describe('GET /api/llm/models', () => {
     it('returns a GPT-5-only catalog with featured latest-per-kind entries', async () => {
@@ -171,33 +131,7 @@ describeRouteSuite('llm routes', () => {
     });
   });
 
-  describe('POST /api/llm/training/stream', () => {
-    it('returns 409 when FE approval is required but no pipeline is approved', async () => {
-      projectGetByIdMock.mockResolvedValue({
-        projectId: 'project-1',
-        metadata: {
-          feWorkflowVersion: 2,
-          pipelineVersions: [
-            { id: 'v1', status: 'draft' },
-            { id: 'v0', status: 'deprecated' }
-          ]
-        }
-      });
-
-      const app = createTestApp();
-      const response = await request(app)
-        .post('/api/llm/training/stream')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          prompt: 'Train churn model'
-        });
-
-      expect(response.status).toBe(409);
-      expect(response.body.code).toBe('FE_PIPELINE_APPROVAL_REQUIRED');
-      expect(response.body.error).toContain('approved feature engineering pipeline');
-    });
-  });
+  // Training stream tests removed — endpoint migrated to /api/workflows/turns/stream (Phase 4)
 
   describe('GET /api/llm/preprocessing/runs*', () => {
     it('returns run snapshot for an existing run id', async () => {

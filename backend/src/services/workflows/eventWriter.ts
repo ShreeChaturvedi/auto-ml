@@ -1,5 +1,3 @@
-import type { Response } from 'express';
-
 import type {
   WorkflowArtifactUpdatedEvent,
   WorkflowErrorEvent,
@@ -8,12 +6,6 @@ import type {
   WorkflowStateEvent,
   WorkflowToolExecutedEvent
 } from './types.js';
-
-export function writeWorkflowEvent(res: Response, payload: unknown): void {
-  if (!res.writableEnded && !res.destroyed) {
-    res.write(`${JSON.stringify(payload)}\n`);
-  }
-}
 
 function deriveWorkflowMode(
   state: WorkflowRunState,

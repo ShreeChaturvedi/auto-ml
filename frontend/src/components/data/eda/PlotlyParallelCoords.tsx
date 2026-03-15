@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Layers } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   LazyPlot,
   PlotSuspense,
@@ -42,13 +43,8 @@ export function PlotlyParallelCoords({
       range: [c.min, c.max],
     }));
 
-    // Color by first column's values
-    const firstColValues = cols.length > 0
-      ? sampled.map((r) => {
-          const v = Number(r[cols[0].column]);
-          return Number.isFinite(v) ? v : 0;
-        })
-      : [];
+    // Color by first column's values (reuse already-computed dimension values)
+    const firstColValues = dimensions[0]?.values.map((v: number | null) => v ?? 0) ?? [];
 
     return {
       type: 'parcoords' as const,
@@ -72,15 +68,13 @@ export function PlotlyParallelCoords({
   // Guard: empty or insufficient columns
   if (!rows || rows.length === 0 || cols.length < 2) {
     return (
-      <div className={className}>
-        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-          <Layers className="h-8 w-8 mb-2 opacity-40" />
-          <p className="text-sm">
-            {cols.length < 2
-              ? 'Need at least 2 numeric columns for parallel coordinates.'
-              : 'No data available for parallel coordinates.'}
-          </p>
-        </div>
+      <div className={cn('flex flex-col items-center justify-center py-12 text-muted-foreground', className)}>
+        <Layers className="h-8 w-8 mb-2 opacity-40" />
+        <p className="text-sm">
+          {cols.length < 2
+            ? 'Need at least 2 numeric columns for parallel coordinates.'
+            : 'No data available for parallel coordinates.'}
+        </p>
       </div>
     );
   }

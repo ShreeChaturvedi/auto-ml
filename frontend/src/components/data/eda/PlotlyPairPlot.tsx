@@ -9,6 +9,7 @@ import {
 } from './edaTheme';
 import { truncateText, subsampleRows } from './edaFormatters';
 import { ScatterChart } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const MAX_ROWS = 500;
 const MAX_COLS = 6;
@@ -16,7 +17,6 @@ const MAX_COLS = 6;
 interface PlotlyPairPlotProps {
   rows: Record<string, unknown>[];
   numericColumns: Array<{ column: string }>;
-  categoricalColumns?: Array<{ column: string }>;
   height?: number;
   className?: string;
 }
@@ -75,15 +75,13 @@ export function PlotlyPairPlot({
   // Guard: empty rows or insufficient columns
   if (!rows || rows.length === 0 || cols.length < 2) {
     return (
-      <div className={className}>
-        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-          <ScatterChart className="h-8 w-8 mb-2 opacity-40" />
-          <p className="text-sm">
-            {cols.length < 2
-              ? 'Need at least 2 numeric columns for a pair plot.'
-              : 'No data available for pair plot.'}
-          </p>
-        </div>
+      <div className={cn('flex flex-col items-center justify-center py-12 text-muted-foreground', className)}>
+        <ScatterChart className="h-8 w-8 mb-2 opacity-40" />
+        <p className="text-sm">
+          {cols.length < 2
+            ? 'Need at least 2 numeric columns for a pair plot.'
+            : 'No data available for pair plot.'}
+        </p>
       </div>
     );
   }

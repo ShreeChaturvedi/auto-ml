@@ -81,10 +81,7 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
     return { totalColumns, completeColumns, columnsWithMissing, avgMissingPct, typeDistribution };
   }, [data]);
 
-  const allColumnsComplete = useMemo(
-    () => data.every((d) => d.missingPercentage === 0),
-    [data],
-  );
+  const allColumnsComplete = summary.completeColumns === summary.totalColumns;
 
   /* ---------- empty state ----------------------------------------- */
 

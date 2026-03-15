@@ -78,9 +78,11 @@ export function PlotlyScatter({
     // Add regression line when available
     if (resolved.regressionLine) {
       const { slope, intercept } = resolved.regressionLine;
-      const xValues = resolved.points.map((p) => p.x);
-      const xMin = Math.min(...xValues);
-      const xMax = Math.max(...xValues);
+      let xMin = Infinity, xMax = -Infinity;
+      for (const p of resolved.points) {
+        if (p.x < xMin) xMin = p.x;
+        if (p.x > xMax) xMax = p.x;
+      }
       result.push({
         type: 'scatter' as const,
         mode: 'lines' as const,

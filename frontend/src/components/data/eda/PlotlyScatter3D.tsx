@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Box } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   LazyPlot,
   PlotSuspense,
@@ -62,7 +63,7 @@ export function PlotlyScatter3D({
 
   const layout = useMemo(() => {
     const base = getPlotlyLayout(isDark);
-    const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+    const gridColor = (base.xaxis as Record<string, unknown>)?.gridcolor as string ?? 'rgba(255,255,255,0.1)';
     return {
       ...base,
       height,
@@ -91,15 +92,13 @@ export function PlotlyScatter3D({
   // Guard: need at least 3 numeric columns
   if (!rows || rows.length === 0 || columnNames.length < 3) {
     return (
-      <div className={className}>
-        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-          <Box className="h-8 w-8 mb-2 opacity-40" />
-          <p className="text-sm">
-            {columnNames.length < 3
-              ? 'Need at least 3 numeric columns for a 3D scatter plot.'
-              : 'No data available for 3D scatter.'}
-          </p>
-        </div>
+      <div className={cn('flex flex-col items-center justify-center py-12 text-muted-foreground', className)}>
+        <Box className="h-8 w-8 mb-2 opacity-40" />
+        <p className="text-sm">
+          {columnNames.length < 3
+            ? 'Need at least 3 numeric columns for a 3D scatter plot.'
+            : 'No data available for 3D scatter.'}
+        </p>
       </div>
     );
   }

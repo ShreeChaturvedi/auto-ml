@@ -105,7 +105,7 @@ export function ColumnHealthGrid({ dataQuality, onColumnClick, className }: Colu
   const sorted = useMemo(
     () =>
       [...dataQuality].sort(
-        (a, b) => (100 - a.missingPercentage) - (100 - b.missingPercentage),
+        (a, b) => b.missingPercentage - a.missingPercentage,
       ),
     [dataQuality],
   );

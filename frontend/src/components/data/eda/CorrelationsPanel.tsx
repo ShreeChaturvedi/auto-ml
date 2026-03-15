@@ -113,106 +113,106 @@ export function CorrelationsPanel({
       </div>
 
       {/* Heatmap view */}
-      <div style={{ display: viewMode === 'heatmap' ? 'block' : 'none' }}>
-        {/* Heatmap */}
-        <PlotlyHeatmap
-          correlations={correlations}
-          numericColumns={numericColumnNames}
-          onCellClick={(columnA, columnB) =>
-            onSelectedCellChange({ a: columnA, b: columnB })
-          }
-        />
-
-        {/* Scatter reveal (animated expand / collapse) */}
-        <div
-          className={cn(
-            'overflow-hidden transition-all duration-300',
-            selectedCell ? 'max-h-[500px] opacity-100 mt-4' : 'max-h-0 opacity-0',
-          )}
-        >
-          {selectedCell && (
-            <div className="rounded-lg border bg-card p-4">
-              {/* Header row */}
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium">
-                  {selectedCell.a} vs {selectedCell.b}
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => onSelectedCellChange(null)}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  aria-label="Dismiss scatter plot"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Scatter: from scatterPairs, or client-side fallback via rows */}
-              {scatterPairMatch ? (
-                <PlotlyScatter
-                  data={scatterPairMatch}
-                  correlation={selectedCoefficient}
-                />
-              ) : rows ? (
-                <PlotlyScatter
-                  rows={rows}
-                  xColumn={selectedCell.a}
-                  yColumn={selectedCell.b}
-                  correlation={selectedCoefficient}
-                />
-              ) : (
-                <div className="flex items-center justify-center py-10 text-muted-foreground text-sm">
-                  Scatter plot data not available for this pair.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Top correlated pairs */}
-        <div className="mt-2">
-          <h4 className="text-xs font-medium text-muted-foreground mb-1 px-1">
-            Top correlated pairs
-          </h4>
-          <CorrelationPairsList
+      {viewMode === 'heatmap' && (
+        <>
+          {/* Heatmap */}
+          <PlotlyHeatmap
             correlations={correlations}
-            maxPairs={5}
-            onPairClick={(columnA, columnB) =>
+            numericColumns={numericColumnNames}
+            onCellClick={(columnA, columnB) =>
               onSelectedCellChange({ a: columnA, b: columnB })
             }
           />
-        </div>
-      </div>
+
+          {/* Scatter reveal (animated expand / collapse) */}
+          <div
+            className={cn(
+              'overflow-hidden transition-all duration-300',
+              selectedCell ? 'max-h-[500px] opacity-100 mt-4' : 'max-h-0 opacity-0',
+            )}
+          >
+            {selectedCell && (
+              <div className="rounded-lg border bg-card p-4">
+                {/* Header row */}
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-medium">
+                    {selectedCell.a} vs {selectedCell.b}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => onSelectedCellChange(null)}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    aria-label="Dismiss scatter plot"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Scatter: from scatterPairs, or client-side fallback via rows */}
+                {scatterPairMatch ? (
+                  <PlotlyScatter
+                    data={scatterPairMatch}
+                    correlation={selectedCoefficient}
+                  />
+                ) : rows ? (
+                  <PlotlyScatter
+                    rows={rows}
+                    xColumn={selectedCell.a}
+                    yColumn={selectedCell.b}
+                    correlation={selectedCoefficient}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center py-10 text-muted-foreground text-sm">
+                    Scatter plot data not available for this pair.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Top correlated pairs */}
+          <div className="mt-2">
+            <h4 className="text-xs font-medium text-muted-foreground mb-1 px-1">
+              Top correlated pairs
+            </h4>
+            <CorrelationPairsList
+              correlations={correlations}
+              maxPairs={5}
+              onPairClick={(columnA, columnB) =>
+                onSelectedCellChange({ a: columnA, b: columnB })
+              }
+            />
+          </div>
+        </>
+      )}
 
       {/* Pair Plot view */}
-      <div style={{ display: viewMode === 'pairplot' ? 'block' : 'none' }}>
-        {rows && (
+      {viewMode === 'pairplot' && (
+        rows ? (
           <PlotlyPairPlot
             rows={rows}
             numericColumns={eda.numericColumns}
           />
-        )}
-        {!rows && (
+        ) : (
           <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-            Row data not available for pair plot.
+            Row data not available for this view.
           </div>
-        )}
-      </div>
+        )
+      )}
 
       {/* 3D Scatter view */}
-      <div style={{ display: viewMode === '3d' ? 'block' : 'none' }}>
-        {rows && (
+      {viewMode === '3d' && (
+        rows ? (
           <PlotlyScatter3D
             rows={rows}
             numericColumns={eda.numericColumns}
           />
-        )}
-        {!rows && (
+        ) : (
           <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-            Row data not available for 3D scatter.
+            Row data not available for this view.
           </div>
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 }

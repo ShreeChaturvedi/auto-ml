@@ -11,6 +11,11 @@ import type {
   ScatterSummary
 } from '../../types/query.js';
 
+/** Coerce an unknown value to a number */
+function toNum(v: unknown): number {
+  return typeof v === 'number' ? v : Number(v);
+}
+
 const MAX_SCATTER_POINTS = 200;
 const HISTOGRAM_BUCKETS = 15;
 
@@ -20,7 +25,7 @@ const HISTOGRAM_BUCKETS = 15;
 export function buildHistogram(rows: QueryRow[], column: string): HistogramSummary | undefined {
   const values = rows
     .map(row => row[column])
-    .map(v => typeof v === 'number' ? v : Number(v))
+    .map(v => toNum(v))
     .filter(v => Number.isFinite(v));
 
   if (values.length === 0) return undefined;
@@ -69,8 +74,8 @@ export function buildHistogram(rows: QueryRow[], column: string): HistogramSumma
 export function buildScatter(rows: QueryRow[], xColumn: string, yColumn: string): ScatterSummary | undefined {
   const points = rows
     .map(row => ({
-      x: typeof row[xColumn] === 'number' ? row[xColumn] : Number(row[xColumn]),
-      y: typeof row[yColumn] === 'number' ? row[yColumn] : Number(row[yColumn])
+      x: toNum(row[xColumn]),
+      y: toNum(row[yColumn])
     }))
     .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
     .slice(0, MAX_SCATTER_POINTS);
@@ -170,28 +175,42 @@ export function buildScatterPairs(
     .sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
     .slice(0, maxPairs);
 
+  // Collect unique columns needed
+  const neededCols = new Set<string>();
+  for (const pair of topPairs) {
+    neededCols.add(pair.columnA);
+    neededCols.add(pair.columnB);
+  }
+
+  // Single pass: extract all column values
+  const colValues = new Map<string, number[]>();
+  for (const col of neededCols) colValues.set(col, []);
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    for (const col of neededCols) {
+      const v = toNum(row[col]);
+      colValues.get(col)!.push(Number.isFinite(v) ? v : NaN);
+    }
+  }
+
+  // Assemble pairs from pre-extracted columns
   const results: ScatterPairData[] = [];
 
   for (const pair of topPairs) {
-    // Extract points for this pair
-    const points = rows
-      .map(row => ({
-        x: typeof row[pair.columnA] === 'number' ? row[pair.columnA] : Number(row[pair.columnA]),
-        y: typeof row[pair.columnB] === 'number' ? row[pair.columnB] : Number(row[pair.columnB])
-      }))
-      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y))
-      .slice(0, MAX_SCATTER_PAIR_POINTS);
+    const xVals = colValues.get(pair.columnA)!;
+    const yVals = colValues.get(pair.columnB)!;
+    const points: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < xVals.length && points.length < MAX_SCATTER_PAIR_POINTS; i++) {
+      if (Number.isFinite(xVals[i]) && Number.isFinite(yVals[i])) {
+        points.push({ x: xVals[i], y: yVals[i] });
+      }
+    }
 
     if (points.length === 0) continue;
 
     const regressionLine = computeRegressionLine(points);
-
-    results.push({
-      xColumn: pair.columnA,
-      yColumn: pair.columnB,
-      points,
-      regressionLine
-    });
+    results.push({ xColumn: pair.columnA, yColumn: pair.columnB, points, regressionLine });
   }
 
   return results.length > 0 ? results : undefined;
@@ -203,8 +222,8 @@ export function buildScatterPairs(
 function pearsonCorrelation(rows: QueryRow[], columnA: string, columnB: string): number {
   const pairs = rows
     .map(row => ({
-      a: typeof row[columnA] === 'number' ? row[columnA] : Number(row[columnA]),
-      b: typeof row[columnB] === 'number' ? row[columnB] : Number(row[columnB])
+      a: toNum(row[columnA]),
+      b: toNum(row[columnB])
     }))
     .filter(pair => Number.isFinite(pair.a) && Number.isFinite(pair.b));
 

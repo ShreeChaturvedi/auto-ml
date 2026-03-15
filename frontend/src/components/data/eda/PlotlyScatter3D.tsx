@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Box } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { PlotEmptyState } from './PlotEmptyState';
 import {
   LazyPlot,
   PlotSuspense,
@@ -9,7 +9,7 @@ import {
   getEdaColors,
   useIsDark,
 } from './edaTheme';
-import { subsampleRows } from './edaFormatters';
+import { subsampleRows } from './edaDataUtils';
 
 const MAX_ROWS = 1000;
 
@@ -36,7 +36,7 @@ export function PlotlyScatter3D({
   const sampled = useMemo(() => subsampleRows(rows, MAX_ROWS), [rows]);
 
   const trace = useMemo(() => {
-    const colors = getEdaColors(isDark);
+    const colors = getEdaColors();
     return {
       type: 'scatter3d' as const,
       mode: 'markers' as const,
@@ -59,6 +59,7 @@ export function PlotlyScatter3D({
       },
       hovertemplate: `${xCol}: %{x}<br>${yCol}: %{y}<br>${zCol}: %{z}<extra></extra>`,
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [sampled, xCol, yCol, zCol, isDark]);
 
   const layout = useMemo(() => {
@@ -91,16 +92,7 @@ export function PlotlyScatter3D({
 
   // Guard: need at least 3 numeric columns
   if (!rows || rows.length === 0 || columnNames.length < 3) {
-    return (
-      <div className={cn('flex flex-col items-center justify-center py-12 text-muted-foreground', className)}>
-        <Box className="h-8 w-8 mb-2 opacity-40" />
-        <p className="text-sm">
-          {columnNames.length < 3
-            ? 'Need at least 3 numeric columns for a 3D scatter plot.'
-            : 'No data available for 3D scatter.'}
-        </p>
-      </div>
-    );
+    return <PlotEmptyState icon={Box} message="Need at least 3 numeric columns and row data for 3D scatter" className={className} />;
   }
 
   return (

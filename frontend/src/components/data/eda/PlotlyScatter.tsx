@@ -8,7 +8,8 @@ import {
   getEdaColors,
   useIsDark,
 } from './edaTheme';
-import { getCorrelationLabel, computeScatterFromRows } from './edaFormatters';
+import { getCorrelationLabel } from './edaFormatters';
+import { computeScatterFromRows } from './edaDataUtils';
 
 interface PlotlyScatterProps {
   /** ScatterPairData (with optional regression) OR legacy ScatterData */
@@ -58,7 +59,7 @@ export function PlotlyScatter({
   const traces = useMemo(() => {
     if (!resolved) return [];
 
-    const markerColor = getEdaColors(isDark)[0];
+    const markerColor = getEdaColors()[0];
     const scatterTrace = {
       type: 'scatter' as const,
       mode: 'markers' as const,
@@ -88,13 +89,14 @@ export function PlotlyScatter({
         mode: 'lines' as const,
         x: [xMin, xMax],
         y: [slope * xMin + intercept, slope * xMax + intercept],
-        line: { color: getEdaColors(isDark)[1], width: 2, dash: 'dash' },
+        line: { color: getEdaColors()[1], width: 2, dash: 'dash' },
         showlegend: false,
         hoverinfo: 'skip',
       });
     }
 
     return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [resolved, isDark]);
 
   const layout = useMemo(() => {

@@ -66,15 +66,6 @@ export function EDAPanel({ eda, rows, className }: EDAPanelProps) {
   const hasCorrelations = correlations.length > 0;
   const hasQuality = dataQuality.length > 0;
 
-  // KPI values
-  const totalRows = dataQuality[0]?.totalCount ?? 0;
-  const totalColumns = dataQuality.length;
-  const completenessPercent =
-    dataQuality.length > 0
-      ? dataQuality.reduce((sum, d) => sum + (100 - d.missingPercentage), 0) / dataQuality.length
-      : 100;
-  const strongCorrelations = correlations.filter((c) => Math.abs(c.coefficient) > 0.7).length;
-
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -121,13 +112,7 @@ export function EDAPanel({ eda, rows, className }: EDAPanelProps) {
             )}
 
             {/* KPI row */}
-            <OverviewKpiRow
-              totalRows={totalRows}
-              totalColumns={totalColumns}
-              completenessPercent={completenessPercent}
-              strongCorrelations={strongCorrelations}
-              insightCount={insights.length}
-            />
+            <OverviewKpiRow eda={eda} insightCount={insights.length} />
 
             {/* Column cards grid */}
             <OverviewColumnCards eda={eda} />

@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 import type { QueryRow } from '../types/query.js';
 
 import { buildMissingMatrix } from './eda/missingMatrix.js';
-import { computeRegressionLine, buildScatterPairs } from './eda/visualizations.js';
+import { buildScatterPairs } from './eda/visualizations.js';
+import { computeRegressionLine } from './eda/statistics.js';
 import { buildEdaSummary } from './edaSummary.js';
 
 describe('edaSummary', () => {

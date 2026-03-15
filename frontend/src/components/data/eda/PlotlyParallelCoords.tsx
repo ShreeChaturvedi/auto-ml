@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { Layers } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Rows3 } from 'lucide-react';
+import { PlotEmptyState } from './PlotEmptyState';
 import {
   LazyPlot,
   PlotSuspense,
@@ -9,7 +9,8 @@ import {
   EDA_COLORSCALES,
   useIsDark,
 } from './edaTheme';
-import { truncateText, subsampleRows } from './edaFormatters';
+import { truncateText } from './edaFormatters';
+import { subsampleRows } from './edaDataUtils';
 
 const MAX_ROWS = 1000;
 const MAX_DIMS = 12;
@@ -67,16 +68,7 @@ export function PlotlyParallelCoords({
 
   // Guard: empty or insufficient columns
   if (!rows || rows.length === 0 || cols.length < 2) {
-    return (
-      <div className={cn('flex flex-col items-center justify-center py-12 text-muted-foreground', className)}>
-        <Layers className="h-8 w-8 mb-2 opacity-40" />
-        <p className="text-sm">
-          {cols.length < 2
-            ? 'Need at least 2 numeric columns for parallel coordinates.'
-            : 'No data available for parallel coordinates.'}
-        </p>
-      </div>
-    );
+    return <PlotEmptyState icon={Rows3} message="Need at least 2 numeric columns and row data for parallel coordinates" className={className} />;
   }
 
   return (

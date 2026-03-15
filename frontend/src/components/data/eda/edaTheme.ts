@@ -29,8 +29,7 @@ function hsl(varName: string): string {
  * Returns the 6-color branded EDA categorical palette
  * reading from --eda-* CSS variables.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function getEdaColors(isDark: boolean): string[] {
+export function getEdaColors(): string[] {
   return [
     hsl('--eda-blue'),
     hsl('--eda-copper'),
@@ -101,7 +100,7 @@ export function getPlotlyLayout(isDark: boolean): Record<string, unknown> {
       mirror: false,
       tickfont: { color: mutedFg, size: 10 },
     },
-    colorway: getEdaColors(isDark),
+    colorway: getEdaColors(),
     hoverlabel: {
       bgcolor: hsl('--popover'),
       font: { family: 'inherit', size: 12, color: fg },

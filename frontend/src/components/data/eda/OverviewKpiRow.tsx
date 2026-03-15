@@ -5,24 +5,25 @@
 
 import { cn } from '@/lib/utils';
 import { formatPercentage } from './edaFormatters';
+import type { EdaSummary } from '@/types/file';
 
 interface OverviewKpiRowProps {
-  totalRows: number;
-  totalColumns: number;
-  completenessPercent: number;
-  strongCorrelations: number;
+  eda: EdaSummary;
   insightCount: number;
   className?: string;
 }
 
-export function OverviewKpiRow({
-  totalRows,
-  totalColumns,
-  completenessPercent,
-  strongCorrelations,
-  insightCount,
-  className,
-}: OverviewKpiRowProps) {
+export function OverviewKpiRow({ eda, insightCount, className }: OverviewKpiRowProps) {
+  const dataQuality = eda.dataQuality ?? [];
+  const correlations = eda.correlations ?? [];
+
+  const totalRows = dataQuality[0]?.totalCount ?? 0;
+  const totalColumns = dataQuality.length;
+  const completenessPercent =
+    dataQuality.length > 0
+      ? dataQuality.reduce((sum, d) => sum + (100 - d.missingPercentage), 0) / dataQuality.length
+      : 100;
+  const strongCorrelations = correlations.filter((c) => Math.abs(c.coefficient) > 0.7).length;
   const completenessColor =
     completenessPercent >= 95
       ? 'text-green-600 dark:text-green-400'

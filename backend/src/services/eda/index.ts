@@ -72,6 +72,7 @@ export { detectColumnTypes } from './columnDetection.js';
 export type { ColumnType } from './columnDetection.js';
 export { computeNumericSummaries, percentile } from './numericAnalysis.js';
 export { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
-export { buildHistogram, buildScatter, buildCorrelations, buildScatterPairs, computeRegressionLine } from './visualizations.js';
+export { buildHistogram, buildScatter, buildCorrelations, buildScatterPairs } from './visualizations.js';
+export { computeRegressionLine, pearsonCorrelation } from './statistics.js';
 export { buildMissingMatrix } from './missingMatrix.js';
 export { sampleRowsEvenly } from './sampling.js';

@@ -64,7 +64,7 @@ export function OverviewColumnCards({ eda, className }: OverviewColumnCardsProps
     }
 
     return entries;
-  }, [eda]);
+  }, [eda.numericColumns, eda.categoricalColumns, eda.histograms, eda.histogram]);
 
   const expandedEntry = useMemo(
     () => columns.find((c) => c.name === expandedColumn) ?? null,
@@ -85,8 +85,8 @@ export function OverviewColumnCards({ eda, className }: OverviewColumnCardsProps
             type="button"
             onClick={() => handleCardClick(col.name)}
             className={cn(
-              'border rounded-md px-2.5 py-2 hover:bg-muted/50 cursor-pointer transition-colors text-left',
-              expandedColumn === col.name && 'ring-1 ring-primary bg-muted/40',
+              'border border-border/30 rounded-md px-2.5 py-2 hover:bg-muted/50 hover:border-border/60 cursor-pointer transition-colors text-left',
+              expandedColumn === col.name && 'ring-1 ring-[hsl(var(--eda-blue))] bg-muted/40',
             )}
           >
             {/* Row 1: name + type icon */}
@@ -159,10 +159,6 @@ function NumericDetail({ col }: { col: NumericColumnSummary }) {
           Range: {formatNumber(col.min)} &ndash; {formatNumber(col.max)}
         </div>
         <div className="h-2 bg-muted rounded-full relative overflow-hidden">
-          <div
-            className="absolute h-full bg-primary/30 rounded-full"
-            style={{ left: '0%', width: '100%' }}
-          />
           <div
             className="absolute h-full bg-primary rounded-full"
             style={{

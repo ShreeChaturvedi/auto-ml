@@ -9,9 +9,10 @@ import {
   PlotSuspense,
   PLOTLY_CONFIG,
   getPlotlyLayout,
+  getEdaColors,
   useIsDark,
 } from './edaTheme';
-import { formatNumber } from './edaFormatters';
+import { formatAxis } from './edaFormatters';
 import type { HistogramData, NumericColumnSummary } from '@/types/file';
 
 interface PlotlyHistogramProps {
@@ -78,6 +79,7 @@ export function PlotlyHistogram({
     const midpoints = buckets.map((b) => (b.start + b.end) / 2);
     const counts = buckets.map((b) => b.count);
     const totalCount = counts.reduce((s, c) => s + c, 0);
+    const edaColors = getEdaColors(isDark);
 
     // 1. Bar trace
     const barTrace: Record<string, unknown> = {
@@ -86,13 +88,13 @@ export function PlotlyHistogram({
       y: counts,
       name: 'Count',
       marker: {
-        color: 'hsl(var(--primary))',
+        color: edaColors[0],
         opacity: 0.7,
-        line: { color: 'hsl(var(--primary))', width: 1 },
+        line: { color: edaColors[0], width: 1 },
       },
       hovertemplate: midpoints.map(
         (_mp, i) =>
-          `${formatNumber(buckets[i].start)} \u2013 ${formatNumber(buckets[i].end)}<br>Count: ${counts[i].toLocaleString()}<extra></extra>`,
+          `${formatAxis(buckets[i].start)} \u2013 ${formatAxis(buckets[i].end)}<br>Count: ${counts[i].toLocaleString()}<extra></extra>`,
       ),
     };
 
@@ -118,19 +120,50 @@ export function PlotlyHistogram({
           y: kde.y,
           name: 'Density',
           yaxis: 'y2',
-          line: { color: 'hsl(var(--chart-2))', width: 2, shape: 'spline' },
+          line: { color: edaColors[1], width: 2, shape: 'spline' },
           hoverinfo: 'skip',
         });
       }
     }
 
-    // 3. Reference-line shapes (mean + median from numericSummary)
+    // 3. Reference-line shapes (mean + median + stdDev from numericSummary)
     const shapes: Record<string, unknown>[] = [];
     const annotations: Record<string, unknown>[] = [];
 
     if (numericSummary) {
       const xMin = buckets[0].start;
       const xMax = buckets[buckets.length - 1].end;
+
+      // Std deviation reference lines at mean +/- stdDev
+      if (numericSummary.stdDev > 0) {
+        const meanMinusStd = numericSummary.mean - numericSummary.stdDev;
+        const meanPlusStd = numericSummary.mean + numericSummary.stdDev;
+
+        if (meanMinusStd >= xMin && meanMinusStd <= xMax) {
+          shapes.push({
+            type: 'line',
+            x0: meanMinusStd,
+            x1: meanMinusStd,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: { color: edaColors[2], width: 1, dash: 'dash' },
+            opacity: 0.5,
+          });
+        }
+        if (meanPlusStd >= xMin && meanPlusStd <= xMax) {
+          shapes.push({
+            type: 'line',
+            x0: meanPlusStd,
+            x1: meanPlusStd,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: { color: edaColors[2], width: 1, dash: 'dash' },
+            opacity: 0.5,
+          });
+        }
+      }
 
       if (numericSummary.mean >= xMin && numericSummary.mean <= xMax) {
         shapes.push({
@@ -140,15 +173,15 @@ export function PlotlyHistogram({
           y0: 0,
           y1: 1,
           yref: 'paper',
-          line: { color: 'hsl(var(--destructive))', width: 1.5, dash: 'dash' },
+          line: { color: edaColors[3], width: 1.5, dash: 'dash' },
         });
         annotations.push({
           x: numericSummary.mean,
           y: 1,
           yref: 'paper',
-          text: `Mean: ${formatNumber(numericSummary.mean)}`,
+          text: `Mean: ${formatAxis(numericSummary.mean)}`,
           showarrow: false,
-          font: { size: 10, color: 'hsl(var(--destructive))' },
+          font: { size: 10, color: edaColors[3] },
           yanchor: 'bottom',
         });
       }
@@ -161,15 +194,15 @@ export function PlotlyHistogram({
           y0: 0,
           y1: 1,
           yref: 'paper',
-          line: { color: 'hsl(var(--chart-3))', width: 1.5, dash: 'dot' },
+          line: { color: edaColors[4], width: 1.5, dash: 'dot' },
         });
         annotations.push({
           x: numericSummary.median,
           y: 0.93,
           yref: 'paper',
-          text: `Median: ${formatNumber(numericSummary.median)}`,
+          text: `Median: ${formatAxis(numericSummary.median)}`,
           showarrow: false,
-          font: { size: 10, color: 'hsl(var(--chart-3))' },
+          font: { size: 10, color: edaColors[4] },
           yanchor: 'bottom',
         });
       }

@@ -9,6 +9,7 @@ import {
   PlotSuspense,
   PLOTLY_CONFIG,
   getPlotlyLayout,
+  getEdaColors,
   useIsDark,
 } from './edaTheme';
 import { formatPercentage, truncateText } from './edaFormatters';
@@ -43,6 +44,8 @@ export function PlotlyCategoricalBar({
     const xValues = ordered.map((v) => v.count);
     const textLabels = ordered.map((v) => formatPercentage(v.percentage, true));
 
+    const edaColors = getEdaColors(isDark);
+
     const barTrace: Record<string, unknown> = {
       type: 'bar',
       orientation: 'h',
@@ -51,7 +54,7 @@ export function PlotlyCategoricalBar({
       text: textLabels,
       textposition: 'auto',
       marker: {
-        color: 'hsl(var(--primary))',
+        color: edaColors[0],
       },
       hovertemplate: ordered.map(
         (v) =>

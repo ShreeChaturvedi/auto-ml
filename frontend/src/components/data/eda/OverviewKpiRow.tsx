@@ -33,7 +33,7 @@ export function OverviewKpiRow({
   return (
     <div className={cn('grid grid-cols-2 md:grid-cols-4 gap-3', className)}>
       {/* Rows */}
-      <div className="bg-muted/30 rounded-lg p-3">
+      <div className="bg-muted/40 border border-border/30 rounded-lg p-3 shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
         <div className="text-2xl font-bold font-mono">
           {totalRows.toLocaleString()}
         </div>
@@ -41,13 +41,13 @@ export function OverviewKpiRow({
       </div>
 
       {/* Columns */}
-      <div className="bg-muted/30 rounded-lg p-3">
+      <div className="bg-muted/40 border border-border/30 rounded-lg p-3 shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
         <div className="text-2xl font-bold font-mono">{totalColumns}</div>
         <div className="text-xs text-muted-foreground mt-0.5">Columns</div>
       </div>
 
       {/* Completeness */}
-      <div className="bg-muted/30 rounded-lg p-3">
+      <div className="bg-muted/40 border border-border/30 rounded-lg p-3 shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
         <div className={cn('text-2xl font-bold font-mono', completenessColor)}>
           {formatPercentage(completenessPercent, true)}
         </div>
@@ -55,7 +55,7 @@ export function OverviewKpiRow({
       </div>
 
       {/* Insights */}
-      <div className="bg-muted/30 rounded-lg p-3">
+      <div className="bg-muted/40 border border-border/30 rounded-lg p-3 shadow-[0_1px_3px_rgba(0,0,0,0.3)]">
         <div className="text-2xl font-bold font-mono">{insightCount}</div>
         <div className="text-xs text-muted-foreground mt-0.5">
           Insights

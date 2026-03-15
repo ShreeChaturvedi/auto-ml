@@ -10,6 +10,7 @@ import {
   PlotSuspense,
   PLOTLY_CONFIG,
   getPlotlyLayout,
+  getEdaColors,
   useIsDark,
 } from './edaTheme';
 import { formatNumber } from './edaFormatters';
@@ -59,10 +60,7 @@ export function PlotlyBoxViolin({
   const isDark = useIsDark();
 
   const { traces, layout } = useMemo(() => {
-    const baseLayout = getPlotlyLayout(isDark);
-    const colorway = (baseLayout.colorway as string[]) ?? [
-      'hsl(var(--primary))',
-    ];
+    const colorway = getEdaColors(isDark);
 
     const allTraces: Record<string, unknown>[] = [];
 

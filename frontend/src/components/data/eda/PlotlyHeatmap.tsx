@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import type { Data, PlotMouseEvent } from 'plotly.js';
 import type { CorrelationData } from '@/types/file';
-import { LazyPlot, PlotSuspense, PLOTLY_CONFIG, getPlotlyLayout, useIsDark } from './edaTheme';
+import { LazyPlot, PlotSuspense, PLOTLY_CONFIG, getPlotlyLayout, EDA_COLORSCALES, useIsDark } from './edaTheme';
+import { truncateText } from './edaFormatters';
 
 interface PlotlyHeatmapProps {
   correlations: CorrelationData[];
@@ -65,30 +66,31 @@ export function PlotlyHeatmap({
     };
   }, [isDark, height]);
 
+  const truncatedColumns = useMemo(
+    () => numericColumns.map((c) => truncateText(c, 20)),
+    [numericColumns],
+  );
+
   const trace = useMemo(
     () =>
       ({
         type: 'heatmap' as const,
         z: matrix,
-        x: numericColumns,
-        y: numericColumns,
-        colorscale: [
-          [0, '#2166ac'],
-          [0.5, isDark ? '#2a2a2e' : '#f7f7f7'],
-          [1, '#b2182b'],
-        ],
+        x: truncatedColumns,
+        y: truncatedColumns,
+        colorscale: EDA_COLORSCALES.rdbu(isDark),
         zmin: -1,
         zmax: 1,
         text: textMatrix as unknown as string[],
         texttemplate: '%{text}',
-        textfont: { size: 10 },
+        textfont: { family: 'ui-monospace, monospace', size: 10 },
         hovertemplate: '%{x} vs %{y}: r = %{z:.3f}<extra></extra>',
         colorbar: {
           title: { text: 'r', side: 'right' },
           thickness: 12,
         },
       }) satisfies Record<string, unknown>,
-    [matrix, textMatrix, numericColumns, isDark],
+    [matrix, textMatrix, truncatedColumns, isDark],
   );
 
   return (

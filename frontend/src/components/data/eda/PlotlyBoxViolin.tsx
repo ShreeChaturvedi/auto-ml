@@ -60,7 +60,7 @@ export function PlotlyBoxViolin({
   const isDark = useIsDark();
 
   const { traces, layout } = useMemo(() => {
-    const colorway = getEdaColors();
+    const colorway = getEdaColors(isDark);
 
     const allTraces: Record<string, unknown>[] = [];
 

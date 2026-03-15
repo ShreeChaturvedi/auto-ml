@@ -1,6 +1,17 @@
 /**
  * edaTheme — centralized Plotly layout theme, lazy-loaded Plot component,
  * and dark-mode hook for all EDA chart components.
+ *
+ * IMPORTANT: All color values are derived from the `isDark` boolean, NOT
+ * from CSS variable reads (getComputedStyle). CSS variables change via a
+ * class toggle in the ThemeProvider's useLayoutEffect, but child component
+ * useMemo blocks execute BEFORE that effect fires (React renders children
+ * before parent effects). This means getComputedStyle() returns stale
+ * values during the render that follows a theme change.
+ *
+ * The fix: hardcode light/dark color pairs here (mirroring index.css values)
+ * and select via the isDark boolean, which IS correct during render because
+ * it's derived from React context state, not DOM state.
  */
 
 import React from 'react';
@@ -8,36 +19,57 @@ import { useTheme } from '@/components/theme-provider';
 
 /**
  * Resolves whether the app is in dark mode, handling 'system' theme.
- * Extracts the duplicated pattern from HistogramChart/ScatterChart.
  */
 export function useIsDark(): boolean {
   const { theme } = useTheme();
   return theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 }
 
-/** Read a CSS custom property value at call time */
-function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
+/* ------------------------------------------------------------------ */
+/*  Color palettes — hardcoded to avoid CSS variable timing issues     */
+/* ------------------------------------------------------------------ */
 
-/** Build an `hsl(...)` string from a CSS variable holding H S L values */
-function hsl(varName: string): string {
-  return `hsl(${cssVar(varName)})`;
-}
+/** EDA palette: light and dark variants (mirrors --eda-* in index.css) */
+const EDA_PALETTE = {
+  light: {
+    blue:     'hsl(210, 60%, 65%)',
+    copper:   'hsl(25, 70%, 60%)',
+    emerald:  'hsl(155, 55%, 55%)',
+    amber:    'hsl(38, 80%, 62%)',
+    rose:     'hsl(345, 50%, 62%)',
+    lavender: 'hsl(270, 45%, 65%)',
+  },
+  dark: {
+    blue:     'hsl(210, 65%, 70%)',
+    copper:   'hsl(25, 75%, 65%)',
+    emerald:  'hsl(155, 60%, 60%)',
+    amber:    'hsl(38, 85%, 67%)',
+    rose:     'hsl(345, 55%, 67%)',
+    lavender: 'hsl(270, 50%, 72%)',
+  },
+} as const;
+
+/** Theme-dependent UI colors (mirrors --foreground etc. in index.css) */
+const UI_COLORS = {
+  light: {
+    fg:       'hsl(222.2, 47.4%, 11.2%)',
+    mutedFg:  'hsl(215.4, 16.3%, 46.9%)',
+    popover:  'hsl(0, 0%, 100%)',
+  },
+  dark: {
+    fg:       'hsl(0, 0%, 98%)',
+    mutedFg:  'hsl(0, 0%, 64%)',
+    popover:  'hsl(0, 0%, 9%)',
+  },
+} as const;
 
 /**
- * Returns the 6-color branded EDA categorical palette
- * reading from --eda-* CSS variables.
+ * Returns the 6-color branded EDA categorical palette.
+ * Must accept isDark to select the correct variant synchronously.
  */
-export function getEdaColors(): string[] {
-  return [
-    hsl('--eda-blue'),
-    hsl('--eda-copper'),
-    hsl('--eda-emerald'),
-    hsl('--eda-amber'),
-    hsl('--eda-rose'),
-    hsl('--eda-lavender'),
-  ];
+export function getEdaColors(isDark: boolean): string[] {
+  const p = isDark ? EDA_PALETTE.dark : EDA_PALETTE.light;
+  return [p.blue, p.copper, p.emerald, p.amber, p.rose, p.lavender];
 }
 
 /** Diverging and sequential colorscales for heatmaps / correlation matrices */
@@ -61,8 +93,7 @@ export const EDA_COLORSCALES = {
 };
 
 /**
- * Factory that returns a Plotly Layout object themed from CSS variables.
- * Called inside render so it picks up current theme.
+ * Factory that returns a Plotly Layout object themed for the current mode.
  *
  * Scientific layout preset:
  * - Left/bottom axis lines visible, top/right hidden
@@ -71,8 +102,7 @@ export const EDA_COLORSCALES = {
  * - EDA branded colorway
  */
 export function getPlotlyLayout(isDark: boolean): Record<string, unknown> {
-  const fg = hsl('--foreground');
-  const mutedFg = hsl('--muted-foreground');
+  const ui = isDark ? UI_COLORS.dark : UI_COLORS.light;
   const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.15)';
 
   return {
@@ -80,7 +110,7 @@ export function getPlotlyLayout(isDark: boolean): Record<string, unknown> {
     plot_bgcolor: 'transparent',
     font: {
       family: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-      color: fg,
+      color: ui.fg,
       size: 11,
     },
     margin: { l: 48, r: 16, t: 24, b: 40 },
@@ -88,22 +118,22 @@ export function getPlotlyLayout(isDark: boolean): Record<string, unknown> {
       gridcolor: gridColor,
       zeroline: false,
       showline: true,
-      linecolor: mutedFg,
+      linecolor: ui.mutedFg,
       mirror: false,
-      tickfont: { color: mutedFg, size: 10 },
+      tickfont: { color: ui.mutedFg, size: 10 },
     },
     yaxis: {
       gridcolor: gridColor,
       zeroline: false,
       showline: true,
-      linecolor: mutedFg,
+      linecolor: ui.mutedFg,
       mirror: false,
-      tickfont: { color: mutedFg, size: 10 },
+      tickfont: { color: ui.mutedFg, size: 10 },
     },
-    colorway: getEdaColors(),
+    colorway: getEdaColors(isDark),
     hoverlabel: {
-      bgcolor: hsl('--popover'),
-      font: { family: 'inherit', size: 12, color: fg },
+      bgcolor: ui.popover,
+      font: { family: 'inherit', size: 12, color: ui.fg },
     },
   };
 }

@@ -48,7 +48,7 @@ export function PlotlyPairPlot({
   );
 
   const trace = useMemo(() => {
-    const colors = getEdaColors();
+    const colors = getEdaColors(isDark);
     return {
       type: 'splom' as const,
       dimensions,
@@ -61,7 +61,6 @@ export function PlotlyPairPlot({
       showupperhalf: true,
       showlowerhalf: true,
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [dimensions, isDark]);
 
   const layout = useMemo(() => {

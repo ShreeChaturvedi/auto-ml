@@ -44,7 +44,7 @@ export function PlotlyCategoricalBar({
     const xValues = ordered.map((v) => v.count);
     const textLabels = ordered.map((v) => formatPercentage(v.percentage, true));
 
-    const edaColors = getEdaColors();
+    const edaColors = getEdaColors(isDark);
 
     const barTrace: Record<string, unknown> = {
       type: 'bar',

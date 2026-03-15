@@ -59,7 +59,7 @@ export function PlotlyHistogram({
     const buckets = histogram.buckets;
     const midpoints = buckets.map((b) => (b.start + b.end) / 2);
     const counts = buckets.map((b) => b.count);
-    const edaColors = getEdaColors();
+    const edaColors = getEdaColors(isDark);
 
     return {
       type: 'bar' as const,
@@ -76,7 +76,6 @@ export function PlotlyHistogram({
           `${formatAxis(buckets[i].start)} \u2013 ${formatAxis(buckets[i].end)}<br>Count: ${counts[i].toLocaleString()}<extra></extra>`,
       ),
     } as Record<string, unknown>;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [histogram, isDark]);
 
   // --- 2. KDE trace (optional) ---
@@ -87,7 +86,7 @@ export function PlotlyHistogram({
     const midpoints = buckets.map((b) => (b.start + b.end) / 2);
     const counts = buckets.map((b) => b.count);
     const totalCount = counts.reduce((s, c) => s + c, 0);
-    const edaColors = getEdaColors();
+    const edaColors = getEdaColors(isDark);
 
     if (totalCount <= 0) return null;
 
@@ -113,7 +112,6 @@ export function PlotlyHistogram({
       line: { color: edaColors[1], width: 2, shape: 'spline' },
       hoverinfo: 'skip',
     } as Record<string, unknown>;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [histogram, showKDE, isDark]);
 
   // --- 3. Reference shapes + annotations from numericSummary ---
@@ -126,7 +124,7 @@ export function PlotlyHistogram({
     const buckets = histogram.buckets;
     const xMin = buckets[0].start;
     const xMax = buckets[buckets.length - 1].end;
-    const edaColors = getEdaColors();
+    const edaColors = getEdaColors(isDark);
 
     // Std deviation reference lines at mean +/- stdDev
     if (numericSummary.stdDev > 0) {
@@ -156,7 +154,6 @@ export function PlotlyHistogram({
     }
 
     return { shapes, annotations };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [histogram, numericSummary, isDark]);
 
   // --- 4. Layout ---

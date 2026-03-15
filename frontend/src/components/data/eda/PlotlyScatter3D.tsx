@@ -36,7 +36,7 @@ export function PlotlyScatter3D({
   const sampled = useMemo(() => subsampleRows(rows, MAX_ROWS), [rows]);
 
   const trace = useMemo(() => {
-    const colors = getEdaColors();
+    const colors = getEdaColors(isDark);
     return {
       type: 'scatter3d' as const,
       mode: 'markers' as const,
@@ -59,7 +59,6 @@ export function PlotlyScatter3D({
       },
       hovertemplate: `${xCol}: %{x}<br>${yCol}: %{y}<br>${zCol}: %{z}<extra></extra>`,
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDark triggers recompute when theme (CSS vars) change
   }, [sampled, xCol, yCol, zCol, isDark]);
 
   const layout = useMemo(() => {

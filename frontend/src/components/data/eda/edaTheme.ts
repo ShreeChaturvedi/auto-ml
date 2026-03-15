@@ -27,13 +27,55 @@ function hsl(varName: string): string {
 }
 
 /**
+ * Returns the 6-color branded EDA categorical palette
+ * reading from --eda-* CSS variables.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getEdaColors(isDark: boolean): string[] {
+  return [
+    hsl('--eda-blue'),
+    hsl('--eda-copper'),
+    hsl('--eda-emerald'),
+    hsl('--eda-amber'),
+    hsl('--eda-rose'),
+    hsl('--eda-lavender'),
+  ];
+}
+
+/** Diverging and sequential colorscales for heatmaps / correlation matrices */
+export const EDA_COLORSCALES = {
+  /** Red–Blue diverging colorscale with dark/light midpoint variants */
+  rdbu: (isDark: boolean): [number, string][] => [
+    [0, 'hsl(0, 70%, 55%)'],
+    [0.25, 'hsl(15, 50%, 65%)'],
+    [0.5, isDark ? 'hsl(0, 0%, 18%)' : 'hsl(0, 0%, 95%)'],
+    [0.75, 'hsl(210, 50%, 65%)'],
+    [1, 'hsl(220, 70%, 55%)'],
+  ],
+  /** Viridis-inspired sequential colorscale */
+  viridis: [
+    [0, '#440154'],
+    [0.25, '#31688e'],
+    [0.5, '#35b779'],
+    [0.75, '#90d743'],
+    [1, '#fde725'],
+  ] as [number, string][],
+};
+
+/**
  * Factory that returns a Plotly Layout object themed from CSS variables.
  * Called inside render so it picks up current theme.
+ *
+ * Scientific layout preset:
+ * - Left/bottom axis lines visible, top/right hidden
+ * - Subtle grid with low opacity
+ * - Zeroline off
+ * - EDA branded colorway
  */
 export function getPlotlyLayout(isDark: boolean): Record<string, unknown> {
   const fg = hsl('--foreground');
   const mutedFg = hsl('--muted-foreground');
-  const gridColor = isDark ? 'hsl(var(--muted))' : 'hsl(var(--border))';
+  const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.15)';
 
   return {
     paper_bgcolor: 'transparent',
@@ -46,21 +88,21 @@ export function getPlotlyLayout(isDark: boolean): Record<string, unknown> {
     margin: { l: 48, r: 16, t: 24, b: 40 },
     xaxis: {
       gridcolor: gridColor,
-      zerolinecolor: gridColor,
+      zeroline: false,
+      showline: true,
+      linecolor: mutedFg,
+      mirror: false,
       tickfont: { color: mutedFg, size: 10 },
     },
     yaxis: {
       gridcolor: gridColor,
-      zerolinecolor: gridColor,
+      zeroline: false,
+      showline: true,
+      linecolor: mutedFg,
+      mirror: false,
       tickfont: { color: mutedFg, size: 10 },
     },
-    colorway: [
-      hsl('--primary'),
-      hsl('--chart-2'),
-      hsl('--chart-3'),
-      hsl('--chart-4'),
-      hsl('--chart-5'),
-    ],
+    colorway: getEdaColors(isDark),
     hoverlabel: {
       bgcolor: hsl('--popover'),
       font: { family: 'inherit', size: 12, color: fg },
@@ -74,19 +116,47 @@ export const PLOTLY_CONFIG: Record<string, unknown> = {
   displayModeBar: false,
 };
 
+/** Plotly config with modebar shown on hover — for interactive charts */
+export const PLOTLY_CONFIG_INTERACTIVE: Record<string, unknown> = {
+  ...PLOTLY_CONFIG,
+  displayModeBar: 'hover' as const,
+};
+
 /** Lazy-loaded Plot component (singleton — shared across all chart components) */
 export const LazyPlot = React.lazy(() => import('react-plotly.js'));
 
-/** Suspense wrapper with pulse skeleton fallback */
-export function PlotSuspense({ height, children }: { height: number; children: ReactNode }) {
+/** Suspense wrapper with pulse skeleton fallback and optional loading label */
+export function PlotSuspense({
+  height,
+  loadingLabel,
+  children,
+}: {
+  height: number;
+  loadingLabel?: string;
+  children: ReactNode;
+}) {
   return React.createElement(
     Suspense,
     {
-      fallback: React.createElement('div', {
-        className: 'animate-pulse bg-muted/50 rounded-md',
-        style: { height },
-      }),
+      fallback: React.createElement(
+        'div',
+        {
+          className: 'animate-pulse bg-muted/50 rounded-md flex items-center justify-center',
+          style: { height },
+        },
+        loadingLabel
+          ? React.createElement(
+              'span',
+              { className: 'text-xs text-muted-foreground' },
+              loadingLabel,
+            )
+          : null,
+      ),
     },
-    children,
+    React.createElement(
+      'div',
+      { className: 'animate-in fade-in duration-300' },
+      children,
+    ),
   );
 }

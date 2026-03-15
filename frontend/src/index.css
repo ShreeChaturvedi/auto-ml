@@ -35,6 +35,20 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 0 0% 45%;
     --radius: 0.5rem;
+
+    /* EDA branded palette — do NOT reuse --chart-* (used by SQL highlighting) */
+    --eda-blue:        210 60% 65%;
+    --eda-copper:      25 70% 60%;
+    --eda-emerald:     155 55% 55%;
+    --eda-amber:       38 80% 62%;
+    --eda-rose:        345 50% 62%;
+    --eda-lavender:    270 45% 65%;
+
+    /* EDA severity */
+    --eda-pristine:    155 65% 50%;
+    --eda-clean:       170 45% 50%;
+    --eda-fair:        38 70% 55%;
+    --eda-poor:        0 65% 55%;
   }
 
   .dark {
@@ -59,6 +73,20 @@
     --border: 0 0% 14%;
     --input: 0 0% 14%;
     --ring: 0 0% 55%;
+
+    /* EDA branded palette — adjusted for dark backgrounds */
+    --eda-blue:        210 65% 70%;
+    --eda-copper:      25 75% 65%;
+    --eda-emerald:     155 60% 60%;
+    --eda-amber:       38 85% 67%;
+    --eda-rose:        345 55% 67%;
+    --eda-lavender:    270 50% 72%;
+
+    /* EDA severity — brighter on dark bg */
+    --eda-pristine:    155 70% 55%;
+    --eda-clean:       170 50% 55%;
+    --eda-fair:        38 75% 60%;
+    --eda-poor:        0 70% 60%;
   }
 }
 

@@ -1,3 +1,4 @@
+import { asRecord } from '../../../utils/typeCoercion.js';
 import {
   FEATURE_TOOL_HANDLERS,
   toFeatureToolContext
@@ -5,7 +6,6 @@ import {
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { FEATURE_ENGINEERING_CONTRACT } from '../../llm/prompts/featureContract.js';
 import { FEATURE_TOOL_NAMES } from '../../llm/tools/featureTools.js';
-import { asRecord } from '../../../utils/typeCoercion.js';
 import { LLM_FEATURE_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import type {
   LifecycleStageDefinition,

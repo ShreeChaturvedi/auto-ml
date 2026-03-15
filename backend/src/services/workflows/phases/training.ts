@@ -1,10 +1,10 @@
+import { asRecord } from '../../../utils/typeCoercion.js';
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { TRAINING_LIFECYCLE_CONTRACT } from '../../llm/prompts/trainingContract.js';
 import { LLM_TRAINING_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import { TRAINING_TOOL_NAMES } from '../../llm/tools/trainingTools.js';
 import { TRAINING_TOOL_HANDLERS } from '../../llm/trainingTools/index.js';
 import { toTrainingToolContext } from '../../llm/trainingTools/types.js';
-import { asRecord } from '../../../utils/typeCoercion.js';
 import type {
   LifecycleStageDefinition,
   PhaseConfig,

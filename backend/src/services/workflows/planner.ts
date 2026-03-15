@@ -3,11 +3,7 @@ import type { LlmClient } from '../llm/llmClient.js';
 import type { WorkflowNodeContract } from './contracts.js';
 import type { WorkflowGraphState } from './graphState.js';
 import { parsePlannerResponse, validatePlan } from './plannerAction.js';
-import { planCodeMaterialization } from './plannerCode.js';
-import { planExecutionRecordingAction } from './plannerExecution.js';
-import { planNotebookBindingAction } from './plannerNotebook.js';
 import { buildPlannerRequest } from './plannerPrompt.js';
-import { planValidationAction } from './plannerValidation.js';
 
 function buildPlannerFailure(message: string, code: string): Partial<WorkflowGraphState> {
   return {
@@ -22,18 +18,8 @@ export async function planWorkflowAction(
   state: WorkflowGraphState,
   contract: WorkflowNodeContract
 ): Promise<Partial<WorkflowGraphState>> {
-  if (state.turn.phase === 'preprocessing' && state.controllerSummary?.currentNode === 'generate_code') {
-    return planCodeMaterialization(client, state);
-  }
-  if (state.turn.phase === 'preprocessing' && state.controllerSummary?.currentNode === 'write_code') {
-    return planNotebookBindingAction(state);
-  }
-  if (state.turn.phase === 'preprocessing' && state.controllerSummary?.currentNode === 'record_execution') {
-    return planExecutionRecordingAction(state);
-  }
-  if (state.turn.phase === 'preprocessing' && state.controllerSummary?.currentNode === 'validate') {
-    return planValidationAction(state);
-  }
+  // Deterministic and delegated stages are now handled upstream in invokeModelNode
+  // via PhaseConfig's stageConfig.deterministicAction / delegatedAction.
 
   let parsedPlan;
 

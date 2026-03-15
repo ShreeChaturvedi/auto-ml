@@ -13,13 +13,8 @@ import {
   PreprocessingToolbarLeft,
   PreprocessingToolbarRight
 } from './PreprocessingToolbar';
-import { PreprocessingResultsSection } from './PreprocessingResultsSection';
-import { TransformationTimelineSheet } from './TransformationTimelineSheet';
-import { cn } from '@/lib/utils';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
-import { useProjectStore } from '@/stores/projectStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
-import { projectColorClasses } from '@/types/project';
 import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
 import { DEFAULT_TAB_ID } from './preprocessingTabUtils';
@@ -29,43 +24,21 @@ export function PreprocessingPanel() {
   const [searchParams] = useSearchParams();
   const initialTabIdRef = useRef(searchParams.get('tab') ?? undefined);
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
-  const projects = useProjectStore((state) => state.projects);
-  const activeProjectColor = useMemo(() => {
-    const activeProject = projectId
-      ? projects.find((project) => project.id === projectId)
-      : undefined;
-    return activeProject?.color ?? 'blue';
-  }, [projectId, projects]);
-  const projectAccentClasses = projectColorClasses[activeProjectColor];
-  const divergedAccentClassName = cn(
-    projectAccentClasses.border,
-    projectAccentClasses.bg,
-    projectAccentClasses.text
-  );
-
   const tables = usePreprocessingStore((state) => state.tables);
   const selectedDatasetId = usePreprocessingStore((state) => state.selectedDatasetId);
   const runId = usePreprocessingStore((state) => state.runId);
-  const timeline = usePreprocessingStore((state) => state.timeline);
   const isLoadingTables = usePreprocessingStore((state) => state.isLoadingTables);
-  const storeError = usePreprocessingStore((state) => state.error);
   const loadTables = usePreprocessingStore((state) => state.loadTables);
   const selectDataset = usePreprocessingStore((state) => state.selectDataset);
   const setNextRunCellMode = usePreprocessingStore((state) => state.setNextRunCellMode);
   const hydrateRunById = usePreprocessingStore((state) => state.hydrateRunById);
-  const approveStep = usePreprocessingStore((state) => state.approveStep);
-  const rejectStep = usePreprocessingStore((state) => state.rejectStep);
   const evaluateReplayCompatibility = usePreprocessingStore((state) => state.evaluateReplayCompatibility);
   const clearRun = usePreprocessingStore((state) => state.clearRun);
-  const replayReport = usePreprocessingStore((state) => state.replayReport);
-  const controllerSummary = usePreprocessingStore((state) => state.controllerSummary);
   const lastHydratedRunIdRef = useRef<string | null>(null);
   const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
 
   const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
   const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
-  const [timelineSheetOpen, setTimelineSheetOpen] = useState(false);
-  const handleOpenTimeline = useCallback(() => setTimelineSheetOpen(true), []);
 
   const { forceOpen: datasetSelectorForceOpen, openSelector: openDatasetSelector } =
     useDatasetSelectorTrigger();
@@ -167,43 +140,12 @@ export function PreprocessingPanel() {
     ));
   };
 
-  const sortedTimeline = useMemo(
-    () => [...timeline].sort((a, b) => a.createdAt - b.createdAt),
-    [timeline]
-  );
-  const latestTimelineEvent = useMemo(
-    () => [...timeline].sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null,
-    [timeline]
-  );
-  const hasRunningStep = useMemo(
-    () => sortedTimeline.some((e) => e.status === 'running'),
-    [sortedTimeline]
-  );
-  const hasAwaitingApproval = useMemo(
-    () => sortedTimeline.some((e) => e.status === 'awaiting_approval'),
-    [sortedTimeline]
-  );
-
   const handleReplayCheck = () => {
     if (!projectId) {
       return;
     }
     void evaluateReplayCompatibility(projectId);
   };
-
-  const handleApproveStep = useCallback((stepId: string) => {
-    if (!projectId) {
-      return;
-    }
-    void approveStep(projectId, stepId);
-  }, [approveStep, projectId]);
-
-  const handleRejectStep = useCallback((stepId: string) => {
-    if (!projectId) {
-      return;
-    }
-    void rejectStep(projectId, stepId, 'Rejected by user');
-  }, [projectId, rejectStep]);
 
   const handleDatasetSelect = (datasetId: string) => {
     const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID);
@@ -246,9 +188,6 @@ export function PreprocessingPanel() {
             onDeleteTab={handleDeleteTab}
             canDeleteTab={tabs.length > 1}
             selectedDatasetId={selectedDatasetId ?? ''}
-            onOpenTimeline={handleOpenTimeline}
-            timelineStepCount={sortedTimeline.length}
-            hasAwaitingApproval={hasAwaitingApproval}
           />
         }
         toolbarRight={
@@ -257,15 +196,6 @@ export function PreprocessingPanel() {
             tables={tables}
             onDatasetSelect={handleDatasetSelect}
             isLoadingTables={isLoadingTables}
-          />
-        }
-        composerStatusSlot={
-          <PreprocessingResultsSection
-            storeError={storeError}
-            latestTimelineEvent={latestTimelineEvent}
-            controllerSummary={controllerSummary}
-            divergedAccentClassName={divergedAccentClassName}
-            onOpenTimeline={handleOpenTimeline}
           />
         }
         renderLeftPane={(renderProps) => (
@@ -305,16 +235,6 @@ export function PreprocessingPanel() {
         onCancel={() => resolvePendingSubmitPrompt(null)}
       />
 
-      <TransformationTimelineSheet
-        sortedTimeline={sortedTimeline}
-        replayReport={replayReport}
-        divergedAccentClassName={divergedAccentClassName}
-        isGenerating={hasRunningStep}
-        onApproveStep={handleApproveStep}
-        onRejectStep={handleRejectStep}
-        open={timelineSheetOpen}
-        onOpenChange={setTimelineSheetOpen}
-      />
     </>
   );
 }

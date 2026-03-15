@@ -1,13 +1,14 @@
-import { useState, useMemo } from 'react';
-import { Waypoints, X, Grid3x3, Box, ScatterChart } from 'lucide-react';
+import { useMemo } from 'react';
+import { Waypoints, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EdaSummary } from '@/types/file';
-import { IconModeToggle } from '@/components/data/IconModeToggle';
 import { PlotlyHeatmap } from './PlotlyHeatmap';
 import { PlotlyScatter } from './PlotlyScatter';
 import { PlotlyPairPlot } from './PlotlyPairPlot';
 import { PlotlyScatter3D } from './PlotlyScatter3D';
 import { CorrelationPairsList } from './CorrelationPairsList';
+
+type ViewMode = 'heatmap' | 'pairplot' | '3d';
 
 interface CorrelationsPanelProps {
   eda: EdaSummary;
@@ -16,14 +17,10 @@ interface CorrelationsPanelProps {
   /** Lifted state from parent so it persists across tab switches */
   selectedCell: { a: string; b: string } | null;
   onSelectedCellChange: (cell: { a: string; b: string } | null) => void;
+  /** View mode lifted to parent (toolbar controls this) */
+  viewMode: ViewMode;
+  onViewModeChange: (v: ViewMode) => void;
   className?: string;
-}
-
-const VIEW_MODES = ['heatmap', 'pairplot', '3d'] as const;
-type ViewMode = (typeof VIEW_MODES)[number];
-
-function isViewMode(v: string): v is ViewMode {
-  return (VIEW_MODES as readonly string[]).includes(v);
 }
 
 export function CorrelationsPanel({
@@ -31,10 +28,9 @@ export function CorrelationsPanel({
   rows,
   selectedCell,
   onSelectedCellChange,
+  viewMode,
   className,
 }: CorrelationsPanelProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
-
   const numericColumnNames = useMemo(
     () => eda.numericColumns.map((c) => c.column),
     [eda.numericColumns],
@@ -82,20 +78,6 @@ export function CorrelationsPanel({
     return pair?.coefficient;
   }, [selectedCell, correlations]);
 
-  const viewModeOptions = useMemo(
-    () => [
-      { value: 'heatmap' as const, ariaLabel: 'Heatmap', icon: Grid3x3, tooltip: 'Correlation Heatmap' },
-      { value: 'pairplot' as const, ariaLabel: 'Pair Plot', icon: ScatterChart, tooltip: 'Pair Plot Matrix' },
-      {
-        value: '3d' as const,
-        ariaLabel: '3D',
-        icon: Box,
-        tooltip: numericColumnNames.length < 3 ? 'Need 3+ numeric columns' : '3D Scatter',
-      },
-    ],
-    [numericColumnNames.length],
-  );
-
   // Empty state: fewer than 2 numeric columns
   if (numericColumnNames.length < 2 || correlations.length === 0) {
     return (
@@ -108,17 +90,6 @@ export function CorrelationsPanel({
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      {/* View mode toggle */}
-      <div className="flex items-center justify-end px-1">
-        <IconModeToggle
-          value={viewMode}
-          onValueChange={(v) => {
-            if (v && isViewMode(v)) setViewMode(v);
-          }}
-          options={viewModeOptions}
-        />
-      </div>
-
       {/* Heatmap view */}
       {viewMode === 'heatmap' && (
         <>

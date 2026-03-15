@@ -1,26 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
+import type { PhaseConfig } from './phaseConfig.js';
 import { executeToolsNode } from './toolExecutor.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
-const {
-  executePreprocessingToolMock,
-  syncPreprocessingLangGraphStateMock
-} = vi.hoisted(() => ({
-  executePreprocessingToolMock: vi.fn(),
-  syncPreprocessingLangGraphStateMock: vi.fn()
-}));
-
-vi.mock('../llm/preprocessingGraph.js', () => ({
-  isPreprocessingToolName: vi.fn((toolName: string) => toolName === 'commit_transformation_step'),
-  executePreprocessingTool: executePreprocessingToolMock,
-  syncPreprocessingLangGraphState: syncPreprocessingLangGraphStateMock
-}));
+const executePhaseSpecificToolMock = vi.fn();
 
 vi.mock('../mcp/mcpAdapter.js', () => ({
   executeMcpTool: vi.fn()
 }));
+
+function createPhaseConfig(): PhaseConfig {
+  return {
+    phase: 'preprocessing',
+    lifecycle: [],
+    classifyTurn: vi.fn(async () => 'action' as const),
+    getStageConfig: vi.fn(() => ({
+      name: 'commit',
+      mode: 'action' as const,
+      allowedTools: [],
+      toolChoice: 'auto' as const,
+      requiresApproval: false,
+      allowAssistantMessage: false,
+      allowAskUser: false,
+      allowRenderUi: false,
+      allowPlanExit: false,
+      requireToolCall: true
+    })),
+    buildSystemPrompt: vi.fn(() => ''),
+    buildUserContext: vi.fn(() => []),
+    resolveNextStage: vi.fn(() => null),
+    isPhaseSpecificTool: vi.fn((toolName: string) => toolName === 'commit_transformation_step'),
+    executePhaseSpecificTool: executePhaseSpecificToolMock
+  };
+}
 
 function createState(): WorkflowGraphState {
   const turn: WorkflowTurnRequest = {
@@ -83,32 +97,39 @@ function createState(): WorkflowGraphState {
 
 describe('executeToolsNode', () => {
   beforeEach(() => {
-    executePreprocessingToolMock.mockReset();
-    syncPreprocessingLangGraphStateMock.mockReset();
-    executePreprocessingToolMock.mockResolvedValue({
+    executePhaseSpecificToolMock.mockReset();
+    executePhaseSpecificToolMock.mockResolvedValue({
       output: {
         runId: 'prep-1',
         stepId: 'step-1',
         status: 'applied'
       }
     });
-    syncPreprocessingLangGraphStateMock.mockImplementation(async (_projectId, _tool, _args, result) => result);
   });
 
   it('marks approval commits as explicit user decisions', async () => {
+    const phaseConfig = createPhaseConfig();
+    const sinkMock = {
+      emit: vi.fn()
+    };
+
     await executeToolsNode(createState(), {
-      writableEnded: false,
-      destroyed: false,
-      write: vi.fn()
+      configurable: {
+        sink: sinkMock,
+        phaseConfig
+      }
     } as never);
 
-    expect(executePreprocessingToolMock).toHaveBeenCalledWith(
-      'project-1',
+    expect(executePhaseSpecificToolMock).toHaveBeenCalledWith(
       'commit_transformation_step',
       expect.objectContaining({
         approvalSource: 'user',
         approved: true,
         datasetId: 'dataset-1'
+      }),
+      expect.objectContaining({
+        projectId: 'project-1',
+        toolCallId: 'wf-call-1'
       })
     );
   });

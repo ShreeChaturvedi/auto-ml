@@ -2,13 +2,13 @@
  * TrainingPanel - Jupyter-style training interface with AI assistance
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Loader2,
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
@@ -22,8 +22,9 @@ import { useProjectStore } from '@/stores/projectStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
+import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
+import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { createTrainingAdapter } from './TrainingAdapter';
-import { ChatMessageList } from '@/components/llm/ChatMessageList';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
@@ -219,120 +220,70 @@ export function TrainingPanel() {
     }
   };
 
-  const LeftPaneComponent = ({
-    messages,
-    isGenerating,
-    error,
-    activeTextMessageId,
-    activeThinkingMessageId,
-    hydratedMessageIds
-  }: {
-    messages: ChatMessage[];
-    isGenerating: boolean;
-    error: string | null;
-    activeTextMessageId: string | null;
-    activeThinkingMessageId: string | null;
-    hydratedMessageIds: Set<string>;
-  }) => {
-    // Sync cells on render or effect
-    const uiSchemas = messages.filter(m => m.type === 'ui').map(m => m.schema as UiSchema);
-    const lastUiSchema = uiSchemas[uiSchemas.length - 1];
-    const llmCodeCells = useMemo((): CodeCellUiItem[] => {
-      if (!lastUiSchema) {
-        return [];
+  const baseRenderLifecycleCard = useLifecycleCards();
+
+  /** Extends lifecycle cards with training-specific ui message rendering */
+  const renderLifecycleCard = useCallback(
+    (message: ChatMessage): ReactNode | null => {
+      if (message.type === 'ui') {
+        return (
+          <div className="space-y-4">
+            {message.schema.sections.map((section: UiSection) => (
+              <div key={section.id} className="space-y-3">
+                {section.title && <h3 className="text-sm font-semibold">{section.title}</h3>}
+                <div className="space-y-3">
+                  {section.items.map(renderTrainingItem)}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
       }
 
-      return lastUiSchema.sections.flatMap((section) =>
-        section.items.filter((item): item is CodeCellUiItem => item.type === 'code_cell')
-      );
-    }, [lastUiSchema]);
-    
-    // Auto sync effect
-    useEffect(() => {
-      if (llmCodeCells.length === 0) return;
-      setCells((prev) => {
-        const manualCells = prev.filter((cell) => !cell.id.startsWith('llm-'));
-        const existingMap = new Map(prev.map((cell) => [cell.id, cell]));
-        const nextLlmCells = llmCodeCells.map((item) => {
-          const id = `llm-${item.id}`;
-          const existing = existingMap.get(id);
-          if (existing) {
-            if (existing.content === item.content) return existing;
-            return { ...existing, content: item.content };
-          }
-          return { id, type: 'code' as const, content: item.content, status: 'idle' as const, createdAt: new Date().toISOString() };
-        });
-        return [...manualCells, ...nextLlmCells];
-      });
-    }, [llmCodeCells]);
-    
-    // Auto run effect
-    useEffect(() => {
-      if (llmCodeCells.length === 0) return;
-      llmCodeCells.forEach((item) => {
-        if (!item.autoRun) return;
-        const cellId = `llm-${item.id}`;
-        if (autoRunIdsRef.current.has(cellId)) return;
-        const cell = cellsRef.current.find((entry) => entry.id === cellId);
-        if (!cell || cell.status !== 'idle') return;
-        autoRunIdsRef.current.add(cellId);
-        void handleRunCell(cellId);
-      });
-    }, [llmCodeCells]);
+      return baseRenderLifecycleCard(message);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseRenderLifecycleCard, cells, datasetCompletionFiles]
+  );
 
-    return (
-      <div className="p-6 space-y-4">
-        {trainingBlockedByFeGate ? (
-          <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                Training Locked: Feature Pipeline Approval Required
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
-              <p>Approve a Feature Engineering pipeline before starting model training.</p>
-              <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
-            </CardContent>
-          </Card>
-        ) : null}
+  /** Sync LLM-emitted code cells into local cell state */
+  const syncLlmCells = useCallback((messages: ChatMessage[]) => {
+    const uiSchemas = messages.filter((m): m is Extract<ChatMessage, { type: 'ui' }> => m.type === 'ui').map(m => m.schema as UiSchema);
+    const lastUiSchema = uiSchemas[uiSchemas.length - 1];
+    if (!lastUiSchema) return;
 
-        {error && <div className="text-sm text-red-500">{error}</div>}
-
-        <ChatMessageList
-          messages={messages}
-          activeTextMessageId={activeTextMessageId}
-          activeThinkingMessageId={activeThinkingMessageId}
-          hydratedMessageIds={hydratedMessageIds}
-          showAssistantAvatar
-          className="space-y-4"
-          renderExtra={(msg) => {
-            if (msg.type === 'ui') {
-              return (
-                <div key={msg.id} className="space-y-4 ml-9">
-                  {msg.schema.sections.map((section: UiSection) => (
-                    <div key={section.id} className="space-y-3">
-                      {section.title && <h3 className="text-sm font-semibold">{section.title}</h3>}
-                      <div className="space-y-3">
-                        {section.items.map(renderTrainingItem)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            }
-            return null;
-          }}
-        />
-
-        {isGenerating && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground ml-9 animate-pulse">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Generating...
-          </div>
-        )}
-      </div>
+    const llmCodeCells: CodeCellUiItem[] = lastUiSchema.sections.flatMap((section) =>
+      section.items.filter((item): item is CodeCellUiItem => item.type === 'code_cell')
     );
-  };
+
+    if (llmCodeCells.length === 0) return;
+
+    setCells((prev) => {
+      const manualCells = prev.filter((cell) => !cell.id.startsWith('llm-'));
+      const existingMap = new Map(prev.map((cell) => [cell.id, cell]));
+      const nextLlmCells = llmCodeCells.map((item) => {
+        const id = `llm-${item.id}`;
+        const existing = existingMap.get(id);
+        if (existing) {
+          if (existing.content === item.content) return existing;
+          return { ...existing, content: item.content };
+        }
+        return { id, type: 'code' as const, content: item.content, status: 'idle' as const, createdAt: new Date().toISOString() };
+      });
+      return [...manualCells, ...nextLlmCells];
+    });
+
+    // Auto run
+    llmCodeCells.forEach((item) => {
+      if (!item.autoRun) return;
+      const cellId = `llm-${item.id}`;
+      if (autoRunIdsRef.current.has(cellId)) return;
+      const cell = cellsRef.current.find((entry) => entry.id === cellId);
+      if (!cell || cell.status !== 'idle') return;
+      autoRunIdsRef.current.add(cellId);
+      void handleRunCell(cellId);
+    });
+  }, [handleRunCell]);
 
   const trainingAdapter = useMemo(() => createTrainingAdapter({
     projectId: projectId ?? '',
@@ -360,7 +311,38 @@ export function TrainingPanel() {
       storageKey="training-messages"
       domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
       domainAdapter={trainingAdapter}
-      LeftPaneComponent={LeftPaneComponent}
+      renderLeftPane={(renderProps) => {
+        // Sync LLM code cells whenever messages change
+        syncLlmCells(renderProps.messages);
+
+        return (
+          <div className="p-6 space-y-4 pb-28">
+            {trainingBlockedByFeGate ? (
+              <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
+                    Training Locked: Feature Pipeline Approval Required
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
+                  <p>Approve a Feature Engineering pipeline before starting model training.</p>
+                  <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
+
+            <ChatMessageRenderer
+              messages={renderProps.messages}
+              renderLifecycleCard={renderLifecycleCard}
+              activeTextMessageId={renderProps.activeTextMessageId}
+              activeThinkingMessageId={renderProps.activeThinkingMessageId}
+              hydratedMessageIds={renderProps.hydratedMessageIds}
+            />
+          </div>
+        );
+      }}
       toolbarLeft={undefined}
       toolbarRight={
         projectFeatures.length > 0 ? (

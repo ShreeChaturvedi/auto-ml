@@ -33,7 +33,7 @@ function normalizeArrayTypeName(typeName: string, elementTypeName: string | null
   return normalizedTypeName;
 }
 
-function resolveTypeNameFromPgCatalog(row: PgTypeCatalogRow): string {
+export function resolveTypeNameFromPgCatalog(row: PgTypeCatalogRow): string {
   const typeName = row.typname?.trim();
   if (!typeName) {
     return 'unknown';

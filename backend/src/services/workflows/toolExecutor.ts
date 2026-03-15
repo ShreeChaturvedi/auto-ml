@@ -3,11 +3,6 @@ import type { z } from 'zod';
 
 import type { ToolResult } from '../../types/llm.js';
 import { ToolCallSchema } from '../../types/llm.js';
-import {
-  executePreprocessingTool,
-  isPreprocessingToolName,
-  syncPreprocessingLangGraphState
-} from '../llm/preprocessingGraph.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
 import { buildToolEvent } from './eventWriter.js';
@@ -63,7 +58,7 @@ async function executeWorkflowToolCall(
     approvalSource
   };
 
-  // Use PhaseConfig dispatch if available, otherwise fall back to legacy branching
+  // PhaseConfig dispatch for phase-specific tools
   if (phaseConfig?.isPhaseSpecificTool(call.tool)) {
     const phaseResult = await phaseConfig.executePhaseSpecificTool(
       call.tool,
@@ -84,18 +79,11 @@ async function executeWorkflowToolCall(
     };
   }
 
-  // Legacy fallback: direct preprocessing tool dispatch
-  const result = isPreprocessingToolName(call.tool)
-    ? await syncPreprocessingLangGraphState(
-        state.turn.projectId,
-        call.tool,
-        enrichedArgs,
-        await executePreprocessingTool(state.turn.projectId, call.tool, enrichedArgs)
-      )
-    : await executeMcpTool(state.turn.projectId, call.tool, {
-        ...(call.args ?? {}),
-        ...(state.turn.notebookId ? { notebookId: state.turn.notebookId } : {})
-      });
+  // MCP fallback for non-phase-specific tools (notebook, data tools)
+  const result = await executeMcpTool(state.turn.projectId, call.tool, {
+    ...(call.args ?? {}),
+    ...(state.turn.notebookId ? { notebookId: state.turn.notebookId } : {})
+  });
 
   return {
     id: call.id,

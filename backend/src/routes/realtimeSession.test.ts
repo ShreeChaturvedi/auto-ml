@@ -19,11 +19,13 @@ vi.mock('../db.js', () => ({
   getDbPool: getDbPoolMock,
 }));
 
-vi.mock('../repositories/userRepository.js', () => ({
-  UserRepository: vi.fn().mockImplementation(() => ({
-    findById: findByIdMock,
-  })),
-}));
+vi.mock('../repositories/userRepository.js', () => {
+  return {
+    UserRepository: class MockUserRepository {
+      findById = findByIdMock;
+    },
+  };
+});
 
 vi.mock('../services/authService.js', () => ({
   authService: {

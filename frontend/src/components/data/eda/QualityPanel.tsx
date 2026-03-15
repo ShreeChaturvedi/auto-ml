@@ -1,6 +1,6 @@
 /**
- * QualityPanel — redesigned data quality overview with missing-value matrix,
- * severity-colored health cards, and the scientific aesthetic shared by all EDA tabs.
+ * QualityPanel — data quality overview with missing-value matrix,
+ * sortable quality table, and the scientific aesthetic shared by all EDA tabs.
  */
 
 import { useMemo } from 'react';
@@ -8,36 +8,19 @@ import { Badge } from '@/components/ui/badge';
 import { InsightTicker } from '@/components/ui/insight-ticker';
 import type { InsightTickerItem } from '@/components/ui/insight-ticker';
 import { CheckCircle2 } from 'lucide-react';
-import type { EdaSummary, DataQualitySummary } from '@/types/file';
+import type { EdaSummary, DataQualitySummary, ColumnDataType } from '@/types/file';
 import { cn } from '@/lib/utils';
 import type { EdaInsight } from './edaInsights';
 import { formatPercentage } from './edaFormatters';
-import { DATA_TYPE_ICONS, DATA_TYPE_COLORS } from './edaConstants';
+import { DATA_TYPE_ICONS, DATA_TYPE_COLORS, getSeverityLabel } from './edaConstants';
 import { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
-import { ColumnHealthGrid } from './ColumnHealthCards';
+import { QualityTable } from './QualityTable';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
 const QUALITY_INSIGHT_PREFIXES = ['missing-', 'constant-', 'cardinality-'];
-
-const SEVERITY_LEGEND = [
-  { label: 'Pristine', range: '100%', colorClass: 'text-green-500' },
-  { label: 'Clean', range: '95-99%', colorClass: 'text-teal-500' },
-  { label: 'Fair', range: '80-94%', colorClass: 'text-amber-500' },
-  { label: 'Poor', range: '<80%', colorClass: 'text-red-500' },
-] as const;
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function avgMissingColorClass(avg: number): string {
-  if (avg < 5) return 'text-green-600 dark:text-green-400';
-  if (avg <= 20) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
-}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -47,10 +30,11 @@ interface QualityPanelProps {
   eda: EdaSummary;
   /** Pre-computed insights from parent — avoids recomputing detectInsights */
   insights?: EdaInsight[];
+  columnTypes?: Record<string, ColumnDataType>;
   className?: string;
 }
 
-export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
+export function QualityPanel({ eda, insights, columnTypes, className }: QualityPanelProps) {
   const data = eda.dataQuality;
 
   /* ---------- derived data ---------------------------------------- */
@@ -83,6 +67,8 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
   }, [data]);
 
   const allColumnsComplete = summary.completeColumns === summary.totalColumns;
+  const avgCompleteness = 100 - summary.avgMissingPct;
+  const avgSeverity = getSeverityLabel(avgCompleteness);
 
   /* ---------- empty state ----------------------------------------- */
 
@@ -125,7 +111,7 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
         </div>
 
         <div className="bg-muted/40 border border-border/30 rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-3">
-          <div className={cn('text-2xl font-bold font-mono', avgMissingColorClass(summary.avgMissingPct))}>
+          <div className={cn('text-2xl font-bold font-mono', avgSeverity.colorClass)}>
             {formatPercentage(summary.avgMissingPct)}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">Avg Missing %</div>
@@ -159,18 +145,13 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
         })}
       </div>
 
-      {/* 5. Severity legend */}
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        {SEVERITY_LEGEND.map((tier) => (
-          <span key={tier.label} className="flex items-center gap-1">
-            <span className={cn('font-medium', tier.colorClass)}>{tier.label}</span>
-            <span>({tier.range})</span>
-          </span>
-        ))}
-      </div>
+      {/* 5. Sortable quality table */}
+      <QualityTable dataQuality={data} columnTypes={columnTypes} />
 
-      {/* 6. Column health grid (replaces the old table) */}
-      <ColumnHealthGrid dataQuality={data} />
+      {/* 6. Severity footnote */}
+      <p className="text-xs text-muted-foreground">
+        Pristine (100%) · Clean (95-99%) · Fair (80-94%) · Poor (&lt;80%)
+      </p>
     </div>
   );
 }

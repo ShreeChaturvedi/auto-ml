@@ -15,6 +15,7 @@ import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
 import { resolveWorkflowNodeContract } from './contracts.js';
 import type { WorkflowEventSink } from './eventSink.js';
 import type { WorkflowGraphState } from './graphState.js';
+import type { StageConfig } from './phaseConfig.js';
 import { extractConfigurable } from './phases/types.js';
 import { planWorkflowAction } from './planner.js';
 import type { WorkflowTurnRequest } from './types.js';
@@ -156,6 +157,17 @@ async function streamWorkflowText(
   };
 }
 
+function resolveCurrentStageConfig(state: WorkflowGraphState, config?: RunnableConfig): StageConfig | undefined {
+  const { phaseConfig } = extractConfigurable(config);
+  if (!phaseConfig) return undefined;
+
+  const currentStage = state.controllerSummary?.currentNode
+    ?? state.run.currentNode;
+  if (typeof currentStage !== 'string') return undefined;
+
+  return phaseConfig.getStageConfig(currentStage);
+}
+
 export async function invokeModelNode(
   state: WorkflowGraphState,
   config?: RunnableConfig
@@ -175,6 +187,51 @@ export async function invokeModelNode(
     modelOverride,
     state.turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
   );
+
+  // PhaseConfig deterministic/delegated modes bypass the generic planner
+  const stageConfig = resolveCurrentStageConfig(state, config);
+
+  if (stageConfig?.mode === 'deterministic' && stageConfig.deterministicAction) {
+    const toolCalls = stageConfig.deterministicAction(state);
+    if (toolCalls.length) {
+      return {
+        pendingToolCalls: toolCalls,
+        latestMessage: '',
+        askUserPayload: null,
+        planExitPayload: null,
+        uiPayload: null,
+        nextStep: 'execute_tools',
+        errorMessage: null,
+        errorCode: null
+      };
+    }
+    return {
+      nextStep: 'fail',
+      errorMessage: `Deterministic action for stage "${stageConfig.name}" produced no tool calls.`,
+      errorCode: 'DETERMINISTIC_ACTION_EMPTY'
+    };
+  }
+
+  if (stageConfig?.mode === 'llm_delegated' && stageConfig.delegatedAction) {
+    const toolCalls = await stageConfig.delegatedAction(client, state);
+    if (toolCalls.length) {
+      return {
+        pendingToolCalls: toolCalls,
+        latestMessage: '',
+        askUserPayload: null,
+        planExitPayload: null,
+        uiPayload: null,
+        nextStep: 'execute_tools',
+        errorMessage: null,
+        errorCode: null
+      };
+    }
+    return {
+      nextStep: 'fail',
+      errorMessage: `Delegated action for stage "${stageConfig.name}" produced no tool calls.`,
+      errorCode: 'DELEGATED_ACTION_EMPTY'
+    };
+  }
 
   if (contract.mode === 'action') {
     return planWorkflowAction(client, state, contract);

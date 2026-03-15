@@ -257,3 +257,10 @@ export async function shutdownKernel(container: KernelContainer): Promise<void> 
     kernels.delete(container.id);
 }
 
+/**
+ * Check whether a kernel connection is cached for the given container.
+ */
+export function hasKernel(container: KernelContainer): boolean {
+    return kernels.has(container.id);
+}
+

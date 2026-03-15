@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   AlertTriangle,
 } from 'lucide-react';
-import type { DataQualitySummary } from '@/types/file';
+import type { ColumnDataType, DataQualitySummary } from '@/types/file';
 
 export const DATA_TYPE_ICONS: Record<DataQualitySummary['dataType'], typeof Hash> = {
   numeric: Hash,
@@ -45,4 +45,15 @@ export function getSeverityLabel(completeness: number): {
     return { label: 'Fair', colorClass: 'text-amber-500', colorVar: '--eda-fair', icon: AlertTriangle };
   }
   return { label: 'Poor', colorClass: 'text-red-500', colorVar: '--eda-poor', icon: AlertTriangle };
+}
+
+export function mapEDATypeToColumnType(edaType: DataQualitySummary['dataType']): ColumnDataType {
+  switch (edaType) {
+    case 'numeric': return 'float';
+    case 'categorical': return 'string';
+    case 'datetime': return 'date';
+    case 'boolean': return 'boolean';
+    case 'mixed': return 'unknown';
+    default: return 'unknown';
+  }
 }

@@ -1,85 +1,136 @@
-// TODO: Rewrite these QA tests against /api/workflows/turns/stream and
-// /api/preprocessing/step-decision. The legacy /llm/preprocessing/stream
-// and /llm/tools/execute endpoints were deleted in Phase 6.
+/**
+ * QA tests for preprocessing workflows against the current API surface:
+ *   - POST /api/workflows/turns/stream  (workflow turn execution)
+ *   - POST /api/preprocessing/step-decision  (user approval/rejection)
+ *
+ * These tests mock `executeWorkflowTurn` at the turnExecutor level and
+ * the preprocessing tool system, verifying that the route layer correctly
+ * dispatches requests, streams NDJSON events, and forwards step decisions.
+ */
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, expect, it, vi } from 'vitest';
 
+import type { WorkflowEventSink } from '../services/workflows/eventSink.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
-import { createLlmRouter } from './llm/index.js';
 import { createPreprocessingRouter } from './preprocessing.js';
+import { createWorkflowRouter } from './workflows.js';
+
+/* ------------------------------------------------------------------ */
+/*  Hoisted mocks                                                      */
+/* ------------------------------------------------------------------ */
 
 const {
-  createLlmClientMock,
-  datasetGetByIdMock,
-  datasetListMock,
-  projectGetByIdMock,
-  llmCompleteMock,
-  llmStreamMock
+  executeWorkflowTurnMock,
+  workflowRepositoryMock,
+  executePreprocessingToolMock,
+  syncPreprocessingLangGraphStateMock,
+  isPreprocessingToolNameMock,
+  getPreprocessingRunSnapshotMock,
+  listPreprocessingRunSnapshotsMock,
+  datasetListMock
 } = vi.hoisted(() => ({
-  createLlmClientMock: vi.fn(),
-  datasetGetByIdMock: vi.fn(),
-  datasetListMock: vi.fn(),
-  projectGetByIdMock: vi.fn(),
-  llmCompleteMock: vi.fn(async () => ''),
-  llmStreamMock: vi.fn(async () => '')
+  executeWorkflowTurnMock: vi.fn(),
+  workflowRepositoryMock: {
+    createRun: vi.fn(),
+    getRun: vi.fn(),
+    listRuns: vi.fn(async () => []),
+    saveRun: vi.fn(),
+    appendEvent: vi.fn(),
+    upsertArtifact: vi.fn(),
+    upsertApproval: vi.fn(),
+    upsertHandoff: vi.fn(),
+    upsertNotebookBinding: vi.fn()
+  },
+  executePreprocessingToolMock: vi.fn(),
+  syncPreprocessingLangGraphStateMock: vi.fn(
+    async (_projectId: string, _tool: string, _args: unknown, result: unknown) => result
+  ),
+  isPreprocessingToolNameMock: vi.fn(() => true),
+  getPreprocessingRunSnapshotMock: vi.fn(),
+  listPreprocessingRunSnapshotsMock: vi.fn(async () => []),
+  datasetListMock: vi.fn(async () => [])
 }));
 
-vi.mock('../services/llm/llmClient.js', () => {
-  createLlmClientMock.mockImplementation(() => ({
-    complete: llmCompleteMock,
-    stream: llmStreamMock
-  }));
-  return {
-    createLlmClient: createLlmClientMock
-  };
+vi.mock('../services/workflows/turnExecutor.js', () => ({
+  executeWorkflowTurn: executeWorkflowTurnMock
+}));
+
+vi.mock('../services/workflows/repository/index.js', () => ({
+  getWorkflowRepository: vi.fn(() => workflowRepositoryMock)
+}));
+
+vi.mock('../services/workflows/phases/featureEngineering.js', () => ({}));
+vi.mock('../services/workflows/phases/onboarding.js', () => ({}));
+vi.mock('../services/workflows/phases/preprocessing.js', () => ({}));
+vi.mock('../services/workflows/phases/training.js', () => ({}));
+
+vi.mock('../services/workflows/phaseConfig.js', async () => {
+  const actual = await vi.importActual<typeof import('../services/workflows/phaseConfig.js')>(
+    '../services/workflows/phaseConfig.js'
+  );
+  actual.registerPhaseConfig({
+    phase: 'preprocessing',
+    lifecycle: [],
+    classifyTurn: vi.fn(async () => 'action' as const),
+    getStageConfig: vi.fn(() => ({
+      name: 'plan_step',
+      mode: 'action' as const,
+      allowedTools: [],
+      toolChoice: 'auto' as const,
+      requiresApproval: false,
+      allowAssistantMessage: false,
+      allowAskUser: false,
+      allowRenderUi: false,
+      allowPlanExit: false,
+      requireToolCall: true
+    })),
+    buildSystemPrompt: vi.fn(() => ''),
+    buildUserContext: vi.fn(() => []),
+    resolveNextStage: vi.fn(() => null),
+    isPhaseSpecificTool: vi.fn(() => false),
+    executePhaseSpecificTool: vi.fn()
+  });
+  return actual;
 });
+
+vi.mock('../services/llm/preprocessingGraph.js', () => ({
+  executePreprocessingTool: executePreprocessingToolMock,
+  syncPreprocessingLangGraphState: syncPreprocessingLangGraphStateMock,
+  isPreprocessingToolName: isPreprocessingToolNameMock,
+  getPreprocessingRunSnapshot: getPreprocessingRunSnapshotMock,
+  listPreprocessingRunSnapshots: listPreprocessingRunSnapshotsMock
+}));
 
 vi.mock('../repositories/datasetRepository.js', () => ({
   createDatasetRepository: vi.fn(() => ({
-    getById: datasetGetByIdMock,
     list: datasetListMock,
     listByProjectId: vi.fn(async () => [])
-  })),
-  datasetRepository: {
-    getById: datasetGetByIdMock,
-    list: datasetListMock,
-    listByProjectId: vi.fn(async () => [])
-  }
+  }))
 }));
 
-vi.mock('../repositories/projectRepository.js', () => ({
-  createProjectRepository: vi.fn(() => ({
-    getById: projectGetByIdMock
-  })),
-  projectRepository: {
-    getById: projectGetByIdMock
-  }
+vi.mock('../services/datasetLoader.js', () => ({
+  sanitizeTableName: vi.fn((filename: string) => filename.replace(/\.\w+$/, ''))
 }));
 
-vi.mock('../services/mcp/mcpAdapter.js', () => ({
-  listMcpToolsForLlm: vi.fn(async () => []),
-  executeMcpTool: vi.fn(async () => ({ output: {} }))
-}));
-
-vi.mock('../services/rag/searchService.js', () => ({
-  searchDocuments: vi.fn(async () => [])
-}));
-
-vi.mock('../services/documentSearchService.js', () => ({
-  searchDocuments: vi.fn(async () => [])
-}));
+/* ------------------------------------------------------------------ */
+/*  Test app factory                                                    */
+/* ------------------------------------------------------------------ */
 
 function createTestApp() {
   const app = express();
   app.use(express.json());
-  app.use('/api', createLlmRouter());
+  app.use('/api', createWorkflowRouter());
   app.use('/api', createPreprocessingRouter());
   return app;
 }
 
-function parseEvents(responseText: string) {
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+function parseEvents(responseText: string): Array<Record<string, unknown>> {
   return responseText
     .trim()
     .split('\n')
@@ -87,774 +138,453 @@ function parseEvents(responseText: string) {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-function findEnvelope(events: Record<string, unknown>[]) {
-  return events.find((event) => event.type === 'envelope') as {
-    envelope?: {
-      message?: string;
-      tool_calls?: Array<{
-        id: string;
-        tool: string;
-        args?: Record<string, unknown>;
-      }>;
-      controller?: {
-        currentNode?: string;
-        turnMode?: string;
-      };
-    };
-  } | undefined;
-}
+/* ------------------------------------------------------------------ */
+/*  Tests                                                               */
+/* ------------------------------------------------------------------ */
 
-function extractUserContent(requestPayload: unknown): string {
-  const request = requestPayload as { messages?: Array<{ role?: string; content?: string }> };
-  return request.messages?.find((message) => message.role === 'user')?.content ?? '';
-}
-
-function extractControllerNode(requestPayload: unknown): string | undefined {
-  const userContent = extractUserContent(requestPayload);
-  const match = /Current controller node:\s*([a-z_]+)/i.exec(userContent);
-  return match?.[1];
-}
-
-describeRouteSuite.skip('preprocessing workflow manual QA — TODO: rewrite against workflow engine', () => {
+describeRouteSuite('preprocessing workflow QA — workflow engine API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    llmCompleteMock.mockResolvedValue('');
-    llmStreamMock.mockResolvedValue('');
-    createLlmClientMock.mockImplementation(() => ({
-      complete: llmCompleteMock,
-      stream: llmStreamMock
-    }));
-    datasetGetByIdMock.mockResolvedValue({
-      datasetId: 'ds-1',
-      projectId: 'project-1',
-      filename: 'train.csv',
-      fileType: 'csv',
-      size: 1024,
-      nRows: 10,
-      nCols: 2,
-      columns: [
-        { name: 'age', dtype: 'integer', nullCount: 0 },
-        { name: 'churn', dtype: 'integer', nullCount: 0 }
-      ],
-      sample: [{ age: 21, churn: 0 }],
-      createdAt: '2026-02-01T00:00:00.000Z',
-      updatedAt: '2026-02-01T00:00:00.000Z'
-    });
-    datasetListMock.mockResolvedValue([
-      {
-        datasetId: 'ds-1',
-        projectId: 'project-1',
-        filename: 'train.csv',
-        fileType: 'csv',
-        size: 1024,
-        nRows: 10,
-        nCols: 2,
-        columns: [
-          { name: 'age', dtype: 'integer', nullCount: 0 },
-          { name: 'churn', dtype: 'integer', nullCount: 0 }
-        ],
-        sample: [{ age: 21, churn: 0 }],
-        createdAt: '2026-02-01T00:00:00.000Z',
-        updatedAt: '2026-02-01T00:00:00.000Z'
-      }
-    ]);
-    projectGetByIdMock.mockResolvedValue({
-      projectId: 'project-1',
-      metadata: {}
-    });
+    syncPreprocessingLangGraphStateMock.mockImplementation(
+      async (_projectId: string, _tool: string, _args: unknown, result: unknown) => result
+    );
   });
 
   it('drives a full happy-path preprocessing workflow from user prompt to summary', async () => {
-    llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
-      turnMode: 'action_required',
-      rationale: 'The user asked for a preprocessing change.'
-    }));
-
-    let runId = '';
-    let stepId = '';
-    llmStreamMock.mockImplementation(async (...args: unknown[]) => {
-      const requestPayload = args[0];
-      const handlers = args[1] as {
-        onToken: (token: string) => void;
-        onToolCall?: (call: { name: string; args: Record<string, unknown> }) => void;
-      };
-      const currentNode = extractControllerNode(requestPayload);
-
-      switch (currentNode) {
-        case 'plan_step':
-          handlers.onToken('I will propose a scaling step.');
-          handlers.onToolCall?.({
-            name: 'propose_transformation_step',
-            args: {
-              title: 'Scale age',
-              intentType: 'scale_numeric'
-            }
-          });
-          break;
-        case 'generate_code':
-          handlers.onToken('I generated the code for that step.');
-          handlers.onToolCall?.({
-            name: 'materialize_step_code',
-            args: {
-              runId,
-              stepId,
-              code: 'df["age"] = (df["age"] - df["age"].mean()) / df["age"].std()'
-            }
-          });
-          break;
-        case 'write_code':
-          handlers.onToken('I will run the prepared notebook cell.');
-          handlers.onToolCall?.({
-            name: 'run_cell',
-            args: {
-              cellId: 'cell-1'
-            }
-          });
-          break;
-        case 'record_execution':
-          handlers.onToken('Recording the successful execution.');
-          handlers.onToolCall?.({
-            name: 'execute_transformation_step',
-            args: {
-              runId,
-              stepId,
-              succeeded: true,
-              cellId: 'cell-1'
-            }
-          });
-          break;
-        case 'validate':
-          handlers.onToken('Validating the step outcome.');
-          handlers.onToolCall?.({
-            name: 'validate_step_result',
-            args: {
-              runId,
-              stepId,
-              requiresApproval: false
-            }
-          });
-          break;
-        case 'commit':
-          handlers.onToken('Committing the validated step.');
-          handlers.onToolCall?.({
-            name: 'commit_transformation_step',
-            args: {
-              runId,
-              stepId,
-              approved: true
-            }
-          });
-          break;
-        case 'summarize':
-          handlers.onToken('Scaling is committed and the workflow is summarized.');
-          break;
-        default:
-          throw new Error(`Unhandled happy-path controller node: ${currentNode ?? 'unknown'}`);
-      }
-      return '';
+    // Simulate a full happy-path workflow via executeWorkflowTurn mock:
+    // The turn executor streams plan, tool execution, and summary events.
+    executeWorkflowTurnMock.mockImplementation(async (sink: WorkflowEventSink) => {
+      sink.emit({
+        type: 'workflow_state',
+        state: {
+          runId: 'wf-run-1',
+          threadId: 'thread-1',
+          phase: 'preprocessing',
+          status: 'running',
+          currentNode: 'plan_step'
+        }
+      });
+      sink.emit({
+        type: 'tool_executed',
+        call: {
+          id: 'call-propose',
+          tool: 'propose_transformation_step',
+          args: { title: 'Scale age', intentType: 'scale_numeric', datasetId: 'ds-1' }
+        },
+        result: {
+          id: 'call-propose',
+          tool: 'propose_transformation_step',
+          output: {
+            runId: 'prep-run-1',
+            step: { stepId: 'step-1', status: 'pending', title: 'Scale age' },
+            status: 'pending'
+          }
+        }
+      });
+      sink.emit({
+        type: 'tool_executed',
+        call: {
+          id: 'call-code',
+          tool: 'materialize_step_code',
+          args: {
+            runId: 'prep-run-1',
+            stepId: 'step-1',
+            code: 'df["age"] = (df["age"] - df["age"].mean()) / df["age"].std()'
+          }
+        },
+        result: {
+          id: 'call-code',
+          tool: 'materialize_step_code',
+          output: { runId: 'prep-run-1', stepId: 'step-1', status: 'code_ready' }
+        }
+      });
+      sink.emit({
+        type: 'tool_executed',
+        call: {
+          id: 'call-commit',
+          tool: 'commit_transformation_step',
+          args: { runId: 'prep-run-1', stepId: 'step-1', approved: true }
+        },
+        result: {
+          id: 'call-commit',
+          tool: 'commit_transformation_step',
+          output: { runId: 'prep-run-1', stepId: 'step-1', status: 'applied' }
+        }
+      });
+      sink.emit({
+        type: 'assistant_message',
+        message: 'Scaling is committed and the workflow is summarized.'
+      });
+      sink.emit({
+        type: 'workflow_state',
+        state: {
+          runId: 'wf-run-1',
+          threadId: 'thread-1',
+          phase: 'preprocessing',
+          status: 'completed',
+          currentNode: 'summarize'
+        }
+      });
     });
 
     const app = createTestApp();
-    const toolCallsHistory: Array<{ id: string; tool: string; args?: Record<string, unknown> }> = [];
-    const toolResultsHistory: Array<Record<string, unknown>> = [];
-
-    const firstResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
+    const response = await request(app)
+      .post('/api/workflows/turns/stream')
       .send({
         projectId: 'project-1',
+        phase: 'preprocessing',
         datasetId: 'ds-1',
         prompt: 'Scale the age column.'
       });
-    const firstEnvelope = findEnvelope(parseEvents(firstResponse.text));
-    expect(firstEnvelope?.envelope?.tool_calls?.[0]?.tool).toBe('propose_transformation_step');
-    toolCallsHistory.push(...(firstEnvelope?.envelope?.tool_calls ?? []));
 
-    const proposeExec = await request(app)
-      .post('/api/llm/tools/execute')
-      .send({
+    expect(response.status).toBe(200);
+    const events = parseEvents(response.text);
+
+    // Verify workflow state events bracket the turn
+    const stateEvents = events.filter((e) => e.type === 'workflow_state');
+    expect(stateEvents.length).toBeGreaterThanOrEqual(2);
+
+    // Verify tool execution events for the preprocessing tools
+    const toolEvents = events.filter((e) => e.type === 'tool_executed') as Array<{
+      type: string;
+      call: { tool: string };
+      result: { output: { status: string } };
+    }>;
+    expect(toolEvents.length).toBe(3);
+    expect(toolEvents[0].call.tool).toBe('propose_transformation_step');
+    expect(toolEvents[1].call.tool).toBe('materialize_step_code');
+    expect(toolEvents[2].call.tool).toBe('commit_transformation_step');
+    expect(toolEvents[2].result.output.status).toBe('applied');
+
+    // Verify summary message
+    const messageEvents = events.filter((e) => e.type === 'assistant_message');
+    expect(messageEvents.length).toBe(1);
+    expect(messageEvents[0].message).toContain('workflow is summarized');
+
+    // Verify done sentinel
+    const doneEvents = events.filter((e) => e.type === 'done');
+    expect(doneEvents.length).toBe(1);
+
+    // Verify executeWorkflowTurn was called with proper arguments
+    expect(executeWorkflowTurnMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
         projectId: 'project-1',
+        phase: 'preprocessing',
         datasetId: 'ds-1',
-        toolCalls: [toolCallsHistory.at(-1)]
-      });
-    const proposeResult = proposeExec.body.results?.[0] as {
-      output?: { runId?: string; step?: { stepId?: string } };
-      tool: string;
-      id: string;
-    };
-    runId = proposeResult.output?.runId ?? '';
-    stepId = proposeResult.output?.step?.stepId ?? '';
-    expect(runId).toBeTruthy();
-    expect(stepId).toBeTruthy();
-    toolResultsHistory.push(proposeExec.body.results[0] as Record<string, unknown>);
-
-    const expectedNodes = [
-      ['generate_code', 'materialize_step_code'],
-      ['write_code', 'run_cell'],
-      ['record_execution', 'execute_transformation_step'],
-      ['validate', 'validate_step_result'],
-      ['commit', 'commit_transformation_step']
-    ] as const;
-
-    for (const [expectedNode, expectedTool] of expectedNodes) {
-      const streamResponse = await request(app)
-        .post('/api/llm/preprocessing/stream')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          prompt: 'Continue preprocessing.',
-          continuation: true,
-          toolCalls: toolCallsHistory,
-          toolResults: toolResultsHistory
-        });
-      const events = parseEvents(streamResponse.text);
-      const envelope = findEnvelope(events);
-      expect(envelope?.envelope?.controller?.currentNode).toBe(expectedNode);
-      expect(envelope?.envelope?.tool_calls?.[0]?.tool).toBe(expectedTool);
-
-      const nextCall = envelope?.envelope?.tool_calls?.[0];
-      expect(nextCall).toBeTruthy();
-      toolCallsHistory.push(nextCall!);
-
-      const executeResponse = await request(app)
-        .post('/api/llm/tools/execute')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          toolCalls: [nextCall]
-        });
-      expect(executeResponse.status).toBe(200);
-      if (expectedTool === 'commit_transformation_step') {
-        expect(executeResponse.body.results[0]).toMatchObject({
-          output: {
-            status: 'applied'
-          }
-        });
-      }
-      toolResultsHistory.push(executeResponse.body.results[0] as Record<string, unknown>);
-    }
-
-    const summaryResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
-      .send({
-        projectId: 'project-1',
-        datasetId: 'ds-1',
-        prompt: 'Continue preprocessing.',
-        continuation: true,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
-      });
-    const summaryEvents = parseEvents(summaryResponse.text);
-    const summaryEnvelope = findEnvelope(summaryEvents);
-
-    expect(summaryEnvelope?.envelope?.controller?.currentNode).toBe('summarize');
-    expect(summaryEnvelope?.envelope?.message).toContain('workflow is summarized');
-    expect(summaryEnvelope?.envelope?.tool_calls).toBeUndefined();
-    expect(llmCompleteMock).toHaveBeenCalledTimes(1);
-
-    const snapshotResponse = await request(app).get(`/api/preprocessing/runs/${runId}`);
-    expect(snapshotResponse.status).toBe(200);
-    expect(snapshotResponse.body.run.steps[0]).toMatchObject({
-      stepId,
-      status: 'applied',
-      code: 'df["age"] = (df["age"] - df["age"].mean()) / df["age"].std()'
-    });
+        prompt: 'Scale the age column.'
+      }),
+      expect.anything()
+    );
   });
 
-  it('handles a pending-approval conversation where the user asks a question and then approves', async () => {
-    llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
-      turnMode: 'action_required',
-      rationale: 'The user asked for a risky preprocessing change.'
-    }));
-
-    let runId = '';
-    let stepId = '';
-    llmStreamMock.mockImplementation(async (...args: unknown[]) => {
-      const requestPayload = args[0];
-      const handlers = args[1] as {
-        onToken: (token: string) => void;
-        onToolCall?: (call: { name: string; args: Record<string, unknown> }) => void;
-      };
-      const currentNode = extractControllerNode(requestPayload);
-      const userContent = extractUserContent(requestPayload).toLowerCase();
-
-      switch (currentNode) {
-        case 'plan_step':
-          handlers.onToken('I will propose dropping outliers.');
-          handlers.onToolCall?.({
-            name: 'propose_transformation_step',
-            args: {
-              title: 'Drop outliers',
-              intentType: 'drop_rows'
-            }
-          });
-          break;
-        case 'generate_code':
-          handlers.onToken('Generating code for the risky step.');
-          handlers.onToolCall?.({
-            name: 'materialize_step_code',
-            args: {
-              runId,
-              stepId,
-              code: 'df = df[df["age"] < 100]'
-            }
-          });
-          break;
-        case 'write_code':
-          handlers.onToken('Running the notebook cell.');
-          handlers.onToolCall?.({
-            name: 'run_cell',
-            args: {
-              cellId: 'cell-2'
-            }
-          });
-          break;
-        case 'record_execution':
-          handlers.onToken('Recording execution before validation.');
-          handlers.onToolCall?.({
-            name: 'execute_transformation_step',
-            args: {
-              runId,
-              stepId,
-              succeeded: true,
-              cellId: 'cell-2'
-            }
-          });
-          break;
-        case 'validate':
-          handlers.onToken('This change is risky, so I am sending it for approval.');
-          handlers.onToolCall?.({
-            name: 'validate_step_result',
-            args: {
-              runId,
-              stepId,
-              requiresApproval: true
-            }
-          });
-          break;
-        case 'await_approval':
-          handlers.onToken('Approval is required because dropping rows can permanently change the dataset.');
-          break;
-        case 'commit':
-          handlers.onToken('Approving and committing the pending step.');
-          handlers.onToolCall?.({
-            name: 'commit_transformation_step',
-            args: {
-              runId,
-              stepId,
-              approved: !userContent.includes('reject')
-            }
-          });
-          break;
-        case 'summarize':
-          handlers.onToken('The approved step is now committed.');
-          break;
-        default:
-          throw new Error(`Unhandled approval-path controller node: ${currentNode ?? 'unknown'}`);
-      }
-      return '';
+  it('handles a pending-approval workflow where the user approves via step-decision', async () => {
+    // First turn: the workflow pauses because a step requires approval
+    executeWorkflowTurnMock.mockImplementation(async (sink: WorkflowEventSink) => {
+      sink.emit({
+        type: 'workflow_state',
+        state: {
+          runId: 'wf-run-2',
+          threadId: 'thread-2',
+          phase: 'preprocessing',
+          status: 'running',
+          currentNode: 'plan_step'
+        }
+      });
+      sink.emit({
+        type: 'tool_executed',
+        call: {
+          id: 'call-propose-2',
+          tool: 'propose_transformation_step',
+          args: { title: 'Drop outliers', intentType: 'drop_rows', datasetId: 'ds-1' }
+        },
+        result: {
+          id: 'call-propose-2',
+          tool: 'propose_transformation_step',
+          output: {
+            runId: 'prep-run-2',
+            step: { stepId: 'step-2', status: 'pending', title: 'Drop outliers' },
+            status: 'pending'
+          }
+        }
+      });
+      sink.emit({
+        type: 'tool_executed',
+        call: {
+          id: 'call-validate-2',
+          tool: 'validate_step_result',
+          args: { runId: 'prep-run-2', stepId: 'step-2', requiresApproval: true }
+        },
+        result: {
+          id: 'call-validate-2',
+          tool: 'validate_step_result',
+          output: {
+            runId: 'prep-run-2',
+            step: { stepId: 'step-2', status: 'awaiting_approval', requiresApproval: true },
+            status: 'awaiting_approval',
+            reasonCode: 'STEP_APPROVAL_REQUIRED'
+          }
+        }
+      });
+      sink.emit({
+        type: 'workflow_state',
+        state: {
+          runId: 'wf-run-2',
+          threadId: 'thread-2',
+          phase: 'preprocessing',
+          status: 'paused',
+          currentNode: 'await_approval',
+          pendingInputKind: 'approval',
+          pauseReason: 'awaiting_approval'
+        }
+      });
     });
 
     const app = createTestApp();
-    const toolCallsHistory: Array<{ id: string; tool: string; args?: Record<string, unknown> }> = [];
-    const toolResultsHistory: Array<Record<string, unknown>> = [];
 
-    const prompts = [
-      'Drop outliers aggressively.',
-      'Continue preprocessing.',
-      'Continue preprocessing.',
-      'Continue preprocessing.',
-      'Continue preprocessing.'
-    ];
-
-    for (let index = 0; index < prompts.length; index += 1) {
-      const response = await request(app)
-        .post('/api/llm/preprocessing/stream')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          prompt: prompts[index],
-          continuation: index > 0,
-          toolCalls: toolCallsHistory,
-          toolResults: toolResultsHistory
-        });
-      const envelope = findEnvelope(parseEvents(response.text));
-      const toolCall = envelope?.envelope?.tool_calls?.[0];
-      expect(toolCall).toBeTruthy();
-      toolCallsHistory.push(toolCall!);
-
-      const executeResponse = await request(app)
-        .post('/api/llm/tools/execute')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          toolCalls: [toolCall]
-        });
-      const result = executeResponse.body.results[0] as {
-        output?: { runId?: string; step?: { stepId?: string } };
-      };
-      runId ||= result.output?.runId ?? '';
-      stepId ||= result.output?.step?.stepId ?? '';
-      toolResultsHistory.push(executeResponse.body.results[0] as Record<string, unknown>);
-    }
-
-    const questionResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
+    // First turn: start workflow, expect it to pause
+    const firstResponse = await request(app)
+      .post('/api/workflows/turns/stream')
       .send({
         projectId: 'project-1',
+        phase: 'preprocessing',
         datasetId: 'ds-1',
-        prompt: 'Why does this need approval?',
-        continuation: false,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
+        prompt: 'Drop outliers aggressively.'
       });
-    const questionEnvelope = findEnvelope(parseEvents(questionResponse.text));
-    expect(questionEnvelope?.envelope?.controller?.currentNode).toBe('await_approval');
-    expect(questionEnvelope?.envelope?.message).toContain('Approval is required');
-    expect(questionEnvelope?.envelope?.tool_calls).toBeUndefined();
 
-    const approvalResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
-      .send({
-        projectId: 'project-1',
-        datasetId: 'ds-1',
-        prompt: 'Approve it.',
-        continuation: false,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
-      });
-    const approvalEnvelope = findEnvelope(parseEvents(approvalResponse.text));
-    expect(approvalEnvelope?.envelope?.controller?.currentNode).toBe('commit');
-    expect(approvalEnvelope?.envelope?.tool_calls?.[0]?.tool).toBe('commit_transformation_step');
+    expect(firstResponse.status).toBe(200);
+    const firstEvents = parseEvents(firstResponse.text);
+    const lastState = firstEvents
+      .filter((e) => e.type === 'workflow_state')
+      .pop() as { state: { status: string; pendingInputKind: string } } | undefined;
+    expect(lastState?.state.status).toBe('paused');
+    expect(lastState?.state.pendingInputKind).toBe('approval');
 
-    const approvalCall = approvalEnvelope?.envelope?.tool_calls?.[0];
-    expect(approvalCall).toBeTruthy();
-    toolCallsHistory.push(approvalCall!);
-    const commitExecute = await request(app)
-      .post('/api/llm/tools/execute')
-      .send({
-        projectId: 'project-1',
-        datasetId: 'ds-1',
-        executionMode: 'user_approval',
-        toolCalls: [approvalCall]
-      });
-    expect(commitExecute.body.results[0]).toMatchObject({
+    // User approves via step-decision endpoint
+    executePreprocessingToolMock.mockResolvedValue({
       output: {
+        runId: 'prep-run-2',
+        step: { stepId: 'step-2', status: 'applied', approvalDecision: 'approved' },
         status: 'applied'
       }
     });
-    toolResultsHistory.push(commitExecute.body.results[0] as Record<string, unknown>);
 
-    const summaryResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
+    const approvalResponse = await request(app)
+      .post('/api/preprocessing/step-decision')
       .send({
         projectId: 'project-1',
-        datasetId: 'ds-1',
-        prompt: 'Continue preprocessing.',
-        continuation: true,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
+        runId: 'prep-run-2',
+        stepId: 'step-2',
+        approved: true,
+        datasetId: 'ds-1'
       });
-    const summaryEvents = parseEvents(summaryResponse.text);
-    const summaryEnvelope = findEnvelope(summaryEvents);
-    expect(summaryEnvelope?.envelope?.controller?.currentNode).toBe('summarize');
-    expect(summaryEnvelope?.envelope?.message).toContain('committed');
-    expect(llmCompleteMock).toHaveBeenCalledTimes(1);
 
-    const snapshotResponse = await request(app).get(`/api/preprocessing/runs/${runId}`);
-    expect(snapshotResponse.status).toBe(200);
-    expect(snapshotResponse.body.run.steps[0]).toMatchObject({
-      stepId,
-      status: 'applied',
-      requiresApproval: true,
-      code: 'df = df[df["age"] < 100]'
-    });
+    expect(approvalResponse.status).toBe(200);
+    expect(approvalResponse.body.tool).toBe('commit_transformation_step');
+    expect(approvalResponse.body.output.status).toBe('applied');
+    expect(executePreprocessingToolMock).toHaveBeenCalledWith(
+      'project-1',
+      'commit_transformation_step',
+      expect.objectContaining({
+        runId: 'prep-run-2',
+        stepId: 'step-2',
+        approved: true,
+        approvalSource: 'user',
+        datasetId: 'ds-1'
+      })
+    );
   });
 
-  it('handles a pending-approval conversation where the user rejects the step with a reason', async () => {
-    llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
-      turnMode: 'action_required',
-      rationale: 'The user asked for a risky preprocessing change.'
-    }));
-
-    let runId = '';
-    let stepId = '';
-    llmStreamMock.mockImplementation(async (...args: unknown[]) => {
-      const requestPayload = args[0];
-      const handlers = args[1] as {
-        onToken: (token: string) => void;
-        onToolCall?: (call: { name: string; args: Record<string, unknown> }) => void;
-      };
-      const currentNode = extractControllerNode(requestPayload);
-      const userContent = extractUserContent(requestPayload).toLowerCase();
-
-      switch (currentNode) {
-        case 'plan_step':
-          handlers.onToken('I will propose dropping outliers.');
-          handlers.onToolCall?.({
-            name: 'propose_transformation_step',
-            args: { title: 'Drop outliers', intentType: 'drop_rows' }
-          });
-          break;
-        case 'generate_code':
-          handlers.onToken('Generating code for the risky step.');
-          handlers.onToolCall?.({
-            name: 'materialize_step_code',
-            args: { runId, stepId, code: 'df = df[df["age"] < 100]' }
-          });
-          break;
-        case 'write_code':
-          handlers.onToken('Running the notebook cell.');
-          handlers.onToolCall?.({
-            name: 'run_cell',
-            args: { cellId: 'cell-3' }
-          });
-          break;
-        case 'record_execution':
-          handlers.onToken('Recording execution before validation.');
-          handlers.onToolCall?.({
-            name: 'execute_transformation_step',
-            args: { runId, stepId, succeeded: true, cellId: 'cell-3' }
-          });
-          break;
-        case 'validate':
-          handlers.onToken('This change is risky, so I am sending it for approval.');
-          handlers.onToolCall?.({
-            name: 'validate_step_result',
-            args: { runId, stepId, requiresApproval: true }
-          });
-          break;
-        case 'await_approval':
-          handlers.onToken('Approval is required because this drops rows.');
-          break;
-        case 'commit':
-          handlers.onToken('Rejecting the pending step and recording the reason.');
-          handlers.onToolCall?.({
-            name: 'commit_transformation_step',
-            args: {
-              runId,
-              stepId,
-              approved: false,
-              rejectionReason: userContent.includes('critical')
-                ? 'This would remove critical records.'
-                : 'Rejected by user.'
-            }
-          });
-          break;
-        case 'summarize':
-          handlers.onToken('The step was rejected and no dataset mutation was committed.');
-          break;
-        default:
-          throw new Error(`Unhandled rejection-path controller node: ${currentNode ?? 'unknown'}`);
-      }
-      return '';
+  it('handles a pending-approval workflow where the user rejects the step with a reason', async () => {
+    // Workflow pauses at await_approval
+    executeWorkflowTurnMock.mockImplementation(async (sink: WorkflowEventSink) => {
+      sink.emit({
+        type: 'workflow_state',
+        state: {
+          runId: 'wf-run-3',
+          threadId: 'thread-3',
+          phase: 'preprocessing',
+          status: 'paused',
+          currentNode: 'await_approval',
+          pendingInputKind: 'approval'
+        }
+      });
     });
 
     const app = createTestApp();
-    const toolCallsHistory: Array<{ id: string; tool: string; args?: Record<string, unknown> }> = [];
-    const toolResultsHistory: Array<Record<string, unknown>> = [];
 
-    for (const [index, prompt] of [
-      'Drop outliers aggressively.',
-      'Continue preprocessing.',
-      'Continue preprocessing.',
-      'Continue preprocessing.',
-      'Continue preprocessing.'
-    ].entries()) {
-      const response = await request(app)
-        .post('/api/llm/preprocessing/stream')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          prompt,
-          continuation: index > 0,
-          toolCalls: toolCallsHistory,
-          toolResults: toolResultsHistory
-        });
-      const envelope = findEnvelope(parseEvents(response.text));
-      const toolCall = envelope?.envelope?.tool_calls?.[0];
-      expect(toolCall).toBeTruthy();
-      toolCallsHistory.push(toolCall!);
-
-      const executeResponse = await request(app)
-        .post('/api/llm/tools/execute')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          toolCalls: [toolCall]
-        });
-      const result = executeResponse.body.results[0] as {
-        output?: { runId?: string; step?: { stepId?: string } };
-      };
-      runId ||= result.output?.runId ?? '';
-      stepId ||= result.output?.step?.stepId ?? '';
-      toolResultsHistory.push(executeResponse.body.results[0] as Record<string, unknown>);
-    }
-
-    const rejectResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
+    // Start the workflow
+    const startResponse = await request(app)
+      .post('/api/workflows/turns/stream')
       .send({
         projectId: 'project-1',
+        phase: 'preprocessing',
         datasetId: 'ds-1',
-        prompt: 'Reject it. This removes critical records.',
-        continuation: false,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
+        prompt: 'Drop outliers aggressively.'
       });
-    const rejectEnvelope = findEnvelope(parseEvents(rejectResponse.text));
-    expect(rejectEnvelope?.envelope?.controller?.currentNode).toBe('commit');
-    expect(rejectEnvelope?.envelope?.tool_calls?.[0]?.tool).toBe('commit_transformation_step');
+    expect(startResponse.status).toBe(200);
 
-    const rejectCall = rejectEnvelope?.envelope?.tool_calls?.[0];
-    expect(rejectCall).toBeTruthy();
-    toolCallsHistory.push(rejectCall!);
-
-    const rejectExecute = await request(app)
-      .post('/api/llm/tools/execute')
-      .send({
-        projectId: 'project-1',
-        datasetId: 'ds-1',
-        executionMode: 'user_approval',
-        toolCalls: [rejectCall]
-      });
-    expect(rejectExecute.body.results[0]).toMatchObject({
+    // User rejects via step-decision endpoint
+    executePreprocessingToolMock.mockResolvedValue({
       output: {
-        status: 'failed',
+        runId: 'prep-run-3',
         step: {
+          stepId: 'step-3',
+          status: 'failed',
           approvalDecision: 'rejected',
           decisionReason: 'This would remove critical records.'
-        }
+        },
+        status: 'failed'
       }
     });
-    toolResultsHistory.push(rejectExecute.body.results[0] as Record<string, unknown>);
 
-    const summaryResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
+    const rejectResponse = await request(app)
+      .post('/api/preprocessing/step-decision')
       .send({
         projectId: 'project-1',
-        datasetId: 'ds-1',
-        prompt: 'Continue preprocessing.',
-        continuation: true,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
+        runId: 'prep-run-3',
+        stepId: 'step-3',
+        approved: false,
+        rejectionReason: 'This would remove critical records.'
       });
-    const summaryEnvelope = findEnvelope(parseEvents(summaryResponse.text));
-    expect(summaryEnvelope?.envelope?.controller?.currentNode).toBe('summarize');
-    expect(summaryEnvelope?.envelope?.message).toContain('rejected');
 
-    const snapshotResponse = await request(app).get(`/api/preprocessing/runs/${runId}`);
-    expect(snapshotResponse.body.run.steps[0]).toMatchObject({
-      stepId,
-      status: 'failed',
-      approvalDecision: 'rejected',
-      decisionReason: 'This would remove critical records.',
-      code: 'df = df[df["age"] < 100]'
-    });
+    expect(rejectResponse.status).toBe(200);
+    expect(rejectResponse.body.tool).toBe('commit_transformation_step');
+    expect(rejectResponse.body.output.status).toBe('failed');
+    expect(rejectResponse.body.output.step.approvalDecision).toBe('rejected');
+    expect(rejectResponse.body.output.step.decisionReason).toBe('This would remove critical records.');
+    expect(executePreprocessingToolMock).toHaveBeenCalledWith(
+      'project-1',
+      'commit_transformation_step',
+      expect.objectContaining({
+        approved: false,
+        rejectionReason: 'This would remove critical records.'
+      })
+    );
   });
 
   it('routes failed execution back into code-repair workflow on the next continue turn', async () => {
-    llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
-      turnMode: 'action_required',
-      rationale: 'The user asked for a preprocessing change.'
-    }));
+    let turnCount = 0;
+    executeWorkflowTurnMock.mockImplementation(async (sink: WorkflowEventSink) => {
+      turnCount += 1;
 
-    let runId = '';
-    let stepId = '';
-    llmStreamMock.mockImplementation(async (...args: unknown[]) => {
-      const requestPayload = args[0];
-      const handlers = args[1] as {
-        onToken: (token: string) => void;
-        onToolCall?: (call: { name: string; args: Record<string, unknown> }) => void;
-      };
-      const currentNode = extractControllerNode(requestPayload);
-
-      switch (currentNode) {
-        case 'plan_step':
-          handlers.onToken('I will propose a scaling step.');
-          handlers.onToolCall?.({
-            name: 'propose_transformation_step',
-            args: { title: 'Scale age', intentType: 'scale_numeric' }
-          });
-          break;
-        case 'generate_code':
-          handlers.onToken('I generated code for the step.');
-          handlers.onToolCall?.({
-            name: 'materialize_step_code',
-            args: { runId, stepId, code: 'df["age"] = df["age"] / 0' }
-          });
-          break;
-        case 'write_code':
-          handlers.onToken('I will rerun the corrected notebook cell.');
-          handlers.onToolCall?.({
-            name: 'run_cell',
-            args: { cellId: 'cell-4' }
-          });
-          break;
-        case 'record_execution':
-          handlers.onToken('Recording the failed execution.');
-          handlers.onToolCall?.({
-            name: 'execute_transformation_step',
-            args: { runId, stepId, succeeded: false, cellId: 'cell-4', stderr: 'ZeroDivisionError' }
-          });
-          break;
-        default:
-          throw new Error(`Unhandled recovery controller node: ${currentNode ?? 'unknown'}`);
+      if (turnCount === 1) {
+        // First turn: propose step, generate code, execute (fails)
+        sink.emit({
+          type: 'workflow_state',
+          state: {
+            runId: 'wf-run-4',
+            threadId: 'thread-4',
+            phase: 'preprocessing',
+            status: 'running',
+            currentNode: 'plan_step'
+          }
+        });
+        sink.emit({
+          type: 'tool_executed',
+          call: { id: 'call-propose-4', tool: 'propose_transformation_step', args: {} },
+          result: {
+            id: 'call-propose-4',
+            tool: 'propose_transformation_step',
+            output: { runId: 'prep-run-4', step: { stepId: 'step-4', status: 'pending' }, status: 'pending' }
+          }
+        });
+        sink.emit({
+          type: 'tool_executed',
+          call: { id: 'call-exec-4', tool: 'execute_transformation_step', args: {} },
+          result: {
+            id: 'call-exec-4',
+            tool: 'execute_transformation_step',
+            output: { runId: 'prep-run-4', step: { stepId: 'step-4', status: 'failed' }, status: 'failed' },
+            error: 'ZeroDivisionError'
+          }
+        });
+        sink.emit({
+          type: 'workflow_state',
+          state: {
+            runId: 'wf-run-4',
+            threadId: 'thread-4',
+            phase: 'preprocessing',
+            status: 'paused',
+            currentNode: 'write_code',
+            pauseReason: 'execution_failed'
+          }
+        });
+      } else if (turnCount === 2) {
+        // Second turn: code repair, re-run cell
+        sink.emit({
+          type: 'workflow_state',
+          state: {
+            runId: 'wf-run-4',
+            threadId: 'thread-4',
+            phase: 'preprocessing',
+            status: 'running',
+            currentNode: 'write_code'
+          }
+        });
+        sink.emit({
+          type: 'tool_executed',
+          call: { id: 'call-rerun-4', tool: 'run_cell', args: { cellId: 'cell-4' } },
+          result: {
+            id: 'call-rerun-4',
+            tool: 'run_cell',
+            output: { cellId: 'cell-4', status: 'success' }
+          }
+        });
+        sink.emit({
+          type: 'assistant_message',
+          message: 'I will rerun the corrected notebook cell.'
+        });
       }
-      return '';
     });
 
     const app = createTestApp();
-    const toolCallsHistory: Array<{ id: string; tool: string; args?: Record<string, unknown> }> = [];
-    const toolResultsHistory: Array<Record<string, unknown>> = [];
 
-    for (const [index, prompt] of [
-      'Scale the age column.',
-      'Continue preprocessing.',
-      'Continue preprocessing.',
-      'Continue preprocessing.'
-    ].entries()) {
-      const response = await request(app)
-        .post('/api/llm/preprocessing/stream')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          prompt,
-          continuation: index > 0,
-          toolCalls: toolCallsHistory,
-          toolResults: toolResultsHistory
-        });
-      const envelope = findEnvelope(parseEvents(response.text));
-      const toolCall = envelope?.envelope?.tool_calls?.[0];
-      expect(toolCall).toBeTruthy();
-      toolCallsHistory.push(toolCall!);
-
-      const executeResponse = await request(app)
-        .post('/api/llm/tools/execute')
-        .send({
-          projectId: 'project-1',
-          datasetId: 'ds-1',
-          toolCalls: [toolCall]
-        });
-      const result = executeResponse.body.results[0] as {
-        output?: { runId?: string; step?: { stepId?: string } };
-      };
-      runId ||= result.output?.runId ?? '';
-      stepId ||= result.output?.step?.stepId ?? '';
-      toolResultsHistory.push(executeResponse.body.results[0] as Record<string, unknown>);
-    }
-
-    const recoveryResponse = await request(app)
-      .post('/api/llm/preprocessing/stream')
+    // First turn: execution fails
+    const firstResponse = await request(app)
+      .post('/api/workflows/turns/stream')
       .send({
         projectId: 'project-1',
+        phase: 'preprocessing',
         datasetId: 'ds-1',
-        prompt: 'Continue preprocessing.',
-        continuation: true,
-        toolCalls: toolCallsHistory,
-        toolResults: toolResultsHistory
+        prompt: 'Scale the age column.'
       });
-    const recoveryEnvelope = findEnvelope(parseEvents(recoveryResponse.text));
-    expect(recoveryEnvelope?.envelope?.controller?.currentNode).toBe('write_code');
-    expect(recoveryEnvelope?.envelope?.tool_calls?.[0]?.tool).toBe('run_cell');
-    expect(recoveryEnvelope?.envelope?.message).toContain('rerun');
+    expect(firstResponse.status).toBe(200);
+
+    const firstEvents = parseEvents(firstResponse.text);
+    const failedToolEvent = firstEvents.find(
+      (e) => e.type === 'tool_executed'
+        && (e as { result?: { error?: string } }).result?.error === 'ZeroDivisionError'
+    );
+    expect(failedToolEvent).toBeDefined();
+
+    const pausedState = firstEvents
+      .filter((e) => e.type === 'workflow_state')
+      .pop() as { state: { currentNode: string; pauseReason: string } } | undefined;
+    expect(pausedState?.state.currentNode).toBe('write_code');
+    expect(pausedState?.state.pauseReason).toBe('execution_failed');
+
+    // Second turn: continue (code repair)
+    const recoveryResponse = await request(app)
+      .post('/api/workflows/turns/stream')
+      .send({
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'ds-1',
+        runId: 'wf-run-4',
+        prompt: 'Continue preprocessing.'
+      });
+    expect(recoveryResponse.status).toBe(200);
+
+    const recoveryEvents = parseEvents(recoveryResponse.text);
+    const rerunEvent = recoveryEvents.find(
+      (e) => e.type === 'tool_executed'
+        && (e as { call: { tool: string } }).call.tool === 'run_cell'
+    );
+    expect(rerunEvent).toBeDefined();
+
+    const recoveryMessage = recoveryEvents.find((e) => e.type === 'assistant_message');
+    expect(recoveryMessage).toBeDefined();
+    expect((recoveryMessage as { message: string }).message).toContain('rerun');
   });
 });

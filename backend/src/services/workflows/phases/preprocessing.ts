@@ -7,7 +7,7 @@ import {
 } from '../../../repositories/preprocessingRunRepository.js';
 import { ToolCallSchema } from '../../../types/llm.js';
 import type { ToolResult } from '../../../types/llm.js';
-import { asString } from '../../../utils/typeCoercion.js';
+import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import { createPreprocessingLangGraphRuntime } from '../../llm/langgraph/preprocessingRuntime.js';
 import type { LlmClient, LlmToolDefinition } from '../../llm/llmClient.js';
 import { createPreprocessingCellInspector, createPreprocessingCellMetadataStore } from '../../llm/preprocessing/cellBinding.js';
@@ -32,11 +32,107 @@ import type {
   ToolContext
 } from '../phaseConfig.js';
 import { registerPhaseConfig } from '../phaseConfig.js';
-import {
-  extractLatestCellId,
-  extractLatestRunCellContext,
-  extractLatestStepNotebookContext
-} from '../preprocessingPlannerContext.js';
+
+// ---------------------------------------------------------------------------
+// Context extractors (inlined from preprocessingPlannerContext.ts)
+// ---------------------------------------------------------------------------
+
+interface StepNotebookContext {
+  runId: string;
+  stepId: string;
+  title?: string;
+  code?: string;
+  toolCallId?: string;
+  version?: number;
+  codeHash?: string;
+  requiresApproval?: boolean;
+  cellIds: string[];
+}
+
+interface LatestRunCellContext {
+  cellId?: string;
+  status?: string;
+  stdout?: string;
+  stderr?: string;
+}
+
+function extractLatestStepNotebookContext(state: WorkflowGraphState): StepNotebookContext | null {
+  const runId = state.controllerSummary?.runId;
+  if (!runId) {
+    return null;
+  }
+
+  for (let index = state.toolResultHistory.length - 1; index >= 0; index -= 1) {
+    const output = asRecord(state.toolResultHistory[index]?.output);
+    const step = asRecord(output?.step);
+    const stepId = typeof output?.stepId === 'string'
+      ? output.stepId
+      : typeof step?.stepId === 'string'
+        ? step.stepId
+        : null;
+    if (!stepId) {
+      continue;
+    }
+
+    const cellIds = Array.isArray(step?.cellIds)
+      ? step.cellIds.filter((value: unknown): value is string => typeof value === 'string')
+      : [];
+
+    return {
+      runId: runId as string,
+      stepId,
+      title: typeof step?.title === 'string' ? step.title : undefined,
+      code: typeof step?.code === 'string' ? step.code : undefined,
+      toolCallId: typeof step?.toolCallId === 'string' ? step.toolCallId : undefined,
+      version: typeof step?.version === 'number' ? step.version : undefined,
+      codeHash: typeof step?.codeHash === 'string' ? step.codeHash : undefined,
+      requiresApproval: typeof step?.requiresApproval === 'boolean' ? step.requiresApproval : undefined,
+      cellIds
+    };
+  }
+
+  return null;
+}
+
+function extractLatestCellId(toolResults: ToolResult[]): string | null {
+  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
+    const result = toolResults[index];
+    if (!['write_cell', 'edit_cell', 'run_cell'].includes(result.tool)) {
+      continue;
+    }
+    const output = asRecord(result.output);
+    if (typeof output?.cellId === 'string') {
+      return output.cellId;
+    }
+    const cell = asRecord(output?.cell);
+    if (typeof cell?.cellId === 'string') {
+      return cell.cellId;
+    }
+    if (typeof cell?.id === 'string') {
+      return cell.id;
+    }
+  }
+
+  return null;
+}
+
+function extractLatestRunCellContext(toolResults: ToolResult[]): LatestRunCellContext | null {
+  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
+    const result = toolResults[index];
+    if (result.tool !== 'run_cell') {
+      continue;
+    }
+    const output = asRecord(result.output);
+    return {
+      cellId: extractLatestCellId([result]) ?? undefined,
+      status: typeof output?.status === 'string' ? output.status : undefined,
+      stdout: typeof output?.stdout === 'string' ? output.stdout : undefined,
+      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined
+    };
+  }
+
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Preprocessing PhaseConfig — replaces Systems A (preprocessingRuntime) and

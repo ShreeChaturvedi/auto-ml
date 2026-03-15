@@ -29,34 +29,31 @@ describeRouteSuite('preprocessing routes', () => {
     listMock.mockResolvedValue([]);
   });
 
-  it('returns 410 for legacy analyze endpoint', async () => {
+  it('returns 404 for removed legacy analyze endpoint', async () => {
     const app = createTestApp();
     const response = await request(app)
       .post('/api/preprocessing/analyze')
       .send({ projectId: 'project-1', datasetId: 'dataset-1' });
 
-    expect(response.status).toBe(410);
-    expect(response.body.code).toBe('PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED');
+    expect(response.status).toBe(404);
   });
 
-  it('returns 410 for legacy refine endpoint', async () => {
+  it('returns 404 for removed legacy refine endpoint', async () => {
     const app = createTestApp();
     const response = await request(app)
       .post('/api/preprocessing/refine')
       .send({ projectId: 'project-1', datasetId: 'dataset-1', message: 'refine', draftSteps: [] });
 
-    expect(response.status).toBe(410);
-    expect(response.body.code).toBe('PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED');
+    expect(response.status).toBe(404);
   });
 
-  it('returns 410 for legacy execute endpoint', async () => {
+  it('returns 404 for removed legacy execute endpoint', async () => {
     const app = createTestApp();
     const response = await request(app)
       .post('/api/preprocessing/execute')
       .send({ projectId: 'project-1', datasetId: 'dataset-1', draftSteps: [] });
 
-    expect(response.status).toBe(410);
-    expect(response.body.code).toBe('PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED');
+    expect(response.status).toBe(404);
   });
 
   it('keeps preprocessing tables endpoint available', async () => {

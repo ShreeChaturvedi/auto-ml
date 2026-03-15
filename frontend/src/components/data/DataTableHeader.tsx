@@ -6,12 +6,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Type,
-  Hash,
-  Calculator,
-  ToggleLeft,
-  Calendar,
-  CircleHelp,
   Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,44 +18,10 @@ import {
 import { cn } from '@/lib/utils';
 import type { ColumnDataType } from '@/types/file';
 import type { Column } from '@tanstack/react-table';
+import { TypeIcon } from './TypeIcon';
+import { getTypeLabel } from './columnTypeUtils';
 
 const TYPE_OPTIONS: ColumnDataType[] = ['string', 'integer', 'float', 'boolean', 'date'];
-
-function getTypeLabel(type: ColumnDataType): string {
-  switch (type) {
-    case 'string':
-      return 'String';
-    case 'integer':
-      return 'Integer';
-    case 'float':
-      return 'Float';
-    case 'boolean':
-      return 'Boolean';
-    case 'date':
-      return 'Date';
-    case 'unknown':
-    default:
-      return 'Unknown';
-  }
-}
-
-function TypeIcon({ type, className }: { type: ColumnDataType; className?: string }) {
-  switch (type) {
-    case 'string':
-      return <Type className={className} />;
-    case 'integer':
-      return <Hash className={className} />;
-    case 'float':
-      return <Calculator className={className} />;
-    case 'boolean':
-      return <ToggleLeft className={className} />;
-    case 'date':
-      return <Calendar className={className} />;
-    case 'unknown':
-    default:
-      return <CircleHelp className={className} />;
-  }
-}
 
 interface DataTableHeaderCellProps {
   header: string;

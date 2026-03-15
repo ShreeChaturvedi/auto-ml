@@ -1,18 +1,15 @@
 /**
  * DistributionsPanel — Distributions tab content for the EDA view.
- * Composes histogram, box/violin, and categorical bar charts with a column
- * selector and mode toggle. All selection state is lifted to the parent so
- * it persists across tab switches.
+ * Composes histogram, box/violin, and categorical bar charts.
+ * Controls are rendered in the EDAToolbar; this component only renders charts.
  */
 
 import { useEffect, useMemo } from 'react';
-import { BarChart3, BoxSelect, Activity } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { PlotlyHistogram } from './PlotlyHistogram';
 import { PlotlyBoxViolin } from './PlotlyBoxViolin';
 import { PlotlyCategoricalBar } from './PlotlyCategoricalBar';
-import { EDAColumnSelector } from './EDAColumnSelector';
 import type {
   EdaSummary,
   NumericColumnSummary,
@@ -41,24 +38,12 @@ export function DistributionsPanel({
   selectedColumn,
   onSelectedColumnChange,
   compareColumns,
-  onCompareColumnsChange,
   mode,
-  onModeChange,
   className,
 }: DistributionsPanelProps) {
   // ---------------------------------------------------------------------------
   // Derived data (memoised)
   // ---------------------------------------------------------------------------
-
-  /** Column list with type annotations for the selector, derived from dataQuality. */
-  const selectorColumns = useMemo(
-    () =>
-      eda.dataQuality.map((col) => ({
-        name: col.column,
-        type: col.dataType,
-      })),
-    [eda.dataQuality],
-  );
 
   /** Map column name -> NumericColumnSummary for fast lookup. */
   const numericMap = useMemo(
@@ -146,55 +131,6 @@ export function DistributionsPanel({
 
   return (
     <div className={cn('space-y-4', className)}>
-      {/* ---- Controls row ---- */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Primary column selector */}
-        <EDAColumnSelector
-          columns={selectorColumns}
-          selected={selectedColumn ? [selectedColumn] : []}
-          onSelectionChange={(cols) =>
-            onSelectedColumnChange(cols[0] ?? null)
-          }
-          placeholder="Select column..."
-        />
-
-        {/* Mode toggle */}
-        <ToggleGroup
-          type="single"
-          size="sm"
-          value={mode}
-          onValueChange={(val) => {
-            // Radix fires empty string when de-selecting; ignore it
-            if (val) onModeChange(val as DistributionMode);
-          }}
-        >
-          <ToggleGroupItem value="histogram" aria-label="Histogram">
-            <BarChart3 className="mr-1 h-3.5 w-3.5" />
-            Histogram
-          </ToggleGroupItem>
-          <ToggleGroupItem value="box" aria-label="Box plot">
-            <BoxSelect className="mr-1 h-3.5 w-3.5" />
-            Box
-          </ToggleGroupItem>
-          <ToggleGroupItem value="violin" aria-label="Violin plot">
-            <Activity className="mr-1 h-3.5 w-3.5" />
-            Violin
-          </ToggleGroupItem>
-        </ToggleGroup>
-
-        {/* Compare-columns selector (box/violin modes only) */}
-        {(mode === 'box' || mode === 'violin') && (
-          <EDAColumnSelector
-            columns={selectorColumns}
-            selected={compareColumns}
-            onSelectionChange={onCompareColumnsChange}
-            multiple
-            filterType="numeric"
-            placeholder="Compare columns..."
-          />
-        )}
-      </div>
-
       {/* ---- Main chart area ---- */}
       {mode === 'histogram' && selectedColumn && (
         <>

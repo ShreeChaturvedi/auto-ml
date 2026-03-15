@@ -16,7 +16,8 @@ export { PlotlyPairPlot } from './PlotlyPairPlot';
 export { PlotlyScatter3D } from './PlotlyScatter3D';
 export { PlotlyParallelCoords } from './PlotlyParallelCoords';
 export { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
-export { ColumnHealthCard, ColumnHealthGrid } from './ColumnHealthCards';
+export { QualityTable } from './QualityTable';
+export { EDAToolbar } from './EDAToolbar';
 export { ChartErrorBoundary } from './ChartErrorBoundary';
 export { PlotEmptyState } from './PlotEmptyState';
 export { detectInsights, type EdaInsight } from './edaInsights';
@@ -30,5 +31,5 @@ export {
   getCorrelationLabel,
   formatAxis,
 } from './edaFormatters';
-export { DATA_TYPE_ICONS, DATA_TYPE_COLORS, getSeverityLabel } from './edaConstants';
+export { DATA_TYPE_ICONS, DATA_TYPE_COLORS, getSeverityLabel, mapEDATypeToColumnType } from './edaConstants';
 export { computeScatterFromRows, subsampleRows } from './edaDataUtils';

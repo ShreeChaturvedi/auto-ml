@@ -23,7 +23,8 @@ import {
 
 import { cn } from '@/lib/utils';
 import type { DataPreview } from '@/types/file';
-import { EDAPanel } from './EDAPanel';
+import { EDAPanel, type EdaTab } from './EDAPanel';
+import { EDAToolbar } from './eda/EDAToolbar';
 import { DataTableControls } from './DataTableControls';
 import type { QueryInfo } from './QueryInfoDialog';
 import Papa from 'papaparse';
@@ -60,6 +61,24 @@ export function DataTable({
   const [edaView, setEdaView] = useState<'table' | 'eda'>('table');
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
+
+  // EDA lifted state
+  const [edaActiveTab, setEdaActiveTab] = useState<EdaTab>('overview');
+  const [distSelectedColumn, setDistSelectedColumn] = useState<string | null>(null);
+  const [distCompareColumns, setDistCompareColumns] = useState<string[]>([]);
+  const [distMode, setDistMode] = useState<'histogram' | 'box' | 'violin'>('histogram');
+  const [corrSelectedCell, setCorrSelectedCell] = useState<{ a: string; b: string } | null>(null);
+  const [corrViewMode, setCorrViewMode] = useState<'heatmap' | 'pairplot' | '3d'>('heatmap');
+
+  // Derived values for toolbar
+  const selectorColumns = useMemo(
+    () => eda?.dataQuality?.map((col) => ({ name: col.column, type: col.dataType })) ?? [],
+    [eda?.dataQuality],
+  );
+  const numericColumnNames = useMemo(
+    () => eda?.numericColumns?.map((c) => c.column) ?? [],
+    [eda?.numericColumns],
+  );
 
   const { updatingColumnName, handleColumnTypeSelect } = useColumnTypeEditor({ onColumnTypeChange });
 
@@ -241,22 +260,61 @@ export function DataTable({
 
   return (
     <div className={cn('flex flex-col h-full overflow-hidden', className)}>
-      <DataTableControls
-        globalFilter={globalFilter}
-        onGlobalFilterChange={setGlobalFilter}
-        searchExpanded={searchExpanded}
-        onSearchExpandedChange={setSearchExpanded}
-        onExport={handleExport}
-        onSave={onSave}
-        queryInfo={queryInfo}
-        hasEda={hasEda}
-        edaView={edaView}
-        onEdaViewChange={setEdaView}
-        controlsPortalTarget={controlsPortalTarget}
-      />
+      {hasEda && edaView === 'eda' ? (
+        <EDAToolbar
+          eda={eda!}
+          activeTab={edaActiveTab}
+          onActiveTabChange={setEdaActiveTab}
+          selectorColumns={selectorColumns}
+          numericColumnNames={numericColumnNames}
+          distSelectedColumn={distSelectedColumn}
+          onDistSelectedColumnChange={setDistSelectedColumn}
+          distMode={distMode}
+          onDistModeChange={setDistMode}
+          distCompareColumns={distCompareColumns}
+          onDistCompareColumnsChange={setDistCompareColumns}
+          corrViewMode={corrViewMode}
+          onCorrViewModeChange={setCorrViewMode}
+          edaView={edaView}
+          onEdaViewChange={setEdaView}
+          controlsPortalTarget={controlsPortalTarget}
+        />
+      ) : (
+        <DataTableControls
+          globalFilter={globalFilter}
+          onGlobalFilterChange={setGlobalFilter}
+          searchExpanded={searchExpanded}
+          onSearchExpandedChange={setSearchExpanded}
+          onExport={handleExport}
+          onSave={onSave}
+          queryInfo={queryInfo}
+          hasEda={hasEda}
+          edaView={edaView}
+          onEdaViewChange={setEdaView}
+          controlsPortalTarget={controlsPortalTarget}
+        />
+      )}
       {hasEda && edaView === 'eda' ? (
         <div className="flex-1 min-h-0 overflow-auto">
-          {eda && <EDAPanel eda={eda} rows={preview.rows} />}
+          {eda && (
+            <EDAPanel
+              eda={eda}
+              rows={preview.rows}
+              columnTypes={columnTypes}
+              activeTab={edaActiveTab}
+              setActiveTab={setEdaActiveTab}
+              distSelectedColumn={distSelectedColumn}
+              onDistSelectedColumnChange={setDistSelectedColumn}
+              distCompareColumns={distCompareColumns}
+              onDistCompareColumnsChange={setDistCompareColumns}
+              distMode={distMode}
+              onDistModeChange={setDistMode}
+              corrSelectedCell={corrSelectedCell}
+              onCorrSelectedCellChange={setCorrSelectedCell}
+              corrViewMode={corrViewMode}
+              onCorrViewModeChange={setCorrViewMode}
+            />
+          )}
         </div>
       ) : (
         tableView

@@ -105,7 +105,7 @@ vi.mock('ws', () => {
                 this.removeListener(event, wrapped);
                 fn(...args);
             };
-            (wrapped as Record<string, unknown>)._original = fn;
+            (wrapped as unknown as Record<string, unknown>)._original = fn;
             return this.on(event, wrapped);
         }
 
@@ -124,7 +124,7 @@ vi.mock('ws', () => {
             const fns = this._listeners[event];
             if (fns) {
                 this._listeners[event] = fns.filter(
-                    (f) => f !== fn && (f as Record<string, unknown>)._original !== fn,
+                    (f) => f !== fn && (f as unknown as Record<string, unknown>)._original !== fn,
                 );
             }
             return this;

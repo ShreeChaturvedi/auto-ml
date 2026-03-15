@@ -1,9 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
-import { ToolIndicator } from '@/components/llm/ToolIndicator';
-import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
-import { ThinkingBlock } from '@/components/training/ThinkingBlock';
+import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
+import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 import { FeatureApprovalGate } from './FeatureApprovalGate';
@@ -14,17 +14,14 @@ import {
 } from './FeatureEngineeringToolbar';
 import { FeatureUiItemRenderer } from './FeatureUiItemRenderer';
 import {
-  HIDDEN_ACTIVITY_TOOLS,
-  HIDDEN_LEGACY_ERROR_MESSAGES,
   hasUiItems,
-  stripAssistantArtifacts
 } from './featureEngineeringUtils';
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
 import { useNotebookStore } from '@/stores/notebookStore';
 
 import { cn } from '@/lib/utils';
 
-import { Beaker, Loader2, Sparkles } from 'lucide-react';
+import { Beaker } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 import type { ChatMessage } from '@/types/llmUi';
@@ -118,201 +115,54 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     });
   }, [currentVersion?.id, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
-  const renderLeftPane = ({
-    messages,
-    isGenerating,
-    error,
-    activeTextMessageId,
-    activeThinkingMessageId,
-    hydratedMessageIds
-  }: {
-    messages: ChatMessage[];
-    isGenerating: boolean;
-    error: string | null;
-    activeTextMessageId: string | null;
-    activeThinkingMessageId: string | null;
-    hydratedMessageIds: Set<string>;
-  }) => {
-    const toolMessages = messages.filter(
-      (message): message is Extract<ChatMessage, { type: 'tool_call' }> =>
-        message.type === 'tool_call' && !HIDDEN_ACTIVITY_TOOLS.has(message.call.tool)
-    );
+  const baseRenderLifecycleCard = useLifecycleCards();
 
-    const toolCalls = toolMessages.map((message) => message.call);
-    const toolResults = toolMessages.flatMap((message) =>
-      message.result ? [message.result] : []
-    );
+  /** Extends lifecycle cards with FE-specific ui message rendering */
+  const renderLifecycleCard = useCallback(
+    (message: ChatMessage): ReactNode | null => {
+      // Handle ui messages with FE-specific item rendering
+      if (message.type === 'ui') {
+        if (!hasUiItems(message.schema)) return null;
 
-    const hasUserMessage = messages.some((message) => message.type === 'user');
-
-    return (
-      <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
-        <FeatureApprovalGate
-          isApproved={isApproved}
-          isReadyForApproval={isReadyForApproval}
-          panelError={panelError}
-          agentError={error}
-          onApprove={() => currentVersion && approveVersion(projectId, currentVersion.id)}
-          onNewDraft={handleNewDraft}
-        />
-
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {!hasUserMessage ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-                <Beaker className="h-8 w-8 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Feature Engineering is ready</p>
-                  <p className="text-xs text-muted-foreground">
-                    Ask the agent to propose candidate features, validate risks, and produce
-                    executable notebook steps.
-                  </p>
+        return (
+          <div className="space-y-4">
+            {message.schema.sections.map((section) => (
+              <div key={section.id} className="space-y-3">
+                {section.title ? (
+                  <h3 className="text-sm font-semibold">{section.title}</h3>
+                ) : null}
+                <div
+                  className={cn(
+                    section.layout === 'grid' && 'grid gap-3',
+                    section.layout === 'grid' && section.columns === 2 && 'md:grid-cols-2',
+                    section.layout === 'grid' && section.columns === 3 && 'md:grid-cols-3',
+                    (!section.layout || section.layout === 'column') && 'space-y-3'
+                  )}
+                >
+                  {section.items.map((item) => (
+                    <FeatureUiItemRenderer
+                      key={item.type === 'dataset_summary' ? item.datasetId : ('id' in item ? item.id : item.text)}
+                      item={item}
+                      isApproved={isApproved}
+                      datasetColumns={datasetColumns}
+                      suggestionDrafts={suggestionDrafts}
+                      featureById={featureById}
+                      onToggleSuggestion={toggleSuggestion}
+                      onUpdateSuggestionControl={updateSuggestionControl}
+                    />
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          <div className="space-y-4 py-4">
-            {messages.map((message) => {
-              if (message.type === 'user') {
-                return (
-                  <div key={message.id} className="flex justify-end">
-                    <div className="max-w-[80%] rounded-lg bg-primary/10 px-4 py-2 text-sm whitespace-pre-wrap">
-                      {message.content}
-                    </div>
-                  </div>
-                );
-              }
-
-              if (message.type === 'assistant_text') {
-                const cleaned = stripAssistantArtifacts(message.content);
-                if (!cleaned) return null;
-
-                return (
-                  <div key={message.id} className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
-                      <Sparkles className="h-3 w-3 text-emerald-600" />
-                    </div>
-                    <ProgressiveMessageText
-                      messageId={message.id}
-                      text={cleaned}
-                      isLive={activeTextMessageId === message.id}
-                      mode="markdown"
-                      animateOnMount={!hydratedMessageIds.has(message.id)}
-                      className="llm-assistant-markdown prose prose-sm max-w-none dark:prose-invert text-foreground"
-                    />
-                  </div>
-                );
-              }
-
-              if (message.type === 'thinking') {
-                return (
-                  <div key={message.id} className="ml-9">
-                    <ThinkingBlock
-                      messageId={message.id}
-                      content={message.content}
-                      isComplete={message.isComplete}
-                      isLive={activeThinkingMessageId === message.id}
-                      animateOnMount={!hydratedMessageIds.has(message.id)}
-                    />
-                  </div>
-                );
-              }
-
-              if (message.type === 'ui') {
-                if (!hasUiItems(message.schema)) return null;
-
-                return (
-                  <div key={message.id} className="ml-9 space-y-4">
-                    {message.schema.sections.map((section) => (
-                      <div key={section.id} className="space-y-3">
-                        {section.title ? (
-                          <h3 className="text-sm font-semibold">{section.title}</h3>
-                        ) : null}
-                        <div
-                          className={cn(
-                            section.layout === 'grid' && 'grid gap-3',
-                            section.layout === 'grid' && section.columns === 2 && 'md:grid-cols-2',
-                            section.layout === 'grid' && section.columns === 3 && 'md:grid-cols-3',
-                            (!section.layout || section.layout === 'column') && 'space-y-3'
-                          )}
-                        >
-                          {section.items.map((item) => (
-                            <FeatureUiItemRenderer
-                              key={item.type === 'dataset_summary' ? item.datasetId : ('id' in item ? item.id : item.text)}
-                              item={item}
-                              isApproved={isApproved}
-                              datasetColumns={datasetColumns}
-                              suggestionDrafts={suggestionDrafts}
-                              featureById={featureById}
-                              onToggleSuggestion={toggleSuggestion}
-                              onUpdateSuggestionControl={updateSuggestionControl}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              }
-
-              if (message.type === 'tool_call') {
-                if (HIDDEN_ACTIVITY_TOOLS.has(message.call.tool)) return null;
-
-                return (
-                  <div key={message.id} className="ml-9 text-xs text-muted-foreground">
-                    <span className="font-mono">{message.call.tool}</span>
-                    {message.result?.error ? (
-                      <span className="ml-2 text-destructive">{message.result.error}</span>
-                    ) : null}
-                  </div>
-                );
-              }
-
-              if (message.type === 'error') {
-                if (HIDDEN_LEGACY_ERROR_MESSAGES.has(message.message)) return null;
-                return (
-                  <div
-                    key={message.id}
-                    className="ml-9 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                  >
-                    {message.message}
-                  </div>
-                );
-              }
-
-              return null;
-            })}
-
-            <ToolIndicator toolCalls={toolCalls} results={toolResults} isRunning={isGenerating} />
-
-            {isGenerating ? (
-              <div className="ml-9 flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Generating feature plan...
               </div>
-            ) : null}
+            ))}
           </div>
-        </div>
+        );
+      }
 
-        <FeatureEngineeringFooter
-          readinessReportUnlocked={readinessReportUnlocked}
-          isReadinessExpanded={isReadinessExpanded}
-          onToggleReadiness={() => setIsReadinessExpanded(!isReadinessExpanded)}
-          readinessReport={readinessReport}
-          outputName={outputName}
-          onOutputNameChange={setOutputName}
-          outputFormat={outputFormat}
-          onOutputFormatChange={setOutputFormat}
-          onApplyFeatures={handleApplyFeatures}
-          applyStatus={applyStatus}
-          applyMessage={applyMessage}
-          isApproved={isApproved}
-          activeFeaturesCount={activeFeatures.length}
-        />
-      </div>
-    );
-  };
+      // Delegate tool_call messages to the shared lifecycle cards
+      return baseRenderLifecycleCard(message);
+    },
+    [baseRenderLifecycleCard, isApproved, datasetColumns, suggestionDrafts, featureById, toggleSuggestion, updateSuggestionControl]
+  );
 
   return (
     <AgenticShell
@@ -325,7 +175,61 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           ? 'This feature pipeline is approved and locked. Start a new draft to continue editing.'
           : undefined
       }
-      renderLeftPane={renderLeftPane}
+      renderLeftPane={(renderProps) => (
+        <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
+          <FeatureApprovalGate
+            isApproved={isApproved}
+            isReadyForApproval={isReadyForApproval}
+            panelError={panelError}
+            agentError={renderProps.error}
+            onApprove={() => currentVersion && approveVersion(projectId, currentVersion.id)}
+            onNewDraft={handleNewDraft}
+          />
+
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            {!renderProps.messages.some((m) => m.type === 'user') ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                  <Beaker className="h-8 w-8 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Feature Engineering is ready</p>
+                    <p className="text-xs text-muted-foreground">
+                      Ask the agent to propose candidate features, validate risks, and produce
+                      executable notebook steps.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <div className="space-y-4 py-4 pb-28">
+              <ChatMessageRenderer
+                messages={renderProps.messages}
+                renderLifecycleCard={renderLifecycleCard}
+                activeTextMessageId={renderProps.activeTextMessageId}
+                activeThinkingMessageId={renderProps.activeThinkingMessageId}
+                hydratedMessageIds={renderProps.hydratedMessageIds}
+              />
+            </div>
+          </div>
+
+          <FeatureEngineeringFooter
+            readinessReportUnlocked={readinessReportUnlocked}
+            isReadinessExpanded={isReadinessExpanded}
+            onToggleReadiness={() => setIsReadinessExpanded(!isReadinessExpanded)}
+            readinessReport={readinessReport}
+            outputName={outputName}
+            onOutputNameChange={setOutputName}
+            outputFormat={outputFormat}
+            onOutputFormatChange={setOutputFormat}
+            onApplyFeatures={handleApplyFeatures}
+            applyStatus={applyStatus}
+            applyMessage={applyMessage}
+            isApproved={isApproved}
+            activeFeaturesCount={activeFeatures.length}
+          />
+        </div>
+      )}
       toolbarLeft={
         <FeatureEngineeringToolbarLeft
           currentVersionId={currentVersion?.id ?? ''}

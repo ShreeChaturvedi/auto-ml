@@ -71,10 +71,12 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   },
 
   setCurrentStage(stage) {
+    if (get().currentStage === stage) return;
     set({ currentStage: stage });
   },
 
   setFeatureRunId(runId) {
+    if (get().featureRunId === runId) return;
     set({ featureRunId: runId });
   },
 

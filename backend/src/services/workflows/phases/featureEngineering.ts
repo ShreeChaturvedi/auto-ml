@@ -5,6 +5,7 @@ import {
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { FEATURE_ENGINEERING_CONTRACT } from '../../llm/prompts/featureContract.js';
 import { FEATURE_TOOL_NAMES } from '../../llm/tools/featureTools.js';
+import { asRecord } from '../../../utils/typeCoercion.js';
 import { LLM_FEATURE_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import type {
   LifecycleStageDefinition,
@@ -14,6 +15,7 @@ import type {
   ToolContext,
   ToolResult
 } from '../phaseConfig.js';
+import { registerPhaseConfig } from '../phaseConfig.js';
 
 // ---------------------------------------------------------------------------
 // Feature Engineering PhaseConfig — structured lifecycle phase that uses
@@ -35,6 +37,7 @@ const FEATURE_ENGINEERING_LIFECYCLE: LifecycleStageDefinition[] = [
 ];
 
 const STAGE_NAMES = FEATURE_ENGINEERING_LIFECYCLE.map((s) => s.name);
+const FEATURE_TOOL_NAME_SET: Set<string> = new Set(FEATURE_TOOL_NAMES);
 
 function buildStageConfig(
   stageName: string,
@@ -87,7 +90,7 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
   },
 
   isPhaseSpecificTool(toolName: string): boolean {
-    return FEATURE_TOOL_NAMES.includes(toolName);
+    return FEATURE_TOOL_NAME_SET.has(toolName);
   },
 
   async executePhaseSpecificTool(
@@ -102,11 +105,12 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
 
     const featureCtx = toFeatureToolContext({
       ...ctx,
-      args: (args && typeof args === 'object' && !Array.isArray(args)
-        ? args
-        : {}) as Record<string, unknown>
+      args: asRecord(args) ?? {}
     });
 
     return handler(featureCtx);
   }
 };
+
+// Register at module load time (side-effect import pattern)
+registerPhaseConfig(featureEngineeringPhaseConfig);

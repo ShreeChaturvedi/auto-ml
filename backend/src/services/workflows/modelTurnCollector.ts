@@ -15,14 +15,9 @@ import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
 import { resolveWorkflowNodeContract } from './contracts.js';
 import type { WorkflowEventSink } from './eventSink.js';
 import type { WorkflowGraphState } from './graphState.js';
-import type { WorkflowConfigurable } from './phases/types.js';
+import { extractConfigurable } from './phases/types.js';
 import { planWorkflowAction } from './planner.js';
 import type { WorkflowTurnRequest } from './types.js';
-
-function extractSink(config?: RunnableConfig): WorkflowEventSink | undefined {
-  const configurable = config?.configurable as WorkflowConfigurable | undefined;
-  return configurable?.sink;
-}
 
 function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
   if (sink) {
@@ -173,7 +168,7 @@ export async function invokeModelNode(
     };
   }
 
-  const sink = extractSink(config);
+  const { sink } = extractConfigurable(config);
   const contract = resolveWorkflowNodeContract(state);
   const modelOverride = state.turn.model && state.turn.model !== 'auto' ? state.turn.model : undefined;
   const client = createLlmClient(

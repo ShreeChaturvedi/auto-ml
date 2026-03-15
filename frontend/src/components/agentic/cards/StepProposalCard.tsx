@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Check, X, Pencil, ChevronDown, ChevronRight } from 'lucide-react';
+import { Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -93,10 +93,6 @@ export function StepProposalCard({
           <Button size="sm" className="h-7 text-xs" onClick={onAccept}>
             <Check className="mr-1 h-3 w-3" />
             Accept
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onAccept}>
-            <Pencil className="mr-1 h-3 w-3" />
-            Modify
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={onReject}>
             <X className="mr-1 h-3 w-3" />

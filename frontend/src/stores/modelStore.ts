@@ -102,10 +102,12 @@ export const useModelStore = create<ModelState>((set, get) => ({
   },
 
   setCurrentStage: (stage) => {
+    if (get().currentStage === stage) return;
     set({ currentStage: stage });
   },
 
   setTrainingRunId: (runId) => {
+    if (get().trainingRunId === runId) return;
     set({ trainingRunId: runId });
   }
 }));

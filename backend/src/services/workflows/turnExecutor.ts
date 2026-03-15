@@ -96,8 +96,9 @@ export async function executeWorkflowTurn(
     )
   });
 
-  const savedState = buildWorkflowStateEvent(savedRun, phaseContext).state;
-  sink.emit(buildWorkflowStateEvent(savedRun, phaseContext));
+  const savedStateEvent = buildWorkflowStateEvent(savedRun, phaseContext);
+  const savedState = savedStateEvent.state;
+  sink.emit(savedStateEvent);
 
   await persistNewToolExecutionEvents(repository, savedRun, history, result);
   await finalizeWorkflowTurn(

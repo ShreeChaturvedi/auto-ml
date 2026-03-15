@@ -1,8 +1,8 @@
+import type { ToolContext, ToolResult } from '../../workflows/phaseConfig.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from '../../workflows/types.js';
 
 /**
  * Context passed to every training tool handler.
- * Mirrors the ToolContext pattern from phaseConfig.ts but adds training-specific fields.
  */
 export interface TrainingToolContext {
   projectId: string;
@@ -14,17 +14,8 @@ export interface TrainingToolContext {
   turn: WorkflowTurnRequest;
 }
 
-/**
- * Return type for training tool handlers.
- */
-export interface TrainingToolResult {
-  output?: unknown;
-  error?: string;
-}
+export type TrainingToolResult = ToolResult;
 
-/**
- * Handler function signature for training tools.
- */
 export type TrainingToolHandler = (ctx: TrainingToolContext) => Promise<TrainingToolResult>;
 
 /**
@@ -41,4 +32,39 @@ export interface ExperimentState {
   targetColumn?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Convert a PhaseConfig ToolContext into a TrainingToolContext.
+ */
+export function toTrainingToolContext(ctx: ToolContext): TrainingToolContext {
+  return {
+    projectId: ctx.projectId,
+    toolCallId: ctx.toolCallId,
+    args: ctx.args,
+    datasetId: ctx.turn.datasetId,
+    notebookId: ctx.turn.notebookId,
+    run: ctx.run,
+    turn: ctx.turn
+  };
+}
+
+/**
+ * Resolve experiment from run metadata. Shared by all handlers that
+ * need an existing experiment.
+ */
+export function resolveExperiment(
+  run: WorkflowRunState,
+  args: Record<string, unknown>
+): { experiment: Record<string, unknown>; experiments: Record<string, Record<string, unknown>> } | { error: string } {
+  const experimentId = typeof args.experimentId === 'string' ? args.experimentId : undefined;
+  if (!experimentId) {
+    return { error: 'This operation requires experimentId.' };
+  }
+  const experiments = (run.metadata?.experiments as Record<string, Record<string, unknown>>) ?? {};
+  const experiment = experiments[experimentId];
+  if (!experiment) {
+    return { error: `Experiment ${experimentId} not found. Call configure_experiment first.` };
+  }
+  return { experiment, experiments };
 }

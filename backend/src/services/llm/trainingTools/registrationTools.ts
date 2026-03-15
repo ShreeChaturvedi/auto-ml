@@ -1,24 +1,16 @@
+import { nowIso } from '../preprocessingTools/helpers.js';
+
+import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 
-/**
- * register_model — commit a trained model to the experiment registry.
- * Updates the experiment status to 'registered' and stores final metadata.
- */
 export const registerModel: TrainingToolHandler = async (
   ctx: TrainingToolContext
 ): Promise<TrainingToolResult> => {
   const { args, run } = ctx;
 
-  const experimentId = args.experimentId as string | undefined;
-  if (!experimentId) {
-    return { error: 'register_model requires experimentId.' };
-  }
-
-  const experiments = (run.metadata?.experiments as Record<string, Record<string, unknown>>) ?? {};
-  const experiment = experiments[experimentId];
-  if (!experiment) {
-    return { error: `Experiment ${experimentId} not found.` };
-  }
+  const resolved = resolveExperiment(run, args);
+  if ('error' in resolved) return resolved;
+  const { experiment } = resolved;
 
   experiment.status = 'registered';
   experiment.registeredModelName = args.modelName;
@@ -27,44 +19,38 @@ export const registerModel: TrainingToolHandler = async (
   experiment.registeredHyperparameters = args.hyperparameters;
   experiment.artifactPath = args.artifactPath;
   experiment.tags = args.tags;
-  experiment.updatedAt = new Date().toISOString();
-
-  run.metadata = { ...run.metadata, experiments };
+  experiment.updatedAt = nowIso();
 
   return {
     output: {
-      experimentId,
+      experimentId: experiment.experimentId,
       modelName: args.modelName,
       modelType: args.modelType,
       status: 'registered',
       metrics: args.metrics,
       tags: args.tags ?? [],
-      message: `Model "${args.modelName as string}" registered successfully for experiment ${experimentId}.`
+      message: `Model "${args.modelName as string}" registered successfully for experiment ${experiment.experimentId as string}.`
     }
   };
 };
 
-/**
- * compare_models — side-by-side comparison of registered experiments.
- * Returns a comparison summary with rankings based on the primary metric.
- */
 export const compareModels: TrainingToolHandler = async (
   ctx: TrainingToolContext
 ): Promise<TrainingToolResult> => {
   const { args, run } = ctx;
 
-  const experimentIds = args.experimentIds as string[] | undefined;
+  const experimentIds = Array.isArray(args.experimentIds) ? args.experimentIds as string[] : undefined;
   if (!experimentIds || experimentIds.length === 0) {
     return { error: 'compare_models requires at least one experimentId.' };
   }
 
-  const primaryMetric = args.primaryMetric as string;
+  const primaryMetric = typeof args.primaryMetric === 'string' ? args.primaryMetric : undefined;
   if (!primaryMetric) {
     return { error: 'compare_models requires primaryMetric.' };
   }
 
   const experiments = (run.metadata?.experiments as Record<string, Record<string, unknown>>) ?? {};
-  const includeHyperparameters = (args.includeHyperparameters as boolean) ?? false;
+  const includeHyperparameters = args.includeHyperparameters === true;
 
   const comparisonRows: Array<Record<string, unknown>> = [];
   const missingIds: string[] = [];
@@ -93,14 +79,12 @@ export const compareModels: TrainingToolHandler = async (
     comparisonRows.push(row);
   }
 
-  // Sort by primary metric descending (higher is better by default)
   comparisonRows.sort((a, b) => {
     const aVal = (a.primaryMetricValue as number) ?? -Infinity;
     const bVal = (b.primaryMetricValue as number) ?? -Infinity;
     return bVal - aVal;
   });
 
-  // Add ranking
   comparisonRows.forEach((row, index) => {
     row.rank = index + 1;
   });

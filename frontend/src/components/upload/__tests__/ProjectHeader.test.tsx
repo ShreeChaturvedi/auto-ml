@@ -45,4 +45,17 @@ describe('ProjectHeader', () => {
 
     expect(onUpdate).toHaveBeenCalledWith({ description: 'Updated description' });
   });
+
+  it('sends empty string (not undefined) when description is cleared', () => {
+    const onUpdate = vi.fn();
+    renderWithRouter(<ProjectHeader project={mockProject} editable onUpdate={onUpdate} />);
+
+    const descriptionInput = screen.getByPlaceholderText('Add a description');
+    fireEvent.change(descriptionInput, { target: { value: '' } });
+    fireEvent.blur(descriptionInput);
+
+    expect(onUpdate).toHaveBeenCalledWith({ description: '' });
+    // Must NOT be undefined — that causes ?? fallback to keep the old value
+    expect(onUpdate.mock.calls[0]![0]).toHaveProperty('description', '');
+  });
 });

@@ -10,23 +10,11 @@ import {
 } from '../llm/preprocessingGraph.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
-import type { WorkflowEventSink } from './eventSink.js';
 import { buildToolEvent } from './eventWriter.js';
 import { MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
-import type { WorkflowConfigurable } from './phases/types.js';
+import { extractConfigurable } from './phases/types.js';
 import type { WorkflowPendingInputKind } from './types.js';
-
-function extractConfigurable(config?: RunnableConfig): {
-  sink: WorkflowEventSink | undefined;
-  phaseConfig: PhaseConfig | undefined;
-} {
-  const configurable = config?.configurable as WorkflowConfigurable | undefined;
-  return {
-    sink: configurable?.sink,
-    phaseConfig: configurable?.phaseConfig
-  };
-}
 
 function toolResultRequiresPause(result: ToolResult): boolean {
   const output = result.output;

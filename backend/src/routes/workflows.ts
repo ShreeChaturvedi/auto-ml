@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { NdjsonResponseSink } from '../services/workflows/eventSink.js';
 import { getPhaseConfig } from '../services/workflows/phaseConfig.js';
 // Phase configs self-register when imported
+import '../services/workflows/phases/featureEngineering.js';
 import '../services/workflows/phases/onboarding.js';
 import '../services/workflows/phases/preprocessing.js';
 import '../services/workflows/phases/training.js';

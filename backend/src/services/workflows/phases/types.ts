@@ -24,3 +24,18 @@ export interface GraphRunnableConfig {
   configurable: WorkflowConfigurable;
   [key: string]: unknown;
 }
+
+/**
+ * Extract sink and phaseConfig from LangGraph's RunnableConfig.
+ * Shared by all graph nodes that need configurable access.
+ */
+export function extractConfigurable(config?: { configurable?: unknown }): {
+  sink: import('../eventSink.js').WorkflowEventSink | undefined;
+  phaseConfig: import('../phaseConfig.js').PhaseConfig | undefined;
+} {
+  const configurable = config?.configurable as WorkflowConfigurable | undefined;
+  return {
+    sink: configurable?.sink,
+    phaseConfig: configurable?.phaseConfig
+  };
+}

@@ -250,3 +250,5 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
     }
   }
 ];
+
+export const TRAINING_TOOL_NAMES: readonly string[] = TRAINING_TOOL_DEFINITIONS.map((t) => t.name);

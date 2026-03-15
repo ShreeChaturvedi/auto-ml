@@ -32,7 +32,7 @@ export function buildWorkflowGraph() {
     });
 }
 
-// Pre-compiled singleton — graph is compiled once at import time.
+// Pre-compiled singleton — graph is compiled lazily on first use.
 let _compiledGraph: ReturnType<typeof buildWorkflowGraph> | null = null;
 
 export function getCompiledGraph() {

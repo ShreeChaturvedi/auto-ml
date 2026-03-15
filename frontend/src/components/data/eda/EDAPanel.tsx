@@ -6,7 +6,7 @@
 
 import { useState, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BarChart3, GitBranch, Layers, ShieldCheck } from 'lucide-react';
+import { BarChart3, Waypoints, Layers, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EdaSummary } from '@/types/file';
 
@@ -98,8 +98,8 @@ export function EDAPanel({ eda, rows, className }: EDAPanelProps) {
             className="gap-1.5 text-xs"
             disabled={!hasCorrelations}
           >
-            <GitBranch className="h-3.5 w-3.5" />
-            Correlations
+            <Waypoints className="h-3.5 w-3.5" />
+            Relationships
           </TabsTrigger>
           <TabsTrigger value="quality" className="gap-1.5 text-xs" disabled={!hasQuality}>
             <ShieldCheck className="h-3.5 w-3.5" />

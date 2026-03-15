@@ -172,6 +172,26 @@ export function formatAxis(value: number): string {
 }
 
 /**
+ * Extract {x, y} scatter points from raw row data for a given pair of columns.
+ * Used as a client-side fallback when the pair is NOT in `scatterPairs`.
+ */
+export function computeScatterFromRows(
+  rows: Record<string, unknown>[],
+  xCol: string,
+  yCol: string,
+): { x: number; y: number }[] {
+  const points: { x: number; y: number }[] = [];
+  for (const row of rows) {
+    const xVal = Number(row[xCol]);
+    const yVal = Number(row[yCol]);
+    if (Number.isFinite(xVal) && Number.isFinite(yVal)) {
+      points.push({ x: xVal, y: yVal });
+    }
+  }
+  return points;
+}
+
+/**
  * Deterministic subsampling using even step size.
  * If rows.length <= maxRows, returns the original array.
  * Otherwise takes every `step`-th row, capped at maxRows.

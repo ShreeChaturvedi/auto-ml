@@ -12,14 +12,23 @@ export { PlotlyHeatmap } from './PlotlyHeatmap';
 export { PlotlyScatter } from './PlotlyScatter';
 export { CorrelationPairsList } from './CorrelationPairsList';
 export { QualityPanel } from './QualityPanel';
+export { PlotlyPairPlot } from './PlotlyPairPlot';
+export { PlotlyScatter3D } from './PlotlyScatter3D';
+export { PlotlyParallelCoords } from './PlotlyParallelCoords';
+export { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
+export { ColumnHealthCard, ColumnHealthGrid } from './ColumnHealthCards';
+export { ChartErrorBoundary } from './ChartErrorBoundary';
 export { detectInsights, type EdaInsight } from './edaInsights';
-export { useIsDark, getPlotlyLayout, PLOTLY_CONFIG, LazyPlot, PlotSuspense } from './edaTheme';
+export { useIsDark, getPlotlyLayout, getEdaColors, PLOTLY_CONFIG, PLOTLY_CONFIG_INTERACTIVE, EDA_COLORSCALES, LazyPlot, PlotSuspense } from './edaTheme';
 export {
   formatNumber,
   formatPercentage,
   truncateText,
   getCorrelationColor,
   getCorrelationLabel,
+  getSeverityLabel,
+  formatAxis,
+  subsampleRows,
   DATA_TYPE_ICONS,
   DATA_TYPE_COLORS,
 } from './edaFormatters';

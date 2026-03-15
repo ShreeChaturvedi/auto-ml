@@ -10,6 +10,8 @@ export {
   buildCorrelations,
   buildHistogram,
   buildScatter,
+  buildScatterPairs,
+  computeRegressionLine,
   computeCategoricalSummaries,
   computeDataQuality,
   computeNumericSummaries,

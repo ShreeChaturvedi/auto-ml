@@ -125,6 +125,7 @@ export interface EdaSummary {
   histograms?: HistogramData[];    // all numeric columns (up to 20)
   scatter?: ScatterData;
   correlations?: CorrelationData[];
+  scatterPairs?: ScatterPairData[];
 }
 
 export interface NumericColumnSummary {
@@ -167,6 +168,19 @@ export interface ScatterData {
   xColumn: string;
   yColumn: string;
   points: Array<{ x: number; y: number }>;
+}
+
+export interface RegressionLine {
+  slope: number;
+  intercept: number;
+  r2: number;
+}
+
+export interface ScatterPairData {
+  xColumn: string;
+  yColumn: string;
+  points: Array<{ x: number; y: number }>;
+  regressionLine?: RegressionLine;
 }
 
 export interface CorrelationData {

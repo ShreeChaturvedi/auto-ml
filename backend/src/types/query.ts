@@ -28,6 +28,7 @@ export interface EdaSummary {
   histograms?: HistogramSummary[];    // all numeric columns (up to 20)
   scatter?: ScatterSummary;
   correlations?: CorrelationSummary[];
+  scatterPairs?: ScatterPairData[];
 }
 
 export interface NumericSummary {
@@ -80,4 +81,17 @@ export interface CorrelationSummary {
   columnA: string;
   columnB: string;
   coefficient: number;
+}
+
+export interface RegressionLine {
+  slope: number;
+  intercept: number;
+  r2: number;
+}
+
+export interface ScatterPairData {
+  xColumn: string;
+  yColumn: string;
+  points: Array<{ x: number; y: number }>;
+  regressionLine?: RegressionLine;
 }

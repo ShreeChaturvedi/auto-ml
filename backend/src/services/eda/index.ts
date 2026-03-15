@@ -13,7 +13,7 @@ import type { EdaSummary, HistogramSummary, QueryRow } from '../../types/query.j
 import { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
 import { detectColumnTypes } from './columnDetection.js';
 import { computeNumericSummaries } from './numericAnalysis.js';
-import { buildCorrelations, buildHistogram, buildScatter } from './visualizations.js';
+import { buildCorrelations, buildHistogram, buildScatter, buildScatterPairs } from './visualizations.js';
 
 /**
  * Build comprehensive EDA summary from query results
@@ -47,6 +47,10 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     ? buildCorrelations(rows, numericCols)
     : undefined;
 
+  const scatterPairs = numericCols.length >= 2 && correlations
+    ? buildScatterPairs(rows, numericCols, correlations, 15)
+    : undefined;
+
   return {
     numericColumns: numericSummaries,
     categoricalColumns: categoricalSummaries,
@@ -54,7 +58,8 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     histogram,
     histograms: histograms.length > 0 ? histograms : undefined,
     scatter,
-    correlations
+    correlations,
+    scatterPairs
   };
 }
 
@@ -63,4 +68,4 @@ export { detectColumnTypes } from './columnDetection.js';
 export type { ColumnType } from './columnDetection.js';
 export { computeNumericSummaries, percentile } from './numericAnalysis.js';
 export { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
-export { buildHistogram, buildScatter, buildCorrelations } from './visualizations.js';
+export { buildHistogram, buildScatter, buildCorrelations, buildScatterPairs, computeRegressionLine } from './visualizations.js';

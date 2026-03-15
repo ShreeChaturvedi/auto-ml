@@ -6,6 +6,8 @@ import type {
   CorrelationSummary,
   HistogramSummary,
   QueryRow,
+  RegressionLine,
+  ScatterPairData,
   ScatterSummary
 } from '../../types/query.js';
 
@@ -103,6 +105,96 @@ export function buildCorrelations(rows: QueryRow[], columns: string[]): Correlat
   correlations.sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient));
 
   return correlations.length > 0 ? correlations : undefined;
+}
+
+const MAX_SCATTER_PAIR_POINTS = 300;
+
+/**
+ * Compute OLS regression line for a set of points
+ */
+export function computeRegressionLine(points: Array<{ x: number; y: number }>): RegressionLine | undefined {
+  if (points.length < 2) return undefined;
+
+  const n = points.length;
+  const meanX = points.reduce((acc, p) => acc + p.x, 0) / n;
+  const meanY = points.reduce((acc, p) => acc + p.y, 0) / n;
+
+  let ssXX = 0;
+  let ssXY = 0;
+  let ssTot = 0;
+
+  for (const p of points) {
+    const dx = p.x - meanX;
+    const dy = p.y - meanY;
+    ssXX += dx * dx;
+    ssXY += dx * dy;
+    ssTot += dy * dy;
+  }
+
+  // Guard: all x values identical
+  if (ssXX === 0) return undefined;
+
+  const slope = ssXY / ssXX;
+  const intercept = meanY - slope * meanX;
+
+  // Guard: all y values identical (SS_tot = 0)
+  if (ssTot === 0) {
+    return { slope, intercept, r2: 1 };
+  }
+
+  // R² = 1 - SS_res / SS_tot
+  let ssRes = 0;
+  for (const p of points) {
+    const predicted = slope * p.x + intercept;
+    ssRes += (p.y - predicted) ** 2;
+  }
+
+  const r2 = 1 - ssRes / ssTot;
+
+  return { slope, intercept, r2 };
+}
+
+/**
+ * Build scatter plot data for the top correlated column pairs with regression lines
+ */
+export function buildScatterPairs(
+  rows: QueryRow[],
+  numericCols: string[],
+  correlations: CorrelationSummary[],
+  maxPairs = 15
+): ScatterPairData[] | undefined {
+  if (!correlations || correlations.length === 0) return undefined;
+
+  // Sort by |coefficient| descending and take top maxPairs
+  const topPairs = [...correlations]
+    .sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
+    .slice(0, maxPairs);
+
+  const results: ScatterPairData[] = [];
+
+  for (const pair of topPairs) {
+    // Extract points for this pair
+    const points = rows
+      .map(row => ({
+        x: typeof row[pair.columnA] === 'number' ? row[pair.columnA] : Number(row[pair.columnA]),
+        y: typeof row[pair.columnB] === 'number' ? row[pair.columnB] : Number(row[pair.columnB])
+      }))
+      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y))
+      .slice(0, MAX_SCATTER_PAIR_POINTS);
+
+    if (points.length === 0) continue;
+
+    const regressionLine = computeRegressionLine(points);
+
+    results.push({
+      xColumn: pair.columnA,
+      yColumn: pair.columnB,
+      points,
+      regressionLine
+    });
+  }
+
+  return results.length > 0 ? results : undefined;
 }
 
 /**

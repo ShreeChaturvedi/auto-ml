@@ -1,63 +1,45 @@
 /**
- * QualityPanel — refined data quality overview with monospace formatting,
- * quality-specific insights, and the scientific aesthetic shared by all EDA tabs.
+ * QualityPanel — redesigned data quality overview with missing-value matrix,
+ * severity-colored health cards, and the scientific aesthetic shared by all EDA tabs.
  */
 
 import { useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { InsightTicker } from '@/components/ui/insight-ticker';
 import type { InsightTickerItem } from '@/components/ui/insight-ticker';
-import {
-  AlertTriangle,
-  CheckCircle2,
-} from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import type { EdaSummary, DataQualitySummary } from '@/types/file';
 import { cn } from '@/lib/utils';
 import type { EdaInsight } from './edaInsights';
 import { formatPercentage, DATA_TYPE_ICONS, DATA_TYPE_COLORS } from './edaFormatters';
+import { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
+import { ColumnHealthGrid } from './ColumnHealthCards';
 
 /* ------------------------------------------------------------------ */
-/*  Constants                                                         */
+/*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
 const QUALITY_INSIGHT_PREFIXES = ['missing-', 'constant-', 'cardinality-'];
 
+const SEVERITY_LEGEND = [
+  { label: 'Pristine', range: '100%', colorClass: 'text-green-500' },
+  { label: 'Clean', range: '95-99%', colorClass: 'text-teal-500' },
+  { label: 'Fair', range: '80-94%', colorClass: 'text-amber-500' },
+  { label: 'Poor', range: '<80%', colorClass: 'text-red-500' },
+] as const;
+
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
+/*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function getMissingStatus(
-  percentage: number,
-): { label: string; color: string; icon: typeof CheckCircle2 } {
-  if (percentage === 0) {
-    return { label: 'Complete', color: 'text-green-600 dark:text-green-400', icon: CheckCircle2 };
-  }
-  if (percentage < 5) {
-    return { label: 'Low', color: 'text-yellow-600 dark:text-yellow-400', icon: AlertTriangle };
-  }
-  if (percentage < 20) {
-    return { label: 'Moderate', color: 'text-orange-600 dark:text-orange-400', icon: AlertTriangle };
-  }
-  return { label: 'High', color: 'text-red-600 dark:text-red-400', icon: AlertTriangle };
-}
-
-function avgMissingColor(avg: number): string {
+function avgMissingColorClass(avg: number): string {
   if (avg < 5) return 'text-green-600 dark:text-green-400';
   if (avg <= 20) return 'text-amber-600 dark:text-amber-400';
   return 'text-red-600 dark:text-red-400';
 }
 
 /* ------------------------------------------------------------------ */
-/*  Component                                                         */
+/*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
 interface QualityPanelProps {
@@ -99,6 +81,11 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
     return { totalColumns, completeColumns, columnsWithMissing, avgMissingPct, typeDistribution };
   }, [data]);
 
+  const allColumnsComplete = useMemo(
+    () => data.every((d) => d.missingPercentage === 0),
+    [data],
+  );
+
   /* ---------- empty state ----------------------------------------- */
 
   if (data.length === 0) {
@@ -120,34 +107,44 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
 
       {/* 2. Summary KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-muted/30 rounded-lg p-3">
+        <div className="bg-muted/40 border border-border/30 rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-3">
           <div className="text-2xl font-bold font-mono">{summary.totalColumns}</div>
           <div className="text-xs text-muted-foreground mt-0.5">Total Columns</div>
         </div>
 
-        <div className="bg-muted/30 rounded-lg p-3">
+        <div className="bg-muted/40 border border-border/30 rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-3">
           <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
             {summary.completeColumns}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">Complete</div>
         </div>
 
-        <div className="bg-muted/30 rounded-lg p-3">
+        <div className="bg-muted/40 border border-border/30 rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-3">
           <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
             {summary.columnsWithMissing}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">With Missing</div>
         </div>
 
-        <div className="bg-muted/30 rounded-lg p-3">
-          <div className={cn('text-2xl font-bold font-mono', avgMissingColor(summary.avgMissingPct))}>
+        <div className="bg-muted/40 border border-border/30 rounded-lg shadow-[0_1px_3px_rgba(0,0,0,0.3)] p-3">
+          <div className={cn('text-2xl font-bold font-mono', avgMissingColorClass(summary.avgMissingPct))}>
             {formatPercentage(summary.avgMissingPct)}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">Avg Missing %</div>
         </div>
       </div>
 
-      {/* 3. Type distribution badges */}
+      {/* 3. Missing-value matrix or positive empty state */}
+      {eda.missingMatrix ? (
+        <PlotlyMissingValueMatrix missingMatrix={eda.missingMatrix} />
+      ) : allColumnsComplete ? (
+        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 py-4 px-3 bg-green-50 dark:bg-green-900/10 rounded-lg border border-green-200 dark:border-green-900/20">
+          <CheckCircle2 className="h-4 w-4" />
+          All columns are complete — no missing values detected.
+        </div>
+      ) : null}
+
+      {/* 4. Type distribution badges */}
       <div className="flex flex-wrap gap-2">
         {Object.entries(summary.typeDistribution).map(([type, count]) => {
           const Icon = DATA_TYPE_ICONS[type as DataQualitySummary['dataType']];
@@ -164,89 +161,18 @@ export function QualityPanel({ eda, insights, className }: QualityPanelProps) {
         })}
       </div>
 
-      {/* 4. Column details table */}
-      <div className="rounded-md border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Missing</TableHead>
-              <TableHead className="w-[130px]">Completeness</TableHead>
-              <TableHead className="text-right">Unique</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((col) => {
-              const Icon = DATA_TYPE_ICONS[col.dataType];
-              const status = getMissingStatus(col.missingPercentage);
-              const StatusIcon = status.icon;
-              const completeness = 100 - col.missingPercentage;
-
-              return (
-                <TableRow key={col.column}>
-                  {/* Name */}
-                  <TableCell
-                    className="font-medium max-w-[150px] truncate"
-                    title={col.column}
-                  >
-                    {col.column}
-                  </TableCell>
-
-                  {/* Type badge */}
-                  <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={cn('gap-1 text-xs', DATA_TYPE_COLORS[col.dataType])}
-                    >
-                      <Icon className="h-3 w-3" />
-                      {col.dataType}
-                    </Badge>
-                  </TableCell>
-
-                  {/* Missing */}
-                  <TableCell className="text-right font-mono text-xs">
-                    {col.missingCount > 0 ? (
-                      <span className="text-amber-600 dark:text-amber-400">
-                        {col.missingCount.toLocaleString()} ({formatPercentage(col.missingPercentage)})
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">0</span>
-                    )}
-                  </TableCell>
-
-                  {/* Completeness */}
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Progress value={completeness} className="h-2" />
-                      <span className="text-xs font-mono w-10 text-right">
-                        {formatPercentage(completeness, true)}
-                      </span>
-                    </div>
-                  </TableCell>
-
-                  {/* Unique */}
-                  <TableCell className="text-right font-mono text-xs">
-                    {col.uniqueCount.toLocaleString()}
-                    <span className="text-muted-foreground ml-1">
-                      ({formatPercentage(col.uniquePercentage, true)})
-                    </span>
-                  </TableCell>
-
-                  {/* Status */}
-                  <TableCell>
-                    <div className={cn('flex items-center gap-1 text-xs', status.color)}>
-                      <StatusIcon className="h-3.5 w-3.5" />
-                      {status.label}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+      {/* 5. Severity legend */}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        {SEVERITY_LEGEND.map((tier) => (
+          <span key={tier.label} className="flex items-center gap-1">
+            <span className={cn('font-medium', tier.colorClass)}>{tier.label}</span>
+            <span>({tier.range})</span>
+          </span>
+        ))}
       </div>
+
+      {/* 6. Column health grid (replaces the old table) */}
+      <ColumnHealthGrid dataQuality={data} />
     </div>
   );
 }

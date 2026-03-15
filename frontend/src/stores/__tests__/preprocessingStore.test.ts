@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiRequest } from '../../lib/api/client';
-import { executeToolCalls, getPreprocessingRunSnapshot } from '../../lib/api/llm';
+import { getPreprocessingRunSnapshot } from '../../lib/api/llm';
 import type { PreprocessingRunSnapshot } from '../../types/preprocessing';
 import { usePreprocessingStore } from '../preprocessingStore';
 
@@ -11,13 +11,11 @@ vi.mock('../../lib/api/client', () => ({
 }));
 
 vi.mock('../../lib/api/llm', () => ({
-  getPreprocessingRunSnapshot: vi.fn(),
-  executeToolCalls: vi.fn()
+  getPreprocessingRunSnapshot: vi.fn()
 }));
 
 const apiRequestMock = vi.mocked(apiRequest);
 const getPreprocessingRunSnapshotMock = vi.mocked(getPreprocessingRunSnapshot);
-const executeToolCallsMock = vi.mocked(executeToolCalls);
 
 function resetPreprocessingStore() {
   usePreprocessingStore.setState({
@@ -74,8 +72,8 @@ function buildSnapshot(): PreprocessingRunSnapshot {
 describe('preprocessingStore hydration', () => {
   beforeEach(() => {
     resetPreprocessingStore();
+    apiRequestMock.mockReset();
     getPreprocessingRunSnapshotMock.mockReset();
-    executeToolCallsMock.mockReset();
   });
 
   it('hydrates timeline and bindings from snapshot payload', () => {
@@ -452,17 +450,13 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('persists approve action via backend commit and rehydrates authoritative state', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'approval-step-1',
-          tool: 'commit_transformation_step',
-          output: {
-            runId: 'prep-run-1',
-            isError: false
-          }
-        }
-      ]
+    apiRequestMock.mockResolvedValueOnce({
+      id: 'approval-step-1',
+      tool: 'commit_transformation_step',
+      output: {
+        runId: 'prep-run-1',
+        isError: false
+      }
     });
     getPreprocessingRunSnapshotMock.mockResolvedValue({
       run: {
@@ -499,21 +493,12 @@ describe('preprocessingStore hydration', () => {
 
     await usePreprocessingStore.getState().approveStep('project-1', 'step-1');
 
-    expect(executeToolCallsMock).toHaveBeenCalledWith(
-      'project-1',
-      [
-        expect.objectContaining({
-          tool: 'commit_transformation_step',
-          args: expect.objectContaining({
-            runId: 'prep-run-1',
-            stepId: 'step-1',
-            approved: true,
-            datasetId: 'dataset-1'
-          })
-        })
-      ],
-      undefined,
-      'user_approval'
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/preprocessing/step-decision',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"approved":true')
+      })
     );
     expect(getPreprocessingRunSnapshotMock).toHaveBeenCalledWith('prep-run-1', 'project-1');
     expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({
@@ -523,17 +508,13 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('persists reject action with reason and restores reason from backend snapshot', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'reject-step-1',
-          tool: 'commit_transformation_step',
-          output: {
-            runId: 'prep-run-1',
-            isError: false
-          }
-        }
-      ]
+    apiRequestMock.mockResolvedValueOnce({
+      id: 'reject-step-1',
+      tool: 'commit_transformation_step',
+      output: {
+        runId: 'prep-run-1',
+        isError: false
+      }
     });
     getPreprocessingRunSnapshotMock.mockResolvedValue({
       run: {
@@ -570,21 +551,12 @@ describe('preprocessingStore hydration', () => {
 
     await usePreprocessingStore.getState().rejectStep('project-1', 'step-1', 'Risk too high');
 
-    expect(executeToolCallsMock).toHaveBeenCalledWith(
-      'project-1',
-      [
-        expect.objectContaining({
-          tool: 'commit_transformation_step',
-          args: expect.objectContaining({
-            runId: 'prep-run-1',
-            stepId: 'step-1',
-            approved: false,
-            rejectionReason: 'Risk too high'
-          })
-        })
-      ],
-      undefined,
-      'user_approval'
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/preprocessing/step-decision',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"approved":false')
+      })
     );
     expect(getPreprocessingRunSnapshotMock).toHaveBeenCalledWith('prep-run-1', 'project-1');
     expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({

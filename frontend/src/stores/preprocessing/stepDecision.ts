@@ -1,4 +1,4 @@
-import { executeToolCalls } from '@/lib/api/llm';
+import { apiRequest } from '@/lib/api/client';
 import { asBoolean, asRecord, asString } from '@/lib/typeCoercion';
 import type { TransformationEvent, TransformationStatus } from '@/types/preprocessing';
 
@@ -54,22 +54,20 @@ export async function commitStepDecision({
   }));
 
   try {
-    const toolArgs: Record<string, unknown> = {
-      runId,
-      stepId,
-      approved,
-      ...(approved && selectedDatasetId ? { datasetId: selectedDatasetId } : {}),
-      ...(!approved && rejectionReason ? { rejectionReason } : {})
-    };
-
-    const response = await executeToolCalls(
-      projectId,
-      [{ id: `${action}-${stepId}-${Date.now()}`, tool: 'commit_transformation_step', args: toolArgs }],
-      undefined,
-      'user_approval'
+    const result = await apiRequest<{ id: string; tool: string; output?: unknown; error?: string }>(
+      '/preprocessing/step-decision',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId,
+          runId,
+          stepId,
+          approved,
+          ...(approved && selectedDatasetId ? { datasetId: selectedDatasetId } : {}),
+          ...(!approved && rejectionReason ? { rejectionReason } : {})
+        })
+      }
     );
-
-    const result = response.results[0];
     const output = asRecord(result?.output);
     const isError = Boolean(result?.error) || asBoolean(output?.isError) === true;
 

@@ -43,7 +43,7 @@ export function useAgenticLoop({
   const abortRef = useRef<AbortController | null>(null);
   const skipPersistOnceRef = useRef(false);
 
-  const { toolHistoryRef, resetToolHistory, executePending } = useToolExecution(projectId);
+  const { toolHistoryRef, resetToolHistory } = useToolExecution();
 
   const messageStorageScope = storageKey && projectId
     ? `${storageKey}-${projectId}`
@@ -168,23 +168,15 @@ export function useAgenticLoop({
           domainAdapter,
           activeRequestIdRef,
           currentTextIdRef,
-          toolHistoryRef,
           handleStreamEvent,
           completeThinking,
           closeTextStream,
           appendToken,
           appendUiSchema,
           appendBackendToolExecution,
-          executePending,
           setMessages,
           setError,
-          setIsStreaming,
-          onLegacyRestream: (result) => {
-            setTimeout(() => {
-              if (requestId !== activeRequestIdRef.current) return;
-              void runLoop(prompt, requestOptions, result.results, toolHistoryRef.current.calls);
-            }, 100);
-          }
+          setIsStreaming
         }),
         controller.signal,
         {
@@ -215,13 +207,11 @@ export function useAgenticLoop({
     currentTextIdRef,
     domainAdapter,
     domainLockReason,
-    executePending,
     handleStreamEvent,
     resetToolHistory,
     setError,
     setIsStreaming,
-    setMessages,
-    toolHistoryRef
+    setMessages
   ]);
 
   const editMessage = useCallback((msgId: string, newContent: string) => {

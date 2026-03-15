@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
+import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
+import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
 import { buildDatasetContinuityPrompt } from './continuityPrompt';
 import { RenameTabDialog } from './PreprocessingDialogs';
@@ -11,7 +13,6 @@ import {
   PreprocessingToolbarLeft,
   PreprocessingToolbarRight
 } from './PreprocessingToolbar';
-import { PreprocessingChatSection } from './PreprocessingChatSection';
 import { PreprocessingResultsSection } from './PreprocessingResultsSection';
 import { TransformationTimelineSheet } from './TransformationTimelineSheet';
 import { cn } from '@/lib/utils';
@@ -213,6 +214,8 @@ export function PreprocessingPanel() {
     clearRun();
   };
 
+  const renderLifecycleCard = useLifecycleCards();
+
   const domainAdapter = useMemo(() => {
     const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID);
     return createPreprocessingAdapter(
@@ -265,13 +268,16 @@ export function PreprocessingPanel() {
             onOpenTimeline={handleOpenTimeline}
           />
         }
-        LeftPaneComponent={(renderProps) => (
-          <PreprocessingChatSection
-            {...renderProps}
-            storeError={storeError}
-            sortedTimeline={sortedTimeline}
-            onOpenTimeline={handleOpenTimeline}
-          />
+        renderLeftPane={(renderProps) => (
+          <div className="mx-auto w-full max-w-5xl space-y-4 p-6 pb-28">
+            <ChatMessageRenderer
+              messages={renderProps.messages}
+              renderLifecycleCard={renderLifecycleCard}
+              activeTextMessageId={renderProps.activeTextMessageId}
+              activeThinkingMessageId={renderProps.activeThinkingMessageId}
+              hydratedMessageIds={renderProps.hydratedMessageIds}
+            />
+          </div>
         )}
       />
 

@@ -1,7 +1,6 @@
 import type { MutableRefObject } from 'react';
 
 import type { LlmStreamEvent } from '@/lib/api/llm';
-import { mergeToolCalls, type ToolExecutionResult } from '@/hooks/useToolExecution';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
 import type { ChatMessage, ToolCall, ToolResult, UiSchema } from '@/types/llmUi';
 import type { WorkflowState } from '@/types/workflow';
@@ -13,24 +12,15 @@ interface CreateAgenticEventHandlerOptions {
   domainAdapter: DomainAdapter;
   activeRequestIdRef: MutableRefObject<number>;
   currentTextIdRef: MutableRefObject<string | null>;
-  toolHistoryRef: MutableRefObject<{ calls: ToolCall[]; results: ToolResult[] }>;
   handleStreamEvent: (event: LlmStreamEvent) => boolean;
   completeThinking: () => void;
   closeTextStream: () => void;
   appendToken: (token: string) => void;
   appendUiSchema: (schema: UiSchema) => void;
   appendBackendToolExecution: (call: ToolCall, result: ToolResult, nextState?: WorkflowState) => void;
-  executePending: (
-    toolCalls: ToolCall[],
-    requestId: number,
-    activeRequestIdRef: MutableRefObject<number>,
-    setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-    domainAdapter: DomainAdapter
-  ) => Promise<ToolExecutionResult | null>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setError: (message: string | null) => void;
   setIsStreaming: (value: boolean) => void;
-  onLegacyRestream: (result: ToolExecutionResult) => void;
 }
 
 function resolveArtifactMessage(event: Extract<LlmStreamEvent, { type: 'artifact_updated' }>): string | null {
@@ -57,18 +47,15 @@ export function createAgenticEventHandler({
   domainAdapter,
   activeRequestIdRef,
   currentTextIdRef,
-  toolHistoryRef,
   handleStreamEvent,
   completeThinking,
   closeTextStream,
   appendToken,
   appendUiSchema,
   appendBackendToolExecution,
-  executePending,
   setMessages,
   setError,
-  setIsStreaming,
-  onLegacyRestream
+  setIsStreaming
 }: CreateAgenticEventHandlerOptions) {
   return (rawEvent: unknown) => {
     const event = rawEvent as LlmStreamEvent;
@@ -80,58 +67,6 @@ export function createAgenticEventHandler({
     if (handled) {
       if (event.type === 'error') {
         domainAdapter.onStreamError?.(event.message);
-      }
-      return;
-    }
-
-    if (event.type === 'envelope') {
-      completeThinking();
-      if (event.envelope.controller) {
-        domainAdapter.onControllerUpdate?.(event.envelope.controller);
-      }
-
-      if (event.envelope.tool_calls?.length) {
-        closeTextStream();
-        const preparedToolCalls = domainAdapter.prepareToolCalls
-          ? domainAdapter.prepareToolCalls(event.envelope.tool_calls)
-          : event.envelope.tool_calls;
-
-        toolHistoryRef.current.calls = mergeToolCalls(toolHistoryRef.current.calls, preparedToolCalls);
-
-        for (const call of preparedToolCalls) {
-          setMessages((prev) => [...prev, { id: `tool-${call.id}`, type: 'tool_call', call }]);
-          domainAdapter.toolRegistry[call.tool]?.onCall?.(call);
-        }
-
-        void executePending(
-          preparedToolCalls,
-          requestId,
-          activeRequestIdRef,
-          setMessages,
-          domainAdapter
-        ).then((result) => {
-          if (!result) {
-            return;
-          }
-          if (result.shouldPause) {
-            setIsStreaming(false);
-            return;
-          }
-          if (requestId !== activeRequestIdRef.current) {
-            return;
-          }
-          onLegacyRestream(result);
-        }).catch(() => {
-          // Tool execution already handled its own error surface.
-        });
-      }
-
-      if (event.envelope.ui) {
-        appendUiSchema(event.envelope.ui);
-      }
-
-      if (event.envelope.message?.trim() && !currentTextIdRef.current) {
-        appendToken(event.envelope.message);
       }
       return;
     }

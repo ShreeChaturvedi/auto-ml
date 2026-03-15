@@ -27,7 +27,6 @@ vi.mock('@/stores/dataStore', () => ({
 
 vi.mock('@/lib/api/llm', () => ({
   streamOnboardingPlan: vi.fn(),
-  executeToolCalls: vi.fn(() => Promise.resolve({ results: [] })),
 }));
 
 vi.mock('@/lib/api/documents', () => ({

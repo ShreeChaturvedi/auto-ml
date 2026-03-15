@@ -19,6 +19,13 @@ interface CorrelationsPanelProps {
   className?: string;
 }
 
+const VIEW_MODES = ['heatmap', 'pairplot', '3d'] as const;
+type ViewMode = (typeof VIEW_MODES)[number];
+
+function isViewMode(v: string): v is ViewMode {
+  return (VIEW_MODES as readonly string[]).includes(v);
+}
+
 export function CorrelationsPanel({
   eda,
   rows,
@@ -26,7 +33,7 @@ export function CorrelationsPanel({
   onSelectedCellChange,
   className,
 }: CorrelationsPanelProps) {
-  const [viewMode, setViewMode] = useState<'heatmap' | 'pairplot' | '3d'>('heatmap');
+  const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
 
   const numericColumnNames = useMemo(
     () => eda.numericColumns.map((c) => c.column),
@@ -106,7 +113,7 @@ export function CorrelationsPanel({
         <IconModeToggle
           value={viewMode}
           onValueChange={(v) => {
-            if (v) setViewMode(v as 'heatmap' | 'pairplot' | '3d');
+            if (v && isViewMode(v)) setViewMode(v);
           }}
           options={viewModeOptions}
         />

@@ -19,7 +19,8 @@ export { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
 export { ColumnHealthCard, ColumnHealthGrid } from './ColumnHealthCards';
 export { ChartErrorBoundary } from './ChartErrorBoundary';
 export { detectInsights, type EdaInsight } from './edaInsights';
-export { useIsDark, getPlotlyLayout, getEdaColors, PLOTLY_CONFIG, PLOTLY_CONFIG_INTERACTIVE, EDA_COLORSCALES, LazyPlot, PlotSuspense } from './edaTheme';
+export { useIsDark, getPlotlyLayout, getEdaColors, PLOTLY_CONFIG, PLOTLY_CONFIG_INTERACTIVE, EDA_COLORSCALES, LazyPlot } from './edaTheme';
+export { PlotSuspense } from './PlotSuspense';
 export {
   formatNumber,
   formatPercentage,

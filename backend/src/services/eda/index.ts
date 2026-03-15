@@ -74,3 +74,4 @@ export { computeNumericSummaries, percentile } from './numericAnalysis.js';
 export { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
 export { buildHistogram, buildScatter, buildCorrelations, buildScatterPairs, computeRegressionLine } from './visualizations.js';
 export { buildMissingMatrix } from './missingMatrix.js';
+export { sampleRowsEvenly } from './sampling.js';

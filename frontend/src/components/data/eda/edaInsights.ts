@@ -30,10 +30,13 @@ export interface EdaInsight {
 export function detectInsights(eda: EdaSummary): EdaInsight[] {
   const insights: EdaInsight[] = [];
 
+  // Pre-build quality lookup map for O(1) access (avoids O(numericCols × dataQuality) nested scan)
+  const qualityMap = new Map(eda.dataQuality.map(q => [q.column, q]));
+
   // Check numeric columns
   for (const col of eda.numericColumns) {
     // Find quality info for this column
-    const quality = eda.dataQuality.find(q => q.column === col.column);
+    const quality = qualityMap.get(col.column);
     const totalCount = quality?.totalCount ?? 0;
 
     // HIGH: Significant outliers (> 5% of data)

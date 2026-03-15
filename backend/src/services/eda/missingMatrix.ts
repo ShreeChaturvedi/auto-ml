@@ -7,6 +7,8 @@
 
 import type { QueryRow } from '../../types/query.js';
 
+import { sampleRowsEvenly } from './sampling.js';
+
 export interface MissingMatrixResult {
   columns: string[];
   matrix: number[][];
@@ -29,18 +31,13 @@ export function buildMissingMatrix(
 ): MissingMatrixResult | undefined {
   if (rows.length === 0 || columns.length === 0) return undefined;
 
-  // Evenly-spaced sampling
-  const step = Math.max(1, Math.floor(rows.length / sampleSize));
-  const sampledRows: QueryRow[] = [];
-  for (let i = 0; i < rows.length; i += step) {
-    sampledRows.push(rows[i]);
-  }
+  const sampled = sampleRowsEvenly(rows, sampleSize);
 
   // Build binary matrix: 1=present, 0=missing
   const matrix: number[][] = [];
   let hasMissing = false;
 
-  for (const row of sampledRows) {
+  for (const row of sampled) {
     const rowValues: number[] = [];
     for (const col of columns) {
       const value = row[col];

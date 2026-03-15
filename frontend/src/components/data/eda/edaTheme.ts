@@ -3,8 +3,7 @@
  * and dark-mode hook for all EDA chart components.
  */
 
-import React, { Suspense } from 'react';
-import type { ReactNode } from 'react';
+import React from 'react';
 import { useTheme } from '@/components/theme-provider';
 
 /**
@@ -125,38 +124,6 @@ export const PLOTLY_CONFIG_INTERACTIVE: Record<string, unknown> = {
 /** Lazy-loaded Plot component (singleton — shared across all chart components) */
 export const LazyPlot = React.lazy(() => import('react-plotly.js'));
 
-/** Suspense wrapper with pulse skeleton fallback and optional loading label */
-export function PlotSuspense({
-  height,
-  loadingLabel,
-  children,
-}: {
-  height: number;
-  loadingLabel?: string;
-  children: ReactNode;
-}) {
-  return React.createElement(
-    Suspense,
-    {
-      fallback: React.createElement(
-        'div',
-        {
-          className: 'animate-pulse bg-muted/50 rounded-md flex items-center justify-center',
-          style: { height },
-        },
-        loadingLabel
-          ? React.createElement(
-              'span',
-              { className: 'text-xs text-muted-foreground' },
-              loadingLabel,
-            )
-          : null,
-      ),
-    },
-    React.createElement(
-      'div',
-      { className: 'animate-in fade-in duration-300' },
-      children,
-    ),
-  );
-}
+// PlotSuspense has been extracted to ./PlotSuspense.tsx for proper JSX support.
+// Re-export for backwards compatibility with existing imports from './edaTheme'.
+export { PlotSuspense } from './PlotSuspense';

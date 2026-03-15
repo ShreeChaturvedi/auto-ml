@@ -17,6 +17,8 @@ import { InsightTicker } from '@/components/ui/insight-ticker';
 // Overview tab components
 import { OverviewKpiRow } from './OverviewKpiRow';
 import { OverviewColumnCards } from './OverviewColumnCards';
+import { PlotlyParallelCoords } from './PlotlyParallelCoords';
+import { PlotlyHeatmap } from './PlotlyHeatmap';
 
 // Distributions tab
 import { DistributionsPanel } from './DistributionsPanel';
@@ -129,6 +131,44 @@ export function EDAPanel({ eda, rows, className }: EDAPanelProps) {
 
             {/* Column cards grid */}
             <OverviewColumnCards eda={eda} />
+
+            {/* Parallel coordinates (multivariate overview) */}
+            {numericColumns.length >= 2 && rows && rows.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium mb-1">Multivariate Overview</h4>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Each vertical axis is a numeric column. Lines connect values in the same row.
+                  Drag on any axis to filter.
+                </p>
+                <PlotlyParallelCoords
+                  rows={rows}
+                  numericColumns={numericColumns}
+                  height={250}
+                />
+              </div>
+            )}
+
+            {/* Correlation heatmap preview */}
+            {hasCorrelations && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium">Correlation Preview</h4>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('correlations')}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    View details &rarr;
+                  </button>
+                </div>
+                <PlotlyHeatmap
+                  correlations={correlations}
+                  numericColumns={numericColumns.map((c) => c.column)}
+                  height={200}
+                  onCellClick={() => setActiveTab('correlations')}
+                />
+              </div>
+            )}
 
             {/* Empty state */}
             {!hasNumeric && !hasCategorical && (

@@ -12,20 +12,28 @@ import {
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-input';
-import { Badge } from '@/components/ui/badge';
-import { truncateText } from './edaFormatters';
 import { DATA_TYPE_ICONS } from './edaConstants';
 import type { DataQualitySummary } from '@/types/file';
 
+/** Fisher-Yates shuffle (returns new array) */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 type ColumnType = DataQualitySummary['dataType'];
-type FilterType = 'all' | 'numeric' | 'categorical';
 
 interface EDAColumnSelectorProps {
   columns: Array<{ name: string; type: ColumnType }>;
   selected: string[];
   onSelectionChange: (cols: string[]) => void;
   multiple?: boolean;
-  filterType?: FilterType;
+  /** Pre-select only this type (hides toggle for it) */
+  filterType?: 'numeric' | 'categorical';
   placeholder?: string;
   className?: string;
 }
@@ -35,30 +43,35 @@ export function EDAColumnSelector({
   selected,
   onSelectionChange,
   multiple = false,
-  filterType: initialFilterType = 'all',
+  filterType,
   placeholder,
   className,
 }: EDAColumnSelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<FilterType>(initialFilterType);
+  // Toggle filters: both on by default (= show all). If filterType is locked, only that type is shown.
+  const [showNumeric, setShowNumeric] = useState(true);
+  const [showCategorical, setShowCategorical] = useState(true);
 
   const filteredColumns = useMemo(() => {
     let filtered = columns;
 
-    // Apply type filter
-    if (filter !== 'all') {
-      filtered = filtered.filter((c) => c.type === filter);
+    // Locked filter (e.g. "Compare columns" only shows numeric)
+    if (filterType) {
+      filtered = filtered.filter((c) => c.type === filterType);
+    } else {
+      // Toggle-based filter
+      if (!showNumeric) filtered = filtered.filter((c) => c.type !== 'numeric');
+      if (!showCategorical) filtered = filtered.filter((c) => c.type !== 'categorical');
     }
 
-    // Apply search filter
     if (search.trim()) {
       const term = search.trim().toLowerCase();
       filtered = filtered.filter((c) => c.name.toLowerCase().includes(term));
     }
 
     return filtered;
-  }, [columns, filter, search]);
+  }, [columns, filterType, showNumeric, showCategorical, search]);
 
   const handleSelect = useCallback(
     (name: string) => {
@@ -76,7 +89,7 @@ export function EDAColumnSelector({
   );
 
   const searchPlaceholders = useMemo(
-    () => columns.slice(0, 8).map((c) => c.name),
+    () => shuffle(columns.map((c) => c.name)).slice(0, 8),
     [columns],
   );
 
@@ -103,32 +116,44 @@ export function EDAColumnSelector({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-64 p-2" align="start">
-        {/* Search input — cycles through column names as placeholder */}
-        <AnimatedPlaceholderInput
-          placeholders={searchPlaceholders}
-          interval={2400}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-auto w-full px-2 py-1 text-xs focus:ring-1 focus:ring-ring"
-        />
-
-        {/* Filter chips */}
-        <div className="flex gap-1 my-1.5">
-          {(['all', 'numeric', 'categorical'] as const).map((f) => (
-            <Badge
-              key={f}
-              variant={filter === f ? 'default' : 'outline'}
-              className="cursor-pointer text-[10px] px-1.5 py-0"
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all' ? 'All' : f === 'numeric' ? 'Numeric' : 'Categorical'}
-            </Badge>
-          ))}
+      <PopoverContent className="w-60 p-0" align="start">
+        {/* Search + filter bar */}
+        <div className="flex items-center gap-1.5 px-2 pt-2 pb-1.5">
+          <AnimatedPlaceholderInput
+            placeholders={searchPlaceholders}
+            interval={2400}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-7 flex-1 px-2 text-xs focus:ring-1 focus:ring-ring"
+          />
+          {!filterType && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowNumeric((v) => !v)}
+                className={cn(
+                  'shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-colors',
+                  showNumeric ? 'bg-foreground text-background font-medium' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                #
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCategorical((v) => !v)}
+                className={cn(
+                  'shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-colors',
+                  showCategorical ? 'bg-foreground text-background font-medium' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Aa
+              </button>
+            </>
+          )}
         </div>
 
         {/* Column list */}
-        <div className="max-h-48 overflow-y-auto space-y-0.5">
+        <div className="max-h-52 overflow-y-auto px-1 pb-1">
           {filteredColumns.length === 0 && (
             <div className="px-2 py-3 text-xs text-muted-foreground text-center">
               No columns found
@@ -145,13 +170,13 @@ export function EDAColumnSelector({
                 aria-selected={isSelected}
                 onClick={() => handleSelect(col.name)}
                 className={cn(
-                  'flex items-center gap-2 px-2 py-1 rounded text-xs',
+                  'flex items-center gap-2 px-2 py-1.5 rounded-md text-xs',
                   'hover:bg-muted/50 cursor-pointer transition-colors',
                   isSelected && 'bg-muted/40',
                 )}
               >
                 <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
-                <span className="truncate flex-1">{truncateText(col.name, 24)}</span>
+                <span className="truncate flex-1">{col.name}</span>
                 {isSelected && (
                   <Check className="h-3 w-3 text-primary shrink-0" />
                 )}

@@ -229,26 +229,30 @@ export function QueryPanel({
               : 'opacity-0 pointer-events-none'
           )}
         >
-            <IconModeToggle
-              value={mode}
-              onValueChange={(val) => {
-                if (val === 'sql' || val === 'english') {
-                  handleModeChange(val);
-                }
-              }}
-              options={[
-                {
-                  value: 'english',
-                  ariaLabel: 'Natural language mode',
-                  icon: MessageSquare
-                },
-                {
-                  value: 'sql',
-                  ariaLabel: 'SQL mode',
-                  icon: Code2
-                }
-              ]}
-            />
+            <TooltipProvider delayDuration={300}>
+              <IconModeToggle
+                value={mode}
+                onValueChange={(val) => {
+                  if (val === 'sql' || val === 'english') {
+                    handleModeChange(val);
+                  }
+                }}
+                options={[
+                  {
+                    value: 'english',
+                    ariaLabel: 'Natural language mode',
+                    icon: MessageSquare,
+                    tooltip: 'English',
+                  },
+                  {
+                    value: 'sql',
+                    ariaLabel: 'SQL mode',
+                    icon: Code2,
+                    tooltip: 'SQL',
+                  },
+                ]}
+              />
+            </TooltipProvider>
 
             <div ref={controlsMountRef} className="relative flex h-7 flex-1 min-w-0 items-center" />
         </div>

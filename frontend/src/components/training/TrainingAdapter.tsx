@@ -252,7 +252,10 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
     },
-    
+    onRevert: () => {
+      useModelStore.getState().clearTrainingRun();
+      useWorkflowSessionStore.getState().clearSession(config.sessionKey);
+    },
     toolRegistry: buildTrainingToolRegistry(),
     toolUiRegistry: {},
     suggestionProvider: (messages, isGenerating) => buildTrainingSuggestions(config, messages, isGenerating)

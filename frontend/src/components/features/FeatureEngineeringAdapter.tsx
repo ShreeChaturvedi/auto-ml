@@ -197,6 +197,10 @@ export function createFeatureEngineeringAdapter(
         useFeatureStore.getState().setFeatureRunId(state.runId);
       }
     },
+    onRevert: () => {
+      useFeatureStore.getState().clearDraft();
+      useWorkflowSessionStore.getState().clearSession(config.sessionKey);
+    },
     toolRegistry,
     toolUiRegistry: {},
     suggestionProvider: (messages, isGenerating) => buildFeatureSuggestions(config, messages, isGenerating)

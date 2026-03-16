@@ -67,6 +67,10 @@ export interface AgenticStepDisplayProps {
   sessionUsages: LlmUsage[];
   handleStop: () => void;
   chatMetaSlot?: React.ReactNode;
+
+  /* Edit mode */
+  editingMessageId?: string | null;
+  onCancelEdit?: () => void;
 }
 
 export function AgenticStepDisplay({
@@ -95,9 +99,25 @@ export function AgenticStepDisplay({
   sessionUsages,
   handleStop,
   chatMetaSlot,
+  editingMessageId,
+  onCancelEdit,
 }: AgenticStepDisplayProps) {
   return (
     <div className="border-t bg-background">
+      {editingMessageId ? (
+        <div className="flex items-center justify-between border-b px-4 py-1.5 bg-muted/30">
+          <span className="text-xs text-muted-foreground">Editing message</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs"
+            onClick={onCancelEdit}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : null}
       {showModelSwitchPrompt ? (
         <div className="border-b px-4 py-2">
           <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">

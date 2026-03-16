@@ -206,6 +206,11 @@ export function PreprocessingPanel() {
               activeTextMessageId={renderProps.activeTextMessageId}
               activeThinkingMessageId={renderProps.activeThinkingMessageId}
               hydratedMessageIds={renderProps.hydratedMessageIds}
+              onEditMessage={renderProps.onEditMessage}
+              onRevertToMessage={renderProps.onRevertToMessage}
+              editingMessageId={renderProps.editingMessageId}
+              turnDiffs={renderProps.turnDiffs}
+              isGenerating={renderProps.isGenerating}
             />
           </div>
         )}

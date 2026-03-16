@@ -112,6 +112,7 @@ export type WSServerMessageType =
   | 'cell:executing'
   | 'cell:executed'
   | 'cell:output'
+  | 'notebook:cells_reset'
   | 'error'
   | 'pong';
 
@@ -167,6 +168,11 @@ export interface WSCellOutputMessage {
   output: CellOutput;
 }
 
+export interface WSCellsResetMessage {
+  type: 'notebook:cells_reset';
+  cells: NotebookCell[];
+}
+
 export interface WSErrorMessage {
   type: 'error';
   message: string;
@@ -187,6 +193,7 @@ export type WSServerMessage =
   | WSCellExecutingMessage
   | WSCellExecutedMessage
   | WSCellOutputMessage
+  | WSCellsResetMessage
   | WSErrorMessage
   | WSPongMessage;
 

@@ -106,6 +106,24 @@ export function setupWSHandlers(
     }
   });
 
+  const unsubscribeCellsReset = wsClient.on<WSServerMessage>('notebook:cells_reset', (msg) => {
+    if (msg.type === 'notebook:cells_reset') {
+      // Ensure safe defaults for fields the server may omit on restored cells
+      const cells = [...msg.cells]
+        .sort((a, b) => a.position - b.position)
+        .map((c) => ({
+          ...c,
+          output: (c as Record<string, unknown>).output ?? [],
+          outputRefs: (c as Record<string, unknown>).outputRefs ?? [],
+          metadata: (c as Record<string, unknown>).metadata ?? {},
+          executionCount: (c as Record<string, unknown>).executionCount ?? 0,
+          executionStatus: (c as Record<string, unknown>).executionStatus ?? 'idle',
+          isDirty: false
+        })) as unknown as NotebookCell[];
+      set(() => ({ cells }));
+    }
+  });
+
   const unsubscribeError = wsClient.on<WSServerMessage>('error', (msg) => {
     if (msg.type === 'error') {
       set({ error: msg.message });
@@ -129,6 +147,7 @@ export function setupWSHandlers(
     unsubscribeCellExecuting();
     unsubscribeCellExecuted();
     unsubscribeCellOutput();
+    unsubscribeCellsReset();
     unsubscribeError();
     unsubscribeConnected();
     unsubscribeDisconnected();

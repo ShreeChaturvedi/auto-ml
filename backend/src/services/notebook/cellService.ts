@@ -1,11 +1,12 @@
 import * as repo from '../../repositories/notebookRepository.js';
-import type {
-  Cell,
-  CellSummary,
-  WriteCellOptions,
-  EditCellOptions,
-  EditCellResult,
-  InsertCellOptions
+import {
+  CELL_EDITOR_AI,
+  type Cell,
+  type CellSummary,
+  type WriteCellOptions,
+  type EditCellOptions,
+  type EditCellResult,
+  type InsertCellOptions
 } from '../../types/notebook.js';
 
 import { broadcast } from './notebookService.js';
@@ -65,7 +66,7 @@ export async function writeCell(
       content: options.content,
       title: options.title,
       cellType: options.cellType,
-      metadata: options.metadata
+      metadata: { ...(options.metadata ?? {}), lastEditedBy: CELL_EDITOR_AI }
     });
 
     broadcast(cell.notebookId, 'cell:updated', { cell });
@@ -75,7 +76,7 @@ export async function writeCell(
       content: options.content,
       title: options.title,
       cellType: options.cellType ?? 'code',
-      metadata: options.metadata
+      metadata: { ...(options.metadata ?? {}), lastEditedBy: CELL_EDITOR_AI }
     });
 
     broadcast(notebookId, 'cell:created', { cell });
@@ -138,7 +139,7 @@ export async function editCell(
   // Update the cell
   const updatedCell = await repo.updateCell(cellId, {
     content: newContent,
-    metadata: options.metadata
+    metadata: { ...(options.metadata ?? {}), lastEditedBy: CELL_EDITOR_AI }
   });
 
   broadcast(updatedCell.notebookId, 'cell:updated', { cell: updatedCell });

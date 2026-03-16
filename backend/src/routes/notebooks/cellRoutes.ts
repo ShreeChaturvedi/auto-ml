@@ -9,6 +9,8 @@ import { executeCell, getOrEnsureContainer } from '../../services/notebook/cellE
 import * as notebookService from '../../services/notebook/notebookService.js';
 import type { CellType } from '../../types/notebook.js';
 
+import { handleSuggestCell } from './insightCodegen.js';
+
 const createCellSchema = z.object({
   content: z.string(),
   title: z.string().optional(),
@@ -31,6 +33,16 @@ const reorderCellsSchema = z.object({
 
 export function createCellRoutes(): Router {
   const router = Router();
+
+  // ============================================================
+  // AI Insight Suggestion Endpoint (must precede generic :cellId routes)
+  // ============================================================
+
+  /**
+   * POST /api/notebooks/:notebookId/cells/suggest
+   * Stream an AI-generated notebook cell that investigates an EDA insight.
+   */
+  router.post('/notebooks/:notebookId/cells/suggest', asyncHandler(handleSuggestCell));
 
   // ============================================================
   // Cell List Endpoints

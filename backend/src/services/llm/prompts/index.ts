@@ -20,3 +20,5 @@ export {
 export { buildFeatureEngineeringRequest } from './featureWorkflow.js';
 
 export { buildTrainingRequest } from './trainingWorkflow.js';
+
+export { buildInsightCodegenPrompt, type InsightCodegenContext } from './insightCodegen.js';

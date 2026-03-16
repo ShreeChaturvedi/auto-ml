@@ -101,9 +101,13 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     e.stopPropagation();
     if (activeProjectId && unlockedPhases.includes(phase)) {
       navigate(`/project/${activeProjectId}/${phase}`);
-      // Toggle expand for expandable phases
       if (EXPANDABLE_PHASES.has(phase)) {
-        togglePhaseExpand(phase);
+        // Toggle if already on this phase; expand if navigating to it
+        if (phase === currentPhase) {
+          togglePhaseExpand(phase);
+        } else {
+          expandPhase(phase);
+        }
       }
     }
   };

@@ -1,5 +1,8 @@
 /**
  * SubtabItem — reusable sidebar subtab with icon, label, underline hover, and theme color active state.
+ *
+ * Note: uses useState for hover tracking because the icon's hover color is a dynamic
+ * Tailwind class (themeColorClass) which can't be used with group-hover: at compile time.
  */
 
 import { useState } from 'react';
@@ -26,11 +29,7 @@ export function SubtabItem({
 }: SubtabItemProps) {
   const [hovered, setHovered] = useState(false);
 
-  const iconColor = isActive
-    ? themeColorClass
-    : hovered
-      ? themeColorClass
-      : 'text-muted-foreground';
+  const iconColor = isActive || hovered ? themeColorClass : 'text-muted-foreground';
 
   return (
     <button

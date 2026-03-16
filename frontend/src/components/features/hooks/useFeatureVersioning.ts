@@ -78,6 +78,9 @@ export function useFeatureVersioning({
       'feature-engineering',
       versions.map((v) => ({ id: v.id, name: v.name, notebookId: v.notebookId ?? null }))
     );
+    return () => {
+      useWorkbookRegistryStore.getState().setWorkbooks('feature-engineering', []);
+    };
   }, [versions]);
 
   // --- Derived version data ---

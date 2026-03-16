@@ -119,6 +119,9 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
   useEffect(() => {
     if (!ready) return;
     useWorkbookRegistryStore.getState().setWorkbooks('training', workbooks);
+    return () => {
+      useWorkbookRegistryStore.getState().setWorkbooks('training', []);
+    };
   }, [ready, workbooks]);
 
   // ---- CRUD ---------------------------------------------------------------

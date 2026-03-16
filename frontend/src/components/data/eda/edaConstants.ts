@@ -13,6 +13,13 @@ import {
 } from 'lucide-react';
 import type { ColumnDataType, DataQualitySummary } from '@/types/file';
 
+/* ------------------------------------------------------------------ */
+/*  Shared EDA mode types (single source of truth)                     */
+/* ------------------------------------------------------------------ */
+
+export type DistributionMode = 'histogram' | 'box' | 'violin';
+export type CorrViewMode = 'heatmap' | 'pairplot' | '3d';
+
 export const DATA_TYPE_ICONS: Record<DataQualitySummary['dataType'], typeof Hash> = {
   numeric: Hash,
   categorical: Type,

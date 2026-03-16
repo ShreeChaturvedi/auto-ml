@@ -75,7 +75,7 @@ export function EDAColumnSelector({
   );
 
   const displayText = useMemo(() => {
-    if (selected.length === 0) return placeholder || 'Select column\u2026';
+    if (selected.length === 0) return placeholder || 'Select column...';
     if (selected.length <= 2) return selected.join(', ');
     return `${selected[0]}, ${selected[1]} +${selected.length - 2}`;
   }, [selected, placeholder]);
@@ -101,7 +101,7 @@ export function EDAColumnSelector({
         {/* Search input */}
         <input
           type="text"
-          placeholder="Search columns\u2026"
+          placeholder="Search columns..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className={cn(

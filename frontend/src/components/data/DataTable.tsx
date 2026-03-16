@@ -23,8 +23,9 @@ import {
 
 import { cn } from '@/lib/utils';
 import type { DataPreview } from '@/types/file';
-import { EDAPanel, type EdaTab } from './EDAPanel';
+import { EDAPanel, type EdaTab } from './eda/EDAPanel';
 import { EDAToolbar } from './eda/EDAToolbar';
+import type { DistributionMode, CorrViewMode } from './eda/edaConstants';
 import { DataTableControls } from './DataTableControls';
 import type { QueryInfo } from './QueryInfoDialog';
 import Papa from 'papaparse';
@@ -32,6 +33,8 @@ import { DataTableHeaderCell } from './DataTableHeader';
 import { useColumnTypeEditor } from './useColumnTypeEditor';
 
 export type { QueryInfo };
+
+const ROW_HEIGHT = 40;
 
 interface DataTableProps {
   preview: DataPreview;
@@ -66,19 +69,9 @@ export function DataTable({
   const [edaActiveTab, setEdaActiveTab] = useState<EdaTab>('overview');
   const [distSelectedColumn, setDistSelectedColumn] = useState<string | null>(null);
   const [distCompareColumns, setDistCompareColumns] = useState<string[]>([]);
-  const [distMode, setDistMode] = useState<'histogram' | 'box' | 'violin'>('histogram');
+  const [distMode, setDistMode] = useState<DistributionMode>('histogram');
   const [corrSelectedCell, setCorrSelectedCell] = useState<{ a: string; b: string } | null>(null);
-  const [corrViewMode, setCorrViewMode] = useState<'heatmap' | 'pairplot' | '3d'>('heatmap');
-
-  // Derived values for toolbar
-  const selectorColumns = useMemo(
-    () => eda?.dataQuality?.map((col) => ({ name: col.column, type: col.dataType })) ?? [],
-    [eda?.dataQuality],
-  );
-  const numericColumnNames = useMemo(
-    () => eda?.numericColumns?.map((c) => c.column) ?? [],
-    [eda?.numericColumns],
-  );
+  const [corrViewMode, setCorrViewMode] = useState<CorrViewMode>('heatmap');
 
   const { updatingColumnName, handleColumnTypeSelect } = useColumnTypeEditor({ onColumnTypeChange });
 
@@ -129,8 +122,6 @@ export function DataTable({
 
   const { rows } = table.getRowModel();
 
-  const ROW_HEIGHT = 40;
-
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current,
@@ -152,6 +143,7 @@ export function DataTable({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }, [table, preview.headers]);
 
   const totalRows = table.getFilteredRowModel().rows.length;
@@ -260,42 +252,35 @@ export function DataTable({
 
   return (
     <div className={cn('flex flex-col h-full overflow-hidden', className)}>
-      {hasEda && edaView === 'eda' ? (
-        <EDAToolbar
-          eda={eda!}
-          activeTab={edaActiveTab}
-          onActiveTabChange={setEdaActiveTab}
-          selectorColumns={selectorColumns}
-          numericColumnNames={numericColumnNames}
-          distSelectedColumn={distSelectedColumn}
-          onDistSelectedColumnChange={setDistSelectedColumn}
-          distMode={distMode}
-          onDistModeChange={setDistMode}
-          distCompareColumns={distCompareColumns}
-          onDistCompareColumnsChange={setDistCompareColumns}
-          corrViewMode={corrViewMode}
-          onCorrViewModeChange={setCorrViewMode}
-          edaView={edaView}
-          onEdaViewChange={setEdaView}
-          controlsPortalTarget={controlsPortalTarget}
-        />
-      ) : (
-        <DataTableControls
-          globalFilter={globalFilter}
-          onGlobalFilterChange={setGlobalFilter}
-          searchExpanded={searchExpanded}
-          onSearchExpandedChange={setSearchExpanded}
-          onExport={handleExport}
-          onSave={onSave}
-          queryInfo={queryInfo}
-          hasEda={hasEda}
-          edaView={edaView}
-          onEdaViewChange={setEdaView}
-          controlsPortalTarget={controlsPortalTarget}
-        />
-      )}
+      {/* Always render DataTableControls */}
+      <DataTableControls
+        globalFilter={globalFilter}
+        onGlobalFilterChange={setGlobalFilter}
+        searchExpanded={searchExpanded}
+        onSearchExpandedChange={setSearchExpanded}
+        onExport={handleExport}
+        onSave={onSave}
+        queryInfo={queryInfo}
+        hasEda={hasEda}
+        edaView={edaView}
+        onEdaViewChange={setEdaView}
+        controlsPortalTarget={controlsPortalTarget}
+      />
       {hasEda && edaView === 'eda' ? (
         <div className="flex-1 min-h-0 overflow-auto">
+          <EDAToolbar
+            eda={eda!}
+            activeTab={edaActiveTab}
+            onActiveTabChange={setEdaActiveTab}
+            distSelectedColumn={distSelectedColumn}
+            onDistSelectedColumnChange={setDistSelectedColumn}
+            distMode={distMode}
+            onDistModeChange={setDistMode}
+            distCompareColumns={distCompareColumns}
+            onDistCompareColumnsChange={setDistCompareColumns}
+            corrViewMode={corrViewMode}
+            onCorrViewModeChange={setCorrViewMode}
+          />
           {eda && (
             <EDAPanel
               eda={eda}
@@ -306,13 +291,10 @@ export function DataTable({
               distSelectedColumn={distSelectedColumn}
               onDistSelectedColumnChange={setDistSelectedColumn}
               distCompareColumns={distCompareColumns}
-              onDistCompareColumnsChange={setDistCompareColumns}
               distMode={distMode}
-              onDistModeChange={setDistMode}
               corrSelectedCell={corrSelectedCell}
               onCorrSelectedCellChange={setCorrSelectedCell}
               corrViewMode={corrViewMode}
-              onCorrViewModeChange={setCorrViewMode}
             />
           )}
         </div>

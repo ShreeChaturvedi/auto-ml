@@ -1,60 +1,48 @@
 /**
- * EDAToolbar — ribbon toolbar with inline dropdown nav + per-tab controls.
- * Renders into DataTable's toolbar slot when EDA view is active.
+ * EDAToolbar — sticky ribbon with icon tab selector + per-tab controls.
+ * Renders below DataTableControls when EDA view is active.
+ * Does NOT contain the table/eda toggle (that lives in DataTableControls).
  */
 
-import { createPortal } from 'react-dom';
-import { Layers, BarChart3, Waypoints, Heart, Check, ChevronDown, BoxSelect, Activity, Grid3x3, ScatterChart, Box, TableIcon, ChartPie } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { useMemo } from 'react';
+import { Layers, ChartSpline, BarChart3, Waypoints, Heart, BoxSelect, Activity, Grid3x3, ScatterChart, Box } from 'lucide-react';
 import type { EdaSummary } from '@/types/file';
 import type { EdaTab } from './EDAPanel';
+import type { DistributionMode, CorrViewMode } from './edaConstants';
 import { EDAColumnSelector } from './EDAColumnSelector';
-import { IconModeToggle } from '../IconModeToggle';
+import { IconModeToggle, type IconModeToggleOption } from '../IconModeToggle';
 
-type DistributionMode = 'histogram' | 'box' | 'violin';
-type ViewMode = 'heatmap' | 'pairplot' | '3d';
+const TAB_OPTIONS: IconModeToggleOption[] = [
+  { value: 'overview', ariaLabel: 'Overview', icon: Layers, tooltip: 'Overview' },
+  { value: 'distributions', ariaLabel: 'Distributions', icon: ChartSpline, tooltip: 'Distributions' },
+  { value: 'correlations', ariaLabel: 'Relationships', icon: Waypoints, tooltip: 'Relationships' },
+  { value: 'quality', ariaLabel: 'Quality', icon: Heart, tooltip: 'Quality' },
+];
 
-const TAB_ITEMS: Array<{ id: EdaTab; label: string; icon: typeof Layers }> = [
-  { id: 'overview', label: 'Overview', icon: Layers },
-  { id: 'distributions', label: 'Distributions', icon: BarChart3 },
-  { id: 'correlations', label: 'Relationships', icon: Waypoints },
-  { id: 'quality', label: 'Quality', icon: Heart },
+const DIST_MODE_OPTIONS: IconModeToggleOption[] = [
+  { value: 'histogram', ariaLabel: 'Histogram', icon: BarChart3, tooltip: 'Histogram' },
+  { value: 'box', ariaLabel: 'Box plot', icon: BoxSelect, tooltip: 'Box Plot' },
+  { value: 'violin', ariaLabel: 'Violin plot', icon: Activity, tooltip: 'Violin Plot' },
 ];
 
 interface EDAToolbarProps {
   eda: EdaSummary;
   activeTab: EdaTab;
   onActiveTabChange: (tab: EdaTab) => void;
-  selectorColumns: Array<{ name: string; type: import('@/types/file').DataQualitySummary['dataType'] }>;
-  numericColumnNames: string[];
   distSelectedColumn: string | null;
   onDistSelectedColumnChange: (col: string | null) => void;
   distMode: DistributionMode;
   onDistModeChange: (mode: DistributionMode) => void;
   distCompareColumns: string[];
   onDistCompareColumnsChange: (cols: string[]) => void;
-  corrViewMode: ViewMode;
-  onCorrViewModeChange: (v: ViewMode) => void;
-  edaView: 'table' | 'eda';
-  onEdaViewChange: (view: 'table' | 'eda') => void;
-  controlsPortalTarget?: HTMLElement | null;
+  corrViewMode: CorrViewMode;
+  onCorrViewModeChange: (v: CorrViewMode) => void;
 }
 
 export function EDAToolbar({
   eda,
   activeTab,
   onActiveTabChange,
-  selectorColumns,
-  numericColumnNames,
   distSelectedColumn,
   onDistSelectedColumnChange,
   distMode,
@@ -63,85 +51,33 @@ export function EDAToolbar({
   onDistCompareColumnsChange,
   corrViewMode,
   onCorrViewModeChange,
-  edaView,
-  onEdaViewChange,
-  controlsPortalTarget,
 }: EDAToolbarProps) {
-  const hasNumeric = (eda.numericColumns?.length ?? 0) > 0;
-  const hasCategorical = (eda.categoricalColumns?.length ?? 0) > 0;
-  const hasCorrelations = (eda.correlations?.length ?? 0) > 0;
-  const hasQuality = (eda.dataQuality?.length ?? 0) > 0;
+  // Derive selector columns and numeric count locally — no need to prop-drill from DataTable
+  const selectorColumns = useMemo(
+    () => eda.dataQuality?.map((col) => ({ name: col.column, type: col.dataType })) ?? [],
+    [eda.dataQuality],
+  );
+  const numericCount = eda.numericColumns?.length ?? 0;
 
-  const isDisabled: Record<EdaTab, boolean> = {
-    overview: false,
-    distributions: !hasNumeric && !hasCategorical,
-    correlations: !hasCorrelations,
-    quality: !hasQuality,
-  };
+  return (
+    <div className="sticky top-0 z-10 bg-background border-b">
+      <div className="flex items-center gap-3 px-4 h-10">
+        {/* Left: tab selector */}
+        <IconModeToggle
+          value={activeTab}
+          onValueChange={(v) => onActiveTabChange(v as EdaTab)}
+          options={TAB_OPTIONS}
+        />
 
-  const ActiveIcon = TAB_ITEMS.find((t) => t.id === activeTab)?.icon ?? Layers;
-
-  const controls = (
-    <div className="relative flex h-7 w-full min-w-0 items-center overflow-hidden">
-      <div className="flex max-w-full min-w-0 items-center gap-2 overflow-hidden">
-        {/* Tab dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="h-7 px-2.5 text-xs gap-1.5 shrink-0"
-            >
-              <ActiveIcon className="h-3.5 w-3.5" />
-              {TAB_ITEMS.find((t) => t.id === activeTab)?.label}
-              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-44">
-            {TAB_ITEMS.map((item) => (
-              <DropdownMenuItem
-                key={item.id}
-                disabled={isDisabled[item.id]}
-                onClick={() => onActiveTabChange(item.id)}
-                className="flex items-center justify-between gap-2"
-              >
-                <span className="flex items-center gap-2">
-                  <item.icon className={cn('h-3.5 w-3.5', activeTab === item.id ? 'text-primary' : 'text-muted-foreground')} />
-                  {item.label}
-                </span>
-                {activeTab === item.id && <Check className="h-3.5 w-3.5 text-primary" />}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Per-tab controls */}
+        {/* Right: per-tab controls */}
         {activeTab === 'distributions' && (
-          <>
+          <div className="ml-auto flex items-center gap-2">
             <EDAColumnSelector
               columns={selectorColumns}
               selected={distSelectedColumn ? [distSelectedColumn] : []}
               onSelectionChange={(cols) => onDistSelectedColumnChange(cols[0] ?? null)}
               placeholder="Select column..."
             />
-            <ToggleGroup
-              type="single"
-              size="sm"
-              value={distMode}
-              onValueChange={(val) => { if (val) onDistModeChange(val as DistributionMode); }}
-            >
-              <ToggleGroupItem value="histogram" aria-label="Histogram">
-                <BarChart3 className="mr-1 h-3.5 w-3.5" />
-                Histogram
-              </ToggleGroupItem>
-              <ToggleGroupItem value="box" aria-label="Box plot">
-                <BoxSelect className="mr-1 h-3.5 w-3.5" />
-                Box
-              </ToggleGroupItem>
-              <ToggleGroupItem value="violin" aria-label="Violin plot">
-                <Activity className="mr-1 h-3.5 w-3.5" />
-                Violin
-              </ToggleGroupItem>
-            </ToggleGroup>
             {(distMode === 'box' || distMode === 'violin') && (
               <EDAColumnSelector
                 columns={selectorColumns}
@@ -152,7 +88,12 @@ export function EDAToolbar({
                 placeholder="Compare columns..."
               />
             )}
-          </>
+            <IconModeToggle
+              value={distMode}
+              onValueChange={(v) => { if (v) onDistModeChange(v as DistributionMode); }}
+              options={DIST_MODE_OPTIONS}
+            />
+          </div>
         )}
 
         {activeTab === 'correlations' && (
@@ -161,42 +102,15 @@ export function EDAToolbar({
             onValueChange={(v) => {
               if (v === 'heatmap' || v === 'pairplot' || v === '3d') onCorrViewModeChange(v);
             }}
+            className="ml-auto"
             options={[
               { value: 'heatmap', ariaLabel: 'Heatmap', icon: Grid3x3, tooltip: 'Correlation Heatmap' },
               { value: 'pairplot', ariaLabel: 'Pair Plot', icon: ScatterChart, tooltip: 'Pair Plot Matrix' },
-              { value: '3d', ariaLabel: '3D', icon: Box, tooltip: numericColumnNames.length < 3 ? 'Need 3+ numeric columns' : '3D Scatter' },
+              { value: '3d', ariaLabel: '3D', icon: Box, tooltip: numericCount < 3 ? 'Need 3+ numeric columns' : '3D Scatter' },
             ]}
           />
         )}
       </div>
-
-      {/* Far right: table/eda toggle */}
-      <IconModeToggle
-        value={edaView}
-        onValueChange={(val) => {
-          if (val === 'table' || val === 'eda') onEdaViewChange(val);
-        }}
-        className="ml-auto shrink-0"
-        options={[
-          { value: 'table', ariaLabel: 'Table view', icon: TableIcon, tooltip: 'Table' },
-          { value: 'eda', ariaLabel: 'Analysis view', icon: ChartPie, tooltip: 'Analysis' },
-        ]}
-      />
     </div>
-  );
-
-  if (controlsPortalTarget) {
-    return createPortal(
-      <TooltipProvider delayDuration={300}>{controls}</TooltipProvider>,
-      controlsPortalTarget,
-    );
-  }
-
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div className="shrink-0 border-b bg-muted/30 px-4 py-2.5">
-        {controls}
-      </div>
-    </TooltipProvider>
   );
 }

@@ -7,8 +7,7 @@ import { PlotlyScatter } from './PlotlyScatter';
 import { PlotlyPairPlot } from './PlotlyPairPlot';
 import { PlotlyScatter3D } from './PlotlyScatter3D';
 import { CorrelationPairsList } from './CorrelationPairsList';
-
-type ViewMode = 'heatmap' | 'pairplot' | '3d';
+import type { CorrViewMode } from './edaConstants';
 
 interface CorrelationsPanelProps {
   eda: EdaSummary;
@@ -18,8 +17,7 @@ interface CorrelationsPanelProps {
   selectedCell: { a: string; b: string } | null;
   onSelectedCellChange: (cell: { a: string; b: string } | null) => void;
   /** View mode lifted to parent (toolbar controls this) */
-  viewMode: ViewMode;
-  onViewModeChange: (v: ViewMode) => void;
+  viewMode: CorrViewMode;
   className?: string;
 }
 

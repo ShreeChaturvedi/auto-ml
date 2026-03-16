@@ -7,6 +7,7 @@
 import { useEffect, useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { DistributionMode } from './edaConstants';
 import { PlotlyHistogram } from './PlotlyHistogram';
 import { PlotlyBoxViolin } from './PlotlyBoxViolin';
 import { PlotlyCategoricalBar } from './PlotlyCategoricalBar';
@@ -17,8 +18,6 @@ import type {
   CategoricalColumnSummary,
 } from '@/types/file';
 
-type DistributionMode = 'histogram' | 'box' | 'violin';
-
 interface DistributionsPanelProps {
   eda: EdaSummary;
   /** Currently selected primary column (lifted state). */
@@ -26,10 +25,8 @@ interface DistributionsPanelProps {
   onSelectedColumnChange: (col: string | null) => void;
   /** Additional columns for box/violin comparison (lifted state). */
   compareColumns: string[];
-  onCompareColumnsChange: (cols: string[]) => void;
   /** Active chart mode (lifted state). */
   mode: DistributionMode;
-  onModeChange: (mode: DistributionMode) => void;
   className?: string;
 }
 

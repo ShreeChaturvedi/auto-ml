@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EdaSummary, ColumnDataType } from '@/types/file';
+import type { DistributionMode, CorrViewMode } from './edaConstants';
 
 export type EdaTab = 'overview' | 'distributions' | 'correlations' | 'quality';
 
@@ -39,13 +40,10 @@ interface EDAPanelProps {
   distSelectedColumn: string | null;
   onDistSelectedColumnChange: (col: string | null) => void;
   distCompareColumns: string[];
-  onDistCompareColumnsChange: (cols: string[]) => void;
-  distMode: 'histogram' | 'box' | 'violin';
-  onDistModeChange: (mode: 'histogram' | 'box' | 'violin') => void;
+  distMode: DistributionMode;
   corrSelectedCell: { a: string; b: string } | null;
   onCorrSelectedCellChange: (cell: { a: string; b: string } | null) => void;
-  corrViewMode: 'heatmap' | 'pairplot' | '3d';
-  onCorrViewModeChange: (v: 'heatmap' | 'pairplot' | '3d') => void;
+  corrViewMode: CorrViewMode;
   className?: string;
 }
 
@@ -58,13 +56,10 @@ export function EDAPanel({
   distSelectedColumn,
   onDistSelectedColumnChange,
   distCompareColumns,
-  onDistCompareColumnsChange,
   distMode,
-  onDistModeChange,
   corrSelectedCell,
   onCorrSelectedCellChange,
   corrViewMode,
-  onCorrViewModeChange,
   className,
 }: EDAPanelProps) {
   const insights = useMemo(() => detectInsights(eda), [eda]);
@@ -135,9 +130,7 @@ export function EDAPanel({
           selectedColumn={distSelectedColumn}
           onSelectedColumnChange={onDistSelectedColumnChange}
           compareColumns={distCompareColumns}
-          onCompareColumnsChange={onDistCompareColumnsChange}
           mode={distMode}
-          onModeChange={onDistModeChange}
         />
       )}
 
@@ -149,7 +142,6 @@ export function EDAPanel({
           selectedCell={corrSelectedCell}
           onSelectedCellChange={onCorrSelectedCellChange}
           viewMode={corrViewMode}
-          onViewModeChange={onCorrViewModeChange}
         />
       )}
 

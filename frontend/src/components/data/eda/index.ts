@@ -1,4 +1,4 @@
-export { EDAPanel } from './EDAPanel';
+export { EDAPanel, type EdaTab } from './EDAPanel';
 export { OverviewKpiRow } from './OverviewKpiRow';
 export { OverviewColumnCards } from './OverviewColumnCards';
 export { SparklineHistogram } from './SparklineHistogram';
@@ -16,7 +16,6 @@ export { PlotlyPairPlot } from './PlotlyPairPlot';
 export { PlotlyScatter3D } from './PlotlyScatter3D';
 export { PlotlyParallelCoords } from './PlotlyParallelCoords';
 export { PlotlyMissingValueMatrix } from './PlotlyMissingValueMatrix';
-export { QualityTable } from './QualityTable';
 export { EDAToolbar } from './EDAToolbar';
 export { ChartErrorBoundary } from './ChartErrorBoundary';
 export { PlotEmptyState } from './PlotEmptyState';
@@ -31,5 +30,5 @@ export {
   getCorrelationLabel,
   formatAxis,
 } from './edaFormatters';
-export { DATA_TYPE_ICONS, DATA_TYPE_COLORS, getSeverityLabel, mapEDATypeToColumnType } from './edaConstants';
+export { DATA_TYPE_ICONS, DATA_TYPE_COLORS, getSeverityLabel, mapEDATypeToColumnType, type DistributionMode, type CorrViewMode } from './edaConstants';
 export { computeScatterFromRows, subsampleRows } from './edaDataUtils';

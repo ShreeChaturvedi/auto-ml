@@ -1,6 +1,6 @@
 /**
- * PlotlyMissingValueMatrix — binary heatmap showing missing (0) vs present (1)
- * values across columns and sampled rows.
+ * PlotlyMissingValueMatrix — horizontal bar chart showing missing % per column.
+ * Replaces the previous binary heatmap which was useless for datasets with few missing values.
  */
 
 import { useMemo } from 'react';
@@ -10,56 +10,52 @@ import { truncateText } from './edaFormatters';
 
 interface PlotlyMissingValueMatrixProps {
   missingMatrix: { columns: string[]; matrix: number[][] };
-  height?: number;
   className?: string;
+}
+
+/** Hardcoded severity color (CSS vars don't work in Plotly) */
+function severityColor(completeness: number, isDark: boolean): string {
+  if (completeness >= 100) return isDark ? 'hsl(155,70%,55%)' : 'hsl(155,65%,50%)';
+  if (completeness >= 95)  return isDark ? 'hsl(170,50%,55%)' : 'hsl(170,45%,50%)';
+  if (completeness >= 80)  return isDark ? 'hsl(38,75%,60%)'  : 'hsl(38,70%,55%)';
+  return isDark ? 'hsl(0,70%,60%)' : 'hsl(0,65%,55%)';
 }
 
 export function PlotlyMissingValueMatrix({
   missingMatrix,
-  height: heightOverride,
   className,
 }: PlotlyMissingValueMatrixProps) {
   const isDark = useIsDark();
   const { columns, matrix } = missingMatrix;
 
-  const height = heightOverride ?? Math.max(180, Math.min(350, matrix.length * 3));
+  const barData = useMemo(() => {
+    // Single pass over matrix — O(rows × cols) total, not O(cols × rows) per column
+    const counts = new Array<number>(columns.length).fill(0);
+    for (const row of matrix) {
+      for (let ci = 0; ci < row.length; ci++) {
+        if (row[ci] === 0) counts[ci]++;
+      }
+    }
+    return columns
+      .map((col, i) => ({ column: col, pct: (counts[i] / matrix.length) * 100 }))
+      .filter(d => d.pct > 0)
+      .sort((a, b) => a.pct - b.pct);
+  }, [columns, matrix]);
 
-  const truncatedColumns = useMemo(
-    () => columns.map((c) => truncateText(c, 15)),
-    [columns],
-  );
-
-  const rowIndices = useMemo(
-    () => Array.from({ length: matrix.length }, (_, i) => i),
-    [matrix],
-  );
-
-  const customdata = useMemo(
-    () =>
-      matrix.map((row) => row.map((val) => (val === 1 ? 'Present' : 'Missing'))),
-    [matrix],
-  );
+  const height = Math.max(120, barData.length * 28 + 60);
 
   const trace = useMemo(
-    () => {
-      const colorscale: [number, string][] = isDark
-        ? [[0, '#bfbfbf'], [1, '#141414']]
-        : [[0, '#d32f2f'], [1, '#e8e8e8']];
-
-      return {
-        type: 'heatmap' as const,
-        z: matrix,
-        x: truncatedColumns,
-        y: rowIndices,
-        customdata,
-        colorscale,
-        zmin: 0,
-        zmax: 1,
-        showscale: false,
-        hovertemplate: '%{x}<br>Row %{y}<br>%{customdata}<extra></extra>',
-      } satisfies Record<string, unknown>;
-    },
-    [matrix, truncatedColumns, rowIndices, customdata, isDark],
+    () => ({
+      type: 'bar' as const,
+      orientation: 'h' as const,
+      y: barData.map(d => truncateText(d.column, 20)),
+      x: barData.map(d => d.pct),
+      text: barData.map(d => `${d.pct.toFixed(1)}%`),
+      textposition: 'auto' as const,
+      marker: { color: barData.map(d => severityColor(100 - d.pct, isDark)) },
+      hovertemplate: '%{y}: %{x:.1f}% missing<extra></extra>',
+    }),
+    [barData, isDark],
   );
 
   const layout = useMemo(() => {
@@ -67,21 +63,22 @@ export function PlotlyMissingValueMatrix({
     return {
       ...base,
       height,
-      margin: { l: 48, r: 16, t: 24, b: 80 },
+      margin: { l: 120, r: 16, t: 8, b: 36 },
       xaxis: {
         ...(base.xaxis as object),
-        tickangle: -45,
-      },
-      yaxis: {
-        ...(base.yaxis as object),
-        title: { text: 'Row Sample', standoff: 8 },
+        range: [0, 100],
+        title: { text: 'Missing %', standoff: 8 },
       },
     };
   }, [isDark, height]);
 
+  if (barData.length === 0) {
+    return null;
+  }
+
   return (
     <div className={className}>
-      <PlotSuspense height={height} loadingLabel="Loading missing-value matrix…">
+      <PlotSuspense height={height} loadingLabel="Loading missing-value chart...">
         <LazyPlot
           data={[trace] as Data[]}
           layout={layout}

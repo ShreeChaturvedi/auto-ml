@@ -88,6 +88,9 @@ export function PlotlyHeatmap({
         colorbar: {
           title: { text: 'r', side: 'right' },
           thickness: 12,
+          outlinecolor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+          bordercolor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+          tickfont: { color: isDark ? 'hsl(0,0%,64%)' : 'hsl(215.4,16.3%,46.9%)', size: 10 },
         },
       }) satisfies Record<string, unknown>,
     [matrix, textMatrix, truncatedColumns, isDark],

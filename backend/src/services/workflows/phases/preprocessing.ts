@@ -444,7 +444,13 @@ RULES:
 - Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
 - Use pandas/numpy idioms. Keep the code minimal and focused.
 - Do NOT use asserts. Summarize validation as print() statements.
-- Return ONLY raw Python code — no markdown fences, no explanation.`;
+- Return ONLY raw Python code — no markdown fences, no explanation.
+
+PANDAS COMPATIBILITY (avoid FutureWarnings):
+- Before assigning float results (e.g. scaled/normalized values) to columns with integer dtype, cast first: \`df[cols] = df[cols].astype("float64")\`.
+- Never use \`inplace=True\`. Write \`df[col] = df[col].fillna(...)\` instead of \`df[col].fillna(..., inplace=True)\`.
+- Use \`isinstance(dtype, pd.CategoricalDtype)\` instead of \`pd.api.types.is_categorical_dtype()\`.
+- When assigning transformed arrays back to DataFrame columns, ensure dtype compatibility explicitly.`;
 
   const userContent = [
     state.turn.prompt ? `User request: ${state.turn.prompt}` : '',

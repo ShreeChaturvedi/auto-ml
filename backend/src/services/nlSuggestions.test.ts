@@ -170,6 +170,89 @@ describe('nlSuggestions service', () => {
     expect((client.complete as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
   });
 
+  it('retries on transient failure then succeeds', async () => {
+    const repository = createDatasetRepository([buildDataset({ projectId: 'project-retry' })]);
+    const successResponse = JSON.stringify({
+      suggestions: [
+        {
+          prompt: 'Show weekly order revenue and average order value for the last 8 weeks.',
+          label: 'Weekly revenue and AOV',
+          category: 'trend',
+          tables: ['orders'],
+          rationale: 'Uses order_date and order_total.'
+        },
+        {
+          prompt: 'List the top 15 days with the highest order revenue and order counts this quarter.',
+          label: 'Top revenue days',
+          category: 'top_n',
+          tables: ['orders'],
+          rationale: 'Ranks strong revenue days.'
+        },
+        {
+          prompt: 'Find dates where order count rose but average order value fell compared with the prior week.',
+          label: 'Count up AOV down',
+          category: 'exceptions',
+          tables: ['orders'],
+          rationale: 'Surfaces mixed operational and business signals.'
+        },
+        {
+          prompt: 'Break down monthly revenue contribution by order size band to understand mix shifts over time.',
+          label: 'Revenue mix by order size',
+          category: 'segmentation',
+          tables: ['orders'],
+          rationale: 'Creates a useful mix analysis from order_total.'
+        }
+      ]
+    });
+    let callCount = 0;
+    const completeFn = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error('Model returned an empty response.');
+      }
+      return successResponse;
+    });
+    const client: LlmClient = {
+      complete: completeFn,
+      stream: vi.fn(async () => '')
+    };
+
+    const service = createNlSuggestionsService({
+      datasetRepository: repository,
+      getClient: () => client,
+      now: () => 1000,
+      cacheTtlMs: 60_000
+    });
+
+    const result = await service.getSuggestions({ projectId: 'project-retry', limit: 4 });
+
+    expect(result.suggestions).toHaveLength(4);
+    expect(result.suggestions[0]?.prompt).toContain('weekly order revenue');
+    expect(completeFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('propagates error after all retries exhausted', async () => {
+    const repository = createDatasetRepository([buildDataset({ projectId: 'project-exhaust' })]);
+    const completeFn = vi.fn()
+      .mockRejectedValue(new Error('Model returned an empty response.'));
+    const client: LlmClient = {
+      complete: completeFn,
+      stream: vi.fn(async () => '')
+    };
+
+    const service = createNlSuggestionsService({
+      datasetRepository: repository,
+      getClient: () => client,
+      now: () => 1000,
+      cacheTtlMs: 60_000
+    });
+
+    await expect(
+      service.getSuggestions({ projectId: 'project-exhaust', limit: 4 })
+    ).rejects.toThrow(/empty response/i);
+    expect(completeFn).toHaveBeenCalledTimes(3);
+  });
+
   it('throws when no project datasets are available', async () => {
     const repository = createDatasetRepository([]);
     const client = createClient(JSON.stringify({ suggestions: [] }));

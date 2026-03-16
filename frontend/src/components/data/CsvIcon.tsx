@@ -28,7 +28,7 @@ export function FileTypeBadgeIcon({ label, className, ...props }: FileTypeBadgeI
         dominantBaseline="central"
         fill="currentColor"
         transform="scale(0.8, 1.25)"
-        transform-origin="12 12"
+        style={{ transformOrigin: '12px 12px' }}
       >
         {label}
       </text>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { ApiError } from '@/lib/api/client';
 import { getPreprocessingRunSnapshot } from '@/lib/api/llm';
 import { listAvailableTables } from '@/lib/api/preprocessing';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
@@ -125,7 +126,7 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
 
   loadTables: async (projectId: string) => {
     const previousProjectId = get().activeProjectId;
-    const switchedProject = previousProjectId !== projectId;
+    const switchedProject = previousProjectId !== null && previousProjectId !== projectId;
 
     if (switchedProject) {
       set({
@@ -144,17 +145,18 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
         error: null
       });
     } else {
-      set({ isLoadingTables: true, error: null });
+      set({ activeProjectId: projectId, isLoadingTables: true, error: null });
     }
 
     try {
       const { tables } = await listAvailableTables(projectId);
       set((state) => {
-        const hasSelectedDataset = Boolean(
+        const selectedStillValid = Boolean(
           state.selectedDatasetId && tables.some((table) => table.datasetId === state.selectedDatasetId)
         );
 
-        if (hasSelectedDataset) {
+        // Preserve selectedDatasetId if it's still valid, or if we're not switching projects
+        if (selectedStillValid || !switchedProject) {
           return { tables, isLoadingTables: false, error: null };
         }
 
@@ -255,6 +257,11 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
       const { run } = await getPreprocessingRunSnapshot(snapshotRunId, projectId);
       get().hydrateRunSnapshot(run);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        console.warn('[preprocessingStore] Stale run reference cleared (run no longer exists):', snapshotRunId);
+        set({ runId: null, timeline: [], stepBindings: {}, error: null });
+        return;
+      }
       console.error('[preprocessingStore] Failed to hydrate preprocessing run snapshot:', error);
       set({
         error: error instanceof Error ? error.message : 'Failed to hydrate preprocessing run snapshot'

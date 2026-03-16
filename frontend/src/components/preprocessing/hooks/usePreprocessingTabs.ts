@@ -4,14 +4,17 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import {
   createEmptyTabSnapshot,
-  createTabId,
-  nextProcessingTabName
+  createWorkbookId,
+  nextWorkbookName
 } from '../preprocessingTabUtils';
-import type { PreprocessingTab, PreprocessingTabSnapshot } from '../preprocessingTabUtils';
+import type { PreprocessingWorkbook, PreprocessingTabSnapshot } from '../preprocessingTabUtils';
+import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { useTabPersistence } from './useTabPersistence';
 import { useTabNotebookSync } from './useTabNotebookSync';
 
-export type { PreprocessingTab, PreprocessingTabSnapshot };
+/** @deprecated Use PreprocessingWorkbook */
+export type PreprocessingTab = PreprocessingWorkbook;
+export type { PreprocessingWorkbook, PreprocessingTabSnapshot };
 
 interface UsePreprocessingTabsOptions {
   projectId: string | undefined;
@@ -24,11 +27,11 @@ interface UsePreprocessingTabsOptions {
 }
 
 export interface UsePreprocessingTabsResult {
-  tabs: PreprocessingTab[];
+  tabs: PreprocessingWorkbook[];
   activeTabId: string;
-  activeTab: PreprocessingTab | undefined;
+  activeTab: PreprocessingWorkbook | undefined;
   tabsReady: boolean;
-  tabsRef: React.MutableRefObject<PreprocessingTab[]>;
+  tabsRef: React.MutableRefObject<PreprocessingWorkbook[]>;
   activeTabIdRef: React.MutableRefObject<string>;
   buildTabStorageKey: (tabId: string) => string;
   buildScopedTabStorageKey: (tabId: string) => string;
@@ -43,7 +46,7 @@ export interface UsePreprocessingTabsResult {
   setRenameTabName: (name: string) => void;
   resetActiveTab: () => void;
   setTabNotebookId: (tabId: string, notebookId: string | null) => void;
-  ensureNotebookForTab: (tab: PreprocessingTab, options?: { forceCreate?: boolean }) => Promise<string | null>;
+  ensureNotebookForTab: (tab: PreprocessingWorkbook, options?: { forceCreate?: boolean }) => Promise<string | null>;
   reconcileTabNotebookMappings: () => Promise<void>;
   saveActiveSnapshot: () => void;
   applyTabSnapshot: (snapshot: PreprocessingTabSnapshot) => void;
@@ -91,6 +94,16 @@ export function usePreprocessingTabs({
 
   const [renameTabDialogOpen, setRenameTabDialogOpen] = useState(false);
   const [renameTabName, setRenameTabName] = useState('');
+
+  // ---- Sync workbooks to registry store for sidebar rendering --------------
+
+  useEffect(() => {
+    if (!tabsReady) return;
+    useWorkbookRegistryStore.getState().setWorkbooks(
+      'preprocessing',
+      tabs.map((t) => ({ id: t.id, name: t.name, notebookId: t.notebookId }))
+    );
+  }, [tabs, tabsReady]);
 
   // ---- Sync divergence when notebook cells change --------------------------
 
@@ -220,9 +233,9 @@ export function usePreprocessingTabs({
   const handleNewTab = useCallback(() => {
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
     if (!currentActiveTab) return;
-    const newTab: PreprocessingTab = {
-      id: createTabId(),
-      name: nextProcessingTabName(tabsRef.current),
+    const newTab: PreprocessingWorkbook = {
+      id: createWorkbookId(),
+      name: nextWorkbookName(tabsRef.current),
       notebookId: null,
       snapshot: createEmptyTabSnapshot(),
       storageVersion: 0
@@ -308,7 +321,7 @@ export function usePreprocessingTabs({
     }
 
     const nextSnapshot = createEmptyTabSnapshot();
-    const resetTab: PreprocessingTab = {
+    const resetTab: PreprocessingWorkbook = {
       ...currentActiveTab,
       notebookId: null,
       snapshot: nextSnapshot

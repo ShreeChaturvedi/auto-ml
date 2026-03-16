@@ -26,6 +26,31 @@ function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
   }
 }
 
+const PLAN_MARKDOWN_MAX = 50_000;
+
+function normalizePlanExitArgs(args: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!args || typeof args !== 'object') return {};
+  const raw = args as Record<string, unknown>;
+
+  // Resolve planMarkdown from common model variants
+  let markdown = raw.planMarkdown;
+  if (typeof markdown !== 'string') {
+    for (const key of ['plan_markdown', 'markdown', 'content', 'plan'] as const) {
+      if (typeof raw[key] === 'string') { markdown = raw[key]; break; }
+    }
+  }
+
+  // Truncate if too long rather than failing validation
+  if (typeof markdown === 'string' && markdown.length > PLAN_MARKDOWN_MAX) {
+    markdown = markdown.slice(0, PLAN_MARKDOWN_MAX);
+  }
+
+  return {
+    planMarkdown: markdown,
+    planName: raw.planName ?? raw.plan_name ?? raw.name
+  };
+}
+
 function parseUiPayload(rawArgs: Record<string, unknown>, phase: WorkflowTurnRequest['phase']) {
   let uiPayload: unknown;
   if (typeof rawArgs.payload === 'string' && rawArgs.payload.trim()) {
@@ -86,10 +111,12 @@ async function streamWorkflowText(
       }
 
       if (call.name === 'plan_exit') {
-        const parsed = PlanExitPayloadSchema.safeParse(call.args);
+        const normalizedArgs = normalizePlanExitArgs(call.args);
+        const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
         if (parsed.success) {
           planExitPayload = normalizePlanExitPayload(parsed.data);
         } else {
+          console.warn('[modelTurnCollector] plan_exit validation failed:', parsed.error.issues);
           errorMessage = 'plan_exit payload failed validation.';
         }
         return;

@@ -46,6 +46,7 @@ export function PreprocessingPanel() {
   const {
     tabs,
     activeTab,
+    tabsReady,
     buildTabStorageKey,
     handleTabSwitch,
     handleNewTab,
@@ -221,6 +222,7 @@ export function PreprocessingPanel() {
         selectedDatasetId={selectedDatasetId}
         onSelectDataset={selectDataset}
         forceOpen={datasetSelectorForceOpen}
+        tabsReady={tabsReady}
       />
 
       <RenameTabDialog

@@ -273,7 +273,11 @@ function inferActionNode(
   if (!latestToolName) return 'plan_step';
 
   if (!latestToolSucceeded) {
-    // On failure, stay in plan_step for replanning
+    // When validation fails, pause at await_approval for user review
+    if (latestToolName === 'validate_step_result') {
+      return 'await_approval';
+    }
+    // On failure of other tools, stay in plan_step for replanning
     return 'plan_step';
   }
 
@@ -389,13 +393,15 @@ function buildValidateAction(state: WorkflowGraphState): import('../../../types/
     ? `Notebook execution stderr: ${runCell.stderr.slice(0, 500)}`
     : undefined;
 
+  // When validation passes, auto-approve and proceed directly to commit.
+  // Setting requiresApproval to false bypasses the await_approval stage.
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,
     tool: 'validate_step_result',
     args: {
       runId: step.runId,
       stepId: step.stepId,
-      requiresApproval: step.requiresApproval ?? true,
+      requiresApproval: false,
       ...(notes ? { notes } : {})
     },
     rationale: 'Validate the latest preprocessing step outcome.'

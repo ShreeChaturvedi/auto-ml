@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DatasetChooserDialog } from './PreprocessingDialogs';
 import type { AvailableTable } from '@/types/preprocessing';
 
@@ -8,30 +8,34 @@ interface DatasetSelectorProps {
   onSelectDataset: (datasetId: string) => void;
   /** Controlled open state — parent can force-open from external triggers */
   forceOpen?: boolean;
+  /** When true, tab persistence has finished hydrating — safe to auto-open */
+  tabsReady?: boolean;
 }
 
 export function DatasetSelector({
   tables,
   selectedDatasetId,
   onSelectDataset,
-  forceOpen
+  forceOpen,
+  tabsReady = true
 }: DatasetSelectorProps) {
   const [isDatasetModalOpen, setDatasetModalOpen] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [candidateDatasetId, setCandidateDatasetId] = useState<string | null>(null);
+  const autoOpenFiredRef = useRef(false);
 
-  // Auto-open when no dataset is selected and tables are available
+  // Auto-open once when no dataset is selected and tables are available.
+  // Guarded by tabsReady (wait for persistence) and autoOpenFiredRef (don't re-open after dismiss).
   useEffect(() => {
+    if (!tabsReady || autoOpenFiredRef.current) return;
     if (!selectedDatasetId && tables.length > 0) {
+      autoOpenFiredRef.current = true;
       setDatasetModalOpen(true);
-      const candidateStillExists = candidateDatasetId
-        ? tables.some((table) => table.datasetId === candidateDatasetId)
-        : false;
-      if (!candidateStillExists) {
+      if (!candidateDatasetId || !tables.some((table) => table.datasetId === candidateDatasetId)) {
         setCandidateDatasetId(tables[0].datasetId);
       }
     }
-  }, [candidateDatasetId, selectedDatasetId, tables]);
+  }, [candidateDatasetId, selectedDatasetId, tables, tabsReady]);
 
   // Respond to parent forcing the dialog open
   useEffect(() => {

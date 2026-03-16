@@ -2,7 +2,9 @@ import { Columns3, Eraser, ScalingIcon, Hash, FilterX, Code, Wrench, type Lucide
 import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
 
-export const DEFAULT_TAB_ID = 'processing-tab-1';
+export const DEFAULT_WORKBOOK_ID = 'processing-tab-1';
+/** @deprecated Use DEFAULT_WORKBOOK_ID */
+export const DEFAULT_TAB_ID = DEFAULT_WORKBOOK_ID;
 
 export interface PreprocessingTabSnapshot {
   selectedDatasetId: string | null;
@@ -12,13 +14,17 @@ export interface PreprocessingTabSnapshot {
   replayReport: ReplayCompatibilityReport | null;
 }
 
-export interface PreprocessingTab {
+/** A preprocessing workbook (chat+notebook pair). */
+export interface PreprocessingWorkbook {
   id: string;
   name: string;
   notebookId: string | null;
   snapshot: PreprocessingTabSnapshot;
   storageVersion: number;
 }
+
+/** @deprecated Use PreprocessingWorkbook */
+export type PreprocessingTab = PreprocessingWorkbook;
 
 export function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
   return {
@@ -30,33 +36,40 @@ export function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
   };
 }
 
-export function createTabId(): string {
+export function createWorkbookId(): string {
   return `proc-${Math.random().toString(36).slice(2, 10)}`;
 }
+/** @deprecated Use createWorkbookId */
+export const createTabId = createWorkbookId;
 
-export function createDefaultTab(): PreprocessingTab {
+export function createDefaultWorkbook(): PreprocessingWorkbook {
   return {
-    id: DEFAULT_TAB_ID,
-    name: 'Processing 1',
+    id: DEFAULT_WORKBOOK_ID,
+    name: 'Workbook 1',
     notebookId: null,
     snapshot: createEmptyTabSnapshot(),
     storageVersion: 0
   };
 }
+/** @deprecated Use createDefaultWorkbook */
+export const createDefaultTab = createDefaultWorkbook;
 
-export function parseProcessingIndex(name: string): number | null {
-  const match = /^Processing\s+(\d+)$/i.exec(name.trim());
+export function parseWorkbookIndex(name: string): number | null {
+  // Accept both "Processing N" (legacy) and "Workbook N"
+  const match = /^(?:Processing|Workbook)\s+(\d+)$/i.exec(name.trim());
   if (!match) {
     return null;
   }
   const value = Number.parseInt(match[1], 10);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
+/** @deprecated Use parseWorkbookIndex */
+export const parseProcessingIndex = parseWorkbookIndex;
 
-export function nextProcessingTabName(tabs: PreprocessingTab[]): string {
+export function nextWorkbookName(workbooks: PreprocessingWorkbook[]): string {
   const used = new Set<number>();
-  tabs.forEach((tab) => {
-    const index = parseProcessingIndex(tab.name);
+  workbooks.forEach((wb) => {
+    const index = parseWorkbookIndex(wb.name);
     if (index) {
       used.add(index);
     }
@@ -65,18 +78,20 @@ export function nextProcessingTabName(tabs: PreprocessingTab[]): string {
   while (used.has(candidate)) {
     candidate += 1;
   }
-  return `Processing ${candidate}`;
+  return `Workbook ${candidate}`;
 }
+/** @deprecated Use nextWorkbookName */
+export const nextProcessingTabName = nextWorkbookName;
 
-export function normalizeProcessingTabNames(tabs: PreprocessingTab[]): PreprocessingTab[] {
+export function normalizeWorkbookNames(workbooks: PreprocessingWorkbook[]): PreprocessingWorkbook[] {
   const used = new Set<number>();
-  return tabs.map((tab) => {
-    const parsed = parseProcessingIndex(tab.name);
+  return workbooks.map((wb) => {
+    const parsed = parseWorkbookIndex(wb.name);
     if (!parsed || !used.has(parsed)) {
       if (parsed) {
         used.add(parsed);
       }
-      return tab;
+      return wb;
     }
     let candidate = 1;
     while (used.has(candidate)) {
@@ -84,11 +99,13 @@ export function normalizeProcessingTabNames(tabs: PreprocessingTab[]): Preproces
     }
     used.add(candidate);
     return {
-      ...tab,
-      name: `Processing ${candidate}`
+      ...wb,
+      name: `Workbook ${candidate}`
     };
   });
 }
+/** @deprecated Use normalizeWorkbookNames */
+export const normalizeProcessingTabNames = normalizeWorkbookNames;
 
 export function statusClassName(status: TransformationEvent['status'], divergedClassName: string): string {
   if (status === 'applied') return 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400';

@@ -11,7 +11,6 @@ import type {
   WorkflowRunState
 } from '../types.js';
 
-import { loadWorkflowSchemaProfile } from './schemaProfile.js';
 import {
   buildApprovalSelectSql,
   buildArtifactSelectSql,
@@ -88,16 +87,15 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
     if (runResult.rows.length === 0) {
       return undefined;
     }
-    const profile = await loadWorkflowSchemaProfile(pool);
 
     const [eventsResult, artifactsResult, approvalsResult, bindingsResult] = await Promise.all([
-      pool.query(buildEventSelectSql(profile.events), [runId]),
-      pool.query(buildArtifactSelectSql(profile.artifacts), [runId]),
-      pool.query(buildApprovalSelectSql(profile.approvals), [runId]),
-      pool.query(buildNotebookBindingSelectSql(profile.notebookBindings), [runId])
+      pool.query(buildEventSelectSql(), [runId]),
+      pool.query(buildArtifactSelectSql(), [runId]),
+      pool.query(buildApprovalSelectSql(), [runId]),
+      pool.query(buildNotebookBindingSelectSql(), [runId])
     ]);
 
-    const handoffsResult = await pool.query(buildHandoffSelectSql(profile.handoffs), [runResult.rows[0].project_id]);
+    const handoffsResult = await pool.query(buildHandoffSelectSql(), [runResult.rows[0].project_id]);
 
     return {
       run: mapRunRow(runResult.rows[0] as Record<string, unknown>),
@@ -168,14 +166,13 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
 
   async appendEvent(runId: string, eventType: string, payload: Record<string, unknown>): Promise<WorkflowEventRecord> {
     const pool = getDbPool();
-    const profile = await loadWorkflowSchemaProfile(pool);
     const eventId = randomUUID();
     const sequenceResult = await pool.query(
       'SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM workflow_events WHERE run_id = $1',
       [runId]
     );
     const nextSequence = Number(sequenceResult.rows[0]?.next_sequence ?? 1);
-    const statement = buildAppendEventSql(profile.events, {
+    const statement = buildAppendEventSql({
       eventId,
       runId,
       sequence: nextSequence,
@@ -190,8 +187,7 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
   async upsertArtifact(input: Omit<WorkflowArtifactRecord, 'createdAt' | 'updatedAt'>): Promise<WorkflowArtifactRecord> {
     const pool = getDbPool();
     const timestamp = nowIso();
-    const profile = await loadWorkflowSchemaProfile(pool);
-    const statement = buildArtifactUpsertSql(profile.artifacts, input, timestamp);
+    const statement = buildArtifactUpsertSql(input, timestamp);
     const result = await pool.query(statement.text, statement.values);
     return mapArtifactRow(result.rows[0] as Record<string, unknown>);
   }
@@ -199,8 +195,7 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
   async upsertApproval(input: Omit<WorkflowApprovalRecord, 'requestedAt'> & { requestedAt?: string }): Promise<WorkflowApprovalRecord> {
     const pool = getDbPool();
     const requestedAt = input.requestedAt ?? nowIso();
-    const profile = await loadWorkflowSchemaProfile(pool);
-    const statement = buildApprovalUpsertSql(profile.approvals, input, requestedAt);
+    const statement = buildApprovalUpsertSql(input, requestedAt);
     const result = await pool.query(statement.text, statement.values);
     return mapApprovalRow(result.rows[0] as Record<string, unknown>);
   }
@@ -208,8 +203,7 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
   async upsertHandoff(input: Omit<WorkflowHandoffRecord, 'createdAt' | 'updatedAt'>): Promise<WorkflowHandoffRecord> {
     const pool = getDbPool();
     const timestamp = nowIso();
-    const profile = await loadWorkflowSchemaProfile(pool);
-    const statement = buildHandoffUpsertSql(profile.handoffs, input, timestamp);
+    const statement = buildHandoffUpsertSql(input, timestamp);
     const result = await pool.query(statement.text, statement.values);
     return mapHandoffRow(result.rows[0] as Record<string, unknown>);
   }
@@ -217,8 +211,7 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
   async upsertNotebookBinding(input: Omit<WorkflowNotebookBindingRecord, 'createdAt' | 'updatedAt'>): Promise<WorkflowNotebookBindingRecord> {
     const pool = getDbPool();
     const timestamp = nowIso();
-    const profile = await loadWorkflowSchemaProfile(pool);
-    const statement = buildNotebookBindingUpsertSql(profile.notebookBindings, input, timestamp);
+    const statement = buildNotebookBindingUpsertSql(input, timestamp);
     const result = await pool.query(statement.text, statement.values);
     return mapNotebookBindingRow(result.rows[0] as Record<string, unknown>);
   }

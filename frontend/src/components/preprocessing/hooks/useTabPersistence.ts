@@ -3,16 +3,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import {
   buildProcessingStorageKey,
-  buildProcessingTabsStateKey,
+  buildWorkbookTabsStateKey,
   extractRunIdFromStoredMessages,
-  parseStoredPreprocessingTabsState
+  migrateWorkbookState,
+  type StoredPreprocessingTabState
 } from '../storagePersistence';
 import {
-  createDefaultTab,
+  DEFAULT_WORKBOOK_ID,
+  createDefaultWorkbook,
   createEmptyTabSnapshot,
-  normalizeProcessingTabNames
+  normalizeWorkbookNames
 } from '../preprocessingTabUtils';
-import type { PreprocessingTab } from '../preprocessingTabUtils';
+import type { PreprocessingWorkbook } from '../preprocessingTabUtils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,13 +25,13 @@ export interface UseTabPersistenceOptions {
 }
 
 export interface UseTabPersistenceResult {
-  /** Restored tabs (or a single default tab). */
-  tabs: PreprocessingTab[];
-  setTabs: React.Dispatch<React.SetStateAction<PreprocessingTab[]>>;
+  /** Restored workbooks (or a single default workbook). */
+  tabs: PreprocessingWorkbook[];
+  setTabs: React.Dispatch<React.SetStateAction<PreprocessingWorkbook[]>>;
   activeTabId: string;
   setActiveTabId: React.Dispatch<React.SetStateAction<string>>;
   tabsReady: boolean;
-  tabsRef: React.MutableRefObject<PreprocessingTab[]>;
+  tabsRef: React.MutableRefObject<PreprocessingWorkbook[]>;
   activeTabIdRef: React.MutableRefObject<string>;
   buildTabStorageKey: (tabId: string) => string;
   buildScopedTabStorageKey: (tabId: string) => string;
@@ -39,8 +41,6 @@ export interface UseTabPersistenceResult {
 // Hook
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TAB_ID = 'processing-tab-1';
-
 export function useTabPersistence({
   projectId
 }: UseTabPersistenceOptions): UseTabPersistenceResult {
@@ -48,14 +48,15 @@ export function useTabPersistence({
   const setRunId = usePreprocessingStore((state) => state.setRunId);
   const applyTabSnapshot = usePreprocessingStore((state) => state.applyTabSnapshot);
 
-  const [tabs, setTabs] = useState<PreprocessingTab[]>([createDefaultTab()]);
-  const [activeTabId, setActiveTabId] = useState<string>(DEFAULT_TAB_ID);
+  const [tabs, setTabs] = useState<PreprocessingWorkbook[]>([createDefaultWorkbook()]);
+  const [activeTabId, setActiveTabId] = useState<string>(DEFAULT_WORKBOOK_ID);
   const [tabsReady, setTabsReady] = useState(false);
 
-  const tabsRef = useRef<PreprocessingTab[]>([]);
-  const activeTabIdRef = useRef<string>(DEFAULT_TAB_ID);
+  const tabsRef = useRef<PreprocessingWorkbook[]>([]);
+  const activeTabIdRef = useRef<string>(DEFAULT_WORKBOOK_ID);
   const hydratedTabsProjectRef = useRef<string | null>(null);
   const suppressStoredRunHydrationRef = useRef(false);
+  const prevRunIdRef = useRef<string | null>(null);
 
   // ---- Storage key builders ------------------------------------------------
 
@@ -85,45 +86,37 @@ export function useTabPersistence({
     setTabsReady(false);
     hydratedTabsProjectRef.current = projectId;
 
-    const persistedTabsState = parseStoredPreprocessingTabsState(
-      localStorage.getItem(buildProcessingTabsStateKey(projectId))
-    );
+    const persistedTabsState = migrateWorkbookState(projectId);
 
-    const recoveredTabs: PreprocessingTab[] = [];
+    const recoveredTabs: PreprocessingWorkbook[] = [];
     const knownTabIds = new Set<string>();
 
-    const appendRecoveredTab = (
-      id: string,
-      name: string,
-      storageVersion: number,
-      notebookId: string | null
-    ) => {
-      if (knownTabIds.has(id)) {
+    const appendRecoveredTab = (tab: StoredPreprocessingTabState) => {
+      if (knownTabIds.has(tab.id)) {
         return;
       }
-      knownTabIds.add(id);
-      const storageKey = buildScopedTabStorageKey(id);
+      knownTabIds.add(tab.id);
+      const storageKey = buildScopedTabStorageKey(tab.id);
       const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
       recoveredTabs.push({
-        id,
-        name,
-        notebookId,
-        storageVersion,
+        id: tab.id,
+        name: tab.name,
+        notebookId: tab.notebookId,
+        storageVersion: tab.storageVersion,
         snapshot: {
           ...createEmptyTabSnapshot(),
-          runId: inferredRunId
+          runId: inferredRunId,
+          selectedDatasetId: tab.selectedDatasetId
         }
       });
     };
 
-    persistedTabsState?.tabs.forEach((tab) => {
-      appendRecoveredTab(tab.id, tab.name, tab.storageVersion, tab.notebookId);
-    });
+    persistedTabsState?.tabs.forEach(appendRecoveredTab);
 
     if (recoveredTabs.length === 0) {
-      recoveredTabs.push(createDefaultTab());
+      recoveredTabs.push(createDefaultWorkbook());
     }
-    const normalizedRecoveredTabs = normalizeProcessingTabNames(recoveredTabs);
+    const normalizedRecoveredTabs = normalizeWorkbookNames(recoveredTabs);
 
     const persistedActiveTabId = persistedTabsState?.activeTabId ?? normalizedRecoveredTabs[0].id;
     const recoveredActiveTabId = normalizedRecoveredTabs.some((tab) => tab.id === persistedActiveTabId)
@@ -170,14 +163,15 @@ export function useTabPersistence({
       : tabs[0].id;
 
     localStorage.setItem(
-      buildProcessingTabsStateKey(projectId),
+      buildWorkbookTabsStateKey(projectId),
       JSON.stringify({
         activeTabId: persistedActiveTabId,
         tabs: tabs.map((tab) => ({
           id: tab.id,
           name: tab.name,
           storageVersion: tab.storageVersion,
-          notebookId: tab.notebookId
+          notebookId: tab.notebookId,
+          selectedDatasetId: tab.snapshot.selectedDatasetId ?? null
         }))
       })
     );
@@ -206,11 +200,22 @@ export function useTabPersistence({
     }
   }, [activeTabId, buildScopedTabStorageKey, projectId, runId, setRunId]);
 
-  // ---- Clear suppression flag when a real runId is set ---------------------
+  // ---- Manage suppression flag for stale run ID clearing -------------------
+  // When runId transitions from a value to null (e.g. hydrateRunById got a 404
+  // and cleared the stale reference), suppress re-inference from localStorage
+  // so the tab persistence effect doesn't immediately re-set the same stale ID.
+  // When a legitimate runId is later set, clear the suppression flag.
 
   useEffect(() => {
+    const prev = prevRunIdRef.current;
+    prevRunIdRef.current = runId;
+
     if (runId) {
+      // A real run ID was set — allow future hydration from localStorage.
       suppressStoredRunHydrationRef.current = false;
+    } else if (prev) {
+      // runId went from a truthy value to null — suppress re-inference.
+      suppressStoredRunHydrationRef.current = true;
     }
   }, [runId]);
 

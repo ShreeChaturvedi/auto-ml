@@ -7,6 +7,15 @@ import type {
   WorkflowRunState
 } from '../types.js';
 
+export interface SqlStatement {
+  text: string;
+  values: unknown[];
+}
+
+export function getPayloadString(payload: Record<string, unknown>): string {
+  return JSON.stringify(payload);
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }

@@ -10,9 +10,10 @@ import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
 // A full preprocessing turn can legitimately span inspection, planning, code
 // authoring, notebook execution, execution recording, validation, and commit.
-// Keep the workflow budget above that happy-path depth so real turns do not fail
-// before the explicit workflow limits kick in.
-export const MAX_WORKFLOW_ITERATIONS = 16;
+// Each stage uses 1-2 iterations, and the model may profile datasets before
+// planning. Budget: ~3 profile + 1 plan + 1 code-gen + 2 write/exec + 1 validate
+// + 1 commit + 1 summarize ≈ 10-12 on the happy path, with headroom for retries.
+export const MAX_WORKFLOW_ITERATIONS = 24;
 export const WORKFLOW_GRAPH_RECURSION_LIMIT = MAX_WORKFLOW_ITERATIONS * 3 + 8;
 
 export const InternalWorkflowState = Annotation.Root({

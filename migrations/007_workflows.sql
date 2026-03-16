@@ -21,6 +21,22 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Phase, status, and pending_input_kind constraints.
+-- Use DROP + ADD so the migration remains idempotent when phases expand.
+DO $$ BEGIN
+  ALTER TABLE workflow_runs DROP CONSTRAINT IF EXISTS workflow_runs_phase_check;
+  ALTER TABLE workflow_runs ADD CONSTRAINT workflow_runs_phase_check
+    CHECK (phase IN ('preprocessing', 'feature_engineering', 'training', 'onboarding'));
+
+  ALTER TABLE workflow_runs DROP CONSTRAINT IF EXISTS workflow_runs_status_check;
+  ALTER TABLE workflow_runs ADD CONSTRAINT workflow_runs_status_check
+    CHECK (status IN ('running', 'paused', 'failed_retryable', 'failed_terminal', 'completed', 'interrupted'));
+
+  ALTER TABLE workflow_runs DROP CONSTRAINT IF EXISTS workflow_runs_pending_input_kind_check;
+  ALTER TABLE workflow_runs ADD CONSTRAINT workflow_runs_pending_input_kind_check
+    CHECK (pending_input_kind IN ('approval', 'clarification', 'selection', 'edit_review'));
+END $$;
+
 CREATE INDEX IF NOT EXISTS workflow_runs_project_phase_idx
   ON workflow_runs (project_id, phase, updated_at DESC);
 

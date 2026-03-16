@@ -16,19 +16,15 @@ export function buildDatasetContinuityPrompt(
 ): string {
   const basePrompt = normalizePrompt(prompt);
   const datasetLabel = context.datasetLabel?.trim() || context.datasetId || 'selected dataset';
-  const datasetId = context.datasetId?.trim();
 
   if (mode === 'restart_from_original') {
-    const datasetInstruction = datasetId
-      ? `Call set_active_dataset with datasetId "${datasetId}" before proposing transformations.`
-      : 'Call set_active_dataset before proposing transformations.';
     return `${basePrompt}
 
 Dataset continuity directive:
 - Start from the ORIGINAL source dataset "${datasetLabel}" for this request.
 - Begin a NEW preprocessing run and do not reuse any previous runId.
 - Reload data from source instead of reusing previously transformed in-memory data.
-- ${datasetInstruction}`;
+- The active dataset is already set — proceed directly to profiling and planning.`;
   }
 
   return `${basePrompt}

@@ -53,6 +53,12 @@ export class OpenAiClient implements LlmClient {
       if (!handlers.onToolCall || streamedToolItemIds.has(event.item_id)) {
         return;
       }
+      // The streaming event may arrive before the function name is resolved.
+      // When name is missing, skip and let emitToolCalls handle it from the
+      // final response where names are always populated.
+      if (!event.name) {
+        return;
+      }
       streamedToolItemIds.add(event.item_id);
       handlers.onToolCall({
         name: event.name,

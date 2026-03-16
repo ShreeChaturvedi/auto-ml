@@ -81,7 +81,10 @@ export const WorkflowPauseEventSchema = z.object({
   reason: z.string().min(1),
   message: z.string().optional(),
   pendingInputKind: z.string().min(1).optional(),
-  ui: UiSchema.nullable().optional(),
+  // Pause ui carries ask_user payloads, approval data, etc. — not the
+  // structured render_ui schema.  Accept any shape so we don't reject
+  // valid pause events from the backend.
+  ui: z.any().nullable().optional(),
   state: WorkflowStateSchema.optional()
 });
 

@@ -59,27 +59,44 @@ try:
 except OSError:
     pass
 
-# Dataset path resolver
+# Dataset path resolver — always returns a writable path.
+# /datasets is mounted read-only; /workspace/datasets is writable.
+# When a file is only found in the read-only mount, copy it to the
+# writable workspace so subsequent writes (df.to_csv) succeed.
 def resolve_dataset_path(filename, dataset_id=None):
-    candidates = [
+    import shutil
+    writable = [
         Path("/workspace") / filename,
         Path("/workspace/datasets") / filename,
-        Path("/datasets") / filename,
     ]
     if dataset_id:
-        candidates.extend([
-            Path("/workspace/datasets") / dataset_id / filename,
-            Path("/datasets") / dataset_id / filename,
-        ])
-    for c in candidates:
+        writable.append(Path("/workspace/datasets") / dataset_id / filename)
+    for c in writable:
         if c.exists():
             return str(c)
-    for root in [Path("/workspace"), Path("/workspace/datasets"), Path("/datasets")]:
+    readonly = [Path("/datasets") / filename]
+    if dataset_id:
+        readonly.append(Path("/datasets") / dataset_id / filename)
+    for c in readonly:
+        if c.exists():
+            dest = Path("/workspace/datasets") / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(c), str(dest))
+            return str(dest)
+    for root in [Path("/workspace"), Path("/workspace/datasets")]:
         if root.exists():
             matches = list(root.rglob(filename))
             if matches:
                 return str(matches[0])
-    return str(candidates[0])
+    for root in [Path("/datasets")]:
+        if root.exists():
+            matches = list(root.rglob(filename))
+            if matches:
+                dest = Path("/workspace/datasets") / filename
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(matches[0]), str(dest))
+                return str(dest)
+    return str(writable[0])
 
 # DataFrame display helper
 def _display_df(df):

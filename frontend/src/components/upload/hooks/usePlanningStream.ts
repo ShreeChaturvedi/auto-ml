@@ -83,8 +83,12 @@ export function usePlanningStream({
               return;
             }
 
-            if (event.type === 'error') {
-              handleStreamEvent(event);
+            if (event.type === 'error' || event.type === 'workflow_error') {
+              handleStreamEvent(
+                event.type === 'workflow_error'
+                  ? { type: 'error', message: event.message }
+                  : event
+              );
               return;
             }
 

@@ -383,8 +383,6 @@ function stageNode(
         return {
           currentNode: node,
           allowedTools: [
-            'list_project_datasets',
-            'set_active_dataset',
             'profile_active_dataset',
             'list_cells',
             'read_cell',
@@ -595,7 +593,9 @@ function buildActionRequest(
 
   if (summary.currentNode === 'plan_step') {
     systemSections.push(
-      'Your next action should establish context or propose exactly one transformation step.'
+      'Your next action should establish context or propose exactly one transformation step.',
+      'IMPORTANT: Do not profile the same dataset more than once. After a single profile_active_dataset call, proceed directly to propose_transformation_step.',
+      'Batch your understanding from one profile call — do not call profile_active_dataset repeatedly.'
     );
   }
   if (summary.currentNode === 'generate_code') {

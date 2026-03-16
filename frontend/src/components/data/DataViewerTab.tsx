@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import type { InsightAction } from './eda/edaInsights';
 import { useParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -268,6 +269,10 @@ export function DataViewerTab() {
 
   const activeControlsPortalTarget = controlsPortalTarget;
 
+  const handleInsightAction = useCallback((action: InsightAction) => {
+    console.log('[insight-action]', action);
+  }, []);
+
   const handleDismissError = useCallback(() => setQueryError(null), []);
 
   useEffect(() => {
@@ -326,6 +331,7 @@ export function DataViewerTab() {
               controlsPortalTarget={activeControlsPortalTarget}
               updateColumnType={updateColumnType}
               extractApiErrorMessage={extractApiErrorMessage}
+              onInsightAction={handleInsightAction}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

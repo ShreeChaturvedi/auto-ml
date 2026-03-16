@@ -14,6 +14,7 @@ export type EdaTab = 'overview' | 'distributions' | 'correlations' | 'quality';
 
 // Insights
 import { detectInsights } from './edaInsights';
+import type { InsightAction } from './edaInsights';
 import { InsightTicker } from '@/components/ui/insight-ticker';
 
 // Overview tab components
@@ -44,6 +45,7 @@ interface EDAPanelProps {
   corrSelectedCell: { a: string; b: string } | null;
   onCorrSelectedCellChange: (cell: { a: string; b: string } | null) => void;
   corrViewMode: CorrViewMode;
+  onInsightAction?: (action: InsightAction) => void;
   className?: string;
 }
 
@@ -60,6 +62,7 @@ export function EDAPanel({
   corrSelectedCell,
   onCorrSelectedCellChange,
   corrViewMode,
+  onInsightAction,
   className,
 }: EDAPanelProps) {
   const insights = useMemo(() => detectInsights(eda), [eda]);
@@ -78,7 +81,8 @@ export function EDAPanel({
         <div className="space-y-4">
           {insights.length > 0 && (
             <InsightTicker
-              items={insights.map((i) => ({ icon: i.icon, text: i.text, severity: i.severity }))}
+              items={insights.map((i) => ({ icon: i.icon, text: i.text, severity: i.severity, actions: i.actions }))}
+              onAction={onInsightAction}
               className="mb-2"
             />
           )}

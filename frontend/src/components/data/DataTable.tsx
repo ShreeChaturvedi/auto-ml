@@ -26,6 +26,7 @@ import type { DataPreview } from '@/types/file';
 import { EDAPanel, type EdaTab } from './eda/EDAPanel';
 import { EDAToolbar } from './eda/EDAToolbar';
 import type { DistributionMode, CorrViewMode } from './eda/edaConstants';
+import type { InsightAction } from './eda/edaInsights';
 import { DataTableControls } from './DataTableControls';
 import type { QueryInfo } from './QueryInfoDialog';
 import Papa from 'papaparse';
@@ -45,6 +46,7 @@ interface DataTableProps {
   queryInfo?: QueryInfo;
   className?: string;
   controlsPortalTarget?: HTMLElement | null;
+  onInsightAction?: (action: InsightAction) => void;
 }
 
 export function DataTable({
@@ -55,7 +57,8 @@ export function DataTable({
   typeColorClassName,
   queryInfo,
   className,
-  controlsPortalTarget
+  controlsPortalTarget,
+  onInsightAction
 }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
@@ -295,6 +298,7 @@ export function DataTable({
               corrSelectedCell={corrSelectedCell}
               onCorrSelectedCellChange={setCorrSelectedCell}
               corrViewMode={corrViewMode}
+              onInsightAction={onInsightAction}
             />
           )}
         </div>

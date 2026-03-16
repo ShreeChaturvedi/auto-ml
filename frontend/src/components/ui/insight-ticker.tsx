@@ -12,11 +12,14 @@ import {
   CHAR_ANIM_DURATION_MS,
   CHAR_STAGGER_MS,
 } from './useInsightTicker';
+import type { InsightAction } from '@/components/data/eda/edaInsights';
+import { InsightActionIcons } from '@/components/data/eda/InsightActionIcons';
 
 export interface InsightTickerItem {
   icon: LucideIcon;
   text: string;
   severity?: 'high' | 'medium' | 'low';
+  actions?: InsightAction[];
 }
 
 interface InsightTickerProps {
@@ -24,6 +27,7 @@ interface InsightTickerProps {
   interval?: number;
   expandable?: boolean;
   className?: string;
+  onAction?: (action: InsightAction) => void;
 }
 
 const severityColors: Record<string, string> = {
@@ -70,6 +74,7 @@ export function InsightTicker({
   interval = 3500,
   expandable = true,
   className,
+  onAction,
 }: InsightTickerProps) {
   const [open, setOpen] = useState(false);
   const {
@@ -146,10 +151,13 @@ export function InsightTicker({
             return (
               <div
                 key={i}
-                className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50"
+                className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50 group"
               >
                 <Icon className={cn('h-3.5 w-3.5 shrink-0 mt-0.5', iconColor)} />
-                <span>{item.text}</span>
+                <span className="flex-1">{item.text}</span>
+                {item.actions && item.actions.length > 0 && onAction && (
+                  <InsightActionIcons actions={item.actions} onAction={onAction} />
+                )}
               </div>
             );
           })}

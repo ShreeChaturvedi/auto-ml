@@ -15,12 +15,34 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { EdaSummary } from '@/types/file';
 
+export type InsightActionType = 'filter' | 'query' | 'preprocess' | 'notebook';
+
+export interface InsightAction {
+  type: InsightActionType;
+  columns: string[];
+  issueType: string;  // 'missing' | 'outlier' | 'skew' | 'correlation' | 'constant' | 'cardinality' | 'imbalance'
+  context?: Record<string, unknown>;  // additional data (e.g. q1, q3, iqr for outlier filter SQL)
+}
+
 export interface EdaInsight {
   id: string;
   severity: 'high' | 'medium' | 'low';
   icon: LucideIcon;
   text: string;
   columns: string[];
+  actions: InsightAction[];
+}
+
+/**
+ * Build an array of InsightActions for the given action types.
+ */
+function buildActions(
+  types: InsightActionType[],
+  columns: string[],
+  issueType: string,
+  context?: Record<string, unknown>,
+): InsightAction[] {
+  return types.map(type => ({ type, columns, issueType, context }));
 }
 
 /**
@@ -43,12 +65,19 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
     if (totalCount > 0 && col.outlierCount > 0) {
       const outlierPct = (col.outlierCount / totalCount) * 100;
       if (outlierPct > 5) {
+        const iqr = col.q3 - col.q1;
         insights.push({
           id: `outlier-${col.column}`,
           severity: 'medium',
           icon: Zap,
           text: `${col.column} has ${col.outlierCount} outliers (${outlierPct.toFixed(1)}% of data)`,
           columns: [col.column],
+          actions: buildActions(
+            ['filter', 'query', 'notebook'],
+            [col.column],
+            'outlier',
+            { q1: col.q1, q3: col.q3, iqr },
+          ),
         });
       }
     }
@@ -63,6 +92,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: TrendingUp,
         text: `${col.column} is highly ${dir}-skewed (${col.skewness.toFixed(2)})`,
         columns: [col.column],
+        actions: buildActions(['notebook'], [col.column], 'skew'),
       });
     } else if (absSkew > 1) {
       const dir = col.skewness > 0 ? 'right' : 'left';
@@ -72,6 +102,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: TrendingUp,
         text: `${col.column} is moderately ${dir}-skewed`,
         columns: [col.column],
+        actions: buildActions(['notebook'], [col.column], 'skew'),
       });
     }
   }
@@ -86,6 +117,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: AlertTriangle,
         text: `${q.column} has ${q.missingPercentage.toFixed(1)}% missing values`,
         columns: [q.column],
+        actions: buildActions(['filter', 'query', 'preprocess', 'notebook'], [q.column], 'missing'),
       });
     }
     // LOW: Moderate missing (5-30%)
@@ -96,6 +128,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: AlertTriangle,
         text: `${q.column} has ${q.missingPercentage.toFixed(1)}% missing values`,
         columns: [q.column],
+        actions: buildActions(['filter', 'query', 'preprocess', 'notebook'], [q.column], 'missing'),
       });
     }
 
@@ -107,6 +140,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: MinusCircle,
         text: `${q.column} is constant — no predictive signal`,
         columns: [q.column],
+        actions: buildActions(['preprocess'], [q.column], 'constant'),
       });
     }
 
@@ -118,6 +152,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: Fingerprint,
         text: `${q.column} has high cardinality (${q.uniqueCount} unique)`,
         columns: [q.column],
+        actions: buildActions(['query', 'notebook'], [q.column], 'cardinality'),
       });
     }
   }
@@ -132,6 +167,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
           icon: Link,
           text: `${corr.columnA} and ${corr.columnB} are highly correlated (r=${corr.coefficient.toFixed(2)})`,
           columns: [corr.columnA, corr.columnB],
+          actions: buildActions(['query', 'notebook'], [corr.columnA, corr.columnB], 'correlation'),
         });
       }
     }
@@ -146,6 +182,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: PieChart,
         text: `${cat.column} is imbalanced (${cat.topValues[0].value} = ${cat.topValues[0].percentage.toFixed(1)}%)`,
         columns: [cat.column],
+        actions: buildActions(['query', 'preprocess', 'notebook'], [cat.column], 'imbalance'),
       });
     }
   }

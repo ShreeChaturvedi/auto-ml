@@ -10,6 +10,7 @@ import { DataTable } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
 import type { ColumnDataType, DataPreview, EdaSummary, QueryMode } from '@/types/file';
 import type { NlQueryExplanation } from '@/lib/api/query';
+import type { InsightAction } from './eda/edaInsights';
 
 interface QueryArtifact {
   id: string;
@@ -57,6 +58,7 @@ export interface DataViewerContentProps {
   controlsPortalTarget: HTMLElement | null;
   updateColumnType: (datasetId: string, columnName: string, nextType: ColumnDataType) => Promise<void>;
   extractApiErrorMessage: (error: unknown) => string;
+  onInsightAction?: (action: InsightAction) => void;
 }
 
 export function DataViewerContent({
@@ -69,7 +71,8 @@ export function DataViewerContent({
   projectTypeColorClassName,
   controlsPortalTarget,
   updateColumnType,
-  extractApiErrorMessage
+  extractApiErrorMessage,
+  onInsightAction
 }: DataViewerContentProps) {
   if (!activeFileTabId) return null;
 
@@ -88,6 +91,7 @@ export function DataViewerContent({
             columnTypes={columnTypes}
             typeColorClassName={projectTypeColorClassName}
             controlsPortalTarget={controlsPortalTarget}
+            onInsightAction={onInsightAction}
             onColumnTypeChange={
               datasetId
                 ? async (columnName: string, nextType: ColumnDataType) => {
@@ -124,6 +128,7 @@ export function DataViewerContent({
           columnTypes={columnTypes}
           typeColorClassName={projectTypeColorClassName}
           controlsPortalTarget={controlsPortalTarget}
+          onInsightAction={onInsightAction}
           queryInfo={{
             query: artifact.query,
             mode: artifact.mode,

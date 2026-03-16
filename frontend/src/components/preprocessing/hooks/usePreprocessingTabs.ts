@@ -101,9 +101,6 @@ export function usePreprocessingTabs({
       'preprocessing',
       tabs.map((t) => ({ id: t.id, name: t.name, notebookId: t.notebookId }))
     );
-    return () => {
-      useWorkbookRegistryStore.getState().setWorkbooks('preprocessing', []);
-    };
   }, [tabs, tabsReady]);
 
   // ---- Sync divergence when notebook cells change --------------------------

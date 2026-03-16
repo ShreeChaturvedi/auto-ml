@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-input';
 import { Badge } from '@/components/ui/badge';
 import { truncateText } from './edaFormatters';
 import { DATA_TYPE_ICONS } from './edaConstants';
@@ -74,6 +75,11 @@ export function EDAColumnSelector({
     [multiple, selected, onSelectionChange],
   );
 
+  const searchPlaceholders = useMemo(
+    () => columns.slice(0, 8).map((c) => c.name),
+    [columns],
+  );
+
   const displayText = useMemo(() => {
     if (selected.length === 0) return placeholder || 'Select column...';
     if (selected.length <= 2) return selected.join(', ');
@@ -98,16 +104,13 @@ export function EDAColumnSelector({
       </PopoverTrigger>
 
       <PopoverContent className="w-64 p-2" align="start">
-        {/* Search input */}
-        <input
-          type="text"
-          placeholder="Search columns..."
+        {/* Search input — cycles through column names as placeholder */}
+        <AnimatedPlaceholderInput
+          placeholders={searchPlaceholders}
+          interval={2400}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className={cn(
-            'w-full rounded-md border border-input bg-background px-2 py-1 text-xs',
-            'placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring',
-          )}
+          className="h-auto w-full px-2 py-1 text-xs focus:ring-1 focus:ring-ring"
         />
 
         {/* Filter chips */}

@@ -51,6 +51,9 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
         ? '2.25rem'
         : '0.75rem';
 
+    // Match overlay text size to the input's effective text size
+    const textSize = className?.match(/\btext-(xs|sm|base|lg|xl)\b/)?.[0] ?? 'text-sm';
+
     return (
       <div className="relative w-full">
         <input
@@ -97,7 +100,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
 
               {/* Current placeholder – slides up and fades out during animation */}
               <span
-                className="absolute inset-x-0 top-0 text-sm text-muted-foreground whitespace-nowrap"
+                className={`absolute inset-x-0 top-0 ${textSize} text-muted-foreground whitespace-nowrap`}
                 style={{
                   transform: isAnimating ? 'translateY(-100%)' : 'translateY(0)',
                   opacity: isAnimating ? 0 : 1,
@@ -113,7 +116,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
                   visibility: each character fades in at its staggered time and
                   briefly blooms to full foreground color before settling to muted. */}
               <span
-                className="absolute inset-x-0 top-0 text-sm whitespace-nowrap"
+                className={`absolute inset-x-0 top-0 ${textSize} whitespace-nowrap`}
                 style={{
                   transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
                   opacity: isAnimating ? 1 : 0,

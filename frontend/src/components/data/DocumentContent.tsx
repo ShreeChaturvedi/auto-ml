@@ -3,10 +3,13 @@
  * based on file type and loading status.
  */
 
+import { lazy, Suspense } from 'react';
 import { AlertTriangle, Download, FileText, Loader2 } from 'lucide-react';
 import { Markdown } from '@/components/ui/Markdown';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+
+const LazyPdfViewer = lazy(() => import('./PdfViewer'));
 
 type ViewerStatus = 'loading' | 'ready' | 'error';
 
@@ -24,7 +27,12 @@ interface DocumentContentProps {
   onDownload: (blobUrl: string | null, fileName: string) => void;
 }
 
-const PDF_VIEWER_HASH = '#toolbar=1&navpanes=0&view=FitH';
+const PdfLoadingFallback = (
+  <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+    <Loader2 className="h-4 w-4 animate-spin" />
+    Loading PDF viewer...
+  </div>
+);
 
 export function DocumentContent({
   status,
@@ -59,13 +67,9 @@ export function DocumentContent({
       )}
 
       {status === 'ready' && isPdf && blobUrl && (
-        <div className="h-full bg-black">
-          <iframe
-            src={`${blobUrl}${PDF_VIEWER_HASH}`}
-            title={`PDF preview for ${fileName}`}
-            className="h-full w-full border-0 bg-black"
-          />
-        </div>
+        <Suspense fallback={PdfLoadingFallback}>
+          <LazyPdfViewer url={blobUrl} fileName={fileName} className="h-full" />
+        </Suspense>
       )}
 
       {status === 'ready' && isMarkdown && (

@@ -2,13 +2,13 @@
  * FilePreview - Modal for previewing uploaded files
  *
  * Supports:
- * - PDF preview (using the browser's native PDF viewer)
+ * - PDF preview (react-pdf with custom toolbar)
  * - Image preview (full-size with zoom)
  * - CSV preview (first few rows in table)
  * - JSON preview (formatted JSON)
  */
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -20,11 +20,13 @@ import type { UploadedFile } from '@/types/file';
 import { formatFileSize, resolveFileIcon } from '@/lib/fileUtils';
 import Papa from 'papaparse';
 import { Badge } from '@/components/ui/badge';
-import { Eye } from 'lucide-react';
+import { Eye, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
 import { Markdown } from '@/components/ui/Markdown';
+
+const LazyPdfViewer = lazy(() => import('@/components/data/PdfViewer'));
 
 interface FilePreviewProps {
   file: UploadedFile;
@@ -105,12 +107,10 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
           const url = URL.createObjectURL(blob);
           objectUrls.push(url);
           setPreviewContent(
-            <div className="h-[600px] rounded-lg border overflow-hidden bg-black">
-              <iframe
-                src={`${url}#toolbar=1&navpanes=0&view=FitH`}
-                title={`PDF preview for ${file.name}`}
-                className="h-full w-full border-0 bg-black"
-              />
+            <div className="h-[600px] rounded-lg border overflow-hidden">
+              <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading PDF...</div>}>
+                <LazyPdfViewer url={url} fileName={file.name} className="h-full" />
+              </Suspense>
             </div>
           );
           setIsLoading(false);
@@ -181,12 +181,10 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
         const pdfUrl = URL.createObjectURL(file.file);
         objectUrls.push(pdfUrl);
         setPreviewContent(
-          <div className="h-[600px] rounded-lg border overflow-hidden bg-black">
-            <iframe
-              src={`${pdfUrl}#toolbar=1&navpanes=0&view=FitH`}
-              title={`PDF preview for ${file.name}`}
-              className="h-full w-full border-0 bg-black"
-            />
+          <div className="h-[600px] rounded-lg border overflow-hidden">
+            <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading PDF...</div>}>
+              <LazyPdfViewer url={pdfUrl} fileName={file.name} className="h-full" />
+            </Suspense>
           </div>
         );
         setIsLoading(false);

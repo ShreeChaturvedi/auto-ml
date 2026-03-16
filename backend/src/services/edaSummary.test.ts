@@ -277,6 +277,82 @@ describe('edaSummary', () => {
       const quality = result.dataQuality.find(q => q.column === 'value')!;
       expect(quality.missingPercentage).toBe(100);
     });
+
+    it('returns scope when options with source are provided', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 },
+        { value: 3 }
+      ];
+      const result = buildEdaSummary(rows, { source: 'query-result', totalRows: 100 });
+      expect(result).toBeDefined();
+      expect(result!.scope).toEqual({
+        source: 'query-result',
+        rowsAnalyzed: 3,
+        totalRows: 100
+      });
+    });
+
+    it('returns scope with dataset-profile source', () => {
+      const rows: QueryRow[] = [
+        { value: 10 },
+        { value: 20 }
+      ];
+      const result = buildEdaSummary(rows, { source: 'dataset-profile', totalRows: 5000 });
+      expect(result).toBeDefined();
+      expect(result!.scope).toEqual({
+        source: 'dataset-profile',
+        rowsAnalyzed: 2,
+        totalRows: 5000
+      });
+    });
+
+    it('returns no scope when options are omitted (backward compat)', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 }
+      ];
+      const result = buildEdaSummary(rows);
+      expect(result).toBeDefined();
+      expect(result!.scope).toBeUndefined();
+    });
+
+    it('returns no scope when options are provided without source', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 }
+      ];
+      const result = buildEdaSummary(rows, {});
+      expect(result).toBeDefined();
+      expect(result!.scope).toBeUndefined();
+    });
+
+    it('defaults totalRows to rowsAnalyzed when totalRows is omitted', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 },
+        { value: 3 }
+      ];
+      const result = buildEdaSummary(rows, { source: 'query-result' });
+      expect(result).toBeDefined();
+      expect(result!.scope).toEqual({
+        source: 'query-result',
+        rowsAnalyzed: 3,
+        totalRows: 3
+      });
+    });
+
+    it('detects all columns from sparse rows', () => {
+      const rows: QueryRow[] = [
+        { a: 1 },
+        { b: 2 },
+        { a: 3, c: 'hello' }
+      ];
+      const result = buildEdaSummary(rows);
+      expect(result).toBeDefined();
+      const qualityColumns = result!.dataQuality.map(q => q.column).sort();
+      expect(qualityColumns).toEqual(['a', 'b', 'c']);
+    });
   });
 
   describe('computeRegressionLine', () => {

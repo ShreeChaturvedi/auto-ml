@@ -8,7 +8,7 @@
  * - Visualizations (histograms, scatter plots, correlations)
  */
 
-import type { EdaSummary, HistogramSummary, QueryRow } from '../../types/query.js';
+import type { EdaScope, EdaSummary, HistogramSummary, QueryRow } from '../../types/query.js';
 
 import { computeCategoricalSummaries, computeDataQuality } from './categoricalAnalysis.js';
 import { detectColumnTypes } from './columnDetection.js';
@@ -16,15 +16,28 @@ import { buildMissingMatrix } from './missingMatrix.js';
 import { computeNumericSummaries } from './numericAnalysis.js';
 import { buildCorrelations, buildHistogram, buildScatter, buildScatterPairs } from './visualizations.js';
 
+export interface BuildEdaSummaryOptions {
+  source?: 'dataset-profile' | 'query-result';
+  totalRows?: number;
+}
+
 /**
  * Build comprehensive EDA summary from query results
  */
-export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
+export function buildEdaSummary(rows: QueryRow[], options?: BuildEdaSummaryOptions): EdaSummary | undefined {
   if (rows.length === 0) {
     return undefined;
   }
 
-  const columns = rows[0] ? Object.keys(rows[0]) : [];
+  // Compute column set as union of keys from first 100 rows to handle sparse rows
+  const sampleSize = Math.min(rows.length, 100);
+  const columnSet = new Set<string>();
+  for (let i = 0; i < sampleSize; i++) {
+    for (const key of Object.keys(rows[i])) {
+      columnSet.add(key);
+    }
+  }
+  const columns = Array.from(columnSet);
   if (columns.length === 0) return undefined;
 
   const columnTypes = detectColumnTypes(rows, columns);
@@ -54,6 +67,14 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
 
   const missingMatrix = buildMissingMatrix(rows, columns);
 
+  const scope: EdaScope | undefined = options?.source
+    ? {
+        source: options.source,
+        rowsAnalyzed: rows.length,
+        totalRows: options.totalRows ?? rows.length
+      }
+    : undefined;
+
   return {
     numericColumns: numericSummaries,
     categoricalColumns: categoricalSummaries,
@@ -63,7 +84,8 @@ export function buildEdaSummary(rows: QueryRow[]): EdaSummary | undefined {
     scatter,
     correlations,
     scatterPairs,
-    missingMatrix
+    missingMatrix,
+    scope
   };
 }
 

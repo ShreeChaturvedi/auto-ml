@@ -20,6 +20,12 @@ export interface QueryResultPayload {
   eda?: EdaSummary;
 }
 
+export interface EdaScope {
+  source: 'dataset-profile' | 'query-result';
+  rowsAnalyzed: number;
+  totalRows: number;
+}
+
 export interface EdaSummary {
   numericColumns: NumericSummary[];
   categoricalColumns: CategoricalSummary[];
@@ -30,6 +36,7 @@ export interface EdaSummary {
   correlations?: CorrelationSummary[];
   scatterPairs?: ScatterPairData[];
   missingMatrix?: { columns: string[]; matrix: number[][] };
+  scope?: EdaScope;
 }
 
 export interface NumericSummary {

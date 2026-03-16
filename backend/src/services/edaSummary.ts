@@ -21,4 +21,4 @@ export {
   percentile
 } from './eda/index.js';
 
-export type { ColumnType } from './eda/index.js';
+export type { BuildEdaSummaryOptions, ColumnType } from './eda/index.js';

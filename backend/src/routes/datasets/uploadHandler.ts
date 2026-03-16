@@ -9,6 +9,7 @@ import { hasDatabaseConfiguration } from '../../db.js';
 import type { DatasetRepository } from '../../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../../services/datasetLoader.js';
 import { profileDatasetRows } from '../../services/datasetProfiler.js';
+import { buildEdaSummary } from '../../services/edaSummary.js';
 
 import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './validation.js';
 
@@ -82,6 +83,12 @@ export async function processDatasetUpload(
 
   const profiling = profileDatasetRows(rows);
 
+  const rowsForEda = rows.slice(0, 5000);
+  const eda = buildEdaSummary(rowsForEda, {
+    source: 'dataset-profile',
+    totalRows: rows.length
+  });
+
   let dataset = await datasetRepository.create({
     projectId: parseResult.data.projectId,
     filename: req.file.originalname,
@@ -120,7 +127,8 @@ export async function processDatasetUpload(
         metadata: {
           ...(current.metadata ?? {}),
           tableName,
-          rowsLoaded
+          rowsLoaded,
+          eda
         }
       }));
       if (updated) {
@@ -142,7 +150,8 @@ export async function processDatasetUpload(
         metadata: {
           ...(current.metadata ?? {}),
           tableName,
-          loadWarning
+          loadWarning,
+          eda
         }
       }));
       if (updated) {
@@ -154,7 +163,8 @@ export async function processDatasetUpload(
       ...current,
       metadata: {
         ...(current.metadata ?? {}),
-        tableName
+        tableName,
+        eda
       }
     }));
     if (updated) {

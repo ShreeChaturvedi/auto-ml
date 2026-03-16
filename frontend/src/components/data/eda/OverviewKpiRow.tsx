@@ -38,7 +38,11 @@ export function OverviewKpiRow({ eda, insightCount, className }: OverviewKpiRowP
         <div className="text-2xl font-bold font-mono">
           {totalRows.toLocaleString()}
         </div>
-        <div className="text-xs text-muted-foreground mt-0.5">Rows</div>
+        <div className="text-xs text-muted-foreground mt-0.5">
+          Rows{eda.scope?.source === 'query-result' && (
+            <span className="ml-1 text-muted-foreground/70">(query)</span>
+          )}
+        </div>
       </div>
 
       {/* Columns */}

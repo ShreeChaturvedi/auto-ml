@@ -115,9 +115,19 @@ export interface ColumnStatistics {
 export type QueryMode = 'english' | 'sql';
 
 /**
+ * EDA scope — describes the origin and extent of an EDA analysis.
+ */
+export interface EdaScope {
+  source: 'dataset-profile' | 'query-result';
+  rowsAnalyzed: number;
+  totalRows: number;
+}
+
+/**
  * EDA Summary types (from backend query API)
  */
 export interface EdaSummary {
+  scope?: EdaScope;
   numericColumns: NumericColumnSummary[];
   categoricalColumns: CategoricalColumnSummary[];
   dataQuality: DataQualitySummary[];

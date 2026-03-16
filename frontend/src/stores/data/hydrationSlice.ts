@@ -3,7 +3,7 @@
  */
 
 import type { StateCreator } from 'zustand';
-import type { UploadedFile, DataPreview } from '@/types/file';
+import type { UploadedFile, DataPreview, EdaSummary } from '@/types/file';
 import { listDatasets } from '@/lib/api/datasets';
 import { listDocuments } from '@/lib/api/documents';
 import { getFileType } from '@/lib/fileUtils';
@@ -107,7 +107,8 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
           headers: dataset.columns.map(c => c.name),
           rows: dataset.sample,
           totalRows: dataset.nRows,
-          previewRows: dataset.sample.length
+          previewRows: dataset.sample.length,
+          eda: dataset.metadata?.eda as EdaSummary | undefined
         };
 
         hydratedFiles.push(file);

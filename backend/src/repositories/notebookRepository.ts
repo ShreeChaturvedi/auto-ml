@@ -28,5 +28,10 @@ export {
   // Output Storage
   saveLargeOutput,
   getOutputPath,
-  shouldStoreExternally
+  shouldStoreExternally,
+  // Savepoints
+  createSavepoint,
+  getSavepoint,
+  listSavepoints,
+  deleteSavepointsAfter
 } from './notebook/index.js';

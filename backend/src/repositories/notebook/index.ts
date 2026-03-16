@@ -36,3 +36,11 @@ export {
   getOutputPath,
   shouldStoreExternally
 } from './outputStorage.js';
+
+// Savepoints
+export {
+  createSavepoint,
+  getSavepoint,
+  listSavepoints,
+  deleteSavepointsAfter
+} from './savepointCrud.js';

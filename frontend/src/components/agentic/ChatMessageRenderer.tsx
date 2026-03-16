@@ -4,16 +4,18 @@
  * Handles common message types (user, assistant_text, thinking, tool_call, error, ui)
  * and delegates phase-specific lifecycle card rendering to the `renderLifecycleCard` prop.
  *
- * Follows the same patterns as ChatMessageList but adds lifecycle card support.
+ * Supports savepoint-based edit/revert via optional props.
  */
 
-import type { ReactNode } from 'react';
-import { Wand2 } from 'lucide-react';
-import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
-import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
+import { useMemo, type ReactNode } from 'react';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
+import { UserMessageBubble } from './UserMessageBubble';
+import { AssistantMessageBubble } from './AssistantMessageBubble';
+import { useHighlightStore } from '@/stores/highlightStore';
+import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
 import type { ChatMessage } from '@/types/llmUi';
+import type { SavepointDiff } from '@/types/savepoint';
 import { cn } from '@/lib/utils';
 
 export interface ChatMessageRendererProps {
@@ -30,6 +32,12 @@ export interface ChatMessageRendererProps {
   hydratedMessageIds?: Set<string>;
   /** Additional className for the root container */
   className?: string;
+  /** Savepoint props — all optional */
+  onEditMessage?: (messageId: string) => void;
+  onRevertToMessage?: (messageId: string) => void;
+  editingMessageId?: string | null;
+  turnDiffs?: ReadonlyMap<string, SavepointDiff>;
+  isGenerating?: boolean;
 }
 
 export function ChatMessageRenderer({
@@ -39,45 +47,76 @@ export function ChatMessageRenderer({
   activeThinkingMessageId = null,
   hydratedMessageIds,
   className,
+  onEditMessage,
+  onRevertToMessage,
+  editingMessageId,
+  turnDiffs,
+  isGenerating,
 }: ChatMessageRendererProps) {
+  // Find the index of the editing message for dimming
+  const editingIndex = useMemo(() => {
+    if (!editingMessageId) return -1;
+    const idx = messages.findIndex(m => m.id === editingMessageId);
+    // Only dim after user messages — guard against non-user editingMessageId
+    if (idx >= 0 && messages[idx]?.type !== 'user') return -1;
+    return idx;
+  }, [editingMessageId, messages]);
+
+  const setHighlightedCells = useHighlightStore(s => s.setHighlightedCells);
+  const clearHighlights = useHighlightStore(s => s.clearHighlights);
+
   return (
     <div className={cn('space-y-3', className)}>
-      {messages.map((msg) => {
+      {messages.map((msg, idx) => {
+        const isDimmed = editingIndex >= 0 && idx > editingIndex;
+
         // ── user ──────────────────────────────────────────────────────────
         if (msg.type === 'user') {
           return (
-            <div key={msg.id} className="flex flex-col items-end group">
-              <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
-                {msg.content}
-              </div>
-            </div>
+            <UserMessageBubble
+              key={msg.id}
+              message={msg as ChatMessage & { type: 'user' }}
+              isEditing={editingMessageId === msg.id}
+              isDimmed={isDimmed}
+              onEdit={onEditMessage ? () => onEditMessage(msg.id) : undefined}
+              onRevert={onRevertToMessage ? () => onRevertToMessage(msg.id) : undefined}
+              isGenerating={isGenerating}
+            />
           );
         }
 
         // ── assistant_text ───────────────────────────────────────────────
         if (msg.type === 'assistant_text') {
-          const cleaned = sanitizeAssistantText(msg.content);
-          if (!cleaned) return null;
-
           const isLive = activeTextMessageId === msg.id;
           const animateOnMount = hydratedMessageIds
             ? !hydratedMessageIds.has(msg.id)
             : undefined;
+          const diff = turnDiffs?.get(msg.id) ?? null;
 
           return (
-            <div key={msg.id} className="flex items-start gap-3 w-full">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
-                <Wand2 className="h-3 w-3 text-emerald-600" />
-              </div>
-              <ProgressiveMessageText
-                messageId={msg.id}
-                text={cleaned}
-                isLive={isLive}
-                mode="markdown"
-                animateOnMount={animateOnMount}
-                className="llm-assistant-markdown prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
-              />
-            </div>
+            <AssistantMessageBubble
+              key={msg.id}
+              message={msg as ChatMessage & { type: 'assistant_text' }}
+              isLive={isLive}
+              animateOnMount={animateOnMount}
+              isDimmed={isDimmed}
+              diff={diff}
+              onDiffHover={(hovering) => {
+                if (hovering && diff?.details) {
+                  setHighlightedCells(diff.details.map(d => d.cellId));
+                } else {
+                  clearHighlights();
+                }
+              }}
+              onDiffClick={() => {
+                if (!onRevertToMessage) return;
+                const turns = groupMessagesByTurn(messages);
+                const turnIdx = getTurnIndex(messages, msg.id);
+                const turn = turns.find(t => t.turnIndex === turnIdx);
+                if (turn) onRevertToMessage(turn.userMessage.id);
+              }}
+              isGenerating={isGenerating}
+            />
           );
         }
 
@@ -87,14 +126,15 @@ export function ChatMessageRenderer({
             ? !hydratedMessageIds.has(msg.id)
             : undefined;
           return (
-            <ThinkingBlock
-              key={msg.id}
-              messageId={msg.id}
-              content={msg.content}
-              isComplete={msg.isComplete}
-              isLive={activeThinkingMessageId === msg.id}
-              animateOnMount={animateOnMount}
-            />
+            <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>
+              <ThinkingBlock
+                messageId={msg.id}
+                content={msg.content}
+                isComplete={msg.isComplete}
+                isLive={activeThinkingMessageId === msg.id}
+                animateOnMount={animateOnMount}
+              />
+            </div>
           );
         }
 
@@ -103,18 +143,19 @@ export function ChatMessageRenderer({
           // Try lifecycle card rendering first
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
-            return <div key={msg.id}>{lifecycleCard}</div>;
+            return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
           }
 
           // Fallback to standard ToolIndicator
           return (
-            <ToolIndicator
-              key={msg.id}
-              toolCalls={[msg.call]}
-              results={msg.result ? [msg.result] : []}
-              isRunning={!msg.result}
-              autoExpandPreviewTools
-            />
+            <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>
+              <ToolIndicator
+                toolCalls={[msg.call]}
+                results={msg.result ? [msg.result] : []}
+                isRunning={!msg.result}
+                autoExpandPreviewTools
+              />
+            </div>
           );
         }
 
@@ -123,7 +164,10 @@ export function ChatMessageRenderer({
           return (
             <div
               key={msg.id}
-              className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              className={cn(
+                'rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive',
+                isDimmed && 'opacity-40'
+              )}
             >
               {msg.message}
             </div>
@@ -135,7 +179,7 @@ export function ChatMessageRenderer({
           // Lifecycle card hook may handle some ui messages
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
-            return <div key={msg.id}>{lifecycleCard}</div>;
+            return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
           }
           return null;
         }
@@ -144,7 +188,7 @@ export function ChatMessageRenderer({
         // Delegate to lifecycle card renderer for phase-specific handling
         const extra = renderLifecycleCard?.(msg);
         if (extra != null) {
-          return <div key={msg.id}>{extra}</div>;
+          return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{extra}</div>;
         }
 
         return null;

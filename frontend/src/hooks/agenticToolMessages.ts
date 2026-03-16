@@ -36,3 +36,24 @@ export function applyBackendToolExecution(
     domainAdapter.onWorkflowStateUpdate?.(nextState);
   }
 }
+
+/**
+ * Rebuild tool history from a set of messages.
+ * Used after reverting to reconstruct the tool call/result history.
+ */
+export function rebuildToolHistoryFromMessages(
+  messages: ChatMessage[],
+  toolHistoryRef: React.MutableRefObject<{ calls: ToolCall[]; results: ToolResult[] }>
+): void {
+  const calls: ToolCall[] = [];
+  const results: ToolResult[] = [];
+
+  for (const msg of messages) {
+    if (msg.type === 'tool_call') {
+      calls.push(msg.call);
+      if (msg.result) results.push(msg.result);
+    }
+  }
+
+  toolHistoryRef.current = { calls, results };
+}

@@ -699,6 +699,8 @@
 }
 .voice-char-enter { animation: voice-char-in 180ms ease-out both; }
 
+
+
 @media (prefers-reduced-motion: reduce) {
   .sql-word-enter {
     animation: none;

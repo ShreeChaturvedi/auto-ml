@@ -30,6 +30,7 @@ import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
 import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
+import { useHighlightStore } from '@/stores/highlightStore';
 
 const Editor = lazy(() =>
   import('@monaco-editor/react').then((module) => ({
@@ -65,6 +66,7 @@ export function NotebookCellComponent({
   onRun,
   onInterrupt
 }: NotebookCellComponentProps) {
+  const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
   const [showOutput, setShowOutput] = useState(true);
 
   const completionOptions = useMemo(
@@ -159,7 +161,8 @@ export function NotebookCellComponent({
         'group overflow-hidden rounded-lg border bg-card transition-colors duration-150',
         isRunning && 'border-l-2 border-l-primary',
         cell.executionStatus === 'error' && 'border-l-2 border-l-destructive',
-        isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20'
+        isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20',
+        isHighlighted && 'ring-2 ring-emerald-400/60 transition-shadow duration-200'
       )}
     >
       <TooltipProvider>

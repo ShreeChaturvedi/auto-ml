@@ -14,6 +14,7 @@ import {
 
 import { createCellRoutes } from './notebooks/cellRoutes.js';
 import { createNotebookRoutes } from './notebooks/notebookRoutes.js';
+import { createSavepointRoutes } from './notebooks/savepointRoutes.js';
 
 const router = Router();
 
@@ -239,5 +240,6 @@ router.use(requireDatabase);
 // Mount notebook CRUD and cell routes (all require database)
 router.use(createNotebookRoutes());
 router.use(createCellRoutes());
+router.use(createSavepointRoutes());
 
 export default router;

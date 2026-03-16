@@ -5,8 +5,9 @@ import { markAllThinkingMessagesComplete } from '@/lib/llm/streamMessageUtils';
 import { useLlmStreamState } from '@/hooks/useLlmStreamState';
 import { createAgenticEventHandler } from '@/hooks/agenticLoopEvents';
 import { hydrateStoredMessages, persistStoredMessages } from '@/hooks/agenticLoopStorage';
-import { applyBackendToolExecution } from '@/hooks/agenticToolMessages';
+import { applyBackendToolExecution, rebuildToolHistoryFromMessages } from '@/hooks/agenticToolMessages';
 import { useToolExecution } from '@/hooks/useToolExecution';
+import { getMessagesUpToTurn, getTurnIndex } from '@/lib/llm/turnUtils';
 import type { WorkflowState } from '@/types/workflow';
 export interface UseAgenticLoopOptions {
   projectId?: string;
@@ -38,10 +39,12 @@ export function useAgenticLoop({
 
   const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
   const [uiSchema, setUiSchema] = useState<UiSchema | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
   const activeRequestIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const skipPersistOnceRef = useRef(false);
+  const savepointsRef = useRef<Record<number, string>>({});
 
   const { toolHistoryRef, resetToolHistory } = useToolExecution();
 
@@ -64,6 +67,7 @@ export function useAgenticLoop({
     const hydrated = hydrateStoredMessages(messageStorageScope);
     setMessages(hydrated.messages);
     setHydratedMessageIds(hydrated.hydratedMessageIds);
+    savepointsRef.current = hydrated.savepoints;
   }, [messageStorageScope, sessionVersion, resetStreamRefs, resetToolHistory, setIsStreaming, setError, setMessages]);
 
   useEffect(() => {
@@ -72,7 +76,7 @@ export function useAgenticLoop({
       skipPersistOnceRef.current = false;
       return;
     }
-    persistStoredMessages(messageStorageScope, messages);
+    persistStoredMessages(messageStorageScope, messages, savepointsRef.current);
   }, [messageStorageScope, messages]);
 
   const handleStop = useCallback(() => {
@@ -117,7 +121,8 @@ export function useAgenticLoop({
     prompt: string,
     requestOptions: BuildRequestOptions,
     toolResultsOverride?: import('@/types/llmUi').ToolResult[],
-    toolCallsOverride?: ToolCall[]
+    toolCallsOverride?: ToolCall[],
+    userMessageId?: string
   ) => {
     if (domainLockReason) {
       setError(domainLockReason);
@@ -141,7 +146,7 @@ export function useAgenticLoop({
 
       if (prompt.trim()) {
         const userChatMessage: ChatMessage = {
-          id: `user-${Date.now()}`,
+          id: userMessageId ?? `user-${Date.now()}`,
           type: 'user',
           content: prompt,
           timestamp: Date.now()
@@ -222,6 +227,86 @@ export function useAgenticLoop({
     });
   }, [setMessages]);
 
+  /**
+   * Revert to a specific turn index.
+   * Reconciles all 7 state layers: abort, messages, tool history,
+   * workflow session, domain adapter, UI schema, and stream refs.
+   */
+  const revertToTurn = useCallback((turnIndex: number) => {
+    // 1. Abort in-flight stream
+    if (isStreaming) {
+      handleStop();
+    }
+
+    // 2. Prune savepoints FIRST (before any persist call reads the ref)
+    const prunedSavepoints: Record<number, string> = {};
+    for (const [k, v] of Object.entries(savepointsRef.current)) {
+      if (Number(k) < turnIndex) prunedSavepoints[Number(k)] = v;
+    }
+    savepointsRef.current = prunedSavepoints;
+
+    // 3. Slice messages to before this turn (keeps turns 0..turnIndex-1)
+    const slicedMessages = getMessagesUpToTurn(messages, turnIndex);
+
+    if (slicedMessages.length === 0) {
+      // Reverting before first turn — clear everything
+      skipPersistOnceRef.current = true;
+      setMessages([]);
+      if (messageStorageScope) {
+        persistStoredMessages(messageStorageScope, [], prunedSavepoints);
+      }
+    } else {
+      setMessages(slicedMessages);
+    }
+
+    // 4. Rebuild tool history from remaining messages
+    resetToolHistory();
+    if (slicedMessages.length > 0) {
+      rebuildToolHistoryFromMessages(slicedMessages, toolHistoryRef);
+    }
+
+    // 5. Domain-specific cleanup (adapters clear their own workflow sessions)
+    domainAdapter.onRevert?.(turnIndex);
+
+    // 6. Reset UI schema to last ui message in sliced set
+    const lastUi = [...slicedMessages].reverse().find(m => m.type === 'ui');
+    setUiSchema(lastUi?.type === 'ui' ? lastUi.schema : null);
+
+    // 7. Reset stream refs + hydrated IDs
+    resetStreamRefs();
+    setHydratedMessageIds(new Set(slicedMessages.map(m => m.id)));
+    setEditingMessageId(null);
+    setError(null);
+  }, [
+    isStreaming, handleStop, messages, messageStorageScope,
+    setMessages, resetToolHistory, toolHistoryRef,
+    domainAdapter, resetStreamRefs, setError
+  ]);
+
+  /**
+   * Edit a previous message and resend.
+   * Truncates conversation from the edited message's turn, then starts a new run.
+   */
+  const editAndResend = useCallback((
+    messageId: string,
+    newContent: string,
+    requestOptions: BuildRequestOptions
+  ) => {
+    const turnIdx = getTurnIndex(messages, messageId);
+    if (turnIdx === -1) return;
+
+    revertToTurn(turnIdx);
+    setEditingMessageId(null);
+
+    // Start fresh run with edited content
+    void runLoop(newContent, requestOptions);
+  }, [messages, revertToTurn, runLoop]);
+
+  /** Register a savepoint ID for a turn index (called externally by useSavepoints). */
+  const registerSavepoint = useCallback((turnIndex: number, savepointId: string) => {
+    savepointsRef.current = { ...savepointsRef.current, [turnIndex]: savepointId };
+  }, []);
+
   return {
     messages,
     setMessages,
@@ -235,6 +320,11 @@ export function useAgenticLoop({
     runLoop,
     handleStop,
     clearMessages,
-    editMessage
+    editMessage,
+    revertToTurn,
+    editAndResend,
+    editingMessageId,
+    setEditingMessageId,
+    registerSavepoint
   };
 }

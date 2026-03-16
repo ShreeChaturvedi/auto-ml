@@ -46,6 +46,7 @@ interface FeatureState {
   setFeatureStep: (stepId: string, step: FeatureLifecycleStep) => void;
   setCurrentStage: (stage: string | null) => void;
   setFeatureRunId: (runId: string | null) => void;
+  clearDraft: () => void;
 
   // FE v2 actions
   createDraftVersion: (projectId: string, name?: string) => PipelineVersion;
@@ -78,6 +79,14 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
   setFeatureRunId(runId) {
     if (get().featureRunId === runId) return;
     set({ featureRunId: runId });
+  },
+
+  clearDraft() {
+    set({
+      featureRunId: null,
+      currentStage: null,
+      featureSteps: {}
+    });
   },
 
   hydrateFromProject(projectId, options) {

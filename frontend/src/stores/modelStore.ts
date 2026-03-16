@@ -29,6 +29,7 @@ interface ModelState {
   updateExperiment: (experimentId: string, state: Partial<ExperimentState>) => void;
   setCurrentStage: (stage: string | null) => void;
   setTrainingRunId: (runId: string | null) => void;
+  clearTrainingRun: () => void;
 }
 
 export const useModelStore = create<ModelState>((set, get) => ({
@@ -109,5 +110,15 @@ export const useModelStore = create<ModelState>((set, get) => ({
   setTrainingRunId: (runId) => {
     if (get().trainingRunId === runId) return;
     set({ trainingRunId: runId });
+  },
+
+  clearTrainingRun: () => {
+    set({
+      trainingRunId: null,
+      currentStage: null,
+      experiments: {},
+      isTraining: false,
+      error: null
+    });
   }
 }));

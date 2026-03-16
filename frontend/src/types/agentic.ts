@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { ChatMessage, ToolCall, ToolResult } from './llmUi';
+import type { SavepointDiff } from './savepoint';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
 import type { PreprocessingControllerSummary } from './preprocessing';
 import type {
@@ -49,9 +50,25 @@ export interface DomainAdapter {
   onWorkflowArtifactUpdate?: (artifact: WorkflowArtifact, state?: WorkflowState) => void;
   resolveToolExecutionRequest?: (toolCalls: ToolCall[]) => ToolExecutionRequest;
   preserveToolHistoryBetweenPrompts?: boolean;
+  onRevert?: (turnIndex: number) => void;
 
   toolRegistry: Record<string, ToolHandlers>;
   toolUiRegistry: Record<string, ComponentType<{ call: ToolCall; result?: ToolResult }>>;
 
   suggestionProvider: (messages: ChatMessage[], isGenerating: boolean) => SuggestionPill[];
 }
+
+/** Props passed to the left-pane render callback in AgenticShell. */
+export interface LeftPaneRenderProps {
+  messages: ChatMessage[];
+  isGenerating: boolean;
+  error: string | null;
+  activeTextMessageId: string | null;
+  activeThinkingMessageId: string | null;
+  hydratedMessageIds: Set<string>;
+  // Savepoint props (all optional — phases that don't render revert need zero changes)
+  onEditMessage?: (messageId: string) => void;
+  onRevertToMessage?: (messageId: string) => void;
+  editingMessageId?: string | null;
+  turnDiffs?: ReadonlyMap<string, SavepointDiff>;
+};

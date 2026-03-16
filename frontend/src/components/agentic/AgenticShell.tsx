@@ -8,7 +8,7 @@
  * single ribbon split by the resizable divider.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -20,23 +20,16 @@ import { NotebookEditor } from '@/components/notebook/NotebookEditor';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import { AgenticStepDisplay } from './AgenticStepDisplay';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
+import { useSavepoints } from '@/hooks/useSavepoints';
 import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { useComposerVoiceInput } from '@/hooks/useComposerVoiceInput';
-import type { DomainAdapter } from '@/types/agentic';
-import type { ChatMessage } from '@/types/llmUi';
+import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
+import type { DomainAdapter, LeftPaneRenderProps } from '@/types/agentic';
+import type { SavepointDiff } from '@/types/savepoint';
 import { useModelSelection } from '@/hooks/useModelSelection';
-
-type LeftPaneRenderProps = {
-  messages: ChatMessage[];
-  isGenerating: boolean;
-  error: string | null;
-  activeTextMessageId: string | null;
-  activeThinkingMessageId: string | null;
-  hydratedMessageIds: Set<string>;
-};
 
 interface AgenticShellProps {
   projectId: string;
@@ -126,6 +119,8 @@ export function AgenticShell({
     return () => disconnectNotebook();
   }, [projectId, initializeNotebook, disconnectNotebook]);
 
+  const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
+
   const {
     messages,
     isGenerating,
@@ -135,7 +130,12 @@ export function AgenticShell({
     activeThinkingMessageId,
     hydratedMessageIds,
     runLoop,
-    handleStop
+    handleStop,
+    revertToTurn,
+    editAndResend,
+    editingMessageId,
+    setEditingMessageId,
+    registerSavepoint
   } = useAgenticLoop({
     projectId,
     storageKey,
@@ -143,6 +143,68 @@ export function AgenticShell({
     domainAdapter,
     domainLockReason
   });
+
+  const savepoints = useSavepoints();
+
+  // Pre-fill composer when editing a message; exit edit mode if message was removed
+  useEffect(() => {
+    if (!editingMessageId) return;
+    const msg = messages.find(m => m.id === editingMessageId);
+    if (msg?.type === 'user') {
+      setChatInput(msg.content);
+    } else {
+      setEditingMessageId(null);
+      setChatInput('');
+    }
+  }, [editingMessageId, messages, setEditingMessageId]);
+
+  const handleEditMessage = useCallback((messageId: string) => {
+    setEditingMessageId(messageId);
+  }, [setEditingMessageId]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setChatInput('');
+  }, [setEditingMessageId]);
+
+  const { clearAfter: savepointsClearAfter, getDiff: savepointsGetDiff } = savepoints;
+
+  const handleRevertToMessage = useCallback((messageId: string) => {
+    const turnIdx = getTurnIndex(messages, messageId);
+    if (turnIdx === -1) return;
+    revertToTurn(turnIdx);
+    if (activeNotebookId) {
+      void savepointsClearAfter(activeNotebookId, turnIdx);
+    }
+  }, [messages, revertToTurn, activeNotebookId, savepointsClearAfter]);
+
+  // Fetch turn diffs only after streaming completes (not during token-by-token updates)
+  const [turnDiffs, setTurnDiffs] = useState<ReadonlyMap<string, SavepointDiff>>(new Map());
+  useEffect(() => {
+    if (!activeNotebookId || isGenerating) return;
+    const turns = groupMessagesByTurn(messages);
+    if (turns.length === 0) return;
+    let cancelled = false;
+
+    const fetchDiffs = async () => {
+      const entries = await Promise.all(
+        turns.map(async (turn) => {
+          const diff = await savepointsGetDiff(activeNotebookId, turn.turnIndex);
+          const lastResponse = turn.responses[turn.responses.length - 1];
+          return diff && lastResponse ? [lastResponse.id, diff] as const : null;
+        })
+      );
+      if (cancelled) return;
+      const newDiffs = new Map<string, SavepointDiff>();
+      for (const entry of entries) {
+        if (entry) newDiffs.set(entry[0], entry[1]);
+      }
+      setTurnDiffs(newDiffs);
+    };
+
+    void fetchDiffs();
+    return () => { cancelled = true; };
+  }, [activeNotebookId, isGenerating, messages, savepointsGetDiff]);
 
   const {
     state: voiceState,
@@ -178,6 +240,18 @@ export function AgenticShell({
     const trimmed = prompt.trim();
     if (!trimmed || !projectId || isGenerating || domainLockReason) return;
 
+    // If editing, do editAndResend instead
+    if (editingMessageId) {
+      setEditingMessageId(null);
+      editAndResend(editingMessageId, trimmed, {
+        model: assistantModel,
+        reasoningEffort
+      });
+      setChatInput('');
+      mention.dismiss();
+      return;
+    }
+
     // Capture mentions before clearing input
     const currentMentions = mention.resolvedMentions;
 
@@ -202,37 +276,44 @@ export function AgenticShell({
         return;
       }
 
+      // Create savepoint in background (fire-and-forget to avoid blocking UX)
+      const turnIndex = messages.filter(m => m.type === 'user').length;
+      const userMsgId = `user-${Date.now()}`;
+      if (activeNotebookId) {
+        void savepoints.createSavepoint(activeNotebookId, turnIndex, userMsgId).then(sp => {
+          if (sp) registerSavepoint(turnIndex, sp.savepointId);
+        });
+      }
+
+      // Show message immediately — don't wait for savepoint API
+      setChatInput('');
+      mention.dismiss();
       void runLoop(preparedPrompt, {
         model: assistantModel,
         reasoningEffort
-      });
-      setChatInput('');
-      mention.dismiss();
+      }, undefined, undefined, userMsgId);
     };
 
     void startRun();
   };
 
+  const leftPaneRenderProps: LeftPaneRenderProps = {
+    messages,
+    isGenerating,
+    error,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds,
+    onEditMessage: handleEditMessage,
+    onRevertToMessage: handleRevertToMessage,
+    editingMessageId,
+    turnDiffs
+  };
+
   const leftPaneContent = renderLeftPane
-    ? renderLeftPane({
-      messages,
-      isGenerating,
-      error,
-      activeTextMessageId,
-      activeThinkingMessageId,
-      hydratedMessageIds
-    })
+    ? renderLeftPane(leftPaneRenderProps)
     : LeftPaneComponent
-      ? (
-        <LeftPaneComponent
-          messages={messages}
-          isGenerating={isGenerating}
-          error={error}
-          activeTextMessageId={activeTextMessageId}
-          activeThinkingMessageId={activeThinkingMessageId}
-          hydratedMessageIds={hydratedMessageIds}
-        />
-      )
+      ? <LeftPaneComponent {...leftPaneRenderProps} />
       : null;
 
   return (
@@ -293,6 +374,8 @@ export function AgenticShell({
               sessionUsages={sessionUsages}
               handleStop={handleStop}
               chatMetaSlot={chatMetaSlot}
+              editingMessageId={editingMessageId}
+              onCancelEdit={handleCancelEdit}
             />
           </div>
         </ResizablePanel>

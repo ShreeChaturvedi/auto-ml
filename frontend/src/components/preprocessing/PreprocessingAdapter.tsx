@@ -112,6 +112,10 @@ export function createPreprocessingAdapter(
       usePreprocessingStore.getState().setControllerSummary(summary);
     },
     onWorkflowStateUpdate: syncWorkflowState,
+    onRevert: () => {
+      usePreprocessingStore.getState().clearRun();
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+    },
     preserveToolHistoryBetweenPrompts: true,
     toolRegistry,
 

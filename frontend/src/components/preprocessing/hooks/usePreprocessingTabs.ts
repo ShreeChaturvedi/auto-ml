@@ -12,8 +12,6 @@ import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { useTabPersistence } from './useTabPersistence';
 import { useTabNotebookSync } from './useTabNotebookSync';
 
-/** @deprecated Use PreprocessingWorkbook */
-export type PreprocessingTab = PreprocessingWorkbook;
 export type { PreprocessingWorkbook, PreprocessingTabSnapshot };
 
 interface UsePreprocessingTabsOptions {

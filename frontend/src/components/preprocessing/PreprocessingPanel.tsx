@@ -17,12 +17,13 @@ import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
-import { DEFAULT_TAB_ID } from './preprocessingTabUtils';
+import { DEFAULT_WORKBOOK_ID } from './preprocessingTabUtils';
+import { getWorkbookParam } from '@/lib/workbookParam';
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
   const [searchParams] = useSearchParams();
-  const initialTabIdRef = useRef(searchParams.get('tab') ?? undefined);
+  const initialTabIdRef = useRef(getWorkbookParam(searchParams));
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
   const tables = usePreprocessingStore((state) => state.tables);
   const selectedDatasetId = usePreprocessingStore((state) => state.selectedDatasetId);
@@ -149,7 +150,7 @@ export function PreprocessingPanel() {
   };
 
   const handleDatasetSelect = (datasetId: string) => {
-    const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID);
+    const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID);
     if (projectId) {
       useWorkflowSessionStore.getState().clearSession(buildWorkflowSessionKey(projectId, storageKey));
     }
@@ -160,7 +161,7 @@ export function PreprocessingPanel() {
   const renderLifecycleCard = useLifecycleCards();
 
   const domainAdapter = useMemo(() => {
-    const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID);
+    const storageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID);
     return createPreprocessingAdapter(
       projectId ?? '',
       selectedDatasetId,
@@ -175,7 +176,7 @@ export function PreprocessingPanel() {
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
         beforeSubmit={requestDatasetContinuityChoice}
-        storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_TAB_ID)}
+        storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}
         toolbarLeft={
           <PreprocessingToolbarLeft

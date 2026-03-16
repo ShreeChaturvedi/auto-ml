@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   MoreVertical,
   Download,
@@ -7,7 +7,6 @@ import {
   ClipboardList,
   Plus
 } from 'lucide-react';
-import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,15 +14,11 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { CollapsibleSection } from '@/components/ui/collapsible-section';
-import { useDataStore } from '@/stores/dataStore';
-import { useProjectStore } from '@/stores/projectStore';
-import { phaseConfig } from '@/types/phase';
-import { projectColorClasses } from '@/types/project';
-import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
-import { deleteDocument, downloadDocument } from '@/lib/api/documents';
+import { useFileActions } from '@/hooks/useFileActions';
+import { useProjectPlans } from '@/hooks/useProjectPlans';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
-import { resolveFileIcon, DATA_FILE_TYPES } from '@/lib/fileUtils';
+import { resolveFileIcon } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
 
 interface FileExplorerProps {
@@ -137,145 +132,12 @@ function PlanItem({ name, isActive, themeColorClass, onOpen }: PlanItemProps) {
 }
 
 export function FileExplorer({ projectId }: FileExplorerProps) {
-  const navigate = useNavigate();
   const location = useLocation();
-  const files = useDataStore((state) => state.files);
-  const activeFileTabId = useDataStore((state) => state.activeFileTabId);
-  const openFileTab = useDataStore((state) => state.openFileTab);
-  const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
-  const removeFile = useDataStore((state) => state.removeFile);
+  const { dataFiles, contextFiles, activeFileTabId, isOnDataViewer, handleOpenFile, handleDeleteFile, handleDownloadFile } = useFileActions(projectId);
+  const { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan } = useProjectPlans(projectId);
+  const { themeColorClass } = useProjectThemeColor(projectId);
 
-  const updateProject = useProjectStore((state) => state.updateProject);
-  const isDataViewerUnlocked = useProjectStore((state) =>
-    state.isPhaseUnlocked(projectId, 'data-viewer')
-  );
-  const project = useProjectStore((state) =>
-    state.projects.find((p) => p.id === projectId)
-  );
-
-  useEffect(() => {
-    if (projectId) {
-      void hydrateFromBackend(projectId);
-    }
-  }, [projectId, hydrateFromBackend]);
-
-  const projectFiles = useMemo(
-    () => files.filter((file) => file.projectId === projectId),
-    [files, projectId]
-  );
-
-  const dataFiles = useMemo(
-    () => projectFiles.filter((file) => DATA_FILE_TYPES.has(file.type)),
-    [projectFiles]
-  );
-
-  const contextFiles = useMemo(
-    () => projectFiles.filter((file) => !DATA_FILE_TYPES.has(file.type)),
-    [projectFiles]
-  );
-
-  const metadata = useMemo(() => (project?.metadata ?? {}) as Record<string, unknown>, [project?.metadata]);
-  const activePlanId = metadata.activePlanId as string | undefined;
-
-  const plans = useMemo(() => {
-    const plansArray = Array.isArray(metadata.plans) ? metadata.plans as { id: string, name: string, content: string }[] : [];
-    
-    // Legacy support
-    const legacyPlanName = metadata.projectPlanName as string | undefined;
-    const legacyPlanContent = metadata.projectPlan as string | undefined;
-    
-    if (plansArray.length === 0 && legacyPlanName && legacyPlanContent) {
-      return [{ id: `plan-${legacyPlanName}`, name: legacyPlanName, content: legacyPlanContent }];
-    }
-    return plansArray;
-  }, [metadata]);
-  const selectedPlanId = activePlanId ?? plans[0]?.id;
-  const isOnDataViewer = location.pathname.endsWith('/data-viewer');
   const isOnUpload = location.pathname.endsWith('/upload');
-  const themeColorClass = project ? projectColorClasses[project.color]?.text ?? '' : '';
-  const currentPhase = project?.currentPhase;
-  const currentPhaseConfig = currentPhase ? phaseConfig[currentPhase] : undefined;
-  const currentPhaseLabel = currentPhaseConfig?.label ?? 'the current step';
-
-  const handleOpenFile = useCallback((fileId: string) => {
-    if (!isDataViewerUnlocked) {
-      const description = currentPhase === 'upload'
-        ? 'Finish the Data Upload workflow to unlock Explorer.'
-        : `Complete ${currentPhaseLabel} to unlock Explorer.`;
-      toast.info('Explorer is still locked', { description });
-      return;
-    }
-
-    openFileTab(fileId);
-    navigate(`/project/${projectId}/data-viewer`);
-  }, [currentPhase, currentPhaseLabel, isDataViewerUnlocked, openFileTab, navigate, projectId]);
-
-  const handleOpenPlan = useCallback((planId: string) => {
-    const selectedPlan = plans.find((plan) => plan.id === planId);
-
-    void updateProject(projectId, {
-      metadata: {
-        ...metadata,
-        activePlanId: planId,
-        projectPlanName: selectedPlan?.name,
-        projectPlan: selectedPlan?.content,
-        uploadStage: 'upload',
-      }
-    });
-    navigate(`/project/${projectId}/upload`);
-  }, [projectId, updateProject, metadata, navigate, plans]);
-
-  const handleCreateNewPlan = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    navigate(`/project/${projectId}/upload?newPlan=1`);
-  }, [projectId, navigate]);
-
-  const handleDeleteFile = useCallback(async (file: UploadedFile) => {
-    try {
-      const datasetId = file.metadata?.datasetId;
-      const documentId = file.metadata?.documentId;
-
-      if (datasetId) {
-        await deleteDataset(datasetId);
-      } else if (documentId) {
-        await deleteDocument(documentId);
-      }
-
-      removeFile(file.id);
-    } catch (error) {
-      console.error('Failed to delete file:', error);
-    }
-  }, [removeFile]);
-
-  const handleDownloadFile = useCallback(async (file: UploadedFile) => {
-    try {
-      const datasetId = file.metadata?.datasetId;
-      const documentId = file.metadata?.documentId;
-      let blob: Blob;
-
-      if (datasetId) {
-        const buffer = await downloadDataset(datasetId);
-        blob = new Blob([buffer]);
-      } else if (documentId) {
-        blob = await downloadDocument(documentId);
-      } else {
-        console.error('No dataset or document ID found');
-        return;
-      }
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to download file:', error);
-    }
-  }, []);
 
   const renderFileList = (fileList: UploadedFile[], emptyMessage: string) => {
     if (fileList.length === 0) {
@@ -304,28 +166,29 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
 
   return (
     <div className="space-y-4">
-      <CollapsibleSection title="Data Files">
+      <section>
+        <h2 className="px-2 py-1 text-workflow-label font-semibold text-muted-foreground uppercase tracking-wider">Data Files</h2>
         {renderFileList(dataFiles, 'No datasets yet.')}
-      </CollapsibleSection>
+      </section>
 
-      <CollapsibleSection title="Context Files">
+      <section>
+        <h2 className="px-2 py-1 text-workflow-label font-semibold text-muted-foreground uppercase tracking-wider">Context Files</h2>
         {renderFileList(contextFiles, 'No context docs yet.')}
-      </CollapsibleSection>
+      </section>
 
-      <CollapsibleSection 
-        title="Plans" 
-        action={
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-6 w-6 hover:bg-muted" 
+      <section>
+        <div className="flex items-center gap-1 px-2 py-1">
+          <h2 className="flex-1 text-workflow-label font-semibold text-muted-foreground uppercase tracking-wider">Plans</h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 hover:bg-muted"
             onClick={handleCreateNewPlan}
             title="Create new plan"
           >
             <Plus className="h-3.5 w-3.5 text-muted-foreground" />
           </Button>
-        }
-      >
+        </div>
         {plans.length > 0 ? (
           <div className="space-y-0.5">
             {plans.map((plan) => (
@@ -333,7 +196,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
                 key={plan.id}
                 name={plan.name}
                 isActive={isOnUpload && plan.id === selectedPlanId}
-                themeColorClass={themeColorClass}
+                themeColorClass={themeColorClass ?? ''}
                 onOpen={() => handleOpenPlan(plan.id)}
               />
             ))}
@@ -343,7 +206,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
             Create a plan
           </div>
         )}
-      </CollapsibleSection>
+      </section>
     </div>
   );
 }

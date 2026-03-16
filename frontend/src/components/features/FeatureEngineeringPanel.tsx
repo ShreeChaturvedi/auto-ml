@@ -20,6 +20,7 @@ import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
 import { useNotebookStore } from '@/stores/notebookStore';
 
 import { cn } from '@/lib/utils';
+import { getWorkbookParam } from '@/lib/workbookParam';
 
 import { Beaker } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,7 +33,7 @@ interface FeatureEngineeringPanelProps {
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const [searchParams] = useSearchParams();
-  const initialVersionId = searchParams.get('tab') ?? undefined;
+  const initialVersionId = getWorkbookParam(searchParams);
   const initialNotebookId = searchParams.get('notebook') ?? undefined;
 
   const {

@@ -3,8 +3,6 @@ import type { ReplayCompatibilityReport } from '@/stores/preprocessingStore';
 import type { StepCellBinding, TransformationEvent } from '@/types/preprocessing';
 
 export const DEFAULT_WORKBOOK_ID = 'processing-tab-1';
-/** @deprecated Use DEFAULT_WORKBOOK_ID */
-export const DEFAULT_TAB_ID = DEFAULT_WORKBOOK_ID;
 
 export interface PreprocessingTabSnapshot {
   selectedDatasetId: string | null;
@@ -23,9 +21,6 @@ export interface PreprocessingWorkbook {
   storageVersion: number;
 }
 
-/** @deprecated Use PreprocessingWorkbook */
-export type PreprocessingTab = PreprocessingWorkbook;
-
 export function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
   return {
     selectedDatasetId: null,
@@ -39,8 +34,6 @@ export function createEmptyTabSnapshot(): PreprocessingTabSnapshot {
 export function createWorkbookId(): string {
   return `proc-${Math.random().toString(36).slice(2, 10)}`;
 }
-/** @deprecated Use createWorkbookId */
-export const createTabId = createWorkbookId;
 
 export function createDefaultWorkbook(): PreprocessingWorkbook {
   return {
@@ -51,8 +44,6 @@ export function createDefaultWorkbook(): PreprocessingWorkbook {
     storageVersion: 0
   };
 }
-/** @deprecated Use createDefaultWorkbook */
-export const createDefaultTab = createDefaultWorkbook;
 
 export function parseWorkbookIndex(name: string): number | null {
   // Accept both "Processing N" (legacy) and "Workbook N"
@@ -63,10 +54,8 @@ export function parseWorkbookIndex(name: string): number | null {
   const value = Number.parseInt(match[1], 10);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
-/** @deprecated Use parseWorkbookIndex */
-export const parseProcessingIndex = parseWorkbookIndex;
 
-export function nextWorkbookName(workbooks: PreprocessingWorkbook[]): string {
+export function nextWorkbookName(workbooks: Pick<PreprocessingWorkbook, 'name'>[]): string {
   const used = new Set<number>();
   workbooks.forEach((wb) => {
     const index = parseWorkbookIndex(wb.name);
@@ -80,10 +69,8 @@ export function nextWorkbookName(workbooks: PreprocessingWorkbook[]): string {
   }
   return `Workbook ${candidate}`;
 }
-/** @deprecated Use nextWorkbookName */
-export const nextProcessingTabName = nextWorkbookName;
 
-export function normalizeWorkbookNames(workbooks: PreprocessingWorkbook[]): PreprocessingWorkbook[] {
+export function normalizeWorkbookNames<T extends Pick<PreprocessingWorkbook, 'name'>>(workbooks: T[]): T[] {
   const used = new Set<number>();
   return workbooks.map((wb) => {
     const parsed = parseWorkbookIndex(wb.name);
@@ -104,8 +91,6 @@ export function normalizeWorkbookNames(workbooks: PreprocessingWorkbook[]): Prep
     };
   });
 }
-/** @deprecated Use normalizeWorkbookNames */
-export const normalizeProcessingTabNames = normalizeWorkbookNames;
 
 export function statusClassName(status: TransformationEvent['status'], divergedClassName: string): string {
   if (status === 'applied') return 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400';

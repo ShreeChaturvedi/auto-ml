@@ -132,5 +132,7 @@ export interface PipelineVersion {
   createdAt: string;
   approvedAt?: string;
   readinessReport: ReadinessReport;
+  /** Linked notebook ID for the 1:1 workbook model. Optional for backward compat. */
+  notebookId?: string;
 }
 

@@ -56,7 +56,7 @@ export function PreprocessingToolbarLeft({
     <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
       <Select value={activeTabId} onValueChange={onTabSwitch}>
         <SelectTrigger className={compactToolbarSelectClass('w-[180px]')}>
-          <SelectValue placeholder="Processing tab" />
+          <SelectValue placeholder="Workbook" />
         </SelectTrigger>
         <SelectContent>
           {tabs.map((tab) => (
@@ -72,7 +72,7 @@ export function PreprocessingToolbarLeft({
         size="icon"
         className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
         onClick={onNewTab}
-        title="New processing tab"
+        title="New workbook"
       >
         <Plus className="h-3.5 w-3.5" />
       </Button>
@@ -99,7 +99,7 @@ export function PreprocessingToolbarLeft({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onResetTab}>
             <RotateCcw className="h-3.5 w-3.5 mr-2" />
-            Reset Tab
+            Reset Workbook
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

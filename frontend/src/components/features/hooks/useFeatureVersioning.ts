@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { useFeatureStore } from '@/stores/featureStore';
+import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import type { PipelineVersion } from '@/types/feature';
 import type { SuggestionDraft } from './useFeaturePipelineState';
 
@@ -70,6 +71,14 @@ export function useFeatureVersioning({
     setCurrentVersion,
     versions
   ]);
+
+  // --- Sync versions to workbook registry for sidebar rendering ---
+  useEffect(() => {
+    useWorkbookRegistryStore.getState().setWorkbooks(
+      'feature-engineering',
+      versions.map((v) => ({ id: v.id, name: v.name, notebookId: v.notebookId ?? null }))
+    );
+  }, [versions]);
 
   // --- Derived version data ---
   const currentVersion = (() => {

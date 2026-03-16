@@ -25,6 +25,8 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { createTrainingAdapter } from './TrainingAdapter';
+import { TrainingToolbarLeft } from './TrainingToolbar';
+import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
@@ -34,6 +36,15 @@ export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
   const [searchParams] = useSearchParams();
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
+
+  const {
+    workbooks: trainingWorkbooks,
+    activeWorkbookId: activeTrainingWorkbookId,
+    // activeWorkbook not needed here — used by sidebar via registry store
+    buildStorageKey: buildTrainingStorageKey,
+    handleSwitch: handleWorkbookSwitch,
+    handleNew: handleNewWorkbook
+  } = useTrainingWorkbooks(projectId);
 
   const [cells, setCells] = useState<Cell[]>([]);
   const cellsRef = useRef<Cell[]>(cells);
@@ -285,6 +296,8 @@ export function TrainingPanel() {
     });
   }, [handleRunCell]);
 
+  const trainingStorageKey = buildTrainingStorageKey(activeTrainingWorkbookId);
+
   const trainingAdapter = useMemo(() => createTrainingAdapter({
     projectId: projectId ?? '',
     datasetId: selectedTrainingFile?.metadata?.datasetId,
@@ -294,7 +307,7 @@ export function TrainingPanel() {
     documentFiles,
     sessionKey: buildWorkflowSessionKey(
       projectId ?? 'training',
-      `training-messages:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
+      `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
     )
   }), [
     buildFeatureSummary,
@@ -302,13 +315,15 @@ export function TrainingPanel() {
     documentFiles,
     projectId,
     selectedTrainingFile?.metadata?.datasetId,
+    trainingStorageKey,
     trainingTargetColumn
   ]);
 
   return (
     <AgenticShell
+      key={activeTrainingWorkbookId}
       projectId={projectId ?? ''}
-      storageKey="training-messages"
+      storageKey={trainingStorageKey}
       domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
       domainAdapter={trainingAdapter}
       renderLeftPane={(renderProps) => {
@@ -348,7 +363,14 @@ export function TrainingPanel() {
           </div>
         );
       }}
-      toolbarLeft={undefined}
+      toolbarLeft={
+        <TrainingToolbarLeft
+          workbooks={trainingWorkbooks}
+          activeWorkbookId={activeTrainingWorkbookId}
+          onSwitch={handleWorkbookSwitch}
+          onNew={handleNewWorkbook}
+        />
+      }
       toolbarRight={
         projectFeatures.length > 0 ? (
           <TooltipProvider>

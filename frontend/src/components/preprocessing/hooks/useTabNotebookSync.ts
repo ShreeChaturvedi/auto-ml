@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { NotebookPhaseMetadata } from '@/types/notebook';
-import type { PreprocessingTab } from '../preprocessingTabUtils';
+import type { PreprocessingWorkbook } from '../preprocessingTabUtils';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildPreprocessingMetadata(tab: PreprocessingTab): NotebookPhaseMetadata {
+function buildPreprocessingMetadata(tab: PreprocessingWorkbook): NotebookPhaseMetadata {
   return { phase: 'preprocessing', tabId: tab.id, tabName: tab.name };
 }
 
@@ -19,16 +19,16 @@ function buildPreprocessingMetadata(tab: PreprocessingTab): NotebookPhaseMetadat
 export interface UseTabNotebookSyncOptions {
   projectId: string | undefined;
   tabsReady: boolean;
-  tabsRef: React.MutableRefObject<PreprocessingTab[]>;
+  tabsRef: React.MutableRefObject<PreprocessingWorkbook[]>;
   activeTabIdRef: React.MutableRefObject<string>;
-  tabs: PreprocessingTab[];
-  activeTab: PreprocessingTab | undefined;
+  tabs: PreprocessingWorkbook[];
+  activeTab: PreprocessingWorkbook | undefined;
   setTabNotebookId: (tabId: string, notebookId: string | null) => void;
 }
 
 export interface UseTabNotebookSyncResult {
   ensureNotebookForTab: (
-    tab: PreprocessingTab,
+    tab: PreprocessingWorkbook,
     options?: { forceCreate?: boolean }
   ) => Promise<string | null>;
   reconcileTabNotebookMappings: () => Promise<void>;
@@ -192,7 +192,7 @@ export function useTabNotebookSync({
   // ---- ensureNotebookForTab ------------------------------------------------
 
   const ensureNotebookForTab = useCallback(async (
-    tab: PreprocessingTab,
+    tab: PreprocessingWorkbook,
     options?: { forceCreate?: boolean }
   ): Promise<string | null> => {
     const forceCreate = options?.forceCreate === true;

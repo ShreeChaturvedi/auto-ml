@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Logo } from '@/components/ui/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { FileExplorer } from '@/components/data/FileExplorer';
+
 import { WorkflowPhaseTree } from './WorkflowPhaseTree';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
@@ -189,21 +189,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         <div className="h-full overflow-y-auto">
           <div className="p-3">
             {activeProject ? (
-              <div className="space-y-4">
-                {/* WorkflowPhaseTree handles collapse and expandable notebook sub-trees */}
-                <WorkflowPhaseTree collapsed={collapsed} onToggleCollapse={onToggleCollapse} />
-                {/* Hide file explorer when collapsed - grid-rows for smooth height animation */}
-                <div
-                  className={cn(
-                    'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
-                    collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
-                  )}
-                >
-                  <div className="min-h-0 overflow-hidden">
-                    <FileExplorer projectId={activeProject.id} />
-                  </div>
-                </div>
-              </div>
+              <WorkflowPhaseTree collapsed={collapsed} />
             ) : (
               /* Show project list when no project is active - handles both collapsed states */
               <ProjectList collapsed={collapsed} onToggleCollapse={onToggleCollapse} />

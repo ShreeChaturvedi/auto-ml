@@ -64,12 +64,12 @@ vi.mock('@/lib/websocket/notebookClient', () => ({
 
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useTabNotebookSync } from '../useTabNotebookSync';
-import type { PreprocessingTab } from '../../preprocessingTabUtils';
+import type { PreprocessingWorkbook } from '../../preprocessingTabUtils';
 import type { Notebook } from '@/types/notebook';
 
 // ── Fixtures ──────────────────────────────────────────────────
 
-function makeTab(overrides: Partial<PreprocessingTab> = {}): PreprocessingTab {
+function makeTab(overrides: Partial<PreprocessingWorkbook> = {}): PreprocessingWorkbook {
   return {
     id: 'tab-1',
     name: 'Processing 1',
@@ -115,7 +115,7 @@ function makeRef<T>(value: T): MutableRefObject<T> {
  * after setting up the store's currentProjectId inside `act`.
  */
 function renderSyncHook(opts: {
-  tabs: PreprocessingTab[];
+  tabs: PreprocessingWorkbook[];
   activeTabId: string;
   projectId?: string;
 }) {

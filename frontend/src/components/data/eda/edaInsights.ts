@@ -22,6 +22,7 @@ export interface InsightAction {
   type: InsightActionType;
   columns: string[];
   issueType: InsightIssueType;
+  severity: 'high' | 'medium' | 'low';
   context?: Record<string, unknown>;
 }
 
@@ -41,9 +42,10 @@ function buildActions(
   types: InsightActionType[],
   columns: string[],
   issueType: InsightIssueType,
+  severity: 'high' | 'medium' | 'low',
   context?: Record<string, unknown>,
 ): InsightAction[] {
-  return types.map(type => ({ type, columns, issueType, context }));
+  return types.map(type => ({ type, columns, issueType, severity, context }));
 }
 
 /**
@@ -77,6 +79,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
             ['filter', 'query', 'notebook'],
             [col.column],
             'outlier',
+            'medium',
             { q1: col.q1, q3: col.q3, iqr },
           ),
         });
@@ -93,7 +96,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: TrendingUp,
         text: `${col.column} is highly ${dir}-skewed (${col.skewness.toFixed(2)})`,
         columns: [col.column],
-        actions: buildActions(['notebook'], [col.column], 'skew'),
+        actions: buildActions(['notebook'], [col.column], 'skew', 'medium'),
       });
     } else if (absSkew > 1) {
       const dir = col.skewness > 0 ? 'right' : 'left';
@@ -103,7 +106,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: TrendingUp,
         text: `${col.column} is moderately ${dir}-skewed`,
         columns: [col.column],
-        actions: buildActions(['notebook'], [col.column], 'skew'),
+        actions: buildActions(['notebook'], [col.column], 'skew', 'low'),
       });
     }
   }
@@ -118,7 +121,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: AlertTriangle,
         text: `${q.column} has ${q.missingPercentage.toFixed(1)}% missing values`,
         columns: [q.column],
-        actions: buildActions(['filter', 'query', 'preprocess', 'notebook'], [q.column], 'missing'),
+        actions: buildActions(['filter', 'query', 'preprocess', 'notebook'], [q.column], 'missing', 'high'),
       });
     }
     // LOW: Moderate missing (5-30%)
@@ -129,7 +132,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: AlertTriangle,
         text: `${q.column} has ${q.missingPercentage.toFixed(1)}% missing values`,
         columns: [q.column],
-        actions: buildActions(['filter', 'query', 'preprocess', 'notebook'], [q.column], 'missing'),
+        actions: buildActions(['filter', 'query', 'preprocess', 'notebook'], [q.column], 'missing', 'low'),
       });
     }
 
@@ -141,7 +144,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: MinusCircle,
         text: `${q.column} is constant — no predictive signal`,
         columns: [q.column],
-        actions: buildActions(['preprocess'], [q.column], 'constant'),
+        actions: buildActions(['preprocess'], [q.column], 'constant', 'high'),
       });
     }
 
@@ -153,7 +156,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: Fingerprint,
         text: `${q.column} has high cardinality (${q.uniqueCount} unique)`,
         columns: [q.column],
-        actions: buildActions(['query', 'notebook'], [q.column], 'cardinality'),
+        actions: buildActions(['query', 'notebook'], [q.column], 'cardinality', 'medium'),
       });
     }
   }
@@ -168,7 +171,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
           icon: Link,
           text: `${corr.columnA} and ${corr.columnB} are highly correlated (r=${corr.coefficient.toFixed(2)})`,
           columns: [corr.columnA, corr.columnB],
-          actions: buildActions(['query', 'notebook'], [corr.columnA, corr.columnB], 'correlation'),
+          actions: buildActions(['query', 'notebook'], [corr.columnA, corr.columnB], 'correlation', 'medium'),
         });
       }
     }
@@ -183,7 +186,7 @@ export function detectInsights(eda: EdaSummary): EdaInsight[] {
         icon: PieChart,
         text: `${cat.column} is imbalanced (${cat.topValues[0].value} = ${cat.topValues[0].percentage.toFixed(1)}%)`,
         columns: [cat.column],
-        actions: buildActions(['query', 'preprocess', 'notebook'], [cat.column], 'imbalance'),
+        actions: buildActions(['query', 'preprocess', 'notebook'], [cat.column], 'imbalance', 'low'),
       });
     }
   }

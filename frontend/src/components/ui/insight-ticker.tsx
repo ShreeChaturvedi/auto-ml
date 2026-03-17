@@ -7,6 +7,7 @@ import { useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   useInsightTicker,
   CHAR_ANIM_DURATION_MS,
@@ -144,24 +145,26 @@ export function InsightTicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{ticker}</PopoverTrigger>
       <PopoverContent className="w-80 p-2" align="start">
-        <div className="space-y-1 max-h-64 overflow-y-auto">
-          {items.map((item, i) => {
-            const Icon = item.icon;
-            const iconColor = severityColors[item.severity ?? 'low'];
-            return (
-              <div
-                key={i}
-                className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50 group"
-              >
-                <Icon className={cn('h-3.5 w-3.5 shrink-0 mt-0.5', iconColor)} />
-                <span className="flex-1">{item.text}</span>
-                {item.actions && item.actions.length > 0 && onAction && (
-                  <InsightActionIcons actions={item.actions} onAction={onAction} />
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <TooltipProvider delayDuration={200}>
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {items.map((item, i) => {
+              const Icon = item.icon;
+              const iconColor = severityColors[item.severity ?? 'low'];
+              return (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50 group"
+                >
+                  <Icon className={cn('h-3.5 w-3.5 shrink-0 mt-0.5', iconColor)} />
+                  <span className="flex-1">{item.text}</span>
+                  {item.actions && item.actions.length > 0 && onAction && (
+                    <InsightActionIcons actions={item.actions} onAction={onAction} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </TooltipProvider>
       </PopoverContent>
     </Popover>
   );

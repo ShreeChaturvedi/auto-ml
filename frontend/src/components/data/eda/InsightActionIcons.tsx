@@ -9,104 +9,82 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  TooltipProvider,
 } from '@/components/ui/tooltip';
-import type { InsightAction, InsightActionType } from './edaInsights';
+import type { InsightAction, InsightIssueType, InsightActionType } from './edaInsights';
 
 export interface InsightActionIconsProps {
   actions: InsightAction[];
   onAction: (action: InsightAction) => void;
 }
 
-const actionMeta: Record<InsightActionType, { icon: LucideIcon; label: string }> = {
-  filter: { icon: Filter, label: 'Filter' },
-  query: { icon: TerminalSquare, label: 'Query' },
-  preprocess: { icon: Wand2, label: 'Preprocess' },
-  notebook: { icon: Code2, label: 'Notebook' },
+type TooltipKey = `${InsightIssueType}:${InsightActionType}`;
+
+const TOOLTIP_MAP: Partial<Record<TooltipKey, (col: string, cols: string) => string>> = {
+  'missing:filter':     (col) => `Filter to rows where ${col} is NULL`,
+  'missing:query':      (col) => `Query missing values in ${col}`,
+  'missing:preprocess': (col) => `Impute or drop missing values in ${col}`,
+  'missing:notebook':   (col) => `Generate notebook code for ${col} missing analysis`,
+  'outlier:filter':     (col) => `Filter to outlier rows in ${col}`,
+  'outlier:query':      (col) => `Query outliers in ${col}`,
+  'outlier:notebook':   (col) => `Generate notebook code for ${col} outlier analysis`,
+  'skew:notebook':      (col) => `Generate notebook code for ${col} skew transform`,
+  'correlation:query':  (_col, cols) => `Query relationship between ${cols}`,
+  'correlation:notebook':(_col, cols) => `Generate notebook code for ${cols} correlation`,
+  'constant:preprocess':(col) => `Drop constant column ${col}`,
+  'cardinality:query':  (col) => `Query distinct values in ${col}`,
+  'cardinality:notebook':(col) => `Generate notebook code for ${col} cardinality`,
+  'imbalance:query':    (col) => `Query class distribution of ${col}`,
+  'imbalance:preprocess':(col) => `Resample or balance ${col}`,
+  'imbalance:notebook': (col) => `Generate notebook code for ${col} class balance`,
 };
 
-/**
- * Build a human-friendly tooltip for an insight action.
- */
+const ACTION_LABELS: Record<InsightActionType, string> = {
+  filter: 'Filter',
+  query: 'Query',
+  preprocess: 'Preprocess',
+  notebook: 'Notebook',
+};
+
+const ACTION_ICONS: Record<InsightActionType, LucideIcon> = {
+  filter: Filter,
+  query: TerminalSquare,
+  preprocess: Wand2,
+  notebook: Code2,
+};
+
 function actionTooltip(action: InsightAction): string {
   const col = action.columns[0] ?? 'column';
   const cols = action.columns.join(', ');
-
-  switch (action.issueType) {
-    case 'missing':
-      switch (action.type) {
-        case 'filter':  return `Filter to rows where ${col} is NULL`;
-        case 'query':   return `Query missing values in ${col}`;
-        case 'preprocess': return `Impute or drop missing values in ${col}`;
-        case 'notebook':   return `Generate notebook code for ${col} missing analysis`;
-      }
-      break;
-    case 'outlier':
-      switch (action.type) {
-        case 'filter':  return `Filter to outlier rows in ${col}`;
-        case 'query':   return `Query outliers in ${col}`;
-        case 'notebook':   return `Generate notebook code for ${col} outlier analysis`;
-      }
-      break;
-    case 'skew':
-      if (action.type === 'notebook') return `Generate notebook code for ${col} skew transform`;
-      break;
-    case 'correlation':
-      switch (action.type) {
-        case 'query':   return `Query relationship between ${cols}`;
-        case 'notebook':   return `Generate notebook code for ${cols} correlation`;
-      }
-      break;
-    case 'constant':
-      if (action.type === 'preprocess') return `Drop constant column ${col}`;
-      break;
-    case 'cardinality':
-      switch (action.type) {
-        case 'query':   return `Query distinct values in ${col}`;
-        case 'notebook':   return `Generate notebook code for ${col} cardinality`;
-      }
-      break;
-    case 'imbalance':
-      switch (action.type) {
-        case 'query':   return `Query class distribution of ${col}`;
-        case 'preprocess': return `Resample or balance ${col}`;
-        case 'notebook':   return `Generate notebook code for ${col} class balance`;
-      }
-      break;
-  }
-
-  // Generic fallback
-  return `${actionMeta[action.type].label} ${cols}`;
+  const key: TooltipKey = `${action.issueType}:${action.type}`;
+  return TOOLTIP_MAP[key]?.(col, cols) ?? `${ACTION_LABELS[action.type]} ${cols}`;
 }
 
 export function InsightActionIcons({ actions, onAction }: InsightActionIconsProps) {
   return (
-    <TooltipProvider delayDuration={200}>
-      <span className="inline-flex items-center gap-0.5 shrink-0 ml-1">
-        {actions.map((action, i) => {
-          const meta = actionMeta[action.type];
-          const Icon = meta.icon;
-          return (
-            <Tooltip key={i}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAction(action);
-                  }}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                {actionTooltip(action)}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </span>
-    </TooltipProvider>
+    <span className="inline-flex items-center gap-0.5 shrink-0 ml-1">
+      {actions.map((action, i) => {
+        const Icon = ACTION_ICONS[action.type];
+        return (
+          <Tooltip key={i}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={actionTooltip(action)}
+                className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction(action);
+                }}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {actionTooltip(action)}
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </span>
   );
 }

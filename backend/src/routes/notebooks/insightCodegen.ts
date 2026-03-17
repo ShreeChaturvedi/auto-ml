@@ -8,18 +8,33 @@
  */
 
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 
 import { createLlmClient } from '../../services/llm/llmClient.js';
-import {
-  buildInsightCodegenPrompt,
-  type InsightCodegenContext
-} from '../../services/llm/prompts/insightCodegen.js';
+import { buildInsightCodegenPrompt } from '../../services/llm/prompts/insightCodegen.js';
 import { acquireLock, releaseLock } from '../../services/notebook/cellLockingService.js';
-import { writeCell } from '../../services/notebook/cellService.js';
+import { deleteCell, writeCell } from '../../services/notebook/cellService.js';
 import { initializeNdjsonStreamResponse } from '../query/nlHandler.js';
 
 // ---------------------------------------------------------------------------
-// Event types
+// Validation
+// ---------------------------------------------------------------------------
+
+const insightContextSchema = z.object({
+  columns: z.array(z.string()),
+  issueType: z.string().min(1),
+  severity: z.string().min(1),
+  text: z.string().min(1),
+  datasetSchema: z.array(z.object({ column: z.string(), dtype: z.string() })),
+  tableName: z.string().min(1),
+});
+
+const requestBodySchema = z.object({
+  insightContext: insightContextSchema,
+});
+
+// ---------------------------------------------------------------------------
+// NDJSON writer
 // ---------------------------------------------------------------------------
 
 type SuggestCellEvent =
@@ -27,10 +42,6 @@ type SuggestCellEvent =
   | { type: 'token'; content: string }
   | { type: 'done' }
   | { type: 'error'; message: string };
-
-// ---------------------------------------------------------------------------
-// NDJSON writer
-// ---------------------------------------------------------------------------
 
 function writeSuggestEvent(res: Response, event: SuggestCellEvent): void {
   if (!res.writableEnded) {
@@ -44,12 +55,17 @@ function writeSuggestEvent(res: Response, event: SuggestCellEvent): void {
 
 export async function handleSuggestCell(req: Request, res: Response): Promise<void> {
   const { notebookId } = req.params;
-  const { insightContext } = req.body as { projectId?: string; insightContext?: InsightCodegenContext };
-
-  if (!notebookId || !insightContext) {
-    res.status(400).json({ error: 'Missing required fields: notebookId and insightContext' });
+  if (!notebookId) {
+    res.status(400).json({ error: 'Missing notebookId parameter' });
     return;
   }
+
+  const parsed = requestBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parsed.error.flatten() });
+    return;
+  }
+  const { insightContext } = parsed.data;
 
   initializeNdjsonStreamResponse(res);
 
@@ -64,7 +80,13 @@ export async function handleSuggestCell(req: Request, res: Response): Promise<vo
     cellId = cell.cellId;
 
     // 2. Lock the cell for AI editing
-    await acquireLock(cellId, 'ai');
+    const acquired = await acquireLock(cellId, 'ai');
+    if (!acquired) {
+      await deleteCell(cellId);
+      writeSuggestEvent(res, { type: 'error', message: 'Cell is locked by another editor' });
+      cellId = undefined; // prevent finally from releasing a lock we don't own
+      return;
+    }
 
     // 3. Notify the client that the cell exists
     writeSuggestEvent(res, { type: 'cell_created', cellId });
@@ -96,7 +118,6 @@ export async function handleSuggestCell(req: Request, res: Response): Promise<vo
     const message = error instanceof Error ? error.message : 'Unknown error';
     writeSuggestEvent(res, { type: 'error', message });
   } finally {
-    // Always release the lock if we acquired one
     if (cellId) {
       try {
         await releaseLock(cellId);

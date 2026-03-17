@@ -88,11 +88,14 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
 
     // Buffer tokens and flush on animation frame to avoid per-token array copy + sort
     let tokenBuffer = '';
-    let flushScheduled = false;
+    let rafHandle: number | null = null;
+
     const flushTokens = () => {
-      flushScheduled = false;
+      rafHandle = null;
       if (!cellId || !tokenBuffer) return;
       const state = get();
+      // Guard: if cell was rejected/cancelled, don't re-insert it
+      if (!state.suggestedCellIds.has(cellId)) return;
       const cell = state.cells.find((c) => c.cellId === cellId);
       if (cell) {
         state.updateCellLocally({ ...cell, content: cell.content + tokenBuffer });
@@ -131,22 +134,23 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
             case 'token': {
               if (!cellId) break;
               tokenBuffer += event.content;
-              if (!flushScheduled) {
-                flushScheduled = true;
-                requestAnimationFrame(flushTokens);
+              if (rafHandle === null) {
+                rafHandle = requestAnimationFrame(flushTokens);
               }
               break;
             }
 
             case 'done': {
               if (!cellId) break;
-              flushTokens(); // flush remaining tokens before finishing
+              if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+              flushTokens();
               _set(finishStream(get(), cellId));
               break;
             }
 
             case 'error': {
               if (!cellId) break;
+              if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
               flushTokens();
               _set(finishStream(get(), cellId, event.message));
               break;
@@ -156,6 +160,8 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
         abortController.signal,
       );
     } catch (error) {
+      // Cancel pending rAF to prevent ghost cell re-insertion after abort
+      if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
       if (error instanceof DOMException && error.name === 'AbortError') return;
       if (cellId) {
         flushTokens();

@@ -18,7 +18,8 @@ export const PHASE_VALUES = [
   'feature-engineering',
   'training',
   'experiments',
-  'deployment'
+  'deployment',
+  'notebook'
 ] as const satisfies readonly PhaseValue[];
 
 const phaseSchema = z.enum(PHASE_VALUES);

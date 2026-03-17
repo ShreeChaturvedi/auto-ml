@@ -63,7 +63,8 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
 
   const unlockedPhases = activeProject?.unlockedPhases ?? [];
   const currentPhase = activeProject?.currentPhase;
-  const allPhases = getAllPhasesSorted();
+  // Exclude 'notebook' — it's an auxiliary phase accessible from EDA insights, not a workflow step.
+  const allPhases = getAllPhasesSorted().filter((p) => p !== 'notebook');
 
   const [expandedPhases, setExpandedPhases] = useState<Set<Phase>>(new Set());
 

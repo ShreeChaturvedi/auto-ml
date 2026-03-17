@@ -6,6 +6,7 @@ import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPane
 import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
 import { TrainingPanel } from '@/components/training/TrainingPanel';
 import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel';
+import { NotebookPage } from '@/components/notebook/NotebookPage';
 import { useProjectStore } from '@/stores/projectStore';
 import type { Phase } from '@/types/phase';
 
@@ -51,6 +52,9 @@ export function ProjectWorkspace() {
 
   useEffect(() => {
     if (!isInitialized || !project || !phase) return;
+    // Don't persist 'notebook' as the current phase — it's an auxiliary page,
+    // so the user should return to their real workflow phase on next visit.
+    if (phase === 'notebook') return;
     if (project.currentPhase !== phase) {
       setCurrentPhase(project.id, phase as Phase);
     }
@@ -74,8 +78,8 @@ export function ProjectWorkspace() {
     return <Navigate to={`/project/${project.id}/${project.currentPhase || 'upload'}`} replace />;
   }
 
-  // Check if phase is unlocked
-  if (!isPhaseUnlocked(project.id, phase as Phase)) {
+  // Check if phase is unlocked (notebook is always accessible as it's an auxiliary phase)
+  if (phase !== 'notebook' && !isPhaseUnlocked(project.id, phase as Phase)) {
     // Redirect to current phase if locked
     return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
   }
@@ -114,6 +118,9 @@ export function ProjectWorkspace() {
           </div>
         </div>
       );
+
+    case 'notebook':
+      return <NotebookPage projectId={projectId!} />;
 
     default:
       return <Navigate to={`/project/${project.id}/upload`} replace />;

@@ -2,6 +2,7 @@ import type {
   WorkflowApprovalRecord,
   WorkflowArtifactRecord
 } from '../types.js';
+
 import { getPayloadString, type SqlStatement } from './shared.js';
 
 export function buildAppendEventSql(

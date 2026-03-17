@@ -12,7 +12,8 @@ export type Phase =
   | 'feature-engineering'
   | 'training'
   | 'experiments'
-  | 'deployment';
+  | 'deployment'
+  | 'notebook';
 
 /**
  * Phase configuration for each workflow stage
@@ -75,6 +76,12 @@ export const phaseConfig: Record<Phase, PhaseConfig> = {
     label: 'Deployment',
     description: 'Deploy models to production',
     order: 6
+  },
+  'notebook': {
+    icon: 'BookOpen',
+    label: 'Notebook',
+    description: 'Interactive notebook for data exploration',
+    order: 7
   }
 };
 

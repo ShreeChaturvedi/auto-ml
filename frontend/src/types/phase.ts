@@ -85,6 +85,14 @@ export const phaseConfig: Record<Phase, PhaseConfig> = {
   }
 };
 
+/** Phases that are auxiliary (accessible from other phases, not part of the linear workflow). */
+export const AUXILIARY_PHASES: ReadonlySet<Phase> = new Set<Phase>(['notebook']);
+
+/** Check if a phase is auxiliary (not part of the main workflow progression). */
+export function isAuxiliaryPhase(phase: Phase): boolean {
+  return AUXILIARY_PHASES.has(phase);
+}
+
 /**
  * Get all phases sorted by workflow order
  */
@@ -93,6 +101,11 @@ export function getAllPhasesSorted(): Phase[] {
     (a, b) => phaseConfig[a].order - phaseConfig[b].order
   );
 }
+
+/** Pre-computed workflow phases (excludes auxiliary phases like notebook). */
+export const WORKFLOW_PHASES: readonly Phase[] = getAllPhasesSorted().filter(
+  (p) => !AUXILIARY_PHASES.has(p)
+);
 
 /**
  * Get the next phase in the workflow

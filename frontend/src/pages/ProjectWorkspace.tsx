@@ -8,6 +8,7 @@ import { TrainingPanel } from '@/components/training/TrainingPanel';
 import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel';
 import { NotebookPage } from '@/components/notebook/NotebookPage';
 import { useProjectStore } from '@/stores/projectStore';
+import { isAuxiliaryPhase } from '@/types/phase';
 import type { Phase } from '@/types/phase';
 
 // Redirect to current phase
@@ -52,9 +53,8 @@ export function ProjectWorkspace() {
 
   useEffect(() => {
     if (!isInitialized || !project || !phase) return;
-    // Don't persist 'notebook' as the current phase — it's an auxiliary page,
-    // so the user should return to their real workflow phase on next visit.
-    if (phase === 'notebook') return;
+    // Auxiliary phases (e.g. notebook) aren't persisted as the user's current workflow phase.
+    if (isAuxiliaryPhase(phase as Phase)) return;
     if (project.currentPhase !== phase) {
       setCurrentPhase(project.id, phase as Phase);
     }
@@ -78,8 +78,8 @@ export function ProjectWorkspace() {
     return <Navigate to={`/project/${project.id}/${project.currentPhase || 'upload'}`} replace />;
   }
 
-  // Check if phase is unlocked (notebook is always accessible as it's an auxiliary phase)
-  if (phase !== 'notebook' && !isPhaseUnlocked(project.id, phase as Phase)) {
+  // Auxiliary phases (e.g. notebook) bypass the unlock check
+  if (!isAuxiliaryPhase(phase as Phase) && !isPhaseUnlocked(project.id, phase as Phase)) {
     // Redirect to current phase if locked
     return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
   }

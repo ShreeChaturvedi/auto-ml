@@ -15,7 +15,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookRegistryStore';
 import { createWorkbookId, nextWorkbookName } from '@/components/preprocessing/preprocessingTabUtils';
 import type { Phase } from '@/types/phase';
-import { phaseConfig, getAllPhasesSorted } from '@/types/phase';
+import { phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
 import { projectColorClasses } from '@/types/project';
 import { cn } from '@/lib/utils';
 import {
@@ -63,8 +63,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
 
   const unlockedPhases = activeProject?.unlockedPhases ?? [];
   const currentPhase = activeProject?.currentPhase;
-  // Exclude 'notebook' — it's an auxiliary phase accessible from EDA insights, not a workflow step.
-  const allPhases = getAllPhasesSorted().filter((p) => p !== 'notebook');
+  const allPhases = WORKFLOW_PHASES;
 
   const [expandedPhases, setExpandedPhases] = useState<Set<Phase>>(new Set());
 

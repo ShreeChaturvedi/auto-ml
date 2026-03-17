@@ -11,6 +11,7 @@ import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres, sanitizeTableName } from '../services/datasetLoader.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
+import { getDatasetRows } from './datasets/rowHandler.js';
 import { handleDatasetUpload, processDatasetUpload } from './datasets/uploadHandler.js';
 
 export function createDatasetUploadRouter(repository?: DatasetRepository) {
@@ -56,6 +57,14 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         columns: dataset.columns.map((c) => c.name),
         rowCount: dataset.nRows
       });
+    })
+  );
+
+  // ── Get paged dataset rows ─────────────────────────────────────────
+  router.get(
+    '/datasets/:datasetId/rows',
+    asyncHandler(async (req, res) => {
+      await getDatasetRows(req, res, datasetRepository);
     })
   );
 

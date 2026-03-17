@@ -12,7 +12,7 @@ import {
   type SortingState
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   TableBody,
   TableCell,
@@ -34,8 +34,14 @@ import { DataTableHeaderCell } from './DataTableHeader';
 import { useColumnTypeEditor } from './useColumnTypeEditor';
 
 export type { QueryInfo };
+export interface DataTableIncrementalLoad {
+  hasMore: boolean;
+  isLoading: boolean;
+  onReachEnd: () => Promise<void> | void;
+}
 
 const ROW_HEIGHT = 40;
+const LOAD_MORE_THRESHOLD_PX = ROW_HEIGHT * 5;
 
 interface DataTableProps {
   preview: DataPreview;
@@ -47,6 +53,7 @@ interface DataTableProps {
   className?: string;
   controlsPortalTarget?: HTMLElement | null;
   onInsightAction?: (action: InsightAction) => void;
+  incrementalLoad?: DataTableIncrementalLoad;
 }
 
 export function DataTable({
@@ -58,12 +65,14 @@ export function DataTable({
   queryInfo,
   className,
   controlsPortalTarget,
-  onInsightAction
+  onInsightAction,
+  incrementalLoad
 }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [searchExpanded, setSearchExpanded] = useState(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const loadMoreLockedRef = useRef(false);
   const [edaView, setEdaView] = useState<'table' | 'eda'>('table');
   const eda = preview.eda ?? queryInfo?.eda;
   const hasEda = Boolean(eda);
@@ -165,6 +174,46 @@ export function DataTable({
     virtualItems.length > 0
       ? virtualItems[virtualItems.length - 1].index + 1
       : 0;
+  const loadedRowLabel = preview.previewRows < preview.totalRows
+    ? 'loaded rows'
+    : totalRows === 1 ? 'row' : 'rows';
+
+  useEffect(() => {
+    if (!incrementalLoad?.isLoading) {
+      loadMoreLockedRef.current = false;
+    }
+  }, [incrementalLoad?.isLoading]);
+
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container || !incrementalLoad) {
+      return;
+    }
+
+    const maybeLoadMore = () => {
+      if (!incrementalLoad.hasMore || incrementalLoad.isLoading || loadMoreLockedRef.current) {
+        return;
+      }
+      if (container.clientHeight <= 0 || container.scrollHeight <= 0) {
+        return;
+      }
+
+      const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (remaining > LOAD_MORE_THRESHOLD_PX) {
+        return;
+      }
+
+      loadMoreLockedRef.current = true;
+      void incrementalLoad.onReachEnd();
+    };
+
+    container.addEventListener('scroll', maybeLoadMore, { passive: true });
+    maybeLoadMore();
+
+    return () => {
+      container.removeEventListener('scroll', maybeLoadMore);
+    };
+  }, [incrementalLoad, rows.length]);
 
   const tableView = (
     <div className="flex flex-col h-full">
@@ -236,12 +285,15 @@ export function DataTable({
             {totalRows > 0 ? (
               <>
                 Showing {visibleStart}-{visibleEnd} of {totalRows.toLocaleString()}{' '}
-                {totalRows === 1 ? 'row' : 'rows'}
+                {loadedRowLabel}
                 {preview.previewRows < preview.totalRows && (
                   <span className="text-muted-foreground/70">
                     {' '}
                     (dataset: {preview.totalRows.toLocaleString()} rows)
                   </span>
+                )}
+                {incrementalLoad?.isLoading && (
+                  <span className="text-muted-foreground/70"> loading more…</span>
                 )}
               </>
             ) : (

@@ -99,6 +99,24 @@ export async function getDatasetSample(datasetId: string) {
   }>(`/datasets/${datasetId}/sample`, { method: 'GET' });
 }
 
+export async function getDatasetRows(
+  datasetId: string,
+  options: { offset: number; limit: number }
+) {
+  const search = new URLSearchParams({
+    offset: String(options.offset),
+    limit: String(options.limit)
+  });
+
+  return apiRequest<{
+    rows: Record<string, unknown>[];
+    columns: string[];
+    rowCount: number;
+    offset: number;
+    limit: number;
+  }>(`/datasets/${datasetId}/rows?${search.toString()}`, { method: 'GET' });
+}
+
 export async function deleteDataset(datasetId: string) {
   return apiRequest<{ success: boolean }>(`/datasets/${datasetId}`, { method: 'DELETE' });
 }

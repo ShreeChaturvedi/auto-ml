@@ -26,6 +26,7 @@ import {
   buildQueryArtifactMeta,
   useColumnOperations
 } from './hooks/useColumnOperations';
+import { useDatasetPreviewPagination } from './hooks/useDatasetPreviewPagination';
 import { useInsightActions } from '@/hooks/useInsightActions';
 
 function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
@@ -80,6 +81,14 @@ export function DataViewerTab() {
   const queryArtifacts = useMemo(
     () => allArtifacts.filter((artifact) => artifact.projectId === projectId),
     [allArtifacts, projectId]
+  );
+  const activeFile = useMemo(
+    () => (fileTabType === 'file' ? files.find((file) => file.id === activeFileTabId) : undefined),
+    [activeFileTabId, fileTabType, files]
+  );
+  const activePreview = useMemo(
+    () => (activeFile ? previews.find((preview) => preview.fileId === activeFile.id) : undefined),
+    [activeFile, previews]
   );
 
   // Hydrate data from backend on mount
@@ -297,6 +306,11 @@ export function DataViewerTab() {
     onSuggestSql: handleSuggestSql,
     datasetSchema,
   });
+  const datasetIncrementalLoad = useDatasetPreviewPagination({
+    file: activeFile,
+    preview: activePreview,
+    extractApiErrorMessage
+  });
 
   const handleDismissError = useCallback(() => setQueryError(null), []);
 
@@ -356,6 +370,7 @@ export function DataViewerTab() {
               controlsPortalTarget={activeControlsPortalTarget}
               updateColumnType={updateColumnType}
               extractApiErrorMessage={extractApiErrorMessage}
+              datasetIncrementalLoad={datasetIncrementalLoad}
               onInsightAction={handleInsightAction}
             />
           ) : (

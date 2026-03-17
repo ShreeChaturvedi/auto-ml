@@ -14,7 +14,7 @@ import type {
 } from '@/types/file';
 import type { Project } from '@/types/project';
 
-import { DataTable } from './DataTable';
+import { DataTable, type DataTableIncrementalLoad } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
 import type { InsightAction } from './eda/edaInsights';
 
@@ -29,6 +29,7 @@ export interface DataViewerContentProps {
   controlsPortalTarget: HTMLElement | null;
   updateColumnType: (datasetId: string, columnName: string, nextType: ColumnDataType) => Promise<void>;
   extractApiErrorMessage: (error: unknown) => string;
+  datasetIncrementalLoad?: DataTableIncrementalLoad;
   onInsightAction?: (action: InsightAction) => void;
 }
 
@@ -43,6 +44,7 @@ export function DataViewerContent({
   controlsPortalTarget,
   updateColumnType,
   extractApiErrorMessage,
+  datasetIncrementalLoad,
   onInsightAction
 }: DataViewerContentProps) {
   if (!activeFileTabId) return null;
@@ -62,6 +64,7 @@ export function DataViewerContent({
             columnTypes={columnTypes}
             typeColorClassName={projectTypeColorClassName}
             controlsPortalTarget={controlsPortalTarget}
+            incrementalLoad={datasetIncrementalLoad}
             onInsightAction={onInsightAction}
             onColumnTypeChange={
               datasetId

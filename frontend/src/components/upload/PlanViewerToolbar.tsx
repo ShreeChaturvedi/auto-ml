@@ -182,7 +182,7 @@ export function PlanViewerToolbar({
           {/* Search overlay layer */}
           <div
             className={cn(
-              'absolute inset-0 flex items-center transition-opacity duration-150 ease-out',
+              'absolute inset-y-0 left-0 w-72 flex items-center transition-opacity duration-150 ease-out',
               searchExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}
           >

@@ -11,6 +11,18 @@ export function quoteId(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/** Safely extract IQR bounds from action context. Returns null if values are non-finite. */
+function extractIqrBounds(action: InsightAction): { lo: number; hi: number } | null {
+  const q1 = action.context?.q1 as number | undefined;
+  const q3 = action.context?.q3 as number | undefined;
+  const iqr = action.context?.iqr as number | undefined;
+  if (q1 == null || q3 == null || iqr == null) return null;
+  const lo = q1 - 1.5 * iqr;
+  const hi = q3 + 1.5 * iqr;
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  return { lo, hi };
+}
+
 export function generateFilterSql(
   tableName: string,
   action: InsightAction,
@@ -20,16 +32,12 @@ export function generateFilterSql(
 
   switch (action.issueType) {
     case 'missing':
-      return `SELECT * FROM ${quoteId(tableName)} WHERE ${quoteId(col)} IS NULL`;
+      return `SELECT * FROM ${quoteId(tableName)} WHERE ${quoteId(col)} IS NULL LIMIT 10000`;
 
     case 'outlier': {
-      const q1 = action.context?.q1 as number | undefined;
-      const q3 = action.context?.q3 as number | undefined;
-      const iqr = action.context?.iqr as number | undefined;
-      if (q1 == null || q3 == null || iqr == null) return null;
-      const lo = q1 - 1.5 * iqr;
-      const hi = q3 + 1.5 * iqr;
-      return `SELECT * FROM ${quoteId(tableName)} WHERE ${quoteId(col)} < ${lo} OR ${quoteId(col)} > ${hi}`;
+      const bounds = extractIqrBounds(action);
+      if (!bounds) return null;
+      return `SELECT * FROM ${quoteId(tableName)} WHERE ${quoteId(col)} < ${bounds.lo} OR ${quoteId(col)} > ${bounds.hi} LIMIT 10000`;
     }
 
     default:
@@ -56,17 +64,14 @@ export function generateQuerySql(
       ].join('\n');
 
     case 'outlier': {
-      const q1 = action.context?.q1 as number | undefined;
-      const q3 = action.context?.q3 as number | undefined;
-      const iqr = action.context?.iqr as number | undefined;
-      if (q1 == null || q3 == null || iqr == null) return null;
-      const lo = q1 - 1.5 * iqr;
-      const hi = q3 + 1.5 * iqr;
+      const bounds = extractIqrBounds(action);
+      if (!bounds) return null;
       return [
         `SELECT ${qCol}`,
         `FROM ${tbl}`,
-        `WHERE ${qCol} < ${lo} OR ${qCol} > ${hi}`,
+        `WHERE ${qCol} < ${bounds.lo} OR ${qCol} > ${bounds.hi}`,
         `ORDER BY ${qCol}`,
+        `LIMIT 1000`,
       ].join('\n');
     }
 
@@ -77,6 +82,7 @@ export function generateQuerySql(
         `SELECT ${qCol}, ${quoteId(colB)}`,
         `FROM ${tbl}`,
         `ORDER BY ${qCol}`,
+        `LIMIT 1000`,
       ].join('\n');
     }
 

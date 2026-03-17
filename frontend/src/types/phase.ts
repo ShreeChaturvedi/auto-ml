@@ -112,14 +112,13 @@ export const WORKFLOW_PHASES: readonly Phase[] = getAllPhasesSorted().filter(
  * Returns undefined if current phase is the last one
  */
 export function getNextPhase(currentPhase: Phase): Phase | undefined {
-  const allPhases = getAllPhasesSorted();
-  const currentIndex = allPhases.indexOf(currentPhase);
+  const currentIndex = WORKFLOW_PHASES.indexOf(currentPhase);
 
-  if (currentIndex === -1 || currentIndex === allPhases.length - 1) {
+  if (currentIndex === -1 || currentIndex === WORKFLOW_PHASES.length - 1) {
     return undefined;
   }
 
-  return allPhases[currentIndex + 1];
+  return WORKFLOW_PHASES[currentIndex + 1];
 }
 
 /**
@@ -127,14 +126,13 @@ export function getNextPhase(currentPhase: Phase): Phase | undefined {
  * Returns undefined if current phase is the first one
  */
 export function getPreviousPhase(currentPhase: Phase): Phase | undefined {
-  const allPhases = getAllPhasesSorted();
-  const currentIndex = allPhases.indexOf(currentPhase);
+  const currentIndex = WORKFLOW_PHASES.indexOf(currentPhase);
 
   if (currentIndex <= 0) {
     return undefined;
   }
 
-  return allPhases[currentIndex - 1];
+  return WORKFLOW_PHASES[currentIndex - 1];
 }
 
 /**

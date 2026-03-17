@@ -66,6 +66,10 @@ export function EDAPanel({
   className,
 }: EDAPanelProps) {
   const insights = useMemo(() => detectInsights(eda), [eda]);
+  const tickerItems = useMemo(
+    () => insights.map((i) => ({ icon: i.icon, text: i.text, severity: i.severity, actions: i.actions })),
+    [insights],
+  );
 
   const numericColumns = eda.numericColumns ?? [];
   const categoricalColumns = eda.categoricalColumns ?? [];
@@ -81,7 +85,7 @@ export function EDAPanel({
         <div className="space-y-4">
           {insights.length > 0 && (
             <InsightTicker
-              items={insights.map((i) => ({ icon: i.icon, text: i.text, severity: i.severity, actions: i.actions }))}
+              items={tickerItems}
               onAction={onInsightAction}
               className="mb-2"
             />

@@ -21,12 +21,12 @@ import { initializeNdjsonStreamResponse } from '../query/nlHandler.js';
 // ---------------------------------------------------------------------------
 
 const insightContextSchema = z.object({
-  columns: z.array(z.string()),
-  issueType: z.string().min(1),
-  severity: z.string().min(1),
-  text: z.string().min(1),
-  datasetSchema: z.array(z.object({ column: z.string(), dtype: z.string() })),
-  tableName: z.string().min(1),
+  columns: z.array(z.string().max(128)).max(20),
+  issueType: z.string().min(1).max(50),
+  severity: z.string().min(1).max(20),
+  text: z.string().min(1).max(500),
+  datasetSchema: z.array(z.object({ column: z.string().max(128), dtype: z.string().max(50) })).max(200),
+  tableName: z.string().min(1).max(128).regex(/^[\w\-. ]+$/),
 });
 
 const requestBodySchema = z.object({

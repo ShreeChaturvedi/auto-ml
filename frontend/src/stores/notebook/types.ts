@@ -89,7 +89,7 @@ export interface NotebookState {
 
   // Actions - Suggested cells
   startSuggestedCellStream: (notebookId: string, context: InsightCodegenContext) => Promise<void>;
-  acceptSuggestedCell: (cellId: string) => Promise<void>;
+  acceptSuggestedCell: (cellId: string) => void;
   rejectSuggestedCell: (cellId: string) => Promise<void>;
   cancelSuggestedCellStream: (cellId: string) => void;
 

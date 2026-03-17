@@ -19,7 +19,7 @@ export interface SuggestedCellSlice {
   streamAbortControllers: Map<string, AbortController>;
 
   startSuggestedCellStream: (notebookId: string, context: InsightCodegenContext) => Promise<void>;
-  acceptSuggestedCell: (cellId: string) => Promise<void>;
+  acceptSuggestedCell: (cellId: string) => void;
   rejectSuggestedCell: (cellId: string) => Promise<void>;
   cancelSuggestedCellStream: (cellId: string) => void;
 }
@@ -33,6 +33,8 @@ function finishStream(
   cellId: string,
   errorMessage?: string,
 ): Partial<NotebookState> {
+  if (!state.streamingCellIds.has(cellId)) return {};
+
   const nextStreaming = new Set(state.streamingCellIds);
   nextStreaming.delete(cellId);
   const nextControllers = new Map(state.streamAbortControllers);
@@ -108,11 +110,28 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
         notebookId,
         context,
         (event) => {
-          const state = get();
-
           switch (event.type) {
             case 'cell_created': {
               cellId = event.cellId;
+
+              // Insert a cell skeleton directly instead of calling loadCell()
+              // to avoid a race where loadCell's async fetch overwrites streamed content.
+              const state = get();
+              const now = new Date().toISOString();
+              state.updateCellLocally({
+                cellId,
+                notebookId,
+                cellType: 'code',
+                content: '',
+                position: state.cells.length,
+                executionCount: 0,
+                executionStatus: 'idle',
+                isDirty: false,
+                output: [],
+                outputRefs: [],
+                createdAt: now,
+                updatedAt: now,
+              });
 
               const nextControllers = new Map(state.streamAbortControllers);
               nextControllers.set(cellId, abortController);
@@ -126,8 +145,6 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
                 streamingCellIds: nextStreaming,
                 streamAbortControllers: nextControllers,
               });
-
-              void state.loadCell(cellId);
               break;
             }
 
@@ -170,22 +187,37 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
     }
   },
 
-  acceptSuggestedCell: async (cellId: string) => {
-    const nextSuggested = new Set(get().suggestedCellIds);
+  acceptSuggestedCell: (cellId: string) => {
+    const state = get();
+    if (!state.suggestedCellIds.has(cellId)) return;
+    const nextSuggested = new Set(state.suggestedCellIds);
     nextSuggested.delete(cellId);
-    const nextErrors = new Map(get().streamErrors);
+    const nextErrors = new Map(state.streamErrors);
     nextErrors.delete(cellId);
     _set({ suggestedCellIds: nextSuggested, streamErrors: nextErrors });
   },
 
   rejectSuggestedCell: async (cellId: string) => {
-    await get().deleteCell(cellId);
-    _set(cleanupCellTracking(get(), cellId));
+    // Clean up tracking state first (before async delete), so the cell
+    // is no longer treated as suggested even if deleteCell fails.
+    const state = get();
+    if (!state.suggestedCellIds.has(cellId)) return;
+    _set(cleanupCellTracking(state, cellId));
+    // Best-effort delete — may fail if cell is still AI-locked on backend
+    try {
+      await get().deleteCell(cellId);
+    } catch {
+      // Cell deletion failed (e.g. still locked). The cell will remain
+      // in the notebook as a regular cell. Not ideal but not catastrophic.
+    }
   },
 
   cancelSuggestedCellStream: (cellId: string) => {
     const controller = get().streamAbortControllers.get(cellId);
     if (controller) controller.abort();
-    void get().rejectSuggestedCell(cellId);
+    // Clean up tracking immediately — don't wait for async reject
+    _set(cleanupCellTracking(get(), cellId));
+    // Fire-and-forget delete attempt
+    get().deleteCell(cellId).catch(() => {/* best-effort */});
   },
 });

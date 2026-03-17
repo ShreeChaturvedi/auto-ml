@@ -29,6 +29,7 @@ vi.mock('@/lib/api/query', async () => {
 });
 
 import { NlQueryWorkflow } from '../NlQueryWorkflow';
+import type { NlGenerationResult } from '@/types/nlQuery';
 import {
   buildProps,
   fastForwardReveal,
@@ -78,7 +79,7 @@ describe('NlQueryWorkflow core behavior', () => {
 
   it('transitions to submitting when triggerGenerate is called', async () => {
     const onPhaseChange = vi.fn();
-    const pending = new Promise(() => undefined);
+    const pending = new Promise<NlGenerationResult>(() => undefined);
     const handleRef = { current: null as NlQueryWorkflowHandle | null };
 
     render(

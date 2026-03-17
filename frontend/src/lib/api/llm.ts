@@ -1,6 +1,6 @@
 import { apiRequest, getApiBaseUrl } from './client';
 import { readNdjsonStream } from './streamReader';
-import type { LlmEnvelope, ToolCall, ToolResult } from '@/types/llmUi';
+import type { LlmEnvelope, LlmUsage, ToolCall, ToolResult } from '@/types/llmUi';
 import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
 import type {
   PreprocessingControllerSummary,
@@ -74,7 +74,7 @@ export type LlmStreamEvent =
   | WorkflowErrorEvent
   | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
   | { type: 'plan_exit'; planName?: string; planMarkdown: string }
-  | { type: 'usage'; usage: Record<string, unknown> }
+  | { type: 'usage'; usage: LlmUsage }
   | { type: 'error'; message: string }
   | { type: 'done' };
 

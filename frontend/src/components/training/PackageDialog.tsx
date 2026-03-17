@@ -2,7 +2,7 @@
  * PackageDialog - Shows PyPI package details with install/info actions
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,

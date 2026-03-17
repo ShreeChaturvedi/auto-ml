@@ -73,17 +73,17 @@ export function PlotlyScatter3D({
         xaxis: {
           gridcolor: gridColor,
           showbackground: false,
-          title: xCol,
+          title: { text: xCol },
         },
         yaxis: {
           gridcolor: gridColor,
           showbackground: false,
-          title: yCol,
+          title: { text: yCol },
         },
         zaxis: {
           gridcolor: gridColor,
           showbackground: false,
-          title: zCol,
+          title: { text: zCol },
         },
       },
     };

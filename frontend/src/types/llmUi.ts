@@ -241,13 +241,18 @@ export const LlmEnvelopeSchema = z.object({
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
 
 /** Token usage data from the OpenAI Responses API, passed through as-is from the backend. */
-export interface LlmUsage {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  input_tokens_details?: { cached_tokens?: number };
-  output_tokens_details?: { reasoning_tokens?: number };
-}
+export const LlmUsageSchema = z.object({
+  input_tokens: z.number(),
+  output_tokens: z.number(),
+  total_tokens: z.number(),
+  input_tokens_details: z.object({
+    cached_tokens: z.number().optional()
+  }).optional(),
+  output_tokens_details: z.object({
+    reasoning_tokens: z.number().optional()
+  }).optional()
+});
+export type LlmUsage = z.infer<typeof LlmUsageSchema>;
 
 // ChatMessage type for interleaved rendering in Training tab and Onboarding chat
 export type ChatMessage =

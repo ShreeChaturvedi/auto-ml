@@ -79,6 +79,11 @@ const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> 
     hoverText: 'hover:text-cyan-700 dark:hover:text-cyan-300',
     hoverBorder: 'hover:border-cyan-400 dark:hover:border-cyan-400/70',
     hoverBg: 'hover:bg-cyan-500/15 dark:hover:bg-cyan-500/20'
+  },
+  custom: {
+    hoverText: 'hover:text-foreground',
+    hoverBorder: 'hover:border-border',
+    hoverBg: 'hover:bg-muted/60'
   }
 };
 

@@ -7,6 +7,7 @@
  */
 
 import {
+  Suspense,
   useRef,
   useEffect,
   useMemo,
@@ -15,7 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Check, X, RotateCcw, AlertTriangle } from 'lucide-react';
 import { useTheme } from '@/components/theme-provider';
-import Editor from '@monaco-editor/react';
+import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType } from 'monaco-editor';
 import type { ApproveThemeClasses } from './NlQueryWorkflow';
@@ -118,37 +119,39 @@ function SqlRevealBlock({
               'transition-colors duration-200',
             )}
           >
-            <Editor
-              height="170px"
-              language="sql"
-              value={editedSql}
-              onChange={(value) => onSqlChange(value || '')}
-              onMount={(editorInstance, monaco: Monaco) => {
-                monacoEditorRef.current = editorInstance;
-                monacoApiRef.current = monaco;
-                monaco.editor.setTheme(monacoTheme);
-              }}
-              theme={monacoTheme}
-              options={{
-                readOnly: false,
-                domReadOnly: false,
-                minimap: { enabled: false },
-                lineNumbers: 'on',
-                lineNumbersMinChars: 2,
-                glyphMargin: false,
-                folding: false,
-                lineDecorationsWidth: 8,
-                roundedSelection: false,
-                scrollBeyondLastLine: false,
-                fontSize: 13,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                wordWrap: 'on',
-                automaticLayout: true,
-                padding: { top: 8, bottom: 8 },
-                cursorBlinking: 'smooth',
-                cursorSmoothCaretAnimation: 'on',
-              }}
-            />
+            <Suspense fallback={<div className="h-[170px] w-full animate-pulse bg-primary/10" />}>
+              <LazyMonacoEditor
+                height="170px"
+                language="sql"
+                value={editedSql}
+                onChange={(value) => onSqlChange(value || '')}
+                onMount={(editorInstance, monaco: Monaco) => {
+                  monacoEditorRef.current = editorInstance;
+                  monacoApiRef.current = monaco;
+                  monaco.editor.setTheme(monacoTheme);
+                }}
+                theme={monacoTheme}
+                options={{
+                  readOnly: false,
+                  domReadOnly: false,
+                  minimap: { enabled: false },
+                  lineNumbers: 'on',
+                  lineNumbersMinChars: 2,
+                  glyphMargin: false,
+                  folding: false,
+                  lineDecorationsWidth: 8,
+                  roundedSelection: false,
+                  scrollBeyondLastLine: false,
+                  fontSize: 13,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  wordWrap: 'on',
+                  automaticLayout: true,
+                  padding: { top: 8, bottom: 8 },
+                  cursorBlinking: 'smooth',
+                  cursorSmoothCaretAnimation: 'on',
+                }}
+              />
+            </Suspense>
           </div>
         ) : sql ? (
           <pre

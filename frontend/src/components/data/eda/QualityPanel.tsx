@@ -49,6 +49,12 @@ const SEVERITY_LEGEND = [
   { label: 'Poor', range: '<80%', var: '--eda-poor' },
 ] as const;
 
+type QualityKpi = {
+  value: string | number;
+  label: string;
+  color?: string;
+};
+
 /* ------------------------------------------------------------------ */
 /*  Sort header (module-level to avoid remount on parent re-render)    */
 /* ------------------------------------------------------------------ */
@@ -171,7 +177,7 @@ export function QualityPanel({ eda, insights, columnTypes, className }: QualityP
           { value: summary.completeColumns, label: 'Complete', color: 'text-green-600 dark:text-green-400' },
           { value: summary.columnsWithMissing, label: 'With Missing', color: 'text-amber-600 dark:text-amber-400' },
           { value: formatPercentage(summary.avgMissingPct), label: 'Avg Missing %', color: avgSeverity.colorClass },
-        ] as const).map((kpi) => (
+        ] satisfies QualityKpi[]).map((kpi) => (
           <div key={kpi.label} className={KPI_CARD}>
             <div className={cn('text-2xl font-bold font-mono', kpi.color)}>{kpi.value}</div>
             <div className="text-xs text-muted-foreground mt-0.5">{kpi.label}</div>

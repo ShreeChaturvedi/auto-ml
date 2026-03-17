@@ -37,7 +37,8 @@ function normalizeSpreadsheetCell(value: ExcelJS.CellValue | undefined): unknown
       return value.text;
     }
     if ('hyperlink' in value) {
-      return value.text ?? value.hyperlink ?? null;
+      const text = 'text' in value ? value.text : undefined;
+      return text ?? value.hyperlink ?? null;
     }
     if ('richText' in value) {
       return value.richText.map((entry) => entry.text).join('');
@@ -52,6 +53,24 @@ function normalizeSpreadsheetCell(value: ExcelJS.CellValue | undefined): unknown
 function stringifySpreadsheetCell(value: ExcelJS.CellValue | undefined): string {
   const normalized = normalizeSpreadsheetCell(value);
   return normalized === null || normalized === undefined ? '' : String(normalized);
+}
+
+function toExcelWorkbookBuffer(buffer: Buffer): ArrayBuffer {
+  const slicedBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  return slicedBuffer instanceof ArrayBuffer
+    ? slicedBuffer
+    : Uint8Array.from(buffer).buffer;
+}
+
+function getSpreadsheetRowValues(row: ExcelJS.Row): ExcelJS.CellValue[] {
+  if (Array.isArray(row.values)) {
+    return row.values.slice(1);
+  }
+
+  return Object.entries(row.values)
+    .filter(([key]) => key !== '0')
+    .sort(([leftKey], [rightKey]) => Number(leftKey) - Number(rightKey))
+    .map(([, value]) => value);
 }
 
 export async function parseDatasetRows(
@@ -107,16 +126,16 @@ export async function parseDatasetRows(
     case 'xlsx': {
       assertSupportedSpreadsheetFilename(filename);
       const workbook = new ExcelJS.Workbook();
-      void (await workbook.xlsx.load(buffer));
+      const workbookBuffer = toExcelWorkbookBuffer(buffer);
+      void (await workbook.xlsx.load(workbookBuffer));
       const worksheet = workbook.worksheets[0];
       if (!worksheet) {
         return [];
       }
 
       const headerRow = worksheet.getRow(1);
-      const headers = headerRow.values
-        .slice(1)
-        .map((value, index) => {
+      const headerValues = getSpreadsheetRowValues(headerRow);
+      const headers: string[] = headerValues.map((value, index) => {
           const header = stringifySpreadsheetCell(value).trim();
           return header || `column_${index + 1}`;
         });

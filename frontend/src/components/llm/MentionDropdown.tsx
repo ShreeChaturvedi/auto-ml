@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { resolveFileIcon, DATA_FILE_TYPES } from '@/lib/fileUtils';
+import { resolveFileIcon, DATA_FILE_TYPES, isFileType } from '@/lib/fileUtils';
 import { cn } from '@/lib/utils';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
@@ -22,7 +22,7 @@ function groupCandidates(candidates: MentionCandidate[]): GroupedCandidates {
   const dataFiles: MentionCandidate[] = [];
   const contextFiles: MentionCandidate[] = [];
   for (const c of candidates) {
-    if (DATA_FILE_TYPES.has(c.type)) {
+    if (isFileType(c.type) && DATA_FILE_TYPES.has(c.type)) {
       dataFiles.push(c);
     } else {
       contextFiles.push(c);

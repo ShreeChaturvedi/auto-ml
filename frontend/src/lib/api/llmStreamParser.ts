@@ -1,4 +1,4 @@
-import { LlmEnvelopeSchema } from '@/types/llmUi';
+import { LlmEnvelopeSchema, LlmUsageSchema } from '@/types/llmUi';
 import {
   WorkflowArtifactUpdatedEventSchema,
   WorkflowErrorEventSchema,
@@ -80,6 +80,16 @@ export function emitParsedLlmStreamEvent(
       parsed.success
         ? parsed.data
         : { type: 'error', message: 'Workflow error payload failed validation.' }
+    );
+    return;
+  }
+
+  if (payload.type === 'usage') {
+    const parsed = LlmUsageSchema.safeParse(payload.usage);
+    onEvent(
+      parsed.success
+        ? { type: 'usage', usage: parsed.data }
+        : { type: 'error', message: 'LLM usage payload failed validation.' }
     );
     return;
   }

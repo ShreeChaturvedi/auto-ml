@@ -1,6 +1,6 @@
 import { ApiError } from '@/lib/api/client';
 import { extractColumnTypesFromQuery } from '@/lib/sql/sqlColumnTypes';
-import type { QueryResultPayload } from '@/lib/api/query';
+import type { NlQueryResponsePayload, QueryResultPayload } from '@/lib/api/query';
 import type { DataPreview } from '@/types/file';
 import type { NlGenerationResult } from '@/types/nlQuery';
 
@@ -67,16 +67,7 @@ export function buildQueryArtifactMeta(query: QueryResultPayload) {
   };
 }
 
-export function toNlGenerationResult(nl: {
-  sql: string;
-  rationale: string;
-  explanation: string;
-  queryId: string;
-  provider: string;
-  cached: boolean;
-  queryExecutionError?: string | null;
-  query?: QueryResultPayload;
-}): NlGenerationResult {
+export function toNlGenerationResult(nl: NlQueryResponsePayload): NlGenerationResult {
   return {
     sql: nl.sql,
     rationale: nl.rationale,
@@ -85,6 +76,6 @@ export function toNlGenerationResult(nl: {
     provider: nl.provider,
     cached: nl.cached,
     queryExecutionError: nl.queryExecutionError ?? null,
-    queryResult: nl.query
+    queryResult: nl.query ?? null
   };
 }

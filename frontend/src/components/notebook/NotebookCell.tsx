@@ -5,7 +5,7 @@
  * behavior is rendered by NotebookMarkdownCell + NotebookEditor section logic.
  */
 
-import { useState, useCallback, Suspense, lazy, useMemo } from 'react';
+import { useState, useCallback, Suspense, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -34,12 +34,7 @@ import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useHighlightStore } from '@/stores/highlightStore';
-
-const Editor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
-    default: module.default
-  }))
-);
+import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 
 interface NotebookCellComponentProps {
   cell: NotebookCell;
@@ -358,7 +353,7 @@ export function NotebookCellComponent({
           />
         }
       >
-        <Editor
+              <LazyMonacoEditor
           path={`cell-${cell.cellId}.py`}
           height={Math.max(60, localContent.split('\n').length * 20 + 20)}
           language="python"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -20,14 +20,9 @@ import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import type { LockOwner, NotebookCell } from '@/types/notebook';
 import { initMonaco } from '@/lib/monaco/preloader';
+import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import 'katex/dist/katex.min.css';
 import { Markdown } from '@/components/ui/Markdown';
-
-const Editor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
-    default: module.default
-  }))
-);
 
 function getSectionLabel(content: string): string {
   const lines = content.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -202,7 +197,7 @@ export function NotebookMarkdownCell({
                 />
               }
             >
-              <Editor
+                <LazyMonacoEditor
                 height={Math.max(60, localContent.split('\n').length * 20 + 20)}
                 language="markdown"
                 value={localContent}

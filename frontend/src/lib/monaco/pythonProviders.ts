@@ -189,7 +189,7 @@ export function registerPythonProviders(
       if (!result) return null;
 
       // Build markdown contents
-      const markdownString = `**${result.type}** \`${result.fullName || result.name}\``;
+      let markdownString = `**${result.type}** \`${result.fullName || result.name}\``;
       if (result.docstring) {
         markdownString += `\n\n${result.docstring}`;
       }

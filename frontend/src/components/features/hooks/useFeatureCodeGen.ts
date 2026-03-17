@@ -2,16 +2,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { FeatureSpec } from '@/types/feature';
+import type { UploadedFile } from '@/types/file';
 
 const FEATURE_PREVIEW_CELL_TITLE = 'Feature Pipeline Preview';
-
-interface DatasetFileInfo {
-  name: string;
-  metadata?: {
-    datasetId?: string;
-    [key: string]: unknown;
-  };
-}
 
 /**
  * Generates a Python code preview for the active feature pipeline and
@@ -20,7 +13,7 @@ interface DatasetFileInfo {
  */
 export function useFeatureCodeGen(
   activeFeatures: FeatureSpec[],
-  selectedDatasetFile: DatasetFileInfo | undefined
+  selectedDatasetFile: UploadedFile | undefined
 ): void {
   const notebookCells = useNotebookStore((state) => state.cells);
   const createNotebookCell = useNotebookStore((state) => state.createCell);

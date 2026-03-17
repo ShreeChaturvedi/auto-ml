@@ -3,7 +3,6 @@
  * inside the PackageDialog, with compact styling overrides.
  */
 
-import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { Markdown } from '@/components/ui/Markdown';
 

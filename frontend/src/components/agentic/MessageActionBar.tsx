@@ -26,15 +26,21 @@ export function MessageActionBar({
   className
 }: MessageActionBarProps) {
   const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => { clearTimeout(timerRef.current); }, []);
+  useEffect(() => () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+  }, []);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(messageContent);
       setCopied(true);
-      clearTimeout(timerRef.current);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
       timerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard API may be unavailable

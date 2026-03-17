@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { usePushToTalk } from '@/hooks/usePushToTalk';
+import type { VoiceState } from '@/hooks/useVoiceInput';
 
 function createKeyEvent(key: string) {
   return {
@@ -18,9 +19,12 @@ describe('usePushToTalk', () => {
     const startRecording = vi.fn();
     const stopRecording = vi.fn();
     const restoreInput = vi.fn();
+    const initialProps: { voiceState: VoiceState } = {
+      voiceState: 'idle'
+    };
 
     const { result, rerender } = renderHook(
-      ({ voiceState }) => usePushToTalk({
+      ({ voiceState }: { voiceState: VoiceState }) => usePushToTalk({
         voiceState,
         getInputSnapshot: () => ({ value: 'Draft prompt', cursor: 12 }),
         restoreInput,
@@ -28,9 +32,7 @@ describe('usePushToTalk', () => {
         stopRecording,
       }),
       {
-        initialProps: {
-          voiceState: 'idle' as const,
-        },
+        initialProps,
       }
     );
 

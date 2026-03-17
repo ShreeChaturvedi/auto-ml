@@ -5,9 +5,10 @@
  * Provides syntax highlighting, context-aware completions, and SQL linting.
  */
 
-import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
+import { Suspense, useEffect, useRef, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import {
   createSqlSuggestionCollector,
   inferSqlSuggestionContext,
@@ -16,13 +17,6 @@ import {
   sanitizeSuggestionToken,
   getAliasBeforeDot
 } from './sqlIntelligence';
-
-// Lazy load Monaco Editor to reduce initial bundle size
-const Editor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
-    default: module.default
-  }))
-);
 
 // Import monaco types for completion registration
 import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
@@ -244,7 +238,7 @@ export function QuerySqlEditor({
           </div>
         }
       >
-        <Editor
+        <LazyMonacoEditor
           height="100%"
           language="sql"
           value={sqlQuery}

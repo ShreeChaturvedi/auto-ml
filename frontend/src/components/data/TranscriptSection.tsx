@@ -6,7 +6,7 @@ import { pluralize } from './nlWorkPlanUtils';
 
 interface TranscriptSectionProps {
   modelWorkBlocks: NlModelWorkBlockState[];
-  active: NlWorkPhaseState | undefined;
+  active: NlWorkPhaseState;
   transcriptExpanded: boolean;
   onToggleTranscript: () => void;
   isReviewMode: boolean;

@@ -33,6 +33,10 @@ export const DATA_FILE_TYPES = new Set<FileType>(['csv', 'json', 'excel']);
 /** Document file types ingested for RAG context. */
 export const DOC_FILE_TYPES = new Set<FileType>(['pdf', 'markdown', 'word', 'text']);
 
+export function isFileType(type: string): type is FileType {
+  return Object.hasOwn(fileIconByType, type);
+}
+
 /**
  * Resolve the icon component and color class for a file type.
  */
@@ -40,7 +44,7 @@ export function resolveFileIcon(type: FileType | string): {
   Icon: ComponentType<{ className?: string }>;
   colorClass: string;
 } {
-  const ft = type as FileType;
+  const ft = isFileType(type) ? type : 'other';
   return {
     Icon: fileIconByType[ft] ?? fileIconByType.other,
     colorClass: fileIconColorByType[ft] ?? fileIconColorByType.other,

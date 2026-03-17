@@ -9,7 +9,7 @@
  * - No loading flash due to Monaco pre-loading
  */
 
-import { useState, Suspense, lazy, useMemo } from 'react';
+import { useState, Suspense, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -28,14 +28,8 @@ import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import type { RichOutput } from '@/lib/api/execution';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
+import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { CodeCellOutput } from './CodeCellOutput';
-
-// Lazy load Monaco Editor
-const Editor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
-    default: module.default
-  }))
-);
 
 const PLACEHOLDER = '# Enter Python code...';
 
@@ -217,7 +211,7 @@ export function CodeCell({
             style={{ backgroundColor: resolvedTheme === 'dark' ? '#000000' : '#ffffff' }}
           />
         }>
-          <Editor
+          <LazyMonacoEditor
             height="100%"
             defaultLanguage="python"
             value={localContent}

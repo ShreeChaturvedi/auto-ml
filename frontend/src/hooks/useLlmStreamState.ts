@@ -158,7 +158,7 @@ export function useLlmStreamState(): LlmStreamState {
       }
 
       if (event.type === 'usage') {
-        setSessionUsages((prev) => [...prev, event.usage as LlmUsage]);
+        setSessionUsages((prev) => [...prev, event.usage]);
         return true;
       }
 

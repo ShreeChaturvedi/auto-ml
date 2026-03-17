@@ -6,54 +6,25 @@
 
 import { toast } from 'sonner';
 import { Markdown } from '@/components/ui/Markdown';
+import type {
+  ColumnDataType,
+  DataPreview,
+  QueryArtifact,
+  UploadedFile
+} from '@/types/file';
+import type { Project } from '@/types/project';
+
 import { DataTable } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
-import type { ColumnDataType, DataPreview, EdaSummary, QueryMode } from '@/types/file';
-import type { NlQueryExplanation } from '@/lib/api/query';
 import type { InsightAction } from './eda/edaInsights';
-
-interface QueryArtifact {
-  id: string;
-  query: string;
-  mode: QueryMode;
-  timestamp: number;
-  result: DataPreview;
-  eda?: EdaSummary;
-  cached?: boolean;
-  executionMs?: number;
-  cacheTimestamp?: string;
-  generatedSql?: string;
-  rationale?: string;
-  explanation?: NlQueryExplanation;
-  projectId: string;
-}
-
-interface FileEntry {
-  id: string;
-  type: string;
-  metadata?: {
-    tableName?: string;
-    datasetId?: string;
-    datasetProfile?: {
-      dtypes?: Record<string, ColumnDataType>;
-    };
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-interface ProjectEntry {
-  metadata?: Record<string, unknown>;
-  [key: string]: unknown;
-}
 
 export interface DataViewerContentProps {
   activeFileTabId: string | null;
   fileTabType: 'file' | 'artifact' | 'plan' | null;
-  files: FileEntry[];
+  files: UploadedFile[];
   previews: DataPreview[];
   queryArtifacts: QueryArtifact[];
-  activeProject?: ProjectEntry;
+  activeProject?: Project;
   projectTypeColorClassName?: string;
   controlsPortalTarget: HTMLElement | null;
   updateColumnType: (datasetId: string, columnName: string, nextType: ColumnDataType) => Promise<void>;

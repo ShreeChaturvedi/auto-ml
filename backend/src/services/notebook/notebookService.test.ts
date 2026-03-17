@@ -57,13 +57,14 @@ describe('notebookService barrel exports', () => {
   // This is the function whose missing re-export caused the 500.
 
   it('updateProjectNotebook delegates to repo.updateNotebook with correct args', async () => {
+    const createdAt = new Date('2026-01-01T00:00:00Z');
     const fakeNotebook = {
       notebookId: 'nb-1',
       projectId: 'p-1',
       name: 'Updated',
       metadata: { phase: 'preprocessing', tabId: 't1' },
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z'
+      createdAt,
+      updatedAt: createdAt
     };
     updateNotebookMock.mockResolvedValueOnce(fakeNotebook);
 
@@ -78,13 +79,14 @@ describe('notebookService barrel exports', () => {
   });
 
   it('updateProjectNotebook passes both name and metadata when provided', async () => {
+    const createdAt = new Date('2026-01-01T00:00:00Z');
     const fakeNotebook = {
       notebookId: 'nb-2',
       projectId: 'p-1',
       name: 'Renamed',
       metadata: { phase: 'training' },
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z'
+      createdAt,
+      updatedAt: createdAt
     };
     updateNotebookMock.mockResolvedValueOnce(fakeNotebook);
 

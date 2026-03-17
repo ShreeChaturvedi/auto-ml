@@ -5,6 +5,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { PythonVersion } from '@/lib/api/execution';
 import { cn } from '@/lib/utils';
 import { Database, Info, Loader2, Package } from 'lucide-react';
 
@@ -13,8 +14,8 @@ interface ContainerStatusCardProps {
   cloudInitializing: boolean;
   sessionId: string | null;
   runtimeStatus: string;
-  pythonVersion: string;
-  setPythonVersion: (version: string) => void;
+  pythonVersion: PythonVersion;
+  setPythonVersion: (version: PythonVersion) => void;
   onConnect: () => void;
 }
 

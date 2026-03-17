@@ -30,6 +30,11 @@ interface UseInsightActionsParams {
 /*  SQL generators                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Quote a SQL identifier (table or column) to handle special characters. */
+function quoteId(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 function generateFilterSql(
   tableName: string,
   action: InsightAction,
@@ -39,7 +44,7 @@ function generateFilterSql(
 
   switch (action.issueType) {
     case 'missing':
-      return `SELECT * FROM ${tableName} WHERE "${col}" IS NULL`;
+      return `SELECT * FROM ${quoteId(tableName)} WHERE ${quoteId(col)} IS NULL`;
 
     case 'outlier': {
       const q1 = action.context?.q1 as number | undefined;
@@ -48,7 +53,7 @@ function generateFilterSql(
       if (q1 == null || q3 == null || iqr == null) return null;
       const lo = q1 - 1.5 * iqr;
       const hi = q3 + 1.5 * iqr;
-      return `SELECT * FROM ${tableName} WHERE "${col}" < ${lo} OR "${col}" > ${hi}`;
+      return `SELECT * FROM ${quoteId(tableName)} WHERE ${quoteId(col)} < ${lo} OR ${quoteId(col)} > ${hi}`;
     }
 
     default:
@@ -62,14 +67,16 @@ function generateQuerySql(
 ): string | null {
   const col = action.columns[0];
   if (!col) return null;
+  const tbl = quoteId(tableName);
+  const qCol = quoteId(col);
 
   switch (action.issueType) {
     case 'missing':
       return [
         `SELECT COUNT(*) AS total,`,
-        `       COUNT(*) FILTER (WHERE "${col}" IS NULL) AS null_count,`,
-        `       ROUND(100.0 * COUNT(*) FILTER (WHERE "${col}" IS NULL) / COUNT(*), 2) AS null_pct`,
-        `FROM ${tableName}`,
+        `       COUNT(*) FILTER (WHERE ${qCol} IS NULL) AS null_count,`,
+        `       ROUND(100.0 * COUNT(*) FILTER (WHERE ${qCol} IS NULL) / COUNT(*), 2) AS null_pct`,
+        `FROM ${tbl}`,
       ].join('\n');
 
     case 'outlier': {
@@ -80,39 +87,31 @@ function generateQuerySql(
       const lo = q1 - 1.5 * iqr;
       const hi = q3 + 1.5 * iqr;
       return [
-        `SELECT "${col}"`,
-        `FROM ${tableName}`,
-        `WHERE "${col}" < ${lo} OR "${col}" > ${hi}`,
-        `ORDER BY "${col}"`,
+        `SELECT ${qCol}`,
+        `FROM ${tbl}`,
+        `WHERE ${qCol} < ${lo} OR ${qCol} > ${hi}`,
+        `ORDER BY ${qCol}`,
       ].join('\n');
     }
 
     case 'correlation': {
-      const colA = action.columns[0];
       const colB = action.columns[1];
-      if (!colA || !colB) return null;
+      if (!colB) return null;
       return [
-        `SELECT "${colA}", "${colB}"`,
-        `FROM ${tableName}`,
-        `ORDER BY "${colA}"`,
+        `SELECT ${qCol}, ${quoteId(colB)}`,
+        `FROM ${tbl}`,
+        `ORDER BY ${qCol}`,
       ].join('\n');
     }
 
     case 'cardinality':
-      return [
-        `SELECT "${col}", COUNT(*) AS cnt`,
-        `FROM ${tableName}`,
-        `GROUP BY 1`,
-        `ORDER BY cnt DESC`,
-        `LIMIT 50`,
-      ].join('\n');
-
     case 'imbalance':
       return [
-        `SELECT "${col}", COUNT(*) AS cnt`,
-        `FROM ${tableName}`,
+        `SELECT ${qCol}, COUNT(*) AS cnt`,
+        `FROM ${tbl}`,
         `GROUP BY 1`,
         `ORDER BY cnt DESC`,
+        ...(action.issueType === 'cardinality' ? ['LIMIT 50'] : []),
       ].join('\n');
 
     default:
@@ -138,65 +137,50 @@ export function useInsightActions({
 
   const handleInsightAction = useCallback(
     (action: InsightAction) => {
-      console.log('[insight-action]', action.type, action.columns, action.issueType, {
-        projectId,
-        tableName,
-      });
-
       if (!tableName) {
         toast.error('No table available for this action');
         return;
       }
 
       switch (action.type) {
-        /* ---- filter: execute SQL and create artifact ---- */
         case 'filter': {
           const sql = generateFilterSql(tableName, action);
           if (!sql) {
             toast.error('Cannot generate filter query for this insight');
             return;
           }
-          if (onExecuteQuery) {
-            onExecuteQuery(sql, 'sql');
-          }
+          onExecuteQuery?.(sql, 'sql');
           break;
         }
 
-        /* ---- query: populate SQL editor (no execution) ---- */
         case 'query': {
           const sql = generateQuerySql(tableName, action);
           if (!sql) {
             toast.error('Cannot generate diagnostic query for this insight');
             return;
           }
-          if (onSuggestSql) {
-            onSuggestSql(sql);
-          }
+          onSuggestSql?.(sql);
           break;
         }
 
-        /* ---- preprocess: navigate to preprocessing phase ---- */
         case 'preprocess': {
           if (!projectId) {
             toast.error('No project context for preprocessing');
             return;
           }
-          const col = action.columns[0] ?? '';
           const params = new URLSearchParams({
-            insightColumn: col,
+            insightColumn: action.columns[0] ?? '',
             insightIssue: action.issueType,
           });
           navigate(`/project/${projectId}/preprocessing?${params.toString()}`);
           break;
         }
 
-        /* ---- notebook: generate suggested cell via LLM ---- */
         case 'notebook': {
           if (!projectId) {
             toast.error('No project context for notebook generation');
             return;
           }
-
           const insightContext: InsightCodegenContext = {
             columns: action.columns,
             issueType: action.issueType,
@@ -205,7 +189,6 @@ export function useInsightActions({
             datasetSchema: datasetSchema ?? [],
             tableName,
           };
-
           setPendingInsightContext(insightContext);
           navigate(`/project/${projectId}/notebook`);
           break;

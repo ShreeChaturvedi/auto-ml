@@ -16,12 +16,13 @@ import type { LucideIcon } from 'lucide-react';
 import type { EdaSummary } from '@/types/file';
 
 export type InsightActionType = 'filter' | 'query' | 'preprocess' | 'notebook';
+export type InsightIssueType = 'missing' | 'outlier' | 'skew' | 'correlation' | 'constant' | 'cardinality' | 'imbalance';
 
 export interface InsightAction {
   type: InsightActionType;
   columns: string[];
-  issueType: string;  // 'missing' | 'outlier' | 'skew' | 'correlation' | 'constant' | 'cardinality' | 'imbalance'
-  context?: Record<string, unknown>;  // additional data (e.g. q1, q3, iqr for outlier filter SQL)
+  issueType: InsightIssueType;
+  context?: Record<string, unknown>;
 }
 
 export interface EdaInsight {
@@ -39,7 +40,7 @@ export interface EdaInsight {
 function buildActions(
   types: InsightActionType[],
   columns: string[],
-  issueType: string,
+  issueType: InsightIssueType,
   context?: Record<string, unknown>,
 ): InsightAction[] {
   return types.map(type => ({ type, columns, issueType, context }));

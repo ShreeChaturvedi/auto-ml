@@ -6,7 +6,7 @@
  */
 
 import { streamSuggestCell, type InsightCodegenContext } from '@/lib/api/insightCodegen';
-import type { NotebookSlice } from './types';
+import type { NotebookSlice, NotebookState } from './types';
 
 // ============================================================
 // Suggested Cell slice interface
@@ -22,6 +22,51 @@ export interface SuggestedCellSlice {
   acceptSuggestedCell: (cellId: string) => Promise<void>;
   rejectSuggestedCell: (cellId: string) => Promise<void>;
   cancelSuggestedCellStream: (cellId: string) => void;
+}
+
+// ============================================================
+// Helpers — immutable Set/Map updates for Zustand reactivity
+// ============================================================
+
+function finishStream(
+  state: NotebookState,
+  cellId: string,
+  errorMessage?: string,
+): Partial<NotebookState> {
+  const nextStreaming = new Set(state.streamingCellIds);
+  nextStreaming.delete(cellId);
+  const nextControllers = new Map(state.streamAbortControllers);
+  nextControllers.delete(cellId);
+
+  const patch: Partial<NotebookState> = {
+    streamingCellIds: nextStreaming,
+    streamAbortControllers: nextControllers,
+  };
+
+  if (errorMessage !== undefined) {
+    const nextErrors = new Map(state.streamErrors);
+    nextErrors.set(cellId, errorMessage);
+    patch.streamErrors = nextErrors;
+  }
+
+  return patch;
+}
+
+function cleanupCellTracking(state: NotebookState, cellId: string): Partial<NotebookState> {
+  const nextSuggested = new Set(state.suggestedCellIds);
+  nextSuggested.delete(cellId);
+  const nextErrors = new Map(state.streamErrors);
+  nextErrors.delete(cellId);
+  const nextStreaming = new Set(state.streamingCellIds);
+  nextStreaming.delete(cellId);
+  const nextControllers = new Map(state.streamAbortControllers);
+  nextControllers.delete(cellId);
+  return {
+    suggestedCellIds: nextSuggested,
+    streamingCellIds: nextStreaming,
+    streamErrors: nextErrors,
+    streamAbortControllers: nextControllers,
+  };
 }
 
 // ============================================================
@@ -52,11 +97,8 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
             case 'cell_created': {
               cellId = event.cellId;
 
-              // Register abort controller keyed by cellId
               const nextControllers = new Map(state.streamAbortControllers);
               nextControllers.set(cellId, abortController);
-
-              // Add to suggested + streaming sets
               const nextSuggested = new Set(state.suggestedCellIds);
               nextSuggested.add(cellId);
               const nextStreaming = new Set(state.streamingCellIds);
@@ -68,7 +110,6 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
                 streamAbortControllers: nextControllers,
               });
 
-              // Load the cell from the backend so it appears in the cells array
               void state.loadCell(cellId);
               break;
             }
@@ -84,30 +125,13 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
 
             case 'done': {
               if (!cellId) break;
-              const nextStreaming = new Set(get().streamingCellIds);
-              nextStreaming.delete(cellId);
-              const nextControllers = new Map(get().streamAbortControllers);
-              nextControllers.delete(cellId);
-              _set({
-                streamingCellIds: nextStreaming,
-                streamAbortControllers: nextControllers,
-              });
+              _set(finishStream(get(), cellId));
               break;
             }
 
             case 'error': {
               if (!cellId) break;
-              const nextStreaming = new Set(get().streamingCellIds);
-              nextStreaming.delete(cellId);
-              const nextErrors = new Map(get().streamErrors);
-              nextErrors.set(cellId, event.message);
-              const nextControllers = new Map(get().streamAbortControllers);
-              nextControllers.delete(cellId);
-              _set({
-                streamingCellIds: nextStreaming,
-                streamErrors: nextErrors,
-                streamAbortControllers: nextControllers,
-              });
+              _set(finishStream(get(), cellId, event.message));
               break;
             }
           }
@@ -115,72 +139,29 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
         abortController.signal,
       );
     } catch (error) {
-      // AbortError is expected when user cancels — don't surface it
       if (error instanceof DOMException && error.name === 'AbortError') return;
-
       if (cellId) {
-        const nextStreaming = new Set(get().streamingCellIds);
-        nextStreaming.delete(cellId);
-        const nextErrors = new Map(get().streamErrors);
-        nextErrors.set(cellId, error instanceof Error ? error.message : 'Stream failed');
-        const nextControllers = new Map(get().streamAbortControllers);
-        nextControllers.delete(cellId);
-        _set({
-          streamingCellIds: nextStreaming,
-          streamErrors: nextErrors,
-          streamAbortControllers: nextControllers,
-        });
+        _set(finishStream(get(), cellId, error instanceof Error ? error.message : 'Stream failed'));
       }
     }
   },
 
   acceptSuggestedCell: async (cellId: string) => {
-    const state = get();
-
-    // Persist: remove isSuggested flag by updating metadata
-    await state.updateCell(cellId, { metadata: {} });
-
-    // Remove from suggested set
-    const nextSuggested = new Set(state.suggestedCellIds);
+    const nextSuggested = new Set(get().suggestedCellIds);
     nextSuggested.delete(cellId);
-    const nextErrors = new Map(state.streamErrors);
+    const nextErrors = new Map(get().streamErrors);
     nextErrors.delete(cellId);
-    _set({
-      suggestedCellIds: nextSuggested,
-      streamErrors: nextErrors,
-    });
+    _set({ suggestedCellIds: nextSuggested, streamErrors: nextErrors });
   },
 
   rejectSuggestedCell: async (cellId: string) => {
-    const state = get();
-
-    // Delete the cell from backend + local state
-    await state.deleteCell(cellId);
-
-    // Clean up all tracking sets
-    const nextSuggested = new Set(state.suggestedCellIds);
-    nextSuggested.delete(cellId);
-    const nextStreaming = new Set(state.streamingCellIds);
-    nextStreaming.delete(cellId);
-    const nextErrors = new Map(state.streamErrors);
-    nextErrors.delete(cellId);
-    const nextControllers = new Map(state.streamAbortControllers);
-    nextControllers.delete(cellId);
-    _set({
-      suggestedCellIds: nextSuggested,
-      streamingCellIds: nextStreaming,
-      streamErrors: nextErrors,
-      streamAbortControllers: nextControllers,
-    });
+    await get().deleteCell(cellId);
+    _set(cleanupCellTracking(get(), cellId));
   },
 
   cancelSuggestedCellStream: (cellId: string) => {
-    const state = get();
-    const controller = state.streamAbortControllers.get(cellId);
-    if (controller) {
-      controller.abort();
-    }
-    // Reject (delete) the cell after aborting
-    void state.rejectSuggestedCell(cellId);
+    const controller = get().streamAbortControllers.get(cellId);
+    if (controller) controller.abort();
+    void get().rejectSuggestedCell(cellId);
   },
 });

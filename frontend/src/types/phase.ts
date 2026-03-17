@@ -12,7 +12,8 @@ export type Phase =
   | 'feature-engineering'
   | 'training'
   | 'experiments'
-  | 'deployment';
+  | 'deployment'
+  | 'notebook';
 
 /**
  * Phase configuration for each workflow stage
@@ -75,8 +76,22 @@ export const phaseConfig: Record<Phase, PhaseConfig> = {
     label: 'Deployment',
     description: 'Deploy models to production',
     order: 6
+  },
+  'notebook': {
+    icon: 'BookOpen',
+    label: 'Notebook',
+    description: 'Interactive notebook for data exploration',
+    order: 7
   }
 };
+
+/** Phases that are auxiliary (accessible from other phases, not part of the linear workflow). */
+export const AUXILIARY_PHASES: ReadonlySet<Phase> = new Set<Phase>(['notebook']);
+
+/** Check if a phase is auxiliary (not part of the main workflow progression). */
+export function isAuxiliaryPhase(phase: Phase): boolean {
+  return AUXILIARY_PHASES.has(phase);
+}
 
 /**
  * Get all phases sorted by workflow order
@@ -87,19 +102,23 @@ export function getAllPhasesSorted(): Phase[] {
   );
 }
 
+/** Pre-computed workflow phases (excludes auxiliary phases like notebook). */
+export const WORKFLOW_PHASES: readonly Phase[] = getAllPhasesSorted().filter(
+  (p) => !AUXILIARY_PHASES.has(p)
+);
+
 /**
  * Get the next phase in the workflow
  * Returns undefined if current phase is the last one
  */
 export function getNextPhase(currentPhase: Phase): Phase | undefined {
-  const allPhases = getAllPhasesSorted();
-  const currentIndex = allPhases.indexOf(currentPhase);
+  const currentIndex = WORKFLOW_PHASES.indexOf(currentPhase);
 
-  if (currentIndex === -1 || currentIndex === allPhases.length - 1) {
+  if (currentIndex === -1 || currentIndex === WORKFLOW_PHASES.length - 1) {
     return undefined;
   }
 
-  return allPhases[currentIndex + 1];
+  return WORKFLOW_PHASES[currentIndex + 1];
 }
 
 /**
@@ -107,14 +126,13 @@ export function getNextPhase(currentPhase: Phase): Phase | undefined {
  * Returns undefined if current phase is the first one
  */
 export function getPreviousPhase(currentPhase: Phase): Phase | undefined {
-  const allPhases = getAllPhasesSorted();
-  const currentIndex = allPhases.indexOf(currentPhase);
+  const currentIndex = WORKFLOW_PHASES.indexOf(currentPhase);
 
   if (currentIndex <= 0) {
     return undefined;
   }
 
-  return allPhases[currentIndex - 1];
+  return WORKFLOW_PHASES[currentIndex - 1];
 }
 
 /**

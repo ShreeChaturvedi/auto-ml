@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 import type { QueryRow } from '../types/query.js';
 
+import { buildMissingMatrix } from './eda/missingMatrix.js';
+import { computeRegressionLine } from './eda/statistics.js';
+import { buildScatterPairs } from './eda/visualizations.js';
 import { buildEdaSummary } from './edaSummary.js';
 
 describe('edaSummary', () => {
@@ -273,6 +276,219 @@ describe('edaSummary', () => {
       const result = buildEdaSummary(rows)!;
       const quality = result.dataQuality.find(q => q.column === 'value')!;
       expect(quality.missingPercentage).toBe(100);
+    });
+
+    it('returns scope when options with source are provided', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 },
+        { value: 3 }
+      ];
+      const result = buildEdaSummary(rows, { source: 'query-result', totalRows: 100 });
+      expect(result).toBeDefined();
+      expect(result!.scope).toEqual({
+        source: 'query-result',
+        rowsAnalyzed: 3,
+        totalRows: 100
+      });
+    });
+
+    it('returns scope with dataset-profile source', () => {
+      const rows: QueryRow[] = [
+        { value: 10 },
+        { value: 20 }
+      ];
+      const result = buildEdaSummary(rows, { source: 'dataset-profile', totalRows: 5000 });
+      expect(result).toBeDefined();
+      expect(result!.scope).toEqual({
+        source: 'dataset-profile',
+        rowsAnalyzed: 2,
+        totalRows: 5000
+      });
+    });
+
+    it('returns no scope when options are omitted (backward compat)', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 }
+      ];
+      const result = buildEdaSummary(rows);
+      expect(result).toBeDefined();
+      expect(result!.scope).toBeUndefined();
+    });
+
+    it('returns no scope when options are provided without source', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 }
+      ];
+      const result = buildEdaSummary(rows, {});
+      expect(result).toBeDefined();
+      expect(result!.scope).toBeUndefined();
+    });
+
+    it('defaults totalRows to rowsAnalyzed when totalRows is omitted', () => {
+      const rows: QueryRow[] = [
+        { value: 1 },
+        { value: 2 },
+        { value: 3 }
+      ];
+      const result = buildEdaSummary(rows, { source: 'query-result' });
+      expect(result).toBeDefined();
+      expect(result!.scope).toEqual({
+        source: 'query-result',
+        rowsAnalyzed: 3,
+        totalRows: 3
+      });
+    });
+
+    it('detects all columns from sparse rows', () => {
+      const rows: QueryRow[] = [
+        { a: 1 },
+        { b: 2 },
+        { a: 3, c: 'hello' }
+      ];
+      const result = buildEdaSummary(rows);
+      expect(result).toBeDefined();
+      const qualityColumns = result!.dataQuality.map(q => q.column).sort();
+      expect(qualityColumns).toEqual(['a', 'b', 'c']);
+    });
+  });
+
+  describe('computeRegressionLine', () => {
+    it('returns slope ~1 and R² ~1 for perfect positive correlation', () => {
+      const points = [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }];
+      const result = computeRegressionLine(points);
+      expect(result).toBeDefined();
+      expect(result!.slope).toBeCloseTo(1, 5);
+      expect(result!.r2).toBeCloseTo(1, 5);
+    });
+
+    it('returns low R² for uncorrelated data', () => {
+      // Deliberately scattered points with no linear trend
+      const points = [
+        { x: 1, y: 10 },
+        { x: 2, y: 3 },
+        { x: 3, y: 15 },
+        { x: 4, y: 1 },
+        { x: 5, y: 12 },
+        { x: 6, y: 2 },
+        { x: 7, y: 14 },
+        { x: 8, y: 4 },
+      ];
+      const result = computeRegressionLine(points);
+      expect(result).toBeDefined();
+      expect(result!.r2).toBeLessThan(0.2);
+    });
+
+    it('returns undefined when all x values are identical', () => {
+      const points = [{ x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 }];
+      expect(computeRegressionLine(points)).toBeUndefined();
+    });
+
+    it('returns undefined for a single point', () => {
+      expect(computeRegressionLine([{ x: 1, y: 1 }])).toBeUndefined();
+    });
+
+    it('returns undefined for empty array', () => {
+      expect(computeRegressionLine([])).toBeUndefined();
+    });
+  });
+
+  describe('buildScatterPairs', () => {
+    const rows: QueryRow[] = [
+      { a: 1, b: 2, c: 10 },
+      { a: 2, b: 4, c: 8 },
+      { a: 3, b: 6, c: 6 },
+      { a: 4, b: 8, c: 4 },
+      { a: 5, b: 10, c: 2 },
+    ];
+    const numericCols = ['a', 'b', 'c'];
+    const correlations = [
+      { columnA: 'a', columnB: 'b', coefficient: 1.0 },
+      { columnA: 'a', columnB: 'c', coefficient: -1.0 },
+      { columnA: 'b', columnB: 'c', coefficient: -1.0 },
+    ];
+
+    it('generates the correct number of pairs', () => {
+      const result = buildScatterPairs(rows, numericCols, correlations);
+      expect(result).toBeDefined();
+      expect(result!.length).toBe(3);
+    });
+
+    it('respects maxPairs cap', () => {
+      const result = buildScatterPairs(rows, numericCols, correlations, 2);
+      expect(result).toBeDefined();
+      expect(result!.length).toBe(2);
+    });
+
+    it('returns undefined when correlations array is empty', () => {
+      expect(buildScatterPairs(rows, numericCols, [])).toBeUndefined();
+    });
+
+    it('works correctly with exactly 2 columns (single pair)', () => {
+      const twoColRows: QueryRow[] = [
+        { x: 1, y: 2 },
+        { x: 2, y: 4 },
+        { x: 3, y: 6 },
+      ];
+      const result = buildScatterPairs(
+        twoColRows,
+        ['x', 'y'],
+        [{ columnA: 'x', columnB: 'y', coefficient: 1.0 }]
+      );
+      expect(result).toBeDefined();
+      expect(result!.length).toBe(1);
+      expect(result![0].xColumn).toBe('x');
+      expect(result![0].yColumn).toBe('y');
+      expect(result![0].regressionLine).toBeDefined();
+    });
+  });
+
+  describe('buildMissingMatrix', () => {
+    it('produces correct binary values for mixed missing/present data', () => {
+      const rows: QueryRow[] = [
+        { a: 1, b: null },
+        { a: null, b: 'hello' },
+        { a: 3, b: '' },
+      ];
+      const result = buildMissingMatrix(rows, ['a', 'b']);
+      expect(result).toBeDefined();
+      expect(result!.columns).toEqual(['a', 'b']);
+      // row 0: a=present(1), b=null(0)
+      expect(result!.matrix[0]).toEqual([1, 0]);
+      // row 1: a=null(0), b=present(1)
+      expect(result!.matrix[1]).toEqual([0, 1]);
+      // row 2: a=present(1), b=''(0)
+      expect(result!.matrix[2]).toEqual([1, 0]);
+    });
+
+    it('returns undefined when no column has missing values', () => {
+      const rows: QueryRow[] = [
+        { a: 1, b: 2 },
+        { a: 3, b: 4 },
+      ];
+      expect(buildMissingMatrix(rows, ['a', 'b'])).toBeUndefined();
+    });
+
+    it('respects sampleSize cap', () => {
+      // 200 rows, sampleSize=10 -> step = 20, so ~10 sampled rows
+      const rows: QueryRow[] = Array.from({ length: 200 }, (_, i) => ({
+        a: i,
+        b: i % 5 === 0 ? null : i,
+      }));
+      const result = buildMissingMatrix(rows, ['a', 'b'], 10);
+      expect(result).toBeDefined();
+      expect(result!.matrix.length).toBeLessThanOrEqual(10);
+    });
+
+    it('returns undefined for empty rows', () => {
+      expect(buildMissingMatrix([], ['a', 'b'])).toBeUndefined();
+    });
+
+    it('returns undefined for empty columns', () => {
+      const rows: QueryRow[] = [{ a: 1 }];
+      expect(buildMissingMatrix(rows, [])).toBeUndefined();
     });
   });
 });

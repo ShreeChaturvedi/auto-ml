@@ -5,90 +5,28 @@
  * Uses backend Postgres for queries with EDA support
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { FileText, AlertCircle } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
-import { FileTabBar } from './FileTabBar';
-import { DataTable } from './DataTable';
-import { DocumentViewer } from './DocumentViewer';
+import { DataViewerTabBar } from './DataViewerTabBar';
+import { DataViewerContent } from './DataViewerContent';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
-import { ApiError } from '@/lib/api/client';
 import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
-import type { QueryResultPayload } from '@/lib/api/query';
-import type { ColumnDataType, QueryMode, DataPreview } from '@/types/file';
+import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { projectColorClasses } from '@/types/project';
-import { extractColumnTypesFromQuery } from './sqlColumnTypes';
 import { cn } from '@/lib/utils';
-
-function extractApiErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return String(error);
-  }
-
-  if (!(error instanceof ApiError)) {
-    return error.message;
-  }
-
-  if (error.payload && typeof error.payload === 'object') {
-    const payload = error.payload as Record<string, unknown>;
-
-    if (typeof payload.details === 'string' && payload.details.trim()) {
-      return payload.details;
-    }
-
-    if (payload.errors && typeof payload.errors === 'object') {
-      const errors = payload.errors as {
-        fieldErrors?: Record<string, string[]>;
-        formErrors?: string[];
-      };
-
-      const fieldErrors = errors.fieldErrors
-        ? Object.entries(errors.fieldErrors)
-            .map(([key, values]) => `${key}: ${values.join(', ')}`)
-            .join('; ')
-        : '';
-      const formErrors = errors.formErrors?.join('; ') ?? '';
-      const combined = [fieldErrors, formErrors].filter(Boolean).join(' | ');
-      if (combined) {
-        return combined;
-      }
-    }
-
-    if (typeof payload.error === 'string' && payload.error.trim()) {
-      return payload.error;
-    }
-  }
-
-  return error.message;
-}
-
-function buildDataPreviewFromQuery(query: QueryResultPayload): DataPreview {
-  return {
-    fileId: 'query-result',
-    headers: query.columns.map((col) => col.name),
-    rows: query.rows,
-    totalRows: query.rowCount,
-    previewRows: query.rowCount,
-    eda: query.eda,
-    columnTypes: extractColumnTypesFromQuery(query.columns, query.rows)
-  };
-}
-
-function buildQueryArtifactMeta(query: QueryResultPayload) {
-  return {
-    eda: query.eda,
-    cached: query.cached,
-    executionMs: query.executionMs,
-    cacheTimestamp: query.cacheTimestamp
-  };
-}
+import {
+  extractApiErrorMessage,
+  buildDataPreviewFromQuery,
+  buildQueryArtifactMeta,
+  useColumnOperations
+} from './hooks/useColumnOperations';
+import { useInsightActions } from '@/hooks/useInsightActions';
 
 function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
   return {
@@ -169,23 +107,7 @@ export function DataViewerTab() {
   }, [activeFileTabId, openFileTabsForProject, queryArtifacts, setActiveFileTab]);
 
   // Derive table names and columns for SQL autocomplete
-  const tableNames = useMemo(() => {
-    return files
-      .filter((f) => f.metadata?.tableName)
-      .map((f) => f.metadata!.tableName!);
-  }, [files]);
-
-  const columnsByTable = useMemo(() => {
-    const result: Record<string, string[]> = {};
-    for (const file of files) {
-      if (!file.metadata?.tableName) continue;
-      const preview = previews.find((p) => p.fileId === file.id);
-      if (preview) {
-        result[file.metadata.tableName] = preview.headers;
-      }
-    }
-    return result;
-  }, [files, previews]);
+  const { tableNames, columnsByTable } = useColumnOperations(files, previews);
 
   // Handle query execution — SQL only.
   // Natural-language queries are now handled by handleNlGenerate + handleNlApprove.
@@ -347,6 +269,37 @@ export function DataViewerTab() {
 
   const activeControlsPortalTarget = controlsPortalTarget;
 
+  // Suggested SQL state — set by insight "query" action, consumed by QueryPanel.
+  // Wrapped with a monotonic token so re-clicking the same insight re-triggers.
+  const suggestedSqlTokenRef = useRef(0);
+  const [suggestedSql, setSuggestedSql] = useState<{ sql: string; token: number } | null>(null);
+
+  const handleSuggestSql = useCallback((sql: string) => {
+    setQueryMode('sql');
+    setSuggestedSql({ sql, token: ++suggestedSqlTokenRef.current });
+    if (queryPanelCollapsed) {
+      handleQueryPanelCollapsedChange(false);
+    }
+  }, [queryPanelCollapsed, handleQueryPanelCollapsedChange]);
+
+  // Build dataset schema for notebook code generation context
+  const datasetSchema = useMemo(() => {
+    const firstFile = files[0];
+    const dtypes = firstFile?.metadata?.datasetProfile?.dtypes;
+    if (!dtypes) return undefined;
+    return Object.entries(dtypes).map(([column, dtype]) => ({ column, dtype }));
+  }, [files]);
+
+  const { handleInsightAction } = useInsightActions({
+    projectId,
+    tableName: tableNames[0],
+    onExecuteQuery: handleExecuteQuery,
+    onSuggestSql: handleSuggestSql,
+    datasetSchema,
+  });
+
+  const handleDismissError = useCallback(() => setQueryError(null), []);
+
   useEffect(() => {
     if (!queryPanelIsTransitioning) {
       return;
@@ -376,129 +329,36 @@ export function DataViewerTab() {
     );
   }
 
-  // Get active tab content
-  const getActiveTabContent = () => {
-    if (!activeFileTabId) return null;
-
-    if (fileTabType === 'file') {
-      const file = files.find((f) => f.id === activeFileTabId);
-      if (!file) return null;
-
-      if (['csv', 'json', 'excel'].includes(file.type)) {
-        const preview = previews.find((p) => p.fileId === activeFileTabId);
-        if (preview) {
-          const columnTypes = file.metadata?.datasetProfile?.dtypes;
-          const datasetId = file.metadata?.datasetId;
-          return (
-            <DataTable
-              preview={preview}
-              columnTypes={columnTypes}
-              typeColorClassName={projectTypeColorClassName}
-              controlsPortalTarget={activeControlsPortalTarget}
-              onColumnTypeChange={
-                datasetId
-                  ? async (columnName: string, nextType: ColumnDataType) => {
-                      try {
-                        await updateColumnType(datasetId, columnName, nextType);
-                        toast.success(`Updated ${columnName} to ${nextType}`);
-                      } catch (error) {
-                        const message = extractApiErrorMessage(error);
-                        toast.error('Failed to update column type', {
-                          description: message
-                        });
-                      }
-                    }
-                  : undefined
-              }
-            />
-          );
-        }
-        return (
-          <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-            No preview available for this dataset yet.
-          </div>
-        );
-      }
-
-      return <DocumentViewer file={file} controlsPortalTarget={activeControlsPortalTarget} />;
-    } else if (fileTabType === 'artifact') {
-      const artifact = queryArtifacts.find((a) => a.id === activeFileTabId);
-      if (artifact) {
-        // Extract column types from the query result metadata
-        const columnTypes = artifact.result.columnTypes;
-        return (
-            <DataTable
-              preview={artifact.result}
-              columnTypes={columnTypes}
-              typeColorClassName={projectTypeColorClassName}
-              controlsPortalTarget={activeControlsPortalTarget}
-              queryInfo={{
-                query: artifact.query,
-                mode: artifact.mode,
-              timestamp: artifact.timestamp,
-              eda: artifact.eda,
-              cached: artifact.cached,
-              executionMs: artifact.executionMs,
-              cacheTimestamp: artifact.cacheTimestamp,
-              generatedSql: artifact.generatedSql,
-              rationale: artifact.rationale,
-              explanation: artifact.explanation
-            }}
-          />
-        );
-      }
-    } else if (fileTabType === 'plan') {
-      // Render plan markdown from project metadata
-      const planContent = (activeProject?.metadata as Record<string, unknown> | undefined)?.projectPlan as string | undefined;
-      if (planContent) {
-        return (
-          <div className="h-full overflow-auto p-6">
-            <div className="mx-auto max-w-3xl prose prose-sm dark:prose-invert">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {planContent}
-              </ReactMarkdown>
-            </div>
-          </div>
-        );
-      }
-    }
-
-    return null;
-  };
-
   return (
     <div className="flex h-full overflow-hidden">
       {/* Main Content Area (left side) */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* File Tab Bar */}
         {projectId && (
-          <FileTabBar
+          <DataViewerTabBar
             projectId={projectId}
             queryIconColorClassName={projectTypeColorClassName}
+            queryError={queryError}
+            onDismissError={handleDismissError}
           />
-        )}
-
-        {/* Error Banner */}
-        {queryError && (
-          <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-destructive">Query Error</p>
-              <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap">{queryError}</p>
-            </div>
-            <button
-              onClick={() => setQueryError(null)}
-              className="text-destructive/70 hover:text-destructive transition-colors"
-              aria-label="Dismiss error"
-            >
-              ×
-            </button>
-          </div>
         )}
 
         {/* Data Display */}
         <div className="flex-1 min-w-0 overflow-auto bg-background">
-          {getActiveTabContent() ?? (
+          {activeFileTabId ? (
+            <DataViewerContent
+              activeFileTabId={activeFileTabId}
+              fileTabType={fileTabType}
+              files={files}
+              previews={previews}
+              queryArtifacts={queryArtifacts}
+              activeProject={activeProject}
+              projectTypeColorClassName={projectTypeColorClassName}
+              controlsPortalTarget={activeControlsPortalTarget}
+              updateColumnType={updateColumnType}
+              extractApiErrorMessage={extractApiErrorMessage}
+              onInsightAction={handleInsightAction}
+            />
+          ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a file from the sidebar to open it here.
             </div>
@@ -537,6 +397,7 @@ export function DataViewerTab() {
           onMountPortalTarget={setControlsPortalTarget}
           onNlGenerate={handleNlGenerate}
           onNlApprove={handleNlApprove}
+          suggestedSql={suggestedSql}
         />
       </div>
     </div>

@@ -19,26 +19,23 @@ vi.mock('../services/sqlExecutor.js', () => ({
   executeReadOnlyQuery: vi.fn()
 }));
 
-vi.mock('../services/nlToSqlV2.js', () => ({
+vi.mock('../services/nlToSql/index.js', () => ({
   generateSqlFromNaturalLanguageV2: vi.fn(),
   repairSqlFromExecutionErrorV2: vi.fn()
 }));
 
-vi.mock('../services/nlSuggestions.js', () => ({
+vi.mock('../services/nlSuggestions/index.js', () => ({
   getNaturalLanguageSuggestions: vi.fn()
 }));
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSqlV2.js';
-import { getNaturalLanguageSuggestions } from '../services/nlSuggestions.js';
+import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
+import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { createQueryRouter } from './query.js';
-
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
 
 const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
 const mockGetCachedQueryResult = vi.mocked(getCachedQueryResult);
@@ -49,14 +46,22 @@ const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV
 const mockGetNaturalLanguageSuggestions = vi.mocked(getNaturalLanguageSuggestions);
 const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
 
-type NdjsonEvent = Record<string, any>;
+type NdjsonEvent = Record<string, unknown>;
+type NdjsonResultEvent = NdjsonEvent & {
+  type: 'result';
+  nl: {
+    sql: string;
+    explanation: { intentSummary: string };
+    queryExecutionError: string | null;
+  };
+};
 
 function parseNdjsonEvents(payload: string): NdjsonEvent[] {
   return payload
     .trim()
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line) as NdjsonEvent);
 }
 
 function findEventIndex(
@@ -73,7 +78,7 @@ function createTestApp() {
   return app;
 }
 
-describeIf('query routes', () => {
+describeRouteSuite('query routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHasDatabaseConfiguration.mockReturnValue(true);
@@ -342,9 +347,9 @@ describeIf('query routes', () => {
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Fetch users',
@@ -385,9 +390,9 @@ describeIf('query routes', () => {
       expect(response.body.nl.sql).toBe('SELECT * FROM users');
       expect(response.body.nl.rationale).toBe('Fetching all users');
       expect(response.body.nl.provider).toEqual({
-        id: 'gemini',
-        label: 'Gemini',
-        model: 'gemini-3-flash-preview'
+        id: 'openai',
+        label: 'OpenAI',
+        model: 'gpt-5.4'
       });
       expect(response.body.nl.explanation.intentSummary).toBe('Fetch users');
       expect(response.body.nl.explanation.confidenceMode).toBe('model');
@@ -403,9 +408,9 @@ describeIf('query routes', () => {
         rationale: 'Fetching all users',
         queryId: 'test-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Fetch users',
@@ -454,9 +459,9 @@ describeIf('query routes', () => {
         rationale: 'Attempt to fetch records',
         queryId: 'test-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Fetch records',
@@ -468,7 +473,7 @@ describeIf('query routes', () => {
           validationNotes: [],
           confidence: 0.5,
           warningLevel: 'medium',
-          confidenceMode: 'heuristic',
+          confidenceMode: 'model',
           reliabilityTier: 'low'
         }
       });
@@ -497,9 +502,9 @@ describeIf('query routes', () => {
         rationale: 'Compute average EOC',
         queryId: 'gen-query-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Compute average EOC score',
@@ -532,9 +537,9 @@ describeIf('query routes', () => {
         rationale: 'Use response column instead of eoc.',
         queryId: 'repair-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Compute average response score',
@@ -603,9 +608,9 @@ describeIf('query routes', () => {
           rationale: 'Fetching all users',
           queryId: 'stream-query-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Fetch users',
@@ -649,7 +654,7 @@ describeIf('query routes', () => {
       expect(events.some((event) => event.type === 'phase_started' && event.phaseId === 'schema_context')).toBe(true);
       expect(events.some((event) => event.type === 'phase_completed' && event.phaseId === 'done')).toBe(true);
 
-      const resultEvent = events.find((event) => event.type === 'result');
+      const resultEvent = events.find((event) => event.type === 'result') as NdjsonResultEvent | undefined;
       expect(resultEvent).toBeDefined();
       if (!resultEvent || resultEvent.type !== 'result') {
         throw new Error('Expected result event in NDJSON stream.');
@@ -676,9 +681,9 @@ describeIf('query routes', () => {
           rationale: 'Fallback SQL generation.',
           queryId: 'stream-progress-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Fetch users quickly',
@@ -690,7 +695,7 @@ describeIf('query routes', () => {
             validationNotes: [],
             confidence: 0.78,
             warningLevel: 'low',
-            confidenceMode: 'heuristic',
+            confidenceMode: 'model',
             reliabilityTier: 'medium'
           }
         };
@@ -765,7 +770,7 @@ describeIf('query routes', () => {
           phaseId: 'planning',
           kind: 'tool',
           title: 'Tool call: inspect_schema',
-          delta: '```json\n{\"table\":\"users\"}\n```',
+          delta: '```json\n{"table":"users"}\n```',
           timestamp: new Date().toISOString()
         });
         input.onModelWork?.({
@@ -790,9 +795,9 @@ describeIf('query routes', () => {
           rationale: 'List users.',
           queryId: 'stream-model-work-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Fetch users',
@@ -860,9 +865,9 @@ describeIf('query routes', () => {
         rationale: 'Compute average EOC',
         queryId: 'stream-repair-gen-id',
         provider: {
-          id: 'gemini',
-          label: 'Gemini',
-          model: 'gemini-3-flash-preview'
+          id: 'openai',
+          label: 'OpenAI',
+          model: 'gpt-5.4'
         },
         explanation: {
           intentSummary: 'Compute average EOC score',
@@ -909,9 +914,9 @@ describeIf('query routes', () => {
           rationale: 'Use response column instead of eoc.',
           queryId: 'stream-repair-id',
           provider: {
-            id: 'gemini',
-            label: 'Gemini',
-            model: 'gemini-3-flash-preview'
+            id: 'openai',
+            label: 'OpenAI',
+            model: 'gpt-5.4'
           },
           explanation: {
             intentSummary: 'Compute average response score',
@@ -969,7 +974,7 @@ describeIf('query routes', () => {
       expect(repairedProgressIndex).toBeGreaterThan(repairCompletedIndex);
       expect(repairedCompletedIndex).toBeGreaterThan(repairedProgressIndex);
 
-      const resultEvent = events.find((event) => event.type === 'result');
+      const resultEvent = events.find((event) => event.type === 'result') as NdjsonResultEvent | undefined;
       expect(resultEvent).toBeDefined();
       expect(resultEvent?.nl?.sql).toContain('AVG(response)');
       expect(resultEvent?.nl?.queryExecutionError).toBeNull();

@@ -8,38 +8,28 @@
  * single ribbon split by the resizable divider.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle
 } from '@/components/ui/resizable';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
 import { NotebookEditor } from '@/components/notebook/NotebookEditor';
-import { LlmChatComposer } from '@/components/llm/LlmChatComposer';
+import type { MentionInputHandle } from '@/components/llm/MentionInput';
+import { AgenticStepDisplay } from './AgenticStepDisplay';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
+import { useSavepoints } from '@/hooks/useSavepoints';
+import { useMentionAutocomplete, type MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import { useNotebookStore } from '@/stores/notebookStore';
-import type { DomainAdapter } from '@/types/agentic';
-import type { ChatMessage } from '@/types/llmUi';
-import {
-  ASSISTANT_MODEL_OPTIONS,
-  DEFAULT_ASSISTANT_MODEL,
-  getDefaultReasoningEffort,
-  getReasoningEffortOptions,
-  type ReasoningEffort
-} from '@/components/llm/modelOptions';
-import { Sparkles } from 'lucide-react';
-
-type LeftPaneRenderProps = {
-  messages: ChatMessage[];
-  isGenerating: boolean;
-  error: string | null;
-  activeTextMessageId: string | null;
-  activeThinkingMessageId: string | null;
-  hydratedMessageIds: Set<string>;
-};
+import { useDataStore } from '@/stores/dataStore';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { useComposerVoiceInput } from '@/hooks/useComposerVoiceInput';
+import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
+import type { DomainAdapter, LeftPaneRenderProps } from '@/types/agentic';
+import type { SavepointDiff } from '@/types/savepoint';
+import { useModelSelection } from '@/hooks/useModelSelection';
 
 interface AgenticShellProps {
   projectId: string;
@@ -55,6 +45,12 @@ interface AgenticShellProps {
   leftPaneScrollable?: boolean;
   LeftPaneComponent?: React.ComponentType<LeftPaneRenderProps>;
   renderLeftPane?: (props: LeftPaneRenderProps) => React.ReactNode;
+  /**
+   * When set, this prompt is auto-submitted once the shell mounts
+   * and the session is empty. The caller should clear the value after
+   * passing it so it does not re-trigger.
+   */
+  initialPrompt?: string | null;
 }
 
 export function AgenticShell({
@@ -70,15 +66,57 @@ export function AgenticShell({
   beforeSubmit,
   leftPaneScrollable = true,
   LeftPaneComponent,
-  renderLeftPane
+  renderLeftPane,
+  initialPrompt
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
-  const [assistantModel, setAssistantModel] = useState(DEFAULT_ASSISTANT_MODEL);
-  const [enableThinking, setEnableThinking] = useState(false);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    getDefaultReasoningEffort(DEFAULT_ASSISTANT_MODEL)
+  const mentionInputRef = useRef<MentionInputHandle>(null);
+  const {
+    selectedModel: assistantModel,
+    reasoningEffort,
+    inlineModelOptions,
+    reasoningEffortOptions,
+    dismissedModelPromptFor,
+    setDismissedModelPromptFor,
+    handleModelChange,
+    setReasoningEffort
+  } = useModelSelection();
+
+  const files = useDataStore((s) => s.files);
+  const mentionCandidates = useMemo<MentionCandidate[]>(
+    () =>
+      files
+        .filter((f) => f.projectId === projectId)
+        .map((f) => ({
+          id: f.id,
+          name: f.name,
+          type: f.type,
+          meta: {
+            datasetId: f.metadata?.datasetId,
+            documentId: f.metadata?.documentId
+          }
+        })),
+    [files, projectId]
   );
-  const [dismissedModelPromptFor, setDismissedModelPromptFor] = useState<string | null>(null);
+
+  const mentionNames = useMemo(
+    () => new Set(mentionCandidates.map((c) => c.name.toLowerCase())),
+    [mentionCandidates]
+  );
+
+  const mentionTypes = useMemo(
+    () => new Map(mentionCandidates.map((c) => [c.name.toLowerCase(), c.type])),
+    [mentionCandidates]
+  );
+
+  const { themeColor } = useProjectThemeColor(projectId);
+
+  const mention = useMentionAutocomplete({
+    candidates: mentionCandidates,
+    value: chatInput,
+    onValueChange: setChatInput,
+    inputRef: mentionInputRef
+  });
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
   const disconnectNotebook = useNotebookStore((s) => s.disconnect);
@@ -88,15 +126,23 @@ export function AgenticShell({
     return () => disconnectNotebook();
   }, [projectId, initializeNotebook, disconnectNotebook]);
 
+  const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
+
   const {
     messages,
     isGenerating,
     error,
+    sessionUsages,
     activeTextMessageId,
     activeThinkingMessageId,
     hydratedMessageIds,
     runLoop,
-    handleStop
+    handleStop,
+    revertToTurn,
+    editAndResend,
+    editingMessageId,
+    setEditingMessageId,
+    registerSavepoint
   } = useAgenticLoop({
     projectId,
     storageKey,
@@ -105,32 +151,128 @@ export function AgenticShell({
     domainLockReason
   });
 
-  const suggestions = domainAdapter.suggestionProvider(messages, isGenerating);
+  const savepoints = useSavepoints();
+
+  // Pre-fill composer when editing a message; exit edit mode if message was removed
+  useEffect(() => {
+    if (!editingMessageId) return;
+    const msg = messages.find(m => m.id === editingMessageId);
+    if (msg?.type === 'user') {
+      setChatInput(msg.content);
+    } else {
+      setEditingMessageId(null);
+      setChatInput('');
+    }
+  }, [editingMessageId, messages, setEditingMessageId]);
+
+  const handleEditMessage = useCallback((messageId: string) => {
+    setEditingMessageId(messageId);
+  }, [setEditingMessageId]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setChatInput('');
+  }, [setEditingMessageId]);
+
+  const { clearAfter: savepointsClearAfter, getDiff: savepointsGetDiff } = savepoints;
+
+  const handleRevertToMessage = useCallback((messageId: string) => {
+    const turnIdx = getTurnIndex(messages, messageId);
+    if (turnIdx === -1) return;
+    revertToTurn(turnIdx);
+    if (activeNotebookId) {
+      void savepointsClearAfter(activeNotebookId, turnIdx);
+    }
+  }, [messages, revertToTurn, activeNotebookId, savepointsClearAfter]);
+
+  // Fetch turn diffs only after streaming completes (not during token-by-token updates)
+  const [turnDiffs, setTurnDiffs] = useState<ReadonlyMap<string, SavepointDiff>>(new Map());
+  useEffect(() => {
+    if (!activeNotebookId || isGenerating) return;
+    const turns = groupMessagesByTurn(messages);
+    if (turns.length === 0) return;
+    let cancelled = false;
+
+    const fetchDiffs = async () => {
+      const entries = await Promise.all(
+        turns.map(async (turn) => {
+          const diff = await savepointsGetDiff(activeNotebookId, turn.turnIndex);
+          const lastResponse = turn.responses[turn.responses.length - 1];
+          return diff && lastResponse ? [lastResponse.id, diff] as const : null;
+        })
+      );
+      if (cancelled) return;
+      const newDiffs = new Map<string, SavepointDiff>();
+      for (const entry of entries) {
+        if (entry) newDiffs.set(entry[0], entry[1]);
+      }
+      setTurnDiffs(newDiffs);
+    };
+
+    void fetchDiffs();
+    return () => { cancelled = true; };
+  }, [activeNotebookId, isGenerating, messages, savepointsGetDiff]);
+
+  const {
+    state: voiceState,
+    analyserRef: voiceAnalyserRef,
+    toggleRecording: voiceToggle,
+    handlePushToTalkKeyDown,
+    handlePushToTalkKeyUp,
+  } = useComposerVoiceInput({
+    value: chatInput,
+    inputRef: mentionInputRef,
+    onValueChange: mention.handleValueChange,
+    disabled: isGenerating,
+  });
+
+  const suggestions = useMemo(
+    () => domainAdapter.suggestionProvider(messages, isGenerating),
+    [domainAdapter, messages, isGenerating]
+  );
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
-  const modelSwitchOptions = ASSISTANT_MODEL_OPTIONS.filter((option) => option.value !== assistantModel);
+  const modelSwitchOptions = inlineModelOptions
+    .filter((option) => option.value !== assistantModel);
   const showModelSwitchPrompt = Boolean(modelSwitchError && dismissedModelPromptFor !== modelSwitchError);
-
-  const handleModelChange = (model: string) => {
-    setAssistantModel(model);
-    setReasoningEffort(getDefaultReasoningEffort(model));
-  };
 
   useEffect(() => {
     if (!modelSwitchError) {
       setDismissedModelPromptFor(null);
     }
-  }, [modelSwitchError]);
+  }, [modelSwitchError, setDismissedModelPromptFor]);
 
   const submitPrompt = (prompt: string) => {
     const trimmed = prompt.trim();
     if (!trimmed || !projectId || isGenerating || domainLockReason) return;
 
+    // If editing, do editAndResend instead
+    if (editingMessageId) {
+      setEditingMessageId(null);
+      editAndResend(editingMessageId, trimmed, {
+        model: assistantModel,
+        reasoningEffort
+      });
+      setChatInput('');
+      mention.dismiss();
+      return;
+    }
+
+    // Capture mentions before clearing input
+    const currentMentions = mention.resolvedMentions;
+
     const startRun = async () => {
       let preparedPrompt = trimmed;
+
+      // Append file mention context
+      if (currentMentions.length > 0) {
+        const fileList = currentMentions.map((m) => m.name).join(', ');
+        preparedPrompt += `\n\n[Referenced files: ${fileList}]`;
+      }
+
       if (beforeSubmit) {
-        const nextPrompt = await beforeSubmit(trimmed);
+        const nextPrompt = await beforeSubmit(preparedPrompt);
         if (!nextPrompt?.trim()) {
           return;
         }
@@ -141,37 +283,57 @@ export function AgenticShell({
         return;
       }
 
+      // Create savepoint in background (fire-and-forget to avoid blocking UX)
+      const turnIndex = messages.filter(m => m.type === 'user').length;
+      const userMsgId = `user-${Date.now()}`;
+      if (activeNotebookId) {
+        void savepoints.createSavepoint(activeNotebookId, turnIndex, userMsgId).then(sp => {
+          if (sp) registerSavepoint(turnIndex, sp.savepointId);
+        });
+      }
+
+      // Show message immediately — don't wait for savepoint API
+      setChatInput('');
+      mention.dismiss();
       void runLoop(preparedPrompt, {
         model: assistantModel,
-        enableThinking,
-        thinkingLevel: reasoningEffort
-      });
-      setChatInput('');
+        reasoningEffort
+      }, undefined, undefined, userMsgId);
     };
 
     void startRun();
   };
 
+  // Auto-submit an initial prompt once when the session is empty
+  const initialPromptFiredRef = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialPromptFiredRef.current || messages.length > 0 || isGenerating) {
+      return;
+    }
+    initialPromptFiredRef.current = true;
+    // Defer to next tick so all shell state is settled
+    const id = window.setTimeout(() => submitPrompt(initialPrompt), 0);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on mount when conditions are met
+  }, [initialPrompt, messages.length, isGenerating]);
+
+  const leftPaneRenderProps: LeftPaneRenderProps = {
+    messages,
+    isGenerating,
+    error,
+    activeTextMessageId,
+    activeThinkingMessageId,
+    hydratedMessageIds,
+    onEditMessage: handleEditMessage,
+    onRevertToMessage: handleRevertToMessage,
+    editingMessageId,
+    turnDiffs
+  };
+
   const leftPaneContent = renderLeftPane
-    ? renderLeftPane({
-      messages,
-      isGenerating,
-      error,
-      activeTextMessageId,
-      activeThinkingMessageId,
-      hydratedMessageIds
-    })
+    ? renderLeftPane(leftPaneRenderProps)
     : LeftPaneComponent
-      ? (
-        <LeftPaneComponent
-          messages={messages}
-          isGenerating={isGenerating}
-          error={error}
-          activeTextMessageId={activeTextMessageId}
-          activeThinkingMessageId={activeThinkingMessageId}
-          hydratedMessageIds={hydratedMessageIds}
-        />
-      )
+      ? <LeftPaneComponent {...leftPaneRenderProps} />
       : null;
 
   return (
@@ -199,99 +361,42 @@ export function AgenticShell({
                 {leftPaneContent}
               </div>
             )}
-            
-            <div className="border-t bg-background">
-              {showModelSwitchPrompt ? (
-                <div className="border-b px-4 py-2">
-                  <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                    <span className="font-medium">Model availability issue detected.</span>
-                    <span className="text-amber-800">Switch model and retry?</span>
-                    <div className="ml-auto flex flex-wrap gap-2">
-                      {modelSwitchOptions.map((option) => (
-                        <Button
-                          key={option.value}
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            handleModelChange(option.value);
-                            setDismissedModelPromptFor(modelSwitchError);
-                          }}
-                          disabled={isGenerating}
-                        >
-                          {option.label}
-                        </Button>
-                      ))}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        onClick={() => setDismissedModelPromptFor(modelSwitchError)}
-                      >
-                        Keep current
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-              {composerStatusSlot ? (
-                <div className="border-b px-4 py-2">
-                  <div className="mx-auto w-full max-w-5xl">
-                    {composerStatusSlot}
-                  </div>
-                </div>
-              ) : null}
-              {suggestions.length > 0 && !domainLockReason ? (
-                <div className="border-b px-4 py-2">
-                  <div className="mx-auto flex max-w-5xl flex-wrap gap-2">
-                    {suggestions.map((suggestion) => (
-                      <Button
-                        key={suggestion.id}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => submitPrompt(suggestion.prompt)}
-                        disabled={isGenerating}
-                      >
-                        <Sparkles className="mr-1 h-3.5 w-3.5" />
-                        {suggestion.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
 
-              <div className="p-4">
-                <LlmChatComposer
-                  value={chatInput}
-                  onValueChange={setChatInput}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      submitPrompt(chatInput);
-                    }
-                  }}
-                  placeholder="Ask the agent to plan, execute, and validate..."
-                  disabled={isGenerating || !!domainLockReason}
-                  isStreaming={isGenerating}
-                  onSend={() => submitPrompt(chatInput)}
-                  onStop={handleStop}
-                  model={assistantModel}
-                  onModelChange={handleModelChange}
-                  modelOptions={ASSISTANT_MODEL_OPTIONS}
-                  reasoningEffort={reasoningEffort}
-                  onReasoningEffortChange={setReasoningEffort}
-                  reasoningOptions={getReasoningEffortOptions(assistantModel)}
-                  enableThinking={enableThinking}
-                  onToggleThinking={() => setEnableThinking(prev => !prev)}
-                  metaSlot={chatMetaSlot}
-                  maxWidthClassName="max-w-5xl"
-                />
-              </div>
-            </div>
+            <AgenticStepDisplay
+              showModelSwitchPrompt={showModelSwitchPrompt}
+              modelSwitchError={modelSwitchError}
+              modelSwitchOptions={modelSwitchOptions}
+              handleModelChange={handleModelChange}
+              setDismissedModelPromptFor={setDismissedModelPromptFor}
+              isGenerating={isGenerating}
+              composerStatusSlot={composerStatusSlot}
+              suggestions={suggestions}
+              domainLockReason={domainLockReason}
+              submitPrompt={submitPrompt}
+              chatInput={chatInput}
+              mention={mention}
+              mentionInputRef={mentionInputRef}
+              mentionNames={mentionNames}
+              mentionTypes={mentionTypes}
+              themeColor={themeColor}
+              voiceConfig={{
+                state: voiceState,
+                analyserRef: voiceAnalyserRef,
+                onToggle: voiceToggle,
+                handleKeyDown: handlePushToTalkKeyDown,
+                handleKeyUp: handlePushToTalkKeyUp,
+              }}
+              assistantModel={assistantModel}
+              inlineModelOptions={inlineModelOptions}
+              reasoningEffort={reasoningEffort}
+              setReasoningEffort={setReasoningEffort}
+              reasoningEffortOptions={reasoningEffortOptions}
+              sessionUsages={sessionUsages}
+              handleStop={handleStop}
+              chatMetaSlot={chatMetaSlot}
+              editingMessageId={editingMessageId}
+              onCancelEdit={handleCancelEdit}
+            />
           </div>
         </ResizablePanel>
 

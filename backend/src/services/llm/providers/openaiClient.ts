@@ -1,4 +1,8 @@
-import type { LlmClient, LlmRequest, LlmStreamHandlers } from '../llmClient.js';
+import OpenAI from 'openai';
+import type { Responses } from 'openai/resources/responses/responses';
+
+import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall, RawLlmUsage } from '../llmClient.js';
+import { normalizeReasoningSelection, resolveCatalogModel } from '../modelCatalog.js';
 
 interface OpenAiClientOptions {
   apiKey: string;
@@ -8,131 +12,103 @@ interface OpenAiClientOptions {
 }
 
 export class OpenAiClient implements LlmClient {
-  private apiKey: string;
-  private baseUrl: string;
+  private client: OpenAI;
   private model: string;
-  private timeoutMs: number;
 
   constructor(options: OpenAiClientOptions) {
-    this.apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl.replace(/\/$/, '') || 'http://localhost:11434';
-    this.model = options.model || 'gpt-4o-mini';
-    this.timeoutMs = options.timeoutMs;
+    this.client = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.baseUrl.replace(/\/$/, '') || undefined,
+      timeout: options.timeoutMs,
+      maxRetries: 0
+    });
+    this.model = resolveCatalogModel(options.model).id;
   }
 
   async complete(request: LlmRequest): Promise<string> {
-    const body = buildOpenAiBody(request, this.model, false);
-    const response = await this.fetchWithTimeout(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: this.buildHeaders(),
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(text || `OpenAI-compatible request failed (${response.status})`);
-    }
-
-    const payload = await response.json();
-    return extractOpenAiText(payload);
+    const response = await this.client.responses.create(buildOpenAiCreateBody(request, this.model));
+    return response.output_text ?? '';
   }
 
   async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
-    const body = buildOpenAiBody(request, this.model, true);
-    const response = await this.fetchWithTimeout(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: this.buildHeaders(),
-      body: JSON.stringify(body)
+    let fullText = '';
+    const streamedToolItemIds = new Set<string>();
+    const stream = this.client.responses.stream(buildOpenAiStreamBody(request, this.model));
+
+    stream.on('response.output_text.delta', (event) => {
+      if (!event.delta) {
+        return;
+      }
+      fullText += event.delta;
+      handlers.onToken(event.delta);
     });
 
-    if (!response.ok || !response.body) {
-      const text = await response.text().catch(() => '');
-      throw new Error(text || `OpenAI-compatible stream failed (${response.status})`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let fullText = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (!trimmed.startsWith('data:')) continue;
-        const data = trimmed.slice(5).trim();
-        if (!data || data === '[DONE]') continue;
-        try {
-          const json = JSON.parse(data);
-          const delta = extractOpenAiDelta(json);
-          if (delta) {
-            fullText += delta;
-            handlers.onToken(delta);
-          }
-        } catch {
-          // Ignore malformed lines.
-        }
+    stream.on('response.reasoning_summary_text.delta', (event) => {
+      if (event.delta && handlers.onThinking) {
+        handlers.onThinking(event.delta);
       }
-    }
+    });
 
-    if (buffer.trim()) {
-      const tail = buffer.trim();
-      if (tail.startsWith('data:')) {
-        const data = tail.slice(5).trim();
-        if (data && data !== '[DONE]') {
-          try {
-            const json = JSON.parse(data);
-            const delta = extractOpenAiDelta(json);
-            if (delta) {
-              fullText += delta;
-              handlers.onToken(delta);
-            }
-          } catch {
-            // Ignore malformed tail.
-          }
-        }
+    stream.on('response.function_call_arguments.done', (event) => {
+      if (!handlers.onToolCall || streamedToolItemIds.has(event.item_id)) {
+        return;
       }
+      // The streaming event may arrive before the function name is resolved.
+      // When name is missing, skip and let emitToolCalls handle it from the
+      // final response where names are always populated.
+      if (!event.name) {
+        return;
+      }
+      streamedToolItemIds.add(event.item_id);
+      handlers.onToolCall({
+        name: event.name,
+        args: parseToolArguments(event.arguments)
+      });
+    });
+
+    const response = await stream.finalResponse();
+    emitToolCalls(response, handlers, streamedToolItemIds);
+
+    if (handlers.onUsage && response.usage) {
+      handlers.onUsage(response.usage as RawLlmUsage);
     }
 
-    return fullText;
-  }
-
-  private buildHeaders() {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-    if (this.apiKey) {
-      headers.Authorization = `Bearer ${this.apiKey}`;
-    }
-    return headers;
-  }
-
-  private async fetchWithTimeout(input: string, init: RequestInit) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      return await fetch(input, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timeout);
-    }
+    return fullText || response.output_text || '';
   }
 }
 
-function buildOpenAiBody(request: LlmRequest, model: string, stream: boolean) {
+function buildOpenAiCreateBody(
+  request: LlmRequest,
+  model: string
+): Responses.ResponseCreateParamsNonStreaming {
+  return {
+    ...buildOpenAiBodyBase(request, model),
+    stream: false
+  };
+}
+
+function buildOpenAiStreamBody(
+  request: LlmRequest,
+  model: string
+): Responses.ResponseCreateParamsStreaming {
+  return {
+    ...buildOpenAiBodyBase(request, model),
+    stream: true
+  };
+}
+
+function buildOpenAiBodyBase(
+  request: LlmRequest,
+  model: string
+): Omit<Responses.ResponseCreateParamsNonStreaming, 'stream'> {
+  const resolvedModel = resolveCatalogModel(model);
   const tools = request.tools?.length
     ? request.tools.map((tool) => ({
-        type: 'function',
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters
-        }
+        type: 'function' as const,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        strict: false
       }))
     : undefined;
 
@@ -142,30 +118,129 @@ function buildOpenAiBody(request: LlmRequest, model: string, stream: boolean) {
       : request.toolChoice
     : undefined;
 
+  const reasoningEffort = normalizeReasoningEffort(request, resolvedModel.id);
+  const input: Responses.ResponseInput = [
+    ...request.messages.map((msg): Responses.EasyInputMessage => ({
+      type: 'message',
+      role: msg.role,
+      content: msg.content
+    })),
+    ...buildToolHistoryInput(request)
+  ];
+
+  const supportsResolvedReasoning = reasoningEffort
+    ? supportsReasoningValue(resolvedModel.id, reasoningEffort)
+    : false;
+
   return {
-    model,
-    messages: request.messages.map((msg) => ({ role: msg.role, content: msg.content })),
-    temperature: request.temperature ?? 0.3,
-    max_tokens: request.maxOutputTokens ?? 2048,
-    stream,
+    model: resolvedModel.id,
+    input,
+    temperature: shouldSendTemperature(resolvedModel.id)
+      ? (request.temperature ?? 0.3)
+      : undefined,
+    max_output_tokens: request.maxOutputTokens ?? 2048,
+    store: false,
     tools,
-    tool_choice: tools ? toolChoice : undefined,
-    response_format: request.responseMimeType === 'application/json'
-      ? { type: 'json_object' }
+    tool_choice: tools?.length ? toolChoice : undefined,
+    reasoning: supportsResolvedReasoning
+      ? {
+          effort: reasoningEffort,
+          summary: 'concise'
+        }
+      : undefined,
+    text: request.responseMimeType === 'application/json'
+      ? { format: { type: 'json_object' } }
       : undefined
   };
 }
 
-function extractOpenAiText(payload: unknown): string {
-  if (!payload || typeof payload !== 'object') return '';
-  const choices = (payload as { choices?: Array<{ message?: { content?: string } }> }).choices;
-  if (!Array.isArray(choices)) return '';
-  return choices.map((choice) => choice.message?.content ?? '').join('');
+function shouldSendTemperature(modelId: string): boolean {
+  if (!modelId.startsWith('gpt-5')) {
+    return true;
+  }
+
+  // Keep GPT-5 request construction uniform across the supported catalog by omitting
+  // temperature entirely and letting the model-specific reasoning profile drive behavior.
+  return false;
 }
 
-function extractOpenAiDelta(payload: unknown): string {
-  if (!payload || typeof payload !== 'object') return '';
-  const choices = (payload as { choices?: Array<{ delta?: { content?: string } }> }).choices;
-  if (!Array.isArray(choices)) return '';
-  return choices.map((choice) => choice.delta?.content ?? '').join('');
+function buildToolHistoryInput(request: LlmRequest): Responses.ResponseInputItem[] {
+  const items: Responses.ResponseInputItem[] = [];
+  const historyLength = Math.max(request.toolCallHistory?.length ?? 0, request.toolResultHistory?.length ?? 0);
+
+  for (let index = 0; index < historyLength; index += 1) {
+    const toolCall = request.toolCallHistory?.[index];
+    if (toolCall) {
+      const callId = `history-call-${index + 1}`;
+      items.push({
+        type: 'function_call',
+        call_id: callId,
+        name: toolCall.name,
+        arguments: JSON.stringify(toolCall.args ?? {})
+      });
+
+      const toolResult = request.toolResultHistory?.[index];
+      if (toolResult) {
+        items.push({
+          type: 'function_call_output',
+          call_id: callId,
+          output: JSON.stringify(toolResult.response)
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
+function normalizeReasoningEffort(request: LlmRequest, modelId: string) {
+  return normalizeReasoningSelection({
+    modelId,
+    reasoningEffort: request.reasoningEffort
+  });
+}
+
+function supportsReasoningValue(modelId: string, value: string): boolean {
+  const model = resolveCatalogModel(modelId);
+  return model.reasoningEfforts.includes(value as (typeof model.reasoningEfforts)[number]);
+}
+
+function emitToolCalls(
+  response: Responses.Response,
+  handlers: LlmStreamHandlers,
+  streamedToolItemIds: Set<string>
+) {
+  if (!handlers.onToolCall) {
+    return;
+  }
+
+  for (const item of response.output ?? []) {
+    if (item.type !== 'function_call') {
+      continue;
+    }
+    if (item.id && streamedToolItemIds.has(item.id)) {
+      continue;
+    }
+
+    const toolCall: LlmToolCall = {
+      name: item.name,
+      args: parseToolArguments(item.arguments)
+    };
+    handlers.onToolCall(toolCall);
+  }
+}
+
+function parseToolArguments(argumentsJson: string | undefined): Record<string, unknown> {
+  if (!argumentsJson) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(argumentsJson) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Fall through to empty object.
+  }
+  return {};
 }

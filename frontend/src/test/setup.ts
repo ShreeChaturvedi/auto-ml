@@ -11,6 +11,11 @@ import { afterEach, vi } from 'vitest';
 // Cleanup after each test
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  window.sessionStorage?.clear?.();
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 // Mock window.matchMedia (needed for theme tests)
@@ -49,6 +54,7 @@ const localStorageMock = (() => {
   };
 })();
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+Object.defineProperty(window, 'sessionStorage', { value: localStorageMock });
 
 // Mock ResizeObserver (needed for some UI components)
 class ResizeObserverMock {

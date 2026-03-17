@@ -35,7 +35,7 @@ function normalizePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
-async function refreshAccessToken(refreshToken: string | null): Promise<string | null> {
+export async function refreshAccessToken(refreshToken: string | null): Promise<string | null> {
   if (!refreshToken) return null;
 
   if (!refreshPromise) {
@@ -164,7 +164,7 @@ function extractApiErrorMessage(payload: unknown): string | null {
     return msg || null;
   }
 
-  // Gemini-style error: { error: { message: string } }
+  // Provider error payload: { error: { message: string } }
   if (record.error && typeof record.error === 'object') {
     const nested = record.error as Record<string, unknown>;
     if (typeof nested.message === 'string') {

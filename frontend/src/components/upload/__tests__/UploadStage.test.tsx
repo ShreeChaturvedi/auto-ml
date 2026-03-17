@@ -4,6 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UploadStage } from '../UploadStage';
 import { fetchNlSuggestions } from '@/lib/api/query';
 
+vi.mock('@/hooks/useProjectPlans', () => ({
+  useProjectPlans: () => ({
+    plans: [],
+    selectedPlanId: undefined,
+    handleOpenPlan: vi.fn(),
+    handleCreateNewPlan: vi.fn(),
+  })
+}));
+
 const files = [
   {
     id: 'file-1',
@@ -40,11 +49,13 @@ vi.mock('@/stores/projectStore', () => ({
         {
           id: 'p1',
           title: 'Project 1',
+          description: '',
           icon: 'Folder',
           color: 'blue',
           metadata: {}
         }
-      ]
+      ],
+      updateProject: vi.fn()
     })
 }));
 

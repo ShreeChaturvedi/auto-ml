@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QueryPanel } from '../QueryPanel';
@@ -55,9 +55,7 @@ describe('QueryPanel theme handling', () => {
     const onExecute = vi.fn();
 
     const firstRender = render(<QueryPanel onExecute={onExecute} />);
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
-    });
+    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     expect(mockState.renderedThemes[0]).toBe('sql-light');
     expect(mockState.renderedThemes).not.toContain('sql-dark');
     expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-language', 'sql');
@@ -68,9 +66,7 @@ describe('QueryPanel theme handling', () => {
     firstRender.unmount();
 
     render(<QueryPanel onExecute={onExecute} />);
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
-    });
+    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
     expect(mockState.renderedThemes).not.toContain('sql-dark');
   });
 

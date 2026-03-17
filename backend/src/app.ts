@@ -13,18 +13,21 @@ import { createDocumentRouter } from './routes/documents.js';
 import executionRouter from './routes/execution.js';
 import { createFeatureEngineeringRouter } from './routes/featureEngineering.js';
 import { registerHealthRoutes } from './routes/health.js';
-import { createLlmRouter } from './routes/llm.js';
+import { createLlmRouter } from './routes/llm/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import modelRouter from './routes/models.js';
 import notebookRouter from './routes/notebooks.js';
 import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
+import { createRealtimeSessionRouter } from './routes/realtimeSession.js';
+import { createWorkflowRouter } from './routes/workflows.js';
 
 export function createApp() {
   const app = express();
   const projectRepository = createProjectRepository(env.storagePath);
   const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+  const isVitestRuntime = Boolean(process.env.VITEST);
 
   app.set('trust proxy', true);
   app.use(
@@ -35,7 +38,9 @@ export function createApp() {
   );
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+  if (!isVitestRuntime) {
+    app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+  }
 
   const router = Router();
   registerHealthRoutes(router);
@@ -54,10 +59,12 @@ export function createApp() {
   router.use(createPreprocessingRouter());
   router.use(createFeatureEngineeringRouter());
   router.use(createLlmRouter());
+  router.use(createWorkflowRouter());
   router.use(createMcpRouter());
   router.use('/models', modelRouter);
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
+  router.use(createRealtimeSessionRouter());
 
   app.use('/api', router);
 

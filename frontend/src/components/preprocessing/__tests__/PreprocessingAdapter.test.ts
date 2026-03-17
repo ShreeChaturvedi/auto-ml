@@ -1,14 +1,23 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createPreprocessingAdapter } from '../PreprocessingAdapter';
+import { streamWorkflowTurn } from '@/lib/api/llm';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { ToolCall } from '@/types/llmUi';
+
+vi.mock('@/lib/api/llm', () => ({
+  streamWorkflowTurn: vi.fn(async () => undefined)
+}));
 
 describe('PreprocessingAdapter prepareToolCalls', () => {
   beforeEach(() => {
     usePreprocessingStore.setState({
-      nextRunCellMode: 'continue'
+      nextRunCellMode: 'continue',
+      runId: null,
+      controllerSummary: null
     });
+    useWorkflowSessionStore.setState({ sessions: {} });
   });
 
   it('injects continue mode into run_cell metadata by default', () => {
@@ -20,7 +29,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ]);
+    ], 'prep-tab-a');
 
     const toolCalls: ToolCall[] = [
       {
@@ -50,7 +59,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ]);
+    ], 'prep-tab-a');
 
     const firstBatch: ToolCall[] = [
       {
@@ -95,7 +104,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         sizeBytes: 123,
         columns: []
       }
-    ]);
+    ], 'prep-tab-a');
 
     const toolCalls: ToolCall[] = [
       {
@@ -110,5 +119,194 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     const prepared = adapter.prepareToolCalls?.(toolCalls) ?? [];
     expect(prepared).toEqual(toolCalls);
     expect(usePreprocessingStore.getState().nextRunCellMode).toBe('restart_from_original');
+  });
+
+  it('passes workflow session state through buildRequest', async () => {
+    useWorkflowSessionStore.setState({
+      sessions: {
+        'prep-tab-a': {
+          runId: 'workflow-run-1',
+          threadId: 'workflow-thread-1'
+        }
+      }
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    await adapter.buildRequest(
+      'Continue preprocessing',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high',
+        continuation: true
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        runId: 'workflow-run-1',
+        threadId: 'workflow-thread-1'
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('stores controller updates from the adapter callback', () => {
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-thread:test');
+
+    adapter.onControllerUpdate?.({
+      threadId: 'prep-thread:test',
+      turnMode: 'action_required',
+      currentNode: 'generate_code',
+      allowedTools: ['materialize_step_code'],
+      allowTextResponse: false,
+      requireToolCall: true,
+      pendingApproval: false,
+      updatedAt: '2026-03-13T00:00:00.000Z'
+    });
+
+    expect(usePreprocessingStore.getState().controllerSummary).toMatchObject({
+      threadId: 'prep-thread:test',
+      currentNode: 'generate_code'
+    });
+  });
+
+  it('stores workflow state updates in both preprocessing and workflow session stores', () => {
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    adapter.onWorkflowStateUpdate?.({
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1',
+      phase: 'preprocessing',
+      currentNode: 'plan_step',
+      status: 'running',
+      phaseContext: {
+        controller: {
+          threadId: 'workflow-thread-1',
+          turnMode: 'action_required',
+          currentNode: 'plan_step',
+          allowedTools: ['propose_transformation_step'],
+          allowTextResponse: false,
+          requireToolCall: true,
+          pendingApproval: false,
+          updatedAt: '2026-03-13T00:00:00.000Z'
+        }
+      }
+    });
+
+    expect(usePreprocessingStore.getState().runId).toBe('workflow-run-1');
+    expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toMatchObject({
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1'
+    });
+  });
+
+  it('marks pending preprocessing steps as failed on stream errors and stops', () => {
+    usePreprocessingStore.setState({
+      timeline: [
+        {
+          id: 'evt-1',
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          toolName: 'propose_transformation_step',
+          title: 'Scale numerics',
+          status: 'pending',
+          requiresApproval: false,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ]
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'customer_churn.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-thread:test');
+
+    adapter.onStreamError?.('Provider failed');
+    expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({
+      status: 'failed'
+    });
+
+    usePreprocessingStore.setState({
+      timeline: [
+        {
+          id: 'evt-2',
+          runId: 'prep-run-1',
+          stepId: 'step-2',
+          toolName: 'materialize_step_code',
+          title: 'Generate code',
+          status: 'running',
+          requiresApproval: false,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ],
+      error: null
+    });
+
+    adapter.onStop?.('Stopped by user.');
+    expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({
+      status: 'failed'
+    });
+    expect(usePreprocessingStore.getState().error).toContain('Stopped by user');
+  });
+
+  it('uses the selected dataset filename when building suggestions', () => {
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'customer_churn.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-thread:test');
+
+    expect(adapter.suggestionProvider([], false)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'missingness',
+        prompt: expect.stringContaining('customer_churn')
+      })
+    ]));
   });
 });

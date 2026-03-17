@@ -16,9 +16,15 @@ import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 import type { PythonVersion } from '../types/execution.js';
 
-import { executeInContainer, getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
 import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
+import { buildFeatureEngineeringScript } from './featureEngineering/scriptBuilder.js';
+import * as kernelManager from './kernelManager.js';
+
+// Re-export extracted modules for backward compatibility
+export { buildFeatureCode, FEATURE_CODEGEN_MAP, numericParam, pyBool, pyString } from './featureEngineering/codeGenerator.js';
+export { buildFeatureEngineeringScript } from './featureEngineering/scriptBuilder.js';
 
 export const FEATURE_METHODS = [
   'log_transform',
@@ -151,256 +157,6 @@ function buildOutputFilename(
   return `${sanitized}.${outputFormat}`;
 }
 
-function pyString(value: string): string {
-  return JSON.stringify(value);
-}
-
-function pyBool(value: unknown, defaultValue = false): string {
-  return value === undefined || value === null
-    ? defaultValue ? 'True' : 'False'
-    : value === true ? 'True' : 'False';
-}
-
-function numericParam(value: unknown, fallback: number): number {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function buildFeatureCode(feature: FeatureSpec, dataframeName: string): string {
-  const src = pyString(feature.sourceColumn);
-  const dst = pyString(feature.featureName);
-  const secondary = feature.secondaryColumn ? pyString(feature.secondaryColumn) : undefined;
-  const params = feature.params ?? {};
-
-  switch (feature.method) {
-    case 'log_transform': {
-      const offset = numericParam(params.offset, 1);
-      return `${dataframeName}[${dst}] = np.log(${dataframeName}[${src}] + ${offset})`;
-    }
-    case 'log1p_transform':
-      return `${dataframeName}[${dst}] = np.log1p(${dataframeName}[${src}])`;
-    case 'sqrt_transform':
-      return `${dataframeName}[${dst}] = np.sqrt(${dataframeName}[${src}])`;
-    case 'square_transform':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] ** 2`;
-    case 'reciprocal_transform':
-      return `${dataframeName}[${dst}] = 1 / ${dataframeName}[${src}].replace(0, np.nan)`;
-    case 'box_cox':
-      return `${dataframeName}[${dst}], _ = boxcox(${dataframeName}[${src}] + 1e-10)`;
-    case 'yeo_johnson':
-      return `${dataframeName}[${dst}], _ = yeojohnson(${dataframeName}[${src}])`;
-    case 'standardize':
-      return `${dataframeName}[${dst}] = (${dataframeName}[${src}] - ${dataframeName}[${src}].mean()) / ${dataframeName}[${src}].std()`;
-    case 'min_max_scale': {
-      const minVal = numericParam(params.min, 0);
-      const maxVal = numericParam(params.max, 1);
-      return `_min, _max = ${dataframeName}[${src}].min(), ${dataframeName}[${src}].max()
-${dataframeName}[${dst}] = (${dataframeName}[${src}] - _min) / (_max - _min) * ${maxVal - minVal} + ${minVal}`;
-    }
-    case 'robust_scale':
-      return `_median = ${dataframeName}[${src}].median()
-_q1, _q3 = ${dataframeName}[${src}].quantile(0.25), ${dataframeName}[${src}].quantile(0.75)
-${dataframeName}[${dst}] = (${dataframeName}[${src}] - _median) / (_q3 - _q1)`;
-    case 'max_abs_scale':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] / ${dataframeName}[${src}].abs().max()`;
-    case 'bucketize': {
-      const bins = numericParam(params.bins, 5);
-      return `${dataframeName}[${dst}] = pd.cut(${dataframeName}[${src}], bins=${bins}, labels=False)`;
-    }
-    case 'quantile_bin': {
-      const quantiles = numericParam(params.quantiles, 4);
-      return `${dataframeName}[${dst}] = pd.qcut(${dataframeName}[${src}], q=${quantiles}, labels=False, duplicates='drop')`;
-    }
-    case 'one_hot_encode': {
-      const dropFirst = pyBool(params.drop_first, false);
-      return `_dummies = pd.get_dummies(${dataframeName}[${src}], prefix=${dst}, drop_first=${dropFirst})
-${dataframeName} = pd.concat([${dataframeName}, _dummies], axis=1)`;
-    }
-    case 'label_encode':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype('category').cat.codes`;
-    case 'target_encode': {
-      const targetColumn = params.targetColumn ? pyString(String(params.targetColumn)) : undefined;
-      const smoothing = numericParam(params.smoothing, 1);
-      return `_target = ${targetColumn}
-_global_mean = ${dataframeName}[_target].mean()
-_stats = ${dataframeName}.groupby(${src})[_target].agg(['mean', 'count'])
-_smooth = (_stats['mean'] * _stats['count'] + _global_mean * ${smoothing}) / (_stats['count'] + ${smoothing})
-${dataframeName}[${dst}] = ${dataframeName}[${src}].map(_smooth)`;
-    }
-    case 'frequency_encode': {
-      const normalize = pyBool(params.normalize, true);
-      return normalize === 'True'
-        ? `_counts = ${dataframeName}[${src}].value_counts(normalize=True)
-${dataframeName}[${dst}] = ${dataframeName}[${src}].map(_counts)`
-        : `_counts = ${dataframeName}[${src}].value_counts()
-${dataframeName}[${dst}] = ${dataframeName}[${src}].map(_counts)`;
-    }
-    case 'binary_encode': {
-      const prefix = pyString(feature.featureName);
-      return `_series = ${dataframeName}[${src}].astype('category')
-_codes = _series.cat.codes
-_codes = _codes.where(_codes >= 0, 0)
-_max = int(_codes.max()) if len(_codes) else 0
-_bits = int(np.ceil(np.log2(_max + 1))) if _max > 0 else 1
-for _i in range(_bits):
-    ${dataframeName}[${prefix} + '_bin' + str(_i)] = ((_codes >> _i) & 1).astype(int)`;
-    }
-    case 'extract_year':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.year`;
-    case 'extract_month':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.month`;
-    case 'extract_day':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.day`;
-    case 'extract_weekday':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.weekday`;
-    case 'extract_hour':
-      return `${dataframeName}[${dst}] = pd.to_datetime(${dataframeName}[${src}]).dt.hour`;
-    case 'cyclical_encode': {
-      const periodKey = String(params.period ?? 'month');
-      const periodMap: Record<string, { attr: string; period: number }> = {
-        hour: { attr: 'hour', period: 24 },
-        weekday: { attr: 'weekday', period: 7 },
-        month: { attr: 'month', period: 12 },
-        day_of_year: { attr: 'dayofyear', period: 365 }
-      };
-      const mapping = periodMap[periodKey] ?? periodMap.month;
-      const prefix = pyString(feature.featureName);
-      return `_val = pd.to_datetime(${dataframeName}[${src}]).dt.${mapping.attr}
-${dataframeName}[${prefix} + '_sin'] = np.sin(2 * np.pi * _val / ${mapping.period})
-${dataframeName}[${prefix} + '_cos'] = np.cos(2 * np.pi * _val / ${mapping.period})`;
-    }
-    case 'time_since': {
-      const unitMap: Record<string, string> = {
-        days: 'D',
-        hours: 'h',
-        weeks: 'W',
-        months: 'M'
-      };
-      const unit = unitMap[String(params.unit ?? 'days')] ?? 'D';
-      return `${dataframeName}[${dst}] = (pd.Timestamp.now() - pd.to_datetime(${dataframeName}[${src}])) / np.timedelta64(1, '${unit}')`;
-    }
-    case 'polynomial': {
-      const degree = Math.max(2, Math.round(numericParam(params.degree, 2)));
-      const prefix = pyString(feature.featureName);
-      return `for _i in range(2, ${degree + 1}):
-    ${dataframeName}[${prefix} + '_pow' + str(_i)] = ${dataframeName}[${src}] ** _i`;
-    }
-    case 'ratio':
-      if (!secondary) return '# Missing secondary column for ratio';
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] / ${dataframeName}[${secondary}].replace(0, np.nan)`;
-    case 'difference':
-      if (!secondary) return '# Missing secondary column for difference';
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] - ${dataframeName}[${secondary}]`;
-    case 'product':
-      if (!secondary) return '# Missing secondary column for product';
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}] * ${dataframeName}[${secondary}]`;
-    case 'text_length':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype(str).str.len()`;
-    case 'word_count':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype(str).str.split().str.len()`;
-    case 'contains_pattern': {
-      const pattern = pyString(String(params.pattern ?? ''));
-      const caseSensitive = pyBool(params.case_sensitive, false);
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].astype(str).str.contains(${pattern}, case=${caseSensitive}, regex=False).astype(int)`;
-    }
-    case 'missing_indicator':
-      return `${dataframeName}[${dst}] = ${dataframeName}[${src}].isna().astype(int)`;
-    default:
-      return `# Unsupported method: ${feature.method}`;
-  }
-}
-
-function buildFeatureEngineeringScript(params: {
-  datasetFilename: string;
-  datasetId: string;
-  outputFilename: string;
-  outputFormat: DatasetFileType;
-  features: FeatureSpec[];
-}): string {
-  const { datasetFilename, datasetId, outputFilename, outputFormat, features } = params;
-  const dataframeName = 'df';
-  const lines: string[] = [];
-
-  lines.push('import json');
-  lines.push('import numpy as np');
-  lines.push('import pandas as pd');
-
-  const needsBoxCox = features.some((feature) => feature.method === 'box_cox');
-  const needsYeoJohnson = features.some((feature) => feature.method === 'yeo_johnson');
-  if (needsBoxCox) {
-    lines.push('from scipy.stats import boxcox');
-  }
-  if (needsYeoJohnson) {
-    lines.push('from scipy.stats import yeojohnson');
-  }
-
-  lines.push('');
-  lines.push(`dataset_path = resolve_dataset_path(${pyString(datasetFilename)}, ${pyString(datasetId)})`);
-
-  const ext = datasetFilename.split('.').pop()?.toLowerCase();
-  if (ext === 'csv') {
-    lines.push(`${dataframeName} = pd.read_csv(dataset_path)`);
-  } else if (ext === 'json') {
-    lines.push(`try:
-    ${dataframeName} = pd.read_json(dataset_path)
-except ValueError:
-    ${dataframeName} = pd.read_json(dataset_path, lines=True)`);
-  } else if (ext === 'xlsx' || ext === 'xls') {
-    lines.push(`${dataframeName} = pd.read_excel(dataset_path)`);
-  } else {
-    lines.push(`${dataframeName} = pd.read_csv(dataset_path)`);
-  }
-
-  lines.push('');
-
-  for (const feature of features) {
-    lines.push(`# Feature: ${feature.featureName}`);
-    lines.push(buildFeatureCode(feature, dataframeName));
-    lines.push('');
-  }
-
-  const outputPath = `/workspace/${outputFilename}`;
-  lines.push(`output_path = ${pyString(outputPath)}`);
-  if (outputFormat === 'csv') {
-    lines.push(`${dataframeName}.to_csv(output_path, index=False)`);
-  } else if (outputFormat === 'json') {
-    lines.push(`${dataframeName}.to_json(output_path, orient='records')`);
-  } else {
-    lines.push(`${dataframeName}.to_excel(output_path, index=False)`);
-  }
-
-  lines.push('');
-  lines.push('from pandas.api import types as _types');
-  lines.push('def _map_dtype(series):');
-  lines.push('    if _types.is_bool_dtype(series):');
-  lines.push("        return 'boolean'");
-  lines.push('    if _types.is_numeric_dtype(series):');
-  lines.push("        return 'number'");
-  lines.push('    if _types.is_datetime64_any_dtype(series):');
-  lines.push("        return 'date'");
-  lines.push("    return 'string'");
-  lines.push('');
-  lines.push('_columns = []');
-  lines.push(`for _col in ${dataframeName}.columns:`);
-  lines.push(`    _series = ${dataframeName}[_col]`);
-  lines.push('    _columns.append({');
-  lines.push('        "name": _col,');
-  lines.push('        "dtype": _map_dtype(_series),');
-  lines.push('        "nullCount": int(_series.isna().sum())');
-  lines.push('    })');
-  lines.push('');
-  lines.push(`_sample = json.loads(${dataframeName}.head(20).to_json(orient='records'))`);
-  lines.push('_meta = {');
-  lines.push(`    "nRows": int(len(${dataframeName})),`);
-  lines.push('    "columns": _columns,');
-  lines.push('    "sample": _sample');
-  lines.push('}');
-  lines.push(`with open('/workspace/_feature_meta.json', 'w') as _f:`);
-  lines.push('    json.dump(_meta, _f)');
-
-  return lines.join('\n');
-}
-
 export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
   if (!await isDockerAvailable()) {
     throw new Error('Docker runtime is unavailable. Start Docker to apply features.');
@@ -450,7 +206,6 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     await syncWorkspaceDatasets(input.projectId, container.workspacePath).catch(() => undefined);
   }
 
-  const executionId = `feature_${randomUUID().slice(0, 8)}`;
   const script = buildFeatureEngineeringScript({
     datasetFilename: dataset.filename,
     datasetId: dataset.datasetId,
@@ -459,12 +214,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     features: enabledFeatures
   });
 
-  const result = await executeInContainer(
-    container,
-    script,
-    env.executionTimeoutMs,
-    { executionId }
-  );
+  const result = await kernelManager.execute(container, script, env.executionTimeoutMs);
 
   if (result.status !== 'success') {
     throw new Error(result.stderr || 'Feature engineering failed inside the runtime.');

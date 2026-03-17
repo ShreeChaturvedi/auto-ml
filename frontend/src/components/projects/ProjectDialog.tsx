@@ -3,10 +3,10 @@
  *
  * Features:
  * - Form with React Hook Form + Zod validation
- * - Title input
+ * - Title input with icon preview
+ * - Animated placeholder description textarea with auto-resize
+ * - Circular color swatches with custom color picker (react-colorful)
  * - Icon selector (from lucide-react)
- * - Color picker (predefined palette)
- * - Description textarea
  * - Handles both create and edit modes
  */
 
@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { HexColorPicker } from 'react-colorful';
 import {
   Dialog,
   DialogContent,
@@ -26,75 +27,78 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useProjectStore } from '@/stores/projectStore';
 import type { Project, ProjectColor } from '@/types/project';
-import { projectColorClasses } from '@/types/project';
+import { resolveProjectColor } from '@/types/project';
 import { cn } from '@/lib/utils';
 import * as LucideIcons from 'lucide-react';
 
-// Form validation schema
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const projectFormSchema = z.object({
   title: z.string().min(1, 'Title is required').max(50, 'Title must be less than 50 characters'),
   description: z.string().max(200, 'Description must be less than 200 characters').optional(),
   icon: z.string().min(1, 'Icon is required'),
   color: z.enum([
-    'blue',
-    'green',
-    'purple',
-    'pink',
-    'orange',
-    'red',
-    'yellow',
-    'indigo',
-    'teal',
-    'cyan'
-  ])
-});
+    'blue', 'green', 'purple', 'pink', 'orange',
+    'red', 'yellow', 'indigo', 'teal', 'cyan', 'custom'
+  ]),
+  customColor: z.string().optional()
+}).refine(
+  (data) => data.color !== 'custom' || (data.customColor && /^#[0-9a-fA-F]{6}$/.test(data.customColor)),
+  { message: 'Pick a custom color', path: ['customColor'] }
+);
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
 
-// Popular icons for projects
 const projectIcons = [
-  'Folder',
-  'FolderOpen',
-  'Database',
-  'Brain',
-  'Sparkles',
-  'Zap',
-  'Rocket',
-  'Target',
-  'BarChart',
-  'LineChart',
-  'Box',
-  'Cpu'
+  'Folder', 'FolderOpen', 'Database', 'Brain',
+  'Sparkles', 'Zap', 'Rocket', 'Target',
+  'BarChart', 'LineChart', 'Box', 'Cpu'
 ];
 
-// Color options
-const colorOptions: ProjectColor[] = [
-  'blue',
-  'green',
-  'purple',
-  'pink',
-  'orange',
-  'red',
-  'yellow',
-  'indigo',
-  'teal',
-  'cyan'
+const presetColors: Exclude<ProjectColor, 'custom'>[] = [
+  'blue', 'green', 'purple', 'pink', 'orange',
+  'red', 'yellow', 'indigo', 'teal', 'cyan'
 ];
+
+const presetColorHex: Record<string, string> = {
+  blue: '#3b82f6', green: '#22c55e', purple: '#a855f7', pink: '#ec4899',
+  orange: '#f97316', red: '#ef4444', yellow: '#eab308', indigo: '#6366f1',
+  teal: '#14b8a6', cyan: '#06b6d4'
+};
+
+const descriptionPlaceholders = [
+  'Predict customer churn using historical data',
+  'Image classification with transfer learning',
+  'Sentiment analysis on product reviews',
+  'Time series forecasting for sales data',
+  'Anomaly detection in network traffic',
+  'Recommendation engine for e-commerce'
+];
+
+const RAINBOW_GRADIENT = 'conic-gradient(in oklch longer hue, oklch(0.7 0.15 0), oklch(0.7 0.15 360))';
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 interface ProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  project?: Project; // If provided, edit mode; otherwise, create mode
+  project?: Project;
 }
 
 export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProps) {
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
-  const createProject = useProjectStore((state) => state.createProject);
-  const updateProject = useProjectStore((state) => state.updateProject);
-  const setActiveProject = useProjectStore((state) => state.setActiveProject);
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const createProject = useProjectStore((s) => s.createProject);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const [formError, setFormError] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -113,36 +117,46 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
       title: project?.title || '',
       description: project?.description || '',
       icon: project?.icon || 'Folder',
-      color: project?.color || 'blue'
+      color: project?.color || 'blue',
+      customColor: project?.customColor || undefined
     }
   });
 
-  // Reset form when dialog opens/closes or project changes
   useEffect(() => {
     if (open) {
       reset({
         title: project?.title || '',
         description: project?.description || '',
         icon: project?.icon || 'Folder',
-        color: project?.color || 'blue'
+        color: project?.color || 'blue',
+        customColor: project?.customColor || undefined
       });
       setFormError(null);
       setIsIconPickerOpen(false);
+      setIsColorPickerOpen(false);
     }
   }, [open, project, reset]);
 
   const selectedIcon = watch('icon');
   const selectedColor = watch('color');
+  const customColor = watch('customColor');
+  const descriptionValue = watch('description') ?? '';
 
   const onSubmit = async (data: ProjectFormValues) => {
     setFormError(null);
-
     try {
+      const formData = {
+        title: data.title,
+        description: data.description,
+        icon: data.icon,
+        color: data.color as ProjectColor,
+        customColor: data.color === 'custom' ? data.customColor : undefined
+      };
+
       if (isEditMode && project) {
-        await updateProject(project.id, data);
+        await updateProject(project.id, formData);
       } else {
-        const created = await createProject(data);
-        // Immediately activate and navigate to the new project's upload phase
+        const created = await createProject(formData);
         setActiveProject(created.id);
         navigate(`/project/${created.id}/upload`);
       }
@@ -152,14 +166,12 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
     }
   };
 
-  // Get preview icon component
-  const PreviewIconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    selectedIcon
-  ];
+  const PreviewIcon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[selectedIcon];
+  const previewColors = resolveProjectColor(selectedColor, customColor);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>{isEditMode ? 'Edit Project' : 'Create New Project'}</DialogTitle>
           <DialogDescription>
@@ -170,46 +182,54 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Title and Icon Preview Row */}
-          <div className="space-y-2">
+          {/* ── Title + Icon ─────────────────────────────────────────── */}
+          <div className="space-y-1.5">
             <Label htmlFor="title">
               Title <span className="text-destructive">*</span>
             </Label>
-            <div className="flex items-center gap-3">
-              {/* Icon Preview (Clickable) */}
+            <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => setIsIconPickerOpen(true)}
                 className={cn(
                   'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-all hover:scale-105 focus:outline-none',
-                  projectColorClasses[selectedColor].bg,
-                  projectColorClasses[selectedColor].text,
-                  projectColorClasses[selectedColor].border
+                  selectedColor !== 'custom' && previewColors.bg,
+                  selectedColor !== 'custom' && previewColors.text,
+                  selectedColor !== 'custom' && previewColors.border
                 )}
+                style={previewColors.style}
                 title="Click to change icon"
               >
-                {PreviewIconComponent && <PreviewIconComponent className="h-5 w-5" />}
+                {PreviewIcon && <PreviewIcon className="h-5 w-5" />}
               </button>
-
-              {/* Title Field */}
-              <div className="flex-1">
-                <Input id="title" placeholder="My ML Project" {...register('title')} />
-              </div>
+              <Input id="title" className="flex-1 bg-muted/40" placeholder="My ML Project" {...register('title')} />
             </div>
             {errors.title && (
               <p className="text-xs text-destructive">{errors.title.message}</p>
             )}
           </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
+          {/* ── Description ──────────────────────────────────────────── */}
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="description">Description</Label>
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                {descriptionValue.length}/200
+              </span>
+            </div>
+            <AnimatedPlaceholderTextarea
               id="description"
-              placeholder="Optional description..."
-              rows={3}
-              className="w-full"
-              {...register('description')}
+              placeholders={descriptionPlaceholders}
+              interval={3500}
+              autoResize
+              rows={1}
+              className="w-full resize-none bg-muted/40"
+              value={descriptionValue}
+              onChange={(e) => {
+                if (e.target.value.length <= 200) {
+                  setValue('description', e.target.value, { shouldValidate: true });
+                }
+              }}
             />
             {errors.description && (
               <p className="text-xs text-destructive">{errors.description.message}</p>
@@ -220,45 +240,70 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
             <p className="text-xs text-destructive">{formError}</p>
           )}
 
-          {/* Color Picker */}
-          <div className="space-y-2">
+          {/* ── Color ────────────────────────────────────────────────── */}
+          <div className="space-y-1.5">
             <Label>Color</Label>
-            <div className="flex flex-wrap gap-2">
-              {colorOptions.map((color) => {
-                const colorClass = {
-                  blue: 'bg-blue-500',
-                  green: 'bg-green-500',
-                  purple: 'bg-purple-500',
-                  pink: 'bg-pink-500',
-                  orange: 'bg-orange-500',
-                  red: 'bg-red-500',
-                  yellow: 'bg-yellow-500',
-                  indigo: 'bg-indigo-500',
-                  teal: 'bg-teal-500',
-                  cyan: 'bg-cyan-500'
-                }[color];
+            <div className="flex flex-wrap items-center gap-1.5">
+              {presetColors.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={cn(
+                    'h-7 w-7 rounded-full border-2 transition-all',
+                    selectedColor === color
+                      ? 'border-foreground scale-110'
+                      : 'border-transparent hover:border-foreground/40 hover:scale-105'
+                  )}
+                  style={{ backgroundColor: presetColorHex[color] }}
+                  onClick={() => {
+                    setValue('color', color, { shouldValidate: true });
+                    setValue('customColor', undefined);
+                  }}
+                  aria-label={`Select ${color} color`}
+                />
+              ))}
 
-                return (
+              {/* Custom color picker */}
+              <Popover open={isColorPickerOpen} onOpenChange={setIsColorPickerOpen}>
+                <PopoverTrigger asChild>
                   <button
-                    key={color}
                     type="button"
                     className={cn(
-                      'h-8 w-8 rounded-md border-2 transition-all',
-                      colorClass,
-                      selectedColor === color
-                        ? 'border-foreground scale-110'
-                        : 'border-border hover:border-foreground hover:scale-105'
+                      'relative h-7 w-7 rounded-full border-2 p-0 transition-all',
+                      selectedColor === 'custom'
+                        ? 'border-black dark:border-white scale-110'
+                        : 'border-transparent hover:border-foreground/40 hover:scale-105'
                     )}
-                    onClick={() => setValue('color', color)}
-                    title={color}
-                    aria-label={`Select ${color} color`}
+                    aria-label="Select custom color"
+                  >
+                    <span
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: selectedColor === 'custom' && customColor
+                          ? customColor
+                          : RAINBOW_GRADIENT
+                      }}
+                    />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3" side="top">
+                  <HexColorPicker
+                    color={customColor || '#6366f1'}
+                    onChange={(hex) => {
+                      setValue('color', 'custom', { shouldValidate: true });
+                      setValue('customColor', hex, { shouldValidate: true });
+                    }}
                   />
-                );
-              })}
+                </PopoverContent>
+              </Popover>
             </div>
+            {errors.customColor && (
+              <p className="text-xs text-destructive">{errors.customColor.message}</p>
+            )}
           </div>
 
-          <DialogFooter>
+          {/* ── Footer ───────────────────────────────────────────────── */}
+          <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
@@ -274,24 +319,16 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Choose an Icon</DialogTitle>
-            <DialogDescription>
-              Select an icon for your project
-            </DialogDescription>
+            <DialogDescription>Select an icon for your project</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-6 gap-2 py-4">
             {projectIcons.map((iconName) => {
-              const IconComponent = (LucideIcons as unknown as Record<
-                string,
-                React.ComponentType<{ className?: string }>
-              >)[iconName];
+              const Icon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[iconName];
               return (
                 <button
                   key={iconName}
                   type="button"
-                  onClick={() => {
-                    setValue('icon', iconName);
-                    setIsIconPickerOpen(false);
-                  }}
+                  onClick={() => { setValue('icon', iconName); setIsIconPickerOpen(false); }}
                   className={cn(
                     'flex h-12 w-12 items-center justify-center rounded-md border-2 transition-all hover:scale-105',
                     selectedIcon === iconName
@@ -300,7 +337,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                   )}
                   title={iconName}
                 >
-                  {IconComponent && <IconComponent className="h-5 w-5" />}
+                  {Icon && <Icon className="h-5 w-5" />}
                 </button>
               );
             })}

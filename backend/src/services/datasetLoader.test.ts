@@ -32,8 +32,8 @@ describe('datasetLoader', () => {
   });
 
   describe('parseDatasetRows', () => {
-    it('parses CSV rows', () => {
-      const rows = parseDatasetRows(
+    it('parses CSV rows', async () => {
+      const rows = await parseDatasetRows(
         Buffer.from('id,name\n1,A\n2,B'),
         'csv'
       );
@@ -42,8 +42,8 @@ describe('datasetLoader', () => {
       expect(rows[0]).toEqual({ id: '1', name: 'A' });
     });
 
-    it('parses JSON arrays', () => {
-      const rows = parseDatasetRows(
+    it('parses JSON arrays', async () => {
+      const rows = await parseDatasetRows(
         Buffer.from(JSON.stringify([{ id: 1 }, { id: 2 }])),
         'json'
       );
@@ -52,8 +52,8 @@ describe('datasetLoader', () => {
       expect(rows[1]).toEqual({ id: 2 });
     });
 
-    it('parses NDJSON payloads', () => {
-      const rows = parseDatasetRows(
+    it('parses NDJSON payloads', async () => {
+      const rows = await parseDatasetRows(
         Buffer.from('{"id": 1}\n{"id": 2}\n'),
         'json'
       );
@@ -62,8 +62,8 @@ describe('datasetLoader', () => {
       expect(rows[0]).toEqual({ id: 1 });
     });
 
-    it('sanitizes null bytes from parsed string fields', () => {
-      const rows = parseDatasetRows(
+    it('sanitizes null bytes from parsed string fields', async () => {
+      const rows = await parseDatasetRows(
         Buffer.from('id,name\n1,bad\u0000name'),
         'csv'
       );
@@ -72,8 +72,8 @@ describe('datasetLoader', () => {
       expect(rows[0]).toEqual({ id: '1', name: 'badname' });
     });
 
-    it('sanitizes unsupported unicode escapes from JSON payloads', () => {
-      const rows = parseDatasetRows(
+    it('sanitizes unsupported unicode escapes from JSON payloads', async () => {
+      const rows = await parseDatasetRows(
         Buffer.from('{"id": 1, "name": "\\ud800"}'),
         'json'
       );
@@ -81,6 +81,29 @@ describe('datasetLoader', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].id).toBe(1);
       expect(rows[0].name).toBe('\uFFFD');
+    });
+
+    it('parses XLSX rows', async () => {
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Sheet1');
+      worksheet.addRow(['id', 'name', 'active']);
+      worksheet.addRow([1, 'Ada', true]);
+      worksheet.addRow([2, 'Grace', false]);
+
+      const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      const rows = await parseDatasetRows(buffer, 'xlsx', 'people.xlsx');
+
+      expect(rows).toEqual([
+        { id: 1, name: 'Ada', active: true },
+        { id: 2, name: 'Grace', active: false }
+      ]);
+    });
+
+    it('rejects legacy XLS spreadsheets with guidance', async () => {
+      await expect(parseDatasetRows(Buffer.from('placeholder'), 'xlsx', 'legacy.xls')).rejects.toThrow(
+        /no longer supported/i
+      );
     });
   });
 

@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
-import { getFileType } from '@/types/file';
+import { getFileType, DATA_FILE_TYPES } from '@/lib/fileUtils';
 import { FileRow } from './FileRow';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
@@ -26,7 +26,6 @@ const acceptedFileTypes = {
   'text/csv': ['.csv'],
   'application/json': ['.json'],
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  'application/vnd.ms-excel': ['.xls'],
   // Context/documentation files (for RAG and business context)
   'application/pdf': ['.pdf'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
@@ -162,9 +161,9 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
       newFiles.forEach((file) => {
         addFile(file);
         // Auto-upload dataset files
-        if (['csv', 'json', 'excel'].includes(file.type)) {
+        if (DATA_FILE_TYPES.has(file.type)) {
           void uploadDatasetToBackend(file);
-        } else if (['pdf', 'markdown', 'word', 'text'].includes(file.type)) {
+        } else {
           void uploadDocumentToBackend(file);
         }
       });
@@ -200,9 +199,15 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
     }
   };
 
-  // Count file types
-  const dataFiles = projectFiles.filter(f => ['csv', 'json', 'excel'].includes(f.type));
-  const contextFiles = projectFiles.filter(f => ['pdf', 'markdown', 'word', 'text', 'other'].includes(f.type));
+  // Count file types (single pass)
+  const [dataFiles, contextFiles] = useMemo(() => {
+    const data: UploadedFile[] = [];
+    const context: UploadedFile[] = [];
+    for (const f of projectFiles) {
+      (DATA_FILE_TYPES.has(f.type) ? data : context).push(f);
+    }
+    return [data, context] as const;
+  }, [projectFiles]);
   const isUploading = Object.values(uploadStatus).some(status => status === 'uploading');
 
   return (
@@ -248,7 +253,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           <p className="text-xs text-muted-foreground text-center max-w-sm px-4">
             {hasFiles
               ? 'Drop more files or click to browse'
-              : 'Drag and drop files here, or click anywhere. Supports CSV, JSON, Excel for data and PDF/Markdown/TXT for context.'}
+              : 'Drag and drop files here, or click anywhere. Supports CSV, JSON, and XLSX for data and PDF/Markdown/TXT for context.'}
           </p>
         </div>
 
@@ -274,18 +279,14 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
             {/* Scrollable file list */}
             <div className="flex-1 overflow-y-auto -mx-1 px-1">
-              {projectFiles.map((file, index) => (
-                <div key={file.id}>
-                  <FileRow
-                    file={file}
-                    onRemove={handleRemoveFile}
-                    status={uploadStatus[file.id]}
-                    errorMessage={uploadErrors[file.id]}
-                  />
-                  {index < projectFiles.length - 1 && (
-                    <hr className="border-border my-2" />
-                  )}
-                </div>
+              {projectFiles.map((file) => (
+                <FileRow
+                  key={file.id}
+                  file={file}
+                  onRemove={handleRemoveFile}
+                  status={uploadStatus[file.id]}
+                  errorMessage={uploadErrors[file.id]}
+                />
               ))}
             </div>
           </div>

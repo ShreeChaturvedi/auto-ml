@@ -1,29 +1,20 @@
-import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../../config.js';
 import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
-import { getOrCreateContainer, executeInContainer, type Container } from '../containerManager.js';
-import {
-  artifactExecDirRel,
-  containerWorkspaceRelativePath,
-  isAutomlArtifactPath,
-  resolveHostPathInWorkspace
-} from '../executionArtifacts.js';
+import { getOrCreateContainer, type Container } from '../containerManager.js';
+import * as kernelManager from '../kernelManager.js';
 
-import {
-  resolveDatasetSyncMode,
-  shouldOverwriteDatasetWorkspace,
-  type DatasetSyncMode
-} from './datasetSyncMode.js';
+import { resolveDatasetSyncMode, type DatasetSyncMode } from './datasetSyncMode.js';
+import { getDatasetPaths, copyDatasetsToWorkspace } from './datasetWorkspace.js';
 import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
+import {
+  buildPreprocessingExecutionCode,
+  resolvePreprocessingExecutionContext
+} from './preprocessingExecutionContext.js';
 
-/**
- * Get or ensure a container exists for a project.
- * Exported for use by LLM tools like install_package.
- */
 export async function getOrEnsureContainer(projectId: string): Promise<Container> {
   const datasetPaths = await getDatasetPaths(projectId);
   return getOrCreateContainer({
@@ -37,26 +28,16 @@ export async function getOrEnsureContainer(projectId: string): Promise<Container
 // WebSocket broadcast function (injected from index.ts)
 let broadcastToNotebook: ((notebookId: string, event: unknown) => void) | null = null;
 
-/**
- * Set the WebSocket broadcast function.
- */
 export function setWebSocketBroadcast(fn: (notebookId: string, event: unknown) => void): void {
   broadcastToNotebook = fn;
 }
 
-/**
- * Broadcast a WebSocket event.
- */
 function broadcast(notebookId: string, type: string, data: Record<string, unknown>): void {
   if (broadcastToNotebook) {
     broadcastToNotebook(notebookId, { type, ...data, timestamp: new Date().toISOString() });
   }
 }
 
-/**
- * Execute a cell's code in a Docker container.
- * This is the main entry point for running cells via the run_cell MCP tool.
- */
 export async function executeCell(
   cellId: string,
   projectId: string,
@@ -103,18 +84,18 @@ export async function executeCell(
     // Copy dataset files to workspace so filenames work directly.
     // In continue mode, preserve edited working files across actions.
     await copyDatasetsToWorkspace(projectId, datasetSyncMode);
+    const executionCode = await buildExecutionCode(projectId, cell.content, cell.metadata);
 
-    // Execute the code
-    const result = await executeInContainer(container, cell.content, env.executionTimeoutMs, {
-      sessionKey: cell.notebookId,
-      imageOutputMode: 'artifact_path'
+    // Execute the code via Jupyter kernel, streaming outputs to WebSocket
+    const result = await kernelManager.execute(container, executionCode, env.executionTimeoutMs, (output) => {
+      broadcast(cell.notebookId, 'cell:output', { cellId, output });
     });
 
     // Calculate execution time
     const executionMs = Date.now() - startTime;
 
     // Process outputs (inline vs external storage)
-    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs, container.workspacePath);
+    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs);
 
     // Determine final status
     const executionStatus = result.status === 'success' ? 'success' : 'error';
@@ -170,17 +151,12 @@ export async function executeCell(
   }
 }
 
-/**
- * Process execution outputs, storing large ones externally.
- */
 async function processOutputs(
   cellId: string,
-  outputs: RichOutput[],
-  workspacePath: string
+  outputs: RichOutput[]
 ): Promise<{ inlineOutputs: CellOutput[]; outputRefs: OutputRef[] }> {
   const inlineOutputs: CellOutput[] = [];
   const outputRefs: OutputRef[] = [];
-  const execDirs = new Set<string>();
 
   for (let i = 0; i < outputs.length; i++) {
     const output = outputs[i];
@@ -204,43 +180,6 @@ async function processOutputs(
         });
         continue;
       }
-
-      if (isAutomlArtifactPath(output.content)) {
-        const relPath = containerWorkspaceRelativePath(output.content);
-        const execDirRel = artifactExecDirRel(relPath);
-        const hostPath = resolveHostPathInWorkspace(workspacePath, relPath);
-        const mimeType = output.mimeType ?? 'image/png';
-        if (!hostPath) {
-          inlineOutputs.push({
-            type: 'error',
-            content: `[image] Unsafe Matplotlib artifact path: ${output.content}`
-          });
-          continue;
-        }
-        let bytes: Buffer;
-        try {
-          bytes = await readFile(hostPath);
-        } catch (error) {
-          inlineOutputs.push({
-            type: 'error',
-            content: `[image] Failed to read Matplotlib artifact from ${output.content}: ${error instanceof Error ? error.message : 'Unknown error'}`
-          });
-          continue;
-        }
-        const filename = `image_${i}_${Date.now()}.${extensionForMimeType(mimeType)}`;
-        const ref = await repo.saveLargeOutput(cellId, 'image', bytes, filename, mimeType);
-        outputRefs.push(ref);
-        inlineOutputs.push({
-          type: 'image',
-          content: ref.ref,
-          mimeType
-        });
-        if (execDirRel) {
-          execDirs.add(execDirRel);
-        }
-        await rm(hostPath, { force: true }).catch(() => undefined);
-        continue;
-      }
     }
 
     const cellOutput: CellOutput = {
@@ -253,7 +192,6 @@ async function processOutputs(
     const contentSize = Buffer.byteLength(output.content, 'utf8');
 
     if (contentSize > env.notebookOutputMaxSize) {
-      // Store externally
       const filename = `output_${i}_${Date.now()}.${getExtension(output.type)}`;
       const ref = await repo.saveLargeOutput(
         cellId,
@@ -264,27 +202,13 @@ async function processOutputs(
       );
       outputRefs.push(ref);
     } else {
-      // Store inline
       inlineOutputs.push(cellOutput);
     }
   }
 
-  await Promise.all(
-    Array.from(execDirs).map((execDirRel) => {
-      const hostDir = resolveHostPathInWorkspace(workspacePath, execDirRel);
-      if (!hostDir) {
-        return Promise.resolve();
-      }
-      return rm(hostDir, { recursive: true, force: true }).catch(() => undefined);
-    })
-  );
-
   return { inlineOutputs, outputRefs };
 }
 
-/**
- * Get extension for output file based on type.
- */
 function getExtension(type: string): string {
   switch (type) {
     case 'image':
@@ -300,89 +224,15 @@ function getExtension(type: string): string {
   }
 }
 
-/**
- * Get dataset paths for a project to mount in the container.
- */
-async function getDatasetPaths(projectId: string): Promise<string[]> {
-  // Import dynamically to avoid circular dependencies
-  const { createDatasetRepository } = await import('../../repositories/datasetRepository.js');
-  const datasetRepo = createDatasetRepository(env.datasetMetadataPath);
-
-  const datasets = await datasetRepo.list();
-  const projectDatasets = datasets.filter((d) => d.projectId === projectId);
-
-  // Construct dataset paths from datasetId and filename
-  return projectDatasets
-    .map((d) => `${env.datasetStorageDir}/${d.datasetId}/${d.filename}`)
-    .filter((path): path is string => !!path);
-}
-
-/**
- * Copy dataset files to workspace so filenames work directly in code.
- * Files are copied to multiple locations to match all resolve_dataset_path() patterns:
- * - /workspace/datasets/{filename}
- * - /workspace/datasets/{datasetId}/{filename}
- * - /workspace/{filename}
- */
-async function copyDatasetsToWorkspace(projectId: string, mode: DatasetSyncMode): Promise<void> {
-  const { createDatasetRepository } = await import('../../repositories/datasetRepository.js');
-  const { copyFile, unlink, stat, mkdir } = await import('fs/promises');
-
-  const datasetRepo = createDatasetRepository(env.datasetMetadataPath);
-  const datasets = await datasetRepo.list();
-  const projectDatasets = datasets.filter((d) => d.projectId === projectId);
-
-  const workspacePath = join(env.executionWorkspaceDir, projectId);
-  const datasetsPath = join(workspacePath, 'datasets');
-  const shouldOverwrite = shouldOverwriteDatasetWorkspace(mode);
-
-  // Ensure datasets directory exists
-  await mkdir(datasetsPath, { recursive: true });
-
-  for (const dataset of projectDatasets) {
-    const sourceFile = `${env.datasetStorageDir}/${dataset.datasetId}/${dataset.filename}`;
-
-    // Ensure datasetId subdirectory exists
-    const datasetIdPath = join(datasetsPath, dataset.datasetId);
-    await mkdir(datasetIdPath, { recursive: true });
-
-    // Copy to multiple locations for flexibility:
-    // 1. /workspace/datasets/{filename} - for simple filename access
-    // 2. /workspace/datasets/{datasetId}/{filename} - for datasetId-based access
-    // 3. /workspace/{filename} - for direct access
-    const destinations = [
-      join(datasetsPath, dataset.filename),
-      join(datasetIdPath, dataset.filename),
-      join(workspacePath, dataset.filename)
-    ];
-
-    try {
-      // Check if source exists
-      await stat(sourceFile);
-
-      for (const destFile of destinations) {
-        if (!shouldOverwrite) {
-          try {
-            await stat(destFile);
-            // Preserve edited working copy in continue mode.
-            continue;
-          } catch {
-            // Destination missing; copy source below.
-          }
-        } else {
-          // Remove existing file if it exists before source refresh.
-          try {
-            await unlink(destFile);
-          } catch {
-            // File doesn't exist, that's fine
-          }
-        }
-
-        // Copy the file
-        await copyFile(sourceFile, destFile);
-      }
-    } catch (error) {
-      console.warn(`[cellExecution] Could not copy dataset ${dataset.filename}: ${error}`);
-    }
+async function buildExecutionCode(
+  projectId: string,
+  content: string,
+  metadata: unknown
+): Promise<string> {
+  const preprocessingContext = await resolvePreprocessingExecutionContext(projectId, metadata);
+  if (!preprocessingContext) {
+    return content;
   }
+
+  return buildPreprocessingExecutionCode(preprocessingContext, content);
 }

@@ -5,7 +5,7 @@
  * behavior is rendered by NotebookMarkdownCell + NotebookEditor section logic.
  */
 
-import { useState, useCallback, Suspense, lazy, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, Suspense, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -16,68 +16,25 @@ import {
 } from '@/components/ui/tooltip';
 import {
   Play,
+  Square,
   Trash2,
   Loader2,
-  AlertCircle,
-  Clock,
   Copy,
   ChevronDown,
   ChevronUp,
   Bot,
-  Lock
+  Lock,
+  Check,
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
 import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
 import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
-import { useTheme } from '@/components/theme-provider';
-import { initMonaco } from '@/lib/monaco/preloader';
-import { getPythonCompletions, type PythonCompletion } from '@/lib/api/notebooks';
-import type { languages, IDisposable, editor, Position } from 'monaco-editor';
-
-const PYTHON_COMPLETIONS: Array<{ label: string; kind: 'keyword' | 'function' | 'module' }> = [
-  { label: 'import', kind: 'keyword' },
-  { label: 'from', kind: 'keyword' },
-  { label: 'def', kind: 'keyword' },
-  { label: 'class', kind: 'keyword' },
-  { label: 'return', kind: 'keyword' },
-  { label: 'if', kind: 'keyword' },
-  { label: 'elif', kind: 'keyword' },
-  { label: 'else', kind: 'keyword' },
-  { label: 'for', kind: 'keyword' },
-  { label: 'while', kind: 'keyword' },
-  { label: 'try', kind: 'keyword' },
-  { label: 'except', kind: 'keyword' },
-  { label: 'with', kind: 'keyword' },
-  { label: 'as', kind: 'keyword' },
-  { label: 'True', kind: 'keyword' },
-  { label: 'False', kind: 'keyword' },
-  { label: 'None', kind: 'keyword' },
-  { label: 'print', kind: 'function' },
-  { label: 'len', kind: 'function' },
-  { label: 'range', kind: 'function' },
-  { label: 'list', kind: 'function' },
-  { label: 'dict', kind: 'function' },
-  { label: 'str', kind: 'function' },
-  { label: 'int', kind: 'function' },
-  { label: 'float', kind: 'function' },
-  { label: 'pandas', kind: 'module' },
-  { label: 'numpy', kind: 'module' },
-  { label: 'matplotlib', kind: 'module' },
-  { label: 'sklearn', kind: 'module' },
-  { label: 'pd', kind: 'module' },
-  { label: 'np', kind: 'module' },
-  { label: 'plt', kind: 'module' }
-];
-
-let completionProviderDisposable: IDisposable | null = null;
-let currentProjectId = '';
-
-const Editor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
-    default: module.default
-  }))
-);
+import { usePythonEditor } from '@/hooks/usePythonEditor';
+import { useHighlightStore } from '@/stores/highlightStore';
+import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 
 interface NotebookCellComponentProps {
   cell: NotebookCell;
@@ -87,16 +44,20 @@ interface NotebookCellComponentProps {
   onContentChange: (content: string) => void;
   onDelete: () => void;
   onRun: () => void;
+  onInterrupt?: () => void;
+  isSuggested?: boolean;
+  isStreaming?: boolean;
+  streamError?: string | null;
+  onAccept?: () => void;
+  onReject?: () => void;
+  onCancel?: () => void;
 }
 
-function getExecutionPrompt(cell: NotebookCell): string {
-  if (cell.executionStatus === 'running') {
-    return '[*]';
-  }
-  if (cell.executionOrder == null) {
-    return '[ ]';
-  }
-  return `[${cell.executionOrder}${cell.isDirty ? '*' : ''}]`;
+function formatExecutionTime(ms: number): string {
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
 }
 
 export function NotebookCellComponent({
@@ -106,67 +67,40 @@ export function NotebookCellComponent({
   projectId,
   onContentChange,
   onDelete,
-  onRun
+  onRun,
+  onInterrupt,
+  isSuggested,
+  isStreaming,
+  streamError,
+  onAccept,
+  onReject,
+  onCancel
 }: NotebookCellComponentProps) {
-  const { theme } = useTheme();
-  const resolvedTheme = theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : theme;
-
-  const [localContent, setLocalContent] = useState(cell.content);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
   const [showOutput, setShowOutput] = useState(true);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (!hasUnsavedChanges) {
-      setLocalContent(cell.content);
-    }
-  }, [cell.content, hasUnsavedChanges]);
-
-  const handleContentChange = useCallback(
-    (value: string | undefined) => {
-      const content = value ?? '';
-      setLocalContent(content);
-      setHasUnsavedChanges(true);
-
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      saveTimeoutRef.current = setTimeout(() => {
-        onContentChange(content);
-        setHasUnsavedChanges(false);
-      }, 1000);
-    },
-    [onContentChange]
+  const completionOptions = useMemo(
+    () => ({ projectId, cellId: cell.cellId }),
+    [projectId, cell.cellId]
   );
 
-  const handleBlur = useCallback(() => {
-    if (!hasUnsavedChanges) {
-      return;
-    }
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    onContentChange(localContent);
-    setHasUnsavedChanges(false);
-  }, [hasUnsavedChanges, localContent, onContentChange]);
-
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    currentProjectId = projectId;
-  }, [projectId]);
+  const {
+    localContent,
+    resolvedTheme,
+    handleContentChange,
+    handleEditorMount,
+    handleBeforeMount
+  } = usePythonEditor({
+    content: cell.content,
+    onContentChange,
+    onRun,
+    autosaveDelay: 1000,
+    alwaysSync: isSuggested,
+    completionOptions,
+    preloadMonaco: true
+  });
 
   const isRunning = cell.executionStatus === 'running';
-  const executionPrompt = getExecutionPrompt(cell);
 
   const richOutputs = useMemo(() => {
     const baseOutputs = cell.output.map((output) => ({
@@ -235,103 +169,181 @@ export function NotebookCellComponent({
   return (
     <div
       className={cn(
-        'group rounded-lg border bg-card transition-colors duration-150',
-        isRunning && 'border-primary/40 ring-1 ring-primary/20',
-        cell.executionStatus === 'error' && 'border-destructive/50',
-        isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20'
+        'group overflow-hidden rounded-lg border bg-card transition-all duration-150',
+        isRunning && 'border-l-2 border-l-primary',
+        cell.executionStatus === 'error' && 'border-l-2 border-l-destructive',
+        isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20',
+        isHighlighted && 'ring-2 ring-emerald-400/60 transition-shadow duration-200',
+        isSuggested && 'border-dashed border-primary/30',
+        isSuggested && isStreaming && 'suggested-cell-shimmer'
       )}
     >
-      <div className="flex h-9 items-center justify-between border-b px-3">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px]">
-            Python
-          </Badge>
+      <TooltipProvider>
+        <div className="flex h-9 items-center justify-between border-b px-2">
+          <div className="flex items-center gap-1.5">
+            {isSuggested ? (
+              /* Suggested cell — streaming indicator or AI badge */
+              <>
+                {isStreaming ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5 text-primary" />
+                )}
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-primary/30 bg-primary/5 text-[10px] text-primary"
+                >
+                  {isStreaming ? 'Generating...' : 'Suggested'}
+                </Badge>
+              </>
+            ) : (
+              <>
+                {/* Run/Stop button — always visible, left-aligned */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {isRunning ? (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={onInterrupt}
+                        disabled={!onInterrupt}
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        aria-label="Stop execution"
+                      >
+                        <Square className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={onRun}
+                        disabled={isLocked}
+                        className="h-6 w-6"
+                        aria-label="Run cell"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {isRunning ? 'Stop execution' : 'Run cell (Shift+Enter)'}
+                  </TooltipContent>
+                </Tooltip>
 
-          <span className="font-mono text-[10px] text-muted-foreground">
-            In {executionPrompt}
-          </span>
+                {/* Execution count or spinner */}
+                {isRunning ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                ) : (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {cell.executionOrder != null
+                      ? `[${cell.executionOrder}${cell.isDirty ? '*' : ''}]`
+                      : '[ ]'}
+                  </span>
+                )}
 
-          {isRunning && (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Running
-            </span>
-          )}
+                {/* Execution time — subtle, formatted */}
+                {!isRunning && cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
+                  <span className="text-xs text-muted-foreground/60">
+                    · {formatExecutionTime(cell.executionDurationMs)}
+                  </span>
+                )}
 
-          {cell.executionStatus === 'error' && (
-            <span className="flex items-center gap-1 text-[10px] text-destructive">
-              <AlertCircle className="h-3 w-3" />
-              Error
-            </span>
-          )}
+                {/* Lock badges */}
+                {isLocked && lockOwner === 'ai' && (
+                  <Badge
+                    variant="outline"
+                    className="gap-1 border-purple-500/30 bg-purple-100/50 text-[10px] text-purple-600 dark:bg-purple-900/30"
+                  >
+                    <Bot className="h-3 w-3" />
+                    AI editing
+                  </Badge>
+                )}
 
-          {cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              {cell.executionDurationMs}ms
-            </span>
-          )}
+                {isLocked && lockOwner === 'user' && (
+                  <Badge variant="outline" className="gap-1 text-[10px]">
+                    <Lock className="h-3 w-3" />
+                    Editing
+                  </Badge>
+                )}
+              </>
+            )}
+          </div>
 
-          {isLocked && lockOwner === 'ai' && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-purple-500/30 bg-purple-100/50 text-[10px] text-purple-600 dark:bg-purple-900/30"
-            >
-              <Bot className="h-3 w-3" />
-              AI editing
-            </Badge>
-          )}
-
-          {isLocked && lockOwner === 'user' && (
-            <Badge variant="outline" className="gap-1 text-[10px]">
-              <Lock className="h-3 w-3" />
-              Editing
-            </Badge>
+          {/* Right-side actions */}
+          {isSuggested ? (
+            <div className="flex items-center gap-0.5">
+              {isStreaming ? (
+                /* Cancel streaming */
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={onCancel}
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      aria-label="Cancel generation"
+                    >
+                      <Square className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Cancel generation</TooltipContent>
+                </Tooltip>
+              ) : (
+                /* Accept / Reject */
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={onAccept}
+                        className="h-6 w-6 text-muted-foreground hover:text-emerald-600"
+                        aria-label="Accept suggested cell"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Accept</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={onReject}
+                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                        aria-label="Reject suggested cell"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Reject</TooltipContent>
+                  </Tooltip>
+                </>
+              )}
+            </div>
+          ) : (
+            /* Delete — hover-reveal, neutral at rest */
+            <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={onDelete}
+                    disabled={isLocked}
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    aria-label="Delete cell"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Delete cell</TooltipContent>
+              </Tooltip>
+            </div>
           )}
         </div>
-
-        <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={onRun}
-                  disabled={isRunning || isLocked}
-                  className="h-6 w-6"
-                  aria-label="Run cell"
-                >
-                  {isRunning ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Play className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Run cell</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={onDelete}
-                  disabled={isLocked}
-                  className="h-6 w-6 text-destructive hover:text-destructive"
-                  aria-label="Delete cell"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Delete cell</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
+      </TooltipProvider>
 
       <Suspense
         fallback={
@@ -341,105 +353,15 @@ export function NotebookCellComponent({
           />
         }
       >
-        <Editor
+              <LazyMonacoEditor
+          path={`cell-${cell.cellId}.py`}
           height={Math.max(60, localContent.split('\n').length * 20 + 20)}
           language="python"
           value={localContent}
           onChange={handleContentChange}
-          onMount={(editor, monaco) => {
-            editor.onDidBlurEditorWidget(handleBlur);
-            monaco.editor.setTheme(resolvedTheme === 'dark' ? 'python-dark' : 'python-light');
-
-            if (!completionProviderDisposable) {
-              completionProviderDisposable = monaco.languages.registerCompletionItemProvider('python', {
-                triggerCharacters: ['.', ' ', '/', '"', "'", '('],
-                provideCompletionItems: async (
-                  model: editor.ITextModel,
-                  position: Position
-                ): Promise<languages.CompletionList> => {
-                  const word = model.getWordUntilPosition(position);
-                  const range = {
-                    startLineNumber: position.lineNumber,
-                    endLineNumber: position.lineNumber,
-                    startColumn: word.startColumn,
-                    endColumn: word.endColumn
-                  };
-
-                  const staticSuggestions: languages.CompletionItem[] = PYTHON_COMPLETIONS.map((item, idx) => ({
-                    label: item.label,
-                    kind: item.kind === 'keyword'
-                      ? monaco.languages.CompletionItemKind.Keyword
-                      : item.kind === 'function'
-                        ? monaco.languages.CompletionItemKind.Function
-                        : monaco.languages.CompletionItemKind.Module,
-                    insertText: item.label,
-                    range,
-                    sortText: `1${String(idx).padStart(4, '0')}`
-                  }));
-
-                  if (!currentProjectId) {
-                    return { suggestions: staticSuggestions };
-                  }
-
-                  try {
-                    const code = model.getValue();
-                    const line = position.lineNumber;
-                    const column = position.column - 1;
-                    const jediCompletions = await getPythonCompletions(code, line, column, currentProjectId);
-
-                    const dynamicSuggestions: languages.CompletionItem[] = jediCompletions.map((comp: PythonCompletion, idx: number) => {
-                      let kind: languages.CompletionItemKind;
-                      switch (comp.type) {
-                        case 'function':
-                          kind = monaco.languages.CompletionItemKind.Function;
-                          break;
-                        case 'class':
-                          kind = monaco.languages.CompletionItemKind.Class;
-                          break;
-                        case 'module':
-                          kind = monaco.languages.CompletionItemKind.Module;
-                          break;
-                        case 'variable':
-                          kind = monaco.languages.CompletionItemKind.Variable;
-                          break;
-                        case 'keyword':
-                          kind = monaco.languages.CompletionItemKind.Keyword;
-                          break;
-                        case 'param':
-                          kind = monaco.languages.CompletionItemKind.Variable;
-                          break;
-                        case 'property':
-                          kind = monaco.languages.CompletionItemKind.Property;
-                          break;
-                        default:
-                          kind = monaco.languages.CompletionItemKind.Text;
-                      }
-
-                      return {
-                        label: comp.name,
-                        kind,
-                        insertText: comp.name,
-                        range,
-                        detail: comp.module ? `${comp.module}` : undefined,
-                        documentation: comp.docstring || comp.signature,
-                        sortText: `0${String(idx).padStart(4, '0')}`
-                      };
-                    });
-
-                    return { suggestions: [...dynamicSuggestions, ...staticSuggestions] };
-                  } catch {
-                    return { suggestions: staticSuggestions };
-                  }
-                }
-              });
-            }
-
-            editor.addCommand(
-              monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-              () => onRun()
-            );
-          }}
+          onMount={handleEditorMount}
           options={{
+            fixedOverflowWidgets: true,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fontSize: 13,
@@ -448,7 +370,7 @@ export function NotebookCellComponent({
             lineNumbersMinChars: 3,
             glyphMargin: false,
             folding: false,
-            lineDecorationsWidth: 0,
+            lineDecorationsWidth: 8,
             renderLineHighlight: 'line',
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,
@@ -459,16 +381,21 @@ export function NotebookCellComponent({
             },
             automaticLayout: true,
             padding: { top: 8, bottom: 8 },
-            readOnly: isLocked,
+            readOnly: isLocked || (isSuggested && isStreaming),
             quickSuggestions: true,
             suggestOnTriggerCharacters: true
           }}
           theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
-          beforeMount={async () => {
-            await initMonaco();
-          }}
+          beforeMount={handleBeforeMount}
         />
       </Suspense>
+
+      {isSuggested && streamError && (
+        <div className="flex items-center gap-2 border-t px-3 py-2 text-xs text-destructive bg-destructive/5">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>{streamError}</span>
+        </div>
+      )}
 
       {richOutputs.length > 0 && (
         <div className="border-t bg-muted/30">

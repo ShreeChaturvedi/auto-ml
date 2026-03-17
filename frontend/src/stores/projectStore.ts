@@ -8,10 +8,14 @@ import {
   updateProject as apiUpdateProject
 } from '@/lib/api/projects';
 import type { ApiProject, ApiProjectMetadata, ApiProjectPayload } from '@/lib/api/projects';
-import { getAllPhasesSorted, getNextPhase } from '@/types/phase';
 import type { Phase } from '@/types/phase';
 import type { Project, ProjectFormData, ProjectColor } from '@/types/project';
-import { projectColorClasses } from '@/types/project';
+import {
+  DEFAULT_PHASE_STATE,
+  buildPhaseState,
+  isProjectColor,
+  completePhaseForProject
+} from './projectPhaseUtils';
 
 interface ProjectState {
   projects: Project[];
@@ -35,59 +39,10 @@ interface ProjectState {
   isPhaseCompleted: (projectId: string, phase: Phase) => boolean;
 }
 
-const DEFAULT_PHASE_STATE = {
-  unlockedPhases: ['upload'] as Phase[],
-  currentPhase: 'upload' as Phase,
-  completedPhases: [] as Phase[]
-};
-
-const ALL_PHASES = getAllPhasesSorted();
-
-function isValidPhase(value: unknown): value is Phase {
-  return typeof value === 'string' && (ALL_PHASES as readonly string[]).includes(value as string);
-}
-
-function normalizePhaseList(list?: Phase[]): Phase[] {
-  if (!Array.isArray(list)) return [];
-  const seen = new Set<Phase>();
-  list.forEach((value) => {
-    if (isValidPhase(value)) {
-      seen.add(value);
-    }
-  });
-  return ALL_PHASES.filter((phase) => seen.has(phase));
-}
-
-function buildPhaseState(metadata?: ApiProjectMetadata) {
-  const unlocked = normalizePhaseList(metadata?.unlockedPhases);
-  const completed = normalizePhaseList(metadata?.completedPhases).filter((phase) => unlocked.includes(phase));
-  const current = isValidPhase(metadata?.currentPhase)
-    ? (metadata?.currentPhase as Phase)
-    : DEFAULT_PHASE_STATE.currentPhase;
-
-  if (!unlocked.includes(DEFAULT_PHASE_STATE.currentPhase)) {
-    unlocked.push(DEFAULT_PHASE_STATE.currentPhase);
-  }
-  if (!unlocked.includes(current)) {
-    unlocked.push(current);
-  }
-
-  return {
-    unlockedPhases: unlocked.length > 0 ? unlocked : [...DEFAULT_PHASE_STATE.unlockedPhases],
-    completedPhases: completed,
-    currentPhase: current
-  };
-}
-
-function isProjectColor(value: unknown): value is ProjectColor {
-  return (
-    typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(projectColorClasses, value)
-  );
-}
-
 function normalizeProject(apiProject: ApiProject): Project {
   const phaseState = buildPhaseState(apiProject.metadata);
+
+  const customColor = apiProject.metadata?.customColor;
 
   return {
     id: apiProject.id,
@@ -95,6 +50,7 @@ function normalizeProject(apiProject: ApiProject): Project {
     description: apiProject.description,
     icon: apiProject.icon ?? 'Folder',
     color: isProjectColor(apiProject.color) ? apiProject.color : 'blue',
+    ...(typeof customColor === 'string' && customColor ? { customColor } : {}),
     createdAt: new Date(apiProject.createdAt),
     updatedAt: new Date(apiProject.updatedAt),
     ...phaseState,
@@ -120,7 +76,8 @@ function toCreatePayload(form: ProjectFormData): ApiProjectPayload {
     icon: form.icon,
     color: form.color,
     metadata: {
-      ...DEFAULT_PHASE_STATE
+      ...DEFAULT_PHASE_STATE,
+      ...(form.color === 'custom' && form.customColor ? { customColor: form.customColor } : {})
     }
   };
 }
@@ -250,12 +207,23 @@ export const useProjectStore = create<ProjectState>()(
 
           set({ error: undefined });
 
+          const mergedColor = (data.color ?? existing.color) as ProjectColor;
+          const mergedProject = { ...existing, ...data };
+          const apiMeta = toApiMetadata(mergedProject);
+
+          // Persist or clear customColor in metadata
+          if (mergedColor === 'custom' && (data as Partial<Project>).customColor) {
+            apiMeta.customColor = (data as Partial<Project>).customColor;
+          } else if (mergedColor !== 'custom') {
+            delete apiMeta.customColor;
+          }
+
           const payload: Partial<ApiProjectPayload> = {
             name: data.title ?? existing.title,
             description: data.description ?? existing.description,
             icon: data.icon ?? existing.icon,
-            color: (data.color ?? existing.color) as ProjectColor,
-            metadata: toApiMetadata({ ...existing, ...data })
+            color: mergedColor,
+            metadata: apiMeta
           };
 
           try {
@@ -341,14 +309,7 @@ export const useProjectStore = create<ProjectState>()(
             projects: state.projects.map((project) => {
               if (project.id !== projectId) return project;
 
-              const completedPhases = project.completedPhases.includes(phase)
-                ? project.completedPhases
-                : [...project.completedPhases, phase];
-
-              const nextPhase = getNextPhase(phase);
-              const unlockedPhases = nextPhase && !project.unlockedPhases.includes(nextPhase)
-                ? [...project.unlockedPhases, nextPhase]
-                : project.unlockedPhases;
+              const { completedPhases, unlockedPhases } = completePhaseForProject(project, phase);
 
               return {
                 ...project,

@@ -1,14 +1,11 @@
 import express, { Router } from 'express';
 import request from 'supertest';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryProjectRepository } from '../repositories/projectRepository.js';
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { registerProjectRoutes } from './projects.js';
-
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
 
 function createTestApp(repository: InMemoryProjectRepository) {
   const app = express();
@@ -19,11 +16,15 @@ function createTestApp(repository: InMemoryProjectRepository) {
   return app;
 }
 
-describeIf('project routes', () => {
+describeRouteSuite('project routes', () => {
   let repository: InMemoryProjectRepository;
 
   beforeEach(() => {
     repository = new InMemoryProjectRepository();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('GET /api/projects', () => {
@@ -200,11 +201,13 @@ describeIf('project routes', () => {
     });
 
     it('updates updatedAt timestamp', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-11T09:00:00.000Z'));
+
       const created = await repository.create({ name: 'Test' });
       const originalUpdatedAt = created.updatedAt;
 
-      // Wait a small amount to ensure timestamp changes
-      await new Promise(resolve => setTimeout(resolve, 10));
+      vi.setSystemTime(new Date('2026-03-11T09:00:01.000Z'));
 
       const app = createTestApp(repository);
       const response = await request(app)

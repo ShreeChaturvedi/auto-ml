@@ -69,8 +69,8 @@ describe('preprocessing storage persistence helpers', () => {
     expect(parsed).toEqual({
       activeTabId: 'proc-2',
       tabs: [
-        { id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null },
-        { id: 'proc-2', name: 'Processing 2', storageVersion: 3, notebookId: 'nb-2' }
+        { id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null, selectedDatasetId: null },
+        { id: 'proc-2', name: 'Processing 2', storageVersion: 3, notebookId: 'nb-2', selectedDatasetId: null }
       ]
     });
   });
@@ -83,7 +83,7 @@ describe('preprocessing storage persistence helpers', () => {
 
     expect(parsed).toEqual({
       activeTabId: 'proc-1',
-      tabs: [{ id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null }]
+      tabs: [{ id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null, selectedDatasetId: null }]
     });
   });
 

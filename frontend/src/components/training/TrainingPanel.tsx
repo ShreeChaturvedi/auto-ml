@@ -2,35 +2,49 @@
  * TrainingPanel - Jupyter-style training interface with AI assistance
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Loader2,
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
-import { sanitizeAssistantText } from '@/lib/llm/sanitizeAssistantText';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
+import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
+import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { createTrainingAdapter } from './TrainingAdapter';
-import { ProgressiveMessageText } from '@/components/llm/ProgressiveMessageText';
-import { ThinkingBlock } from '@/components/training/ThinkingBlock';
+import { TrainingToolbarLeft } from './TrainingToolbar';
+import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
+import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
+
+  const {
+    workbooks: trainingWorkbooks,
+    activeWorkbookId: activeTrainingWorkbookId,
+    // activeWorkbook not needed here — used by sidebar via registry store
+    buildStorageKey: buildTrainingStorageKey,
+    handleSwitch: handleWorkbookSwitch,
+    handleNew: handleNewWorkbook
+  } = useTrainingWorkbooks(projectId);
 
   const [cells, setCells] = useState<Cell[]>([]);
   const cellsRef = useRef<Cell[]>(cells);
@@ -41,6 +55,21 @@ export function TrainingPanel() {
 
   const { executeCode: executeWithStore } = useExecutionStore();
 
+  // Apply initial notebook from URL search params
+  useEffect(() => {
+    if (initialNotebookIdRef.current) {
+      void useNotebookStore.getState().setActiveNotebook(initialNotebookIdRef.current);
+    }
+  }, []);
+
+  // Tag notebook with training phase metadata
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
+  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
+
+  useEffect(() => {
+    if (!activeNotebookId) return;
+    void updateNotebookMetadata(activeNotebookId, { phase: 'training' });
+  }, [activeNotebookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Files
   const files = useDataStore((s) => s.files);
@@ -202,177 +231,146 @@ export function TrainingPanel() {
     }
   };
 
-  const LeftPaneComponent = ({
-    messages,
-    isGenerating,
-    error,
-    activeTextMessageId,
-    activeThinkingMessageId,
-    hydratedMessageIds
-  }: {
-    messages: ChatMessage[];
-    isGenerating: boolean;
-    error: string | null;
-    activeTextMessageId: string | null;
-    activeThinkingMessageId: string | null;
-    hydratedMessageIds: Set<string>;
-  }) => {
-    // Sync cells on render or effect
-    const uiSchemas = messages.filter(m => m.type === 'ui').map(m => m.schema as UiSchema);
-    const lastUiSchema = uiSchemas[uiSchemas.length - 1];
-    const llmCodeCells = useMemo((): CodeCellUiItem[] => {
-      if (!lastUiSchema) {
-        return [];
+  const baseRenderLifecycleCard = useLifecycleCards();
+
+  /** Extends lifecycle cards with training-specific ui message rendering */
+  const renderLifecycleCard = useCallback(
+    (message: ChatMessage): ReactNode | null => {
+      if (message.type === 'ui') {
+        return (
+          <div className="space-y-4">
+            {message.schema.sections.map((section: UiSection) => (
+              <div key={section.id} className="space-y-3">
+                {section.title && <h3 className="text-sm font-semibold">{section.title}</h3>}
+                <div className="space-y-3">
+                  {section.items.map(renderTrainingItem)}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
       }
 
-      return lastUiSchema.sections.flatMap((section) =>
-        section.items.filter((item): item is CodeCellUiItem => item.type === 'code_cell')
-      );
-    }, [lastUiSchema]);
-    
-    // Auto sync effect
-    useEffect(() => {
-      if (llmCodeCells.length === 0) return;
-      setCells((prev) => {
-        const manualCells = prev.filter((cell) => !cell.id.startsWith('llm-'));
-        const existingMap = new Map(prev.map((cell) => [cell.id, cell]));
-        const nextLlmCells = llmCodeCells.map((item) => {
-          const id = `llm-${item.id}`;
-          const existing = existingMap.get(id);
-          if (existing) {
-            if (existing.content === item.content) return existing;
-            return { ...existing, content: item.content };
-          }
-          return { id, type: 'code' as const, content: item.content, status: 'idle' as const, createdAt: new Date().toISOString() };
-        });
-        return [...manualCells, ...nextLlmCells];
-      });
-    }, [llmCodeCells]);
-    
-    // Auto run effect
-    useEffect(() => {
-      if (llmCodeCells.length === 0) return;
-      llmCodeCells.forEach((item) => {
-        if (!item.autoRun) return;
-        const cellId = `llm-${item.id}`;
-        if (autoRunIdsRef.current.has(cellId)) return;
-        const cell = cellsRef.current.find((entry) => entry.id === cellId);
-        if (!cell || cell.status !== 'idle') return;
-        autoRunIdsRef.current.add(cellId);
-        void handleRunCell(cellId);
-      });
-    }, [llmCodeCells]);
+      return baseRenderLifecycleCard(message);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseRenderLifecycleCard, cells, datasetCompletionFiles]
+  );
 
-    return (
-      <div className="p-6 space-y-4">
-        {trainingBlockedByFeGate ? (
-          <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                Training Locked: Feature Pipeline Approval Required
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
-              <p>Approve a Feature Engineering pipeline before starting model training.</p>
-              <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
-            </CardContent>
-          </Card>
-        ) : null}
+  /** Sync LLM-emitted code cells into local cell state */
+  const syncLlmCells = useCallback((messages: ChatMessage[]) => {
+    const uiSchemas = messages.filter((m): m is Extract<ChatMessage, { type: 'ui' }> => m.type === 'ui').map(m => m.schema as UiSchema);
+    const lastUiSchema = uiSchemas[uiSchemas.length - 1];
+    if (!lastUiSchema) return;
 
-        {error && <div className="text-sm text-red-500">{error}</div>}
-
-        <div className="space-y-4">
-          {messages.map((msg) => {
-            if (msg.type === 'user') {
-              return (
-                <div key={msg.id} className="flex flex-col items-end group">
-                  <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
-                    {msg.content}
-                  </div>
-                </div>
-              );
-            }
-            if (msg.type === 'assistant_text') {
-              const cleaned = sanitizeAssistantText(msg.content);
-              if (!cleaned) return null;
-              return (
-                <div key={msg.id} className="flex items-start gap-3 w-full">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
-                    <Wand2 className="h-3 w-3 text-emerald-600" />
-                  </div>
-                  <ProgressiveMessageText
-                    messageId={msg.id}
-                    text={cleaned}
-                    isLive={activeTextMessageId === msg.id}
-                    mode="markdown"
-                    animateOnMount={!hydratedMessageIds.has(msg.id)}
-                    className="llm-assistant-markdown prose prose-sm dark:prose-invert mt-0.5 max-w-none text-foreground break-words prose-p:leading-relaxed prose-pre:p-0"
-                  />
-                </div>
-              );
-            }
-            if (msg.type === 'thinking') {
-              return (
-                <ThinkingBlock
-                  key={msg.id}
-                  messageId={msg.id}
-                  content={msg.content}
-                  isComplete={msg.isComplete}
-                  isLive={activeThinkingMessageId === msg.id}
-                  animateOnMount={!hydratedMessageIds.has(msg.id)}
-                />
-              );
-            }
-            if (msg.type === 'ui') {
-              return (
-                <div key={msg.id} className="space-y-4 ml-9">
-                  {msg.schema.sections.map((section: UiSection) => (
-                    <div key={section.id} className="space-y-3">
-                      {section.title && <h3 className="text-sm font-semibold">{section.title}</h3>}
-                      <div className="space-y-3">
-                        {section.items.map(renderTrainingItem)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            }
-            if (msg.type === 'error') {
-              return (
-                <div key={msg.id} className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {msg.message}
-                </div>
-              );
-            }
-            return null;
-          })}
-        </div>
-
-        {isGenerating && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground ml-9 animate-pulse">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Generating...
-          </div>
-        )}
-      </div>
+    const llmCodeCells: CodeCellUiItem[] = lastUiSchema.sections.flatMap((section) =>
+      section.items.filter((item): item is CodeCellUiItem => item.type === 'code_cell')
     );
-  };
+
+    if (llmCodeCells.length === 0) return;
+
+    setCells((prev) => {
+      const manualCells = prev.filter((cell) => !cell.id.startsWith('llm-'));
+      const existingMap = new Map(prev.map((cell) => [cell.id, cell]));
+      const nextLlmCells = llmCodeCells.map((item) => {
+        const id = `llm-${item.id}`;
+        const existing = existingMap.get(id);
+        if (existing) {
+          if (existing.content === item.content) return existing;
+          return { ...existing, content: item.content };
+        }
+        return { id, type: 'code' as const, content: item.content, status: 'idle' as const, createdAt: new Date().toISOString() };
+      });
+      return [...manualCells, ...nextLlmCells];
+    });
+
+    // Auto run
+    llmCodeCells.forEach((item) => {
+      if (!item.autoRun) return;
+      const cellId = `llm-${item.id}`;
+      if (autoRunIdsRef.current.has(cellId)) return;
+      const cell = cellsRef.current.find((entry) => entry.id === cellId);
+      if (!cell || cell.status !== 'idle') return;
+      autoRunIdsRef.current.add(cellId);
+      void handleRunCell(cellId);
+    });
+  }, [handleRunCell]);
+
+  const trainingStorageKey = buildTrainingStorageKey(activeTrainingWorkbookId);
+
+  const trainingAdapter = useMemo(() => createTrainingAdapter({
+    projectId: projectId ?? '',
+    datasetId: selectedTrainingFile?.metadata?.datasetId,
+    targetColumn: trainingTargetColumn,
+    featureSummary: buildFeatureSummary(),
+    datasetFiles,
+    documentFiles,
+    sessionKey: buildWorkflowSessionKey(
+      projectId ?? 'training',
+      `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
+    )
+  }), [
+    buildFeatureSummary,
+    datasetFiles,
+    documentFiles,
+    projectId,
+    selectedTrainingFile?.metadata?.datasetId,
+    trainingStorageKey,
+    trainingTargetColumn
+  ]);
 
   return (
     <AgenticShell
+      key={activeTrainingWorkbookId}
       projectId={projectId ?? ''}
-      storageKey="training-messages"
+      storageKey={trainingStorageKey}
       domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
-      domainAdapter={createTrainingAdapter({
-        projectId: projectId ?? '',
-        datasetId: selectedTrainingFile?.metadata?.datasetId,
-        targetColumn: trainingTargetColumn,
-        featureSummary: buildFeatureSummary(),
-        datasetFiles,
-        documentFiles
-      })}
-      LeftPaneComponent={LeftPaneComponent}
-      toolbarLeft={undefined}
+      domainAdapter={trainingAdapter}
+      renderLeftPane={(renderProps) => {
+        // Sync LLM code cells whenever messages change
+        syncLlmCells(renderProps.messages);
+
+        return (
+          <div className="p-6 space-y-4 pb-28">
+            {trainingBlockedByFeGate ? (
+              <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
+                    Training Locked: Feature Pipeline Approval Required
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
+                  <p>Approve a Feature Engineering pipeline before starting model training.</p>
+                  <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
+
+            <ChatMessageRenderer
+              messages={renderProps.messages}
+              renderLifecycleCard={renderLifecycleCard}
+              activeTextMessageId={renderProps.activeTextMessageId}
+              activeThinkingMessageId={renderProps.activeThinkingMessageId}
+              hydratedMessageIds={renderProps.hydratedMessageIds}
+              onEditMessage={renderProps.onEditMessage}
+              onRevertToMessage={renderProps.onRevertToMessage}
+              editingMessageId={renderProps.editingMessageId}
+              turnDiffs={renderProps.turnDiffs}
+              isGenerating={renderProps.isGenerating}
+            />
+          </div>
+        );
+      }}
+      toolbarLeft={
+        <TrainingToolbarLeft
+          workbooks={trainingWorkbooks}
+          activeWorkbookId={activeTrainingWorkbookId}
+          onSwitch={handleWorkbookSwitch}
+          onNew={handleNewWorkbook}
+        />
+      }
       toolbarRight={
         projectFeatures.length > 0 ? (
           <TooltipProvider>

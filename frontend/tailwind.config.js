@@ -1,3 +1,6 @@
+import typography from '@tailwindcss/typography';
+import tailwindcssAnimate from 'tailwindcss-animate';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
@@ -81,14 +84,44 @@ export default {
             transform: 'translateX(0)',
           },
         },
+        'mention-in': {
+          '0%': { opacity: '0', transform: 'translateY(4px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'mention-out': {
+          '0%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+          '100%': { opacity: '0', transform: 'translateY(4px) scale(0.98)' },
+        },
+        'waveform-dance': {
+          '0%, 100%': { transform: 'scaleY(1)' },
+          '50%': { transform: 'scaleY(1.5)' },
+        },
+        'timeline-step-in': {
+          from: { opacity: '0', transform: 'translateX(-8px)' },
+          to: { opacity: '1', transform: 'translateX(0)' },
+        },
+        'timeline-pulse': {
+          '0%, 100%': { boxShadow: '0 0 0 0 currentColor', opacity: '1' },
+          '50%': { boxShadow: '0 0 0 4px transparent', opacity: '0.7' },
+        },
+        'timeline-skeleton-sweep': {
+          '0%': { backgroundPosition: '200% 0' },
+          '100%': { backgroundPosition: '-200% 0' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         spotlight: 'spotlight 2s ease 0.75s 1 forwards',
         'slide-in-right': 'slide-in-right 0.2s ease-out',
+        'mention-in': 'mention-in 150ms ease-out',
+        'mention-out': 'mention-out 100ms ease-in',
+        'waveform-dance': 'waveform-dance 0.8s ease-in-out infinite',
+        'timeline-step-in': 'timeline-step-in 220ms ease-out both',
+        'timeline-pulse': 'timeline-pulse 2s ease-in-out infinite',
+        'timeline-skeleton-sweep': 'timeline-skeleton-sweep 1.5s ease-in-out infinite',
       },
     },
   },
-  plugins: [],
+  plugins: [typography, tailwindcssAnimate],
 }

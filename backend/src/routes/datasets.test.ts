@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 
 import { createDatasetUploadRouter } from './datasets.js';
@@ -59,9 +59,6 @@ vi.mock('../db.js', () => ({
 }));
 
 const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
-
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
 
 // In-memory dataset repository for testing
 class InMemoryDatasetRepository implements DatasetRepository {
@@ -153,7 +150,7 @@ function createMockDataset(overrides?: Partial<DatasetProfile>): DatasetProfile 
   };
 }
 
-describeIf('dataset routes', () => {
+describeRouteSuite('dataset routes', () => {
   let repository: InMemoryDatasetRepository;
 
   beforeEach(() => {
@@ -246,6 +243,21 @@ describeIf('dataset routes', () => {
       expect(response.body.sample).toEqual(dataset.sample);
       expect(response.body.columns).toEqual(['id', 'name', 'value']);
       expect(response.body.rowCount).toBe(50);
+    });
+  });
+
+  describe('POST /api/upload/dataset', () => {
+    it('rejects legacy XLS uploads with a clear migration message', async () => {
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/upload/dataset')
+        .attach('file', Buffer.from('legacy-binary'), {
+          filename: 'legacy.xls',
+          contentType: 'application/vnd.ms-excel'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/convert the file to \.xlsx or \.csv/i);
     });
   });
 

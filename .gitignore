@@ -42,3 +42,4 @@ Senior Design Project Proposal.pdf
 
 # Local agent/debug logs
 .cursor/*.log
+.superpowers/

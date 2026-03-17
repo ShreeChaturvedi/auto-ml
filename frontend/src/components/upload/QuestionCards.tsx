@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import type { AskUserQuestion, QuestionAnswer } from '@/types/llmUi';
 import { cn } from '@/lib/utils';
 
+export const CUSTOM_OPTION = '__custom__' as const;
+export const CUSTOM_OPTION_LABEL = 'Type your own answer...';
+
 interface QuestionCardsProps {
   questions: AskUserQuestion[];
   onSubmit: (answers: QuestionAnswer[]) => void;
@@ -16,23 +19,108 @@ interface QuestionCardsProps {
 
 type AnswerState = Record<string, string | string[]>;
 
+const getCardClassName = (selected: boolean) =>
+  cn(
+    'cursor-pointer border transition-colors hover:border-primary/40',
+    selected && 'border-primary bg-primary/5'
+  );
+
+function OptionCard({
+  optionLabel,
+  optionDescription,
+  isSelected,
+  disabled,
+  inputType,
+  questionId,
+  onToggle,
+}: {
+  optionLabel: string;
+  optionDescription?: string;
+  isSelected: boolean;
+  disabled: boolean;
+  inputType: 'radio' | 'checkbox';
+  questionId: string;
+  onToggle: () => void;
+}) {
+  if (inputType === 'radio') {
+    return (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={isSelected}
+        disabled={disabled}
+        onClick={onToggle}
+        className={cn(getCardClassName(isSelected), 'w-full rounded-md p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
+        data-testid={`single-option-${questionId}-${optionLabel}`}
+      >
+        <p className="text-sm font-medium">{optionLabel}</p>
+        {optionDescription ? <p className="mt-1 text-xs text-muted-foreground">{optionDescription}</p> : null}
+      </button>
+    );
+  }
+
+  return (
+    <label
+      className={cn(getCardClassName(isSelected), 'flex w-full cursor-pointer items-start gap-3 rounded-md p-3 text-left focus-within:ring-2 focus-within:ring-ring', disabled && 'pointer-events-none opacity-50')}
+      data-testid={`multi-option-${questionId}-${optionLabel}`}
+    >
+      <input
+        type="checkbox"
+        checked={isSelected}
+        disabled={disabled}
+        onChange={onToggle}
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-input focus-visible:outline-none"
+      />
+      <div>
+        <p className="text-sm font-medium">{optionLabel}</p>
+        {optionDescription ? <p className="mt-1 text-xs text-muted-foreground">{optionDescription}</p> : null}
+      </div>
+    </label>
+  );
+}
+
 export function QuestionCards({ questions, onSubmit, disabled = false }: QuestionCardsProps) {
   const [answers, setAnswers] = useState<AnswerState>({});
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
+  const customInputRef = useRef<HTMLInputElement>(null);
+
+  const currentQuestion = questions[currentIndex];
+  const selected = currentQuestion ? answers[currentQuestion.id] : undefined;
+
+  const allowCustom = currentQuestion
+    ? currentQuestion.type !== 'free_text' && (currentQuestion.allowCustom ?? true)
+    : false;
+
+  const showCustomInput = allowCustom && (
+    selected === CUSTOM_OPTION ||
+    (Array.isArray(selected) && selected.includes(CUSTOM_OPTION))
+  );
+
+  useEffect(() => {
+    if (showCustomInput) {
+      customInputRef.current?.focus();
+    }
+  }, [showCustomInput]);
 
   const isQuestionAnswered = useCallback(
     (question: AskUserQuestion): boolean => {
       const value = answers[question.id];
+
       if (typeof value === 'string') {
+        if (value === CUSTOM_OPTION) {
+          return Boolean(customAnswers[question.id]?.trim());
+        }
         return value.trim().length > 0;
       }
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
 
-      if ((question.allowCustom ?? true) && customAnswers[question.id]?.trim()) {
-        return true;
+      if (Array.isArray(value)) {
+        const nonSentinel = value.filter((v) => v !== CUSTOM_OPTION);
+        const hasSentinel = value.includes(CUSTOM_OPTION);
+        if (hasSentinel) {
+          return nonSentinel.length > 0 || Boolean(customAnswers[question.id]?.trim());
+        }
+        return value.length > 0;
       }
 
       return false;
@@ -44,42 +132,39 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
     return questions.every((question) => isQuestionAnswered(question));
   }, [isQuestionAnswered, questions]);
 
-  const getCardClassName = (selected: boolean) =>
-    cn(
-      'cursor-pointer border transition-colors hover:border-primary/40',
-      selected && 'border-primary bg-primary/5'
-    );
-
   const normalizeAnswer = (question: AskUserQuestion): string | string[] => {
     const current = answers[question.id];
     const custom = customAnswers[question.id]?.trim();
 
     if (question.type === 'multi_select') {
-      const selected = Array.isArray(current) ? [...current] : [];
-      if (custom && !selected.includes(custom)) {
-        selected.push(custom);
+      const values = Array.isArray(current) ? current.filter((v) => v !== CUSTOM_OPTION) : [];
+      if (Array.isArray(current) && current.includes(CUSTOM_OPTION) && custom) {
+        values.push(custom);
       }
-      return selected;
+      return values;
     }
 
-    if (typeof current === 'string' && current.trim()) {
-      return current.trim();
+    if (typeof current === 'string') {
+      if (current === CUSTOM_OPTION) {
+        return custom ?? '';
+      }
+      if (current.trim()) {
+        return current.trim();
+      }
     }
 
     return custom ?? '';
   };
 
-  const currentQuestion = questions[currentIndex];
-
   if (!currentQuestion) {
     return null;
   }
 
-  const selected = answers[currentQuestion.id];
-  const allowCustom = currentQuestion.allowCustom ?? (currentQuestion.type !== 'free_text');
   const missingSelectableOptions =
     (currentQuestion.type === 'single_select' || currentQuestion.type === 'multi_select')
     && (!currentQuestion.options || currentQuestion.options.length === 0);
+
+  const hasOptions = currentQuestion.options && currentQuestion.options.length > 0;
 
   return (
     <form
@@ -129,70 +214,86 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
           <CardTitle className="text-base leading-relaxed">{currentQuestion.question}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {currentQuestion.type === 'single_select' && currentQuestion.options?.length ? (
+          {currentQuestion.type === 'single_select' && hasOptions ? (
             <div
               className="space-y-2"
               role="radiogroup"
               aria-label={currentQuestion.question}
             >
-              {currentQuestion.options.map((option) => {
-                const isSelected = selected === option.label;
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    disabled={disabled}
-                    onClick={() => {
-                      setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.label }));
-                    }}
-                    className={cn(getCardClassName(isSelected), 'w-full rounded-md p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
-                    data-testid={`single-option-${currentQuestion.id}-${option.label}`}
-                  >
-                    <p className="text-sm font-medium">{option.label}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
-                  </button>
-                );
-              })}
+              {currentQuestion.options.map((option) => (
+                <OptionCard
+                  key={option.label}
+                  optionLabel={option.label}
+                  optionDescription={option.description}
+                  isSelected={selected === option.label}
+                  disabled={disabled}
+                  inputType="radio"
+                  questionId={currentQuestion.id}
+                  onToggle={() => {
+                    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.label }));
+                  }}
+                />
+              ))}
+              {allowCustom ? (
+                <OptionCard
+                  optionLabel={CUSTOM_OPTION_LABEL}
+                  isSelected={selected === CUSTOM_OPTION}
+                  disabled={disabled}
+                  inputType="radio"
+                  questionId={currentQuestion.id}
+                  onToggle={() => {
+                    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: CUSTOM_OPTION }));
+                  }}
+                />
+              ) : null}
             </div>
           ) : null}
 
-          {currentQuestion.type === 'multi_select' && currentQuestion.options?.length ? (
+          {currentQuestion.type === 'multi_select' && hasOptions ? (
             <div className="space-y-2">
               {currentQuestion.options.map((option) => {
                 const selectedValues = Array.isArray(selected) ? selected : [];
-                const isSelected = selectedValues.includes(option.label);
                 return (
-                  <label
+                  <OptionCard
                     key={option.label}
-                    className={cn(getCardClassName(isSelected), 'flex w-full cursor-pointer items-start gap-3 rounded-md p-3 text-left focus-within:ring-2 focus-within:ring-ring', disabled && 'pointer-events-none opacity-50')}
-                    data-testid={`multi-option-${currentQuestion.id}-${option.label}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      disabled={disabled}
-                      onChange={() => {
-                        setAnswers((prev) => {
-                          const existingValue = prev[currentQuestion.id];
-                          const currentValues = Array.isArray(existingValue) ? existingValue : [];
-                          const nextValues = currentValues.includes(option.label)
-                            ? currentValues.filter((entry: string) => entry !== option.label)
-                            : [...currentValues, option.label];
-
-                          return { ...prev, [currentQuestion.id]: nextValues };
-                        });
-                      }}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-input focus-visible:outline-none"
-                    />
-                    <div>
-                      <p className="text-sm font-medium">{option.label}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
-                    </div>
-                  </label>
+                    optionLabel={option.label}
+                    optionDescription={option.description}
+                    isSelected={selectedValues.includes(option.label)}
+                    disabled={disabled}
+                    inputType="checkbox"
+                    questionId={currentQuestion.id}
+                    onToggle={() => {
+                      setAnswers((prev) => {
+                        const existingValue = prev[currentQuestion.id];
+                        const currentValues = Array.isArray(existingValue) ? existingValue : [];
+                        const nextValues = currentValues.includes(option.label)
+                          ? currentValues.filter((entry: string) => entry !== option.label)
+                          : [...currentValues, option.label];
+                        return { ...prev, [currentQuestion.id]: nextValues };
+                      });
+                    }}
+                  />
                 );
               })}
+              {allowCustom ? (
+                <OptionCard
+                  optionLabel={CUSTOM_OPTION_LABEL}
+                  isSelected={Array.isArray(selected) && selected.includes(CUSTOM_OPTION)}
+                  disabled={disabled}
+                  inputType="checkbox"
+                  questionId={currentQuestion.id}
+                  onToggle={() => {
+                    setAnswers((prev) => {
+                      const existingValue = prev[currentQuestion.id];
+                      const currentValues = Array.isArray(existingValue) ? existingValue : [];
+                      const nextValues = currentValues.includes(CUSTOM_OPTION)
+                        ? currentValues.filter((entry: string) => entry !== CUSTOM_OPTION)
+                        : [...currentValues, CUSTOM_OPTION];
+                      return { ...prev, [currentQuestion.id]: nextValues };
+                    });
+                  }}
+                />
+              ) : null}
             </div>
           ) : null}
 
@@ -245,8 +346,9 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
             </div>
           ) : null}
 
-          {allowCustom ? (
+          {showCustomInput ? (
             <Input
+              ref={customInputRef}
               placeholder="Type your own answer"
               aria-label={`Custom answer for ${currentQuestion.header}`}
               value={customAnswers[currentQuestion.id] ?? ''}
@@ -297,7 +399,7 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
           </div>
         </CardContent>
       </Card>
-      
+
       <div className="sr-only" aria-live="polite">
         Showing question {currentIndex + 1} of {questions.length}
       </div>

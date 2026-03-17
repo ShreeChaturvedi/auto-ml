@@ -6,7 +6,7 @@
  */
 
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useLayoutEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -38,7 +38,10 @@ export function ThemeProvider({
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
   );
 
-  useEffect(() => {
+  // useLayoutEffect ensures the CSS class is toggled BEFORE children render,
+  // so getComputedStyle() calls in chart components read the correct CSS variables.
+  // useEffect runs after paint, causing a flash of stale theme colors.
+  useLayoutEffect(() => {
     const root = window.document.documentElement;
 
     root.classList.remove('light', 'dark');

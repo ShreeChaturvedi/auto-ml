@@ -1,6 +1,6 @@
 import { env } from '../../config.js';
 
-import { GeminiClient } from './providers/geminiClient.js';
+import { resolveCatalogModel, type LlmReasoningEffort } from './modelCatalog.js';
 import { OpenAiClient } from './providers/openaiClient.js';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
@@ -17,7 +17,6 @@ export interface LlmToolDefinition {
 }
 
 export type LlmToolChoice = 'auto' | 'any' | 'none';
-export type LlmThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
 
 export interface LlmToolCall {
   name: string;
@@ -45,15 +44,24 @@ export interface LlmRequest {
   toolChoice?: LlmToolChoice;
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
-  enableThinking?: boolean;
-  thinkingLevel?: LlmThinkingLevel;
+  reasoningEffort?: LlmReasoningEffort;
   contextId?: string;
+}
+
+/** Raw OpenAI Responses API usage shape — passed through as-is to the frontend. */
+export interface RawLlmUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  input_tokens_details?: { cached_tokens?: number };
+  output_tokens_details?: { reasoning_tokens?: number };
 }
 
 export interface LlmStreamHandlers {
   onToken: (token: string) => void;
   onToolCall?: (call: LlmToolCall) => void;
   onThinking?: (text: string) => void;
+  onUsage?: (usage: RawLlmUsage) => void;
 }
 
 export interface LlmClient {
@@ -62,31 +70,13 @@ export interface LlmClient {
 }
 
 export function createLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
-  const provider = env.llmProvider.toLowerCase();
   const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs;
+  const resolvedModel = resolveCatalogModel(modelOverride || env.llmModel);
 
-  if (provider === 'openai') {
-    return new OpenAiClient({
-      apiKey: env.llmApiKey,
-      baseUrl: env.llmBaseUrl,
-      model: modelOverride || env.llmModel,
-      timeoutMs
-    });
-  }
-
-  return new GeminiClient({
-    apiKey: env.geminiApiKey || env.llmApiKey,
-    model: modelOverride || env.geminiModel || env.llmModel,
-    timeoutMs
-  });
-}
-
-export function createThinkingLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
-  // Thinking model is only supported for Gemini
-  const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs * 2;
-  return new GeminiClient({
-    apiKey: env.geminiApiKey || env.llmApiKey,
-    model: modelOverride || env.geminiThinkingModel,
+  return new OpenAiClient({
+    apiKey: env.openaiApiKey,
+    baseUrl: env.openaiBaseUrl,
+    model: resolvedModel.id,
     timeoutMs
   });
 }

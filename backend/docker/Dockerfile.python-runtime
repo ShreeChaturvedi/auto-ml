@@ -35,7 +35,10 @@ RUN pip install --no-cache-dir \
     scipy==1.14.0 \
     plotly==5.23.0 \
     openpyxl==3.1.5 \
-    xlrd==2.0.1
+    xlrd==2.0.1 \
+    ipykernel==6.29.5 \
+    jupyter_kernel_gateway==3.0.1 \
+    ipywidgets==8.1.5
 
 # Set up workspace
 WORKDIR /workspace
@@ -43,5 +46,8 @@ WORKDIR /workspace
 # Switch to non-root user
 USER sandbox
 
-# Keep container running (will be exec'd into)
-CMD ["tail", "-f", "/dev/null"]
+# Start Jupyter Kernel Gateway
+CMD ["python", "-m", "kernel_gateway", \
+     "--KernelGatewayApp.ip=0.0.0.0", \
+     "--KernelGatewayApp.port=8888", \
+     "--KernelGatewayApp.allow_origin=*"]

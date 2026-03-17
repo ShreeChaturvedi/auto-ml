@@ -4,7 +4,7 @@ import {
   extractColumnTypesFromQuery,
   mapColumnToColumnDataType,
   mapPostgresTypeToColumnDataType
-} from '../sqlColumnTypes';
+} from '@/lib/sql/sqlColumnTypes';
 
 describe('sqlColumnTypes', () => {
   it('maps PostgreSQL type names to frontend column data types', () => {

@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+.animate-spin-slow {
+  animation: spin 1.1s linear infinite;
+}
+
+/* Registered property so --shine-angle is interpolable in @keyframes */
+@property --shine-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -24,6 +35,20 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 0 0% 45%;
     --radius: 0.5rem;
+
+    /* EDA branded palette — do NOT reuse --chart-* (used by SQL highlighting) */
+    --eda-blue:        210 60% 65%;
+    --eda-copper:      25 70% 60%;
+    --eda-emerald:     155 55% 55%;
+    --eda-amber:       38 80% 62%;
+    --eda-rose:        345 50% 62%;
+    --eda-lavender:    270 45% 65%;
+
+    /* EDA severity */
+    --eda-pristine:    155 65% 50%;
+    --eda-clean:       170 45% 50%;
+    --eda-fair:        38 70% 55%;
+    --eda-poor:        0 65% 55%;
   }
 
   .dark {
@@ -32,7 +57,7 @@
     --foreground: 0 0% 98%;
     --card: 0 0% 4%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 4%;
+    --popover: 0 0% 9%;
     --popover-foreground: 0 0% 98%;
     /* Neutral primary - white button in dark mode */
     --primary: 0 0% 98%;
@@ -48,12 +73,46 @@
     --border: 0 0% 14%;
     --input: 0 0% 14%;
     --ring: 0 0% 55%;
+
+    /* EDA branded palette — adjusted for dark backgrounds */
+    --eda-blue:        210 65% 70%;
+    --eda-copper:      25 75% 65%;
+    --eda-emerald:     155 60% 60%;
+    --eda-amber:       38 85% 67%;
+    --eda-rose:        345 55% 67%;
+    --eda-lavender:    270 50% 72%;
+
+    /* EDA severity — brighter on dark bg */
+    --eda-pristine:    155 70% 55%;
+    --eda-clean:       170 50% 55%;
+    --eda-fair:        38 75% 60%;
+    --eda-poor:        0 70% 60%;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 4px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
   }
 
   html,
@@ -72,29 +131,6 @@
 }
 
 @layer utilities {
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.3);
-    border-radius: 4px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.5);
-  }
-
   .scrollbar-hide {
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -103,6 +139,27 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* MentionInput overlays */
+.mention-input-placeholder {
+  line-height: 1.5rem;
+  white-space: pre-wrap;
+}
+
+.mention-input-voice-caret {
+  width: 2px;
+  height: 1.15em;
+  border-radius: 999px;
+  background: var(--voice-theme-color, hsl(var(--primary)));
+  box-shadow: 0 0 0 1px hsl(var(--background)), 0 0 5px 1px hsl(var(--primary) / 0.35);
+  animation: voice-caret-pulse 900ms ease-in-out infinite;
+}
+
+/* Mention chip inside contentEditable */
+.mention-chip {
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
 }
 
 /* Dialog focus states */
@@ -117,33 +174,6 @@
   [data-radix-scroll-area-viewport]>* {
     display: block !important;
   }
-}
-
-/* PDF Viewer styling to match our app theme */
-.pdf-viewer-container {
-  --rpv-default-layout__container-border-color: transparent;
-}
-
-.dark .pdf-viewer-container {
-  /* Override react-pdf-viewer dark theme colors to match our design */
-  --rpv-default-layout__body--background-color: hsl(0 0% 0%);
-  --rpv-default-layout__container--background-color: hsl(0 0% 0%);
-  --rpv-default-layout__sidebar--background-color: hsl(0 0% 4%);
-  --rpv-default-layout__toolbar--background-color: hsl(0 0% 4%);
-}
-
-/* Style the PDF page area to match our dark theme */
-.pdf-viewer-container .rpv-core__page-layer {
-  background-color: hsl(0 0% 0%);
-}
-
-.pdf-viewer-container .rpv-core__inner-pages {
-  background-color: hsl(0 0% 0%);
-}
-
-/* Hide the default toolbar since we use custom one */
-.pdf-viewer-container .rpv-toolbar {
-  display: none !important;
 }
 
 /* Markdown rendered content styling */
@@ -406,55 +436,68 @@
   font-size: 0.84em;
 }
 
+.nl-model-work-viewport {
+  --nl-work-fade-top: 0px;
+  --nl-work-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black var(--nl-work-fade-top),
+    black calc(100% - var(--nl-work-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black var(--nl-work-fade-top),
+    black calc(100% - var(--nl-work-fade-bottom)),
+    transparent 100%
+  );
+}
+
+/* Execute icon: layered traces flow along stroke paths, hover-only */
 @keyframes execute-icon-trace {
   0% {
     stroke-dashoffset: 0;
   }
-
-  35% {
-    stroke-dashoffset: 100;
-  }
-
   100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes execute-trace-movement {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
     stroke-dashoffset: 0;
   }
 }
 
-.execute-icon-path {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-  transition: stroke-dashoffset 220ms ease-out;
+.execute-icon-trace-base {
+  animation: execute-trace-movement 1.5s linear infinite;
+  stroke-linecap: round;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
-.group\/execute:hover .execute-icon-path {
-  animation: execute-icon-trace 700ms ease-out 1;
+.execute-icon {
+  --comet-head-color: currentColor;
+  --comet-head-max: 100%;
+  --comet-tail-color: currentColor;
+  --comet-tail-max: 0%;
 }
 
-@keyframes idea-filament-trace {
-  0% {
-    stroke-dashoffset: 100;
-  }
-
-  45% {
-    stroke-dashoffset: 0;
-  }
-
-  100% {
-    stroke-dashoffset: -100;
-  }
+.dark .execute-icon {
+  --comet-head-color: white;
+  --comet-head-max: 100%;
+  --comet-tail-color: currentColor;
+  --comet-tail-max: 0%;
 }
 
-.idea-icon-outline {
-  stroke-opacity: 0.95;
-}
-
-.idea-icon-filament {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-}
-
-.group\/execute:hover .idea-icon-filament {
-  animation: idea-filament-trace 820ms ease-in-out 1;
+.group\/execute:hover .execute-icon-trace-base {
+  opacity: 1;
 }
 
 /* ─── SQL reveal highlighting + token entry animation ────────────────────── */
@@ -621,6 +664,43 @@
   animation: nl-cursor-blink 700ms step-end infinite;
 }
 
+/* ─── Voice input waveform + cursor animations ──────────────────────────── */
+
+@keyframes waveform-dance {
+  0%, 100% { transform: scaleY(1); }
+  50%      { transform: scaleY(1.5); }
+}
+
+.voice-idle-btn:hover {
+  color: var(--voice-theme-color, hsl(var(--foreground)));
+}
+
+.waveform-bar {
+  animation: waveform-dance 0.8s ease-in-out infinite paused;
+}
+
+/* Trigger dance on parent hover */
+.group\/voice:hover .waveform-bar {
+  animation-play-state: running;
+}
+
+@keyframes voice-caret-pulse {
+  0%, 100% { opacity: 0.4; transform: scaleY(0.92); box-shadow: 0 0 0 1px hsl(var(--background)), 0 0 3px 1px var(--voice-theme-color, hsl(var(--primary) / 0.25)); }
+  50%      { opacity: 1; transform: scaleY(1.06); box-shadow: 0 0 0 1px hsl(var(--background)), 0 0 7px 2px var(--voice-theme-color, hsl(var(--primary) / 0.45)); }
+}
+
+/* Per-character reveal for voice-transcribed text in the chat input.
+   No translateY — vertical movement in contentEditable causes line-height
+   recalc and cursor jitter. Uses --voice-theme-color for themed bloom. */
+@keyframes voice-char-in {
+  0%   { opacity: 0; color: var(--voice-theme-color, hsl(var(--foreground))); text-shadow: 0 0 4px currentColor; }
+  30%  { opacity: 1; color: var(--voice-theme-color, hsl(var(--foreground))); text-shadow: 0 0 2px currentColor; }
+  100% { opacity: 1; color: inherit; text-shadow: none; }
+}
+.voice-char-enter { animation: voice-char-in 180ms ease-out both; }
+
+
+
 @media (prefers-reduced-motion: reduce) {
   .sql-word-enter {
     animation: none;
@@ -634,4 +714,183 @@
     animation: none;
     opacity: 0.7;
   }
+
+  .waveform-bar {
+    animation: none;
+  }
+
+  .mention-input-voice-caret {
+    animation: none;
+    opacity: 0.85;
+    transform: none;
+    box-shadow: 0 0 0 1px hsl(var(--background));
+  }
+
+  .voice-char-enter {
+    animation: none;
+  }
+
+}
+
+/* ─── Metallic shine border for chat composer ────────────────────────────── */
+
+/*
+ * Technique: two absolutely-positioned pseudo-elements masked to only the 1 px
+ * border region (padding-box XOR content-box).  ::before renders the
+ * proximity-following radial shine; ::after renders the solid focus border.
+ * The base border comes from the inner InputGroup.
+ */
+.metallic-border {
+  --shine-x: 0px;
+  --shine-y: 0px;
+  --shine-opacity: 0;
+  position: relative;
+}
+
+/* Shared mask that isolates the 1 px border strip */
+.metallic-border::before,
+.metallic-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* ── Proximity shine (cursor-following) ────────────────────────────────── */
+.metallic-border::before {
+  z-index: 10;
+  background: radial-gradient(
+    circle 68px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.93)) 0%,
+    hsl(0 0% 80% / calc(var(--shine-opacity) * 0.50)) 35%,
+    transparent 100%
+  );
+}
+
+.dark .metallic-border::before {
+  background: radial-gradient(
+    circle 68px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 1.0)) 0%,
+    hsl(0 0% 85% / calc(var(--shine-opacity) * 0.61)) 35%,
+    transparent 100%
+  );
+}
+
+/* ── Focus layer (sweep-around highlight) ──────────────────────────────── */
+.metallic-border::after {
+  z-index: 11;
+  /* Resting at 180deg keeps both arms fully drawn (2×180 = 360) so removing
+     the animation on blur preserves the full border while opacity fades. */
+  --shine-angle: 180deg;
+  background: conic-gradient(
+    from calc(var(--cursor-angle, 0deg) - var(--shine-angle)),
+    hsl(var(--ring)) 0deg calc(2 * var(--shine-angle)),
+    transparent calc(2 * var(--shine-angle))
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.metallic-border[data-focused="true"]::after {
+  opacity: 1;
+  animation: metallic-sweep 0.45s ease-out forwards;
+}
+
+@keyframes metallic-sweep {
+  from { --shine-angle: 0deg; }
+  to   { --shine-angle: 180deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metallic-border::before {
+    display: none;
+  }
+  .metallic-border[data-focused="true"]::after {
+    /* Skip sweep; --shine-angle stays at 180deg so border appears instantly */
+    animation: none;
+  }
+}
+
+/* Timeline step enter animation */
+.timeline-step-enter {
+  animation: timeline-step-in 220ms ease-out both;
+}
+@keyframes timeline-step-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Pulsing status dot for running/awaiting steps */
+.timeline-dot-pulse {
+  animation: timeline-pulse 2s ease-in-out infinite;
+}
+@keyframes timeline-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 0 4px transparent; opacity: 0.7; }
+}
+
+/* Skeleton shimmer for empty streaming state */
+.timeline-skeleton {
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: timeline-skeleton-sweep 1.5s ease-in-out infinite;
+}
+@keyframes timeline-skeleton-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-step-enter { animation: none; }
+  .timeline-dot-pulse { animation: none; }
+  .timeline-skeleton { animation: none; }
+}
+
+/* Suggested cell — metallic shimmer during streaming */
+@keyframes suggested-cell-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.suggested-cell-shimmer {
+  position: relative;
+}
+
+.suggested-cell-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--muted-foreground) / 0.04) 30%,
+    hsl(var(--muted-foreground) / 0.1) 50%,
+    hsl(var(--muted-foreground) / 0.04) 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: suggested-cell-shimmer 2.5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggested-cell-shimmer::after { animation: none; background: hsl(var(--muted-foreground) / 0.03); }
+}
+
+/* PDF viewer page styling */
+.pdf-viewer-page canvas {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
 }

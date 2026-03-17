@@ -1,16 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executeToolCalls, getPreprocessingRunSnapshot } from '../../lib/api/llm';
+import { apiRequest } from '../../lib/api/client';
+import { getPreprocessingRunSnapshot } from '../../lib/api/llm';
 import type { PreprocessingRunSnapshot } from '../../types/preprocessing';
 import { usePreprocessingStore } from '../preprocessingStore';
 
-vi.mock('../../lib/api/llm', () => ({
-  getPreprocessingRunSnapshot: vi.fn(),
-  executeToolCalls: vi.fn()
+vi.mock('../../lib/api/client', () => ({
+  ApiError: class ApiError extends Error {
+    readonly status: number;
+    readonly payload: unknown;
+
+    constructor(message: string, status: number, payload: unknown) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+      this.payload = payload;
+    }
+  },
+  apiRequest: vi.fn(),
+  getApiBaseUrl: vi.fn(() => 'http://localhost:4000/api')
 }));
 
+vi.mock('../../lib/api/llm', () => ({
+  getPreprocessingRunSnapshot: vi.fn()
+}));
+
+const apiRequestMock = vi.mocked(apiRequest);
 const getPreprocessingRunSnapshotMock = vi.mocked(getPreprocessingRunSnapshot);
-const executeToolCallsMock = vi.mocked(executeToolCalls);
 
 function resetPreprocessingStore() {
   usePreprocessingStore.setState({
@@ -24,6 +40,7 @@ function resetPreprocessingStore() {
     timeline: [],
     stepBindings: {},
     replayReport: null,
+    controllerSummary: null,
     isLoadingTables: false,
     error: null
   });
@@ -66,8 +83,8 @@ function buildSnapshot(): PreprocessingRunSnapshot {
 describe('preprocessingStore hydration', () => {
   beforeEach(() => {
     resetPreprocessingStore();
+    apiRequestMock.mockReset();
     getPreprocessingRunSnapshotMock.mockReset();
-    executeToolCallsMock.mockReset();
   });
 
   it('hydrates timeline and bindings from snapshot payload', () => {
@@ -93,6 +110,60 @@ describe('preprocessingStore hydration', () => {
       codeHash: 'abc123',
       version: 2
     });
+    expect(state.controllerSummary).toBeNull();
+  });
+
+  it('clears stale controller state when hydrating an authoritative run snapshot', () => {
+    usePreprocessingStore.setState({
+      controllerSummary: {
+        threadId: 'prep-thread:stale',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().hydrateRunSnapshot(buildSnapshot());
+
+    expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
+  });
+
+  it('applies tab snapshots with a clean controller and continuity state', () => {
+    usePreprocessingStore.setState({
+      nextRunCellMode: 'restart_from_original',
+      latestCheckpointId: 'ckpt-stale',
+      controllerSummary: {
+        threadId: 'prep-thread:stale',
+        turnMode: 'action_required',
+        currentNode: 'write_code',
+        allowedTools: ['run_cell'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      },
+      error: 'stale error'
+    });
+
+    usePreprocessingStore.getState().applyTabSnapshot({
+      selectedDatasetId: 'dataset-2',
+      runId: 'prep-run-2',
+      timeline: [],
+      stepBindings: {},
+      replayReport: null
+    });
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('dataset-2');
+    expect(state.runId).toBe('prep-run-2');
+    expect(state.nextRunCellMode).toBe('continue');
+    expect(state.latestCheckpointId).toBeNull();
+    expect(state.controllerSummary).toBeNull();
+    expect(state.error).toBeNull();
   });
 
   it('consumes restart run-cell mode once and resets to continue', () => {
@@ -103,6 +174,107 @@ describe('preprocessingStore hydration', () => {
 
     expect(first).toBe('restart_from_original');
     expect(second).toBe('continue');
+  });
+
+  it('rejects selecting a dataset that is not available in the project', () => {
+    usePreprocessingStore.setState({
+      tables: [
+        {
+          datasetId: 'dataset-1',
+          name: 'dataset_1',
+          filename: 'dataset.csv',
+          sizeBytes: 123
+        }
+      ],
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().selectDataset('missing-dataset');
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBeNull();
+    expect(state.controllerSummary).not.toBeNull();
+    expect(state.error).toContain('Selected dataset is unavailable');
+  });
+
+  it('clears stale run state when selecting a valid dataset', () => {
+    usePreprocessingStore.setState({
+      tables: [
+        {
+          datasetId: 'dataset-1',
+          name: 'dataset_1',
+          filename: 'dataset.csv',
+          sizeBytes: 123
+        }
+      ],
+      runId: 'prep-run-1',
+      nextRunCellMode: 'restart_from_original',
+      latestCheckpointId: 'ckpt-1',
+      timeline: [
+        {
+          id: 'evt-1',
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          toolName: 'propose_transformation_step',
+          title: 'Scale',
+          status: 'pending',
+          requiresApproval: false,
+          cellIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ],
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().selectDataset('dataset-1');
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('dataset-1');
+    expect(state.runId).toBeNull();
+    expect(state.nextRunCellMode).toBe('continue');
+    expect(state.latestCheckpointId).toBeNull();
+    expect(state.timeline).toEqual([]);
+    expect(state.controllerSummary).toBeNull();
+  });
+
+  it('clears controller summary when the active run is cleared', () => {
+    usePreprocessingStore.setState({
+      runId: 'prep-run-1',
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'generate_code',
+        allowedTools: ['materialize_step_code'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().clearRun();
+
+    expect(usePreprocessingStore.getState().runId).toBeNull();
+    expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
   });
 
   it('does not flag divergence when cell content hash matches backend codeHash', async () => {
@@ -175,25 +347,27 @@ describe('preprocessingStore hydration', () => {
     expect(state.error).toBeNull();
   });
 
+  it('surfaces backend hydration errors when snapshot fetch fails', async () => {
+    getPreprocessingRunSnapshotMock.mockRejectedValue(new Error('snapshot fetch failed'));
+
+    await usePreprocessingStore.getState().hydrateRunById('project-1', 'prep-run-1');
+
+    expect(usePreprocessingStore.getState().error).toContain('snapshot fetch failed');
+  });
+
   it('uses backend as source of truth when local pre-check passes but backend fails', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'replay-check-1',
-          tool: 'restore_checkpoint',
-          output: {
-            isError: true,
-            reasonCode: 'REPLAY_INCOMPATIBLE_DATASET',
-            compatibilityIssues: [
-              {
-                stepId: 'step-1',
-                column: 'income',
-                issue: 'missing_column'
-              }
-            ]
+    apiRequestMock.mockResolvedValue({
+      output: {
+        isError: true,
+        reasonCode: 'REPLAY_INCOMPATIBLE_DATASET',
+        compatibilityIssues: [
+          {
+            stepId: 'step-1',
+            column: 'income',
+            issue: 'missing_column'
           }
-        }
-      ]
+        ]
+      }
     });
 
     usePreprocessingStore.setState({
@@ -238,18 +412,12 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('keeps backend pass authoritative even when local pre-check warns', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'replay-check-2',
-          tool: 'restore_checkpoint',
-          output: {
-            isError: false,
-            compatible: true,
-            compatibilityIssues: []
-          }
-        }
-      ]
+    apiRequestMock.mockResolvedValue({
+      output: {
+        isError: false,
+        compatible: true,
+        compatibilityIssues: []
+      }
     });
 
     usePreprocessingStore.setState({
@@ -293,17 +461,13 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('persists approve action via backend commit and rehydrates authoritative state', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'approval-step-1',
-          tool: 'commit_transformation_step',
-          output: {
-            runId: 'prep-run-1',
-            isError: false
-          }
-        }
-      ]
+    apiRequestMock.mockResolvedValueOnce({
+      id: 'approval-step-1',
+      tool: 'commit_transformation_step',
+      output: {
+        runId: 'prep-run-1',
+        isError: false
+      }
     });
     getPreprocessingRunSnapshotMock.mockResolvedValue({
       run: {
@@ -340,21 +504,12 @@ describe('preprocessingStore hydration', () => {
 
     await usePreprocessingStore.getState().approveStep('project-1', 'step-1');
 
-    expect(executeToolCallsMock).toHaveBeenCalledWith(
-      'project-1',
-      [
-        expect.objectContaining({
-          tool: 'commit_transformation_step',
-          args: expect.objectContaining({
-            runId: 'prep-run-1',
-            stepId: 'step-1',
-            approved: true,
-            datasetId: 'dataset-1'
-          })
-        })
-      ],
-      undefined,
-      'user_approval'
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/preprocessing/step-decision',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"approved":true')
+      })
     );
     expect(getPreprocessingRunSnapshotMock).toHaveBeenCalledWith('prep-run-1', 'project-1');
     expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({
@@ -364,17 +519,13 @@ describe('preprocessingStore hydration', () => {
   });
 
   it('persists reject action with reason and restores reason from backend snapshot', async () => {
-    executeToolCallsMock.mockResolvedValue({
-      results: [
-        {
-          id: 'reject-step-1',
-          tool: 'commit_transformation_step',
-          output: {
-            runId: 'prep-run-1',
-            isError: false
-          }
-        }
-      ]
+    apiRequestMock.mockResolvedValueOnce({
+      id: 'reject-step-1',
+      tool: 'commit_transformation_step',
+      output: {
+        runId: 'prep-run-1',
+        isError: false
+      }
     });
     getPreprocessingRunSnapshotMock.mockResolvedValue({
       run: {
@@ -411,21 +562,12 @@ describe('preprocessingStore hydration', () => {
 
     await usePreprocessingStore.getState().rejectStep('project-1', 'step-1', 'Risk too high');
 
-    expect(executeToolCallsMock).toHaveBeenCalledWith(
-      'project-1',
-      [
-        expect.objectContaining({
-          tool: 'commit_transformation_step',
-          args: expect.objectContaining({
-            runId: 'prep-run-1',
-            stepId: 'step-1',
-            approved: false,
-            rejectionReason: 'Risk too high'
-          })
-        })
-      ],
-      undefined,
-      'user_approval'
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/preprocessing/step-decision',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"approved":false')
+      })
     );
     expect(getPreprocessingRunSnapshotMock).toHaveBeenCalledWith('prep-run-1', 'project-1');
     expect(usePreprocessingStore.getState().timeline[0]).toMatchObject({
@@ -477,7 +619,7 @@ describe('preprocessingStore hydration', () => {
       ]
     });
 
-    usePreprocessingStore.getState().markInterruptedSteps('Gemini quota limit reached (429).');
+    usePreprocessingStore.getState().markInterruptedSteps('OpenAI rate limit or quota reached (429).');
     const state = usePreprocessingStore.getState();
 
     expect(state.timeline.find((event) => event.stepId === 'step-pending')).toMatchObject({
@@ -489,6 +631,6 @@ describe('preprocessingStore hydration', () => {
     expect(state.timeline.find((event) => event.stepId === 'step-await')).toMatchObject({
       status: 'awaiting_approval'
     });
-    expect(state.error).toContain('Gemini quota limit reached');
+    expect(state.error).toContain('OpenAI rate limit or quota reached');
   });
 });

@@ -156,8 +156,8 @@ export class NotebookWSClient {
 
   public subscribe(notebookId: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[ws] Cannot subscribe: not connected');
-      // Store for later subscription after reconnect
+      // Store for later subscription after reconnect — not an error,
+      // subscribe is commonly called before the connection is open.
       this.subscribedNotebook = notebookId;
       return;
     }

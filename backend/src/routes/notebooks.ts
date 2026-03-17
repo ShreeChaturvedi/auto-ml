@@ -1,532 +1,245 @@
-import { existsSync } from 'node:fs';
-
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { getCompletions } from '../services/containerManager.js';
-import { executeCell, getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
-import * as notebookService from '../services/notebook/notebookService.js';
-import type { CellType } from '../types/notebook.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import { getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
+import { getCompletions } from '../services/pythonCompletions.js';
+import {
+  pythonIntelligence,
+  type HoverResult,
+  type SignatureResult,
+  type DiagnosticResult,
+} from '../services/pythonIntelligence.js';
+
+import { createCellRoutes } from './notebooks/cellRoutes.js';
+import { createNotebookRoutes } from './notebooks/notebookRoutes.js';
+import { createSavepointRoutes } from './notebooks/savepointRoutes.js';
 
 const router = Router();
 
 // ============================================================
-// Python Completions Endpoint (no database required)
+// Shared schemas and helpers
 // ============================================================
 
-const completionSchema = z.object({
+const cellContextSchema = z.object({
+  cellId: z.string(),
+  content: z.string(),
+  position: z.number(),
+});
+
+const intelligenceSchema = z.object({
   code: z.string(),
   line: z.number().int().min(1),
   column: z.number().int().min(0),
-  projectId: z.string().min(1)
+  projectId: z.string().min(1),
+  cells: z.array(cellContextSchema).optional(),
+  currentCellId: z.string().optional(),
 });
 
 /**
- * POST /api/python/completions
- * Get Python code completions using Jedi (no database required)
+ * Build a concatenated notebook context from individual cells.
+ *
+ * When cells are provided the helper sorts them by position, joins their
+ * contents with newlines, and computes the line offset where the current
+ * cell starts so that line numbers in the request can be adjusted.
  */
-router.post('/python/completions', async (req: Request, res: Response) => {
-  try {
-    const parsed = completionSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      console.error('[notebooks] Completion validation failed:', parsed.error.issues);
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const { code, line, column, projectId } = parsed.data;
-
-    // Get container for this project
-    const container = await getOrEnsureContainer(projectId);
-
-    // Get completions
-    const completions = await getCompletions(container, code, line, column);
-
-    res.json({ completions });
-  } catch (error) {
-    console.error('[notebooks] Error getting completions:', error);
-    res.status(500).json({
-      error: 'Failed to get completions',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+function buildNotebookContext(
+  cells: { cellId: string; content: string; position: number }[] | undefined,
+  currentCellId: string | undefined,
+  code: string,
+  line: number
+): { concatenatedCode: string; adjustedLine: number; currentCellOffset: number } {
+  if (!cells || cells.length === 0) {
+    return { concatenatedCode: code, adjustedLine: line, currentCellOffset: 0 };
   }
-});
+
+  const sorted = [...cells].sort((a, b) => a.position - b.position);
+
+  let currentCellOffset = 0;
+  const parts: string[] = [];
+
+  for (const cell of sorted) {
+    if (cell.cellId === currentCellId) {
+      currentCellOffset = parts.reduce(
+        (sum, part) => sum + part.split('\n').length,
+        0
+      );
+      // Use the live editor content instead of the (potentially stale) store snapshot
+      parts.push(code);
+    } else {
+      parts.push(cell.content);
+    }
+  }
+
+  const concatenatedCode = parts.join('\n');
+  const adjustedLine = line + currentCellOffset;
+
+  return { concatenatedCode, adjustedLine, currentCellOffset };
+}
+
+// ============================================================
+// Python Intelligence Endpoints (no database required)
+// ============================================================
+
+/**
+ * POST /api/python/completions
+ * Get Python code completions using Jedi
+ */
+router.post('/python/completions', asyncHandler(async (req: Request, res: Response) => {
+  const parsed = intelligenceSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    console.error('[notebooks] Completion validation failed:', parsed.error.issues);
+    res.status(400).json({
+      error: 'Invalid request body',
+      details: parsed.error.issues,
+    });
+    return;
+  }
+
+  const { code, line, column, projectId, cells, currentCellId } = parsed.data;
+
+  let container;
+  try {
+    container = await getOrEnsureContainer(projectId);
+  } catch (err) {
+    console.error('[notebooks] Container unavailable for completions:', err);
+    res.status(503).json({ error: 'Container unavailable' });
+    return;
+  }
+
+  const ctx = buildNotebookContext(cells, currentCellId, code, line);
+  const completions = await getCompletions(container, ctx.concatenatedCode, ctx.adjustedLine, column);
+
+  res.json({ completions });
+}));
+
+/**
+ * POST /api/python/hover
+ * Get hover/type information for the symbol under the cursor
+ */
+router.post('/python/hover', asyncHandler(async (req: Request, res: Response) => {
+  const parsed = intelligenceSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
+    return;
+  }
+
+  const { code, line, column, projectId, cells, currentCellId } = parsed.data;
+
+  let container;
+  try {
+    container = await getOrEnsureContainer(projectId);
+  } catch (err) {
+    console.error('[notebooks] Container unavailable for hover:', err);
+    res.status(503).json({ error: 'Container unavailable' });
+    return;
+  }
+
+  const ctx = buildNotebookContext(cells, currentCellId, code, line);
+  const result = await pythonIntelligence(container, {
+    operation: 'hover',
+    code: ctx.concatenatedCode,
+    line: ctx.adjustedLine,
+    column,
+    currentCellOffset: ctx.currentCellOffset,
+  });
+
+  res.json({ hover: (result.hover ?? null) as HoverResult | null });
+}));
+
+/**
+ * POST /api/python/signatures
+ * Get call-signature help for the function at the cursor
+ */
+router.post('/python/signatures', asyncHandler(async (req: Request, res: Response) => {
+  const parsed = intelligenceSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
+    return;
+  }
+
+  const { code, line, column, projectId, cells, currentCellId } = parsed.data;
+
+  let container;
+  try {
+    container = await getOrEnsureContainer(projectId);
+  } catch (err) {
+    console.error('[notebooks] Container unavailable for signatures:', err);
+    res.status(503).json({ error: 'Container unavailable' });
+    return;
+  }
+
+  const ctx = buildNotebookContext(cells, currentCellId, code, line);
+  const result = await pythonIntelligence(container, {
+    operation: 'signatures',
+    code: ctx.concatenatedCode,
+    line: ctx.adjustedLine,
+    column,
+    currentCellOffset: ctx.currentCellOffset,
+  });
+
+  res.json({ signatures: (result.signatures ?? []) as SignatureResult[] });
+}));
+
+/**
+ * POST /api/python/diagnostics
+ * Get syntax diagnostics for the current cell
+ */
+router.post('/python/diagnostics', asyncHandler(async (req: Request, res: Response) => {
+  const parsed = intelligenceSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
+    return;
+  }
+
+  const { code, line, column, projectId, cells, currentCellId } = parsed.data;
+
+  let container;
+  try {
+    container = await getOrEnsureContainer(projectId);
+  } catch (err) {
+    console.error('[notebooks] Container unavailable for diagnostics:', err);
+    res.status(503).json({ error: 'Container unavailable' });
+    return;
+  }
+
+  const ctx = buildNotebookContext(cells, currentCellId, code, line);
+  const result = await pythonIntelligence(container, {
+    operation: 'diagnostics',
+    code: ctx.concatenatedCode,
+    line: ctx.adjustedLine,
+    column,
+    currentCellOffset: ctx.currentCellOffset,
+  });
+
+  res.json({ diagnostics: (result.diagnostics ?? []) as DiagnosticResult[] });
+}));
 
 // ============================================================
 // Middleware: Check database configuration
 // ============================================================
 
-function requireDatabase(req: Request, res: Response, next: () => void) {
+function requireDatabase(_req: Request, res: Response, next: () => void) {
   if (!hasDatabaseConfiguration()) {
     res.status(503).json({
       error: 'Database configuration required',
-      message: 'Notebook operations require a database connection. Please configure DATABASE_URL.'
+      message: 'Notebook operations require a database connection. Please configure DATABASE_URL.',
     });
     return;
   }
   next();
 }
 
-// Apply to remaining routes
 router.use(requireDatabase);
 
-// ============================================================
-// Notebook Endpoints
-// ============================================================
-
-const createNotebookSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional()
-});
-
-const renameNotebookSchema = z.object({
-  name: z.string().trim().min(1).max(120)
-});
-
-/**
- * GET /api/projects/:projectId/notebooks
- * List notebooks for a project.
- */
-router.get('/projects/:projectId/notebooks', async (req: Request, res: Response) => {
-  try {
-    const { projectId } = req.params;
-    const notebooks = await notebookService.listProjectNotebooks(projectId);
-    res.json(notebooks);
-  } catch (error) {
-    console.error('[notebooks] Error listing notebooks:', error);
-    res.status(500).json({
-      error: 'Failed to list notebooks',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * POST /api/projects/:projectId/notebooks
- * Create a notebook for a project.
- */
-router.post('/projects/:projectId/notebooks', async (req: Request, res: Response) => {
-  try {
-    const { projectId } = req.params;
-    const parsed = createNotebookSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name);
-    res.status(201).json(notebook);
-  } catch (error) {
-    console.error('[notebooks] Error creating notebook:', error);
-    res.status(500).json({
-      error: 'Failed to create notebook',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * PATCH /api/notebooks/:notebookId
- * Rename a notebook.
- */
-router.patch('/notebooks/:notebookId', async (req: Request, res: Response) => {
-  try {
-    const { notebookId } = req.params;
-    const parsed = renameNotebookSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const notebook = await notebookService.renameProjectNotebook(notebookId, parsed.data.name);
-    res.json(notebook);
-  } catch (error) {
-    console.error('[notebooks] Error renaming notebook:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('not found') ? 404 : 500;
-    res.status(status).json({
-      error: 'Failed to rename notebook',
-      message
-    });
-  }
-});
-
-/**
- * DELETE /api/projects/:projectId/notebooks/:notebookId
- * Delete a notebook from a project.
- */
-router.delete('/projects/:projectId/notebooks/:notebookId', async (req: Request, res: Response) => {
-  try {
-    const { projectId, notebookId } = req.params;
-    const result = await notebookService.deleteProjectNotebook(projectId, notebookId);
-    res.json(result);
-  } catch (error) {
-    console.error('[notebooks] Error deleting notebook:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('last notebook')
-      ? 409
-      : message.includes('not found')
-        ? 404
-        : 500;
-    res.status(status).json({
-      error: 'Failed to delete notebook',
-      message
-    });
-  }
-});
-
-/**
- * GET /api/projects/:projectId/notebook
- * Get or create the notebook for a project.
- */
-router.get('/projects/:projectId/notebook', async (req: Request, res: Response) => {
-  try {
-    const { projectId } = req.params;
-    const notebook = await notebookService.ensureNotebook(projectId);
-    res.json(notebook);
-  } catch (error) {
-    console.error('[notebooks] Error getting notebook:', error);
-    res.status(500).json({
-      error: 'Failed to get notebook',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// ============================================================
-// Cell List Endpoints
-// ============================================================
-
-/**
- * GET /api/notebooks/:notebookId/cells
- * List all cells in a notebook.
- */
-router.get('/notebooks/:notebookId/cells', async (req: Request, res: Response) => {
-  try {
-    const { notebookId } = req.params;
-    const cells = await notebookService.listCells(notebookId);
-    res.json(cells);
-  } catch (error) {
-    console.error('[notebooks] Error listing cells:', error);
-    res.status(500).json({
-      error: 'Failed to list cells',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// ============================================================
-// Cell CRUD Endpoints
-// ============================================================
-
-const createCellSchema = z.object({
-  content: z.string(),
-  title: z.string().optional(),
-  cellType: z.enum(['code', 'markdown']).optional(),
-  position: z.number().int().min(0).optional()
-});
-
-/**
- * POST /api/notebooks/:notebookId/cells
- * Create a new cell in a notebook.
- */
-router.post('/notebooks/:notebookId/cells', async (req: Request, res: Response) => {
-  try {
-    const { notebookId } = req.params;
-    const parsed = createCellSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const { content, title, cellType, position } = parsed.data;
-
-    // If position is specified, use insertCell
-    let cell;
-    if (position !== undefined) {
-      cell = await notebookService.insertCell(notebookId, {
-        position,
-        content,
-        title,
-        cellType: cellType as CellType
-      });
-    } else {
-      cell = await notebookService.writeCell(notebookId, {
-        content,
-        title,
-        cellType: cellType as CellType
-      });
-    }
-
-    res.status(201).json(cell);
-  } catch (error) {
-    console.error('[notebooks] Error creating cell:', error);
-    res.status(500).json({
-      error: 'Failed to create cell',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * GET /api/cells/:cellId
- * Get a single cell by ID.
- */
-router.get('/cells/:cellId', async (req: Request, res: Response) => {
-  try {
-    const { cellId } = req.params;
-    const cell = await notebookService.readCell(cellId);
-    res.json(cell);
-  } catch (error) {
-    console.error('[notebooks] Error reading cell:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('not found') ? 404 : 500;
-    res.status(status).json({
-      error: 'Failed to read cell',
-      message
-    });
-  }
-});
-
-const updateCellSchema = z.object({
-  content: z.string().optional(),
-  title: z.string().optional()
-});
-
-/**
- * PATCH /api/cells/:cellId
- * Update a cell's content or title.
- */
-router.patch('/cells/:cellId', async (req: Request, res: Response) => {
-  try {
-    const { cellId } = req.params;
-    const parsed = updateCellSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const { content, title } = parsed.data;
-
-    // Get existing cell to get notebookId
-    const existing = await notebookService.readCell(cellId);
-
-    const cell = await notebookService.writeCell(existing.notebookId, {
-      cellId,
-      content: content ?? existing.content,
-      title: title ?? existing.title ?? undefined
-    });
-
-    res.json(cell);
-  } catch (error) {
-    console.error('[notebooks] Error updating cell:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('not found') ? 404 : message.includes('locked') ? 423 : 500;
-    res.status(status).json({
-      error: 'Failed to update cell',
-      message
-    });
-  }
-});
-
-/**
- * DELETE /api/cells/:cellId
- * Delete a cell.
- */
-router.delete('/cells/:cellId', async (req: Request, res: Response) => {
-  try {
-    const { cellId } = req.params;
-    await notebookService.deleteCell(cellId);
-    res.status(204).send();
-  } catch (error) {
-    console.error('[notebooks] Error deleting cell:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('not found') ? 404 : message.includes('locked') ? 423 : 500;
-    res.status(status).json({
-      error: 'Failed to delete cell',
-      message
-    });
-  }
-});
-
-// ============================================================
-// Cell Execution Endpoints
-// ============================================================
-
-const runCellSchema = z.object({
-  projectId: z.string().min(1)
-});
-
-/**
- * POST /api/cells/:cellId/run
- * Execute a code cell.
- */
-router.post('/cells/:cellId/run', async (req: Request, res: Response) => {
-  try {
-    const { cellId } = req.params;
-    const parsed = runCellSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const { projectId } = parsed.data;
-    const result = await executeCell(cellId, projectId);
-    res.json(result);
-  } catch (error) {
-    console.error('[notebooks] Error running cell:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('not found') ? 404 : message.includes('locked') ? 423 : 500;
-    res.status(status).json({
-      error: 'Failed to run cell',
-      message
-    });
-  }
-});
-
-// ============================================================
-// Cell Reordering Endpoints
-// ============================================================
-
-const reorderCellsSchema = z.object({
-  cellIds: z.array(z.string()).min(1)
-});
-
-/**
- * POST /api/notebooks/:notebookId/reorder
- * Reorder cells in a notebook.
- */
-router.post('/notebooks/:notebookId/reorder', async (req: Request, res: Response) => {
-  try {
-    const { notebookId } = req.params;
-    const parsed = reorderCellsSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request body',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const { cellIds } = parsed.data;
-    await notebookService.reorderCells(notebookId, cellIds);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[notebooks] Error reordering cells:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      error: 'Failed to reorder cells',
-      message
-    });
-  }
-});
-
-// ============================================================
-// Cell Output Endpoints
-// ============================================================
-
-/**
- * GET /api/cells/:cellId/outputs/:filename
- * Serve a large output file.
- */
-router.get('/cells/:cellId/outputs/:filename', async (req: Request, res: Response) => {
-  try {
-    const { cellId, filename } = req.params;
-
-    // Validate path segments to prevent traversal attacks.
-    const isSafeSegment = (value: string) => !value.includes('..') && !value.includes('/') && !value.includes('\\');
-
-    if (!isSafeSegment(cellId)) {
-      res.status(400).json({ error: 'Invalid cellId' });
-      return;
-    }
-
-    if (!isSafeSegment(filename)) {
-      res.status(400).json({ error: 'Invalid filename' });
-      return;
-    }
-
-    const filePath = notebookService.getOutputPath(cellId, filename);
-
-    if (!existsSync(filePath)) {
-      res.status(404).json({ error: 'Output file not found' });
-      return;
-    }
-
-    // Determine content type based on extension
-    const ext = filename.split('.').pop()?.toLowerCase();
-    const contentTypes: Record<string, string> = {
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      svg: 'image/svg+xml',
-      html: 'text/html',
-      json: 'application/json',
-      txt: 'text/plain'
-    };
-
-    const contentType = contentTypes[ext ?? ''] ?? 'application/octet-stream';
-    res.setHeader('Content-Type', contentType);
-    // Frontend dev server enables COEP/COOP for SharedArrayBuffer (DuckDB). Under COEP=require-corp,
-    // cross-origin subresources (like images served from the API port) must opt in. This header
-    // allows notebook output images to render in the browser.
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    // `filePath` is absolute. Do not pass `root`, otherwise Express treats the path as relative and
-    // the underlying `send` module will look up the wrong filesystem location.
-    res.sendFile(filePath);
-  } catch (error) {
-    console.error('[notebooks] Error serving output:', error);
-    res.status(500).json({
-      error: 'Failed to serve output',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// ============================================================
-// Cell Lock Endpoints
-// ============================================================
-
-/**
- * GET /api/cells/:cellId/lock
- * Check if a cell is locked.
- */
-router.get('/cells/:cellId/lock', async (req: Request, res: Response) => {
-  try {
-    const { cellId } = req.params;
-    const lock = await notebookService.isLocked(cellId);
-    res.json(lock);
-  } catch (error) {
-    console.error('[notebooks] Error checking lock:', error);
-    res.status(500).json({
-      error: 'Failed to check lock',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
+// Mount notebook CRUD and cell routes (all require database)
+router.use(createNotebookRoutes());
+router.use(createCellRoutes());
+router.use(createSavepointRoutes());
 
 export default router;

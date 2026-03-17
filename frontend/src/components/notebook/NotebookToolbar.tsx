@@ -6,7 +6,8 @@
  * The cloud badge is clickable and opens the RuntimeManagerDialog.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -32,17 +33,27 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExecutionStore } from '@/stores/executionStore';
+import { restartKernel } from '@/lib/api/notebooks';
 import { RuntimeManagerDialog } from '@/components/training/RuntimeManagerDialog';
 import {
   COMPACT_TOOLBAR_GROUP_CLASS,
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
   compactToolbarSelectClass
 } from '@/components/agentic/toolbarStyles';
-import { Code, Loader2, MoreHorizontal, Pencil, Plus, Trash2, Type } from 'lucide-react';
+import { Code, Loader2, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, Type, Upload } from 'lucide-react';
+import { parseIpynb, importIpynb } from '@/lib/notebook/ipynbImporter';
 import { cn } from '@/lib/utils';
-import type { NotebookCellType } from '@/types/notebook';
+import type { NotebookCellType, NotebookPhaseMetadata } from '@/types/notebook';
+
+const NOTEBOOK_PHASE_SET = new Set<string>(['preprocessing', 'feature-engineering', 'training']);
 
 interface NotebookToolbarProps {
   projectId: string;
@@ -50,6 +61,11 @@ interface NotebookToolbarProps {
 }
 
 export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) {
+  // Derive notebook phase from the current route (/project/:projectId/:phase)
+  const { phase: routePhase } = useParams<{ phase: string }>();
+  const phase = NOTEBOOK_PHASE_SET.has(routePhase ?? '')
+    ? (routePhase as NotebookPhaseMetadata['phase'])
+    : undefined;
   const notebook = useNotebookStore((state) => state.notebook);
   const notebooks = useNotebookStore((state) => state.notebooks);
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
@@ -70,6 +86,8 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
   const [createName, setCreateName] = useState('');
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameName, setRenameName] = useState('');
+  const [isRestarting, setIsRestarting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canDeleteNotebook = useMemo(() => notebooks.length > 1, [notebooks.length]);
 
@@ -102,12 +120,13 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
   }, [createCell]);
 
   const handleCreateNotebook = useCallback(async () => {
-    const created = await createNotebook(createName.trim() || undefined);
+    const metadata = phase ? { phase } : undefined;
+    const created = await createNotebook(createName.trim() || undefined, metadata);
     if (created) {
       setCreateDialogOpen(false);
       setCreateName('');
     }
-  }, [createName, createNotebook]);
+  }, [createName, createNotebook, phase]);
 
   const openRenameDialog = useCallback(() => {
     if (!notebook) return;
@@ -127,8 +146,54 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
     await deleteNotebook(notebook.notebookId);
   }, [canDeleteNotebook, deleteNotebook, notebook]);
 
+  const handleRestartKernel = useCallback(async () => {
+    const pid = notebook?.projectId;
+    if (!pid) return;
+    setIsRestarting(true);
+    try {
+      await restartKernel(pid);
+    } catch (error) {
+      console.error('Failed to restart kernel:', error);
+    } finally {
+      setIsRestarting(false);
+    }
+  }, [notebook?.projectId]);
+
+  const handleUploadIpynb = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = parseIpynb(text, file.name);
+      const metadata = phase ? { phase } : undefined;
+      const imported = await importIpynb(projectId, parsed, metadata);
+
+      // Reload notebooks and switch to the imported one
+      const loadNotebooks = useNotebookStore.getState().loadNotebooks;
+      await loadNotebooks();
+      await setActiveNotebook(imported.notebookId);
+    } catch (error) {
+      console.error('Failed to import .ipynb:', error);
+      const message = error instanceof Error ? error.message : 'Failed to import notebook';
+      useNotebookStore.getState().setError(message);
+    }
+
+    // Reset file input for re-upload
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [phase, projectId, setActiveNotebook]);
+
   return (
     <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".ipynb"
+        className="hidden"
+        onChange={(e) => void handleUploadIpynb(e)}
+      />
       <div className={cn('flex h-14 items-center justify-between border-b px-3 shrink-0', className)}>
         {/* Left group: selector + add buttons + menu */}
         <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
@@ -193,13 +258,17 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
                 variant="ghost"
                 size="icon"
                 className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
-                disabled={!notebook}
+                disabled={isSaving}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={openRenameDialog}>
+              <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5 mr-2" />
+                Upload
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={openRenameDialog} disabled={!notebook}>
                 <Pencil className="h-3.5 w-3.5 mr-2" />
                 Rename
               </DropdownMenuItem>
@@ -207,7 +276,7 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
               <DropdownMenuItem
                 onSelect={handleDeleteNotebook}
                 className="text-destructive focus:text-destructive"
-                disabled={!canDeleteNotebook}
+                disabled={!notebook || !canDeleteNotebook}
               >
                 <Trash2 className="h-3.5 w-3.5 mr-2" />
                 Delete
@@ -216,10 +285,33 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
           </DropdownMenu>
         </div>
 
-        {/* Right group: cloud badge */}
-        <RuntimeManagerDialog
-          projectId={projectId}
-          trigger={
+        {/* Right group: restart + cloud badge */}
+        <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+                  onClick={() => void handleRestartKernel()}
+                  disabled={isRestarting || !cloudAvailable}
+                  title="Restart Kernel"
+                >
+                  {isRestarting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Restart Kernel</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <RuntimeManagerDialog
+            projectId={projectId}
+            trigger={
             <Badge
               variant={cloudAvailable ? 'default' : 'secondary'}
               className={cn(
@@ -236,8 +328,9 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
               )}
               {cloudInitializing ? 'Connecting...' : cloudAvailable ? 'Cloud' : 'Unavailable'}
             </Badge>
-          }
-        />
+            }
+          />
+        </div>
       </div>
 
       {/* Create notebook dialog */}

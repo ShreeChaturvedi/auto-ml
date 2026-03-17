@@ -1,22 +1,10 @@
-/**
- * FileRow - Simple file display row without card borders
- *
- * Features:
- * - Minimal row layout (icon, name, metadata, actions)
- * - No card borders or heavy styling
- * - Hover actions (preview, delete)
- * - Status indicators for upload state
- */
-
 import { useState } from 'react';
-import { Trash2, Eye, Loader2, Check, AlertCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Trash2, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UploadedFile } from '@/types/file';
-import { getFileIcon, formatFileSize } from '@/types/file';
+import { resolveFileIcon, formatFileSize } from '@/lib/fileUtils';
 import { FilePreview } from './FilePreview';
-import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface FileRowProps {
@@ -29,119 +17,58 @@ interface FileRowProps {
 export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) {
   const [showPreview, setShowPreview] = useState(false);
 
-  const iconName = getFileIcon(file.type);
-  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    iconName
-  ];
-
-  const typeColorMap: Record<typeof file.type, string> = {
-    csv: 'text-green-500',
-    json: 'text-blue-500',
-    excel: 'text-emerald-500',
-    pdf: 'text-red-500',
-    markdown: 'text-cyan-500',
-    word: 'text-indigo-500',
-    text: 'text-slate-500',
-    other: 'text-gray-500'
-  };
-
-  // Truncate file name if longer than 35 characters
-  const shouldTruncate = file.name.length > 35;
-  const displayName = shouldTruncate ? `${file.name.slice(0, 32)}...` : file.name;
+  const { Icon, colorClass } = resolveFileIcon(file.type);
+  const isUploading = status === 'uploading';
+  const isError = status === 'error';
 
   return (
     <>
-      <div className="group flex items-center gap-3 py-2 px-1 rounded-md hover:bg-accent/30 transition-colors">
-        {/* Icon */}
-        <div className={cn('flex-shrink-0', typeColorMap[file.type])}>
-          {IconComponent && <IconComponent className="h-5 w-5" />}
-        </div>
-
-        {/* File Info */}
-        <div className="flex-1 min-w-0">
-          {/* File Name */}
-          {shouldTruncate ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <p className="text-sm font-medium text-foreground truncate cursor-help">
-                    {displayName}
-                  </p>
-                </TooltipTrigger>
-                <TooltipContent side="top" align="start" className="max-w-sm">
-                  <p className="text-xs break-all">{file.name}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : (
-            <p className="text-sm font-medium text-foreground truncate">
-              {displayName}
-            </p>
-          )}
-
-          {/* Metadata row */}
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-muted-foreground uppercase font-medium">
-              {file.type}
-            </span>
-            <span className="text-xs text-muted-foreground">·</span>
-            <span className="text-xs text-muted-foreground font-mono">
-              {formatFileSize(file.size)}
-            </span>
-            {file.metadata?.tableName && (
-              <>
-                <span className="text-xs text-muted-foreground">·</span>
-                <span className="text-xs text-muted-foreground font-mono truncate max-w-[100px]">
-                  {file.metadata.tableName}
-                </span>
-              </>
+      <div className="group flex items-center gap-3 py-1.5 px-1 rounded-md hover:bg-accent/30 transition-colors">
+        {/* Icon / Spinner / Error — crossfade container */}
+        <div className={cn('relative flex-shrink-0 h-5 w-5', colorClass)}>
+          {/* File icon — visible when uploaded */}
+          <Icon
+            className={cn(
+              'h-5 w-5 absolute inset-0 transition-opacity duration-300',
+              isUploading || isError ? 'opacity-0 pointer-events-none' : 'opacity-100',
             )}
-            {typeof file.metadata?.chunkCount === 'number' && (
-              <>
-                <span className="text-xs text-muted-foreground">·</span>
-                <span className="text-xs text-muted-foreground">
-                  {file.metadata.chunkCount} chunks
-                </span>
-              </>
+          />
+          {/* Spinner — visible while uploading */}
+          <Loader2
+            className={cn(
+              'h-5 w-5 absolute inset-0 text-muted-foreground transition-opacity duration-300',
+              isUploading ? 'animate-spin-slow opacity-100' : 'opacity-0 pointer-events-none',
             )}
-          </div>
-
-          {/* Error message */}
-          {status === 'error' && errorMessage && (
-            <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {errorMessage}
-            </p>
-          )}
-          {file.metadata?.parseWarning && (
-            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {file.metadata.parseWarning}
-            </p>
+          />
+          {/* Error icon */}
+          {isError && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <AlertCircle className="h-5 w-5 absolute inset-0 text-destructive" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p className="text-xs">{errorMessage ?? 'Upload failed'}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
 
-        {/* Status indicator */}
-        <div className="flex-shrink-0">
-          {status === 'uploading' && (
-            <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+        {/* Filename */}
+        <p
+          className={cn(
+            'flex-1 min-w-0 text-sm font-medium text-foreground truncate',
+            isUploading && 'shimmer-text',
           )}
-          {status === 'uploaded' && (
-            <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-500/40 gap-1">
-              <Check className="h-3 w-3" />
-              Synced
-            </Badge>
-          )}
-          {status === 'error' && (
-            <Badge variant="destructive" className="text-xs">
-              Failed
-            </Badge>
-          )}
-        </div>
+        >
+          {file.name}
+        </p>
 
-        {/* Actions - Show on hover */}
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <TooltipProvider>
+        {/* File size / Actions — actions overlay size on hover */}
+        <div className="relative flex-shrink-0 flex items-center justify-end">
+          <span className="text-xs text-muted-foreground font-mono group-hover:opacity-0">
+            {formatFileSize(file.size)}
+          </span>
+          <div className="absolute inset-y-0 right-0 flex items-center gap-1 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -158,9 +85,7 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
                 <p className="text-xs">Preview</p>
               </TooltipContent>
             </Tooltip>
-          </TooltipProvider>
 
-          <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -177,7 +102,7 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
                 <p className="text-xs">Delete</p>
               </TooltipContent>
             </Tooltip>
-          </TooltipProvider>
+          </div>
         </div>
       </div>
 

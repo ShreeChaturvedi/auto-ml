@@ -1,6 +1,6 @@
-import { useCallback, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { ClipboardList, Plus } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useProjectStore } from '@/stores/projectStore';
+import { useProjectPlans } from '@/hooks/useProjectPlans';
 import { cn } from '@/lib/utils';
 
 interface PlanSelectorProps {
@@ -18,66 +19,29 @@ interface PlanSelectorProps {
   menuAlign?: 'start' | 'center' | 'end';
   nameMaxWidthClass?: string;
   menuContentClassName?: string;
+  iconSlot?: ReactNode;
 }
 
 export function PlanSelector({
   className,
   menuAlign = 'end',
   nameMaxWidthClass,
-  menuContentClassName
+  menuContentClassName,
+  iconSlot
 }: PlanSelectorProps) {
-  const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
-  const projects = useProjectStore((state) => state.projects);
-  const updateProject = useProjectStore((state) => state.updateProject);
 
   const effectiveProjectId = projectId || activeProjectId;
-  const project = effectiveProjectId ? projects.find((p) => p.id === effectiveProjectId) : null;
 
-  const metadata = useMemo(() => (project?.metadata ?? {}) as Record<string, unknown>, [project?.metadata]);
-  const activePlanId = metadata.activePlanId as string | undefined;
-  
-  const plans = useMemo(() => {
-    if (!project) return [];
-    const plansArray = Array.isArray(metadata.plans) ? metadata.plans as { id: string, name: string, content: string }[] : [];
-    
-    // Legacy support
-    const legacyPlanName = metadata.projectPlanName as string | undefined;
-    const legacyPlanContent = metadata.projectPlan as string | undefined;
-    
-    if (plansArray.length === 0 && legacyPlanName && legacyPlanContent) {
-      return [{ id: `plan-${legacyPlanName}`, name: legacyPlanName, content: legacyPlanContent }];
-    }
-    return plansArray;
-  }, [project, metadata]);
+  const { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan } = useProjectPlans(
+    effectiveProjectId ?? ''
+  );
 
-  const handleSelectPlan = useCallback((planId: string) => {
-    if (!effectiveProjectId) return;
-
-    const selectedPlan = plans.find((plan) => plan.id === planId);
-
-    void updateProject(effectiveProjectId, {
-      metadata: {
-        ...metadata,
-        activePlanId: planId,
-        projectPlanName: selectedPlan?.name,
-        projectPlan: selectedPlan?.content,
-      },
-    });
-  }, [effectiveProjectId, metadata, plans, updateProject]);
-
-  const handleCreateNewPlan = useCallback(() => {
-    if (!effectiveProjectId) return;
-
-    navigate(`/project/${effectiveProjectId}/upload?newPlan=1`);
-  }, [effectiveProjectId, navigate]);
-
-  if (!project || plans.length === 0) {
+  if (!effectiveProjectId || plans.length === 0) {
     return null;
   }
 
-  const selectedPlanId = activePlanId ?? plans[0]?.id;
   const activePlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
 
   return (
@@ -91,7 +55,7 @@ export function PlanSelector({
             className
           )}
         >
-          <ClipboardList className="h-4 w-4 text-primary" />
+          {iconSlot ?? <ClipboardList className="h-4 w-4 text-primary" />}
           <span className={cn('truncate text-left', nameMaxWidthClass ?? 'max-w-[150px]')}>
             {activePlan.name}
           </span>
@@ -104,7 +68,7 @@ export function PlanSelector({
         {plans.map((plan) => (
           <DropdownMenuItem
             key={plan.id}
-            onClick={() => handleSelectPlan(plan.id)}
+            onClick={() => handleOpenPlan(plan.id)}
             className={cn(
               "cursor-pointer",
               plan.id === selectedPlanId ? "bg-accent text-accent-foreground font-medium" : ""

@@ -5,7 +5,6 @@
  * Call initMonaco() early in the app lifecycle (e.g., in App.tsx or main.tsx).
  */
 
-import { loader } from '@monaco-editor/react';
 import type { Monaco } from '@monaco-editor/react';
 
 let monacoInstance: Monaco | null = null;
@@ -25,6 +24,8 @@ export async function initMonaco(): Promise<Monaco> {
   }
 
   initPromise = (async () => {
+    const { loader } = await import('@monaco-editor/react');
+
     // Load Monaco
     const monaco = await loader.init();
 

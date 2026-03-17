@@ -104,6 +104,7 @@ export function ShootingStars({
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [star, setStar] = useState<ShootingStar | null>(null);
+  const { width: containerWidth, height: containerHeight } = containerSize;
 
   /** Monotonically increasing ID so each star gets a unique gradient element. */
   const idCounterRef = useRef(0);
@@ -142,14 +143,13 @@ export function ShootingStars({
   //            bug caused by the old self-scheduling timer.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const { width, height } = containerSize;
-    if (width === 0 || height === 0) return;
+    if (containerWidth === 0 || containerHeight === 0) return;
     if (star !== null) return; // star still in flight — wait for it to exit
 
     const delay = Math.random() * (maxDelay - minDelay) + minDelay;
 
     spawnTimerRef.current = setTimeout(() => {
-      const { x, y, angle } = randomEdgeOrigin(width, height);
+      const { x, y, angle } = randomEdgeOrigin(containerWidth, containerHeight);
       const speed = Math.random() * (maxSpeed - minSpeed) + minSpeed;
 
       setStar({
@@ -169,7 +169,7 @@ export function ShootingStars({
         spawnTimerRef.current = null;
       }
     };
-  }, [star, containerSize.width, containerSize.height, minSpeed, maxSpeed, minDelay, maxDelay]);
+  }, [star, containerWidth, containerHeight, minSpeed, maxSpeed, minDelay, maxDelay]);
 
   // ---------------------------------------------------------------------------
   // Effect 3 — requestAnimationFrame movement loop.
@@ -178,8 +178,6 @@ export function ShootingStars({
   //            container is resized so that bounds checking stays accurate.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const { width, height } = containerSize;
-
     const moveStar = () => {
       setStar((prev) => {
         if (!prev) return null;
@@ -194,9 +192,9 @@ export function ShootingStars({
         const margin = 20;
         if (
           newX < -margin ||
-          newX > width + margin ||
+          newX > containerWidth + margin ||
           newY < -margin ||
-          newY > height + margin
+          newY > containerHeight + margin
         ) {
           return null;
         }
@@ -222,7 +220,7 @@ export function ShootingStars({
         rafRef.current = null;
       }
     };
-  }, [containerSize.width, containerSize.height]);
+  }, [containerWidth, containerHeight]);
 
   // ---------------------------------------------------------------------------
   // Render

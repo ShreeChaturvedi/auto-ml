@@ -1,7 +1,10 @@
-import type { DomainAdapter, SuggestionPill } from '@/types/agentic';
-import { streamTrainingPlan } from '@/lib/api/llm';
+import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agentic';
+import { streamWorkflowTurn } from '@/lib/api/llm';
 import type { UploadedFile } from '@/types/file';
 import type { ChatMessage } from '@/types/llmUi';
+import { useModelStore } from '@/stores/modelStore';
+import { useNotebookStore } from '@/stores/notebookStore';
+import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 
 export interface TrainingAdapterConfig {
   projectId: string;
@@ -10,6 +13,7 @@ export interface TrainingAdapterConfig {
   featureSummary: string | undefined;
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
+  sessionKey: string;
 }
 
 function dedupeTrainingSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
@@ -133,29 +137,126 @@ function buildTrainingSuggestions(
   return dedupeTrainingSuggestions(suggestions).slice(0, 7);
 }
 
+function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
+  const store = () => useModelStore.getState();
+
+  return {
+    configure_experiment: {
+      onCall: (call) => {
+        const args = call.args as Record<string, unknown> | undefined;
+        store().setCurrentStage('configure_experiment');
+        if (args?.experimentName) {
+          // Placeholder — the experiment will be created when the result arrives
+        }
+      },
+      onResult: (_call, result) => {
+        const output = result.output as Record<string, unknown> | undefined;
+        if (output?.experimentId) {
+          store().updateExperiment(output.experimentId as string, {
+            experimentId: output.experimentId as string,
+            experimentName: (output.experimentName as string) ?? 'Untitled',
+            modelType: (output.modelType as string) ?? 'unknown',
+            status: 'configured'
+          });
+        }
+      }
+    },
+    propose_training_plan: {
+      onCall: () => {
+        store().setCurrentStage('propose_model');
+      },
+      onResult: (_call, result) => {
+        const output = result.output as Record<string, unknown> | undefined;
+        if (output?.experimentId) {
+          store().updateExperiment(output.experimentId as string, {
+            status: 'proposed'
+          });
+        }
+      }
+    },
+    execute_training: {
+      onCall: () => {
+        store().setCurrentStage('execute_training');
+      },
+      onResult: (_call, result) => {
+        const output = result.output as Record<string, unknown> | undefined;
+        if (output?.experimentId) {
+          store().updateExperiment(output.experimentId as string, {
+            status: output.status === 'failed' ? 'failed' : 'training'
+          });
+        }
+      }
+    },
+    evaluate_results: {
+      onCall: () => {
+        store().setCurrentStage('evaluate_results');
+      },
+      onResult: (_call, result) => {
+        const output = result.output as Record<string, unknown> | undefined;
+        if (output?.experimentId) {
+          store().updateExperiment(output.experimentId as string, {
+            status: 'evaluated',
+            metrics: (output.metrics as Record<string, unknown>) ?? {}
+          });
+        }
+      }
+    },
+    register_model: {
+      onCall: () => {
+        store().setCurrentStage('register_model');
+      },
+      onResult: (_call, result) => {
+        const output = result.output as Record<string, unknown> | undefined;
+        if (output?.experimentId) {
+          store().updateExperiment(output.experimentId as string, {
+            status: 'registered',
+            metrics: (output.metrics as Record<string, unknown>) ?? {}
+          });
+        }
+      }
+    },
+    compare_models: {
+      onCall: () => {
+        store().setCurrentStage('summarize');
+      },
+      onResult: () => {
+        // Comparison results are presented directly in the chat — no store update needed
+      }
+    }
+  };
+}
+
 export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdapter {
   return {
-    buildRequest: async (prompt, toolCalls, toolResults, onEvent, signal, options) => {
+    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) return;
-      await streamTrainingPlan(
+      const session = useWorkflowSessionStore.getState().sessions[config.sessionKey];
+      await streamWorkflowTurn(
         {
           projectId: config.projectId,
+          phase: 'training',
           datasetId: config.datasetId,
+          runId: session?.runId,
+          threadId: session?.threadId,
+          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
           targetColumn: config.targetColumn,
           prompt,
-          toolCalls,
-          toolResults,
           featureSummary: config.featureSummary,
-          enableThinking: options.enableThinking,
-          thinkingLevel: options.thinkingLevel,
+          reasoningEffort: options.reasoningEffort,
           model: options.model
         },
         onEvent,
         signal
       );
     },
-    
-    toolRegistry: {},
+    onWorkflowStateUpdate: (state) => {
+      useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
+    },
+    onRevert: () => {
+      useModelStore.getState().clearTrainingRun();
+      useWorkflowSessionStore.getState().clearSession(config.sessionKey);
+    },
+    toolRegistry: buildTrainingToolRegistry(),
     toolUiRegistry: {},
     suggestionProvider: (messages, isGenerating) => buildTrainingSuggestions(config, messages, isGenerating)
   };

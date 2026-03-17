@@ -7,6 +7,10 @@ import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
 import { setupRafAnimationClock, teardownRafAnimationClock } from '@/test/rafAnimationTestUtils';
 
+const { mockUseLlmModelCatalog } = vi.hoisted(() => ({
+  mockUseLlmModelCatalog: vi.fn(),
+}));
+
 const addFileMock = vi.fn();
 const addPreviewMock = vi.fn();
 const setFileMetadataMock = vi.fn();
@@ -23,7 +27,6 @@ vi.mock('@/stores/dataStore', () => ({
 
 vi.mock('@/lib/api/llm', () => ({
   streamOnboardingPlan: vi.fn(),
-  executeToolCalls: vi.fn(() => Promise.resolve({ results: [] })),
 }));
 
 vi.mock('@/lib/api/documents', () => ({
@@ -34,9 +37,100 @@ vi.mock('@/lib/api/datasets', () => ({
   uploadDatasetFile: vi.fn(),
 }));
 
+vi.mock('@/hooks/useLlmModelCatalog', () => ({
+  useLlmModelCatalog: () => mockUseLlmModelCatalog(),
+}));
+
+function createMockModelCatalogState() {
+  return {
+    catalog: null,
+    featuredModelOptions: [
+      {
+        value: 'gpt-5.4',
+        label: 'GPT 5.4',
+        kind: 'base',
+        description: 'Best default for most chats and agentic planning.',
+        supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.3-codex',
+        label: 'GPT 5.3 Codex',
+        kind: 'codex',
+        description: 'Best when the chat is code-heavy or tool-oriented.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-mini',
+        label: 'GPT 5 Mini',
+        kind: 'mini',
+        description: 'Faster and cheaper while still strong for everyday work.',
+        supportedReasoningEfforts: ['low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-nano',
+        label: 'GPT 5 Nano',
+        kind: 'nano',
+        description: 'Best for quick lightweight tasks and short prompts.',
+        supportedReasoningEfforts: ['low', 'medium', 'high'],
+        defaultReasoningEffort: 'low',
+        featured: true,
+      },
+    ],
+    allModelOptions: [
+      {
+        value: 'gpt-5.4',
+        label: 'GPT 5.4',
+        kind: 'base',
+        description: 'Best default for most chats and agentic planning.',
+        supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5.3-codex',
+        label: 'GPT 5.3 Codex',
+        kind: 'codex',
+        description: 'Best when the chat is code-heavy or tool-oriented.',
+        supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+        defaultReasoningEffort: 'high',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-mini',
+        label: 'GPT 5 Mini',
+        kind: 'mini',
+        description: 'Faster and cheaper while still strong for everyday work.',
+        supportedReasoningEfforts: ['low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium',
+        featured: true,
+      },
+      {
+        value: 'gpt-5-nano',
+        label: 'GPT 5 Nano',
+        kind: 'nano',
+        description: 'Best for quick lightweight tasks and short prompts.',
+        supportedReasoningEfforts: ['low', 'medium', 'high'],
+        defaultReasoningEffort: 'low',
+        featured: true,
+      },
+    ],
+    defaultModel: 'gpt-5.4',
+    defaultReasoningEffort: 'high',
+    isLoading: false,
+    error: null,
+  };
+}
+
 describe('PlanningStage Accessibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseLlmModelCatalog.mockReturnValue(createMockModelCatalogState());
     HTMLElement.prototype.scrollIntoView = vi.fn();
     (streamOnboardingPlan as Mock).mockImplementation(async (_request, onEvent) => {
       onEvent({ type: 'done' });
@@ -94,22 +188,18 @@ describe('PlanningStage Accessibility', () => {
     expect(fileInput).toBeTruthy();
     expect(fileInput).toHaveAttribute(
       'accept',
-      '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.xls,.html,.htm,.xml,.yml,.yaml,.rtf'
+      '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.html,.htm,.xml,.yml,.yaml,.rtf'
     );
 
     const file = new File(['hello world'], 'context.md', { type: 'text/markdown' });
     fireEvent.change(fileInput!, { target: { files: [file] } });
 
-    await waitFor(() => {
-      expect(screen.getByText('context.md')).toBeInTheDocument();
-      expect(screen.getByText('1 attachment ready to send.')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('context.md')).toBeInTheDocument();
+    expect(screen.getByText('1 attachment ready to send.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove context.md' }));
 
-    await waitFor(() => {
-      expect(screen.queryByText('context.md')).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.queryByText('context.md')).not.toBeInTheDocument());
   });
 
   it('uploads queued attachments on send and shows them in the sent message', async () => {
@@ -137,17 +227,13 @@ describe('PlanningStage Accessibility', () => {
     fireEvent.change(input, { target: { value: 'use this new document in the plan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
-    await waitFor(() => {
-      expect(uploadDocument).toHaveBeenCalledWith('p1', file);
-      expect(addFileMock).toHaveBeenCalledTimes(1);
-      expect(setFileMetadataMock).toHaveBeenCalledTimes(1);
-      expect(addPreviewMock).not.toHaveBeenCalled();
-    });
+    await waitFor(() => expect(uploadDocument).toHaveBeenCalledWith('p1', file));
+    expect(addFileMock).toHaveBeenCalledTimes(1);
+    expect(setFileMetadataMock).toHaveBeenCalledTimes(1);
+    expect(addPreviewMock).not.toHaveBeenCalled();
 
-    await waitFor(() => {
-      expect(screen.getByText('use this new document in the plan')).toBeInTheDocument();
-      expect(screen.getByText('notes.md')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('use this new document in the plan')).toBeInTheDocument();
+    expect(screen.getByText('notes.md')).toBeInTheDocument();
   });
 
   it('routes csv attachments through dataset upload so planning can use the new dataset', async () => {
@@ -185,11 +271,9 @@ describe('PlanningStage Accessibility', () => {
     fireEvent.change(input, { target: { value: 'build a quick analysis plan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
-    await waitFor(() => {
-      expect(uploadDatasetFile).toHaveBeenCalledWith(csvFile, 'p1');
-      expect(uploadDocument).not.toHaveBeenCalled();
-      expect(addPreviewMock).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(uploadDatasetFile).toHaveBeenCalledWith(csvFile, 'p1'));
+    expect(uploadDocument).not.toHaveBeenCalled();
+    expect(addPreviewMock).toHaveBeenCalledTimes(1);
 
     await waitFor(() => {
       const calls = (streamOnboardingPlan as Mock).mock.calls;
@@ -198,6 +282,31 @@ describe('PlanningStage Accessibility', () => {
       expect(request?.userIntent).toContain('Use and prioritize these newly attached files');
       expect(request?.userIntent).toContain('cow_milk_study.csv');
     });
+  });
+
+  it('sends GPT-5 model and reasoningEffort without legacy thinking fields', async () => {
+    render(
+      <PlanningStage
+        projectId="p1"
+        onPlanApproved={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/describe your goal or request changes/i);
+    fireEvent.change(input, { target: { value: 'build an execution plan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => {
+      expect(streamOnboardingPlan).toHaveBeenCalled();
+    });
+
+    const request = (streamOnboardingPlan as Mock).mock.calls.at(-1)?.[0];
+    expect(request).toMatchObject({
+      model: 'gpt-5.4',
+      reasoningEffort: 'high',
+    });
+    expect(request).not.toHaveProperty('enableThinking');
+    expect(request).not.toHaveProperty('thinkingLevel');
   });
 });
 
@@ -302,6 +411,6 @@ describe('PlanningStage progressive assistant rendering', () => {
 
     expect(screen.getByText('Visible planning output')).toBeInTheDocument();
     expect(screen.queryByText(/<<<END>>>/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/\"version\":\"1\"/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"version":"1"/)).not.toBeInTheDocument();
   });
 });

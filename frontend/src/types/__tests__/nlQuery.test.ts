@@ -6,7 +6,7 @@ import {
   completeNlWorkDonePhase,
   createInitialNlWorkPhases,
   finalizeNlModelWorkBlocks
-} from '../nlQuery';
+} from '@/lib/nlQuery/phaseStateMachine';
 
 describe('nlQuery work phase helpers', () => {
   it('does not mark earlier pending phases completed when done fails first', () => {

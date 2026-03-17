@@ -20,6 +20,14 @@ function isSmtpConfigured(): boolean {
   return !!(env.smtpHost && env.smtpUser && env.smtpPassword);
 }
 
+export function buildPasswordResetUrl(resetToken: string): string {
+  return `${env.frontendUrl}/reset-password?token=${resetToken}`;
+}
+
+export function buildVerificationUrl(verificationToken: string): string {
+  return `${env.frontendUrl}/verify-email?token=${verificationToken}`;
+}
+
 /**
  * Create HTML email template for password reset
  */
@@ -144,7 +152,7 @@ export class EmailService {
    * @param resetToken - Password reset token (will be appended to reset URL)
    */
   async sendPasswordResetEmail(email: string, resetToken: string): Promise<void> {
-    const resetUrl = `${env.frontendUrl}/reset-password?token=${resetToken}`;
+    const resetUrl = buildPasswordResetUrl(resetToken);
 
     if (!this.transporter) {
       // Development fallback - log to console
@@ -187,7 +195,7 @@ AutoML Toolchain - AI-Augmented Data Science Platform
    * @param verificationToken - Email verification token
    */
   async sendVerificationEmail(email: string, verificationToken: string): Promise<void> {
-    const verifyUrl = `${env.frontendUrl}/verify-email?token=${verificationToken}`;
+    const verifyUrl = buildVerificationUrl(verificationToken);
 
     if (!this.transporter) {
       // Development fallback - log to console

@@ -5,12 +5,14 @@
  * Toolbar and notebook management are handled by NotebookToolbar.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
 import { NotebookMarkdownCell } from './NotebookMarkdownCell';
 import { useNotebookStore } from '@/stores/notebookStore';
+import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
+import { interruptKernel } from '@/lib/api/notebooks';
 import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
@@ -107,7 +109,31 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
   const runCell = useNotebookStore((state) => state.runCell);
   const isCellLocked = useNotebookStore((state) => state.isCellLocked);
   const getCellLockOwner = useNotebookStore((state) => state.getCellLockOwner);
+  const suggestedCellIds = useNotebookStore((state) => state.suggestedCellIds);
+  const streamingCellIds = useNotebookStore((state) => state.streamingCellIds);
+  const streamErrors = useNotebookStore((state) => state.streamErrors);
+  const acceptSuggestedCell = useNotebookStore((state) => state.acceptSuggestedCell);
+  const rejectSuggestedCell = useNotebookStore((state) => state.rejectSuggestedCell);
+  const cancelSuggestedCellStream = useNotebookStore((state) => state.cancelSuggestedCellStream);
+  const startSuggestedCellStream = useNotebookStore((state) => state.startSuggestedCellStream);
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  // Consume pending insight context (cross-phase navigation from EDA → Notebook)
+  const pendingInsightContext = useInsightNavigationStore((state) => state.pendingInsightContext);
+  const clearPendingContext = useInsightNavigationStore((state) => state.clearPendingContext);
+  const insightFiredRef = useRef(false);
+
+  useEffect(() => {
+    if (pendingInsightContext && activeNotebookId && !insightFiredRef.current) {
+      insightFiredRef.current = true;
+      startSuggestedCellStream(activeNotebookId, pendingInsightContext);
+      clearPendingContext();
+    }
+    if (!pendingInsightContext) {
+      insightFiredRef.current = false;
+    }
+  }, [pendingInsightContext, activeNotebookId, startSuggestedCellStream, clearPendingContext]);
 
   const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
     await createCell({ content: '', cellType });
@@ -136,6 +162,17 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
       await runCell(cellId, projectId);
     },
     [runCell, projectId]
+  );
+
+  const handleCellInterrupt = useCallback(
+    async (cellId: string) => {
+      try {
+        await interruptKernel(cellId, projectId);
+      } catch (error) {
+        console.error('[NotebookEditor] Failed to interrupt kernel:', error);
+      }
+    },
+    [projectId]
   );
 
   useEffect(() => {
@@ -262,6 +299,13 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                     onContentChange={(content) => handleCellContentChange(item.cell.cellId, content)}
                     onDelete={() => handleCellDelete(item.cell.cellId)}
                     onRun={() => handleCellRun(item.cell.cellId)}
+                    onInterrupt={() => handleCellInterrupt(item.cell.cellId)}
+                    isSuggested={suggestedCellIds.has(item.cell.cellId)}
+                    isStreaming={streamingCellIds.has(item.cell.cellId)}
+                    streamError={streamErrors.get(item.cell.cellId) ?? null}
+                    onAccept={() => acceptSuggestedCell(item.cell.cellId)}
+                    onReject={() => rejectSuggestedCell(item.cell.cellId)}
+                    onCancel={() => cancelSuggestedCellStream(item.cell.cellId)}
                   />
                 </div>
               )}

@@ -111,6 +111,8 @@ export type WSServerMessageType =
   | 'cell:unlocked'
   | 'cell:executing'
   | 'cell:executed'
+  | 'cell:output'
+  | 'notebook:cells_reset'
   | 'error'
   | 'pong';
 
@@ -160,6 +162,17 @@ export interface WSCellExecutedMessage {
   cell: NotebookCell;
 }
 
+export interface WSCellOutputMessage {
+  type: 'cell:output';
+  cellId: string;
+  output: CellOutput;
+}
+
+export interface WSCellsResetMessage {
+  type: 'notebook:cells_reset';
+  cells: NotebookCell[];
+}
+
 export interface WSErrorMessage {
   type: 'error';
   message: string;
@@ -179,6 +192,8 @@ export type WSServerMessage =
   | WSCellUnlockedMessage
   | WSCellExecutingMessage
   | WSCellExecutedMessage
+  | WSCellOutputMessage
+  | WSCellsResetMessage
   | WSErrorMessage
   | WSPongMessage;
 
@@ -223,12 +238,20 @@ export interface ReorderCellsRequest {
   cellIds: string[];
 }
 
+export interface NotebookPhaseMetadata {
+  phase?: 'preprocessing' | 'feature-engineering' | 'training';
+  tabId?: string;
+  tabName?: string;
+}
+
 export interface CreateNotebookRequest {
   name?: string;
+  metadata?: NotebookPhaseMetadata;
 }
 
 export interface UpdateNotebookRequest {
-  name: string;
+  name?: string;
+  metadata?: NotebookPhaseMetadata;
 }
 
 export interface DeleteNotebookResponse {

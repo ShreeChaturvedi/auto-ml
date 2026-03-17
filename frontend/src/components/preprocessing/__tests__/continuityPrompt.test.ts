@@ -18,7 +18,7 @@ describe('buildDatasetContinuityPrompt', () => {
     expect(result).toContain('Do not reload the original source dataset');
   });
 
-  it('adds restart directive and explicit dataset id when restarting from original', () => {
+  it('adds restart directive when restarting from original', () => {
     const result = buildDatasetContinuityPrompt(
       'Profile missing values.',
       'restart_from_original',
@@ -30,7 +30,7 @@ describe('buildDatasetContinuityPrompt', () => {
 
     expect(result).toContain('Start from the ORIGINAL source dataset "usage.csv"');
     expect(result).toContain('Begin a NEW preprocessing run');
-    expect(result).toContain('datasetId "dataset-1"');
+    expect(result).toContain('proceed directly to profiling and planning');
   });
 
   it('handles restart mode without dataset id', () => {
@@ -44,6 +44,6 @@ describe('buildDatasetContinuityPrompt', () => {
     );
 
     expect(result).toContain('selected dataset');
-    expect(result).toContain('Call set_active_dataset before proposing transformations.');
+    expect(result).toContain('proceed directly to profiling and planning');
   });
 });

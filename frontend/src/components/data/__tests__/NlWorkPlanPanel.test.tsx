@@ -27,10 +27,10 @@ import { NlWorkPlanPanel } from '../NlWorkPlanPanel';
 import type { NlProviderInfo, NlQueryExplanation } from '@/lib/api/query';
 import type { NlModelWorkBlockState, NlWorkPhaseState } from '@/types/nlQuery';
 
-const GEMINI_PROVIDER: NlProviderInfo = {
-  id: 'gemini',
-  label: 'Gemini',
-  model: 'gemini-3-flash-preview'
+const OPENAI_PROVIDER: NlProviderInfo = {
+  id: 'openai',
+  label: 'OpenAI',
+  model: 'gpt-5.4'
 };
 
 const MODEL_EXPLANATION: NlQueryExplanation = {
@@ -48,19 +48,19 @@ const MODEL_EXPLANATION: NlQueryExplanation = {
 };
 
 const FALLBACK_EXPLANATION: NlQueryExplanation = {
-  intentSummary: 'Fallback plan for ranking students.',
+  intentSummary: 'Plan for ranking students.',
   selectedTables: ['checkpoints_pulse'],
   joinPlan: [],
   filters: [],
   aggregations: [],
-  assumptions: ['Model generation timed out; deterministic fallback SQL was generated.'],
+  assumptions: ['Compact SQL generation recovered after the rich response failed validation.'],
   validationNotes: [
-    'Model timeout triggered deterministic fallback SQL.',
+    'Compact SQL generation produced the final SQL after rich output validation failed.',
     'debug: provider fallback detail: quota exceeded'
   ],
   confidence: 0.48,
   warningLevel: 'high',
-  confidenceMode: 'deterministic_fallback',
+  confidenceMode: 'model',
   reliabilityTier: 'low'
 };
 
@@ -152,7 +152,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="submitting"
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -163,7 +163,7 @@ describe('NlWorkPlanPanel', () => {
     );
 
     expect(screen.getByText(/planning • in progress/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/gemini provider/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/openai provider/i)).toBeInTheDocument();
     expect(screen.queryByText(/model work/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('nl-model-work-block-plan-1')).toBeInTheDocument();
   });
@@ -173,7 +173,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="submitting"
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -191,7 +191,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="submitting"
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -209,7 +209,7 @@ describe('NlWorkPlanPanel', () => {
       <NlWorkPlanPanel
         phase="reviewing"
         explanation={MODEL_EXPLANATION}
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming={false}
@@ -220,7 +220,7 @@ describe('NlWorkPlanPanel', () => {
     );
 
     expect(screen.getByText(/^review$/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/gemini provider/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/openai provider/i)).toBeInTheDocument();
     expect(screen.queryByText(/91% confidence/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/model path/i)).not.toBeInTheDocument();
   });
@@ -235,7 +235,7 @@ describe('NlWorkPlanPanel', () => {
     render(
       <NlWorkPlanPanel
         phase="revealing"
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={completedPhases}
         modelWorkBlocks={[]}
         isStreaming={false}
@@ -248,12 +248,12 @@ describe('NlWorkPlanPanel', () => {
     expect(screen.getByText(/nl query pipeline finished/i)).toBeInTheDocument();
   });
 
-  it('does not show fallback-path or reliability copy in review mode', () => {
+  it('does not show legacy path or reliability copy in review mode', () => {
     render(
       <NlWorkPlanPanel
         phase="reviewing"
         explanation={FALLBACK_EXPLANATION}
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming={false}
@@ -263,7 +263,7 @@ describe('NlWorkPlanPanel', () => {
       />
     );
 
-    expect(screen.queryByText(/deterministic fallback path/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/compact fallback path/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^reliability$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/debug details/i)).toBeInTheDocument();
   });
@@ -273,7 +273,7 @@ describe('NlWorkPlanPanel', () => {
       <NlWorkPlanPanel
         phase="reviewing"
         explanation={FALLBACK_EXPLANATION}
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming={false}
@@ -310,7 +310,7 @@ describe('NlWorkPlanPanel', () => {
       render(
         <NlWorkPlanPanel
           phase="submitting"
-          provider={GEMINI_PROVIDER}
+          provider={OPENAI_PROVIDER}
           workPhases={PHASES}
           modelWorkBlocks={MODEL_WORK_BLOCKS}
           isStreaming
@@ -373,7 +373,7 @@ describe('NlWorkPlanPanel', () => {
     const { rerender } = render(
       <NlWorkPlanPanel
         phase="submitting"
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={MODEL_WORK_BLOCKS}
         isStreaming
@@ -406,7 +406,7 @@ describe('NlWorkPlanPanel', () => {
     rerender(
       <NlWorkPlanPanel
         phase="submitting"
-        provider={GEMINI_PROVIDER}
+        provider={OPENAI_PROVIDER}
         workPhases={PHASES}
         modelWorkBlocks={nextBlocks}
         isStreaming
@@ -435,7 +435,7 @@ describe('NlWorkPlanPanel', () => {
       const { rerender } = render(
         <NlWorkPlanPanel
           phase="submitting"
-          provider={GEMINI_PROVIDER}
+          provider={OPENAI_PROVIDER}
           workPhases={PHASES}
           modelWorkBlocks={MODEL_WORK_BLOCKS}
           isStreaming
@@ -462,7 +462,7 @@ describe('NlWorkPlanPanel', () => {
       rerender(
         <NlWorkPlanPanel
           phase="submitting"
-          provider={GEMINI_PROVIDER}
+          provider={OPENAI_PROVIDER}
           workPhases={PHASES}
           modelWorkBlocks={MODEL_WORK_BLOCKS}
           isStreaming
@@ -478,7 +478,7 @@ describe('NlWorkPlanPanel', () => {
       rerender(
         <NlWorkPlanPanel
           phase="submitting"
-          provider={GEMINI_PROVIDER}
+          provider={OPENAI_PROVIDER}
           workPhases={PHASES}
           modelWorkBlocks={[
             {

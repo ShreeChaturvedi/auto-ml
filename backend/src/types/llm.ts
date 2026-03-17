@@ -31,7 +31,14 @@ export const ToolNameSchema = z.enum([
   'insert_cell',
   'install_package',
   'uninstall_package',
-  'list_packages'
+  'list_packages',
+  // Training lifecycle tools
+  'configure_experiment',
+  'propose_training_plan',
+  'execute_training',
+  'evaluate_results',
+  'register_model',
+  'compare_models'
 ]);
 
 export const ToolCallSchema = z.object({
@@ -87,10 +94,18 @@ export const LlmEnvelopeSchema = z.object({
   tool_calls: z.array(ToolCallSchema).optional(),
   ask_user: AskUserPayloadSchema.optional(),
   plan_exit: PlanExitPayloadSchema.optional(),
+  controller: z.record(z.unknown()).optional(),
   ui: z.unknown().optional()
 });
 
 export type LlmEnvelope = z.infer<typeof LlmEnvelopeSchema>;
+
+export const ToolResultSchema = z.object({
+  id: z.string().min(1),
+  tool: ToolNameSchema,
+  output: z.unknown().optional(),
+  error: z.string().optional()
+});
 
 export interface ToolResult {
   id: string;

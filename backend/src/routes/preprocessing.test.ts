@@ -1,8 +1,8 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 
-import { canListen } from '../tests/canListen.js';
+import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { createPreprocessingRouter } from './preprocessing.js';
 
@@ -16,9 +16,6 @@ vi.mock('../repositories/datasetRepository.js', () => ({
   }))
 }));
 
-const canBind = await canListen();
-const describeIf = canBind ? describe : describe.skip;
-
 function createTestApp() {
   const app = express();
   app.use(express.json());
@@ -26,40 +23,37 @@ function createTestApp() {
   return app;
 }
 
-describeIf('preprocessing routes', () => {
+describeRouteSuite('preprocessing routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listMock.mockResolvedValue([]);
   });
 
-  it('returns 410 for legacy analyze endpoint', async () => {
+  it('returns 404 for removed legacy analyze endpoint', async () => {
     const app = createTestApp();
     const response = await request(app)
       .post('/api/preprocessing/analyze')
       .send({ projectId: 'project-1', datasetId: 'dataset-1' });
 
-    expect(response.status).toBe(410);
-    expect(response.body.code).toBe('PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED');
+    expect(response.status).toBe(404);
   });
 
-  it('returns 410 for legacy refine endpoint', async () => {
+  it('returns 404 for removed legacy refine endpoint', async () => {
     const app = createTestApp();
     const response = await request(app)
       .post('/api/preprocessing/refine')
       .send({ projectId: 'project-1', datasetId: 'dataset-1', message: 'refine', draftSteps: [] });
 
-    expect(response.status).toBe(410);
-    expect(response.body.code).toBe('PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED');
+    expect(response.status).toBe(404);
   });
 
-  it('returns 410 for legacy execute endpoint', async () => {
+  it('returns 404 for removed legacy execute endpoint', async () => {
     const app = createTestApp();
     const response = await request(app)
       .post('/api/preprocessing/execute')
       .send({ projectId: 'project-1', datasetId: 'dataset-1', draftSteps: [] });
 
-    expect(response.status).toBe(410);
-    expect(response.body.code).toBe('PREPROCESSING_LEGACY_ENDPOINT_DEPRECATED');
+    expect(response.status).toBe(404);
   });
 
   it('keeps preprocessing tables endpoint available', async () => {

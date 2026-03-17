@@ -1,11 +1,5 @@
 import type { ChatMessage } from '@/types/llmUi';
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
+import { asRecordOrNull } from '@/lib/typeCoercion';
 
 export function buildProcessingStorageKey(tabId: string): string {
   return `preprocessing-messages-v5-${tabId}`;
@@ -15,11 +9,56 @@ export function buildProcessingTabsStateKey(projectId: string): string {
   return `preprocessing-tabs-v1-${projectId}`;
 }
 
+// ---- Workbook-era key builders (same format, new prefix for clarity) ------
+
+export function buildWorkbookStorageKey(workbookId: string): string {
+  // Re-uses the same key format — no message migration needed
+  return `preprocessing-messages-v5-${workbookId}`;
+}
+
+export function buildWorkbookTabsStateKey(projectId: string): string {
+  return `preprocessing-workbooks-v1-${projectId}`;
+}
+
+/**
+ * One-time localStorage migration: old preprocessing-tabs-v1 → preprocessing-workbooks-v1.
+ * Returns the parsed state from whichever key exists (new key preferred).
+ */
+export function migrateWorkbookState(projectId: string): StoredPreprocessingTabsState | null {
+  const newKey = buildWorkbookTabsStateKey(projectId);
+  const existing = localStorage.getItem(newKey);
+  if (existing) {
+    return parseStoredPreprocessingTabsState(existing);
+  }
+
+  const oldKey = buildProcessingTabsStateKey(projectId);
+  const legacy = localStorage.getItem(oldKey);
+  if (!legacy) return null;
+
+  const parsed = parseStoredPreprocessingTabsState(legacy);
+  if (parsed) {
+    // Migrate names: "Processing N" → "Workbook N"
+    const migrated: StoredPreprocessingTabsState = {
+      activeTabId: parsed.activeTabId,
+      tabs: parsed.tabs.map((tab) => ({
+        ...tab,
+        name: tab.name.replace(/^Processing\s+/i, 'Workbook ')
+      }))
+    };
+    localStorage.setItem(newKey, JSON.stringify(migrated));
+    localStorage.removeItem(oldKey);
+    return migrated;
+  }
+
+  return null;
+}
+
 export interface StoredPreprocessingTabState {
   id: string;
   name: string;
   storageVersion: number;
   notebookId: string | null;
+  selectedDatasetId: string | null;
 }
 
 export interface StoredPreprocessingTabsState {
@@ -40,7 +79,7 @@ export function parseStoredPreprocessingTabsState(
     const tabs = Array.isArray(parsed.tabs)
       ? parsed.tabs
           .map((tab) => {
-            const record = asRecord(tab);
+            const record = asRecordOrNull(tab);
             if (!record) {
               return null;
             }
@@ -52,10 +91,13 @@ export function parseStoredPreprocessingTabsState(
             const notebookId = typeof record.notebookId === 'string' && record.notebookId.trim()
               ? record.notebookId
               : null;
+            const selectedDatasetId = typeof record.selectedDatasetId === 'string' && record.selectedDatasetId.trim()
+              ? record.selectedDatasetId
+              : null;
             if (!id.trim() || !name.trim()) {
               return null;
             }
-            return { id, name, storageVersion, notebookId };
+            return { id, name, storageVersion, notebookId, selectedDatasetId };
           })
           .filter((tab): tab is StoredPreprocessingTabState => Boolean(tab))
       : [];
@@ -104,7 +146,7 @@ export function extractRunIdFromStoredMessages(rawMessages: string | null): stri
       if (message.type !== 'tool_call' || !message.result) {
         continue;
       }
-      const output = asRecord(message.result.output);
+      const output = asRecordOrNull(message.result.output);
       const runId = output && typeof output.runId === 'string' ? output.runId : undefined;
       if (runId && runId.trim()) {
         return runId;

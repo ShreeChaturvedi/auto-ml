@@ -8,8 +8,9 @@ import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord, TrainModelRequest } from '../types/model.js';
 
-import { executeInContainer, getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
+import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
@@ -258,9 +259,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     outputDir
   });
 
-  const result = await executeInContainer(container, script, env.executionTimeoutMs, {
-    executionId: `train_${modelId.slice(0, 8)}`
-  });
+  const result = await kernelManager.execute(container, script, env.executionTimeoutMs);
 
   const runDir = join(container.workspacePath, 'models', modelId);
   const metricsPath = join(runDir, 'metrics.json');

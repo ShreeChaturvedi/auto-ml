@@ -1,7 +1,9 @@
 import type { RichOutput } from '@/lib/api/execution';
 import { parseOutputRefUrl } from '@/lib/api/notebooks';
+import { PlotlyOutput } from '@/components/notebook/PlotlyOutput';
+import { ShadowHtml } from '@/components/notebook/ShadowHtml';
 import { cn } from '@/lib/utils';
-import { AlertCircle, Table2 } from 'lucide-react';
+import { Table2 } from 'lucide-react';
 import { formatValue, parseTableData, type TableData } from './cellOutputUtils';
 
 interface CellOutputRendererProps {
@@ -22,27 +24,20 @@ export function CellOutputRenderer({ outputs, className }: CellOutputRendererPro
 }
 
 function OutputBody({ output }: { output: RichOutput }) {
-    const tableData = parseTableData(output.data);
-
     switch (output.type) {
         case 'text':
-            return <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5">{output.content}</pre>;
-
         case 'error':
             return (
-                <div className="space-y-1">
-                    <div className="flex items-center gap-1 text-[11px] text-red-500">
-                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="font-semibold">Error</span>
-                    </div>
-                    <pre className="whitespace-pre-wrap break-words border-l-2 border-red-500/30 pl-3 font-mono text-[12px] leading-5 text-red-400">
-                        {output.content}
-                    </pre>
-                </div>
+                <pre className={cn(
+                    'whitespace-pre-wrap break-words font-mono text-[12px] leading-5',
+                    output.type === 'error' && 'text-red-400'
+                )}>
+                    {output.content}
+                </pre>
             );
 
         case 'table':
-            return <TableOutput output={output} tableData={tableData} />;
+            return <TableOutput output={output} tableData={parseTableData(output.data)} />;
 
         case 'image': {
             const imageSrc = output.content.startsWith('outputs/')
@@ -54,21 +49,20 @@ function OutputBody({ output }: { output: RichOutput }) {
                     alt="Output"
                     loading="lazy"
                     decoding="async"
-                    className="max-h-[360px] max-w-full rounded-md border object-contain"
+                    className="max-w-full rounded-md border object-contain"
                     onError={() => {
                         console.warn('[CellOutputRenderer] Failed to load image output:', { original: output.content, src: imageSrc });
                     }}
+                    style={{ minHeight: 60, background: 'var(--muted)' }}
                 />
             );
         }
 
         case 'html':
-            return (
-                <div
-                    className="prose prose-sm max-w-none text-[13px] leading-relaxed dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: output.content }}
-                />
-            );
+            return <ShadowHtml html={output.content} />;
+
+        case 'chart':
+            return <PlotlyOutput data={output.data} />;
 
         default:
             return (

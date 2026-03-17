@@ -2,7 +2,7 @@
  * Sidebar - Left navigation panel
  *
  * Clean collapse animation:
- * - Collapse button is now inside PhaseList/ProjectIconList (replaces heading)
+ * - Collapse button is now inside WorkflowPhaseTree/ProjectIconList (replaces heading)
  * - Icons stay in EXACT same position
  * - Only width and opacity change
  */
@@ -15,8 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Logo } from '@/components/ui/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { FileExplorer } from '@/components/data/FileExplorer';
-import { PhaseList } from './PhaseList';
+
+import { WorkflowPhaseTree } from './WorkflowPhaseTree';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
 import { UserProfile } from '@/components/projects/UserProfile';
@@ -186,22 +186,10 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         className="flex-1 overflow-hidden"
         onClick={collapsed ? (e) => { e.stopPropagation(); onToggleCollapse(); } : undefined}
       >
-        <div className="h-full overflow-y-auto scrollbar-thin">
+        <div className="h-full overflow-y-auto">
           <div className="p-3">
             {activeProject ? (
-              <div className="space-y-4">
-                {/* PhaseList now handles the collapse button internally */}
-                <PhaseList collapsed={collapsed} onToggleCollapse={onToggleCollapse} />
-                {/* Hide file explorer when collapsed */}
-                <div
-                  className={cn(
-                    'transition-all duration-300 overflow-hidden',
-                    collapsed ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
-                  )}
-                >
-                  <FileExplorer projectId={activeProject.id} />
-                </div>
-              </div>
+              <WorkflowPhaseTree collapsed={collapsed} />
             ) : (
               /* Show project list when no project is active - handles both collapsed states */
               <ProjectList collapsed={collapsed} onToggleCollapse={onToggleCollapse} />

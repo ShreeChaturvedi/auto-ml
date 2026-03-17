@@ -1,0 +1,142 @@
+/**
+ * useInsightTicker — animation state machine for the InsightTicker.
+ * Adapted from useAnimatedPlaceholder with simplified logic:
+ * - No input focus/caret management
+ * - No controlled value
+ * - Auto-cycles through items on interval
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import {
+  SLIDE_DURATION_MS,
+  CHAR_ANIM_DURATION_MS,
+  CHAR_STAGGER_MS,
+} from './useAnimatedPlaceholder';
+
+const RESET_BUFFER_MS = 20;
+
+function getResetTimeout(textLength: number): number {
+  const charCount = Math.max(1, textLength);
+  return Math.max(
+    SLIDE_DURATION_MS + RESET_BUFFER_MS,
+    (charCount - 1) * CHAR_STAGGER_MS + CHAR_ANIM_DURATION_MS + RESET_BUFFER_MS,
+  );
+}
+
+export interface UseInsightTickerResult {
+  currentIndex: number;
+  nextIndex: number;
+  isAnimating: boolean;
+  outgoingTransition: string;
+  incomingTransition: string;
+  prefersReducedMotion: boolean;
+}
+
+export function useInsightTicker(
+  itemCount: number,
+  interval = 3500,
+): UseInsightTickerResult {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [skipTransition, setSkipTransition] = useState(false);
+
+  const resetTimeoutRef = useRef<number | null>(null);
+  const firstRafRef = useRef<number | null>(null);
+  const secondRafRef = useRef<number | null>(null);
+  const currentIndexRef = useRef(0);
+  const isAnimatingRef = useRef(false);
+
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  // Reset index if itemCount shrinks
+  useEffect(() => {
+    if (itemCount > 0 && currentIndexRef.current >= itemCount) {
+      currentIndexRef.current = 0;
+      setCurrentIndex(0);
+    }
+  }, [itemCount]);
+
+  useEffect(() => {
+    const clearPending = () => {
+      if (resetTimeoutRef.current !== null) {
+        window.clearTimeout(resetTimeoutRef.current);
+        resetTimeoutRef.current = null;
+      }
+      if (firstRafRef.current !== null) {
+        cancelAnimationFrame(firstRafRef.current);
+        firstRafRef.current = null;
+      }
+      if (secondRafRef.current !== null) {
+        cancelAnimationFrame(secondRafRef.current);
+        secondRafRef.current = null;
+      }
+    };
+
+    if (itemCount <= 1 || prefersReducedMotion) {
+      clearPending();
+      isAnimatingRef.current = false;
+      setIsAnimating(false);
+      setSkipTransition(false);
+      return;
+    }
+
+    const cycle = () => {
+      if (isAnimatingRef.current) return;
+      isAnimatingRef.current = true;
+      setIsAnimating(true);
+
+      // Estimate text length for reset timing (use average ~40 chars)
+      const resetMs = getResetTimeout(40);
+
+      resetTimeoutRef.current = window.setTimeout(() => {
+        const nextIdx = (currentIndexRef.current + 1) % itemCount;
+        setCurrentIndex(nextIdx);
+        currentIndexRef.current = nextIdx;
+        setIsAnimating(false);
+        setSkipTransition(true);
+        isAnimatingRef.current = false;
+        resetTimeoutRef.current = null;
+
+        firstRafRef.current = requestAnimationFrame(() => {
+          firstRafRef.current = null;
+          secondRafRef.current = requestAnimationFrame(() => {
+            setSkipTransition(false);
+            secondRafRef.current = null;
+          });
+        });
+      }, resetMs);
+    };
+
+    const intervalId = window.setInterval(cycle, interval);
+    return () => {
+      window.clearInterval(intervalId);
+      clearPending();
+      isAnimatingRef.current = false;
+    };
+  }, [itemCount, interval, prefersReducedMotion]);
+
+  const nextIndex = itemCount > 0 ? (currentIndex + 1) % itemCount : 0;
+
+  const outgoingTransition = skipTransition
+    ? 'none'
+    : `transform ${SLIDE_DURATION_MS}ms ease-out, opacity ${SLIDE_DURATION_MS}ms ease-out`;
+  const incomingTransition = skipTransition
+    ? 'none'
+    : `transform ${SLIDE_DURATION_MS}ms ease-out`;
+
+  return {
+    currentIndex,
+    nextIndex,
+    isAnimating,
+    outgoingTransition,
+    incomingTransition,
+    prefersReducedMotion,
+  };
+}
+
+export { CHAR_ANIM_DURATION_MS, CHAR_STAGGER_MS };

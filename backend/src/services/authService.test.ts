@@ -1,4 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../config.js', async () => {
+  const actual = await vi.importActual<typeof import('../config.js')>('../config.js');
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      bcryptRounds: 4,
+      jwtSecret: 'test-jwt-secret'
+    }
+  };
+});
 
 import type { SafeUser } from '../types/user.js';
 

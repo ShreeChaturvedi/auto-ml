@@ -2,13 +2,13 @@
  * FilePreview - Modal for previewing uploaded files
  *
  * Supports:
- * - PDF preview (using react-pdf-viewer)
+ * - PDF preview (react-pdf with custom toolbar)
  * - Image preview (full-size with zoom)
  * - CSV preview (first few rows in table)
  * - JSON preview (formatted JSON)
  */
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,16 +17,16 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import type { UploadedFile } from '@/types/file';
-import { formatFileSize } from '@/types/file';
+import { formatFileSize, resolveFileIcon } from '@/lib/fileUtils';
 import Papa from 'papaparse';
 import { Badge } from '@/components/ui/badge';
-import { Eye } from 'lucide-react';
+import { Eye, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
-import { Worker, Viewer, SpecialZoomLevel } from '@react-pdf-viewer/core';
-import '@react-pdf-viewer/core/lib/styles/index.css';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Markdown } from '@/components/ui/Markdown';
+
+const LazyPdfViewer = lazy(() => import('@/components/data/PdfViewer'));
 
 interface FilePreviewProps {
   file: UploadedFile;
@@ -45,6 +45,8 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
   const [rowInfo, setRowInfo] = useState<RowInfo | null>(null);
 
   useEffect(() => {
+    const objectUrls: string[] = [];
+
     if (!open) return;
 
     // For hydrated files from backend (no file object), fetch sample from API
@@ -103,16 +105,13 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
       void downloadDocument(file.metadata.documentId)
         .then((blob) => {
           const url = URL.createObjectURL(blob);
+          objectUrls.push(url);
           setPreviewContent(
-            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-              <div className="h-[600px] rounded-lg border overflow-hidden">
-                <Viewer
-                  fileUrl={url}
-                  defaultScale={SpecialZoomLevel.PageWidth}
-                  theme={{ theme: 'dark' }}
-                />
-              </div>
-            </Worker>
+            <div className="h-[600px] rounded-lg border overflow-hidden">
+              <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading PDF...</div>}>
+                <LazyPdfViewer url={url} fileName={file.name} className="h-full" />
+              </Suspense>
+            </div>
           );
           setIsLoading(false);
         })
@@ -136,11 +135,9 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
           const text = await blob.text();
           if (file.type === 'markdown') {
             setPreviewContent(
-              <div className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {text}
-                </ReactMarkdown>
-              </div>
+              <Markdown className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
+                {text}
+              </Markdown>
             );
           } else {
             setPreviewContent(
@@ -182,16 +179,13 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
     switch (file.type) {
       case 'pdf': {
         const pdfUrl = URL.createObjectURL(file.file);
+        objectUrls.push(pdfUrl);
         setPreviewContent(
-          <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-            <div className="h-[600px] rounded-lg border overflow-hidden">
-              <Viewer
-                fileUrl={pdfUrl}
-                defaultScale={SpecialZoomLevel.PageWidth}
-                theme={{ theme: 'dark' }}
-              />
-            </div>
-          </Worker>
+          <div className="h-[600px] rounded-lg border overflow-hidden">
+            <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading PDF...</div>}>
+              <LazyPdfViewer url={pdfUrl} fileName={file.name} className="h-full" />
+            </Suspense>
+          </div>
         );
         setIsLoading(false);
         break;
@@ -267,11 +261,9 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
       case 'markdown':
         file.file.text().then((text) => {
           setPreviewContent(
-            <div className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {text}
-              </ReactMarkdown>
-            </div>
+            <Markdown className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
+              {text}
+            </Markdown>
           );
           setIsLoading(false);
         }).catch(() => {
@@ -311,31 +303,42 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
 
     // Cleanup
     return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
       setPreviewContent(null);
       setRowInfo(null);
     };
   }, [file, open]);
 
+  const { Icon, colorClass } = resolveFileIcon(file.type);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>{file.name}</DialogTitle>
-          <DialogDescription className="flex items-center gap-2">
-            <Badge variant="outline" className="bg-muted/50">{file.type.charAt(0).toUpperCase() + file.type.slice(1)}</Badge>
-            <Badge variant="outline" className="bg-muted/50">{formatFileSize(file.size)}</Badge>
+          <DialogTitle className="flex items-center gap-2 min-w-0">
+            <div className={cn('flex-shrink-0', colorClass)}>
+              <Icon className="h-5 w-5" />
+            </div>
+            <span className="truncate">{file.name}</span>
+            <Badge variant="outline" className="bg-muted/50 font-normal text-xs flex-shrink-0">
+              {formatFileSize(file.size)}
+            </Badge>
             {rowInfo && (
-              <Badge variant="outline" className="gap-1 bg-muted/50">
+              <Badge variant="outline" className="gap-1 bg-muted/50 font-normal text-xs flex-shrink-0">
                 <Eye className="h-3 w-3" />
-                <span>
-                  {rowInfo.shown.toLocaleString()}
-                  {rowInfo.total > rowInfo.shown && (
-                    <span className="text-muted-foreground"> of {rowInfo.total.toLocaleString()}</span>
-                  )}
-                  {' '}rows
-                </span>
+                {rowInfo.shown.toLocaleString()}
+                {rowInfo.total > rowInfo.shown && ` of ${rowInfo.total.toLocaleString()}`}
+                {' '}rows
               </Badge>
             )}
+            {typeof file.metadata?.chunkCount === 'number' && (
+              <Badge variant="outline" className="bg-muted/50 font-normal text-xs flex-shrink-0">
+                {file.metadata.chunkCount} chunks
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Preview of {file.name}
           </DialogDescription>
         </DialogHeader>
 

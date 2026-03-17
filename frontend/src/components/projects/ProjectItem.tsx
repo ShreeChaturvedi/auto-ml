@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useProjectStore } from '@/stores/projectStore';
 import type { Project } from '@/types/project';
-import { projectColorClasses } from '@/types/project';
+import { resolveProjectColor } from '@/types/project';
 import { ProjectDialog } from './ProjectDialog';
 import { cn } from '@/lib/utils';
 import * as LucideIcons from 'lucide-react';
@@ -45,7 +45,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const isActive = activeProjectId === project.id;
-  const colorClasses = projectColorClasses[project.color];
+  const colorClasses = resolveProjectColor(project.color, project.customColor);
 
   // Get icon component dynamically
   const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
@@ -84,9 +84,10 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
       <div
         className={cn(
           'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
-          colorClasses.bg,
-          colorClasses.text
+          !colorClasses.style && colorClasses.bg,
+          !colorClasses.style && colorClasses.text
         )}
+        style={colorClasses.style}
       >
         {IconComponent && <IconComponent className="h-3.5 w-3.5" />}
       </div>

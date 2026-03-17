@@ -92,6 +92,9 @@ export type Notebook = z.infer<typeof NotebookSchema>;
 export const LockOwnerSchema = z.enum(['ai', 'user']);
 export type LockOwner = z.infer<typeof LockOwnerSchema>;
 
+/** Marker value for metadata.lastEditedBy on AI-written cells. */
+export const CELL_EDITOR_AI: LockOwner = 'ai';
+
 export const CellLockSchema = z.object({
   cellId: z.string().uuid(),
   lockedBy: LockOwnerSchema,
@@ -111,8 +114,10 @@ export const WSEventTypeSchema = z.enum([
   'cell:unlocked',
   'cell:executing',
   'cell:executed',
+  'cell:output',
   'notebook:created',
   'notebook:updated',
+  'notebook:cells_reset',
   'error'
 ]);
 export type WSEventType = z.infer<typeof WSEventTypeSchema>;
@@ -145,6 +150,8 @@ export const WSServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cell:unlocked'), cellId: z.string().uuid() }),
   z.object({ type: z.literal('cell:executing'), cellId: z.string().uuid() }),
   z.object({ type: z.literal('cell:executed'), cell: CellSchema }),
+  z.object({ type: z.literal('cell:output'), cellId: z.string().uuid(), output: CellOutputSchema }),
+  z.object({ type: z.literal('notebook:cells_reset'), cells: z.array(CellSchema) }),
   z.object({ type: z.literal('error'), message: z.string() }),
   z.object({ type: z.literal('pong') })
 ]);

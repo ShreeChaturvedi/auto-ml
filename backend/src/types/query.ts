@@ -20,13 +20,23 @@ export interface QueryResultPayload {
   eda?: EdaSummary;
 }
 
+export interface EdaScope {
+  source: 'dataset-profile' | 'query-result';
+  rowsAnalyzed: number;
+  totalRows: number;
+}
+
 export interface EdaSummary {
   numericColumns: NumericSummary[];
   categoricalColumns: CategoricalSummary[];
   dataQuality: DataQualitySummary[];
-  histogram?: HistogramSummary;
+  histogram?: HistogramSummary;       // keep for backward compat
+  histograms?: HistogramSummary[];    // all numeric columns (up to 20)
   scatter?: ScatterSummary;
   correlations?: CorrelationSummary[];
+  scatterPairs?: ScatterPairData[];
+  missingMatrix?: { columns: string[]; matrix: number[][] };
+  scope?: EdaScope;
 }
 
 export interface NumericSummary {
@@ -79,4 +89,17 @@ export interface CorrelationSummary {
   columnA: string;
   columnB: string;
   coefficient: number;
+}
+
+export interface RegressionLine {
+  slope: number;
+  intercept: number;
+  r2: number;
+}
+
+export interface ScatterPairData {
+  xColumn: string;
+  yColumn: string;
+  points: Array<{ x: number; y: number }>;
+  regressionLine?: RegressionLine;
 }

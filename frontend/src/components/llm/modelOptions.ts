@@ -1,66 +1,21 @@
-export type ReasoningEffort = 'dynamic' | 'low' | 'medium' | 'high';
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-export type ReasoningIcon = 'zap' | 'gauge' | 'brain' | 'flame';
+export type ReasoningIcon = 'zap' | 'gauge' | 'brain' | 'flame' | 'rocket';
 
-export const DEFAULT_ASSISTANT_MODEL = 'gemini-3.1-pro-preview-customtools';
+export type AssistantModelKind = 'base' | 'codex' | 'mini' | 'nano';
+
+export const DEFAULT_ASSISTANT_MODEL = 'gpt-5.4';
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'high';
 
 export interface AssistantModelOption {
   value: string;
   label: string;
-  icon: 'auto' | 'gemini';
+  kind: AssistantModelKind;
+  description: string;
   supportedReasoningEfforts: readonly ReasoningEffort[];
   defaultReasoningEffort: ReasoningEffort;
-  /** Whether this model supports the thinking toggle / reasoning selector */
-  supportsThinking: boolean;
-  /** If true, thinking is always on and cannot be toggled off */
-  thinkingAlwaysOn: boolean;
+  featured?: boolean;
 }
-
-const GEMINI_3_1_REASONING_EFFORTS: readonly ReasoningEffort[] = [
-  'dynamic',
-  'low',
-  'medium',
-  'high'
-];
-
-export const ASSISTANT_MODEL_OPTIONS: readonly AssistantModelOption[] = [
-  {
-    value: 'auto',
-    label: 'Auto',
-    icon: 'auto',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: false,
-    thinkingAlwaysOn: false
-  },
-  {
-    value: 'gemini-3.1-pro-preview-customtools',
-    label: 'Gemini 3.1 Pro',
-    icon: 'gemini',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: true,
-    thinkingAlwaysOn: true
-  },
-  {
-    value: 'gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
-    icon: 'gemini',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: true,
-    thinkingAlwaysOn: false
-  },
-  {
-    value: 'gemini-2.0-flash',
-    label: 'Gemini 2.0 Flash',
-    icon: 'gemini',
-    supportedReasoningEfforts: GEMINI_3_1_REASONING_EFFORTS,
-    defaultReasoningEffort: 'dynamic',
-    supportsThinking: false,
-    thinkingAlwaysOn: false
-  }
-];
 
 export interface ReasoningEffortOption {
   value: ReasoningEffort;
@@ -68,15 +23,29 @@ export interface ReasoningEffortOption {
   icon: ReasoningIcon;
 }
 
-const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
-  dynamic: { label: 'Dynamic', icon: 'zap' },
-  low: { label: 'Low', icon: 'gauge' },
-  medium: { label: 'Medium', icon: 'brain' },
-  high: { label: 'High', icon: 'flame' }
+const DEFAULT_MODEL_OPTION: AssistantModelOption = {
+  value: DEFAULT_ASSISTANT_MODEL,
+  label: 'GPT 5.4',
+  kind: 'base',
+  description: 'Strongest model for complex planning, tool orchestration, and high-stakes work.',
+  supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+  defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
+  featured: true
 };
 
-export function getReasoningEffortOptions(modelValue: string): ReasoningEffortOption[] {
-  const modelOption = ASSISTANT_MODEL_OPTIONS.find((option) => option.value === modelValue) ?? ASSISTANT_MODEL_OPTIONS[0];
+const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
+  minimal: { label: 'Minimal', icon: 'zap' },
+  low: { label: 'Low', icon: 'gauge' },
+  medium: { label: 'Medium', icon: 'brain' },
+  high: { label: 'High', icon: 'flame' },
+  xhigh: { label: 'Extra High', icon: 'rocket' }
+};
+
+export function getReasoningEffortOptions(
+  modelValue: string,
+  modelOptions: readonly AssistantModelOption[]
+): ReasoningEffortOption[] {
+  const modelOption = getModelOption(modelValue, modelOptions);
 
   return modelOption.supportedReasoningEfforts.map((effort) => ({
     value: effort,
@@ -85,11 +54,26 @@ export function getReasoningEffortOptions(modelValue: string): ReasoningEffortOp
   }));
 }
 
-export function getDefaultReasoningEffort(modelValue: string): ReasoningEffort {
-  const modelOption = ASSISTANT_MODEL_OPTIONS.find((option) => option.value === modelValue) ?? ASSISTANT_MODEL_OPTIONS[0];
+export function getDefaultReasoningEffort(
+  modelValue: string,
+  modelOptions: readonly AssistantModelOption[]
+): ReasoningEffort {
+  const modelOption = getModelOption(modelValue, modelOptions);
   return modelOption.defaultReasoningEffort;
 }
 
-export function getModelOption(modelValue: string): AssistantModelOption {
-  return ASSISTANT_MODEL_OPTIONS.find((option) => option.value === modelValue) ?? ASSISTANT_MODEL_OPTIONS[0];
+export function getModelOption(
+  modelValue: string,
+  modelOptions: readonly AssistantModelOption[]
+): AssistantModelOption {
+  return modelOptions.find((option) => option.value === modelValue)
+    ?? modelOptions.find((option) => option.value === DEFAULT_ASSISTANT_MODEL)
+    ?? modelOptions[0]
+    ?? DEFAULT_MODEL_OPTION;
+}
+
+export function buildInlineModelOptions(
+  featuredModelOptions: readonly AssistantModelOption[]
+): AssistantModelOption[] {
+  return [...featuredModelOptions];
 }

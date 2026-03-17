@@ -1,19 +1,54 @@
 import { apiRequest, getApiBaseUrl } from './client';
-import { LlmEnvelopeSchema, type LlmEnvelope, type ToolCall, type ToolResult } from '@/types/llmUi';
-import type { PreprocessingRunSnapshot, PreprocessingRunSummary } from '@/types/preprocessing';
+import { readNdjsonStream } from './streamReader';
+import type { LlmEnvelope, LlmUsage, ToolCall, ToolResult } from '@/types/llmUi';
+import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
+import type {
+  PreprocessingControllerSummary,
+  PreprocessingRunSnapshot,
+  PreprocessingRunSummary
+} from '@/types/preprocessing';
+import type {
+  WorkflowArtifact,
+  WorkflowErrorEvent,
+  WorkflowPhase,
+  WorkflowPauseEvent,
+  WorkflowState,
+  WorkflowToolExecutedEvent
+} from '@/types/workflow';
+import { emitParsedLlmStreamEvent } from './llmStreamParser';
 
-export type ThinkingLevel = 'dynamic' | 'low' | 'medium' | 'high';
+export interface LlmModelCatalogEntry {
+  id: string;
+  label: string;
+  kind: AssistantModelKind;
+  description?: string;
+  tip?: string;
+  featured: boolean;
+  reasoningEfforts: ReasoningEffort[];
+  defaultReasoningEffort: ReasoningEffort;
+}
+
+export interface LlmModelCatalogResponse {
+  defaultModel: string;
+  defaultReasoningEffort?: ReasoningEffort;
+  featured?: LlmModelCatalogEntry[];
+  featuredModels?: LlmModelCatalogEntry[];
+  models: LlmModelCatalogEntry[];
+}
 
 export interface LlmPlanRequest {
   projectId: string;
   datasetId?: string;
+  runId?: string;
+  threadId?: string;
+  notebookId?: string;
+  continuation?: boolean;
   targetColumn?: string;
   prompt?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   featureSummary?: string;
-  enableThinking?: boolean;
-  thinkingLevel?: ThinkingLevel;
+  reasoningEffort?: ReasoningEffort;
   model?: string;
 }
 
@@ -24,8 +59,7 @@ export interface OnboardingStreamRequest {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   round?: number;
-  enableThinking?: boolean;
-  thinkingLevel?: ThinkingLevel;
+  reasoningEffort?: ReasoningEffort;
   model?: string;
 }
 
@@ -33,17 +67,37 @@ export type LlmStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'envelope'; envelope: LlmEnvelope }
+  | { type: 'workflow_state'; state: WorkflowState }
+  | WorkflowToolExecutedEvent
+  | { type: 'artifact_updated'; artifact: WorkflowArtifact; state?: WorkflowState }
+  | WorkflowPauseEvent
+  | WorkflowErrorEvent
   | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
   | { type: 'plan_exit'; planName?: string; planMarkdown: string }
+  | { type: 'usage'; usage: LlmUsage }
   | { type: 'error'; message: string }
   | { type: 'done' };
+
+export type { PreprocessingControllerSummary };
+
+export interface WorkflowTurnRequest extends LlmPlanRequest {
+  phase: WorkflowPhase;
+}
+
+export async function streamWorkflowTurn(
+  request: WorkflowTurnRequest,
+  onEvent: (event: LlmStreamEvent) => void,
+  signal?: AbortSignal
+) {
+  return streamLlm('/workflows/turns/stream', request, onEvent, signal);
+}
 
 export async function streamFeaturePlan(
   request: LlmPlanRequest,
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  return streamLlm('/llm/feature-plan/stream', request, onEvent, signal);
+  return streamWorkflowTurn({ ...request, phase: 'feature_engineering' }, onEvent, signal);
 }
 
 export async function streamTrainingPlan(
@@ -51,7 +105,7 @@ export async function streamTrainingPlan(
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  return streamLlm('/llm/training/stream', request, onEvent, signal);
+  return streamWorkflowTurn({ ...request, phase: 'training' }, onEvent, signal);
 }
 
 export async function streamPreprocessingPlan(
@@ -59,7 +113,7 @@ export async function streamPreprocessingPlan(
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  return streamLlm('/llm/preprocessing/stream', request, onEvent, signal);
+  return streamWorkflowTurn({ ...request, phase: 'preprocessing' }, onEvent, signal);
 }
 
 export async function streamOnboardingPlan(
@@ -67,19 +121,11 @@ export async function streamOnboardingPlan(
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  return streamLlm('/llm/onboarding/stream', request, onEvent, signal);
-}
-
-export async function executeToolCalls(
-  projectId: string,
-  toolCalls: ToolCall[],
-  notebookId?: string,
-  executionMode: 'agent' | 'user_approval' = 'agent'
-) {
-  return apiRequest<{ results: ToolResult[] }>('/llm/tools/execute', {
-    method: 'POST',
-    body: JSON.stringify({ projectId, toolCalls, notebookId, executionMode })
-  });
+  return streamWorkflowTurn(
+    { ...request, projectId: request.projectId, phase: 'onboarding' as WorkflowPhase },
+    onEvent,
+    signal
+  );
 }
 
 export async function listPreprocessingRuns(projectId: string, limit?: number) {
@@ -88,7 +134,7 @@ export async function listPreprocessingRuns(projectId: string, limit?: number) {
     query.set('limit', String(limit));
   }
   return apiRequest<{ projectId: string; count: number; runs: PreprocessingRunSummary[] }>(
-    `/llm/preprocessing/runs?${query.toString()}`
+    `/preprocessing/runs?${query.toString()}`
   );
 }
 
@@ -98,7 +144,13 @@ export async function getPreprocessingRunSnapshot(runId: string, projectId?: str
     query.set('projectId', projectId);
   }
   const suffix = query.toString() ? `?${query.toString()}` : '';
-  return apiRequest<{ run: PreprocessingRunSnapshot }>(`/llm/preprocessing/runs/${runId}${suffix}`);
+  return apiRequest<{ run: PreprocessingRunSnapshot }>(`/preprocessing/runs/${runId}${suffix}`);
+}
+
+export async function listLlmModels() {
+  return apiRequest<LlmModelCatalogResponse>('/llm/models', {
+    method: 'GET'
+  });
 }
 
 async function streamLlm(
@@ -131,80 +183,16 @@ async function streamLlm(
     throw new Error(message || `LLM request failed (${response.status})`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
   let sawDone = false;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const payload = JSON.parse(trimmed) as LlmStreamEvent;
-        if (payload.type === 'envelope') {
-          const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
-          if (parsed.success) {
-            onEvent({ type: 'envelope', envelope: parsed.data });
-            if (parsed.data.ask_user?.questions?.length) {
-              onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
-            }
-            if (parsed.data.plan_exit?.planMarkdown) {
-              onEvent({
-                type: 'plan_exit',
-                planName: parsed.data.plan_exit.planName,
-                planMarkdown: parsed.data.plan_exit.planMarkdown
-              });
-            }
-          } else {
-            onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
-          }
-          continue;
-        }
-        if (payload.type === 'done') {
-          sawDone = true;
-        }
-        onEvent(payload);
-      } catch {
-        onEvent({ type: 'error', message: 'Failed to parse LLM stream.' });
-      }
-    }
-  }
-
-  if (buffer.trim()) {
+  for await (const payload of readNdjsonStream<LlmStreamEvent>(response)) {
     try {
-      const payload = JSON.parse(buffer.trim()) as LlmStreamEvent;
-      if (payload.type === 'envelope') {
-        const parsed = LlmEnvelopeSchema.safeParse(payload.envelope);
-        if (parsed.success) {
-          onEvent({ type: 'envelope', envelope: parsed.data });
-          if (parsed.data.ask_user?.questions?.length) {
-            onEvent({ type: 'ask_user', questions: parsed.data.ask_user.questions });
-          }
-          if (parsed.data.plan_exit?.planMarkdown) {
-            onEvent({
-              type: 'plan_exit',
-              planName: parsed.data.plan_exit.planName,
-              planMarkdown: parsed.data.plan_exit.planMarkdown
-            });
-          }
-        } else {
-          onEvent({ type: 'error', message: 'LLM envelope failed validation.' });
-        }
-      } else {
-        if (payload.type === 'done') {
-          sawDone = true;
-        }
-        onEvent(payload);
+      if (payload.type === 'done') {
+        sawDone = true;
       }
+      emitParsedLlmStreamEvent(payload, onEvent);
     } catch {
-      onEvent({ type: 'error', message: 'Failed to parse LLM stream tail.' });
+      onEvent({ type: 'error', message: 'Failed to parse LLM stream.' });
     }
   }
 

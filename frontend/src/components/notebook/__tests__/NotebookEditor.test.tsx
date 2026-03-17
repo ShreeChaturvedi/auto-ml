@@ -24,16 +24,31 @@ const mockState = vi.hoisted(() => ({
   }>,
   isLoading: false,
   isSaving: false,
+  activeNotebookId: 'nb-1',
   createCell: vi.fn(),
   updateCell: vi.fn(),
   deleteCell: vi.fn(),
   runCell: vi.fn(),
   isCellLocked: vi.fn().mockReturnValue(false),
-  getCellLockOwner: vi.fn().mockReturnValue(null)
+  getCellLockOwner: vi.fn().mockReturnValue(null),
+  suggestedCellIds: new Set<string>(),
+  streamingCellIds: new Set<string>(),
+  streamErrors: new Map<string, string>(),
+  acceptSuggestedCell: vi.fn(),
+  rejectSuggestedCell: vi.fn(),
+  cancelSuggestedCellStream: vi.fn(),
+  startSuggestedCellStream: vi.fn()
 }));
 
 vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: (selector: (state: unknown) => unknown) => selector(mockState)
+}));
+
+vi.mock('@/stores/insightNavigationStore', () => ({
+  useInsightNavigationStore: (selector: (state: unknown) => unknown) => selector({
+    pendingInsightContext: null,
+    clearPendingContext: vi.fn()
+  })
 }));
 
 vi.mock('../NotebookCell', () => ({

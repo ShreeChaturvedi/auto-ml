@@ -10,7 +10,7 @@ import type { QueryResultPayload } from '../types/query.js';
 import { buildEdaSummary } from './edaSummary.js';
 import { validateReadOnlySql } from './sqlValidator.js';
 
-export interface PgTypeCatalogRow {
+interface PgTypeCatalogRow {
   oid: number;
   typname: string;
   typtype: string;
@@ -115,7 +115,7 @@ export async function executeReadOnlyQuery({ sql }: { sql: string }): Promise<Qu
     const result = await client.query(normalizedSql);
     const executionMs = Date.now() - startedAt;
     const limitedRows = result.rows.slice(0, env.sqlMaxRows);
-    const eda = buildEdaSummary(limitedRows) ?? undefined;
+    const eda = buildEdaSummary(limitedRows, { source: 'query-result', totalRows: result.rows.length });
 
     // Resolve human-readable type names from pg_type, but do not fail the
     // query result payload if catalog lookup itself fails.

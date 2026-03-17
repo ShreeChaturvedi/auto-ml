@@ -4,8 +4,8 @@
  * Prepares per-session workspace state (dataset links, manifests).
  */
 
-import { access, lstat, mkdir, readlink, readdir, symlink, writeFile } from 'fs/promises';
-import { extname, join, posix } from 'path';
+import { access, copyFile, lstat, mkdir, readdir, writeFile } from 'fs/promises';
+import { extname, join } from 'path';
 
 import { env } from '../config.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
@@ -31,18 +31,22 @@ function buildAlias(filename: string, datasetId: string) {
   return `${base}__${suffix}${ext}`;
 }
 
-async function ensureSymlink(linkPath: string, target: string) {
+/**
+ * Copy the dataset file into the writable workspace instead of symlinking.
+ * Symlinks to the read-only /datasets mount caused OSError on write-back
+ * (df.to_csv) during preprocessing.
+ */
+async function ensureDatasetCopy(linkPath: string, hostSourcePath: string) {
   try {
     const stat = await lstat(linkPath);
-    if (stat.isSymbolicLink()) {
-      const existingTarget = await readlink(linkPath);
-      if (existingTarget === target) {
-        return true;
-      }
+    // Already exists as a regular file — keep it (may contain user edits)
+    if (stat.isFile()) {
+      return true;
     }
+    // Exists but is a symlink (legacy) — overwrite with a real copy
     return false;
   } catch {
-    await symlink(target, linkPath);
+    await copyFile(hostSourcePath, linkPath);
     return true;
   }
 }
@@ -66,7 +70,6 @@ export async function syncWorkspaceDatasets(projectId: string, workspacePath: st
   for (const dataset of datasets) {
     const filename = dataset.filename;
     const hostPath = join(env.datasetStorageDir, dataset.datasetId, filename);
-    const target = posix.join('/datasets', dataset.datasetId, filename);
 
     try {
       await access(hostPath);
@@ -83,11 +86,11 @@ export async function syncWorkspaceDatasets(projectId: string, workspacePath: st
       collisions.push(filename);
     }
 
-    const linked = await ensureSymlink(linkPath, target);
-    if (!linked && alias === filename) {
+    const copied = await ensureDatasetCopy(linkPath, hostPath);
+    if (!copied && alias === filename) {
       alias = buildAlias(filename, dataset.datasetId);
       linkPath = join(datasetsDir, alias);
-      await ensureSymlink(linkPath, target);
+      await ensureDatasetCopy(linkPath, hostPath);
       collisions.push(filename);
     }
 
@@ -96,7 +99,7 @@ export async function syncWorkspaceDatasets(projectId: string, workspacePath: st
       alias,
       datasetId: dataset.datasetId,
       filename,
-      target
+      target: hostPath
     });
   }
 

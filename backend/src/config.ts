@@ -12,12 +12,14 @@ function resolveBackendPath(value: string): string {
 loadEnv();
 loadEnv({ path: resolve(BACKEND_ROOT, '.env') });
 
-const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview-customtools';
-const DEFAULT_NL2SQL_MODEL = 'gemini-3-flash-preview';
-const RESOLVED_LLM_MODEL = process.env.LLM_MODEL ?? DEFAULT_GEMINI_MODEL;
-const RESOLVED_GEMINI_MODEL = process.env.GEMINI_MODEL ?? RESOLVED_LLM_MODEL;
-const RESOLVED_GEMINI_THINKING_MODEL = process.env.GEMINI_THINKING_MODEL ?? RESOLVED_LLM_MODEL;
-const RESOLVED_NL2SQL_MODEL = process.env.NL2SQL_MODEL ?? DEFAULT_NL2SQL_MODEL;
+const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
+const DEFAULT_NL2SQL_MODEL = 'gpt-5-mini';
+const RESOLVED_LLM_MODEL = process.env.OPENAI_DEFAULT_MODEL
+  ?? process.env.LLM_MODEL
+  ?? DEFAULT_OPENAI_MODEL;
+const RESOLVED_NL2SQL_MODEL = process.env.OPENAI_NL2SQL_MODEL
+  ?? process.env.NL2SQL_MODEL
+  ?? DEFAULT_NL2SQL_MODEL;
 
 const DEFAULT_ORIGINS = [
   'http://localhost:5173',
@@ -94,6 +96,10 @@ export const env = {
   executionAutoBuildImage: process.env.EXECUTION_AUTO_BUILD_IMAGE !== 'false',
   executionWorkspaceDir: resolveBackendPath(process.env.EXECUTION_WORKSPACE_DIR ?? 'storage/workspaces'),
 
+  // Kernel Gateway
+  kernelGatewayPort: parseInteger(process.env.KERNEL_GATEWAY_PORT, 8888),
+  kernelStartupTimeoutMs: parseInteger(process.env.KERNEL_STARTUP_TIMEOUT_MS, 15000),
+
   // Authentication
   jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
   bcryptRounds: parseInteger(process.env.BCRYPT_ROUNDS, 12),
@@ -114,19 +120,14 @@ export const env = {
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
   googleCallbackUrl: process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:5173/auth/google/callback',
 
-  // LLM Providers
-  llmProvider: process.env.LLM_PROVIDER ?? 'gemini',
-  llmApiKey: process.env.LLM_API_KEY ?? '',
-  llmBaseUrl: process.env.LLM_BASE_URL ?? '',
+  // OpenAI LLM configuration
+  openaiApiKey: process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY ?? '',
+  openaiBaseUrl: process.env.OPENAI_BASE_URL ?? process.env.LLM_BASE_URL ?? '',
   llmModel: RESOLVED_LLM_MODEL,
-  geminiApiKey: process.env.GEMINI_API_KEY ?? '',
-  geminiModel: RESOLVED_GEMINI_MODEL,
-  geminiThinkingModel: RESOLVED_GEMINI_THINKING_MODEL,
   llmTimeoutMs: parseInteger(process.env.LLM_TIMEOUT_MS, 60000),
   preprocessingLlmTimeoutMs: parseInteger(process.env.PREPROCESSING_LLM_TIMEOUT_MS, 120000),
   preprocessingThinkingLlmTimeoutMs: parseInteger(process.env.PREPROCESSING_THINKING_LLM_TIMEOUT_MS, 180000),
   nl2sqlModel: RESOLVED_NL2SQL_MODEL,
-  nl2sqlEnableThinking: process.env.NL2SQL_ENABLE_THINKING === 'true',
   nl2sqlTimeoutMs: parseInteger(process.env.NL2SQL_TIMEOUT_MS, 25000),
   nl2sqlMaxTablesContext: parseInteger(process.env.NL2SQL_MAX_TABLES_CONTEXT, 8),
   nl2sqlMaxColumnsPerTable: parseInteger(process.env.NL2SQL_MAX_COLUMNS_PER_TABLE, 40),

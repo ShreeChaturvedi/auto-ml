@@ -21,17 +21,15 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   horizontalListSortingStrategy,
   arrayMove
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
-import { X, FileText, FileJson, FileSpreadsheet, Database, FileCode, FileType, File } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
-import { cn } from '@/lib/utils';
-import { useMemo, useState, useEffect } from 'react';
+import { useProjectStore } from '@/stores/projectStore';
+import { projectColorClasses } from '@/types/project';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { SortableTab } from './SortableTab';
 
 // Combined tab type
 type FileTab = {
@@ -41,127 +39,6 @@ type FileTab = {
   fileType?: string; // For files: 'csv', 'json', 'excel', etc.
   queryMode?: 'english' | 'sql'; // For artifacts
 };
-
-interface SortableTabProps {
-  id: string;
-  name: string;
-  isActive: boolean;
-  fileType?: string;
-  queryMode?: 'english' | 'sql';
-  queryIconColorClassName?: string;
-  onClose: () => void;
-  onClick: () => void;
-}
-
-function SortableTab({
-  id,
-  name,
-  isActive,
-  fileType,
-  queryMode,
-  queryIconColorClassName,
-  onClose,
-  onClick
-}: SortableTabProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id
-  });
-
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1
-  };
-
-  // Get icon based on type
-  const getIcon = () => {
-    if (queryMode) {
-      const colorClass = queryIconColorClassName ?? 'text-muted-foreground';
-      return queryMode === 'sql' ? (
-        <Database className={cn('h-4 w-4', colorClass)} />
-      ) : (
-        <FileText className={cn('h-4 w-4', colorClass)} />
-      );
-    }
-
-    switch (fileType) {
-      case 'csv':
-        return <FileSpreadsheet className="h-4 w-4 text-green-500" />;
-      case 'json':
-        return <FileJson className="h-4 w-4 text-blue-500" />;
-      case 'excel':
-        return <FileSpreadsheet className="h-4 w-4 text-emerald-500" />;
-      case 'pdf':
-        return <FileText className="h-4 w-4 text-rose-500" />;
-      case 'markdown':
-        return <FileCode className="h-4 w-4 text-purple-500" />;
-      case 'word':
-        return <FileType className="h-4 w-4 text-sky-500" />;
-      case 'text':
-        return <FileText className="h-4 w-4 text-slate-500" />;
-      default:
-        return <File className="h-4 w-4 text-gray-500" />;
-    }
-  };
-
-  const handleClick = () => {
-    if (!isDragging) onClick();
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        // `relative` anchors the absolutely-positioned close button.
-        // `overflow-hidden + isolate` keep the button clipped/layered within this tab only.
-        'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden',
-        isActive
-          ? 'border-primary bg-muted text-foreground'
-          : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-      )}
-      onClick={handleClick}
-      {...attributes}
-      {...listeners}
-    >
-      {/* Icon and title */}
-      <div className="flex items-center gap-2 whitespace-nowrap">
-        {getIcon()}
-        {/*
-         * On hover, a CSS mask fades the text toward the right so it naturally
-         * dissolves beneath the close button instead of being hard-clipped.
-         * The mask is purely alpha-based and therefore works over any background.
-         */}
-        <span
-          className="text-sm font-medium max-w-[150px] truncate
-            group-hover:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]
-            group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]"
-        >
-          {name}
-        </span>
-      </div>
-
-      {/*
-       * Close button — absolutely positioned at the right edge of the tab so
-       * it superimposes over the content without pushing the tab wider.
-       * `pointer-events-none` while invisible prevents ghost clicks.
-       */}
-      <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5"
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        >
-          <X className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 interface FileTabBarProps {
   projectId: string;
@@ -176,6 +53,12 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   const openFileTabs = useDataStore((state) => state.openFileTabs);
   const closeFileTab = useDataStore((state) => state.closeFileTab);
   const removeArtifact = useDataStore((state) => state.removeArtifact);
+
+  const { projects } = useProjectStore();
+  const activeProject = projects.find((project) => project.id === projectId);
+  const themeBorderAccentClass = activeProject
+    ? projectColorClasses[activeProject.color]?.borderAccent
+    : undefined;
 
   // Get files and artifacts for this project
   const files = useMemo(
@@ -217,6 +100,21 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
 
   // Maintain tab order state for drag-drop persistence
   const [orderedTabs, setOrderedTabs] = useState<FileTab[]>(baseTabs);
+
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll active tab into view when it changes (e.g. new query opened off-screen)
+  useEffect(() => {
+    if (!activeFileTabId) return;
+    const tabExists = orderedTabs.some((t) => t.id === activeFileTabId);
+    if (!tabExists) return;
+    const el = activeTabRef.current;
+    if (!el) return;
+    const rafId = requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [activeFileTabId, orderedTabs]);
 
   // Update ordered tabs when base tabs change
   useEffect(() => {
@@ -289,7 +187,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
   return (
     <div className="h-14 border-b border-border bg-card">
       <div className="flex h-full items-center">
-        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-thin">
+        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex h-full items-center">
             <DndContext
               sensors={sensors}
@@ -307,8 +205,10 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
                     fileType={tab.fileType}
                     queryMode={tab.queryMode}
                     queryIconColorClassName={queryIconColorClassName}
+                    themeBorderAccentClass={themeBorderAccentClass}
                     onClose={() => handleCloseTab(tab)}
                     onClick={() => handleTabClick(tab)}
+                    activeTabRef={activeTabRef}
                   />
                 ))}
               </SortableContext>

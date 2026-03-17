@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 
 import { PlanningStage } from './PlanningStage';
 import { ProcessingStage } from './ProcessingStage';
-import { ProjectHeader } from './ProjectHeader';
 import { UploadStage } from './UploadStage';
 
 type UploadFlowStage = 'upload' | 'processing' | 'chat';
@@ -133,17 +133,21 @@ export function UploadArea() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="upload-area">
-      <ProjectHeader
-        project={activeProject}
-        editable={stage === 'upload'}
-        collapsed={stage !== 'upload'}
-        onBack={stage === 'chat' ? () => setStage('upload') : undefined}
-        onUpdate={(updates) => {
-          void updateProject(activeProject.id, updates);
-        }}
-      />
+      {/* Compact header for non-upload stages */}
+      {stage !== 'upload' && (
+        <div className="flex h-14 items-center border-b px-4 shrink-0 bg-card/50 backdrop-blur-sm sm:px-8">
+          <p className="truncate text-sm text-muted-foreground flex-1 min-w-0">
+            {activeProject.description || activeProject.title}
+          </p>
+          {stage === 'chat' && (
+            <Button variant="ghost" size="sm" onClick={() => setStage('upload')} className="shrink-0">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )}
 
-      <div className="min-h-0 flex-1 overflow-auto bg-background">
+      <div className="min-h-0 flex-1 overflow-hidden bg-background">
         {stage === 'upload' ? (
           <UploadStage
             projectId={activeProject.id}
@@ -168,7 +172,7 @@ export function UploadArea() {
               // Append new plan to metadata
               const newPlan = { id: `plan-${Date.now()}`, name: planName, content: plan };
               const existingPlans = Array.isArray(metadata.plans) ? metadata.plans : [];
-              
+
               // Maintain backward compat
               const legacyCompat = {
                 projectPlan: plan,

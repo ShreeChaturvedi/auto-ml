@@ -1,13 +1,15 @@
-import { ArrowRight, ClipboardList } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 
 import { fetchNlSuggestions } from '@/lib/api/query';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useProjectPlans } from '@/hooks/useProjectPlans';
 import type { UploadedFile } from '@/types/file';
-import { Markdown } from '@/components/ui/Markdown';
 
 import { DataUploadPanel } from './DataUploadPanel';
+import { DescriptionInput } from './DescriptionInput';
+import { PlanViewerPane } from './PlanViewerPane';
 
 interface UploadStageProps {
   projectId: string;
@@ -17,8 +19,11 @@ interface UploadStageProps {
 export function UploadStage({ projectId, onNext }: UploadStageProps) {
   const files = useDataStore((state) => state.files);
   const project = useProjectStore((state) => state.projects.find((p) => p.id === projectId));
+  const updateProject = useProjectStore((state) => state.updateProject);
   const projectFiles = files.filter((file) => file.projectId === projectId);
   const hasFiles = projectFiles.length > 0;
+
+  const { plans, selectedPlanId, handleCreateNewPlan } = useProjectPlans(projectId);
 
   const isFileReady = (file: UploadedFile): boolean => {
     if (file.type === 'csv' || file.type === 'json' || file.type === 'excel') {
@@ -33,26 +38,8 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
   };
 
   const allFilesReady = hasFiles && projectFiles.every(isFileReady);
-
-  const metadata = (project?.metadata ?? {}) as Record<string, unknown>;
-  const activePlanId = metadata.activePlanId as string | undefined;
-  
-  const plans = Array.isArray(metadata.plans) ? metadata.plans as { id: string, name: string, content: string }[] : [];
-  
-  // Legacy support
-  const legacyPlanName = metadata.projectPlanName as string | undefined;
-  const legacyPlanContent = metadata.projectPlan as string | undefined;
-  
-  let currentPlan = null;
-  if (activePlanId) {
-    currentPlan = plans.find((p) => p.id === activePlanId);
-  }
-  if (!currentPlan && plans.length === 0 && legacyPlanName && legacyPlanContent) {
-    currentPlan = { id: `plan-${legacyPlanName}`, name: legacyPlanName, content: legacyPlanContent };
-  } else if (!currentPlan && plans.length > 0) {
-    currentPlan = plans[plans.length - 1]; // Fallback to most recent
-  }
-  const hasAnyPlan = plans.length > 0 || Boolean(legacyPlanName && legacyPlanContent);
+  const currentPlan = selectedPlanId ? plans.find((p) => p.id === selectedPlanId) : plans[0];
+  const hasPlans = plans.length > 0 && currentPlan;
 
   const handleNext = () => {
     void fetchNlSuggestions(projectId, 8).catch((error) => {
@@ -61,51 +48,60 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
     onNext();
   };
 
+  const handleDescriptionChange = (description: string) => {
+    void updateProject(projectId, { description });
+  };
+
   return (
-    <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-4 p-4 sm:gap-6 sm:p-6" data-testid="upload-stage">
-      <div className="min-h-0 flex-1 flex flex-col lg:flex-row gap-6">
-        {/* Left side: Upload area */}
-        <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex h-full overflow-hidden" data-testid="upload-stage">
+      {/* Left column */}
+      <div className={`flex flex-col min-w-0 ${hasPlans ? 'flex-1' : 'flex-1 w-full'}`}>
+        {/* Left ribbon */}
+        <div className="flex h-14 items-center border-b px-3 shrink-0">
+          <div className="min-w-0 flex-1">
+            <DescriptionInput
+              value={project?.description ?? ''}
+              onChange={handleDescriptionChange}
+            />
+          </div>
+          {!hasPlans && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCreateNewPlan}
+              className="ml-2 shrink-0 gap-1.5 text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              New Plan
+            </Button>
+          )}
+        </div>
+
+        {/* Upload panel body */}
+        <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
           <DataUploadPanel projectId={projectId} />
         </div>
 
-        {/* Right side: Active plan (if exists) */}
-        {currentPlan && (
-          <div className="flex-1 flex flex-col min-w-0 border-t lg:border-t-0 lg:border-l border-border pt-6 lg:pt-0 lg:pl-6">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="rounded-lg bg-primary/10 p-2">
-                <ClipboardList className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold">{currentPlan.name}</h2>
-                <p className="text-xs text-muted-foreground">
-                  Active Project Plan
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex-1 overflow-auto rounded-xl border border-border bg-card/50">
-              <div className="p-6 prose prose-sm dark:prose-invert max-w-none">
-                <Markdown>
-                  {currentPlan.content}
-                </Markdown>
-              </div>
-            </div>
+        {/* Next button row (only when no plans and files ready) */}
+        {!hasPlans && (
+          <div className="flex items-center justify-end border-t border-border px-4 py-3 sm:px-6">
+            {hasFiles && !allFilesReady ? (
+              <p className="mr-3 text-xs text-muted-foreground">Finish processing uploads before continuing.</p>
+            ) : null}
+            <Button onClick={handleNext} disabled={!allFilesReady} className="gap-2" data-testid="upload-next-button">
+              Next
+              <ArrowRight className="h-4 w-4" />
+            </Button>
           </div>
         )}
       </div>
 
-      {!hasAnyPlan ? (
-        <div className="flex items-center justify-end border-t border-border pt-4">
-          {hasFiles && !allFilesReady ? (
-            <p className="mr-3 text-xs text-muted-foreground">Finish processing uploads before continuing.</p>
-          ) : null}
-          <Button onClick={handleNext} disabled={!allFilesReady} className="gap-2" data-testid="upload-next-button">
-            Next
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+      {/* Right column: Plan viewer (only when plans exist) */}
+      {hasPlans && (
+        <div className="flex flex-col min-w-0 w-full lg:w-[55%] lg:min-w-[360px] border-t lg:border-t-0 lg:border-l border-border">
+          <PlanViewerPane plan={currentPlan} />
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

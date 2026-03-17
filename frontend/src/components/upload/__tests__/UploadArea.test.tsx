@@ -37,8 +37,10 @@ vi.mock('@/stores/dataStore', () => ({
     })
 }));
 
-vi.mock('../ProjectHeader', () => ({
-  ProjectHeader: () => <div data-testid="project-header" />
+vi.mock('@/components/ui/button', () => ({
+  Button: ({ children, ...props }: React.HTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>{children}</button>
+  )
 }));
 
 vi.mock('../UploadStage', () => ({

@@ -7,10 +7,12 @@
 
 import { readNdjsonStream } from './streamReader';
 import { getApiBaseUrl } from './client';
+import { useAuthStore } from '@/stores/authStore';
+import type { InsightIssueType } from '@/components/data/eda/edaInsights';
 
 export interface InsightCodegenContext {
   columns: string[];
-  issueType: string;
+  issueType: InsightIssueType;
   severity: string;
   text: string;
   datasetSchema: Array<{ column: string; dtype: string }>;
@@ -29,9 +31,18 @@ export async function streamSuggestCell(
   onEvent: (event: SuggestCellEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  const authState = useAuthStore.getState();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/x-ndjson',
+  };
+  if (authState.accessToken) {
+    headers.Authorization = `Bearer ${authState.accessToken}`;
+  }
+
   const res = await fetch(`${getApiBaseUrl()}/notebooks/${notebookId}/cells/suggest`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ insightContext: context }),
     signal,
   });

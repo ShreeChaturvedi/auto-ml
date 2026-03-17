@@ -86,6 +86,20 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
     const abortController = new AbortController();
     let cellId: string | null = null;
 
+    // Buffer tokens and flush on animation frame to avoid per-token array copy + sort
+    let tokenBuffer = '';
+    let flushScheduled = false;
+    const flushTokens = () => {
+      flushScheduled = false;
+      if (!cellId || !tokenBuffer) return;
+      const state = get();
+      const cell = state.cells.find((c) => c.cellId === cellId);
+      if (cell) {
+        state.updateCellLocally({ ...cell, content: cell.content + tokenBuffer });
+      }
+      tokenBuffer = '';
+    };
+
     try {
       await streamSuggestCell(
         notebookId,
@@ -116,21 +130,24 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
 
             case 'token': {
               if (!cellId) break;
-              const cell = state.cells.find((c) => c.cellId === cellId);
-              if (cell) {
-                state.updateCellLocally({ ...cell, content: cell.content + event.content });
+              tokenBuffer += event.content;
+              if (!flushScheduled) {
+                flushScheduled = true;
+                requestAnimationFrame(flushTokens);
               }
               break;
             }
 
             case 'done': {
               if (!cellId) break;
+              flushTokens(); // flush remaining tokens before finishing
               _set(finishStream(get(), cellId));
               break;
             }
 
             case 'error': {
               if (!cellId) break;
+              flushTokens();
               _set(finishStream(get(), cellId, event.message));
               break;
             }
@@ -141,6 +158,7 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       if (cellId) {
+        flushTokens();
         _set(finishStream(get(), cellId, error instanceof Error ? error.message : 'Stream failed'));
       }
     }

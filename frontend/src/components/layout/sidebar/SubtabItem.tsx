@@ -1,22 +1,23 @@
 /**
  * SubtabItem — reusable sidebar subtab with icon, label, underline hover, and theme color active state.
  *
- * Note: uses useState for hover tracking because the icon's hover color is a dynamic
- * Tailwind class (themeColorClass) which can't be used with group-hover: at compile time.
+ * Uses a <div role="button"> so that interactive content (e.g. dropdown menus)
+ * can be placed in the actionSlot without nesting <button> violations.
  */
 
-import { useState } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { useState, type ComponentType } from 'react';
 import { cn } from '@/lib/utils';
 
 interface SubtabItemProps {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   isActive: boolean;
   themeColorClass: string;
   onClick: () => void;
   /** Optional right-side slot (e.g., "..." dropdown for file items) */
   actionSlot?: React.ReactNode;
+  /** Override icon color on hover/active (defaults to themeColorClass) */
+  iconColorClass?: string;
 }
 
 export function SubtabItem({
@@ -25,20 +26,28 @@ export function SubtabItem({
   isActive,
   themeColorClass,
   onClick,
-  actionSlot
+  actionSlot,
+  iconColorClass
 }: SubtabItemProps) {
   const [hovered, setHovered] = useState(false);
 
-  const iconColor = isActive || hovered ? themeColorClass : 'text-muted-foreground';
+  const iconColor = isActive || hovered ? (iconColorClass ?? themeColorClass) : 'text-muted-foreground';
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs truncate transition-colors duration-200',
+        'group w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs truncate transition-colors duration-200 cursor-pointer',
         isActive
           ? 'font-medium'
           : 'text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50'
@@ -55,6 +64,6 @@ export function SubtabItem({
           {actionSlot}
         </span>
       )}
-    </button>
+    </div>
   );
 }

@@ -5,7 +5,7 @@
  * Toolbar and notebook management are handled by NotebookToolbar.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
@@ -122,11 +122,16 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
   // Consume pending insight context (cross-phase navigation from EDA → Notebook)
   const pendingInsightContext = useInsightNavigationStore((state) => state.pendingInsightContext);
   const clearPendingContext = useInsightNavigationStore((state) => state.clearPendingContext);
+  const insightFiredRef = useRef(false);
 
   useEffect(() => {
-    if (pendingInsightContext && activeNotebookId) {
+    if (pendingInsightContext && activeNotebookId && !insightFiredRef.current) {
+      insightFiredRef.current = true;
       startSuggestedCellStream(activeNotebookId, pendingInsightContext);
       clearPendingContext();
+    }
+    if (!pendingInsightContext) {
+      insightFiredRef.current = false;
     }
   }, [pendingInsightContext, activeNotebookId, startSuggestedCellStream, clearPendingContext]);
 

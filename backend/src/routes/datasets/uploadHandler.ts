@@ -13,6 +13,8 @@ import { buildEdaSummary } from '../../services/edaSummary.js';
 
 import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './validation.js';
 
+const EDA_MAX_ROWS = 5000;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -83,7 +85,7 @@ export async function processDatasetUpload(
 
   const profiling = profileDatasetRows(rows);
 
-  const rowsForEda = rows.slice(0, 5000);
+  const rowsForEda = rows.slice(0, EDA_MAX_ROWS);
   const eda = buildEdaSummary(rowsForEda, {
     source: 'dataset-profile',
     totalRows: rows.length

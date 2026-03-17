@@ -29,8 +29,9 @@ export function buildEdaSummary(rows: QueryRow[], options?: BuildEdaSummaryOptio
     return undefined;
   }
 
-  // Compute column set as union of keys from first 100 rows to handle sparse rows
-  const sampleSize = Math.min(rows.length, 100);
+  // Compute column set as union of keys from first N rows to handle sparse rows
+  const SPARSE_ROW_SAMPLE_SIZE = 100;
+  const sampleSize = Math.min(rows.length, SPARSE_ROW_SAMPLE_SIZE);
   const columnSet = new Set<string>();
   for (let i = 0; i < sampleSize; i++) {
     for (const key of Object.keys(rows[i])) {

@@ -282,11 +282,20 @@ export function DataViewerTab() {
     }
   }, [queryPanelCollapsed, handleQueryPanelCollapsedChange]);
 
+  // Build dataset schema for notebook code generation context
+  const datasetSchema = useMemo(() => {
+    const firstFile = files[0];
+    const dtypes = firstFile?.metadata?.datasetProfile?.dtypes;
+    if (!dtypes) return undefined;
+    return Object.entries(dtypes).map(([column, dtype]) => ({ column, dtype }));
+  }, [files]);
+
   const { handleInsightAction } = useInsightActions({
     projectId,
     tableName: tableNames[0],
     onExecuteQuery: handleExecuteQuery,
     onSuggestSql: handleSuggestSql,
+    datasetSchema,
   });
 
   const handleDismissError = useCallback(() => setQueryError(null), []);

@@ -12,6 +12,7 @@ import type { NotebookState } from './notebook/types';
 import { createSessionSlice } from './notebook/sessionSlice';
 import { createCellSlice } from './notebook/cellSlice';
 import { createLockSlice } from './notebook/lockSlice';
+import { createSuggestedCellSlice } from './notebook/suggestedCellSlice';
 
 export type { NotebookState } from './notebook/types';
 
@@ -37,5 +38,6 @@ export {
 export const useNotebookStore = create<NotebookState>((...args) => ({
   ...createSessionSlice(...args),
   ...createCellSlice(...args),
-  ...createLockSlice(...args)
+  ...createLockSlice(...args),
+  ...createSuggestedCellSlice(...args)
 }));

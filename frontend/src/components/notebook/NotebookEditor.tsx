@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
 import { NotebookMarkdownCell } from './NotebookMarkdownCell';
 import { useNotebookStore } from '@/stores/notebookStore';
+import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
 import { interruptKernel } from '@/lib/api/notebooks';
 import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -108,7 +109,26 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
   const runCell = useNotebookStore((state) => state.runCell);
   const isCellLocked = useNotebookStore((state) => state.isCellLocked);
   const getCellLockOwner = useNotebookStore((state) => state.getCellLockOwner);
+  const suggestedCellIds = useNotebookStore((state) => state.suggestedCellIds);
+  const streamingCellIds = useNotebookStore((state) => state.streamingCellIds);
+  const streamErrors = useNotebookStore((state) => state.streamErrors);
+  const acceptSuggestedCell = useNotebookStore((state) => state.acceptSuggestedCell);
+  const rejectSuggestedCell = useNotebookStore((state) => state.rejectSuggestedCell);
+  const cancelSuggestedCellStream = useNotebookStore((state) => state.cancelSuggestedCellStream);
+  const startSuggestedCellStream = useNotebookStore((state) => state.startSuggestedCellStream);
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  // Consume pending insight context (cross-phase navigation from EDA → Notebook)
+  const pendingInsightContext = useInsightNavigationStore((state) => state.pendingInsightContext);
+  const clearPendingContext = useInsightNavigationStore((state) => state.clearPendingContext);
+
+  useEffect(() => {
+    if (pendingInsightContext && activeNotebookId) {
+      startSuggestedCellStream(activeNotebookId, pendingInsightContext);
+      clearPendingContext();
+    }
+  }, [pendingInsightContext, activeNotebookId, startSuggestedCellStream, clearPendingContext]);
 
   const handleAddCell = useCallback(async (cellType: NotebookCellType = 'code') => {
     await createCell({ content: '', cellType });
@@ -275,6 +295,12 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                     onDelete={() => handleCellDelete(item.cell.cellId)}
                     onRun={() => handleCellRun(item.cell.cellId)}
                     onInterrupt={() => handleCellInterrupt(item.cell.cellId)}
+                    isSuggested={suggestedCellIds.has(item.cell.cellId)}
+                    isStreaming={streamingCellIds.has(item.cell.cellId)}
+                    streamError={streamErrors.get(item.cell.cellId) ?? null}
+                    onAccept={() => acceptSuggestedCell(item.cell.cellId)}
+                    onReject={() => rejectSuggestedCell(item.cell.cellId)}
+                    onCancel={() => cancelSuggestedCellStream(item.cell.cellId)}
                   />
                 </div>
               )}

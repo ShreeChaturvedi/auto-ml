@@ -1,16 +1,19 @@
 /**
  * useInsightActions — hook for dispatching insight action side-effects.
  *
- * Handles three simple actions (filter, query, preprocess) and stubs notebook (Task 6).
+ * Handles four actions: filter, query, preprocess, and notebook.
  *  - filter:     generates SQL and executes it as a new query artifact
  *  - query:      populates the SQL editor with a diagnostic query (no execution)
  *  - preprocess: navigates to preprocessing with insight search params
+ *  - notebook:   navigates to notebook phase with pending insight context for LLM code generation
  */
 
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { InsightAction } from '@/components/data/eda/edaInsights';
+import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
+import type { InsightCodegenContext } from '@/lib/api/insightCodegen';
 
 interface UseInsightActionsParams {
   projectId?: string;
@@ -19,6 +22,8 @@ interface UseInsightActionsParams {
   onExecuteQuery?: (sql: string, mode: 'sql') => void;
   /** Populate the SQL editor with a suggested query (used for query action). */
   onSuggestSql?: (sql: string) => void;
+  /** Dataset schema for notebook code generation context. */
+  datasetSchema?: Array<{ column: string; dtype: string }>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -61,11 +66,10 @@ function generateQuerySql(
   switch (action.issueType) {
     case 'missing':
       return [
-        `SELECT "${col}",`,
+        `SELECT COUNT(*) AS total,`,
         `       COUNT(*) FILTER (WHERE "${col}" IS NULL) AS null_count,`,
-        `       COUNT(*) AS total`,
+        `       ROUND(100.0 * COUNT(*) FILTER (WHERE "${col}" IS NULL) / COUNT(*), 2) AS null_pct`,
         `FROM ${tableName}`,
-        `GROUP BY 1`,
       ].join('\n');
 
     case 'outlier': {
@@ -125,8 +129,12 @@ export function useInsightActions({
   tableName,
   onExecuteQuery,
   onSuggestSql,
+  datasetSchema,
 }: UseInsightActionsParams) {
   const navigate = useNavigate();
+  const setPendingInsightContext = useInsightNavigationStore(
+    (state) => state.setPendingInsightContext,
+  );
 
   const handleInsightAction = useCallback(
     (action: InsightAction) => {
@@ -182,13 +190,29 @@ export function useInsightActions({
           break;
         }
 
-        /* ---- notebook: stub for Task 6 ---- */
-        case 'notebook':
-          // Will be implemented in Task 6
+        /* ---- notebook: generate suggested cell via LLM ---- */
+        case 'notebook': {
+          if (!projectId) {
+            toast.error('No project context for notebook generation');
+            return;
+          }
+
+          const insightContext: InsightCodegenContext = {
+            columns: action.columns,
+            issueType: action.issueType,
+            severity: 'medium',
+            text: `Investigate ${action.issueType} issue in column(s): ${action.columns.join(', ')}`,
+            datasetSchema: datasetSchema ?? [],
+            tableName,
+          };
+
+          setPendingInsightContext(insightContext);
+          navigate(`/project/${projectId}/notebook`);
           break;
+        }
       }
     },
-    [projectId, tableName, onExecuteQuery, onSuggestSql, navigate],
+    [projectId, tableName, onExecuteQuery, onSuggestSql, navigate, datasetSchema, setPendingInsightContext],
   );
 
   return { handleInsightAction };

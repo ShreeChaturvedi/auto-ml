@@ -18,6 +18,7 @@ import type {
   NotebookPhaseMetadata
 } from '@/types/notebook';
 import type { NotebookWSClient } from '@/lib/websocket/notebookClient';
+import type { InsightCodegenContext } from '@/lib/api/insightCodegen';
 
 // ============================================================
 // Full store state
@@ -44,6 +45,12 @@ export interface NotebookState {
 
   // Error state
   error: string | null;
+
+  // Suggested cell state
+  suggestedCellIds: Set<string>;
+  streamingCellIds: Set<string>;
+  streamErrors: Map<string, string>;
+  streamAbortControllers: Map<string, AbortController>;
 
   // Actions - Initialization
   initializeNotebook: (projectId: string) => Promise<void>;
@@ -79,6 +86,12 @@ export interface NotebookState {
   setCellLock: (cellId: string, lockedBy: LockOwner) => void;
   clearCellLock: (cellId: string) => void;
   setError: (error: string | null) => void;
+
+  // Actions - Suggested cells
+  startSuggestedCellStream: (notebookId: string, context: InsightCodegenContext) => Promise<void>;
+  acceptSuggestedCell: (cellId: string) => Promise<void>;
+  rejectSuggestedCell: (cellId: string) => Promise<void>;
+  cancelSuggestedCellStream: (cellId: string) => void;
 
   // Actions - Reset
   reset: () => void;

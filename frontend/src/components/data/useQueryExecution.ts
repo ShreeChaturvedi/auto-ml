@@ -67,6 +67,7 @@ export function useQueryExecution({
   return {
     mode,
     sqlQuery,
+    setSqlQuery,
     englishQuery,
     currentQuery,
     handleModeChange,

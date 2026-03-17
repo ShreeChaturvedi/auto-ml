@@ -20,11 +20,50 @@ import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
 import { DEFAULT_WORKBOOK_ID } from './preprocessingTabUtils';
 import { getWorkbookParam } from '@/lib/workbookParam';
 
+/**
+ * Build a natural-language prompt for the preprocessing agent based on
+ * insight parameters from the Data Viewer.
+ */
+function buildInsightPrompt(column: string, issueType: string): string {
+  switch (issueType) {
+    case 'missing':
+      return `The column "${column}" has a significant number of missing values. Please analyze the missing data pattern and suggest the best imputation strategy or whether the column should be dropped.`;
+    case 'constant':
+      return `The column "${column}" is constant (all values are the same) and provides no predictive signal. Please drop this column from the dataset.`;
+    case 'imbalance':
+      return `The column "${column}" has significant class imbalance. Please analyze the distribution and suggest resampling or balancing strategies.`;
+    default:
+      return `Please address the "${issueType}" issue detected in the column "${column}".`;
+  }
+}
+
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialTabIdRef = useRef(getWorkbookParam(searchParams));
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
+
+  // Read insight search params (set by Data Viewer "preprocess" action) on mount.
+  // Compute once and store in state so it survives re-renders without re-reading
+  // (search params are cleared immediately after reading).
+  const [insightInitialPrompt] = useState<string | null>(() => {
+    const col = searchParams.get('insightColumn');
+    const issue = searchParams.get('insightIssue');
+    if (!col || !issue) return null;
+    return buildInsightPrompt(col, issue);
+  });
+  const hadInsightParams = insightInitialPrompt !== null;
+
+  // Clear insight search params after reading to avoid re-triggering on re-render
+  useEffect(() => {
+    if (!hadInsightParams) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('insightColumn');
+    next.delete('insightIssue');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run once on mount
+  }, []);
+
   const tables = usePreprocessingStore((state) => state.tables);
   const selectedDatasetId = usePreprocessingStore((state) => state.selectedDatasetId);
   const runId = usePreprocessingStore((state) => state.runId);
@@ -178,6 +217,7 @@ export function PreprocessingPanel() {
         beforeSubmit={requestDatasetContinuityChoice}
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}
+        initialPrompt={insightInitialPrompt}
         toolbarLeft={
           <PreprocessingToolbarLeft
             tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}

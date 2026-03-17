@@ -5,8 +5,7 @@
  * Uses backend Postgres for queries with EDA support
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import type { InsightAction } from './eda/edaInsights';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,6 +26,7 @@ import {
   buildQueryArtifactMeta,
   useColumnOperations
 } from './hooks/useColumnOperations';
+import { useInsightActions } from '@/hooks/useInsightActions';
 
 function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
   return {
@@ -269,9 +269,25 @@ export function DataViewerTab() {
 
   const activeControlsPortalTarget = controlsPortalTarget;
 
-  const handleInsightAction = useCallback((action: InsightAction) => {
-    console.log('[insight-action]', action);
-  }, []);
+  // Suggested SQL state — set by insight "query" action, consumed by QueryPanel.
+  // Wrapped with a monotonic token so re-clicking the same insight re-triggers.
+  const suggestedSqlTokenRef = useRef(0);
+  const [suggestedSql, setSuggestedSql] = useState<{ sql: string; token: number } | null>(null);
+
+  const handleSuggestSql = useCallback((sql: string) => {
+    setQueryMode('sql');
+    setSuggestedSql({ sql, token: ++suggestedSqlTokenRef.current });
+    if (queryPanelCollapsed) {
+      handleQueryPanelCollapsedChange(false);
+    }
+  }, [queryPanelCollapsed, handleQueryPanelCollapsedChange]);
+
+  const { handleInsightAction } = useInsightActions({
+    projectId,
+    tableName: tableNames[0],
+    onExecuteQuery: handleExecuteQuery,
+    onSuggestSql: handleSuggestSql,
+  });
 
   const handleDismissError = useCallback(() => setQueryError(null), []);
 
@@ -372,6 +388,7 @@ export function DataViewerTab() {
           onMountPortalTarget={setControlsPortalTarget}
           onNlGenerate={handleNlGenerate}
           onNlApprove={handleNlApprove}
+          suggestedSql={suggestedSql}
         />
       </div>
     </div>

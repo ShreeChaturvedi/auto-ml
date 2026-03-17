@@ -45,6 +45,12 @@ interface AgenticShellProps {
   leftPaneScrollable?: boolean;
   LeftPaneComponent?: React.ComponentType<LeftPaneRenderProps>;
   renderLeftPane?: (props: LeftPaneRenderProps) => React.ReactNode;
+  /**
+   * When set, this prompt is auto-submitted once the shell mounts
+   * and the session is empty. The caller should clear the value after
+   * passing it so it does not re-trigger.
+   */
+  initialPrompt?: string | null;
 }
 
 export function AgenticShell({
@@ -60,7 +66,8 @@ export function AgenticShell({
   beforeSubmit,
   leftPaneScrollable = true,
   LeftPaneComponent,
-  renderLeftPane
+  renderLeftPane,
+  initialPrompt
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
@@ -296,6 +303,19 @@ export function AgenticShell({
 
     void startRun();
   };
+
+  // Auto-submit an initial prompt once when the session is empty
+  const initialPromptFiredRef = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialPromptFiredRef.current || messages.length > 0 || isGenerating) {
+      return;
+    }
+    initialPromptFiredRef.current = true;
+    // Defer to next tick so all shell state is settled
+    const id = window.setTimeout(() => submitPrompt(initialPrompt), 0);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on mount when conditions are met
+  }, [initialPrompt, messages.length, isGenerating]);
 
   const leftPaneRenderProps: LeftPaneRenderProps = {
     messages,

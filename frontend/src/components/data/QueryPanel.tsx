@@ -130,6 +130,11 @@ interface QueryPanelProps {
    * The parent is responsible for executing the SQL and creating an artifact.
    */
   onNlApprove?: (result: NlGenerationResult, approvedSql: string) => void;
+  /**
+   * When set, the SQL editor is populated with this value.
+   * The token field ensures repeated suggestions of the same SQL still trigger.
+   */
+  suggestedSql?: { sql: string; token: number } | null;
 }
 
 export function QueryPanel({
@@ -147,15 +152,25 @@ export function QueryPanel({
   isExpanding = false,
   onNlGenerate,
   onNlApprove,
+  suggestedSql,
 }: QueryPanelProps) {
   const {
     mode,
     sqlQuery,
+    setSqlQuery,
     englishQuery,
     handleModeChange,
     handleQueryChange,
     handleExecute
   } = useQueryExecution({ onExecute, externalMode, onModeChange });
+
+  // Apply externally-suggested SQL when it changes (token ensures re-triggers)
+  useEffect(() => {
+    if (suggestedSql) {
+      setSqlQuery(suggestedSql.sql);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to suggestedSql changes
+  }, [suggestedSql]);
 
   // NL workflow ref & phase — phase is a local mirror updated via onPhaseChange
   // so footer buttons re-render reactively without holding workflow state here.

@@ -1,20 +1,16 @@
-<svg viewBox="0 0 900 185" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AutoML">
-  <g transform="translate(36 54) scale(2.4)" fill="none" stroke="#374151">
-    <path d="M4 24C4 24 8 20 16 20C24 20 28 24 28 24" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
-    <path d="M7 18C7 18 10 14 16 14C22 14 25 18 25 18" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-    <path d="M10 12C10 12 12 9 16 9C20 9 22 12 22 12" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="16" cy="5" r="2.5" fill="#374151" stroke="none"/>
-    <path d="M13 9L15 6" stroke-width="2" stroke-linecap="round"/>
-    <path d="M19 9L17 6" stroke-width="2" stroke-linecap="round"/>
+<svg viewBox="0 0 900 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Agentic AutoML Platform">
+  <g transform="translate(36 38) scale(2.4)" fill="none" stroke="#374151">
+    <circle cx="16" cy="4" r="3" fill="#374151" stroke="none"/>
+    <path d="M14 8L5 26" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M18 8L27 26" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+    <path d="M9 18H19.5" stroke-width="2.5" stroke-linecap="round"/>
   </g>
 
   <style>
-    .title { font: 700 54px "Space Grotesk", "IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
-    .tagline { font: 500 20px "Space Grotesk", "IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
-    .subline { font: 400 16px "Space Grotesk", "IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .title { font: 700 40px "Space Grotesk", "IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .tagline { font: 500 18px "Space Grotesk", "IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
   </style>
 
-  <text x="136" y="96" class="title" fill="#111827">AutoML</text>
-  <text x="136" y="132" class="tagline" fill="#4b5563">Automated Data Scientist platform</text>
-  <text x="136" y="158" class="subline" fill="#6b7280">LLM + RAG + MCP with HPO + SFT for production ML</text>
+  <text x="136" y="80" class="title" fill="#111827">Agentic AutoML Platform</text>
+  <text x="136" y="116" class="tagline" fill="#4b5563">LLM-orchestrated pipelines from raw data to production models</text>
 </svg>

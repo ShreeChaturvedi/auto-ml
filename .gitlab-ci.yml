@@ -1,0 +1,64 @@
+image: node:22-slim
+
+stages:
+  - install
+  - check
+  - build
+  - test
+
+install:
+  stage: install
+  script:
+    - npm run install:all
+  cache:
+    key:
+      files:
+        - backend/package-lock.json
+        - frontend/package-lock.json
+    paths:
+      - backend/node_modules/
+      - frontend/node_modules/
+      - testing/node_modules/
+    policy: pull-push
+
+lint:
+  stage: check
+  script:
+    - npm run lint
+  cache:
+    key:
+      files:
+        - backend/package-lock.json
+        - frontend/package-lock.json
+    paths:
+      - backend/node_modules/
+      - frontend/node_modules/
+    policy: pull
+
+build:
+  stage: build
+  script:
+    - npm run build
+  cache:
+    key:
+      files:
+        - backend/package-lock.json
+        - frontend/package-lock.json
+    paths:
+      - backend/node_modules/
+      - frontend/node_modules/
+    policy: pull
+
+test:
+  stage: test
+  script:
+    - npm run test
+  cache:
+    key:
+      files:
+        - backend/package-lock.json
+        - frontend/package-lock.json
+    paths:
+      - backend/node_modules/
+      - frontend/node_modules/
+    policy: pull

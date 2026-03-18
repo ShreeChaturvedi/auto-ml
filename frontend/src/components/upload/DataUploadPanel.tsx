@@ -8,7 +8,7 @@
  * - Horizontal separators between files
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileStack, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +19,15 @@ import { getFileType, DATA_FILE_TYPES } from '@/lib/fileUtils';
 import { FileRow } from './FileRow';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+
+/** Static style for the shimmer band at rest (hoisted to avoid allocation per render). */
+const SHIMMER_RESTING_STYLE: React.CSSProperties = {
+  opacity: 0,
+  transform: 'translateX(-120%) skewX(-15deg)',
+  background:
+    'linear-gradient(90deg, transparent 0%, hsl(var(--muted-foreground) / 0.06) 20%, hsl(var(--muted-foreground) / 0.14) 50%, hsl(var(--muted-foreground) / 0.06) 80%, transparent 100%)',
+};
 
 // Accepted file types (data files and context documents only - NO images)
 const acceptedFileTypes = {
@@ -210,10 +219,27 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   }, [projectFiles]);
   const isUploading = Object.values(uploadStatus).some(status => status === 'uploading');
 
+  const shimmerRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = usePrefersReducedMotion();
+
+  /** Fire-and-forget: one sweep across the surface, then hidden again. */
+  const triggerShimmer = useCallback(() => {
+    if (reducedMotion || isDragActive) return;
+    const el = shimmerRef.current;
+    if (!el || el.getAnimations().length > 0) return;
+    el.animate(
+      [
+        { transform: 'translateX(-120%) skewX(-15deg)', opacity: 1 },
+        { transform: 'translateX(220%) skewX(-15deg)', opacity: 1 },
+      ],
+      { duration: 1200, easing: 'ease-in-out', fill: 'none' },
+    );
+  }, [reducedMotion, isDragActive]);
+
   return (
     <div className="h-full flex flex-col" data-testid="data-upload-panel">
       {isUploading ? (
-        <div className="mb-3 flex justify-end">
+        <div className="absolute top-2 right-3 z-10">
           <Badge variant="secondary" className="gap-1.5 text-xs">
             <Loader2 className="h-3 w-3 animate-spin" />
             Uploading...
@@ -223,18 +249,24 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
       {/* Drop Zone + File List Container */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Drop Zone - Full height when empty, compact when has files */}
+        {/* Drop Zone - Fills entire area when empty, compact when has files */}
         <div
           {...getRootProps()}
+          onMouseEnter={triggerShimmer}
           className={cn(
-            'flex flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer',
-            hasFiles ? 'py-6 mb-4' : 'flex-1 min-h-[300px]',
-            isDragActive
-              ? 'border-primary bg-primary/5 scale-[1.01]'
-              : 'border-border hover:border-primary/50 hover:bg-accent/20'
+            'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden',
+            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border border-dashed border-border hover:border-muted-foreground/30' : 'flex-1',
+            isDragActive && 'bg-primary/5'
           )}
         >
           <input {...getInputProps()} />
+
+          {/* Metallic shimmer band — hidden at rest, sweeps once on hover via WAAPI */}
+          <div
+            ref={shimmerRef}
+            className="pointer-events-none absolute inset-y-0 w-[60%]"
+            style={SHIMMER_RESTING_STYLE}
+          />
 
           <div className={cn(
             'rounded-2xl p-3 mb-3 transition-transform',
@@ -259,7 +291,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
         {/* File List - Simple rows with separators */}
         {hasFiles && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 pb-4">
             {/* Header with counts */}
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium">Uploaded Files</span>

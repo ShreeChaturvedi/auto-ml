@@ -1,19 +1,20 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UploadStage } from '../UploadStage';
-import { fetchNlSuggestions } from '@/lib/api/query';
+
+const mockHandleCreateNewPlan = vi.fn();
 
 vi.mock('@/hooks/useProjectPlans', () => ({
   useProjectPlans: () => ({
     plans: [],
     selectedPlanId: undefined,
     handleOpenPlan: vi.fn(),
-    handleCreateNewPlan: vi.fn(),
+    handleCreateNewPlan: mockHandleCreateNewPlan,
   })
 }));
 
-const files = [
+const readyFiles = [
   {
     id: 'file-1',
     name: 'orders.csv',
@@ -21,25 +22,15 @@ const files = [
     size: 128,
     uploadedAt: new Date(),
     projectId: 'p1',
-    metadata: {
-      datasetId: 'dataset-1'
-    }
+    metadata: { datasetId: 'dataset-1' }
   }
 ];
 
-vi.mock('@/lib/api/query', () => ({
-  fetchNlSuggestions: vi.fn().mockResolvedValue({
-    suggestions: [],
-    cached: false,
-    schemaFingerprint: 'schema-1'
-  })
-}));
+let mockFiles: typeof readyFiles = [];
 
 vi.mock('@/stores/dataStore', () => ({
   useDataStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      files
-    })
+    selector({ files: mockFiles })
 }));
 
 vi.mock('@/stores/projectStore', () => ({
@@ -66,18 +57,27 @@ vi.mock('../DataUploadPanel', () => ({
 describe('UploadStage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFiles = [];
   });
 
-  it('prewarms NL suggestions when advancing from upload', async () => {
-    const onNext = vi.fn();
+  it('hides New Plan button when no files are uploaded', () => {
+    mockFiles = [];
+    render(<UploadStage projectId="p1" />);
 
-    render(<UploadStage projectId="p1" onNext={onNext} />);
+    expect(screen.queryByText('New Plan')).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByTestId('upload-next-button'));
+  it('shows New Plan button when files are uploaded and ready', () => {
+    mockFiles = readyFiles;
+    render(<UploadStage projectId="p1" />);
 
-    expect(onNext).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
-      expect(fetchNlSuggestions).toHaveBeenCalledWith('p1', 8);
-    });
+    expect(screen.getByText('New Plan')).toBeInTheDocument();
+  });
+
+  it('does not render a bottom Next button row', () => {
+    mockFiles = readyFiles;
+    render(<UploadStage projectId="p1" />);
+
+    expect(screen.queryByTestId('upload-next-button')).not.toBeInTheDocument();
   });
 });

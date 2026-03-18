@@ -21,6 +21,7 @@ import {
   TableRow
 } from '@/components/ui/table';
 
+import { Eye, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DataPreview } from '@/types/file';
 import { EDAPanel, type EdaTab } from './eda/EDAPanel';
@@ -231,23 +232,28 @@ export function DataTable({
       </div>
 
       <div className="border-t bg-muted/30 shrink-0">
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="text-xs text-muted-foreground font-mono">
-            {totalRows > 0 ? (
-              <>
-                Showing {visibleStart}-{visibleEnd} of {totalRows.toLocaleString()}{' '}
-                {totalRows === 1 ? 'row' : 'rows'}
-                {preview.previewRows < preview.totalRows && (
-                  <span className="text-muted-foreground/70">
-                    {' '}
-                    (dataset: {preview.totalRows.toLocaleString()} rows)
+        <div className="flex items-center px-4 py-1.5">
+          {totalRows > 0 ? (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
+              <span className="flex items-center gap-1.5" title="Visible rows">
+                <Eye className="h-3 w-3 shrink-0 opacity-60" />
+                {visibleStart}–{visibleEnd}
+                <span className="opacity-50">/</span>
+                {totalRows.toLocaleString()}
+              </span>
+              {preview.previewRows < preview.totalRows && (
+                <>
+                  <span className="opacity-30">·</span>
+                  <span className="flex items-center gap-1.5 opacity-70" title="Total dataset rows">
+                    <Database className="h-3 w-3 shrink-0" />
+                    {preview.totalRows.toLocaleString()}
                   </span>
-                )}
-              </>
-            ) : (
-              'No rows'
-            )}
-          </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground font-mono">No rows</span>
+          )}
         </div>
       </div>
     </div>

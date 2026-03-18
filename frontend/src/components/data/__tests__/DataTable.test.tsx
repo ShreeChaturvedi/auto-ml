@@ -163,6 +163,9 @@ describe('DataTable virtual scrolling', () => {
 
     render(<DataTable preview={preview} />);
 
-    expect(screen.getByText(/\b500\b/)).toBeInTheDocument();
+    // The status ribbon uses icon + number segments; "500" appears as the loaded row count
+    const statusRibbon = document.querySelector('[title="Visible rows"]');
+    expect(statusRibbon).toBeInTheDocument();
+    expect(statusRibbon!.textContent).toMatch(/500/);
   });
 });

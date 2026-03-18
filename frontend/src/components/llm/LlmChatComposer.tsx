@@ -136,9 +136,7 @@ export function LlmChatComposer({
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const canSend = value.trim().length > 0;
   const attachmentItems = attachment?.items ?? [];
-  const attachmentSupportLabel = attachment?.accept
-    ? `Supported: ${attachment.accept}`
-    : 'Add document to context';
+  const attachmentSupportLabel = 'Attach files';
 
   const { wrapperRef, isFocused, onFocusCapture, onBlurCapture } = useMetallicBorder();
 

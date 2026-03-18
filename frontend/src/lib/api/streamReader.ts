@@ -56,3 +56,24 @@ export async function* readNdjsonStream<T>(response: Response): AsyncGenerator<T
     reader.releaseLock();
   }
 }
+
+/**
+ * Consume an NDJSON token stream, accumulating `token` event content into a
+ * string and invoking `onToken` after each append. Stops on `error` events
+ * or if the optional `AbortSignal` fires.
+ */
+export async function accumulateTokenStream(
+  response: Response,
+  onToken: (accumulated: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  let accumulated = '';
+  for await (const event of readNdjsonStream<{ type: string; content?: string }>(response)) {
+    if (signal?.aborted) break;
+    if (event.type === 'token' && event.content) {
+      accumulated += event.content;
+      onToken(accumulated);
+    }
+    if (event.type === 'error') break;
+  }
+}

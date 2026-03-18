@@ -39,6 +39,17 @@ const EXPANDABLE_PHASES = new Set<Phase>([
 
 const WORKBOOK_PHASES = new Set<Phase>(['preprocessing', 'feature-engineering', 'training']);
 
+/**
+ * Connector-line layout constants.
+ *
+ * Phase button: py-2 (8px) padding + icon h-3.5 (14px) → icon bottom at 22px.
+ * SubtabItem:   py-1.5 (6px) padding + icon h-3.5 (14px) → icon center at 13px from item bottom.
+ * Horizontal:   px-3 (12px) + half of w-3.5 (7px) = 19px center, minus 0.5px to center the 1px line.
+ */
+const LINE_STYLE_BASE = { left: '18.5px', top: '22px', bottom: '13px' } as const;
+const LINE_STYLE_ACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'currentColor' };
+const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground))' };
+
 /** Phases that show a "+" action button on hover */
 const PLUS_ACTION_PHASES = new Set<Phase>([
   'upload',
@@ -101,13 +112,11 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     e.stopPropagation();
     if (activeProjectId && unlockedPhases.includes(phase)) {
       navigate(`/project/${activeProjectId}/${phase}`);
-      if (EXPANDABLE_PHASES.has(phase)) {
-        // Toggle if already on this phase; expand if navigating to it
-        if (phase === currentPhase) {
-          togglePhaseExpand(phase);
-        } else {
-          expandPhase(phase);
-        }
+      if (EXPANDABLE_PHASES.has(phase) && phase === currentPhase) {
+        // Toggle only if already on this phase; expansion of the new phase
+        // is handled by the useEffect watching currentPhase to avoid a
+        // flash where isExpanded=true but isActive=false for one frame.
+        togglePhaseExpand(phase);
       }
     }
   };
@@ -239,7 +248,20 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           );
 
           return (
-            <div key={phase}>
+            <div key={phase} className="relative">
+              {/* Vertical connector line — spans from phase icon/background through subtabs.
+                  Positioned on the phase root so it isn't clipped by the subtabs overflow-hidden. */}
+              {isExpandable && !collapsed && activeProjectId && (
+                <div
+                  className={cn(
+                    'absolute w-px transition-opacity duration-300',
+                    isExpanded ? 'opacity-100' : 'opacity-0',
+                    isActive && themeColorClass
+                  )}
+                  style={isActive ? LINE_STYLE_ACTIVE : LINE_STYLE_INACTIVE}
+                />
+              )}
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   {phaseButton}
@@ -261,12 +283,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                       : 'grid-rows-[0fr] opacity-0'
                   )}
                 >
-                  <div className="relative overflow-hidden">
-                    {/* Vertical connector line — bottom-3 stops at last subitem icon center */}
-                    <div
-                      className="absolute top-0 bottom-3 w-px bg-border"
-                      style={{ left: '19px' }}
-                    />
+                  <div className="overflow-hidden">
                     {phase === 'upload' && (
                       <PlanSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
                     )}

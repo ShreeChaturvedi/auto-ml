@@ -11,6 +11,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { createDatasetUploadRouter } from './routes/datasets.js';
 import { createDocumentRouter } from './routes/documents.js';
 import executionRouter from './routes/execution.js';
+import { createExperimentsRouter } from './routes/experiments.js';
 import { createFeatureEngineeringRouter } from './routes/featureEngineering.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { createLlmRouter } from './routes/llm/index.js';
@@ -62,6 +63,7 @@ export function createApp() {
   router.use(createWorkflowRouter());
   router.use(createMcpRouter());
   router.use('/models', modelRouter);
+  router.use('/experiments', createExperimentsRouter());
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
   router.use(createRealtimeSessionRouter());

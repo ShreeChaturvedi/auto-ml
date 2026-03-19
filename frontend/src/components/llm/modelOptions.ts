@@ -7,6 +7,11 @@ export type AssistantModelKind = 'base' | 'codex' | 'mini' | 'nano';
 export const DEFAULT_ASSISTANT_MODEL = 'gpt-5.4';
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'high';
 
+const LEGACY_MODEL_VALUE_ALIASES: Record<string, string> = {
+  'gpt-5-mini': 'gpt-5.4-mini',
+  'gpt-5-nano': 'gpt-5.4-nano'
+};
+
 export interface AssistantModelOption {
   value: string;
   label: string;
@@ -32,6 +37,10 @@ const DEFAULT_MODEL_OPTION: AssistantModelOption = {
   defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
   featured: true
 };
+
+export function normalizeAssistantModelValue(modelValue: string): string {
+  return LEGACY_MODEL_VALUE_ALIASES[modelValue] ?? modelValue;
+}
 
 const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
   minimal: { label: 'Minimal', icon: 'zap' },
@@ -66,7 +75,9 @@ export function getModelOption(
   modelValue: string,
   modelOptions: readonly AssistantModelOption[]
 ): AssistantModelOption {
-  return modelOptions.find((option) => option.value === modelValue)
+  const normalizedModelValue = normalizeAssistantModelValue(modelValue);
+
+  return modelOptions.find((option) => option.value === normalizedModelValue)
     ?? modelOptions.find((option) => option.value === DEFAULT_ASSISTANT_MODEL)
     ?? modelOptions[0]
     ?? DEFAULT_MODEL_OPTION;

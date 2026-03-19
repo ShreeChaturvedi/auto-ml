@@ -43,7 +43,8 @@ export function TrainingPanel() {
     // activeWorkbook not needed here — used by sidebar via registry store
     buildStorageKey: buildTrainingStorageKey,
     handleSwitch: handleWorkbookSwitch,
-    handleNew: handleNewWorkbook
+    handleNew: handleNewWorkbook,
+    handleDelete: handleDeleteWorkbook
   } = useTrainingWorkbooks(projectId);
 
   const [cells, setCells] = useState<Cell[]>([]);
@@ -369,6 +370,11 @@ export function TrainingPanel() {
           activeWorkbookId={activeTrainingWorkbookId}
           onSwitch={handleWorkbookSwitch}
           onNew={handleNewWorkbook}
+          onRename={() => {}}
+          onReplay={() => {}}
+          onReset={() => {}}
+          onDelete={handleDeleteWorkbook}
+          canDelete={trainingWorkbooks.length > 1}
         />
       }
       toolbarRight={

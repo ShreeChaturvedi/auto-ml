@@ -4,16 +4,10 @@ import {
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
   compactToolbarSelectClass
 } from '@/components/agentic/toolbarStyles';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
+import { WorkbookActionsMenu } from '@/components/agentic/WorkbookActionsMenu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { AvailableTable } from '@/types/preprocessing';
-import { Database, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { Database, Plus } from 'lucide-react';
 
 interface ProcessingTabOption {
   id: string;
@@ -28,9 +22,9 @@ interface PreprocessingToolbarLeftProps {
   onRenameTab: () => void;
   onReplayCheck: () => void;
   onResetTab: () => void;
-  onDeleteTab: () => void;
-  canDeleteTab: boolean;
-  selectedDatasetId: string;
+  onDeleteTab?: () => void;
+  canReplay: boolean;
+  canDelete?: boolean;
 }
 
 interface PreprocessingToolbarRightProps {
@@ -49,8 +43,8 @@ export function PreprocessingToolbarLeft({
   onReplayCheck,
   onResetTab,
   onDeleteTab,
-  canDeleteTab,
-  selectedDatasetId
+  canReplay,
+  canDelete
 }: PreprocessingToolbarLeftProps) {
   return (
     <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
@@ -77,41 +71,15 @@ export function PreprocessingToolbarLeft({
         <Plus className="h-3.5 w-3.5" />
       </Button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
-            disabled={!activeTabId}
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onSelect={onRenameTab}>
-            <Pencil className="h-3.5 w-3.5 mr-2" />
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onReplayCheck} disabled={!selectedDatasetId}>
-            <RefreshCw className="h-3.5 w-3.5 mr-2" />
-            Replay Check
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onResetTab}>
-            <RotateCcw className="h-3.5 w-3.5 mr-2" />
-            Reset Workbook
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={onDeleteTab}
-            className="text-destructive focus:text-destructive"
-            disabled={!canDeleteTab}
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-2" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <WorkbookActionsMenu
+        onRename={onRenameTab}
+        onReplay={onReplayCheck}
+        onReset={onResetTab}
+        onDelete={onDeleteTab}
+        disableAll={!activeTabId}
+        disableReplay={!canReplay}
+        disableDelete={!canDelete}
+      />
     </div>
   );
 }
@@ -123,24 +91,22 @@ export function PreprocessingToolbarRight({
   isLoadingTables
 }: PreprocessingToolbarRightProps) {
   return (
-    <>
-      <Select
-        value={selectedDatasetId}
-        onValueChange={onDatasetSelect}
-        disabled={isLoadingTables || tables.length === 0}
-      >
-        <SelectTrigger className="h-7 w-[200px] text-xs">
-          <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-          <SelectValue placeholder="Select dataset" />
-        </SelectTrigger>
-        <SelectContent>
-          {tables.map((table) => (
-            <SelectItem key={table.datasetId} value={table.datasetId}>
-              {table.filename}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </>
+    <Select
+      value={selectedDatasetId}
+      onValueChange={onDatasetSelect}
+      disabled={isLoadingTables || tables.length === 0}
+    >
+      <SelectTrigger className="h-7 w-[200px] text-xs">
+        <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+        <SelectValue placeholder="Select dataset" />
+      </SelectTrigger>
+      <SelectContent>
+        {tables.map((table) => (
+          <SelectItem key={table.datasetId} value={table.datasetId}>
+            {table.filename}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

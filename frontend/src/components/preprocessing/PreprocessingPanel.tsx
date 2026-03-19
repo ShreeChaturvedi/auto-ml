@@ -228,8 +228,8 @@ export function PreprocessingPanel() {
             onReplayCheck={handleReplayCheck}
             onResetTab={resetActiveTab}
             onDeleteTab={handleDeleteTab}
-            canDeleteTab={tabs.length > 1}
-            selectedDatasetId={selectedDatasetId ?? ''}
+            canReplay={!!selectedDatasetId}
+            canDelete={tabs.length > 1}
           />
         }
         toolbarRight={

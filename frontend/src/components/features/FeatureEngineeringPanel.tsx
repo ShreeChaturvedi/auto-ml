@@ -243,6 +243,8 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           onVersionSwitch={handleVersionSwitch}
           onNewDraft={handleNewDraft}
           onRenameDraft={handleRenameDraft}
+          onReplay={() => {}}
+          onReset={() => {}}
           onDeleteDraft={handleDeleteDraft}
           canRenameDraft={isCurrentVersionDraft}
           canDeleteDraft={canDeleteCurrentDraft}

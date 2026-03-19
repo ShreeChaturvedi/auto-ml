@@ -283,6 +283,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
     const lastValueRef = useRef(value);
     const composingRef = useRef(false);
     const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const cursorRafRef = useRef(0);
 
     const syncRenderedValue = useCallback((nextValue: string, cursorOffset?: number, animateRange?: AnimateCharRange) => {
       const el = divRef.current;
@@ -292,6 +293,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
         clearTimeout(cleanupTimerRef.current);
         cleanupTimerRef.current = null;
       }
+      cancelAnimationFrame(cursorRafRef.current);
       collapseAnimationSpans(el);
 
       lastValueRef.current = nextValue;
@@ -306,7 +308,29 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
         if (document.activeElement !== el) {
           el.focus();
         }
-        placeCursorAt(el, cursorOffset);
+
+        if (animateRange && animateRange.end > animateRange.start) {
+          const totalNewChars = animateRange.end - animateRange.start;
+          placeCursorAt(el, animateRange.start);
+          const startTime = performance.now();
+
+          const tick = () => {
+            if (document.activeElement !== el) return;
+            const elapsed = performance.now() - startTime;
+            const charsRevealed = Math.min(
+              Math.floor(elapsed / VOICE_CHAR_STAGGER_MS) + 1,
+              totalNewChars
+            );
+            placeCursorAt(el, animateRange.start + charsRevealed);
+            if (charsRevealed < totalNewChars) {
+              cursorRafRef.current = requestAnimationFrame(tick);
+            }
+          };
+
+          cursorRafRef.current = requestAnimationFrame(tick);
+        } else {
+          placeCursorAt(el, cursorOffset);
+        }
       }
 
       if (animateRange) {
@@ -319,6 +343,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
         if (cleanupTimerRef.current) {
           clearTimeout(cleanupTimerRef.current);
         }
+        cancelAnimationFrame(cursorRafRef.current);
       };
     }, []);
 

@@ -317,8 +317,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
             aria-autocomplete="list"
             aria-expanded={isIdle && suggestionsOpen && filteredSuggestions.length > 0}
             className={cn(
-              'h-full resize-none leading-relaxed',
-              'focus-visible:border-ring focus-visible:ring-0 focus-visible:ring-offset-0',
+              'h-full resize-none leading-relaxed border-0 rounded-none shadow-none',
+              'focus-visible:ring-0 focus-visible:ring-offset-0',
               'transition-colors duration-200',
               !isIdle && 'cursor-default',
             )}

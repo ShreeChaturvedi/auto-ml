@@ -6,13 +6,6 @@
   animation: spin 1.1s linear infinite;
 }
 
-/* Registered property so --shine-angle is interpolable in @keyframes */
-@property --shine-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -786,29 +779,16 @@
   );
 }
 
-/* ── Focus layer (sweep-around highlight) ──────────────────────────────── */
+/* ── Focus layer (smooth fade-in highlight) ────────────────────────────── */
 .metallic-border::after {
   z-index: 11;
-  /* Resting at 180deg keeps both arms fully drawn (2×180 = 360) so removing
-     the animation on blur preserves the full border while opacity fades. */
-  --shine-angle: 180deg;
-  background: conic-gradient(
-    from calc(var(--cursor-angle, 0deg) - var(--shine-angle)),
-    hsl(var(--ring)) 0deg calc(2 * var(--shine-angle)),
-    transparent calc(2 * var(--shine-angle))
-  );
+  background: hsl(var(--ring));
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.35s ease;
 }
 
 .metallic-border[data-focused="true"]::after {
   opacity: 1;
-  animation: metallic-sweep 0.45s ease-out forwards;
-}
-
-@keyframes metallic-sweep {
-  from { --shine-angle: 0deg; }
-  to   { --shine-angle: 180deg; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -816,8 +796,7 @@
     display: none;
   }
   .metallic-border[data-focused="true"]::after {
-    /* Skip sweep; --shine-angle stays at 180deg so border appears instantly */
-    animation: none;
+    transition: none;
   }
 }
 

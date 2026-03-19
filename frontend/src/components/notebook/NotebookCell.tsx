@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, Suspense, useMemo } from 'react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -78,6 +79,7 @@ export function NotebookCellComponent({
 }: NotebookCellComponentProps) {
   const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
   const [showOutput, setShowOutput] = useState(true);
+  const [outputCopied, copyOutput] = useCopyToClipboard();
 
   const completionOptions = useMemo(
     () => ({ projectId, cellId: cell.cellId }),
@@ -137,34 +139,8 @@ export function NotebookCellComponent({
 
   const handleCopyOutput = useCallback(async () => {
     const text = buildOutputCopyText(richOutputs);
-    if (!text) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // Ignore and fall back to `execCommand('copy')` below.
-    }
-
-    if (typeof document === 'undefined') {
-      return;
-    }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', 'true');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    textarea.style.pointerEvents = 'none';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const copied = document.execCommand('copy');
-    document.body.removeChild(textarea);
-    void copied;
-  }, [richOutputs]);
+    if (text) await copyOutput(text);
+  }, [richOutputs, copyOutput]);
 
   return (
     <div
@@ -280,7 +256,7 @@ export function NotebookCellComponent({
                       variant="ghost"
                       size="icon-xs"
                       onClick={onCancel}
-                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      className="h-6 w-6 text-foreground hover:text-destructive"
                       aria-label="Cancel generation"
                     >
                       <Square className="h-3.5 w-3.5" />
@@ -311,7 +287,7 @@ export function NotebookCellComponent({
                         variant="ghost"
                         size="icon-xs"
                         onClick={onReject}
-                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                        className="h-6 w-6 text-foreground hover:text-destructive"
                         aria-label="Reject suggested cell"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -332,7 +308,7 @@ export function NotebookCellComponent({
                     size="icon-xs"
                     onClick={onDelete}
                     disabled={isLocked}
-                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    className="h-6 w-6 text-foreground hover:text-destructive"
                     aria-label="Delete cell"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -408,11 +384,15 @@ export function NotebookCellComponent({
                 size="icon-xs"
                 className="h-6 w-6"
                 onClick={handleCopyOutput}
-                title="Copy output"
-                aria-label="Copy output"
+                title={outputCopied ? 'Copied!' : 'Copy output'}
+                aria-label={outputCopied ? 'Copied!' : 'Copy output'}
                 type="button"
               >
-                <Copy className="h-3 w-3" />
+                {outputCopied ? (
+                  <Check className="h-3 w-3 text-green-500" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
               </Button>
 
               <Button

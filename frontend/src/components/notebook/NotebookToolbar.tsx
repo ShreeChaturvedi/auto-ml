@@ -9,6 +9,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -22,16 +28,19 @@ import {
   COMPACT_TOOLBAR_GROUP_CLASS,
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS
 } from '@/components/agentic/toolbarStyles';
-import { Code, Loader2, RotateCcw, Type } from 'lucide-react';
+import { Code, List, Loader2, RotateCcw, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NotebookCellType } from '@/types/notebook';
+import type { TocHeading } from '@/lib/markdown/tocUtils';
 
 interface NotebookToolbarProps {
   projectId: string;
   className?: string;
+  headings?: TocHeading[];
+  onScrollToHeading?: (slug: string) => void;
 }
 
-export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) {
+export function NotebookToolbar({ projectId, className, headings, onScrollToHeading }: NotebookToolbarProps) {
   const notebook = useNotebookStore((state) => state.notebook);
   const isSaving = useNotebookStore((state) => state.isSaving);
   const createCell = useNotebookStore((state) => state.createCell);
@@ -74,34 +83,67 @@ export function NotebookToolbar({ projectId, className }: NotebookToolbarProps) 
 
   return (
     <div className={cn('flex h-14 items-center justify-between border-b px-3 shrink-0', className)}>
-      {/* Left group: cell buttons */}
-      <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
-          onClick={() => handleAddCell('markdown')}
-          disabled={isSaving || !notebook}
-          title="Add text cell"
-        >
-          <Type className="h-3.5 w-3.5" />
-        </Button>
+      {/* Left group: cell buttons + TOC */}
+      <TooltipProvider delayDuration={300}>
+        <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+            onClick={() => handleAddCell('markdown')}
+            disabled={isSaving || !notebook}
+            title="Add text cell"
+          >
+            <Type className="h-3.5 w-3.5" />
+          </Button>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
-          onClick={() => handleAddCell('code')}
-          disabled={isSaving || !notebook}
-          title="Add code cell"
-        >
-          {isSaving ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Code className="h-3.5 w-3.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+            onClick={() => handleAddCell('code')}
+            disabled={isSaving || !notebook}
+            title="Add code cell"
+          >
+            {isSaving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Code className="h-3.5 w-3.5" />
+            )}
+          </Button>
+
+          {headings && headings.length > 0 && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
+                      aria-label="Table of Contents"
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Table of Contents</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" className="max-h-64 w-56 overflow-y-auto">
+                {headings.map((h) => (
+                  <DropdownMenuItem
+                    key={h.slug}
+                    onClick={() => onScrollToHeading?.(h.slug)}
+                    className={cn('cursor-pointer truncate', h.level === 3 && 'pl-6')}
+                  >
+                    {h.text}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-        </Button>
-      </div>
+        </div>
+      </TooltipProvider>
 
       {/* Right group: restart + cloud badge */}
       <div className="flex items-center gap-2">

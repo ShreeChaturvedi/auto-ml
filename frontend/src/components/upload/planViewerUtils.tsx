@@ -1,69 +1,8 @@
 import { createElement, type ReactNode } from 'react';
 import type { Components } from 'react-markdown';
 
-export interface TocHeading {
-  level: 2 | 3;
-  text: string;
-  slug: string;
-}
-
-const SLUG_PREFIX = 'plan-viewer-';
-
-/**
- * Convert heading text to a DOM-safe slug with plan-viewer- prefix
- * to avoid collisions with other IDs in the page.
- */
-export function slugifyHeading(text: string): string {
-  return (
-    SLUG_PREFIX +
-    text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-  );
-}
-
-/**
- * Flatten a ReactNode tree to plain text (for slugifying rendered headings).
- */
-export function extractTextContent(node: ReactNode): string {
-  if (node == null || typeof node === 'boolean') return '';
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(extractTextContent).join('');
-  if (typeof node === 'object' && 'props' in node) {
-    const el = node as unknown as { props: { children?: ReactNode } };
-    return extractTextContent(el.props.children);
-  }
-  return '';
-}
-
-/**
- * Extract h2/h3 headings from raw markdown for TOC generation.
- */
-export function extractTocHeadings(markdown: string): TocHeading[] {
-  const headings: TocHeading[] = [];
-  const lines = markdown.split('\n');
-  for (const line of lines) {
-    const m2 = line.match(/^##\s+(.+)$/);
-    if (m2) {
-      const text = m2[1].trim();
-      headings.push({ level: 2, text, slug: slugifyHeading(text) });
-      continue;
-    }
-    const m3 = line.match(/^###\s+(.+)$/);
-    if (m3) {
-      const text = m3[1].trim();
-      headings.push({ level: 3, text, slug: slugifyHeading(text) });
-    }
-  }
-  return headings;
-}
-
-export function escapeRegExp(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+import { escapeRegExp } from '@/lib/utils';
+import { buildHeadingComponents } from '@/lib/markdown/tocUtils';
 
 /**
  * Recursively walk ReactNode children, splitting text nodes on regex match
@@ -124,19 +63,8 @@ function highlightText(children: ReactNode, regex: RegExp): ReactNode {
  * Build react-markdown component overrides for heading IDs and optional search highlighting.
  */
 export function buildMarkdownComponents(searchQuery: string): Components {
-  const headingRenderer = (tag: 'h2' | 'h3') => {
-    const Component = ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => {
-      const text = extractTextContent(children);
-      const id = slugifyHeading(text);
-      return createElement(tag, { ...props, id }, children);
-    };
-    Component.displayName = `PlanViewer${tag}`;
-    return Component;
-  };
-
   const base: Components = {
-    h2: headingRenderer('h2'),
-    h3: headingRenderer('h3'),
+    ...buildHeadingComponents('plan-viewer-'),
   };
 
   if (!searchQuery.trim()) return base;

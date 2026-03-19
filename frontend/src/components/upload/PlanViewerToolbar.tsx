@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Check, ChevronDown, ClipboardList, Copy, Download, List, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,9 @@ import {
   COMPACT_TOOLBAR_GROUP_CLASS,
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
 } from '@/components/agentic/toolbarStyles';
-import { escapeRegExp, type TocHeading } from './planViewerUtils';
+import type { TocHeading } from '@/lib/markdown/tocUtils';
+import { escapeRegExp } from '@/lib/utils';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 
 interface PlanViewerToolbarProps {
   planContent: string;
@@ -43,25 +45,11 @@ export function PlanViewerToolbar({
   headings,
   scrollToHeading,
 }: PlanViewerToolbarProps) {
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-    };
-  }, []);
+  const [copied, copy] = useCopyToClipboard();
 
   const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(planContent).then(() => {
-      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-      setCopied(true);
-      copyTimerRef.current = window.setTimeout(() => {
-        setCopied(false);
-        copyTimerRef.current = null;
-      }, 1500);
-    });
-  }, [planContent]);
+    void copy(planContent);
+  }, [copy, planContent]);
 
   const handleExport = useCallback(() => {
     const filename = `${planName.replace(/\.md$/, '').replace(/\s+/g, '_')}.md`;

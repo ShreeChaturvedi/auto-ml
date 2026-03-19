@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { Copy, Check, Pencil, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,27 +25,9 @@ export function MessageActionBar({
   isGenerating,
   className
 }: MessageActionBarProps) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copied, copy] = useCopyToClipboard();
 
-  useEffect(() => () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-    }
-  }, []);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(messageContent);
-      setCopied(true);
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-      timerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API may be unavailable
-    }
-  };
+  const handleCopy = () => void copy(messageContent);
 
   return (
     <div

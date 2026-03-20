@@ -26,7 +26,7 @@ import {
   PreprocessingActionResult,
   ListPackagesResult,
   GenericJsonResult,
-} from './toolRenderers';
+} from './toolRenderers/index';
 import type {
   SearchHit,
   DatasetProfileOutput,
@@ -36,7 +36,7 @@ import type {
   ListCellsOutput,
   EditCellOutput,
   ReadCellOutput,
-} from './toolRenderers';
+} from './toolRenderers/index';
 
 // ─── Tool visibility sets ───────────────────────────────────────
 

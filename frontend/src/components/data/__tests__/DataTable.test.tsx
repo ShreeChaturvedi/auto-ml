@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { DataPreview } from '@/types/file';
 
 import { DataTable } from '../DataTable';
@@ -164,5 +164,47 @@ describe('DataTable virtual scrolling', () => {
     render(<DataTable preview={preview} />);
 
     expect(screen.getByText(/\b500\b/)).toBeInTheDocument();
+  });
+
+  it('requests more rows when incremental loading reaches the end of the scroll container', () => {
+    const onReachEnd = vi.fn();
+    const rows = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `Row ${i + 1}` }));
+    const preview: DataPreview = {
+      fileId: 'paged.csv',
+      headers: ['id', 'name'],
+      rows,
+      totalRows: 200,
+      previewRows: 20
+    };
+
+    render(
+      <DataTable
+        preview={preview}
+        incrementalLoad={{
+          hasMore: true,
+          isLoading: false,
+          onReachEnd
+        }}
+      />
+    );
+
+    const scrollContainer = document.querySelector('.overflow-auto') as HTMLDivElement;
+    Object.defineProperty(scrollContainer, 'clientHeight', {
+      configurable: true,
+      value: 240
+    });
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      value: 800
+    });
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 530
+    });
+
+    fireEvent.scroll(scrollContainer);
+
+    expect(onReachEnd).toHaveBeenCalledTimes(1);
   });
 });

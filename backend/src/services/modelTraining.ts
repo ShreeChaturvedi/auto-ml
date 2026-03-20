@@ -9,6 +9,7 @@ import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord, TrainModelRequest } from '../types/model.js';
 
 import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
@@ -334,8 +335,14 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     },
     metadata: metricsPayload.clusterSizes
       ? { clusterSizes: metricsPayload.clusterSizes }
-      : undefined
+      : undefined,
+    evaluationStatus: 'pending'
   });
+
+  // Fire-and-forget evaluation — training response returns immediately
+  runEvaluation(record.modelId).catch(err =>
+    console.error('[modelTraining] Background evaluation failed', { modelId: record.modelId, error: err })
+  );
 
   await rm(runDir, { recursive: true, force: true }).catch(() => undefined);
 

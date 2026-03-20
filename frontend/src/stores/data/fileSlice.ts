@@ -28,6 +28,14 @@ export interface FileSlice {
   deleteFile: (id: string) => Promise<void>;
   getFilesByProject: (projectId: string) => UploadedFile[];
   addPreview: (preview: DataPreview) => void;
+  appendPreviewPage: (
+    fileId: string,
+    page: {
+      offset: number;
+      rows: Record<string, unknown>[];
+      rowCount: number;
+    }
+  ) => void;
   removePreview: (fileId: string) => void;
   getPreviewByFileId: (fileId: string) => DataPreview | undefined;
   setProcessing: (processing: boolean) => void;
@@ -109,6 +117,33 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
   addPreview: (preview: DataPreview) => {
     set((state) => ({
       previews: [...state.previews.filter((p) => p.fileId !== preview.fileId), preview]
+    }));
+  },
+
+  appendPreviewPage: (fileId, page) => {
+    const { offset, rows, rowCount } = page;
+    if (rows.length === 0) {
+      return;
+    }
+
+    set((state) => ({
+      previews: state.previews.map((preview) => {
+        if (preview.fileId !== fileId) {
+          return preview;
+        }
+
+        const overlap = Math.max(0, preview.rows.length - offset);
+        const nextRows = overlap >= rows.length
+          ? preview.rows
+          : [...preview.rows, ...rows.slice(overlap)];
+
+        return {
+          ...preview,
+          rows: nextRows,
+          totalRows: rowCount,
+          previewRows: nextRows.length
+        };
+      })
     }));
   },
 

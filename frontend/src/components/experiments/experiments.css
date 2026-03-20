@@ -1,0 +1,71 @@
+/* ── Experiments Animations ───────────────────────────────── */
+
+/* Chart loading skeleton — chart-shaped SVG outlines with shimmer */
+.chart-skeleton {
+  background: linear-gradient(90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--muted-foreground) / 0.08) 50%,
+    hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: timeline-skeleton-sweep 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+/* Champion indicator — gold left border with gradient */
+.champion-row {
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(180deg, #f59e0b, #d97706, #f59e0b) 1;
+  animation: champion-border-shift 3s linear infinite;
+}
+
+@keyframes champion-border-shift {
+  0%, 100% { border-image: linear-gradient(180deg, #f59e0b, #d97706, #f59e0b) 1; }
+  50% { border-image: linear-gradient(180deg, #d97706, #f59e0b, #d97706) 1; }
+}
+
+/* Selection elevation */
+.model-row-selected {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px -2px hsl(var(--foreground) / 0.1);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+/* Metric counter animation */
+.metric-counter {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Optuna trial pulse on best value update */
+@keyframes trial-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+.trial-best-pulse {
+  animation: trial-pulse 300ms ease-out;
+}
+
+/* Empty state coordinate plane fade-in */
+@keyframes empty-state-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.empty-state-enter {
+  animation: empty-state-fade-in 400ms ease-out both;
+}
+
+/* Reduced motion: disable all experiments animations */
+@media (prefers-reduced-motion: reduce) {
+  .chart-skeleton,
+  .champion-row,
+  .trial-best-pulse,
+  .empty-state-enter {
+    animation: none;
+  }
+  .model-row-selected {
+    transform: none;
+    transition: none;
+  }
+}

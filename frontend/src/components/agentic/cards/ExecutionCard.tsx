@@ -9,17 +9,13 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { formatDuration } from '@/components/experiments/utils';
 
 export interface ExecutionCardProps {
   status: 'running' | 'success' | 'failed';
   stdout?: string;
   stderr?: string;
   duration?: number;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 export function ExecutionCard({

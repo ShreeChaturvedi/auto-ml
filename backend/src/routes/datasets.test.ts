@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
@@ -150,6 +153,12 @@ function createMockDataset(overrides?: Partial<DatasetProfile>): DatasetProfile 
   };
 }
 
+function storeDatasetFile(dataset: DatasetProfile, contents: string) {
+  const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
+  mkdirSync(datasetDir, { recursive: true });
+  writeFileSync(join(datasetDir, dataset.filename), contents, 'utf8');
+}
+
 describeRouteSuite('dataset routes', () => {
   let repository: InMemoryDatasetRepository;
 
@@ -243,6 +252,49 @@ describeRouteSuite('dataset routes', () => {
       expect(response.body.sample).toEqual(dataset.sample);
       expect(response.body.columns).toEqual(['id', 'name', 'value']);
       expect(response.body.rowCount).toBe(50);
+    });
+  });
+
+  describe('GET /api/datasets/:datasetId/rows', () => {
+    it('returns paged rows for an existing dataset', async () => {
+      const dataset = createMockDataset({
+        sample: [{ id: 1, name: 'Sample' }],
+        nRows: 5,
+        columns: [
+          { name: 'id', dtype: 'integer', nullCount: 0 },
+          { name: 'name', dtype: 'string', nullCount: 0 }
+        ]
+      });
+      repository.addDataset(dataset);
+      storeDatasetFile(dataset, 'id,name\n1,A\n2,B\n3,C\n4,D\n5,E');
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get(`/api/datasets/${dataset.datasetId}/rows`)
+        .query({ offset: 2, limit: 2 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.rows).toEqual([
+        { id: 3, name: 'C' },
+        { id: 4, name: 'D' }
+      ]);
+      expect(response.body.columns).toEqual(['id', 'name']);
+      expect(response.body.rowCount).toBe(5);
+      expect(response.body.offset).toBe(2);
+      expect(response.body.limit).toBe(2);
+    });
+
+    it('returns 400 for invalid pagination params', async () => {
+      const dataset = createMockDataset();
+      repository.addDataset(dataset);
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get(`/api/datasets/${dataset.datasetId}/rows`)
+        .query({ offset: -1, limit: 0 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
     });
   });
 

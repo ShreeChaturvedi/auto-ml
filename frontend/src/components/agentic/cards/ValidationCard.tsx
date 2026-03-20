@@ -8,6 +8,7 @@
 import { CheckCircle2, XCircle, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { formatMetric } from '@/components/experiments/utils';
 
 export interface ValidationMetric {
   name: string;
@@ -19,12 +20,6 @@ export interface ValidationCardProps {
   passed: boolean;
   metrics?: ValidationMetric[];
   notes?: string;
-}
-
-function formatMetricValue(value: number | undefined): string {
-  if (value == null) return '--';
-  if (Number.isInteger(value)) return value.toString();
-  return value.toFixed(4);
 }
 
 function MetricChangeIndicator({ before, after }: { before?: number; after?: number }) {
@@ -83,10 +78,10 @@ export function ValidationCard({ passed, metrics, notes }: ValidationCardProps) 
                 <tr key={metric.name} className="border-b last:border-b-0">
                   <td className="px-3 py-1.5 font-medium text-foreground">{metric.name}</td>
                   <td className="px-3 py-1.5 text-right font-mono text-muted-foreground tabular-nums">
-                    {formatMetricValue(metric.before)}
+                    {formatMetric(metric.before)}
                   </td>
                   <td className="px-3 py-1.5 text-right font-mono text-foreground tabular-nums">
-                    {formatMetricValue(metric.after)}
+                    {formatMetric(metric.after)}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <MetricChangeIndicator before={metric.before} after={metric.after} />

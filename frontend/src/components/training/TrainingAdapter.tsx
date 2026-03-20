@@ -152,7 +152,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             experimentId: output.experimentId as string,
             experimentName: (output.experimentName as string) ?? 'Untitled',
             modelType: (output.modelType as string) ?? 'unknown',
@@ -168,7 +168,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: 'proposed'
           });
         }
@@ -181,7 +181,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: output.status === 'failed' ? 'failed' : 'training'
           });
         }
@@ -194,7 +194,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: 'evaluated',
             metrics: (output.metrics as Record<string, unknown>) ?? {}
           });
@@ -208,7 +208,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: 'registered',
             metrics: (output.metrics as Record<string, unknown>) ?? {}
           });

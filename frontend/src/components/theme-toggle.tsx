@@ -30,12 +30,10 @@ export function ThemeToggle() {
       size="icon-sm"
       onClick={toggleTheme}
       aria-label="Toggle theme"
+      className="grid place-items-center"
     >
-      <span className="relative flex h-4 w-4 items-center justify-center">
-        <Sun className="absolute inset-0 m-auto h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-        <Moon className="absolute inset-0 m-auto h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      </span>
-      <span className="sr-only">Toggle theme</span>
+      <Sun className="col-start-1 row-start-1 h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      <Moon className="col-start-1 row-start-1 h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
     </Button>
   );
 }

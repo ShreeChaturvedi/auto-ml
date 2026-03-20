@@ -45,19 +45,33 @@ const MODEL_META: Record<string, ModelMeta> = {
     cachedPer1M: 0.175,
     outputPer1M: 14.00
   },
+  'gpt-5.4-mini': {
+    contextWindow: 400_000,
+    maxOutput: 128_000,
+    inputPer1M: 0.75,
+    cachedPer1M: 0.075,
+    outputPer1M: 4.50
+  },
+  'gpt-5.4-nano': {
+    contextWindow: 400_000,
+    maxOutput: 128_000,
+    inputPer1M: 0.20,
+    cachedPer1M: 0.02,
+    outputPer1M: 1.25
+  },
   'gpt-5-mini': {
     contextWindow: 400_000,
     maxOutput: 128_000,
-    inputPer1M: 0.25,
-    cachedPer1M: 0.025,
-    outputPer1M: 2.00
+    inputPer1M: 0.75,
+    cachedPer1M: 0.075,
+    outputPer1M: 4.50
   },
   'gpt-5-nano': {
     contextWindow: 400_000,
     maxOutput: 128_000,
-    inputPer1M: 0.05,
-    cachedPer1M: 0.005,
-    outputPer1M: 0.40
+    inputPer1M: 0.20,
+    cachedPer1M: 0.02,
+    outputPer1M: 1.25
   }
 };
 

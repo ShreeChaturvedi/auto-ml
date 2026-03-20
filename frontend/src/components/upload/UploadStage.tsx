@@ -1,6 +1,6 @@
-import { ArrowRight, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
-import { fetchNlSuggestions } from '@/lib/api/query';
+import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -13,14 +13,18 @@ import { PlanViewerPane } from './PlanViewerPane';
 
 interface UploadStageProps {
   projectId: string;
-  onNext: () => void;
+  /** @deprecated No longer used — kept for caller compatibility. */
+  onNext?: () => void;
 }
 
-export function UploadStage({ projectId, onNext }: UploadStageProps) {
+export function UploadStage({ projectId }: UploadStageProps) {
   const files = useDataStore((state) => state.files);
   const project = useProjectStore((state) => state.projects.find((p) => p.id === projectId));
   const updateProject = useProjectStore((state) => state.updateProject);
-  const projectFiles = files.filter((file) => file.projectId === projectId);
+  const projectFiles = useMemo(
+    () => files.filter((file) => file.projectId === projectId),
+    [files, projectId],
+  );
   const hasFiles = projectFiles.length > 0;
 
   const { plans, selectedPlanId, handleCreateNewPlan } = useProjectPlans(projectId);
@@ -41,13 +45,6 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
   const currentPlan = selectedPlanId ? plans.find((p) => p.id === selectedPlanId) : plans[0];
   const hasPlans = plans.length > 0 && currentPlan;
 
-  const handleNext = () => {
-    void fetchNlSuggestions(projectId, 8).catch((error) => {
-      console.warn('[UploadStage] Failed to prewarm NL suggestions on upload completion:', error);
-    });
-    onNext();
-  };
-
   const handleDescriptionChange = (description: string) => {
     void updateProject(projectId, { description });
   };
@@ -64,11 +61,12 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
               onChange={handleDescriptionChange}
             />
           </div>
-          {!hasPlans && (
+          {!hasPlans && hasFiles && (
             <Button
               variant="ghost"
               size="sm"
               onClick={handleCreateNewPlan}
+              disabled={!allFilesReady}
               className="ml-2 shrink-0 gap-1.5 text-muted-foreground hover:text-foreground"
             >
               <Plus className="h-4 w-4" />
@@ -77,23 +75,11 @@ export function UploadStage({ projectId, onNext }: UploadStageProps) {
           )}
         </div>
 
-        {/* Upload panel body */}
-        <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+        {/* Upload panel body — fills the entire remaining area */}
+        <div className="min-h-0 flex-1 overflow-auto">
           <DataUploadPanel projectId={projectId} />
         </div>
 
-        {/* Next button row (only when no plans and files ready) */}
-        {!hasPlans && (
-          <div className="flex items-center justify-end border-t border-border px-4 py-3 sm:px-6">
-            {hasFiles && !allFilesReady ? (
-              <p className="mr-3 text-xs text-muted-foreground">Finish processing uploads before continuing.</p>
-            ) : null}
-            <Button onClick={handleNext} disabled={!allFilesReady} className="gap-2" data-testid="upload-next-button">
-              Next
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* Right column: Plan viewer (only when plans exist) */}

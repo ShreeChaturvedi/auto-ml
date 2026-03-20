@@ -25,26 +25,26 @@ const MODEL_OPTIONS: AssistantModelOption[] = [
     value: 'gpt-5.3-codex',
     label: 'GPT 5.3 Codex',
     kind: 'codex',
-    description: 'Best when the chat is code-heavy or tool-oriented.',
+    description: 'Use for coding tasks and tool-heavy workflows.',
     supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'high',
     featured: true,
   },
   {
-    value: 'gpt-5-mini',
-    label: 'GPT 5 Mini',
+    value: 'gpt-5.4-mini',
+    label: 'GPT 5.4 Mini',
     kind: 'mini',
-    description: 'Faster and cheaper while still strong for everyday work.',
-    supportedReasoningEfforts: ['low', 'medium', 'high'],
+    description: 'Use for most everyday tasks with strong quality at lower cost.',
+    supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'medium',
     featured: true,
   },
   {
-    value: 'gpt-5-nano',
-    label: 'GPT 5 Nano',
+    value: 'gpt-5.4-nano',
+    label: 'GPT 5.4 Nano',
     kind: 'nano',
-    description: 'Best for quick lightweight tasks and short prompts.',
-    supportedReasoningEfforts: ['low', 'medium', 'high'],
+    description: 'Use for fast, simple tasks and high-volume requests.',
+    supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'low',
     featured: true,
   },
@@ -116,8 +116,8 @@ describe('LlmChatComposer', () => {
 
     expect(within(listbox).getByText('GPT 5.4')).toBeInTheDocument();
     expect(within(listbox).getByText('GPT 5.3 Codex')).toBeInTheDocument();
-    expect(within(listbox).getByText('GPT 5 Mini')).toBeInTheDocument();
-    expect(within(listbox).getByText('GPT 5 Nano')).toBeInTheDocument();
+    expect(within(listbox).getByText('GPT 5.4 Mini')).toBeInTheDocument();
+    expect(within(listbox).getByText('GPT 5.4 Nano')).toBeInTheDocument();
     expect(within(listbox).queryByText('Other…')).not.toBeInTheDocument();
     expect(within(listbox).getByLabelText('GPT 5.4 usage tip')).toBeInTheDocument();
     expect(within(listbox).getByLabelText('GPT 5.3 Codex usage tip')).toBeInTheDocument();
@@ -150,10 +150,10 @@ describe('LlmChatComposer', () => {
 
     await openSelect(0);
     await act(async () => {
-      fireEvent.click(await screen.findByText('GPT 5 Mini'));
+      fireEvent.click(await screen.findByText('GPT 5.4 Mini'));
     });
 
-    expect(screen.getByTestId('selection-state')).toHaveTextContent('gpt-5-mini:medium');
+    expect(screen.getByTestId('selection-state')).toHaveTextContent('gpt-5.4-mini:medium');
   });
 
 });

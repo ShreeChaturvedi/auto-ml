@@ -12,9 +12,9 @@
  * docs/design-system.md
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { MessageSquare, Code2, PanelRight } from 'lucide-react';
+import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
@@ -26,7 +26,7 @@ import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQu
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { QuerySqlEditor } from './QuerySqlEditor';
-import { QueryResults } from './QueryResults';
+import { AnimatedExecuteIcon, AnimatedBrainIcon } from './AnimatedQueryIcons';
 import { useQueryExecution } from './useQueryExecution';
 
 const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> = {
@@ -202,7 +202,10 @@ export function QueryPanel({
     resolveEditorTheme(appTheme)
   );
   const { activeProjectId, projects } = useProjectStore();
-  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeProjectId),
+    [projects, activeProjectId]
+  );
   const executeIconColorClass = activeProject
     ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
     : 'text-primary';
@@ -237,56 +240,93 @@ export function QueryPanel({
     onCollapsedChange?.(false);
   }, [onCollapsedChange]);
 
+  const isNlGenerating = nlPhase === 'submitting' || nlPhase === 'revealing';
+
+  const renderExecuteButton = () => {
+    // During NL reviewing phase, approve/reject controls are inline — hide ribbon button
+    if (mode === 'english' && nlPhase === 'reviewing') return null;
+
+    const isSql = mode === 'sql';
+    const disabled = isSql
+      ? isExecuting || !sqlQuery.trim()
+      : isNlGenerating || !englishQuery.trim();
+    const onClick = isSql
+      ? handleExecute
+      : () => nlWorkflowRef.current?.triggerGenerate();
+    const tooltipText = isSql ? `Execute query  ${modKey}↵` : `Generate SQL  ${modKey}↵`;
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClick}
+            disabled={disabled}
+            className="group/execute h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            {isSql ? (
+              <AnimatedExecuteIcon isExecuting={isExecuting} colorClassName={executeIconColorClass} />
+            ) : isNlGenerating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <AnimatedBrainIcon colorClassName={executeIconColorClass} />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{tooltipText}</TooltipContent>
+      </Tooltip>
+    );
+  };
+
   return (
     <div className={cn('relative flex flex-col h-full bg-card border-l', className)}>
       {/* Unified Header — collapse button stays at the right edge */}
-      <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0">
-        <div
-          className={cn(
-            'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-opacity duration-150 ease-out',
-            showExpandedContent
-              ? 'opacity-100'
-              : 'opacity-0 pointer-events-none'
-          )}
-        >
-            <TooltipProvider delayDuration={300}>
-              <IconModeToggle
-                value={mode}
-                onValueChange={(val) => {
-                  if (val === 'sql' || val === 'english') {
-                    handleModeChange(val);
-                  }
-                }}
-                options={[
-                  {
-                    value: 'english',
-                    ariaLabel: 'Natural language mode',
-                    icon: MessageSquare,
-                    tooltip: 'English',
-                  },
-                  {
-                    value: 'sql',
-                    ariaLabel: 'SQL mode',
-                    icon: Code2,
-                    tooltip: 'SQL',
-                  },
-                ]}
-              />
-            </TooltipProvider>
+      <div className="relative flex items-center h-14 px-3 border-b border-border bg-card shrink-0 overflow-hidden">
+        <TooltipProvider delayDuration={300}>
+          <div
+            className={cn(
+              'flex items-center gap-2 flex-1 min-w-0 pr-9 transition-opacity ease-out',
+              showExpandedContent
+                ? 'opacity-100 duration-200 delay-150'
+                : 'opacity-0 pointer-events-none duration-100 delay-0'
+            )}
+          >
+            <IconModeToggle
+              value={mode}
+              onValueChange={(val) => {
+                if (val === 'sql' || val === 'english') {
+                  handleModeChange(val);
+                }
+              }}
+              options={[
+                {
+                  value: 'english',
+                  ariaLabel: 'Natural language mode',
+                  icon: MessageSquare,
+                  tooltip: 'English',
+                },
+                {
+                  value: 'sql',
+                  ariaLabel: 'SQL mode',
+                  icon: Code2,
+                  tooltip: 'SQL',
+                },
+              ]}
+            />
 
             <div ref={controlsMountRef} className="relative flex h-7 flex-1 min-w-0 items-center" />
-        </div>
 
-        <TooltipProvider delayDuration={300}>
+            {renderExecuteButton()}
+          </div>
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => onCollapsedChange?.(!collapsed)}
-                className={cn(
-                  'absolute right-3 top-1/2 h-7 w-7 -translate-y-1/2 shrink-0 text-muted-foreground hover:text-foreground'
-                )}
+                className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
               >
                 <PanelRight className="h-4 w-4" />
               </Button>
@@ -330,49 +370,33 @@ export function QueryPanel({
             : 'pointer-events-none opacity-0 select-none'
         )}
       >
-        <div className="flex-1 flex flex-col min-h-0 px-3 pt-3 pb-2">
-          {mode === 'sql' ? (
-            // SQL Mode: Monaco Editor with syntax highlighting
-            <QuerySqlEditor
-              sqlQuery={sqlQuery}
-              onQueryChange={(value) => handleQueryChange(value)}
-              onExecute={handleExecute}
-              isExecuting={isExecuting}
-              monacoTheme={monacoTheme}
-              tableNames={tableNames}
-              columnsByTable={columnsByTable}
-              collapsed={collapsed}
-              isExpanding={isExpanding}
-              modKey={modKey}
-            />
-          ) : (
-            // English Mode: NL workflow — animated input -> connector -> SQL reveal
-            <NlQueryWorkflow
-              projectId={activeProject?.id ?? activeProjectId}
-              englishQuery={englishQuery}
-              onQueryChange={(v) => handleQueryChange(v)}
-              onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
-              onApprove={onNlApprove ?? (() => {})}
-              isExpanding={isExpanding}
-              onPhaseChange={setNlPhase}
-              approveThemeClasses={approveThemeClasses}
-              connectorColorClassName={executeIconColorClass}
-              ref={nlWorkflowRef}
-            />
-          )}
-        </div>
-
-        {/* Execute / NL Workflow footer buttons — phase-aware */}
-        <QueryResults
-          mode={mode}
-          isExecuting={isExecuting}
-          isSqlEmpty={!sqlQuery.trim()}
-          isEnglishEmpty={!englishQuery.trim()}
-          onExecute={handleExecute}
-          nlPhase={nlPhase}
-          nlWorkflowRef={nlWorkflowRef}
-          executeIconColorClass={executeIconColorClass}
-        />
+        {mode === 'sql' ? (
+          <QuerySqlEditor
+            sqlQuery={sqlQuery}
+            onQueryChange={handleQueryChange}
+            onExecute={handleExecute}
+            isExecuting={isExecuting}
+            monacoTheme={monacoTheme}
+            tableNames={tableNames}
+            columnsByTable={columnsByTable}
+            collapsed={collapsed}
+            isExpanding={isExpanding}
+            modKey={modKey}
+          />
+        ) : (
+          <NlQueryWorkflow
+            projectId={activeProject?.id ?? activeProjectId}
+            englishQuery={englishQuery}
+            onQueryChange={handleQueryChange}
+            onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
+            onApprove={onNlApprove ?? (() => {})}
+            isExpanding={isExpanding}
+            onPhaseChange={setNlPhase}
+            approveThemeClasses={approveThemeClasses}
+            connectorColorClassName={executeIconColorClass}
+            ref={nlWorkflowRef}
+          />
+        )}
       </div>
     </div>
   );

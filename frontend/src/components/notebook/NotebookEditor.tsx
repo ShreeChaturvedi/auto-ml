@@ -5,7 +5,7 @@
  * Toolbar and notebook management are handled by NotebookToolbar.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
@@ -14,7 +14,9 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
 import { interruptKernel } from '@/lib/api/notebooks';
 import { Loader2, Code, Type } from 'lucide-react';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
+import { scrollToRadixElement } from '@/lib/scrollUtils';
 import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
 
 interface InsertCellRowProps {
@@ -72,6 +74,10 @@ function InsertCellRow({ position, onInsert, disabled, className }: InsertCellRo
   );
 }
 
+export interface NotebookEditorHandle {
+  scrollToHeading: (slug: string) => void;
+}
+
 interface NotebookEditorProps {
   projectId: string;
   className?: string;
@@ -98,7 +104,15 @@ function countCodeChildren(cells: NotebookCellModel[], markdownIndex: number): n
   return count;
 }
 
-export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
+export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorProps>(
+  function NotebookEditor({ projectId, className }, ref) {
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const { themeColor } = useProjectThemeColor(projectId);
+
+  useImperativeHandle(ref, () => ({
+    scrollToHeading: (slug: string) => scrollToRadixElement(scrollAreaRef.current, slug),
+  }), []);
+
   const notebook = useNotebookStore((state) => state.notebook);
   const cells = useNotebookStore((state) => state.cells);
   const isLoading = useNotebookStore((state) => state.isLoading);
@@ -238,7 +252,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
 
   return (
     <div className={cn('flex h-full flex-col', className)}>
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
         <div className="space-y-3">
           {isLoading && cells.length === 0 && (
             <div className="flex items-center justify-center py-8">
@@ -285,6 +299,7 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
                   lockOwner={getCellLockOwner(item.cell.cellId)}
                   isCollapsed={item.isSectionCollapsed}
                   hiddenCodeCount={item.hiddenCodeCount}
+                  themeColor={themeColor}
                   onToggleCollapsed={() => toggleSectionCollapse(item.cell.cellId)}
                   onContentChange={(content) => handleCellContentChange(item.cell.cellId, content)}
                   onDelete={() => handleCellDelete(item.cell.cellId)}
@@ -321,4 +336,4 @@ export function NotebookEditor({ projectId, className }: NotebookEditorProps) {
       </ScrollArea>
     </div>
   );
-}
+});

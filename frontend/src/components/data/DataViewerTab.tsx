@@ -11,7 +11,7 @@ import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
-import { DataViewerTabBar } from './DataViewerTabBar';
+import { FileTabBar } from './FileTabBar';
 import { DataViewerContent } from './DataViewerContent';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -44,7 +44,6 @@ function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl
 
 export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
-  const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
   const [queryPanelIsExpanding, setQueryPanelIsExpanding] = useState(false);
   const [queryPanelIsTransitioning, setQueryPanelIsTransitioning] = useState(false);
@@ -125,7 +124,6 @@ export function DataViewerTab() {
       if (!activeProject) return;
 
       setIsExecuting(true);
-      setQueryError(null);
 
       try {
         // Execute SQL using backend Postgres
@@ -146,7 +144,9 @@ export function DataViewerTab() {
         console.error('Query execution failed:', error);
         const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
 
-        setQueryError(withSqlIdentifierHint(errorMessage, mode, tableNames[0]));
+        toast.error('Query failed', {
+          description: withSqlIdentifierHint(errorMessage, mode, tableNames[0])
+        });
       } finally {
         setIsExecuting(false);
       }
@@ -223,7 +223,6 @@ export function DataViewerTab() {
       if (!activeProject) return;
 
       setIsExecuting(true);
-      setQueryError(null);
 
       try {
         let queryResult = result.queryResult;
@@ -254,8 +253,9 @@ export function DataViewerTab() {
         console.error('NL query approval failed:', error);
         const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
 
-        setQueryError(withSqlIdentifierHint(errorMessage, 'english', tableNames[0]));
-        toast.error(`Query failed: ${errorMessage}`);
+        toast.error('Query failed', {
+          description: withSqlIdentifierHint(errorMessage, 'english', tableNames[0])
+        });
       } finally {
         setIsExecuting(false);
       }
@@ -312,8 +312,6 @@ export function DataViewerTab() {
     extractApiErrorMessage
   });
 
-  const handleDismissError = useCallback(() => setQueryError(null), []);
-
   useEffect(() => {
     if (!queryPanelIsTransitioning) {
       return;
@@ -348,11 +346,9 @@ export function DataViewerTab() {
       {/* Main Content Area (left side) */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {projectId && (
-          <DataViewerTabBar
+          <FileTabBar
             projectId={projectId}
             queryIconColorClassName={projectTypeColorClassName}
-            queryError={queryError}
-            onDismissError={handleDismissError}
           />
         )}
 

@@ -7,7 +7,6 @@
 
 import { Suspense, useEffect, useRef, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import {
   createSqlSuggestionCollector,
@@ -225,11 +224,7 @@ export function QuerySqlEditor({
 
   return (
     <div
-      className={cn(
-        'relative flex-1 rounded-md overflow-hidden bg-background',
-        'border border-input transition-colors duration-200',
-        'focus-within:border-ring'
-      )}
+      className="relative flex-1 overflow-hidden bg-background"
     >
       <Suspense
         fallback={

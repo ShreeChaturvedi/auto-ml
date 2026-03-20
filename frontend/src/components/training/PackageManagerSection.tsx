@@ -199,9 +199,9 @@ export function PackageManagerSection({
                         )}
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-[10px] shrink-0 font-mono">
+                    <span className="inline-flex items-center rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] font-mono tabular-nums">
                       {pkg.version ?? 'latest'}
-                    </Badge>
+                    </span>
                   </div>
                 </button>
               ))

@@ -5,9 +5,10 @@
  * Uses a <pre><code> block with a CSS class for optional syntax highlighting.
  */
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { Button } from '@/components/ui/button';
 
 export interface CodeGenerationCardProps {
@@ -22,17 +23,7 @@ export function CodeGenerationCard({
   expanded: initialExpanded = false,
 }: CodeGenerationCardProps) {
   const [expanded, setExpanded] = useState(initialExpanded);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API may not be available
-    }
-  }, [code]);
+  const [copied, copy] = useCopyToClipboard();
 
   const lineCount = code.split('\n').length;
   const preview = code.split('\n').slice(0, 3).join('\n');
@@ -62,7 +53,7 @@ export function CodeGenerationCard({
           variant="ghost"
           size="icon-xs"
           className="h-5 w-5"
-          onClick={handleCopy}
+          onClick={() => void copy(code)}
           title="Copy code"
         >
           {copied ? (

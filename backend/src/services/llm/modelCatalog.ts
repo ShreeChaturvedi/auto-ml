@@ -15,6 +15,11 @@ export interface LlmModelCatalogEntry {
   featuredOrder: number;
 }
 
+const LEGACY_MODEL_ID_ALIASES: Record<string, string> = {
+  'gpt-5-mini': 'gpt-5.4-mini',
+  'gpt-5-nano': 'gpt-5.4-nano'
+};
+
 const CATALOG: readonly LlmModelCatalogEntry[] = [
   {
     id: 'gpt-5.4',
@@ -30,28 +35,28 @@ const CATALOG: readonly LlmModelCatalogEntry[] = [
     id: 'gpt-5.3-codex',
     label: 'GPT 5.3 Codex',
     kind: 'codex',
-    description: 'Best when the task is code-heavy, tool-heavy, or iterative.',
+    description: 'Use for coding tasks and tool-heavy workflows.',
     reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'high',
     featured: true,
     featuredOrder: 1
   },
   {
-    id: 'gpt-5-mini',
-    label: 'GPT 5 Mini',
+    id: 'gpt-5.4-mini',
+    label: 'GPT 5.4 Mini',
     kind: 'mini',
-    description: 'Faster and cheaper for everyday chat without dropping to the smallest model.',
-    reasoningEfforts: ['low', 'medium', 'high'],
+    description: 'Use for most everyday tasks with strong quality at lower cost.',
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'medium',
     featured: true,
     featuredOrder: 2
   },
   {
-    id: 'gpt-5-nano',
-    label: 'GPT 5 Nano',
+    id: 'gpt-5.4-nano',
+    label: 'GPT 5.4 Nano',
     kind: 'nano',
-    description: 'Lowest-latency option for short prompts and lightweight tasks.',
-    reasoningEfforts: ['low', 'medium', 'high'],
+    description: 'Use for fast, simple tasks and high-volume requests.',
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultReasoningEffort: 'low',
     featured: true,
     featuredOrder: 3
@@ -60,8 +65,15 @@ const CATALOG: readonly LlmModelCatalogEntry[] = [
 
 const FALLBACK_DEFAULT_MODEL_ID = 'gpt-5.4';
 
+export function normalizeCatalogModelId(modelId: string | undefined | null): string | undefined {
+  if (!modelId) {
+    return undefined;
+  }
+  return LEGACY_MODEL_ID_ALIASES[modelId] ?? modelId;
+}
+
 function resolveConfiguredDefaultModelId(): string {
-  return getModelCatalogEntry(env.llmModel)?.id ?? FALLBACK_DEFAULT_MODEL_ID;
+  return getModelCatalogEntry(normalizeCatalogModelId(env.llmModel))?.id ?? FALLBACK_DEFAULT_MODEL_ID;
 }
 
 export function listCatalogModels(): LlmModelCatalogEntry[] {
@@ -77,10 +89,11 @@ export function getDefaultLlmModel(): string {
 }
 
 export function getModelCatalogEntry(modelId: string | undefined | null): LlmModelCatalogEntry | null {
-  if (!modelId) {
+  const normalizedModelId = normalizeCatalogModelId(modelId);
+  if (!normalizedModelId) {
     return null;
   }
-  return CATALOG.find((entry) => entry.id === modelId) ?? null;
+  return CATALOG.find((entry) => entry.id === normalizedModelId) ?? null;
 }
 
 export function resolveCatalogModel(modelId: string | undefined | null): LlmModelCatalogEntry {

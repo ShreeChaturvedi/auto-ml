@@ -9,6 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNotebookHeadings } from '@/hooks/useNotebookHeadings';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/resizable';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
-import { NotebookEditor } from '@/components/notebook/NotebookEditor';
+import { NotebookEditor, type NotebookEditorHandle } from '@/components/notebook/NotebookEditor';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import { AgenticStepDisplay } from './AgenticStepDisplay';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
@@ -71,6 +72,7 @@ export function AgenticShell({
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
+  const editorRef = useRef<NotebookEditorHandle>(null);
   const {
     selectedModel: assistantModel,
     reasoningEffort,
@@ -127,6 +129,8 @@ export function AgenticShell({
   }, [projectId, initializeNotebook, disconnectNotebook]);
 
   const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
+
+  const notebookHeadings = useNotebookHeadings();
 
   const {
     messages,
@@ -405,8 +409,12 @@ export function AgenticShell({
         {/* ── Right panel: notebook ribbon + cells ── */}
         <ResizablePanel defaultSize={52} minSize={30}>
           <div className="flex h-full flex-col">
-            <NotebookToolbar projectId={projectId} />
-            <NotebookEditor projectId={projectId} className="min-h-0 flex-1" />
+            <NotebookToolbar
+              projectId={projectId}
+              headings={notebookHeadings}
+              onScrollToHeading={(slug) => editorRef.current?.scrollToHeading(slug)}
+            />
+            <NotebookEditor ref={editorRef} projectId={projectId} className="min-h-0 flex-1" />
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>

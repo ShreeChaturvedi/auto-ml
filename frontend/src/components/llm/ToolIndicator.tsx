@@ -18,7 +18,7 @@ import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResul
 import { useProjectStore } from '@/stores/projectStore';
 import { projectColorClasses } from '@/types/project';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { getToolIcon, getToolLabel, getResultHint } from './ToolRenderers';
+import { getToolIcon, getToolLabel, getResultHint } from './ToolDisplayHelpers';
 
 interface ToolIndicatorProps {
     toolCalls: ToolCall[];

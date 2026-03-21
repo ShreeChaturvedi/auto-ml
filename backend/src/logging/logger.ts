@@ -4,8 +4,6 @@ import pino, { type Logger } from 'pino';
 
 import { env } from '../config.js';
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
 type AppLogger = {
   debug: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
@@ -96,7 +94,7 @@ function splitMessage(args: unknown[]) {
   };
 }
 
-function emitLog(logger: Logger, level: LogLevel, args: unknown[]) {
+function emitLog(logger: Logger, level: 'debug' | 'info' | 'warn' | 'error', args: unknown[]) {
   const { message, metaArgs } = splitMessage(args);
   const metadata = buildMetadata(metaArgs);
 
@@ -118,28 +116,26 @@ function emitLog(logger: Logger, level: LogLevel, args: unknown[]) {
   logger[level]('structured-log');
 }
 
-function resolveLogger(bindings: Record<string, unknown>): Logger {
-  const activeLogger = requestLoggerStorage.getStore() ?? baseLogger;
-  return Object.keys(bindings).length > 0 ? activeLogger.child(bindings) : activeLogger;
-}
-
 function createLogger(bindings: Record<string, unknown> = {}): AppLogger {
+  const hasBindings = Object.keys(bindings).length > 0;
+
+  function resolve(): Logger {
+    const active = requestLoggerStorage.getStore() ?? baseLogger;
+    return hasBindings ? active.child(bindings) : active;
+  }
+
   return {
-    debug: (...args: unknown[]) => emitLog(resolveLogger(bindings), 'debug', args),
-    info: (...args: unknown[]) => emitLog(resolveLogger(bindings), 'info', args),
-    warn: (...args: unknown[]) => emitLog(resolveLogger(bindings), 'warn', args),
-    error: (...args: unknown[]) => emitLog(resolveLogger(bindings), 'error', args),
+    debug: (...args: unknown[]) => emitLog(resolve(), 'debug', args),
+    info: (...args: unknown[]) => emitLog(resolve(), 'info', args),
+    warn: (...args: unknown[]) => emitLog(resolve(), 'warn', args),
+    error: (...args: unknown[]) => emitLog(resolve(), 'error', args),
     child: (childBindings: Record<string, unknown>) => createLogger({ ...bindings, ...childBindings }),
-    raw: () => resolveLogger(bindings)
+    raw: () => resolve()
   };
 }
 
 export function runWithRequestLogger<T>(logger: Logger, callback: () => T): T {
   return requestLoggerStorage.run(logger, callback);
-}
-
-export function getLogger(): Logger {
-  return resolveLogger({});
 }
 
 export const appLogger = createLogger();

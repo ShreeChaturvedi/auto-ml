@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
-
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';

@@ -1,7 +1,6 @@
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-
 import { Router } from 'express';
 
 import { env } from '../config.js';
@@ -11,6 +10,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres, sanitizeTableName } from '../services/datasetLoader.js';
+import { regenerateNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
 import { getDatasetRows } from './datasets/rowHandler.js';
@@ -232,6 +232,18 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       }
 
       appLogger.info(`[datasets] Deleted ${datasetId}`);
+
+      if (dataset.projectId) {
+        try {
+          await regenerateNaturalLanguageSuggestions({ projectId: dataset.projectId });
+        } catch (error) {
+          appLogger.error(
+            `[datasets] NL placeholder regeneration failed after delete for project ${dataset.projectId}:`,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }
+
       res.json({ success: true });
     })
   );

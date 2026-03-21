@@ -27,7 +27,7 @@ export const requestContextMiddleware: RequestHandler = (req, res, next) => {
   const requestId = typeof req.id === 'string' ? req.id : String(req.id);
   const requestLogger = req.log.child({
     requestId,
-    route: req.originalUrl
+    route: req.path
   });
 
   runWithRequestLogger(requestLogger, next);

@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-
 import type { PoolClient } from 'pg';
-
 
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';

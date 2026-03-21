@@ -1,6 +1,5 @@
 import { createServer } from 'node:http';
 
-
 import { createApp } from './app.js';
 import { env } from './config.js';
 import { verifyDatabaseConnection } from './db.js';

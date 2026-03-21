@@ -2,7 +2,6 @@ import { createReadStream, existsSync } from 'fs';
 import { rm } from 'fs/promises';
 import { dirname } from 'path';
 
-
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -68,12 +67,7 @@ export function createDocumentRouter() {
         }
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const errorStack = error instanceof Error ? error.stack : undefined;
-      appLogger.error('[documents] failed to ingest:', errorMessage);
-      if (errorStack) {
-        appLogger.error('[documents] stack:', errorStack);
-      }
+      appLogger.error('[documents] failed to ingest document', error);
 
       // Return more specific error message for debugging
       return res.status(500).json({

@@ -3,7 +3,6 @@ import { Pool, type PoolConfig } from 'pg';
 import { env } from './config.js';
 import { appLogger } from './logging/logger.js';
 
-
 let pool: Pool | null = null;
 
 function buildPoolConfig(): PoolConfig {

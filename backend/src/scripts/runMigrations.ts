@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { closeDbPool, getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 
-
 async function runMigrations() {
   if (!hasDatabaseConfiguration()) {
     appLogger.error('[migrations] DATABASE_URL is not set. Cannot run migrations.');

@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';

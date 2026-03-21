@@ -14,11 +14,7 @@ import * as kernelManager from './kernelManager.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
-const logger = {
-  info: (msg: string, meta?: Record<string, unknown>) => appLogger.info(`[errorAttribution] ${msg}`, meta ?? ''),
-  warn: (msg: string, meta?: Record<string, unknown>) => appLogger.warn(`[errorAttribution] ${msg}`, meta ?? ''),
-  error: (msg: string, meta?: Record<string, unknown>) => appLogger.error(`[errorAttribution] ${msg}`, meta ?? ''),
-};
+const logger = appLogger.child({ service: 'errorAttribution' });
 
 const ERROR_ANALYSIS_TIMEOUT_MS = 120_000; // 2 minutes
 

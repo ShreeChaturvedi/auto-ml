@@ -1,7 +1,6 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-
 import type { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 
@@ -12,6 +11,7 @@ import type { DatasetRepository } from '../../repositories/datasetRepository.js'
 import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../../services/datasetLoader.js';
 import { profileDatasetRows } from '../../services/datasetProfiler.js';
 import { buildEdaSummary } from '../../services/edaSummary.js';
+import { regenerateNaturalLanguageSuggestions } from '../../services/nlSuggestions/index.js';
 
 import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './validation.js';
 
@@ -178,6 +178,17 @@ export async function processDatasetUpload(
     console.info(
       `[datasets] Stored ${req.file.originalname} (${fileType}) without database load`
     );
+  }
+
+  if (parseResult.data.projectId) {
+    try {
+      await regenerateNaturalLanguageSuggestions({ projectId: parseResult.data.projectId });
+    } catch (error) {
+      console.error(
+        `[datasets] NL placeholder regeneration failed after upload for project ${parseResult.data.projectId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
   }
 
   res.status(201).json({

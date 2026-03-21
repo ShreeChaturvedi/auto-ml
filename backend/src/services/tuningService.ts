@@ -27,11 +27,7 @@ import { buildPreprocessingLines, buildTrainTestSplitLines } from './pythonScrip
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
-const logger = {
-  info: (msg: string, meta?: Record<string, unknown>) => appLogger.info(`[tuningService] ${msg}`, meta ?? ''),
-  warn: (msg: string, meta?: Record<string, unknown>) => appLogger.warn(`[tuningService] ${msg}`, meta ?? ''),
-  error: (msg: string, meta?: Record<string, unknown>) => appLogger.error(`[tuningService] ${msg}`, meta ?? ''),
-};
+const logger = appLogger.child({ service: 'tuningService' });
 
 /* ------------------------------------------------------------------ */
 /*  Script generation                                                  */

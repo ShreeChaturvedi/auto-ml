@@ -16,11 +16,7 @@ import { buildDatasetLoadLines, buildPreprocessingLines, buildTrainTestSplitLine
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
-const logger = {
-  info: (msg: string, meta?: Record<string, unknown>) => appLogger.info(`[evaluationService] ${msg}`, meta ?? ''),
-  warn: (msg: string, meta?: Record<string, unknown>) => appLogger.warn(`[evaluationService] ${msg}`, meta ?? ''),
-  error: (msg: string, meta?: Record<string, unknown>) => appLogger.error(`[evaluationService] ${msg}`, meta ?? ''),
-};
+const logger = appLogger.child({ service: 'evaluationService' });
 
 const EVALUATION_TIMEOUT_MS = 300_000; // 5 minutes
 

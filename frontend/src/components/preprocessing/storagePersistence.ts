@@ -134,27 +134,52 @@ export function discoverProcessingTabIds(projectId: string): string[] {
   return [...discovered];
 }
 
-export function extractRunIdFromStoredMessages(rawMessages: string | null): string | null {
+function readStoredConversationMessages(rawMessages: string | null): ChatMessage[] {
   if (!rawMessages) {
-    return null;
+    return [];
   }
 
   try {
-    const parsed = JSON.parse(rawMessages) as ChatMessage[];
-    for (let index = parsed.length - 1; index >= 0; index -= 1) {
-      const message = parsed[index];
-      if (message.type !== 'tool_call' || !message.result) {
-        continue;
-      }
-      const output = asRecordOrNull(message.result.output);
-      const runId = output && typeof output.runId === 'string' ? output.runId : undefined;
-      if (runId && runId.trim()) {
-        return runId;
-      }
-    }
+    const parsed = JSON.parse(rawMessages) as ChatMessage[] | { messages?: ChatMessage[] };
+    return Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.messages)
+        ? parsed.messages
+        : [];
   } catch {
-    return null;
+    return [];
+  }
+}
+
+export function isWorkflowThreadId(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
+}
+
+export function extractRawRunReferenceFromStoredMessages(rawMessages: string | null): string | null {
+  const messages = readStoredConversationMessages(rawMessages);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.type !== 'tool_call' || !message.result) {
+      continue;
+    }
+    const output = asRecordOrNull(message.result.output);
+    const runId = output && typeof output.runId === 'string' ? output.runId : undefined;
+    if (runId && runId.trim()) {
+      return runId;
+    }
   }
 
   return null;
+}
+
+export function extractRunIdFromStoredMessages(rawMessages: string | null): string | null {
+  const runReference = extractRawRunReferenceFromStoredMessages(rawMessages);
+  if (!runReference || isWorkflowThreadId(runReference)) {
+    return null;
+  }
+
+  return runReference;
 }

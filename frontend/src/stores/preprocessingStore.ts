@@ -84,6 +84,13 @@ interface PreprocessingState {
   setControllerSummary: (summary: PreprocessingControllerSummary | null) => void;
 }
 
+function isWorkflowThreadId(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
+}
+
 type PreprocessingStateData = Pick<
   PreprocessingState,
   | 'activeProjectId'
@@ -253,6 +260,12 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
   },
 
   hydrateRunById: async (projectId: string, snapshotRunId: string) => {
+    if (isWorkflowThreadId(snapshotRunId)) {
+      console.warn('[preprocessingStore] Ignoring stale workflow thread reference used as runId:', snapshotRunId);
+      set({ runId: null, timeline: [], stepBindings: {}, error: null });
+      return;
+    }
+
     try {
       const { run } = await getPreprocessingRunSnapshot(snapshotRunId, projectId);
       get().hydrateRunSnapshot(run);

@@ -1,4 +1,5 @@
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import { createLlmClient, type LlmClient, type LlmMessage } from '../llm/llmClient.js';
 import { extractJson } from '../nlToSql/jsonNormalization.js';
@@ -92,13 +93,13 @@ async function requestSuggestions(params: {
       return normalizeSuggestions(parsed, params.limit);
     } catch (error) {
       if (attempt < maxAttempts - 1) {
-        console.warn(`[nlSuggestions] Attempt ${attempt + 1}/${maxAttempts} failed, retrying.`, {
+        appLogger.warn(`[nlSuggestions] Attempt ${attempt + 1}/${maxAttempts} failed, retrying.`, {
           error: error instanceof Error ? error.message : String(error),
           projectId: params.projectId
         });
         await new Promise((resolve) => { setTimeout(resolve, 500 * (attempt + 1)); });
       } else {
-        console.error(`[nlSuggestions] All ${maxAttempts} attempts failed.`, {
+        appLogger.error(`[nlSuggestions] All ${maxAttempts} attempts failed.`, {
           error: error instanceof Error ? error.message : String(error),
           projectId: params.projectId
         });

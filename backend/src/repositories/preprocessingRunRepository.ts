@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { appLogger } from '../logging/logger.js';
+
 export type StepStatus =
   | 'pending'
   | 'running'
@@ -158,7 +160,7 @@ class FilePreprocessingRunRepository implements PreprocessingRunRepository {
 
       return { runs: parsed.runs };
     } catch (error) {
-      console.error('[preprocessingRunRepository] Failed to read run state file', error);
+      appLogger.error('[preprocessingRunRepository] Failed to read run state file', error);
       return emptyStore();
     }
   }

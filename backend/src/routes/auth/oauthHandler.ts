@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import type { UserRepository } from '../../repositories/userRepository.js';
 import { authService } from '../../services/authService.js';
 import type { SafeUser } from '../../types/user.js';
@@ -61,7 +62,7 @@ export async function handleGoogleCallback(
 
   if (!tokenResponse.ok) {
     const error = await tokenResponse.text();
-    console.error('[auth] Google token exchange failed:', error);
+    appLogger.error('[auth] Google token exchange failed:', error);
     return res.status(400).json({ error: 'Failed to exchange authorization code' });
   }
 
@@ -127,6 +128,6 @@ export async function handleGoogleCallback(
     req.get('user-agent')
   );
 
-  console.log(`[auth] Google OAuth login for ${googleUser.email}`);
+  appLogger.info(`[auth] Google OAuth login for ${googleUser.email}`);
   return res.json({ user: safeUser, ...jwtTokens });
 }

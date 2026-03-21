@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 
+import { appLogger } from '../../logging/logger.js';
 import {
   generateSqlFromNaturalLanguageV2,
   repairSqlFromExecutionErrorV2,
@@ -283,7 +284,7 @@ export async function resolveNlQueryExecution(params: {
     });
   } catch (executionError) {
     const message = getErrorMessage(executionError, 'Generated SQL failed to execute');
-    console.warn('[query/nl] Generated SQL execution failed:', {
+    appLogger.warn('[query/nl] Generated SQL execution failed:', {
       error: message,
       sql: generated.sql
     });
@@ -346,7 +347,7 @@ export async function resolveNlQueryExecution(params: {
         });
       }
     } catch (repairError) {
-      console.warn('[query/nl] SQL repair failed, returning original SQL for manual review:', repairError);
+      appLogger.warn('[query/nl] SQL repair failed, returning original SQL for manual review:', repairError);
       return buildNlResponsePayload({
         generated,
         cached: false,

@@ -1,4 +1,5 @@
 import { hasDatabaseConfiguration } from '../../db.js';
+import { appLogger } from '../../logging/logger.js';
 
 import { FileProjectRepository } from './fileBackend.js';
 import { InMemoryProjectRepository } from './inMemory.js';
@@ -9,19 +10,19 @@ export function createProjectRepository(storagePath: string): ProjectRepository 
   // Use Postgres when available to maintain foreign key integrity with datasets
   if (hasDatabaseConfiguration()) {
     try {
-      console.log('[projectRepository] Using Postgres backend');
+      appLogger.info('[projectRepository] Using Postgres backend');
       return new PgProjectRepository();
     } catch (error) {
-      console.error('[projectRepository] Postgres failed, falling back to file storage', error);
+      appLogger.error('[projectRepository] Postgres failed, falling back to file storage', error);
     }
   }
 
   // Fallback to file-based storage
   try {
-    console.log('[projectRepository] Using file-based storage');
+    appLogger.info('[projectRepository] Using file-based storage');
     return new FileProjectRepository(storagePath);
   } catch (error) {
-    console.error('[projectRepository] Falling back to in-memory storage', error);
+    appLogger.error('[projectRepository] Falling back to in-memory storage', error);
     return new InMemoryProjectRepository();
   }
 }

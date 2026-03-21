@@ -1,3 +1,4 @@
+import { appLogger } from '../logging/logger.js';
 const MIME_TEXT = new Set([
   'text/plain',
   'text/markdown',
@@ -99,7 +100,7 @@ async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; parseErro
   await ensurePdfDomPolyfills();
   const primaryAttempt = await parsePdfWithPdfParse(buffer).catch((error) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[documentParser] PDFParse failed:', message);
+    appLogger.error('[documentParser] PDFParse failed:', message);
     return { text: '', parseError: message };
   });
 
@@ -109,7 +110,7 @@ async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; parseErro
 
   const fallbackAttempt = await parsePdfWithPdfjs(buffer).catch((error) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[documentParser] PDF.js fallback failed:', message);
+    appLogger.error('[documentParser] PDF.js fallback failed:', message);
     return { text: '', parseError: message };
   });
 
@@ -144,7 +145,7 @@ async function ensurePdfDomPolyfills(): Promise<void> {
       (globalThis as { DOMRect?: unknown }).DOMRect = domRect;
     }
   } catch (error) {
-    console.warn('[documentParser] DOMMatrix polyfill failed:', error);
+    appLogger.warn('[documentParser] DOMMatrix polyfill failed:', error);
   }
 
   if (typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix === 'undefined') {

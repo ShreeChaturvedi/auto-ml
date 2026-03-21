@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
 
+
 import { Router } from 'express';
 import { z } from 'zod';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { sanitizeTableName } from '../services/datasetLoader.js';
 import {
@@ -70,7 +72,7 @@ export function createPreprocessingRouter() {
 
       return res.json({ tables });
     } catch (error) {
-      console.error('[preprocessing] Failed to list tables:', error);
+      appLogger.error('[preprocessing] Failed to list tables:', error);
       return res.status(500).json({ error: 'Failed to list tables' });
     }
   });

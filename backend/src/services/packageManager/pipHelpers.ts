@@ -7,6 +7,7 @@
 
 import { spawn } from 'child_process';
 
+import { appLogger } from '../../logging/logger.js';
 import { execDocker } from '../dockerUtils.js';
 
 import type { PackageInstallEvent } from './types.js';
@@ -148,7 +149,7 @@ export async function runPipInstallStream(
         const installTimeout = setTimeout(() => {
             timedOut = true;
             onEvent({ type: 'log', message: INSTALL_TIMEOUT_MESSAGE });
-            console.warn(`[containerManager] pip install timed out (${attemptLabel})`);
+            appLogger.warn(`[containerManager] pip install timed out (${attemptLabel})`);
             proc.kill('SIGKILL');
         }, PIP_INSTALL_TIMEOUT_MS);
 

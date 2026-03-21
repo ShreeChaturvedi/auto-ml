@@ -1,9 +1,10 @@
 import cors from 'cors';
 import express, { Request, Response, Router } from 'express';
-import morgan from 'morgan';
 
 import { env } from './config.js';
 import { getDbPool, hasDatabaseConfiguration } from './db.js';
+import { appLogger } from './logging/logger.js';
+import { requestContextMiddleware } from './middleware/requestContext.js';
 import { createDatasetRepository } from './repositories/datasetRepository.js';
 import { createProjectRepository } from './repositories/projectRepository.js';
 import { createAnswerRouter } from './routes/answer.js';
@@ -28,7 +29,6 @@ export function createApp() {
   const app = express();
   const projectRepository = createProjectRepository(env.storagePath);
   const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
-  const isVitestRuntime = Boolean(process.env.VITEST);
 
   app.set('trust proxy', true);
   app.use(
@@ -37,11 +37,9 @@ export function createApp() {
       credentials: true
     })
   );
+  app.use(requestContextMiddleware);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
-  if (!isVitestRuntime) {
-    app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
-  }
 
   const router = Router();
   registerHealthRoutes(router);
@@ -79,7 +77,7 @@ export function createApp() {
   });
 
   app.use((err: unknown, _req: Request, res: Response) => {
-    console.error(err);
+    appLogger.error({ err }, 'Unhandled request error');
     res.status(500).json({ error: 'Internal Server Error' });
   });
 

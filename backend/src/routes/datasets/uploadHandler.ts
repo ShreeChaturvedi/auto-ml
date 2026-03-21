@@ -1,11 +1,13 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+
 import type { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 
 import { env } from '../../config.js';
 import { hasDatabaseConfiguration } from '../../db.js';
+import { appLogger } from '../../logging/logger.js';
 import type { DatasetRepository } from '../../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../../services/datasetLoader.js';
 import { profileDatasetRows } from '../../services/datasetProfiler.js';
@@ -137,12 +139,12 @@ export async function processDatasetUpload(
         dataset = updated;
       }
 
-      console.log(
+      appLogger.info(
         `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
       );
     } catch (loadError) {
       loadWarning = loadError instanceof Error ? loadError.message : String(loadError);
-      console.error(
+      appLogger.error(
         `[datasets] Dataset uploaded but Postgres load failed for ${req.file.originalname}:`,
         loadWarning
       );

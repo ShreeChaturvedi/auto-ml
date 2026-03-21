@@ -1,6 +1,8 @@
 import { Pool, type PoolConfig } from 'pg';
 
 import { env } from './config.js';
+import { appLogger } from './logging/logger.js';
+
 
 let pool: Pool | null = null;
 
@@ -35,7 +37,7 @@ export function getDbPool(): Pool {
   if (!pool) {
     pool = new Pool(buildPoolConfig());
     pool.on('error', (error) => {
-      console.error('[db] Unexpected PG pool error', error);
+      appLogger.error('[db] Unexpected PG pool error', error);
     });
   }
   return pool;

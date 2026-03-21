@@ -12,6 +12,8 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
+import { appLogger } from '../logging/logger.js';
+
 import type { Container } from './containerManager.js';
 import { execDocker, execDockerWithStdin } from './dockerUtils.js';
 import { CONTAINER_PYTHON_SITE_DIR, SITE_DIR_PREAMBLE } from './packageManager/pipHelpers.js';
@@ -101,7 +103,7 @@ export async function ensureJediInstalled(container: Container): Promise<void> {
         );
         jediInstalledContainers.add(container.containerId);
     } catch (error) {
-        console.warn('[pythonIntelligence] Failed to install jedi:', error);
+        appLogger.warn('[pythonIntelligence] Failed to install jedi:', error);
     }
 }
 

@@ -7,6 +7,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
 import {
     executeCode,
     createSession,
@@ -63,7 +64,7 @@ router.post('/', async (req: Request, res: Response) => {
             result
         });
     } catch (error) {
-        console.error('[execution] Execute error:', error);
+        appLogger.error('[execution] Execute error:', error);
         res.status(500).json({
             error: 'Execution failed',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -104,7 +105,7 @@ router.post('/session', async (req: Request, res: Response) => {
             }
         });
     } catch (error) {
-        console.error('[execution] Create session error:', error);
+        appLogger.error('[execution] Create session error:', error);
         res.status(500).json({
             error: 'Failed to create session',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -145,7 +146,7 @@ router.delete('/session/:id', async (req: Request, res: Response) => {
         await destroySession(req.params.id);
         res.json({ success: true });
     } catch (error) {
-        console.error('[execution] Destroy session error:', error);
+        appLogger.error('[execution] Destroy session error:', error);
         res.status(500).json({
             error: 'Failed to destroy session',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -175,7 +176,7 @@ router.post('/packages', async (req: Request, res: Response) => {
 
         res.json(result);
     } catch (error) {
-        console.error('[execution] Install package error:', error);
+        appLogger.error('[execution] Install package error:', error);
         res.status(500).json({
             error: 'Failed to install package',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -196,7 +197,7 @@ router.get('/packages/suggest', async (req: Request, res: Response) => {
         const suggestions = await searchPackages(q, limit);
         res.json({ suggestions });
     } catch (error) {
-        console.error('[execution] Package search error:', error);
+        appLogger.error('[execution] Package search error:', error);
         res.status(500).json({
             error: 'Failed to search packages',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -242,7 +243,7 @@ router.post('/packages/stream', async (req: Request, res: Response) => {
         });
         res.end();
     } catch (error) {
-        console.error('[execution] Stream install error:', error);
+        appLogger.error('[execution] Stream install error:', error);
         if (!res.headersSent) {
             res.status(500).json({
                 error: 'Failed to install package',
@@ -268,7 +269,7 @@ router.get('/packages/:sessionId', async (req: Request, res: Response) => {
         const packages = await listPackages(req.params.sessionId);
         res.json({ packages });
     } catch (error) {
-        console.error('[execution] List packages error:', error);
+        appLogger.error('[execution] List packages error:', error);
         res.status(500).json({
             error: 'Failed to list packages',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -285,7 +286,7 @@ router.get('/runtimes', async (_req: Request, res: Response) => {
         const runtimes = await getAvailableRuntimes();
         res.json({ runtimes });
     } catch (error) {
-        console.error('[execution] List runtimes error:', error);
+        appLogger.error('[execution] List runtimes error:', error);
         res.status(500).json({
             error: 'Failed to list runtimes',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -302,7 +303,7 @@ router.get('/health', async (_req: Request, res: Response) => {
         const health = await getHealth();
         res.json(health);
     } catch (error) {
-        console.error('[execution] Health check error:', error);
+        appLogger.error('[execution] Health check error:', error);
         res.status(500).json({
             status: 'error',
             message: error instanceof Error ? error.message : 'Unknown error'

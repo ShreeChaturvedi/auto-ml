@@ -5,6 +5,8 @@
 import { parse as parseCsv } from 'csv-parse/sync';
 import ExcelJS from 'exceljs';
 
+import { appLogger } from '../../logging/logger.js';
+
 import { sanitizeDatasetRows } from './sanitization.js';
 
 const LEGACY_XLS_ERROR =
@@ -114,7 +116,7 @@ export async function parseDatasetRows(
               rows.push(value as Record<string, unknown>);
             }
           } catch {
-            console.warn('[datasetLoader] Skipping invalid JSON line');
+            appLogger.warn('[datasetLoader] Skipping invalid JSON line');
           }
         }
         if (rows.length > 0) {

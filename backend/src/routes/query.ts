@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 
@@ -49,12 +51,12 @@ export function createQueryRouter() {
     '/query/sql',
     asyncHandler(async (req, res) => {
       if (!isVitestRuntime) {
-        console.log('[query/sql] Request body:', req.body);
+        appLogger.info('[query/sql] Request body:', req.body);
       }
       const result = sqlQuerySchema.safeParse(req.body);
       if (!result.success) {
         if (!isVitestRuntime) {
-          console.log('[query/sql] Validation error:', result.error.flatten());
+          appLogger.info('[query/sql] Validation error:', result.error.flatten());
         }
         return res.status(400).json({ errors: result.error.flatten() });
       }
@@ -95,7 +97,7 @@ export function createQueryRouter() {
         const nl = await resolveNlQueryExecution({ projectId, query, tableName });
         return res.json({ nl });
       } catch (error) {
-        console.error('[query/nl] NL query post-processing failed:', error);
+        appLogger.error('[query/nl] NL query post-processing failed:', error);
         return res.status(400).json({
           error: getErrorMessage(error, 'Failed to process NL query')
         });

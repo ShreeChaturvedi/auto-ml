@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { appLogger } from '../logging/logger.js';
 import type { ModelRecord } from '../types/model.js';
 
 function ensureDirectory(path: string) {
@@ -86,7 +87,7 @@ export class FileModelRepository implements ModelRepository {
       if (!raw.trim()) return [];
       return JSON.parse(raw) as ModelRecord[];
     } catch (error) {
-      console.error('[modelRepository] Failed to read metadata', error);
+      appLogger.error('[modelRepository] Failed to read metadata', error);
       return [];
     }
   }

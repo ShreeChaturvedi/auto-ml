@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ErrorAnalysisResult } from '../types/experiments.js';
 import type { ModelTaskType } from '../types/model.js';
@@ -14,9 +15,9 @@ import * as kernelManager from './kernelManager.js';
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = {
-  info: (msg: string, meta?: Record<string, unknown>) => console.log(`[errorAttribution] ${msg}`, meta ?? ''),
-  warn: (msg: string, meta?: Record<string, unknown>) => console.warn(`[errorAttribution] ${msg}`, meta ?? ''),
-  error: (msg: string, meta?: Record<string, unknown>) => console.error(`[errorAttribution] ${msg}`, meta ?? ''),
+  info: (msg: string, meta?: Record<string, unknown>) => appLogger.info(`[errorAttribution] ${msg}`, meta ?? ''),
+  warn: (msg: string, meta?: Record<string, unknown>) => appLogger.warn(`[errorAttribution] ${msg}`, meta ?? ''),
+  error: (msg: string, meta?: Record<string, unknown>) => appLogger.error(`[errorAttribution] ${msg}`, meta ?? ''),
 };
 
 const ERROR_ANALYSIS_TIMEOUT_MS = 120_000; // 2 minutes

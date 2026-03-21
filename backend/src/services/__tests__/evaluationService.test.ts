@@ -1,3 +1,5 @@
+import { copyFile, mkdir } from 'node:fs/promises';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /* ------------------------------------------------------------------ */
@@ -73,11 +75,6 @@ vi.mock('node:fs', () => ({
   existsSync: vi.fn().mockReturnValue(true),
 }));
 
-/* ------------------------------------------------------------------ */
-/*  Import SUT (after mocks)                                           */
-/* ------------------------------------------------------------------ */
-
-import { copyFile, mkdir } from 'node:fs/promises';
 import { buildEvaluationScript, runEvaluation } from '../evaluationService.js';
 
 /* ------------------------------------------------------------------ */

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { appLogger } from '../../logging/logger.js';
 import type { CreateProjectInput, Project } from '../../types/project.js';
 
 import { InMemoryProjectRepository } from './inMemory.js';
@@ -23,7 +24,7 @@ function loadProjectsFromFile(filePath: string): Project[] {
     if (!raw.trim()) return [];
     const parsed = storedProjectsSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) {
-      console.warn('[projectRepository] Ignoring invalid storage file contents');
+      appLogger.warn('[projectRepository] Ignoring invalid storage file contents');
       return [];
     }
     return parsed.data.map((project) => ({
@@ -31,7 +32,7 @@ function loadProjectsFromFile(filePath: string): Project[] {
       metadata: sanitizeMetadata(project.metadata)
     }));
   } catch (error) {
-    console.error('[projectRepository] Failed to load projects from file', error);
+    appLogger.error('[projectRepository] Failed to load projects from file', error);
     return [];
   }
 }
@@ -45,7 +46,7 @@ function persistProjects(filePath: string, projects: Project[]) {
     }));
     writeFileSync(filePath, JSON.stringify(sanitized, null, 2), 'utf8');
   } catch (error) {
-    console.error('[projectRepository] Failed to persist projects to file', error);
+    appLogger.error('[projectRepository] Failed to persist projects to file', error);
   }
 }
 

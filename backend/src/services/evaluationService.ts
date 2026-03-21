@@ -3,6 +3,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelTaskType } from '../types/model.js';
@@ -16,9 +17,9 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = {
-  info: (msg: string, meta?: Record<string, unknown>) => console.log(`[evaluationService] ${msg}`, meta ?? ''),
-  warn: (msg: string, meta?: Record<string, unknown>) => console.warn(`[evaluationService] ${msg}`, meta ?? ''),
-  error: (msg: string, meta?: Record<string, unknown>) => console.error(`[evaluationService] ${msg}`, meta ?? ''),
+  info: (msg: string, meta?: Record<string, unknown>) => appLogger.info(`[evaluationService] ${msg}`, meta ?? ''),
+  warn: (msg: string, meta?: Record<string, unknown>) => appLogger.warn(`[evaluationService] ${msg}`, meta ?? ''),
+  error: (msg: string, meta?: Record<string, unknown>) => appLogger.error(`[evaluationService] ${msg}`, meta ?? ''),
 };
 
 const EVALUATION_TIMEOUT_MS = 300_000; // 5 minutes

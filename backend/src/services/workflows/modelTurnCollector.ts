@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
+
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { z } from 'zod';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import { normalizePlanExitPayload } from '../../routes/llm/planValidation.js';
 import { normalizeUiPayload } from '../../routes/llm/uiNormalization.js';
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
@@ -116,7 +118,7 @@ async function streamWorkflowText(
         if (parsed.success) {
           planExitPayload = normalizePlanExitPayload(parsed.data);
         } else {
-          console.warn('[modelTurnCollector] plan_exit validation failed:', parsed.error.issues);
+          appLogger.warn('[modelTurnCollector] plan_exit validation failed:', parsed.error.issues);
           errorMessage = 'plan_exit payload failed validation.';
         }
         return;

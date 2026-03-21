@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
 import { hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { getOrEnsureContainer } from '../services/notebook/cellExecutionService.js';
 import { getCompletions } from '../services/pythonCompletions.js';
@@ -90,7 +91,7 @@ router.post('/python/completions', asyncHandler(async (req: Request, res: Respon
   const parsed = intelligenceSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    console.error('[notebooks] Completion validation failed:', parsed.error.issues);
+    appLogger.error('[notebooks] Completion validation failed:', parsed.error.issues);
     res.status(400).json({
       error: 'Invalid request body',
       details: parsed.error.issues,
@@ -104,7 +105,7 @@ router.post('/python/completions', asyncHandler(async (req: Request, res: Respon
   try {
     container = await getOrEnsureContainer(projectId);
   } catch (err) {
-    console.error('[notebooks] Container unavailable for completions:', err);
+    appLogger.error('[notebooks] Container unavailable for completions:', err);
     res.status(503).json({ error: 'Container unavailable' });
     return;
   }
@@ -133,7 +134,7 @@ router.post('/python/hover', asyncHandler(async (req: Request, res: Response) =>
   try {
     container = await getOrEnsureContainer(projectId);
   } catch (err) {
-    console.error('[notebooks] Container unavailable for hover:', err);
+    appLogger.error('[notebooks] Container unavailable for hover:', err);
     res.status(503).json({ error: 'Container unavailable' });
     return;
   }
@@ -168,7 +169,7 @@ router.post('/python/signatures', asyncHandler(async (req: Request, res: Respons
   try {
     container = await getOrEnsureContainer(projectId);
   } catch (err) {
-    console.error('[notebooks] Container unavailable for signatures:', err);
+    appLogger.error('[notebooks] Container unavailable for signatures:', err);
     res.status(503).json({ error: 'Container unavailable' });
     return;
   }
@@ -203,7 +204,7 @@ router.post('/python/diagnostics', asyncHandler(async (req: Request, res: Respon
   try {
     container = await getOrEnsureContainer(projectId);
   } catch (err) {
-    console.error('[notebooks] Container unavailable for diagnostics:', err);
+    appLogger.error('[notebooks] Container unavailable for diagnostics:', err);
     res.status(503).json({ error: 'Container unavailable' });
     return;
   }

@@ -11,8 +11,8 @@ import type { DatasetRepository } from '../../repositories/datasetRepository.js'
 import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../../services/datasetLoader.js';
 import { profileDatasetRows } from '../../services/datasetProfiler.js';
 import { buildEdaSummary } from '../../services/edaSummary.js';
-import { regenerateNaturalLanguageSuggestions } from '../../services/nlSuggestions/index.js';
 
+import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
 import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './validation.js';
 
 const EDA_MAX_ROWS = 5000;
@@ -175,21 +175,12 @@ export async function processDatasetUpload(
       dataset = updated;
     }
 
-    console.info(
+    appLogger.info(
       `[datasets] Stored ${req.file.originalname} (${fileType}) without database load`
     );
   }
 
-  if (parseResult.data.projectId) {
-    try {
-      await regenerateNaturalLanguageSuggestions({ projectId: parseResult.data.projectId });
-    } catch (error) {
-      console.error(
-        `[datasets] NL placeholder regeneration failed after upload for project ${parseResult.data.projectId}:`,
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-  }
+  await regenerateProjectNlSuggestionsSilently(parseResult.data.projectId, 'upload');
 
   res.status(201).json({
     dataset: {

@@ -184,7 +184,7 @@ export async function installPackageStream(
     const baseArgs = pipInstallBaseArgs(container.containerId);
 
     onEvent({ type: 'progress', progress: 8, stage: 'Checking wheels' });
-    console.info(`[containerManager] pip install phase -> checking-wheels (${requirements.join(', ')})`);
+    appLogger.info(`[containerManager] pip install phase -> checking-wheels (${requirements.join(', ')})`);
 
     const binaryAttempt = await runPipInstallStream(
         [...baseArgs, '--only-binary', ':all:', ...requirements],
@@ -194,7 +194,7 @@ export async function installPackageStream(
 
     if (binaryAttempt.success) {
         onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
-        console.info(`[containerManager] pip install phase -> completed (binary-attempt, ${requirements.join(', ')})`);
+        appLogger.info(`[containerManager] pip install phase -> completed (binary-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`
@@ -218,7 +218,7 @@ export async function installPackageStream(
     }
 
     onEvent({ type: 'progress', progress: 35, stage: 'Building from source' });
-    console.info(`[containerManager] pip install phase -> building-from-source (${requirements.join(', ')})`);
+    appLogger.info(`[containerManager] pip install phase -> building-from-source (${requirements.join(', ')})`);
 
     const sourceAttempt = await runPipInstallStream(
         [...baseArgs, ...requirements],
@@ -228,7 +228,7 @@ export async function installPackageStream(
 
     if (sourceAttempt.success) {
         onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
-        console.info(`[containerManager] pip install phase -> completed (source-attempt, ${requirements.join(', ')})`);
+        appLogger.info(`[containerManager] pip install phase -> completed (source-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`

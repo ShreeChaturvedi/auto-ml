@@ -44,14 +44,14 @@ export function getDbPool(): Pool {
 
 export async function verifyDatabaseConnection(): Promise<void> {
   if (!hasDatabaseConfiguration()) {
-    console.info('[db] DATABASE_URL not set, skipping Postgres connection check');
+    appLogger.info('[db] DATABASE_URL not set, skipping Postgres connection check');
     return;
   }
 
   const client = await getDbPool().connect();
   try {
     await client.query('select 1 as ok');
-    console.info('[db] Successfully connected to Postgres');
+    appLogger.info('[db] Successfully connected to Postgres');
   } finally {
     client.release();
   }

@@ -28,11 +28,11 @@ async function runMigrations() {
     const filePath = join(migrationsDir, file);
     const sql = readFileSync(filePath, 'utf8');
 
-    console.info(`[migrations] Running ${file}`);
+    appLogger.info(`[migrations] Running ${file}`);
     await pool.query(sql);
   }
 
-  console.info('[migrations] All migrations executed successfully');
+  appLogger.info('[migrations] All migrations executed successfully');
 }
 
 runMigrations()

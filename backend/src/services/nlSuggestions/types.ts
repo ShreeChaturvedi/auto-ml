@@ -12,8 +12,14 @@ export interface GetNlSuggestionsOptions {
   limit?: number;
 }
 
-export interface NlSuggestionCacheEntry {
-  expiresAt: number;
+export interface StoredNlSuggestionSet {
+  suggestionSetId: string;
+  projectId: string;
+  schemaFingerprint: string;
+  modelId: string;
+  promptVersion: number;
+  createdAt: string;
+  updatedAt: string;
   suggestions: NlSuggestion[];
 }
 
@@ -40,7 +46,6 @@ export interface RelationshipHint {
 
 export interface NlSuggestionServiceDeps {
   datasetRepository: import('../../repositories/datasetRepository.js').DatasetRepository;
+  suggestionRepository: import('../../repositories/nlSuggestionRepository.js').NlSuggestionRepository;
   getClient: (model: string) => import('../llm/llmClient.js').LlmClient;
-  now: () => number;
-  cacheTtlMs: number;
 }

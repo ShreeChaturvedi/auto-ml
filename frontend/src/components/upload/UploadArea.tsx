@@ -75,11 +75,11 @@ export function UploadArea() {
     if (!activeProject) return;
     if (searchParams.get('newPlan') !== '1') return;
 
-    setStage('chat');
+    setStage('processing');
 
     const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     void updateProject(activeProject.id, {
-      metadata: { ...existingMetadata, uploadStage: 'chat' },
+      metadata: { ...existingMetadata, uploadStage: 'processing' },
     }).catch((error) => {
       console.error('Failed to persist new-plan stage metadata', error);
     });

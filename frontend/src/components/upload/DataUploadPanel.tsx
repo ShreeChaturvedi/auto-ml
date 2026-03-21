@@ -20,6 +20,7 @@ import { FileRow } from './FileRow';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 
 /** Static style for the shimmer band at rest (hoisted to avoid allocation per render). */
 const SHIMMER_RESTING_STYLE: React.CSSProperties = {
@@ -61,6 +62,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const allFiles = useDataStore((state) => state.files);
+  const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
 
   // Filter files for this project using useMemo to avoid infinite loops
   const projectFiles = useMemo(
@@ -166,18 +168,26 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         file
       }));
 
+      const datasetUploads: Promise<unknown>[] = [];
+
       // Add to store
       newFiles.forEach((file) => {
         addFile(file);
         // Auto-upload dataset files
         if (DATA_FILE_TYPES.has(file.type)) {
-          void uploadDatasetToBackend(file);
+          datasetUploads.push(uploadDatasetToBackend(file));
         } else {
           void uploadDocumentToBackend(file);
         }
       });
+
+      if (datasetUploads.length > 0) {
+        void Promise.allSettled(datasetUploads).then(() => (
+          fetchProjectSuggestions(projectId, { force: true })
+        ));
+      }
     },
-    [projectId, addFile, uploadDatasetToBackend, uploadDocumentToBackend]
+    [projectId, addFile, fetchProjectSuggestions, uploadDatasetToBackend, uploadDocumentToBackend]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -199,6 +209,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         delete next[fileId];
         return next;
       });
+
     } catch (error) {
       console.error('[DataUploadPanel] Failed to delete file:', error);
       setUploadErrors((prev) => ({

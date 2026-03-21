@@ -4,6 +4,8 @@ import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
 import type { EvaluationResult } from '@/types/experiments';
 import { AlertTriangle, TreePine } from 'lucide-react';
+import { fetchInsights } from '@/lib/api/experiments';
+import { accumulateTokenStream } from '@/lib/api/streamReader';
 import { ErrorTreeNodeCard } from './ErrorTreeNodeCard';
 
 interface ErrorsTabProps {
@@ -81,8 +83,6 @@ function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; error
       setFailed(false);
       setText('');
       try {
-        const { fetchInsights } = await import('@/lib/api/experiments');
-        const { accumulateTokenStream } = await import('@/lib/api/streamReader');
         const response = await fetchInsights(projectId, { type: 'error_narrative', context: { errorAnalysis } });
         await accumulateTokenStream(response, (accumulated) => {
           if (!controller.signal.aborted) setText(accumulated);

@@ -67,6 +67,7 @@ export const env = {
   preprocessingRunsPath: resolveBackendPath(process.env.PREPROCESSING_RUNS_PATH ?? 'storage/preprocessing/runs.json'),
   datasetStorageDir: resolveBackendPath(process.env.DATASET_STORAGE_DIR ?? 'storage/datasets/files'),
   datasetUploadMaxMb: parseInteger(process.env.DATASET_UPLOAD_MAX_MB, 300),
+  nlSuggestionCachePath: resolveBackendPath(process.env.NL_SUGGESTION_CACHE_PATH ?? 'storage/nlSuggestions/cache.json'),
   documentStorageDir: resolveBackendPath(process.env.DOCUMENT_STORAGE_DIR ?? 'storage/documents/files'),
   datasetMetadataPath: resolveBackendPath(process.env.DATASET_METADATA_PATH ?? 'storage/datasets/metadata.json'),
   modelStorageDir: resolveBackendPath(process.env.MODEL_STORAGE_DIR ?? 'storage/models/artifacts'),

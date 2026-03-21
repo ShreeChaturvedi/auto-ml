@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { useProjectStore } from '@/stores/projectStore';
+import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 import { projectColorClasses, type ProjectColor } from '@/types/project';
 import { IconModeToggle } from './IconModeToggle';
 import { NlQueryWorkflow } from './NlQueryWorkflow';
@@ -100,6 +101,7 @@ function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark
 }
 
 interface QueryPanelProps {
+  projectId?: string | null;
   onExecute: (query: string, mode: QueryMode) => void;
   isExecuting?: boolean;
   className?: string;
@@ -143,6 +145,7 @@ interface QueryPanelProps {
 }
 
 export function QueryPanel({
+  projectId,
   onExecute,
   isExecuting = false,
   className,
@@ -202,10 +205,15 @@ export function QueryPanel({
     resolveEditorTheme(appTheme)
   );
   const { activeProjectId, projects } = useProjectStore();
+  const resolvedProjectId = projectId ?? activeProjectId;
   const activeProject = useMemo(
-    () => projects.find((p) => p.id === activeProjectId),
-    [projects, activeProjectId]
+    () => projects.find((p) => p.id === resolvedProjectId),
+    [projects, resolvedProjectId]
   );
+  const projectSuggestionEntry = useNlSuggestionStore((state) => (
+    projectId ? state.byProject[projectId] : undefined
+  ));
+  const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
   const executeIconColorClass = activeProject
     ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
     : 'text-primary';
@@ -230,6 +238,14 @@ export function QueryPanel({
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
   }, [appTheme]);
+
+  useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+
+    void fetchProjectSuggestions(projectId);
+  }, [fetchProjectSuggestions, projectId]);
 
   const showExpandedContent = !collapsed;
 
@@ -385,7 +401,7 @@ export function QueryPanel({
           />
         ) : (
           <NlQueryWorkflow
-            projectId={activeProject?.id ?? activeProjectId}
+            suggestions={projectSuggestionEntry?.suggestions ?? []}
             englishQuery={englishQuery}
             onQueryChange={handleQueryChange}
             onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}

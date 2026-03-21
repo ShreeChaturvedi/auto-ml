@@ -44,6 +44,7 @@ import type {
   NlQueryStreamEvent,
   NlWorkPhaseState
 } from '@/types/nlQuery';
+import type { NlSuggestion } from '@/lib/api/query';
 
 export interface NlQueryWorkflowHandle {
   phase: NlPhase;
@@ -53,7 +54,7 @@ export interface NlQueryWorkflowHandle {
 }
 
 interface NlQueryWorkflowProps {
-  projectId?: string | null;
+  suggestions?: NlSuggestion[];
   englishQuery: string;
   onQueryChange: (value: string) => void;
   onGenerate: (
@@ -71,7 +72,7 @@ interface NlQueryWorkflowProps {
 
 const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   {
-    projectId,
+    suggestions = [],
     englishQuery,
     onQueryChange,
     onGenerate,
@@ -149,7 +150,11 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     openSuggestions,
     closeSuggestionsDelayed,
     handleInputChange,
-  } = useNlSuggestions({ projectId, englishQuery, isIdle, onQueryChange });
+  } = useNlSuggestions({ suggestions, englishQuery, isIdle, onQueryChange });
+
+  const resolvedPlaceholderPrompts = placeholderPrompts.length > 0
+    ? placeholderPrompts
+    : ['Ask a question about your uploaded data.'];
 
   const handleGenerate = useCallback(async () => {
     const query = englishQuery.trim();
@@ -299,7 +304,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         <div className="relative h-full">
           <AnimatedPlaceholderTextarea
             ref={textareaRef}
-            placeholders={placeholderPrompts}
+            placeholders={resolvedPlaceholderPrompts}
             value={englishQuery}
             autoFocus={isIdle}
             onChange={(e) => {

@@ -10,9 +10,9 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres, sanitizeTableName } from '../services/datasetLoader.js';
-import { regenerateNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
+import { regenerateProjectNlSuggestionsSilently } from './datasets/nlSuggestions.js';
 import { getDatasetRows } from './datasets/rowHandler.js';
 import { handleDatasetUpload, processDatasetUpload } from './datasets/uploadHandler.js';
 
@@ -25,11 +25,9 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     '/datasets',
     asyncHandler(async (req, res) => {
       const projectId = req.query.projectId as string | undefined;
-      let datasets = await datasetRepository.list();
-
-      if (projectId) {
-        datasets = datasets.filter((d) => d.projectId === projectId);
-      }
+      const datasets = projectId
+        ? await datasetRepository.listByProject(projectId)
+        : await datasetRepository.list();
 
       const withTableNames = datasets.map((dataset) => ({
         ...dataset,
@@ -233,16 +231,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
       appLogger.info(`[datasets] Deleted ${datasetId}`);
 
-      if (dataset.projectId) {
-        try {
-          await regenerateNaturalLanguageSuggestions({ projectId: dataset.projectId });
-        } catch (error) {
-          appLogger.error(
-            `[datasets] NL placeholder regeneration failed after delete for project ${dataset.projectId}:`,
-            error instanceof Error ? error.message : String(error)
-          );
-        }
-      }
+      await regenerateProjectNlSuggestionsSilently(dataset.projectId, 'delete');
 
       res.json({ success: true });
     })

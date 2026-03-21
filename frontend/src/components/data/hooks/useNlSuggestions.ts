@@ -1,74 +1,48 @@
 /**
- * useNlSuggestions - Fetches, filters, and manages NL query suggestions
+ * useNlSuggestions - Filters and manages NL query suggestions
  * for the NlQueryWorkflow autocomplete dropdown.
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { fetchNlSuggestions, type NlSuggestion } from '@/lib/api/query';
+import type { NlSuggestion } from '@/lib/api/query';
 
 const MAX_VISIBLE_SUGGESTIONS = 6;
 
 interface UseNlSuggestionsOptions {
-  projectId?: string | null;
+  suggestions: NlSuggestion[];
   englishQuery: string;
   isIdle: boolean;
   onQueryChange: (value: string) => void;
 }
 
 export function useNlSuggestions({
-  projectId,
+  suggestions,
   englishQuery,
   isIdle,
   onQueryChange,
 }: UseNlSuggestionsOptions) {
-  const [nlSuggestions, setNlSuggestions] = useState<NlSuggestion[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  useEffect(() => {
-    if (!projectId) {
-      setNlSuggestions([]);
-      return;
-    }
-
-    let cancelled = false;
-    void fetchNlSuggestions(projectId, 8)
-      .then((response) => {
-        if (!cancelled) {
-          setNlSuggestions(response.suggestions);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to load NL suggestions:', error);
-        if (!cancelled) {
-          setNlSuggestions([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
   const filteredSuggestions = useMemo(() => {
     const input = englishQuery.trim().toLowerCase();
-    const suggestions = input
-      ? nlSuggestions.filter((suggestion) => (
+    const matchingSuggestions = input
+      ? suggestions.filter((suggestion) => (
           suggestion.prompt.toLowerCase().includes(input)
           || suggestion.label.toLowerCase().includes(input)
           || suggestion.category.toLowerCase().includes(input)
         ))
-      : nlSuggestions;
+      : suggestions;
 
-    return suggestions.slice(0, MAX_VISIBLE_SUGGESTIONS);
-  }, [englishQuery, nlSuggestions]);
+    return matchingSuggestions.slice(0, MAX_VISIBLE_SUGGESTIONS);
+  }, [englishQuery, suggestions]);
 
   const placeholderPrompts = useMemo(
-    () => nlSuggestions
+    () => suggestions
       .map((suggestion) => suggestion.prompt.trim())
       .filter((prompt) => prompt.length > 0),
-    [nlSuggestions]
+    [suggestions]
   );
 
   useEffect(() => {

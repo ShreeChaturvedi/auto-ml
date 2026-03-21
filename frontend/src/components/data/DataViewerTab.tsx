@@ -394,6 +394,7 @@ export function DataViewerTab() {
         }}
       >
         <QueryPanel
+          projectId={projectId}
           onExecute={handleExecuteQuery}
           isExecuting={isExecuting}
           className="w-full"

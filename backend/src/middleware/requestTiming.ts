@@ -9,7 +9,7 @@ type RequestTimingOptions = {
 };
 
 function formatDurationMs(durationMs: number): number {
-  return Number(durationMs.toFixed(1));
+  return Math.round(durationMs * 10) / 10;
 }
 
 function setResponseTimeHeader(res: Response, durationMs: number) {

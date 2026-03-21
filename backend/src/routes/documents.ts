@@ -68,6 +68,7 @@ export function createDocumentRouter() {
       });
     } catch (error) {
       appLogger.error('[documents] failed to ingest document', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Return more specific error message for debugging
       return res.status(500).json({

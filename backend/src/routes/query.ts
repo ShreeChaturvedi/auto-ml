@@ -171,7 +171,7 @@ export function createQueryRouter() {
         return res.json(suggestions);
       } catch (error) {
         return res.status(400).json({
-          error: getErrorMessage(error, 'Failed to generate NL suggestions')
+          error: getErrorMessage(error, 'Failed to load NL suggestions')
         });
       }
     })

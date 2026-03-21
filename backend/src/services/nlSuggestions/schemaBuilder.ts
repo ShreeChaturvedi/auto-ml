@@ -41,8 +41,9 @@ export function buildSchemaFingerprint(tables: SchemaTableSummary[]): string {
   const payload = tables
     .map((table) => ({
       tableName: table.tableName,
-      rowCount: table.rowCount,
-      columns: table.columns.map((column) => `${column.name}:${column.dtype}`)
+      columns: table.columns
+        .map((column) => `${column.name.trim().toLowerCase()}:${column.dtype.trim().toLowerCase()}`)
+        .sort((left, right) => left.localeCompare(right))
     }))
     .sort((left, right) => left.tableName.localeCompare(right.tableName));
 

@@ -14,6 +14,7 @@ import {
 } from '../../services/datasetLoader.js';
 import type { DatasetProfile } from '../../types/dataset.js';
 
+import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
 import { updateColumnTypeSchema } from './validation.js';
 
 /** Build the standard dataset JSON envelope used in column-update responses. */
@@ -157,6 +158,8 @@ export async function updateColumnType(
     res.status(404).json({ error: 'Dataset not found' });
     return;
   }
+
+  await regenerateProjectNlSuggestionsSilently(updatedDataset.projectId, 'column update');
 
   res.json({ dataset: formatDatasetResponse(updatedDataset, tableName) });
 }

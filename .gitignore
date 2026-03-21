@@ -23,6 +23,9 @@ frontend/@/
 # Local environment
 frontend/.env
 
+# Capstone competition research (private)
+docs/capstone-competition-notes.md
+
 # Handoff docs (not for repo)
 LLM_TRAINING_TAB_CONTEXT.md
 NOTEBOOK_IMPLEMENTATION_HANDOFF.md
@@ -42,3 +45,6 @@ Senior Design Project Proposal.pdf
 # Local agent/debug logs
 .cursor/*.log
 .superpowers/
+
+# Git worktrees
+.worktrees/

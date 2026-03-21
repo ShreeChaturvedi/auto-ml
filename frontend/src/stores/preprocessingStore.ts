@@ -12,6 +12,7 @@ import type {
   StepCellBinding,
   TransformationEvent
 } from '@/types/preprocessing';
+import { isWorkflowThreadId } from '@/components/preprocessing/storagePersistence';
 import {
   buildStepBindingsFromSnapshot,
   buildTimelineFromSnapshot,
@@ -82,13 +83,6 @@ interface PreprocessingState {
   processToolCall: (call: ToolCall, fallbackRunId?: string) => void;
   processToolResult: (call: ToolCall, result: ToolResult, fallbackRunId?: string) => void;
   setControllerSummary: (summary: PreprocessingControllerSummary | null) => void;
-}
-
-function isWorkflowThreadId(value: string | null | undefined): boolean {
-  if (!value) {
-    return false;
-  }
-  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
 }
 
 type PreprocessingStateData = Pick<

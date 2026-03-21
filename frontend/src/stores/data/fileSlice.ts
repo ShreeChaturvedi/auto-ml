@@ -11,6 +11,7 @@ import type {
 } from '@/types/file';
 import { deleteDataset, updateDatasetColumnType } from '@/lib/api/datasets';
 import { deleteDocument } from '@/lib/api/documents';
+import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 import type { DataState } from '../dataStore';
 
 export interface FileSlice {
@@ -108,6 +109,10 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
     }
 
     get().removeFile(id);
+
+    if (file.metadata?.datasetId && file.projectId) {
+      void useNlSuggestionStore.getState().fetchProjectSuggestions(file.projectId, { force: true });
+    }
   },
 
   getFilesByProject: (projectId: string) => {
@@ -201,7 +206,10 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
     }
 
     await updateDatasetColumnType(datasetId, columnName, newType);
-    await get().hydrateFromBackend(file.projectId, { force: true });
+    await Promise.all([
+      get().hydrateFromBackend(file.projectId, { force: true }),
+      useNlSuggestionStore.getState().fetchProjectSuggestions(file.projectId, { force: true })
+    ]);
   },
 
   setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => {

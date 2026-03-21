@@ -4,8 +4,9 @@
 # Serena MCP config
 .serena/
 
-# Claude Code config
-.claude/
+# Claude Code config (keep skills shared, ignore local config)
+.claude/*
+!.claude/skills/
 
 # Node modules (all workspaces)
 node_modules/
@@ -27,9 +28,7 @@ LLM_TRAINING_TAB_CONTEXT.md
 NOTEBOOK_IMPLEMENTATION_HANDOFF.md
 TRAINING_TAB_HANDOFF.md
 
-# Agent/coding guidelines (personal preference, not for repo)
-AGENTS.md
-CLAUDE.md
+# Agent/coding guidelines (shared with team)
 DECISIONS.md
 PROGRESS.md
 

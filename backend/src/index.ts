@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
 
+
 import { createApp } from './app.js';
 import { env } from './config.js';
 import { verifyDatabaseConnection } from './db.js';
+import { appLogger } from './logging/logger.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
@@ -32,7 +34,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   isShuttingDown = true;
 
-  console.log(`[server] ${signal} received, shutting down gracefully`);
+  appLogger.info(`[server] ${signal} received, shutting down gracefully`);
 
   // Stop accepting new WebSocket connections
   wsServer.close();
@@ -42,13 +44,13 @@ async function shutdown(signal: string): Promise<void> {
 
   // Close HTTP server
   server.close(() => {
-    console.log('[server] HTTP server closed');
+    appLogger.info('[server] HTTP server closed');
     process.exit(0);
   });
 
   // Force exit after 10 seconds if shutdown hangs
   setTimeout(() => {
-    console.log('[server] Forced exit after timeout');
+    appLogger.info('[server] Forced exit after timeout');
     process.exit(1);
   }, 10000);
 }
@@ -67,17 +69,17 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 
     // Start listening
     server.listen(env.port, () => {
-      console.log(`Server listening on http://localhost:${env.port}`);
-      console.log(`WebSocket available on ws://localhost:${env.port}/ws/notebook`);
+      appLogger.info(`Server listening on http://localhost:${env.port}`);
+      appLogger.info(`WebSocket available on ws://localhost:${env.port}/ws/notebook`);
     });
 
     // Verify database connection (non-blocking, doesn't prevent startup)
     void verifyDatabaseConnection().catch((error) => {
-      console.error('[db] Failed to verify Postgres connection', error);
+      appLogger.error('[db] Failed to verify Postgres connection', error);
       process.exitCode = 1;
     });
   } catch (error) {
-    console.error('[server] Failed to start:', error);
+    appLogger.error('[server] Failed to start:', error);
     process.exit(1);
   }
 })();

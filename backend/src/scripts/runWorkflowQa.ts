@@ -1,6 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 
+import { appLogger } from '../logging/logger.js';
 import { createWorkflowRouter } from '../routes/workflows.js';
 
 interface WorkflowQaRequest {
@@ -86,7 +87,7 @@ async function main() {
     const event = JSON.parse(line) as Record<string, unknown>;
     if (event.type === 'workflow_state') {
       const state = event.state as Record<string, unknown>;
-      console.log(
+      appLogger.info(
         `STATE ${state.currentNode} status=${state.status} runId=${state.runId} threadId=${state.threadId}`
       );
       continue;
@@ -97,27 +98,27 @@ async function main() {
     }
     if (event.type === 'tool_executed') {
       const call = event.call as Record<string, unknown>;
-      console.log(`TOOL ${call.tool} ${summarizeToolResult(event)}`);
+      appLogger.info(`TOOL ${call.tool} ${summarizeToolResult(event)}`);
       continue;
     }
     if (event.type === 'workflow_pause') {
-      console.log(`PAUSE ${(event.reason as string) ?? 'unknown'}`);
+      appLogger.info(`PAUSE ${(event.reason as string) ?? 'unknown'}`);
       continue;
     }
     if (event.type === 'workflow_error') {
-      console.log(`ERROR ${(event.message as string) ?? 'unknown error'}`);
+      appLogger.info(`ERROR ${(event.message as string) ?? 'unknown error'}`);
       continue;
     }
     if (event.type === 'done') {
       if (assistantText.trim()) {
-        console.log(`TEXT ${assistantText.trim()}`);
+        appLogger.info(`TEXT ${assistantText.trim()}`);
       }
-      console.log('DONE');
+      appLogger.info('DONE');
     }
   }
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  appLogger.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

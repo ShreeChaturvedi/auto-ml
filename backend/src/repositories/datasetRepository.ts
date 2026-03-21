@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 
 function ensureDirectory(path: string) {
@@ -39,7 +40,7 @@ export class FileDatasetRepository implements DatasetRepository {
       const data = JSON.parse(raw) as DatasetProfile[];
       return data;
     } catch (error) {
-      console.error('[datasetRepository] Failed to read metadata', error);
+      appLogger.error('[datasetRepository] Failed to read metadata', error);
       return [];
     }
   }
@@ -360,7 +361,7 @@ export function createDatasetRepository(metadataPath: string): DatasetRepository
     try {
       return new PgDatasetRepository();
     } catch (error) {
-      console.error('[datasetRepository] Failed to create Postgres dataset repository, falling back to file store', error);
+      appLogger.error('[datasetRepository] Failed to create Postgres dataset repository, falling back to file store', error);
     }
   }
 

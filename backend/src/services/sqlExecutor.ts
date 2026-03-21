@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
+
 import type { PoolClient } from 'pg';
 
 
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import type { QueryResultPayload } from '../types/query.js';
 
 import { buildEdaSummary } from './edaSummary.js';
@@ -124,7 +126,7 @@ export async function executeReadOnlyQuery({ sql }: { sql: string }): Promise<Qu
     try {
       typeMap = await getTypeNames(dataTypeIDs, client);
     } catch (error) {
-      console.warn('[sqlExecutor] Failed to resolve type names from pg_type:', error);
+      appLogger.warn('[sqlExecutor] Failed to resolve type names from pg_type:', error);
     }
 
     const payload: QueryResultPayload = {
@@ -156,6 +158,6 @@ async function safeRollback(client: PoolClient) {
   try {
     await client.query('ROLLBACK');
   } catch (error) {
-    console.error('[sqlExecutor] Failed to rollback transaction', error);
+    appLogger.error('[sqlExecutor] Failed to rollback transaction', error);
   }
 }

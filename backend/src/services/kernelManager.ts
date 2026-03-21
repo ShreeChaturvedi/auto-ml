@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 
 import { WebSocket } from 'ws';
 
+import { appLogger } from '../logging/logger.js';
 import type { ExecutionResult, RichOutput } from '../types/execution.js';
 
 import { executeOnKernel } from './kernel/execution.js';
@@ -186,7 +187,7 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
     try {
         await execute(container, KERNEL_INIT_CODE, 30_000);
     } catch (err) {
-        console.warn(
+        appLogger.warn(
             `[kernelManager] Kernel init failed for container ${container.id}:`,
             err instanceof Error ? err.message : err,
         );
@@ -268,7 +269,7 @@ export async function shutdownKernel(container: KernelContainer): Promise<void> 
     try {
         await gatewayFetch(conn, `/api/kernels/${conn.kernelId}`, 'DELETE', 'shut down');
     } catch (err) {
-        console.warn(`[kernelManager] Error shutting down kernel ${conn.kernelId}:`, err);
+        appLogger.warn(`[kernelManager] Error shutting down kernel ${conn.kernelId}:`, err);
     }
 
     kernels.delete(container.id);

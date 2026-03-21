@@ -1,6 +1,7 @@
 import type { Router } from 'express';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
 import type { ProjectRepository } from '../repositories/projectRepository.js';
 import { PHASE_VALUES } from '../repositories/projectRepository.js';
 
@@ -58,7 +59,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
 
     const project = await repository.create(result.data);
     if (!isVitestRuntime) {
-      console.log(`[projects] created ${project.id} (${project.name})`);
+      appLogger.info(`[projects] created ${project.id} (${project.name})`);
     }
     return res.status(201).json({ project });
   });
@@ -75,7 +76,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     }
 
     if (!isVitestRuntime) {
-      console.log(`[projects] updated ${project.id}`);
+      appLogger.info(`[projects] updated ${project.id}`);
     }
     return res.json({ project });
   });
@@ -87,7 +88,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     }
 
     if (!isVitestRuntime) {
-      console.log(`[projects] deleted ${req.params.id}`);
+      appLogger.info(`[projects] deleted ${req.params.id}`);
     }
     return res.status(204).send();
   });

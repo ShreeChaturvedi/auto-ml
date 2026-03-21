@@ -12,6 +12,7 @@ import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 
 /**
  * Check if SMTP is properly configured
@@ -156,10 +157,10 @@ export class EmailService {
 
     if (!this.transporter) {
       // Development fallback - log to console
-      console.log(`[EmailService] Password reset requested for ${email}`);
-      console.log(`[EmailService] Reset URL: ${resetUrl}`);
-      console.log(`[EmailService] Token expires in 1 hour`);
-      console.log(`[EmailService] SMTP not configured - email not sent`);
+      appLogger.info(`[EmailService] Password reset requested for ${email}`);
+      appLogger.info(`[EmailService] Reset URL: ${resetUrl}`);
+      appLogger.info(`[EmailService] Token expires in 1 hour`);
+      appLogger.info(`[EmailService] SMTP not configured - email not sent`);
       return;
     }
 
@@ -185,7 +186,7 @@ AutoML Toolchain - AI-Augmented Data Science Platform
       `.trim()
     });
 
-    console.log(`[EmailService] Password reset email sent to ${email}`);
+    appLogger.info(`[EmailService] Password reset email sent to ${email}`);
   }
 
   /**
@@ -199,9 +200,9 @@ AutoML Toolchain - AI-Augmented Data Science Platform
 
     if (!this.transporter) {
       // Development fallback - log to console
-      console.log(`[EmailService] Email verification requested for ${email}`);
-      console.log(`[EmailService] Verification URL: ${verifyUrl}`);
-      console.log(`[EmailService] SMTP not configured - email not sent`);
+      appLogger.info(`[EmailService] Email verification requested for ${email}`);
+      appLogger.info(`[EmailService] Verification URL: ${verifyUrl}`);
+      appLogger.info(`[EmailService] SMTP not configured - email not sent`);
       return;
     }
 
@@ -223,7 +224,7 @@ AutoML Toolchain - AI-Augmented Data Science Platform
       `.trim()
     });
 
-    console.log(`[EmailService] Verification email sent to ${email}`);
+    appLogger.info(`[EmailService] Verification email sent to ${email}`);
   }
 
   /**
@@ -239,7 +240,7 @@ AutoML Toolchain - AI-Augmented Data Science Platform
       await this.transporter.verify();
       return true;
     } catch (error) {
-      console.error('[EmailService] SMTP connection verification failed:', error);
+      appLogger.error('[EmailService] SMTP connection verification failed:', error);
       return false;
     }
   }

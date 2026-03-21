@@ -7,6 +7,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
 import { sanitizeTableName } from '../services/datasetLoader.js';
 import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 
@@ -70,7 +71,7 @@ export function createFeatureEngineeringRouter() {
         }
       });
     } catch (error) {
-      console.error('[feature-engineering] Apply failed:', error);
+      appLogger.error('[feature-engineering] Apply failed:', error);
       const message = error instanceof Error ? error.message : 'Feature engineering failed';
       return res.status(400).json({ error: message });
     }

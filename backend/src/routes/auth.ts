@@ -18,6 +18,7 @@ import type { Router } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { UserRepository } from '../repositories/userRepository.js';
@@ -101,7 +102,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         req.get('user-agent')
       );
 
-      console.log(`[auth] registered user ${user.email}`);
+      appLogger.info(`[auth] registered user ${user.email}`);
       return res.status(201).json({ user, ...tokens });
     })
   );
@@ -144,7 +145,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         req.get('user-agent')
       );
 
-      console.log(`[auth] login ${user.email}`);
+      appLogger.info(`[auth] login ${user.email}`);
       return res.json({ user, ...tokens });
     })
   );
@@ -186,7 +187,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         await userRepository.revokeRefreshToken(tokenHash);
       }
 
-      console.log(`[auth] logout ${req.user?.email}`);
+      appLogger.info(`[auth] logout ${req.user?.email}`);
       return res.status(204).send();
     })
   );
@@ -223,7 +224,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       await userRepository.storePasswordResetToken(user.user_id, tokenHash, expiresAt);
       await emailService.sendPasswordResetEmail(email, resetToken);
 
-      console.log(`[auth] password reset requested for ${email}`);
+      appLogger.info(`[auth] password reset requested for ${email}`);
       return res.json({ message: 'If that email exists, a reset link has been sent' });
     })
   );
@@ -250,7 +251,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       await userRepository.markPasswordResetTokenUsed(tokenHash);
       await userRepository.revokeAllUserTokens(tokenRecord.user_id);
 
-      console.log(`[auth] password reset completed for user ${tokenRecord.user_id}`);
+      appLogger.info(`[auth] password reset completed for user ${tokenRecord.user_id}`);
       return res.json({ message: 'Password reset successful' });
     })
   );
@@ -297,7 +298,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       if (Object.keys(updateData).length > 0) {
         const updatedUser = await userRepository.update(userId, updateData);
-        console.log(`[auth] profile updated for ${req.user!.email}`);
+        appLogger.info(`[auth] profile updated for ${req.user!.email}`);
         return res.json({ user: updatedUser });
       }
 
@@ -320,7 +321,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       try {
         return await handleGoogleCallback(req, res, userRepository);
       } catch (error) {
-        console.error('[auth] Google OAuth error:', error);
+        appLogger.error('[auth] Google OAuth error:', error);
         return res.status(500).json({ error: 'Google authentication failed' });
       }
     })

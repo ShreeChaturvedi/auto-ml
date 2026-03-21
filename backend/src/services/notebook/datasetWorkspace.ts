@@ -2,6 +2,7 @@ import { copyFile, mkdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 
 import { shouldOverwriteDatasetWorkspace, type DatasetSyncMode } from './datasetSyncMode.js';
@@ -43,7 +44,7 @@ export async function copyDatasetsToWorkspace(
       await stat(sourceFile);
       await syncDatasetFiles(sourceFile, destinations, shouldOverwrite);
     } catch (error) {
-      console.warn(`[cellExecution] Could not copy dataset ${dataset.filename}: ${error}`);
+      appLogger.warn(`[cellExecution] Could not copy dataset ${dataset.filename}: ${error}`);
     }
   }
 }

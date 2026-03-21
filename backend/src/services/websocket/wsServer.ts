@@ -1,9 +1,11 @@
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'node:crypto';
 
+
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import type { WSClientMessage, WSServerMessage } from '../../types/notebook.js';
 
 // ============================================================
@@ -35,7 +37,7 @@ export class NotebookWSServer {
     this.setupHandlers();
     this.startHeartbeat();
 
-    console.log('[ws] WebSocket server initialized on /ws/notebook');
+    appLogger.info('[ws] WebSocket server initialized on /ws/notebook');
   }
 
   // ============================================================
@@ -48,7 +50,7 @@ export class NotebookWSServer {
     });
 
     this.wss.on('error', (error) => {
-      console.error('[ws] Server error:', error);
+      appLogger.error('[ws] Server error:', error);
     });
   }
 
@@ -62,7 +64,7 @@ export class NotebookWSServer {
     };
 
     this.clients.set(clientId, client);
-    console.log(`[ws] Client connected: ${clientId}`);
+    appLogger.info(`[ws] Client connected: ${clientId}`);
 
     ws.on('message', (data: Buffer) => {
       this.handleMessage(clientId, data.toString());
@@ -73,7 +75,7 @@ export class NotebookWSServer {
     });
 
     ws.on('error', (error) => {
-      console.error(`[ws] Client ${clientId} error:`, error);
+      appLogger.error(`[ws] Client ${clientId} error:`, error);
       this.handleDisconnect(clientId);
     });
 
@@ -104,10 +106,10 @@ export class NotebookWSServer {
           break;
 
         default:
-          console.warn(`[ws] Unknown message type from ${clientId}:`, data);
+          appLogger.warn(`[ws] Unknown message type from ${clientId}:`, data);
       }
     } catch (error) {
-      console.error(`[ws] Failed to parse message from ${clientId}:`, error);
+      appLogger.error(`[ws] Failed to parse message from ${clientId}:`, error);
       this.sendToClient(clientId, {
         type: 'error',
         message: 'Invalid message format'
@@ -123,7 +125,7 @@ export class NotebookWSServer {
     client.subscribedNotebooks.clear();
     this.clients.delete(clientId);
 
-    console.log(`[ws] Client disconnected: ${clientId}`);
+    appLogger.info(`[ws] Client disconnected: ${clientId}`);
   }
 
   // ============================================================
@@ -135,7 +137,7 @@ export class NotebookWSServer {
     if (!client) return;
 
     client.subscribedNotebooks.add(notebookId);
-    console.log(`[ws] Client ${clientId} subscribed to notebook ${notebookId}`);
+    appLogger.info(`[ws] Client ${clientId} subscribed to notebook ${notebookId}`);
 
     this.sendToClient(clientId, {
       type: 'subscribed',
@@ -148,7 +150,7 @@ export class NotebookWSServer {
     if (!client) return;
 
     client.subscribedNotebooks.delete(notebookId);
-    console.log(`[ws] Client ${clientId} unsubscribed from notebook ${notebookId}`);
+    appLogger.info(`[ws] Client ${clientId} unsubscribed from notebook ${notebookId}`);
 
     this.sendToClient(clientId, {
       type: 'unsubscribed',
@@ -174,7 +176,7 @@ export class NotebookWSServer {
     }
 
     if (count > 0) {
-      console.log(`[ws] Broadcast ${event.type} to ${count} clients for notebook ${notebookId}`);
+      appLogger.info(`[ws] Broadcast ${event.type} to ${count} clients for notebook ${notebookId}`);
     }
   }
 
@@ -189,7 +191,7 @@ export class NotebookWSServer {
       try {
         client.ws.send(JSON.stringify(event));
       } catch (error) {
-        console.error(`[ws] Failed to send to client ${clientId}:`, error);
+        appLogger.error(`[ws] Failed to send to client ${clientId}:`, error);
       }
     }
   }
@@ -207,7 +209,7 @@ export class NotebookWSServer {
         const elapsed = now.getTime() - client.lastPing.getTime();
 
         if (elapsed > timeout) {
-          console.log(`[ws] Client ${clientId} timed out, disconnecting`);
+          appLogger.info(`[ws] Client ${clientId} timed out, disconnecting`);
           client.ws.terminate();
           this.handleDisconnect(clientId);
         } else if (client.ws.readyState === WebSocket.OPEN) {
@@ -233,7 +235,7 @@ export class NotebookWSServer {
     this.clients.clear();
 
     this.wss.close();
-    console.log('[ws] WebSocket server closed');
+    appLogger.info('[ws] WebSocket server closed');
   }
 
   // ============================================================
@@ -261,7 +263,7 @@ let wsServer: NotebookWSServer | null = null;
 
 export function initializeWebSocket(server: HttpServer): NotebookWSServer {
   if (wsServer) {
-    console.warn('[ws] WebSocket server already initialized');
+    appLogger.warn('[ws] WebSocket server already initialized');
     return wsServer;
   }
 

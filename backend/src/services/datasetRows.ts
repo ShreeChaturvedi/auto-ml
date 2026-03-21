@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile } from '../types/dataset.js';
 
 import { parseDatasetRows, sanitizeTableName } from './datasetLoader.js';
@@ -72,7 +74,7 @@ export async function getDatasetRowsPage(
     try {
       rows = await readDatasetRowsFromPostgres(dataset, page);
     } catch (error) {
-      console.warn(
+      appLogger.warn(
         `[datasets] Failed to load rows from Postgres for ${dataset.datasetId}, falling back to file storage:`,
         error instanceof Error ? error.message : String(error)
       );

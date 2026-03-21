@@ -10,6 +10,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { appLogger } from '../logging/logger.js';
+
 /* ------------------------------------------------------------------ */
 /*  Hoisted state shared between mock factories and tests             */
 /* ------------------------------------------------------------------ */
@@ -758,7 +760,7 @@ describe('shutdownKernel', () => {
         const ctr = track(makeContainer());
         await connectDefault(ctr);
 
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const warnSpy = vi.spyOn(appLogger, 'warn').mockImplementation(() => {});
 
         mockFetch.mockResolvedValueOnce(errorResponse(500, 'Internal Server Error'));
         // Should not throw even though DELETE returned 500
@@ -775,7 +777,7 @@ describe('shutdownKernel', () => {
         const ctr = track(makeContainer());
         await connectDefault(ctr);
 
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const warnSpy = vi.spyOn(appLogger, 'warn').mockImplementation(() => {});
 
         mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'));
         await shutdownKernel(ctr);

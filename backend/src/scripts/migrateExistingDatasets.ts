@@ -11,16 +11,17 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres } from '../services/datasetLoader.js';
 
 async function migrateExistingDatasets() {
-  console.log('[migration] Starting dataset migration');
+  appLogger.info('[migration] Starting dataset migration');
 
   const repository = createDatasetRepository(env.datasetMetadataPath);
   const datasets = await repository.list();
 
-  console.log(`[migration] Found ${datasets.length} datasets`);
+  appLogger.info(`[migration] Found ${datasets.length} datasets`);
 
   let migrated = 0;
   let skipped = 0;
@@ -32,7 +33,7 @@ async function migrateExistingDatasets() {
       const filePath = join(datasetDir, dataset.filename);
 
       if (!existsSync(filePath)) {
-        console.log(`[migration] Skipped (file not found): ${dataset.filename}`);
+        appLogger.info(`[migration] Skipped (file not found): ${dataset.filename}`);
         skipped++;
         continue;
       }
@@ -56,20 +57,20 @@ async function migrateExistingDatasets() {
         }
       }));
 
-      console.log(`[migration] Created table "${tableName}" (${rowsLoaded} rows)`);
+      appLogger.info(`[migration] Created table "${tableName}" (${rowsLoaded} rows)`);
       migrated++;
 
     } catch (error) {
-      console.error(`[migration] Failed: ${dataset.filename}:`, error instanceof Error ? error.message : String(error));
+      appLogger.error(`[migration] Failed: ${dataset.filename}:`, error instanceof Error ? error.message : String(error));
       errors++;
     }
   }
 
-  console.log(`[migration] Complete: ${migrated} migrated, ${skipped} skipped, ${errors} errors`);
+  appLogger.info(`[migration] Complete: ${migrated} migrated, ${skipped} skipped, ${errors} errors`);
   process.exit(errors > 0 ? 1 : 0);
 }
 
 migrateExistingDatasets().catch((error) => {
-  console.error('[migration] Fatal error:', error);
+  appLogger.error('[migration] Fatal error:', error);
   process.exit(1);
 });

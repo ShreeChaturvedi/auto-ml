@@ -10,6 +10,7 @@ import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import type { PythonVersion } from '../../types/execution.js';
 import { execDocker } from '../dockerUtils.js';
 
@@ -87,7 +88,7 @@ export async function ensureRuntimeImage(pythonVersion: PythonVersion): Promise<
             tags.add(latestTag);
         }
 
-        console.log(`[containerManager] Building runtime image: ${imageName}`);
+        appLogger.info(`[containerManager] Building runtime image: ${imageName}`);
         const buildArgs = ['build', '--build-arg', `PYTHON_VERSION=${pythonVersion}`];
         if (env.executionDockerPlatform) {
             buildArgs.push('--platform', env.executionDockerPlatform);

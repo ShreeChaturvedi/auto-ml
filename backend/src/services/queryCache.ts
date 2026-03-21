@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
+
 import { addMilliseconds } from 'date-fns';
 
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import type { QueryResultPayload } from '../types/query.js';
 import { hashSql } from '../utils/hash.js';
 
@@ -72,7 +74,7 @@ export async function storeCachedQueryResult({
   } catch (error) {
     // Log but don't fail - caching is optional, queries should still work
     // Common cause: project doesn't exist in DB (created before Postgres was configured)
-    console.warn('[queryCache] Failed to cache query result:', (error as Error).message);
+    appLogger.warn('[queryCache] Failed to cache query result:', (error as Error).message);
   }
 }
 

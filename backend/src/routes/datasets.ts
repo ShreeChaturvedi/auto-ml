@@ -1,10 +1,12 @@
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+
 import { Router } from 'express';
 
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
@@ -155,7 +157,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
             columns: dataset.columns
           });
 
-          console.log(
+          appLogger.info(
             `[datasets] Migrated ${dataset.filename} -> "${tableName}" (${rowsLoaded} rows)`
           );
           await datasetRepository.update(dataset.datasetId, (current) => ({
@@ -169,7 +171,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
           }));
           results.migrated.push(dataset.datasetId);
         } catch (error) {
-          console.error(
+          appLogger.error(
             `[datasets] Migration failed for ${dataset.filename}:`,
             error instanceof Error ? error.message : String(error)
           );
@@ -180,7 +182,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         }
       }
 
-      console.log(
+      appLogger.info(
         `[datasets] Migration complete: ${results.migrated.length} migrated, ${results.skipped.length} skipped, ${results.errors.length} errors`
       );
 
@@ -222,14 +224,14 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
           await pool.query(`DROP TABLE IF EXISTS "${tableName}"`);
         } catch (error) {
-          console.error(
+          appLogger.error(
             `[datasets] Failed to drop table:`,
             error instanceof Error ? error.message : String(error)
           );
         }
       }
 
-      console.log(`[datasets] Deleted ${datasetId}`);
+      appLogger.info(`[datasets] Deleted ${datasetId}`);
       res.json({ success: true });
     })
   );

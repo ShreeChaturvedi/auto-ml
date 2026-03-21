@@ -2,11 +2,13 @@ import { createReadStream, existsSync } from 'fs';
 import { rm } from 'fs/promises';
 import { dirname } from 'path';
 
+
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { ingestDocument } from '../services/documentIngestion.js';
 import { parseDocument } from '../services/documentParser.js';
 import { searchDocuments } from '../services/documentSearchService.js';
@@ -68,9 +70,9 @@ export function createDocumentRouter() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const errorStack = error instanceof Error ? error.stack : undefined;
-      console.error('[documents] failed to ingest:', errorMessage);
+      appLogger.error('[documents] failed to ingest:', errorMessage);
       if (errorStack) {
-        console.error('[documents] stack:', errorStack);
+        appLogger.error('[documents] stack:', errorStack);
       }
 
       // Return more specific error message for debugging
@@ -140,7 +142,7 @@ export function createDocumentRouter() {
 
       return res.json({ documents });
     } catch (error) {
-      console.error('[documents] Failed to list documents:', error);
+      appLogger.error('[documents] Failed to list documents:', error);
       return res.status(500).json({ error: 'Failed to list documents' });
     }
   });
@@ -182,7 +184,7 @@ export function createDocumentRouter() {
       });
       return stream.pipe(res);
     } catch (error) {
-      console.error('[documents] Failed to download document:', error);
+      appLogger.error('[documents] Failed to download document:', error);
       return res.status(500).json({ error: 'Failed to download document' });
     }
   });
@@ -215,7 +217,7 @@ export function createDocumentRouter() {
 
       return res.json({ success: true });
     } catch (error) {
-      console.error('[documents] Failed to delete document:', error);
+      appLogger.error('[documents] Failed to delete document:', error);
       return res.status(500).json({ error: 'Failed to delete document' });
     }
   });

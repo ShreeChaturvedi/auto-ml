@@ -4,6 +4,7 @@ import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises
 import { join } from 'node:path';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord, TrainModelRequest } from '../types/model.js';
@@ -245,7 +246,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
 
   if (container.workspacePath) {
     await syncWorkspaceDatasets(input.projectId, container.workspacePath).catch((error) => {
-      console.warn('[modelTraining] Failed to sync datasets:', error);
+      appLogger.warn('[modelTraining] Failed to sync datasets:', error);
     });
   }
 
@@ -341,7 +342,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
 
   // Fire-and-forget evaluation — training response returns immediately
   runEvaluation(record.modelId).catch(err =>
-    console.error('[modelTraining] Background evaluation failed', { modelId: record.modelId, error: err })
+    appLogger.error('[modelTraining] Background evaluation failed', { modelId: record.modelId, error: err })
   );
 
   await rm(runDir, { recursive: true, force: true }).catch(() => undefined);

@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import type { Response } from 'express';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelTemplate, ModelTemplateParam } from '../types/model.js';
@@ -27,9 +28,9 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = {
-  info: (msg: string, meta?: Record<string, unknown>) => console.log(`[tuningService] ${msg}`, meta ?? ''),
-  warn: (msg: string, meta?: Record<string, unknown>) => console.warn(`[tuningService] ${msg}`, meta ?? ''),
-  error: (msg: string, meta?: Record<string, unknown>) => console.error(`[tuningService] ${msg}`, meta ?? ''),
+  info: (msg: string, meta?: Record<string, unknown>) => appLogger.info(`[tuningService] ${msg}`, meta ?? ''),
+  warn: (msg: string, meta?: Record<string, unknown>) => appLogger.warn(`[tuningService] ${msg}`, meta ?? ''),
+  error: (msg: string, meta?: Record<string, unknown>) => appLogger.error(`[tuningService] ${msg}`, meta ?? ''),
 };
 
 /* ------------------------------------------------------------------ */

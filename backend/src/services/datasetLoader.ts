@@ -7,6 +7,7 @@
  */
 
 import { getDbPool } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import type { DatasetProfileColumn } from '../types/dataset.js';
 
 import { insertRows } from './dataLoading/dataInsertion.js';
@@ -76,12 +77,12 @@ export async function loadDatasetIntoPostgres(params: {
 
     await client.query('COMMIT');
 
-    console.log(`[datasetLoader] Loaded ${rowsLoaded} rows into "${tableName}"`);
+    appLogger.info(`[datasetLoader] Loaded ${rowsLoaded} rows into "${tableName}"`);
 
     return { tableName, rowsLoaded };
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(`[datasetLoader] Failed to load dataset into table "${tableName}"`, error);
+    appLogger.error(`[datasetLoader] Failed to load dataset into table "${tableName}"`, error);
     throw error;
   } finally {
     client.release();

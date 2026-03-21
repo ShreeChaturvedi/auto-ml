@@ -5,6 +5,7 @@
  * within Docker containers used for sandboxed Python execution.
  */
 
+import { appLogger } from '../logging/logger.js';
 import type { PackageInfo } from '../types/execution.js';
 
 import type { Container } from './containerManager.js';
@@ -162,7 +163,7 @@ export async function listPackages(container: Container): Promise<PackageInfo[]>
         }
         return parsed.filter((pkg) => Boolean(pkg?.name));
     } catch (error) {
-        console.warn('[packageManager] Failed to list packages:', error);
+        appLogger.warn('[packageManager] Failed to list packages:', error);
         return [];
     }
 }

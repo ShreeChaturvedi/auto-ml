@@ -5,6 +5,7 @@ import {
   buildProcessingTabsStateKey,
   discoverProcessingTabIds,
   extractRunIdFromStoredMessages,
+  isWorkflowThreadId,
   parseStoredPreprocessingTabsState
 } from '../storagePersistence';
 
@@ -39,6 +40,30 @@ describe('preprocessing storage persistence helpers', () => {
     expect(extractRunIdFromStoredMessages(storedMessages)).toBe('prep-latest');
   });
 
+  it('extracts latest run id from v2 persisted conversation payloads', () => {
+    const storedConversation = JSON.stringify({
+      version: 2,
+      messages: [
+        { id: 'u1', type: 'user', content: 'hello', timestamp: Date.now() },
+        {
+          id: 't1',
+          type: 'tool_call',
+          call: { id: 'call-1', tool: 'set_active_dataset', args: {} },
+          result: { id: 'call-1', tool: 'set_active_dataset', output: { runId: 'prep-old' } }
+        },
+        {
+          id: 't2',
+          type: 'tool_call',
+          call: { id: 'call-2', tool: 'validate_step_result', args: {} },
+          result: { id: 'call-2', tool: 'validate_step_result', output: { runId: 'prep-v2-latest' } }
+        }
+      ],
+      savepoints: {}
+    });
+
+    expect(extractRunIdFromStoredMessages(storedConversation)).toBe('prep-v2-latest');
+  });
+
   it('returns null for malformed json payload', () => {
     expect(extractRunIdFromStoredMessages('{oops')).toBeNull();
   });
@@ -55,6 +80,26 @@ describe('preprocessing storage persistence helpers', () => {
     ]);
 
     expect(extractRunIdFromStoredMessages(storedMessages)).toBeNull();
+  });
+
+  it('ignores workflow thread identifiers persisted as run references', () => {
+    const storedConversation = JSON.stringify({
+      version: 2,
+      messages: [
+        {
+          id: 't1',
+          type: 'tool_call',
+          call: { id: 'call-1', tool: 'profile_active_dataset', args: {} },
+          result: { id: 'call-1', tool: 'profile_active_dataset', output: { runId: 'thread-7b839c25-712e-415a-919e-2e637d1402bc' } }
+        }
+      ],
+      savepoints: {}
+    });
+
+    expect(isWorkflowThreadId('thread-7b839c25-712e-415a-919e-2e637d1402bc')).toBe(true);
+    expect(isWorkflowThreadId('workflow-thread-1')).toBe(true);
+    expect(isWorkflowThreadId('prep-run-123')).toBe(false);
+    expect(extractRunIdFromStoredMessages(storedConversation)).toBeNull();
   });
 
   it('parses persisted tabs metadata payload', () => {

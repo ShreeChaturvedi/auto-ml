@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import {
   buildProcessingStorageKey,
   buildWorkbookTabsStateKey,
+  extractRawRunReferenceFromStoredMessages,
   extractRunIdFromStoredMessages,
+  isWorkflowThreadId,
   migrateWorkbookState,
   type StoredPreprocessingTabState
 } from '../storagePersistence';
@@ -73,6 +76,20 @@ export function useTabPersistence({
     [buildTabStorageKey, projectId]
   );
 
+  const purgeInvalidStoredSession = useCallback((tabId: string, rawStoredMessages: string | null) => {
+    const runReference = extractRawRunReferenceFromStoredMessages(rawStoredMessages);
+    if (!projectId || !isWorkflowThreadId(runReference)) {
+      return null;
+    }
+
+    localStorage.removeItem(buildScopedTabStorageKey(tabId));
+    useWorkflowSessionStore
+      .getState()
+      .clearSession(buildWorkflowSessionKey(projectId, buildTabStorageKey(tabId)));
+
+    return runReference;
+  }, [buildScopedTabStorageKey, buildTabStorageKey, projectId]);
+
   // ---- Restore tabs from localStorage when projectId changes ---------------
 
   useEffect(() => {
@@ -97,7 +114,9 @@ export function useTabPersistence({
       }
       knownTabIds.add(tab.id);
       const storageKey = buildScopedTabStorageKey(tab.id);
-      const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
+      const rawStoredMessages = localStorage.getItem(storageKey);
+      purgeInvalidStoredSession(tab.id, rawStoredMessages);
+      const inferredRunId = extractRunIdFromStoredMessages(rawStoredMessages);
       recoveredTabs.push({
         id: tab.id,
         name: tab.name,
@@ -129,7 +148,7 @@ export function useTabPersistence({
     setActiveTabId(recoveredActiveTabId);
     applyTabSnapshot(activeRecoveredTab.snapshot);
     setTabsReady(true);
-  }, [applyTabSnapshot, buildScopedTabStorageKey, projectId]);
+  }, [applyTabSnapshot, buildScopedTabStorageKey, projectId, purgeInvalidStoredSession]);
 
   // ---- Keep refs in sync ---------------------------------------------------
 
@@ -194,11 +213,13 @@ export function useTabPersistence({
       return;
     }
     const storageKey = buildScopedTabStorageKey(activeTab.id);
-    const inferredRunId = extractRunIdFromStoredMessages(localStorage.getItem(storageKey));
+    const rawStoredMessages = localStorage.getItem(storageKey);
+    purgeInvalidStoredSession(activeTab.id, rawStoredMessages);
+    const inferredRunId = extractRunIdFromStoredMessages(rawStoredMessages);
     if (inferredRunId) {
       setRunId(inferredRunId);
     }
-  }, [activeTabId, buildScopedTabStorageKey, projectId, runId, setRunId]);
+  }, [activeTabId, buildScopedTabStorageKey, projectId, purgeInvalidStoredSession, runId, setRunId]);
 
   // ---- Manage suppression flag for stale run ID clearing -------------------
   // When runId transitions from a value to null (e.g. hydrateRunById got a 404

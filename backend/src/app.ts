@@ -5,6 +5,7 @@ import { env } from './config.js';
 import { getDbPool, hasDatabaseConfiguration } from './db.js';
 import { appLogger } from './logging/logger.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
+import { requestTimingMiddleware } from './middleware/requestTiming.js';
 import { createDatasetRepository } from './repositories/datasetRepository.js';
 import { createProjectRepository } from './repositories/projectRepository.js';
 import { createAnswerRouter } from './routes/answer.js';
@@ -38,6 +39,7 @@ export function createApp() {
     })
   );
   app.use(requestContextMiddleware);
+  app.use(requestTimingMiddleware);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 

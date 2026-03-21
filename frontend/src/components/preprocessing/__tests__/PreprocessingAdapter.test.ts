@@ -167,6 +167,56 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     );
   });
 
+  it('does not fall back to a global controller thread when the workbook has no session', async () => {
+    usePreprocessingStore.setState({
+      runId: null,
+      controllerSummary: {
+        threadId: 'stale-thread-from-another-workbook',
+        turnMode: 'action_required',
+        currentNode: 'plan_step',
+        allowedTools: ['profile_active_dataset'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-21T00:00:00.000Z'
+      }
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-b');
+
+    await adapter.buildRequest(
+      'Start a clean workbook session',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high',
+        continuation: false
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        threadId: undefined
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
   it('stores controller updates from the adapter callback', () => {
     const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
       {
@@ -289,6 +339,47 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
       status: 'failed'
     });
     expect(usePreprocessingStore.getState().error).toContain('Stopped by user');
+  });
+
+  it('clears stale workflow session state when the backend reports a missing run', () => {
+    usePreprocessingStore.setState({
+      runId: 'prep-run-1',
+      selectedDatasetId: 'dataset-1',
+      controllerSummary: {
+        threadId: 'thread-stale',
+        turnMode: 'action_required',
+        currentNode: 'plan_step',
+        allowedTools: ['profile_active_dataset'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-21T00:00:00.000Z'
+      }
+    });
+    useWorkflowSessionStore.setState({
+      sessions: {
+        'prep-tab-a': {
+          runId: 'prep-run-1',
+          threadId: 'thread-stale'
+        }
+      }
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'customer_churn.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    adapter.onStreamError?.('Run thread-stale not found.');
+
+    expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toBeUndefined();
+    expect(usePreprocessingStore.getState().runId).toBeNull();
+    expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
   });
 
   it('uses the selected dataset filename when building suggestions', () => {

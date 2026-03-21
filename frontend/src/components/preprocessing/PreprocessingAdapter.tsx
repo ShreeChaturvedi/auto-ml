@@ -14,6 +14,11 @@ export function createPreprocessingAdapter(
   tables: AvailableTable[],
   sessionKey: string
 ): DomainAdapter {
+  function clearStaleWorkflowSession() {
+    useWorkflowSessionStore.getState().clearSession(sessionKey);
+    usePreprocessingStore.getState().clearRun();
+  }
+
   const toolHandlers = {
     onCall: (call: ToolCall) => usePreprocessingStore.getState().processToolCall(call),
     onResult: (call: ToolCall, result: ToolResult) => usePreprocessingStore.getState().processToolResult(call, result)
@@ -60,7 +65,7 @@ export function createPreprocessingAdapter(
           phase: 'preprocessing',
           datasetId: selectedTable.datasetId,
           runId: session?.runId ?? usePreprocessingStore.getState().runId ?? undefined,
-          threadId: session?.threadId ?? usePreprocessingStore.getState().controllerSummary?.threadId ?? undefined,
+          threadId: session?.threadId ?? undefined,
           notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
           prompt,
           model: options.model,
@@ -103,6 +108,9 @@ export function createPreprocessingAdapter(
       };
     }),
     onStreamError: (message: string) => {
+      if (/^Run\s+.+\s+not found\./i.test(message.trim())) {
+        clearStaleWorkflowSession();
+      }
       usePreprocessingStore.getState().markInterruptedSteps(message);
     },
     onStop: (reason: string) => {

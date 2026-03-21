@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useNotebookStore } from '@/stores/notebookStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import {
   createEmptyTabSnapshot,
   createWorkbookId,
@@ -34,8 +35,8 @@ export interface UsePreprocessingTabsResult {
   buildTabStorageKey: (tabId: string) => string;
   buildScopedTabStorageKey: (tabId: string) => string;
   handleTabSwitch: (value: string) => void;
-  handleNewTab: () => void;
-  handleDeleteTab: () => void;
+  handleNewTab: () => string | null;
+  handleDeleteTab: () => string | null;
   openRenameTabDialog: () => void;
   handleRenameTab: () => void;
   renameTabDialogOpen: boolean;
@@ -43,6 +44,7 @@ export interface UsePreprocessingTabsResult {
   renameTabName: string;
   setRenameTabName: (name: string) => void;
   resetActiveTab: () => void;
+  invalidateActiveTabSession: () => void;
   setTabNotebookId: (tabId: string, notebookId: string | null) => void;
   ensureNotebookForTab: (tab: PreprocessingWorkbook, options?: { forceCreate?: boolean }) => Promise<string | null>;
   reconcileTabNotebookMappings: () => Promise<void>;
@@ -92,6 +94,7 @@ export function usePreprocessingTabs({
 
   const [renameTabDialogOpen, setRenameTabDialogOpen] = useState(false);
   const [renameTabName, setRenameTabName] = useState('');
+  const previousActiveTabIdRef = useRef(activeTabId);
 
   // ---- Sync workbooks to registry store for sidebar rendering --------------
 
@@ -112,6 +115,14 @@ export function usePreprocessingTabs({
   // ---- Keep active tab snapshot in sync with preprocessing store state -----
 
   useEffect(() => {
+    // Tab switches apply a snapshot from the destination workbook. Skip the
+    // first sync pass after the active tab changes so we don't briefly write
+    // the previous workbook's store state into the new workbook.
+    if (previousActiveTabIdRef.current !== activeTabId) {
+      previousActiveTabIdRef.current = activeTabId;
+      return;
+    }
+
     setTabs((previous) => {
       const nextTabs = previous.map((tab) => {
         if (tab.id !== activeTabId) {
@@ -230,7 +241,7 @@ export function usePreprocessingTabs({
 
   const handleNewTab = useCallback(() => {
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
-    if (!currentActiveTab) return;
+    if (!currentActiveTab) return null;
     const newTab: PreprocessingWorkbook = {
       id: createWorkbookId(),
       name: nextWorkbookName(tabsRef.current),
@@ -247,15 +258,16 @@ export function usePreprocessingTabs({
     setActiveTabId(newTab.id);
     applyTabSnapshot(newTab.snapshot);
     void ensureNotebookForTab(newTab);
+    return newTab.id;
   }, [activeTabIdRef, applyTabSnapshot, ensureNotebookForTab, saveActiveSnapshot, setActiveTabId, setTabs, tabsRef]);
 
   const handleDeleteTab = useCallback(() => {
     const currentTabs = tabsRef.current;
     const currentActiveTab = currentTabs.find((tab) => tab.id === activeTabIdRef.current);
-    if (!currentActiveTab || currentTabs.length <= 1) return;
+    if (!currentActiveTab || currentTabs.length <= 1) return null;
     const targetIndex = currentTabs.findIndex((tab) => tab.id === currentActiveTab.id);
     const fallbackTab = currentTabs[targetIndex - 1] ?? currentTabs[targetIndex + 1];
-    if (!fallbackTab) return;
+    if (!fallbackTab) return null;
     const notebookIdToDelete = currentActiveTab.notebookId;
     if (projectId) {
       localStorage.removeItem(buildScopedTabStorageKey(currentActiveTab.id));
@@ -276,6 +288,7 @@ export function usePreprocessingTabs({
         await deleteNotebook(notebookIdToDelete);
       }
     })();
+    return fallbackTab.id;
   }, [activeTabIdRef, applyTabSnapshot, buildScopedTabStorageKey, deleteNotebook, ensureNotebookForTab, projectId, setActiveTabId, setTabs, tabsRef]);
 
   // ---- Rename tab ----------------------------------------------------------
@@ -353,6 +366,42 @@ export function usePreprocessingTabs({
     })();
   }, [activeTabIdRef, applyTabSnapshot, buildScopedTabStorageKey, deleteNotebook, ensureNotebookForTab, onNeedsDatasetSelection, projectId, setTabs, tables, tabsRef]);
 
+  const invalidateActiveTabSession = useCallback(() => {
+    const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
+    if (!currentActiveTab) return;
+
+    if (projectId) {
+      localStorage.removeItem(buildScopedTabStorageKey(currentActiveTab.id));
+      useWorkflowSessionStore
+        .getState()
+        .clearSession(buildWorkflowSessionKey(projectId, buildTabStorageKey(currentActiveTab.id)));
+    }
+
+    const nextSnapshot: PreprocessingTabSnapshot = {
+      ...currentActiveTab.snapshot,
+      runId: null,
+      timeline: [],
+      stepBindings: {},
+      replayReport: null
+    };
+
+    setTabs((previous) => {
+      const nextTabs = previous.map((tab) => (
+        tab.id === currentActiveTab.id
+          ? {
+              ...tab,
+              snapshot: nextSnapshot,
+              storageVersion: tab.storageVersion + 1
+            }
+          : tab
+      ));
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
+
+    applyTabSnapshot(nextSnapshot);
+  }, [activeTabIdRef, applyTabSnapshot, buildScopedTabStorageKey, buildTabStorageKey, projectId, setTabs, tabsRef]);
+
   return {
     tabs,
     activeTabId,
@@ -372,6 +421,7 @@ export function usePreprocessingTabs({
     renameTabName,
     setRenameTabName,
     resetActiveTab,
+    invalidateActiveTabSession,
     setTabNotebookId,
     ensureNotebookForTab,
     reconcileTabNotebookMappings,

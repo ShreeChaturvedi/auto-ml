@@ -6,7 +6,6 @@ import {
   buildProcessingStorageKey,
   buildWorkbookTabsStateKey,
   extractRawRunReferenceFromStoredMessages,
-  extractRunIdFromStoredMessages,
   isWorkflowThreadId,
   migrateWorkbookState,
   type StoredPreprocessingTabState
@@ -63,17 +62,14 @@ export function useTabPersistence({
 
   // ---- Storage key builders ------------------------------------------------
 
-  const buildTabStorageKey = useCallback(
-    (tabId: string): string => buildProcessingStorageKey(tabId),
-    []
-  );
+  const buildTabStorageKey = buildProcessingStorageKey;
 
   const buildScopedTabStorageKey = useCallback(
     (tabId: string): string =>
       projectId
-        ? `${buildTabStorageKey(tabId)}-${projectId}`
-        : buildTabStorageKey(tabId),
-    [buildTabStorageKey, projectId]
+        ? `${buildProcessingStorageKey(tabId)}-${projectId}`
+        : buildProcessingStorageKey(tabId),
+    [projectId]
   );
 
   // ---- Restore tabs from localStorage when projectId changes ---------------

@@ -142,6 +142,11 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
       const output = result.output as Record<string, unknown> | undefined;
       const featureId = (output?.featureId ?? call.args?.featureId) as string | undefined;
 
+      // Capture runId from tool output (backend now returns it)
+      if (output?.runId && typeof output.runId === 'string') {
+        store.setFeatureRunId(output.runId);
+      }
+
       if (featureId && output && !result.error) {
         store.setFeatureStep(featureId, {
           stepId: featureId,

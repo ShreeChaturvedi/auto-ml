@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import type { PipelineVersion } from '@/types/feature';
@@ -26,6 +26,17 @@ interface UseFeatureVersioningReturn {
   handleNewDraft: () => void;
   handleDeleteDraft: () => void;
   handleRenameDraft: () => void;
+  handleReset: () => void;
+  // Dialog state for rename
+  renameDialogOpen: boolean;
+  setRenameDialogOpen: (open: boolean) => void;
+  renameDialogValue: string;
+  setRenameDialogValue: (value: string) => void;
+  handleRenameConfirm: () => void;
+  // Dialog state for delete confirmation
+  deleteDialogOpen: boolean;
+  setDeleteDialogOpen: (open: boolean) => void;
+  handleDeleteConfirm: () => void;
 }
 
 export function useFeatureVersioning({
@@ -49,6 +60,12 @@ export function useFeatureVersioning({
   const approveVersion = useFeatureStore((state) => state.approveVersion);
   const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
   const clearProjectFeatures = useFeatureStore((state) => state.clearProjectFeatures);
+  const clearDraft = useFeatureStore((state) => state.clearDraft);
+
+  // --- Dialog state ---
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameDialogValue, setRenameDialogValue] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // --- Version bootstrap effect ---
   useEffect(() => {
@@ -108,15 +125,15 @@ export function useFeatureVersioning({
     setApplyMessage(null);
   }, [clearProjectFeatures, createDraftVersion, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
 
+  // --- Delete with shadcn AlertDialog ---
   const handleDeleteDraft = useCallback(() => {
     if (!currentVersion || currentVersion.status !== 'draft') return;
+    setDeleteDialogOpen(true);
+  }, [currentVersion]);
 
-    const shouldDelete = window.confirm(
-      versions.length <= 1
-        ? `Delete draft "${currentVersion.name}"? A fresh blank draft will be created.`
-        : `Delete draft "${currentVersion.name}"?`
-    );
-    if (!shouldDelete) return;
+  const handleDeleteConfirm = useCallback(() => {
+    if (!currentVersion || currentVersion.status !== 'draft') return;
+    setDeleteDialogOpen(false);
 
     if (versions.length <= 1) {
       const deletedVersionId = currentVersion.id;
@@ -126,24 +143,41 @@ export function useFeatureVersioning({
       removeVersion(projectId, currentVersion.id);
     }
     clearProjectFeatures(projectId);
+    clearDraft();
     setSuggestionDrafts({});
     setApplyStatus('idle');
     setApplyMessage(null);
     setPanelError(null);
-  }, [clearProjectFeatures, createDraftVersion, currentVersion, projectId, removeVersion, versions.length, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+  }, [clearDraft, clearProjectFeatures, createDraftVersion, currentVersion, projectId, removeVersion, versions.length, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
 
+  // --- Rename with shadcn Dialog ---
   const handleRenameDraft = useCallback(() => {
     if (!currentVersion || currentVersion.status !== 'draft') return;
-    const nextName = window.prompt('Rename current draft pipeline:', currentVersion.name);
-    if (!nextName) return;
-    const trimmed = nextName.trim();
+    setRenameDialogValue(currentVersion.name);
+    setRenameDialogOpen(true);
+  }, [currentVersion]);
+
+  const handleRenameConfirm = useCallback(() => {
+    if (!currentVersion) return;
+    const trimmed = renameDialogValue.trim();
     if (!trimmed) {
       setPanelError('Draft name cannot be empty.');
       return;
     }
     renameVersion(projectId, currentVersion.id, trimmed);
+    setRenameDialogOpen(false);
     setPanelError(null);
-  }, [currentVersion, projectId, renameVersion, setPanelError]);
+  }, [currentVersion, projectId, renameDialogValue, renameVersion, setPanelError]);
+
+  // --- Reset handler ---
+  const handleReset = useCallback(() => {
+    clearDraft();
+    clearProjectFeatures(projectId);
+    setSuggestionDrafts({});
+    setPanelError(null);
+    setApplyStatus('idle');
+    setApplyMessage(null);
+  }, [clearDraft, clearProjectFeatures, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
 
   return {
     versions,
@@ -157,5 +191,14 @@ export function useFeatureVersioning({
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    handleRenameConfirm,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    handleDeleteConfirm,
   };
 }

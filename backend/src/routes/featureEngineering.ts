@@ -2,6 +2,7 @@
  * Feature Engineering Routes
  *
  * Apply engineered features to datasets using the Python runtime.
+ * Expose feature pipeline run state for frontend hydration.
  */
 
 import { Router } from 'express';
@@ -10,6 +11,7 @@ import { z } from 'zod';
 import { appLogger } from '../logging/logger.js';
 import { sanitizeTableName } from '../services/datasetLoader.js';
 import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
+import { featureRunRepository } from '../services/workflows/phases/featureEngineering.js';
 
 const featureSpecSchema = z.object({
   id: z.string().optional(),
@@ -31,6 +33,15 @@ const applySchema = z.object({
   outputFormat: z.enum(['csv', 'json', 'xlsx']).optional(),
   pythonVersion: z.enum(['3.10', '3.11']).optional(),
   features: z.array(featureSpecSchema).min(1)
+});
+
+const featureRunQuerySchema = z.object({
+  projectId: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+const featureRunParamsSchema = z.object({
+  runId: z.string().min(1)
 });
 
 export function createFeatureEngineeringRouter() {
@@ -74,6 +85,49 @@ export function createFeatureEngineeringRouter() {
       appLogger.error('[feature-engineering] Apply failed:', error);
       const message = error instanceof Error ? error.message : 'Feature engineering failed';
       return res.status(400).json({ error: message });
+    }
+  });
+
+  // ---- Run listing and snapshots ------------------------------------------
+
+  router.get('/feature-engineering/runs', async (req, res) => {
+    const parsed = featureRunQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+
+    try {
+      let runs = await featureRunRepository.listByProjectId(parsed.data.projectId);
+      if (parsed.data.limit) {
+        runs = runs.slice(0, parsed.data.limit);
+      }
+      return res.json({
+        projectId: parsed.data.projectId,
+        count: runs.length,
+        runs
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to list feature runs';
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  router.get('/feature-engineering/runs/:runId', async (req, res) => {
+    const parsedParams = featureRunParamsSchema.safeParse(req.params);
+    if (!parsedParams.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsedParams.error.issues });
+    }
+
+    try {
+      const run = await featureRunRepository.getById(parsedParams.data.runId);
+      if (!run) {
+        return res.status(404).json({ error: 'Feature run not found' });
+      }
+
+      return res.json({ run });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load feature run';
+      return res.status(500).json({ error: message });
     }
   });
 

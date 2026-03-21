@@ -1,8 +1,10 @@
-import { asRecord } from '../../../utils/typeCoercion.js';
+import { env } from '../../../config.js';
+import { createFileFeaturePipelineRunRepository } from '../../../repositories/featurePipelineRunRepository.js';
+import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import {
   FEATURE_TOOL_HANDLERS,
-  toFeatureToolContext
 } from '../../llm/featureTools/index.js';
+import type { FeatureToolContext } from '../../llm/featureTools/types.js';
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { FEATURE_ENGINEERING_CONTRACT } from '../../llm/prompts/featureContract.js';
 import { FEATURE_TOOL_NAMES } from '../../llm/tools/featureTools.js';
@@ -22,6 +24,12 @@ import { registerPhaseConfig } from '../phaseConfig.js';
 // the planner to drive propose -> materialize -> execute -> validate ->
 // register -> checkpoint stages.  Always in 'action' mode.
 // ---------------------------------------------------------------------------
+
+// -- Module-level singleton (same pattern as preprocessing.ts:146) ----------
+
+export const featureRunRepository = createFileFeaturePipelineRunRepository(env.featureRunsPath);
+
+// -- Lifecycle stages -------------------------------------------------------
 
 const FEATURE_ENGINEERING_LIFECYCLE: LifecycleStageDefinition[] = [
   { name: 'answer', label: 'Answer', order: 0 },
@@ -57,6 +65,58 @@ function buildStageConfig(
     requireToolCall: !isReview
   };
 }
+
+// ---------------------------------------------------------------------------
+// Private dispatch — follows the preprocessing.ts:497-536 pattern.
+// Resolves the feature run from the repository and builds the handler
+// context with closure access to the module-level singleton.
+// ---------------------------------------------------------------------------
+
+async function executeFeatureToolCall(
+  projectId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  toolCallId: string | undefined,
+  datasetId: string | undefined
+): Promise<ToolResult> {
+  const explicitRunId = asString(args.runId);
+
+  // Resolve run
+  let run;
+  if (explicitRunId) {
+    const existing = await featureRunRepository.getById(explicitRunId);
+    if (!existing) {
+      return { error: `Feature run ${explicitRunId} not found` };
+    }
+    run = existing;
+  } else {
+    run = await featureRunRepository.getOrCreate(projectId);
+  }
+
+  const handler = FEATURE_TOOL_HANDLERS.get(toolName);
+  if (!handler) {
+    return { error: `Unknown feature tool: ${toolName}` };
+  }
+
+  try {
+    const featureCtx: FeatureToolContext = {
+      projectId,
+      toolCallId,
+      args,
+      datasetId,
+      run,
+      runRepository: featureRunRepository
+    };
+    return await handler(featureCtx);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected error';
+    return { error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PhaseConfig
+// ---------------------------------------------------------------------------
 
 export const featureEngineeringPhaseConfig: PhaseConfig = {
   phase: 'feature_engineering',
@@ -98,17 +158,13 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
     args: unknown,
     ctx: ToolContext
   ): Promise<ToolResult> {
-    const handler = FEATURE_TOOL_HANDLERS.get(name);
-    if (!handler) {
-      return { error: `Unknown feature tool: ${name}` };
-    }
-
-    const featureCtx = toFeatureToolContext({
-      ...ctx,
-      args: asRecord(args) ?? {}
-    });
-
-    return handler(featureCtx);
+    return executeFeatureToolCall(
+      ctx.projectId,
+      name,
+      asRecord(args) ?? {},
+      ctx.toolCallId,
+      ctx.turn.datasetId
+    );
   }
 };
 

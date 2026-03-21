@@ -276,6 +276,8 @@ interface RenameTabDialogProps {
   value: string;
   onValueChange: (value: string) => void;
   onSave: () => void;
+  title?: string;
+  description?: string;
 }
 
 export function RenameTabDialog({
@@ -283,15 +285,17 @@ export function RenameTabDialog({
   onOpenChange,
   value,
   onValueChange,
-  onSave
+  onSave,
+  title = 'Rename processing tab',
+  description = 'Update the name of the current processing tab.'
 }: RenameTabDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename processing tab</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Update the name of the current processing tab.
+            {description}
           </DialogDescription>
         </DialogHeader>
         <Input

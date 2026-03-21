@@ -116,24 +116,34 @@ vi.mock('@/stores/dataStore', () => ({
     })
 }));
 
-vi.mock('@/stores/featureStore', () => ({
-  useFeatureStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      features: mockState.features,
-      upsertFeature: mockState.upsertFeatureMock,
-      removeFeature: mockState.removeFeatureMock,
-      clearProjectFeatures: mockState.clearProjectFeaturesMock,
-      hydrateFromProject: mockState.hydrateFeaturesMock,
-      versions: mockState.versions,
-      currentVersionId: mockState.currentVersionId,
-      createDraftVersion: mockState.createDraftVersionMock,
-      removeVersion: mockState.removeVersionMock,
-      renameVersion: mockState.renameVersionMock,
-      approveVersion: mockState.approveVersionMock,
-      setCurrentVersion: mockState.setCurrentVersionMock,
-      updateReadinessReport: mockState.updateReadinessReportMock
-    })
-}));
+vi.mock('@/stores/featureStore', () => {
+  const storeState = () => ({
+    features: mockState.features,
+    upsertFeature: mockState.upsertFeatureMock,
+    removeFeature: mockState.removeFeatureMock,
+    clearProjectFeatures: mockState.clearProjectFeaturesMock,
+    hydrateFromProject: mockState.hydrateFeaturesMock,
+    versions: mockState.versions,
+    currentVersionId: mockState.currentVersionId,
+    createDraftVersion: mockState.createDraftVersionMock,
+    removeVersion: mockState.removeVersionMock,
+    renameVersion: mockState.renameVersionMock,
+    approveVersion: mockState.approveVersionMock,
+    setCurrentVersion: mockState.setCurrentVersionMock,
+    updateReadinessReport: mockState.updateReadinessReportMock,
+    featureSteps: {},
+    currentStage: null,
+    featureRunId: null,
+    setFeatureStep: vi.fn(),
+    setCurrentStage: vi.fn(),
+    setFeatureRunId: vi.fn(),
+    clearDraft: vi.fn()
+  });
+
+  const useFeatureStore = (selector: (state: unknown) => unknown) => selector(storeState());
+  useFeatureStore.getState = storeState;
+  return { useFeatureStore };
+});
 
 vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: (selector: (state: unknown) => unknown) =>
@@ -151,7 +161,9 @@ vi.mock('@/stores/notebookStore', () => ({
 }));
 
 vi.mock('@/lib/api/featureEngineering', () => ({
-  applyFeatureEngineering: (...args: unknown[]) => mockState.applyFeatureEngineeringMock(...args)
+  applyFeatureEngineering: (...args: unknown[]) => mockState.applyFeatureEngineeringMock(...args),
+  fetchFeatureRuns: vi.fn().mockResolvedValue({ runs: [], count: 0, projectId: '' }),
+  fetchFeatureRun: vi.fn().mockResolvedValue({ run: { runId: '', projectId: '', features: {}, createdAt: '', updatedAt: '' } })
 }));
 
 describe('FeatureEngineeringPanel (Issue #44)', () => {

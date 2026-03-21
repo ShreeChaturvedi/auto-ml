@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
+import { useWorkflowSessionStore, buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
+import { fetchFeatureRun, fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useFeatureReadiness } from './useFeatureReadiness';
 import { useFeatureCodeGen } from './useFeatureCodeGen';
@@ -66,6 +68,17 @@ interface UseFeaturePipelineStateReturn {
   handleNewDraft: () => void;
   handleDeleteDraft: () => void;
   handleRenameDraft: () => void;
+  handleReset: () => void;
+
+  // Dialog state
+  renameDialogOpen: boolean;
+  setRenameDialogOpen: (open: boolean) => void;
+  renameDialogValue: string;
+  setRenameDialogValue: (value: string) => void;
+  handleRenameConfirm: () => void;
+  deleteDialogOpen: boolean;
+  setDeleteDialogOpen: (open: boolean) => void;
+  handleDeleteConfirm: () => void;
 
   // Store actions (passed through for toolbar/approval gate)
   approveVersion: (projectId: string, versionId: string) => void;
@@ -94,6 +107,44 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     hydratedProjectRef.current = projectId;
     hydrateFromBackend(projectId);
     hydrateFeatures(projectId, { force: true });
+
+    // Hydrate feature lifecycle state from backend runs endpoint
+    const store = useFeatureStore.getState();
+
+    // Skip if store already has lifecycle state from this session
+    if (store.featureRunId && Object.keys(store.featureSteps).length > 0) {
+      return;
+    }
+
+    const hydrateRunIntoStore = (run: { runId: string; features: Record<string, import('@/lib/api/featureEngineering').FeatureStepRecord> }) => {
+      const featureStore = useFeatureStore.getState();
+      featureStore.setFeatureRunId(run.runId);
+      for (const [featureId, step] of Object.entries(run.features)) {
+        featureStore.setFeatureStep(featureId, {
+          stepId: step.featureId,
+          name: step.name,
+          method: step.method,
+          status: step.status,
+          code: step.code,
+          metrics: step.validation as Record<string, unknown> | undefined
+        });
+      }
+    };
+
+    const currentVersionId = store.currentVersionId[projectId];
+    const storageKey = `feature-engineering-messages-v3-${currentVersionId ?? 'default'}`;
+    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+    const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+
+    if (session?.runId) {
+      void fetchFeatureRun(session.runId)
+        .then(({ run }) => hydrateRunIntoStore(run))
+        .catch(() => { /* Run not found or network error — start fresh */ });
+    } else {
+      void fetchFeatureRuns(projectId)
+        .then(({ runs }) => { if (runs.length > 0) hydrateRunIntoStore(runs[0]); })
+        .catch(() => { /* Network error — start fresh */ });
+    }
   }, [hydrateFeatures, hydrateFromBackend, projectId]);
 
   // --- Derived file data ---
@@ -181,6 +232,15 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    handleRenameConfirm,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    handleDeleteConfirm,
   } = useFeatureVersioning({
     projectId,
     setSuggestionDrafts,
@@ -259,6 +319,15 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    handleRenameConfirm,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    handleDeleteConfirm,
     approveVersion
   };
 }

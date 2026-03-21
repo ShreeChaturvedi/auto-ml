@@ -103,6 +103,7 @@ The repo includes custom slash-command skills in `.claude/skills/`. These work i
 | **now-fix** | `/now-fix` | Immediately fixes the issue that was just created with `/issue` in the same session. Uses the context already gathered instead of re-fetching from GitLab. |
 | **frontend-design** | `/frontend-design` | Generates production-grade, visually distinctive frontend UI. Emphasizes bold creative direction, avoids generic AI aesthetics. Use when building or redesigning UI components. |
 | **sync** | `/sync [sprint-number]` | Pulls latest changes from the sprint branch into your current branch. Shows what's new (commits, files, authors), previews conflicts, resolves them if needed, and rebases cleanly. Run regularly to stay up to date. Example: `/sync 9` |
+| **review-mr** | `/review-mr [MR-number]` | Reviews a GitLab merge request, summarizes changes, assesses quality, and if acceptable: auto-merges, runs a cleanup pass, and deletes the source branch. If quality issues are found, leaves a comment with specific fixes needed. |
 
 For **Codex**, these skills aren't invoked as slash commands. Instead, read the skill file (e.g., `.claude/skills/issue/SKILL.md`) and follow the steps described in it, or paste the relevant instructions into your prompt.
 

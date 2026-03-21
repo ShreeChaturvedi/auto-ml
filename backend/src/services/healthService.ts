@@ -13,7 +13,7 @@ const DEFAULT_RUNTIME_PYTHON_VERSION: PythonVersion = '3.11';
 export type HealthStatus = 'ok' | 'degraded' | 'error';
 
 interface BaseHealthCheck {
-  status: HealthStatus | 'ok';
+  status: HealthStatus;
   critical: boolean;
 }
 
@@ -271,10 +271,8 @@ export async function getHealthReport(
     getDatabaseCheck(deps),
     getDockerCheck(deps)
   ]);
-  const [runtimeImage, memory] = await Promise.all([
-    getRuntimeImageCheck(deps, docker),
-    Promise.resolve(getMemoryCheck(deps))
-  ]);
+  const runtimeImage = await getRuntimeImageCheck(deps, docker);
+  const memory = getMemoryCheck(deps);
 
   const checks = {
     database,

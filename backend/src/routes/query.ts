@@ -5,7 +5,7 @@ import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
+import { regenerateNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 import { getErrorMessage } from '../utils/errors.js';
 
 import {
@@ -163,7 +163,7 @@ export function createQueryRouter() {
       }
 
       try {
-        const suggestions = await getNaturalLanguageSuggestions({
+        const suggestions = await regenerateNaturalLanguageSuggestions({
           projectId: result.data.projectId,
           limit: result.data.limit
         });

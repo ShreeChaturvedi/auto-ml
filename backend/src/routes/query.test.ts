@@ -25,11 +25,11 @@ vi.mock('../services/nlToSql/index.js', () => ({
 }));
 
 vi.mock('../services/nlSuggestions/index.js', () => ({
-  getNaturalLanguageSuggestions: vi.fn()
+  regenerateNaturalLanguageSuggestions: vi.fn()
 }));
 
 import { hasDatabaseConfiguration } from '../db.js';
-import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
+import { regenerateNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 import { generateSqlFromNaturalLanguageV2, repairSqlFromExecutionErrorV2 } from '../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../services/queryCache.js';
 import { executeReadOnlyQuery } from '../services/sqlExecutor.js';
@@ -43,7 +43,7 @@ const mockStoreCachedQueryResult = vi.mocked(storeCachedQueryResult);
 const mockExecuteReadOnlyQuery = vi.mocked(executeReadOnlyQuery);
 const mockGenerateSqlFromNaturalLanguageV2 = vi.mocked(generateSqlFromNaturalLanguageV2);
 const mockRepairSqlFromExecutionErrorV2 = vi.mocked(repairSqlFromExecutionErrorV2);
-const mockGetNaturalLanguageSuggestions = vi.mocked(getNaturalLanguageSuggestions);
+const mockGetNaturalLanguageSuggestions = vi.mocked(regenerateNaturalLanguageSuggestions);
 const TEST_PROJECT_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 type NdjsonEvent = Record<string, unknown>;

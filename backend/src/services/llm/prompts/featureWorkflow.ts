@@ -100,7 +100,10 @@ FEATURE ENGINEERING CONTRACT:
       { role: 'user', content: userContent }
     ],
     temperature: 0.3,
-    maxOutputTokens: 4096,
+    // Feature engineering renders rich JSON (render_ui with feature suggestions, reports,
+    // code cells). Reasoning models consume output-token budget for reasoning tokens too,
+    // so 4096 often leaves nothing for the actual response. 16000 gives sufficient headroom.
+    maxOutputTokens: 8000,
     tools,
     toolChoice: 'auto',
     toolCallHistory,

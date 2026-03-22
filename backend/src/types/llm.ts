@@ -32,6 +32,13 @@ export const ToolNameSchema = z.enum([
   'install_package',
   'uninstall_package',
   'list_packages',
+  // Feature engineering lifecycle tools
+  'propose_feature',
+  'materialize_feature_code',
+  'execute_feature',
+  'validate_feature',
+  'register_feature',
+  'checkpoint_feature_pipeline',
   // Training lifecycle tools
   'configure_experiment',
   'propose_training_plan',

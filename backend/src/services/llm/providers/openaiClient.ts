@@ -27,7 +27,7 @@ export class OpenAiClient implements LlmClient {
 
   async complete(request: LlmRequest): Promise<string> {
     const response = await this.client.responses.create(buildOpenAiCreateBody(request, this.model));
-    return response.output_text ?? '';
+    return extractResponseText(response);
   }
 
   async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
@@ -243,4 +243,25 @@ function parseToolArguments(argumentsJson: string | undefined): Record<string, u
     // Fall through to empty object.
   }
   return {};
+}
+
+function extractResponseText(response: Responses.Response): string {
+  if (response.output_text?.trim()) {
+    return response.output_text;
+  }
+
+  const chunks: string[] = [];
+  for (const item of response.output ?? []) {
+    if (item.type !== 'message') {
+      continue;
+    }
+
+    for (const content of item.content ?? []) {
+      if (content.type === 'output_text' && typeof content.text === 'string' && content.text.trim()) {
+        chunks.push(content.text);
+      }
+    }
+  }
+
+  return chunks.join('').trim();
 }

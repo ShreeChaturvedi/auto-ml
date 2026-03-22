@@ -169,4 +169,26 @@ describe('OpenAiClient streaming tool handling', () => {
       args: {}
     });
   });
+
+  it('falls back to message output text when output_text is blank', async () => {
+    openAiCreateMock.mockResolvedValue({
+      output_text: '',
+      output: [
+        {
+          type: 'message',
+          content: [
+            {
+              type: 'output_text',
+              text: '{"kind":"assistant_message","message":"Recovered from output array."}'
+            }
+          ]
+        }
+      ]
+    });
+
+    const client = createClient();
+    const result = await client.complete(buildRequest());
+
+    expect(result).toBe('{"kind":"assistant_message","message":"Recovered from output array."}');
+  });
 });

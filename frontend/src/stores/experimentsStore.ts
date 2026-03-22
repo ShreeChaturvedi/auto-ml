@@ -192,14 +192,13 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   purgeModelCache: (modelId) => {
     set((state) => {
-      const { [modelId]: _eval, ...restEvals } = state.evaluations;
-      const { [modelId]: _shap, ...restShap } = state.shapData;
-      const { [modelId]: _err, ...restErrors } = state.errorAnalysis;
-      return {
-        evaluations: restEvals,
-        shapData: restShap,
-        errorAnalysis: restErrors,
-      };
+      const evaluations = { ...state.evaluations };
+      const shapData = { ...state.shapData };
+      const errorAnalysis = { ...state.errorAnalysis };
+      delete evaluations[modelId];
+      delete shapData[modelId];
+      delete errorAnalysis[modelId];
+      return { evaluations, shapData, errorAnalysis };
     });
   }
 }));

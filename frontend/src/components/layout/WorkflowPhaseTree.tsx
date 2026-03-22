@@ -28,13 +28,15 @@ import { getWorkbookParam } from '@/lib/workbookParam';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
+import { ModelSubtabs } from './sidebar/ModelSubtabs';
 
 const EXPANDABLE_PHASES = new Set<Phase>([
   'upload',
   'data-viewer',
   'preprocessing',
   'feature-engineering',
-  'training'
+  'training',
+  'experiments'
 ]);
 
 const WORKBOOK_PHASES = new Set<Phase>(['preprocessing', 'feature-engineering', 'training']);
@@ -297,6 +299,9 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                         themeColorClass={themeColorClass}
                         activeWorkbookId={isActive ? activeWorkbookId : undefined}
                       />
+                    )}
+                    {phase === 'experiments' && (
+                      <ModelSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
                     )}
                   </div>
                 </div>

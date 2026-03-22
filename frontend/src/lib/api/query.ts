@@ -16,6 +16,12 @@ export interface NlQueryRequest {
   tableName?: string;
 }
 
+export interface WorkflowPlaceholders {
+  preprocessing: string[];
+  featureEngineering: string[];
+  training: string[];
+}
+
 export interface NlSuggestion {
   id: string;
   prompt: string;
@@ -165,6 +171,7 @@ export async function fetchNlSuggestions(projectId: string, limit = 8) {
     suggestions: NlSuggestion[];
     cached: boolean;
     schemaFingerprint: string;
+    workflowPlaceholders?: WorkflowPlaceholders;
   }>(`/query/nl/suggestions?${search.toString()}`, {
     method: 'GET'
   });

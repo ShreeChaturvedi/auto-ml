@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
+import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 import { FeatureApprovalGate } from './FeatureApprovalGate';
@@ -43,6 +44,7 @@ interface FeatureEngineeringPanelProps {
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
+  const composerPlaceholders = useWorkflowPlaceholders(projectId, 'featureEngineering');
   const [searchParams, setSearchParams] = useSearchParams();
   const workbookParam = getWorkbookParam(searchParams);
   const initialNotebookId = searchParams.get('notebook') ?? undefined;
@@ -249,6 +251,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       <AgenticShell
         key={currentVersion?.id ?? 'feature-engineering-default'}
         projectId={projectId}
+        composerPlaceholders={composerPlaceholders}
         storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
         domainAdapter={adapter}
         domainLockReason={

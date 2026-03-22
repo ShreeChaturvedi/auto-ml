@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 
-import { fetchNlSuggestions, type NlSuggestion } from '@/lib/api/query';
+import { fetchNlSuggestions, type NlSuggestion, type WorkflowPlaceholders } from '@/lib/api/query';
 
 export interface ProjectNlSuggestionEntry {
   suggestions: NlSuggestion[];
   schemaFingerprint: string;
+  workflowPlaceholders?: WorkflowPlaceholders;
 }
 
 interface NlSuggestionState {
@@ -72,7 +73,8 @@ export const useNlSuggestionStore = create<NlSuggestionState>()((set, get) => ({
       .then((response) => {
         const nextEntry: ProjectNlSuggestionEntry = {
           suggestions: response.suggestions,
-          schemaFingerprint: response.schemaFingerprint
+          schemaFingerprint: response.schemaFingerprint,
+          workflowPlaceholders: response.workflowPlaceholders
         };
         set((state) => ({
           byProject: hasSameEntry(state.byProject[projectId], nextEntry)

@@ -12,6 +12,12 @@ export interface GetNlSuggestionsOptions {
   limit?: number;
 }
 
+export interface WorkflowPlaceholders {
+  preprocessing: string[];
+  featureEngineering: string[];
+  training: string[];
+}
+
 export interface StoredNlSuggestionSet {
   suggestionSetId: string;
   projectId: string;
@@ -21,6 +27,7 @@ export interface StoredNlSuggestionSet {
   createdAt: string;
   updatedAt: string;
   suggestions: NlSuggestion[];
+  workflowPlaceholders?: WorkflowPlaceholders;
 }
 
 export interface SchemaColumnSummary {

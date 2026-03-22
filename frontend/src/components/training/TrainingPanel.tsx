@@ -24,6 +24,7 @@ import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
+import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createTrainingAdapter } from './TrainingAdapter';
 import { TrainingToolbarLeft } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
@@ -34,6 +35,7 @@ const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const composerPlaceholders = useWorkflowPlaceholders(projectId, 'training');
   const [searchParams] = useSearchParams();
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
 
@@ -324,6 +326,7 @@ export function TrainingPanel() {
     <AgenticShell
       key={activeTrainingWorkbookId}
       projectId={projectId ?? ''}
+      composerPlaceholders={composerPlaceholders}
       storageKey={trainingStorageKey}
       domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
       domainAdapter={trainingAdapter}

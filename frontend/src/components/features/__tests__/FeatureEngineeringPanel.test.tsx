@@ -164,6 +164,15 @@ vi.mock('@/stores/notebookStore', () => ({
     })
 }));
 
+vi.mock('@/stores/nlSuggestionStore', () => ({
+  useNlSuggestionStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      byProject: {},
+      fetchProjectSuggestions: vi.fn().mockResolvedValue(null),
+      reset: vi.fn()
+    })
+}));
+
 vi.mock('@/lib/api/featureEngineering', () => ({
   applyFeatureEngineering: (...args: unknown[]) => mockState.applyFeatureEngineeringMock(...args),
   fetchFeatureRuns: vi.fn().mockResolvedValue({ runs: [], count: 0, projectId: '' }),

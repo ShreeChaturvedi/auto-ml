@@ -7,23 +7,29 @@ import { extractJson } from '../nlToSql/jsonNormalization.js';
 
 import { inferRelationshipHints } from './relationshipHints.js';
 import { buildSchemaFingerprint, buildSchemaSummary } from './schemaBuilder.js';
-import { normalizeSuggestions, SUGGESTION_SCHEMA } from './suggestionParser.js';
+import { normalizeSuggestions, normalizeWorkflowPlaceholders, SUGGESTION_SCHEMA } from './suggestionParser.js';
 import type {
   GetNlSuggestionsOptions,
   NlSuggestion,
   NlSuggestionServiceDeps,
   RelationshipHint,
-  SchemaTableSummary
+  SchemaTableSummary,
+  WorkflowPlaceholders
 } from './types.js';
 
-export type { GetNlSuggestionsOptions, NlSuggestion } from './types.js';
+export type { GetNlSuggestionsOptions, NlSuggestion, WorkflowPlaceholders } from './types.js';
 
 const DEFAULT_SUGGESTION_COUNT = 8;
 const MAX_SUGGESTION_COUNT = 12;
 const MAX_SUGGESTION_RETRIES = 2;
-const SUGGESTION_PROMPT_VERSION = 1;
+const SUGGESTION_PROMPT_VERSION = 2;
 
-const inflightSuggestionGenerations = new Map<string, Promise<NlSuggestion[]>>();
+interface GenerationResult {
+  suggestions: NlSuggestion[];
+  workflowPlaceholders?: WorkflowPlaceholders;
+}
+
+const inflightSuggestionGenerations = new Map<string, Promise<GenerationResult>>();
 
 function buildPrompt(params: {
   projectId: string;
@@ -55,8 +61,16 @@ function buildPrompt(params: {
     'Use only the tables and columns that exist in the schema below.',
     'If you imply a join, base it on the relationship hints and mention the business framing naturally.',
     'Each prompt should be a single sentence, detailed enough for direct execution, and concrete about dimensions, metrics, filters, or time windows when the schema supports them.',
-    'Return JSON with one top-level key: suggestions.',
+    'Return JSON with a top-level key: suggestions.',
     'Each suggestion item must contain: prompt, label, category, tables, rationale.',
+    '',
+    'Also generate placeholder prompts for three ML workflow phases.',
+    'Each placeholder should sound like a natural request a data scientist would type, reference actual column or table names from the schema, start with an action verb, and be 8-15 words.',
+    'Add a "workflowPlaceholders" key to your JSON response with three sub-keys:',
+    '- "preprocessing": 4-5 placeholders about data cleaning, missing values, encoding, or scaling.',
+    '- "featureEngineering": 4-5 placeholders about feature creation, interactions, or selection.',
+    '- "training": 4-5 placeholders about model selection, training, evaluation, or comparison.',
+    '',
     `Project id: ${params.projectId}`,
     `Prompt version: ${SUGGESTION_PROMPT_VERSION}`,
     'Schema:',
@@ -99,7 +113,7 @@ async function requestSuggestions(params: {
   projectId: string;
   prompt: string;
   limit: number;
-}): Promise<NlSuggestion[]> {
+}): Promise<GenerationResult> {
   const messages: LlmMessage[] = [
     { role: 'system', content: 'You are a senior analytics assistant. Return valid JSON only.' },
     { role: 'user', content: params.prompt }
@@ -110,13 +124,17 @@ async function requestSuggestions(params: {
     try {
       const raw = await params.client.complete({
         messages,
-        maxOutputTokens: 1400,
+        maxOutputTokens: 2000,
         responseMimeType: 'application/json',
         reasoningEffort: 'low'
       });
 
       const parsed = SUGGESTION_SCHEMA.parse(extractJson(raw));
-      return normalizeSuggestions(parsed, params.limit);
+      const suggestions = normalizeSuggestions(parsed, params.limit);
+      const workflowPlaceholders = parsed.workflowPlaceholders
+        ? normalizeWorkflowPlaceholders(parsed.workflowPlaceholders)
+        : undefined;
+      return { suggestions, workflowPlaceholders };
     } catch (error) {
       const shouldRetry = attempt < maxAttempts - 1 && isRetryableSuggestionError(error);
       if (shouldRetry) {
@@ -150,18 +168,21 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
     return buildSchemaSummary(datasets, projectId);
   }
 
+  interface SuggestionResult {
+    suggestions: NlSuggestion[];
+    cached: boolean;
+    schemaFingerprint: string;
+    workflowPlaceholders?: WorkflowPlaceholders;
+  }
+
   async function getSuggestions({
     projectId,
     limit = DEFAULT_SUGGESTION_COUNT
-  }: GetNlSuggestionsOptions): Promise<{ suggestions: NlSuggestion[]; cached: boolean; schemaFingerprint: string }> {
+  }: GetNlSuggestionsOptions): Promise<SuggestionResult> {
     const tables = await getProjectTables(projectId);
 
     if (tables.length === 0) {
-      return {
-        suggestions: [],
-        cached: false,
-        schemaFingerprint: ''
-      };
+      return { suggestions: [], cached: false, schemaFingerprint: '' };
     }
 
     const schemaFingerprint = buildSchemaFingerprint(tables);
@@ -176,22 +197,19 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
     return {
       suggestions: stored?.suggestions.slice(0, limit) ?? [],
       cached: Boolean(stored),
-      schemaFingerprint
+      schemaFingerprint,
+      workflowPlaceholders: stored?.workflowPlaceholders
     };
   }
 
   async function regenerateSuggestions({
     projectId,
     limit = DEFAULT_SUGGESTION_COUNT
-  }: GetNlSuggestionsOptions): Promise<{ suggestions: NlSuggestion[]; cached: boolean; schemaFingerprint: string }> {
+  }: GetNlSuggestionsOptions): Promise<SuggestionResult> {
     const tables = await getProjectTables(projectId);
 
     if (tables.length === 0) {
-      return {
-        suggestions: [],
-        cached: false,
-        schemaFingerprint: ''
-      };
+      return { suggestions: [], cached: false, schemaFingerprint: '' };
     }
 
     const schemaFingerprint = buildSchemaFingerprint(tables);
@@ -207,7 +225,8 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
       return {
         suggestions: existing.suggestions.slice(0, limit),
         cached: true,
-        schemaFingerprint
+        schemaFingerprint,
+        workflowPlaceholders: existing.workflowPlaceholders
       };
     }
 
@@ -220,18 +239,19 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
 
     const running = inflightSuggestionGenerations.get(inflightKey);
     if (running) {
-      const suggestions = await running;
+      const result = await running;
       return {
-        suggestions: suggestions.slice(0, limit),
+        suggestions: result.suggestions.slice(0, limit),
         cached: true,
-        schemaFingerprint
+        schemaFingerprint,
+        workflowPlaceholders: result.workflowPlaceholders
       };
     }
 
     const generationPromise = (async () => {
       const client = getClient(modelId);
       const relationships = inferRelationshipHints(tables);
-      const suggestions = await requestSuggestions({
+      const result = await requestSuggestions({
         client,
         projectId,
         prompt: buildPrompt({
@@ -248,21 +268,23 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
         schemaFingerprint,
         modelId,
         promptVersion: SUGGESTION_PROMPT_VERSION,
-        suggestions
+        suggestions: result.suggestions,
+        workflowPlaceholders: result.workflowPlaceholders
       });
 
-      return suggestions;
+      return result;
     })().finally(() => {
       inflightSuggestionGenerations.delete(inflightKey);
     });
 
     inflightSuggestionGenerations.set(inflightKey, generationPromise);
 
-    const suggestions = await generationPromise;
+    const result = await generationPromise;
     return {
-      suggestions: suggestions.slice(0, limit),
+      suggestions: result.suggestions.slice(0, limit),
       cached: false,
-      schemaFingerprint
+      schemaFingerprint,
+      workflowPlaceholders: result.workflowPlaceholders
     };
   }
 

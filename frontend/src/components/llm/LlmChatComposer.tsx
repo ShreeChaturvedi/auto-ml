@@ -49,6 +49,8 @@ export interface ChatInputConfig {
   onValueChange: (value: string) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
   placeholder: string;
+  /** Animated cycling placeholders — takes precedence when non-empty */
+  placeholders?: string[];
   disabled: boolean;
   isStreaming: boolean;
   onSend: () => void;
@@ -117,6 +119,7 @@ export function LlmChatComposer({
     onValueChange,
     onKeyDown,
     placeholder,
+    placeholders,
     disabled,
     isStreaming,
     onSend,
@@ -165,6 +168,7 @@ export function LlmChatComposer({
               themeColor={mentionSlot.themeColor}
               voiceActive={mentionSlot.voiceActive}
               placeholder={placeholder}
+              placeholders={placeholders}
               disabled={disabled}
               className="min-h-[60px]"
             />

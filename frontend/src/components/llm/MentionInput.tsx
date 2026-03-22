@@ -10,6 +10,11 @@ import {
 import { cn } from '@/lib/utils';
 import { fileIconColorByType, tailwindColorToHex } from '@/lib/fileUtils';
 import type { FileType } from '@/types/file';
+import {
+  useAnimatedPlaceholder,
+  CHAR_ANIM_DURATION_MS,
+  CHAR_STAGGER_MS
+} from '@/components/ui/useAnimatedPlaceholder';
 
 export interface AnimateCharRange { start: number; end: number }
 
@@ -31,6 +36,8 @@ interface MentionInputProps {
   /** Resolved CSS color string for the voice-input caret */
   themeColor?: string;
   placeholder?: string;
+  /** Animated cycling placeholders — takes precedence over placeholder when non-empty */
+  placeholders?: string[];
   disabled?: boolean;
   voiceActive?: boolean;
   className?: string;
@@ -38,6 +45,55 @@ interface MentionInputProps {
 
 const VOICE_CHAR_STAGGER_MS = 14;
 const VOICE_CHAR_ANIM_MS = 180;
+
+function AnimatedMentionPlaceholder({ placeholders }: { placeholders: string[] }) {
+  const anim = useAnimatedPlaceholder({
+    placeholders,
+    interval: 4000,
+    value: '',
+    disabled: false,
+  });
+
+  return (
+    <div className="pointer-events-none absolute inset-x-3 top-2.5 overflow-hidden" aria-hidden="true">
+      <div className="relative overflow-hidden">
+        <span
+          className="block text-base text-muted-foreground md:text-sm whitespace-pre-wrap break-words"
+          style={{
+            transform: anim.isAnimating ? 'translateY(-100%)' : 'translateY(0)',
+            opacity: anim.isAnimating ? 0 : 1,
+            transition: anim.outgoingTransition,
+          }}
+        >
+          {anim.currentPlaceholder}
+        </span>
+        <span
+          className="absolute inset-x-0 top-0 text-base text-muted-foreground md:text-sm whitespace-pre-wrap break-words"
+          style={{
+            transform: anim.isAnimating ? 'translateY(0)' : 'translateY(100%)',
+            opacity: anim.isAnimating ? 1 : 0,
+            transition: anim.incomingTransition,
+          }}
+        >
+          {anim.isAnimating
+            ? Array.from(anim.nextPlaceholder).map((char, i) => (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline',
+                    animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
+                    animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                  }}
+                >
+                  {char}
+                </span>
+              ))
+            : anim.nextPlaceholder}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function getChipDotColor(fileType?: string): string {
   if (!fileType) return tailwindColorToHex('text-muted-foreground');
@@ -276,7 +332,7 @@ function buildDOM(
 
 export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
   function MentionInput(
-    { value, onValueChange, onKeyDown, mentionNames, mentionTypes, themeColor, placeholder, disabled, voiceActive, className },
+    { value, onValueChange, onKeyDown, mentionNames, mentionTypes, themeColor, placeholder, placeholders, disabled, voiceActive, className },
     ref
   ) {
     const divRef = useRef<HTMLDivElement>(null);
@@ -453,12 +509,14 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
         )}
         style={themeColor ? { '--voice-theme-color': themeColor } as CSSProperties : undefined}
       >
-        {value.length === 0 && placeholder ? (
+        {value.length === 0 && !voiceActive && placeholders && placeholders.length > 1 ? (
+          <AnimatedMentionPlaceholder placeholders={placeholders} />
+        ) : value.length === 0 && (placeholders?.[0] ?? placeholder) ? (
           <span
             aria-hidden="true"
             className="mention-input-placeholder pointer-events-none absolute inset-x-3 top-2.5 text-base text-muted-foreground md:text-sm"
           >
-            {placeholder}
+            {placeholders?.[0] ?? placeholder}
           </span>
         ) : null}
 

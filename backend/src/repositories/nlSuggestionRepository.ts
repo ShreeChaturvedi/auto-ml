@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
-import type { NlSuggestion, StoredNlSuggestionSet } from '../services/nlSuggestions/types.js';
+import type { NlSuggestion, StoredNlSuggestionSet, WorkflowPlaceholders } from '../services/nlSuggestions/types.js';
 import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export interface NlSuggestionRepository {
@@ -106,6 +106,7 @@ class PgNlSuggestionRepository implements NlSuggestionRepository {
               model_id,
               prompt_version,
               suggestions,
+              workflow_placeholders,
               created_at,
               updated_at
        FROM nl_placeholder_suggestions
@@ -133,11 +134,13 @@ class PgNlSuggestionRepository implements NlSuggestionRepository {
          schema_fingerprint,
          model_id,
          prompt_version,
-         suggestions
+         suggestions,
+         workflow_placeholders
        )
-       VALUES ($1, $2, $3, $4, $5, $6)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (project_id, schema_fingerprint, model_id, prompt_version)
        DO UPDATE SET suggestions = EXCLUDED.suggestions,
+                     workflow_placeholders = EXCLUDED.workflow_placeholders,
                      updated_at = NOW()
        RETURNING suggestion_set_id,
                  project_id,
@@ -145,6 +148,7 @@ class PgNlSuggestionRepository implements NlSuggestionRepository {
                  model_id,
                  prompt_version,
                  suggestions,
+                 workflow_placeholders,
                  created_at,
                  updated_at`,
       [
@@ -153,7 +157,8 @@ class PgNlSuggestionRepository implements NlSuggestionRepository {
         entry.schemaFingerprint,
         entry.modelId,
         entry.promptVersion,
-        JSON.stringify(entry.suggestions)
+        JSON.stringify(entry.suggestions),
+        entry.workflowPlaceholders ? JSON.stringify(entry.workflowPlaceholders) : null
       ]
     );
 
@@ -168,6 +173,7 @@ function mapPgRow(row: {
   model_id: string;
   prompt_version: number;
   suggestions: NlSuggestion[];
+  workflow_placeholders?: WorkflowPlaceholders | null;
   created_at: Date;
   updated_at: Date;
 }): StoredNlSuggestionSet {
@@ -178,6 +184,7 @@ function mapPgRow(row: {
     modelId: row.model_id,
     promptVersion: Number(row.prompt_version),
     suggestions: row.suggestions,
+    workflowPlaceholders: row.workflow_placeholders ?? undefined,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };

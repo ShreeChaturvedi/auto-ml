@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
+import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
 import { buildDatasetContinuityPrompt } from './continuityPrompt';
 import { RenameTabDialog } from './PreprocessingDialogs';
@@ -39,6 +40,7 @@ function buildInsightPrompt(column: string, issueType: string): string {
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const composerPlaceholders = useWorkflowPlaceholders(projectId, 'preprocessing');
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTabIdRef = useRef(getWorkbookParam(searchParams));
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
@@ -273,6 +275,7 @@ export function PreprocessingPanel() {
       <AgenticShell
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
+        composerPlaceholders={composerPlaceholders}
         beforeSubmit={requestDatasetContinuityChoice}
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}

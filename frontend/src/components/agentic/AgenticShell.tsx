@@ -52,6 +52,8 @@ interface AgenticShellProps {
    * passing it so it does not re-trigger.
    */
   initialPrompt?: string | null;
+  /** Animated workflow placeholders for the chat composer */
+  composerPlaceholders?: string[];
 }
 
 export function AgenticShell({
@@ -68,7 +70,8 @@ export function AgenticShell({
   leftPaneScrollable = true,
   LeftPaneComponent,
   renderLeftPane,
-  initialPrompt
+  initialPrompt,
+  composerPlaceholders
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
@@ -398,6 +401,7 @@ export function AgenticShell({
               sessionUsages={sessionUsages}
               handleStop={handleStop}
               chatMetaSlot={chatMetaSlot}
+              composerPlaceholders={composerPlaceholders}
               editingMessageId={editingMessageId}
               onCancelEdit={handleCancelEdit}
             />

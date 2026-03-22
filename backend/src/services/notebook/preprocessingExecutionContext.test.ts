@@ -134,6 +134,27 @@ describe('preprocessingExecutionContext', () => {
     expect(getByIdMock).not.toHaveBeenCalled();
   });
 
+  it('sanitizes invalid dataframeName to default', async () => {
+    getByIdMock.mockResolvedValue({
+      datasetId: 'ds-1',
+      projectId: 'project-1',
+      filename: 'data.csv',
+      fileType: 'csv'
+    });
+
+    for (const bad of ['df; import os', 'a b', '123abc', '', 'x'.repeat(100)]) {
+      const context = await resolvePreprocessingExecutionContext('project-1', {
+        preprocessing: {
+          runId: 'prep-1',
+          stepId: 'step-1',
+          datasetId: 'ds-1',
+          dataframeName: bad
+        }
+      });
+      expect(context?.dataframeName).toBe('df');
+    }
+  });
+
   it('emits load helper call, user code, and save helper call', () => {
     const code = buildPreprocessingExecutionCode({
       runId: 'prep-1',

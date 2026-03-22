@@ -291,14 +291,7 @@ export async function restartKernel(container: KernelContainer): Promise<void> {
 
     // Re-run init code so helpers (resolve_dataset_path, load/save_preprocessing_dataset)
     // survive kernel restarts — fixes #132.
-    try {
-        await execute(container, KERNEL_INIT_CODE, 30_000);
-    } catch (err) {
-        appLogger.warn(
-            `[kernelManager] Kernel re-init after restart failed for container ${container.id}:`,
-            err instanceof Error ? err.message : err,
-        );
-    }
+    await execute(container, KERNEL_INIT_CODE, 30_000);
 }
 
 /**

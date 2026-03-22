@@ -14,7 +14,12 @@ export interface PreprocessingExecutionContext {
 }
 
 const DEFAULT_DATAFRAME_NAME = 'df';
+const PYTHON_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+
+function sanitizeIdentifier(name: string | undefined): string {
+  return name && PYTHON_IDENTIFIER_RE.test(name) ? name : DEFAULT_DATAFRAME_NAME;
+}
 
 export async function resolvePreprocessingExecutionContext(
   projectId: string,
@@ -48,7 +53,7 @@ export async function resolvePreprocessingExecutionContext(
     datasetId,
     filename: dataset.filename,
     fileType: dataset.fileType,
-    dataframeName: asString(preprocessing?.dataframeName) ?? DEFAULT_DATAFRAME_NAME
+    dataframeName: sanitizeIdentifier(asString(preprocessing?.dataframeName))
   };
 }
 

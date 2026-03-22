@@ -700,6 +700,28 @@ describe('restartKernel', () => {
         expect(newWs.url).toContain('/api/kernels/kernel-1/channels');
     });
 
+    it('20b. re-executes KERNEL_INIT_CODE after restart', async () => {
+        const ctr = track(makeContainer());
+        await connectDefault(ctr);
+
+        mockFetch.mockResolvedValueOnce(okResponse({})); // restart response
+        await restartKernel(ctr);
+
+        // The new WebSocket should have received an execute_request with the init code
+        const newWs = lastWs();
+        const initSend = newWs.send.mock.calls.find((call: unknown[]) => {
+            try {
+                const parsed = JSON.parse(call[0] as string) as {
+                    header?: { msg_type?: string };
+                    content?: { code?: string };
+                };
+                return parsed.header?.msg_type === 'execute_request'
+                    && parsed.content?.code?.includes('Kernel initialized');
+            } catch { return false; }
+        });
+        expect(initSend).toBeDefined();
+    });
+
     it('21. throws when no kernel connection exists', async () => {
         const ctr = makeContainer({ id: 'no-conn' });
         await expect(restartKernel(ctr)).rejects.toThrow(/No kernel connection/);

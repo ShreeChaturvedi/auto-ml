@@ -19,6 +19,7 @@ import {
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
+import { useFeatureStore } from '@/stores/featureStore';
 
 import { cn } from '@/lib/utils';
 import { getWorkbookParam } from '@/lib/workbookParam';
@@ -42,8 +43,8 @@ interface FeatureEngineeringPanelProps {
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
-  const [searchParams] = useSearchParams();
-  const initialVersionId = getWorkbookParam(searchParams);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const workbookParam = getWorkbookParam(searchParams);
   const initialNotebookId = searchParams.get('notebook') ?? undefined;
 
   const {
@@ -94,12 +95,72 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     approveVersion
   } = useFeaturePipelineState(projectId);
 
-  // Apply initial version/notebook from URL search params
+  const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
+
+  // Sync active draft pipeline from URL changes after mount.
   useEffect(() => {
-    if (initialVersionId && initialVersionId !== currentVersion?.id) {
-      handleVersionSwitch(initialVersionId);
+    if (workbookParam && workbookParam !== currentVersion?.id) {
+      handleVersionSwitch(workbookParam);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentVersion?.id, handleVersionSwitch, workbookParam]);
+
+  // Seed the URL with the current draft pipeline when the page loads without a workbook param.
+  useEffect(() => {
+    if (workbookParam || !currentVersion?.id) {
+      return;
+    }
+
+    const next = new URLSearchParams(searchParams);
+    next.set('workbook', currentVersion.id);
+    setSearchParams(next, { replace: true });
+  }, [currentVersion?.id, searchParams, setSearchParams, workbookParam]);
+
+  const updateWorkbookParam = useCallback((versionId: string, replace = false) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('workbook', versionId);
+    setSearchParams(next, { replace });
+  }, [searchParams, setSearchParams]);
+
+  const handleVersionSelect = useCallback((versionId: string) => {
+    handleVersionSwitch(versionId);
+    updateWorkbookParam(versionId);
+  }, [handleVersionSwitch, updateWorkbookParam]);
+
+  const handleCreateDraft = useCallback(() => {
+    handleNewDraft();
+    const nextVersionId = useFeatureStore.getState().currentVersionId[projectId];
+    if (nextVersionId) {
+      updateWorkbookParam(nextVersionId);
+    }
+  }, [handleNewDraft, projectId, updateWorkbookParam]);
+
+  const handleApproveCurrentVersion = useCallback(() => {
+    if (!currentVersion) {
+      return;
+    }
+    approveVersion(projectId, currentVersion.id);
+    updateWorkbookParam(currentVersion.id);
+  }, [approveVersion, currentVersion, projectId, updateWorkbookParam]);
+
+  const handleDeleteCurrentDraft = useCallback(() => {
+    const previousVersionId = currentVersion?.id;
+    handleDeleteDraft();
+    const nextVersionId = useFeatureStore.getState().currentVersionId[projectId];
+
+    if (nextVersionId && nextVersionId !== previousVersionId) {
+      updateWorkbookParam(nextVersionId);
+      return;
+    }
+
+    if (!nextVersionId) {
+      const remainingVersions = useFeatureStore.getState().versions[projectId] ?? [];
+      const fallbackVersion = remainingVersions[0];
+      if (fallbackVersion) {
+        setCurrentVersion(projectId, fallbackVersion.id);
+        updateWorkbookParam(fallbackVersion.id);
+      }
+    }
+  }, [currentVersion?.id, handleDeleteDraft, projectId, setCurrentVersion, updateWorkbookParam]);
 
   // Tag notebook with feature-engineering phase metadata
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
@@ -203,8 +264,8 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
               isReadyForApproval={isReadyForApproval}
               panelError={panelError}
               agentError={renderProps.error}
-              onApprove={() => currentVersion && approveVersion(projectId, currentVersion.id)}
-              onNewDraft={handleNewDraft}
+              onApprove={handleApproveCurrentVersion}
+              onNewDraft={handleCreateDraft}
             />
 
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -260,12 +321,12 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           <FeatureEngineeringToolbarLeft
             currentVersionId={currentVersion?.id ?? ''}
             versions={versions.map((version) => ({ id: version.id, name: version.name }))}
-            onVersionSwitch={handleVersionSwitch}
-            onNewDraft={handleNewDraft}
+            onVersionSwitch={handleVersionSelect}
+            onNewDraft={handleCreateDraft}
             onRenameDraft={handleRenameDraft}
             onReplay={() => {}}
             onReset={handleReset}
-            onDeleteDraft={handleDeleteDraft}
+            onDeleteDraft={handleDeleteCurrentDraft}
             canRenameDraft={isCurrentVersionDraft}
             canDeleteDraft={canDeleteCurrentDraft}
           />

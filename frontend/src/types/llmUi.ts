@@ -33,7 +33,19 @@ export const ToolNameSchema = z.enum([
   'insert_cell',
   'install_package',
   'uninstall_package',
-  'list_packages'
+  'list_packages',
+  'propose_feature',
+  'materialize_feature_code',
+  'execute_feature',
+  'validate_feature',
+  'register_feature',
+  'checkpoint_feature_pipeline',
+  'configure_experiment',
+  'propose_training_plan',
+  'execute_training',
+  'evaluate_results',
+  'register_model',
+  'compare_models'
 ]);
 
 export const ToolCallSchema = z.object({

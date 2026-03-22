@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import './phases/featureEngineering.js';
 
 import type { LlmRequest, LlmStreamHandlers } from '../llm/llmClient.js';
 
@@ -194,4 +195,5 @@ describe('invokeModelNode', () => {
       nextStep: 'complete'
     });
   });
+
 });

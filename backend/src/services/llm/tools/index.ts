@@ -50,9 +50,17 @@ export const LLM_ALL_TOOLS: LlmToolDefinition[] = [
   LLM_RENDER_UI_TOOL
 ];
 
+// get_dataset_profile is intentionally excluded: its data (columns, types, sample rows)
+// is already injected into every feature engineering request via the dataset parameter.
+// Keeping it in the tool list causes the model to re-profile the dataset in a loop
+// because there is no matching history entry in the conversation.
+const FEATURE_ENGINEERING_DISCOVERY_TOOLS = FEATURE_DISCOVERY_TOOLS.filter(
+  (name) => name !== 'get_dataset_profile'
+);
+
 export const LLM_FEATURE_ENGINEERING_TOOLS: LlmToolDefinition[] = [
   ...LLM_TOOL_DEFINITIONS.filter((tool) =>
-    FEATURE_DISCOVERY_TOOLS.includes(tool.name) || NOTEBOOK_EXECUTION_TOOLS.includes(tool.name)
+    FEATURE_ENGINEERING_DISCOVERY_TOOLS.includes(tool.name) || NOTEBOOK_EXECUTION_TOOLS.includes(tool.name)
   ),
   ASK_USER_TOOL,
   LLM_RENDER_UI_TOOL

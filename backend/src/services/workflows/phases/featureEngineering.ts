@@ -1,5 +1,6 @@
 import { env } from '../../../config.js';
 import { createFileFeaturePipelineRunRepository } from '../../../repositories/featurePipelineRunRepository.js';
+import type { ToolCall } from '../../../types/llm.js';
 import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import {
   FEATURE_TOOL_HANDLERS,
@@ -47,11 +48,60 @@ const FEATURE_ENGINEERING_LIFECYCLE: LifecycleStageDefinition[] = [
 const STAGE_NAMES = FEATURE_ENGINEERING_LIFECYCLE.map((s) => s.name);
 const FEATURE_TOOL_NAME_SET: Set<string> = new Set(FEATURE_TOOL_NAMES);
 
+function buildInitialProfileAction(state: import('../graphState.js').WorkflowGraphState): ToolCall[] {
+  if (!state.turn.datasetId) {
+    return [];
+  }
+
+  return [{
+    id: `wf-call-profile-${Date.now()}`,
+    tool: 'get_dataset_profile',
+    args: {
+      datasetId: state.turn.datasetId
+    },
+    rationale: 'Profile the active dataset before proposing candidate features.'
+  }];
+}
+
 function buildStageConfig(
   stageName: string,
   tools: LlmToolDefinition[]
 ): StageConfig {
   const isReview = stageName === 'await_review';
+  const isInitialPlanningStage = stageName === 'plan_feature_pipeline';
+  const isContinueStage = stageName === 'continue_feature_pipeline';
+
+  if (isInitialPlanningStage) {
+    return {
+      name: stageName,
+      mode: 'deterministic',
+      allowedTools: tools.filter((tool) => tool.name === 'get_dataset_profile'),
+      toolChoice: 'required',
+      requiresApproval: false,
+      allowAssistantMessage: false,
+      allowAskUser: false,
+      allowRenderUi: false,
+      allowPlanExit: false,
+      requireToolCall: true,
+      deterministicAction: buildInitialProfileAction
+    };
+  }
+
+  if (isContinueStage) {
+    return {
+      name: stageName,
+      mode: 'text',
+      allowedTools: [],
+      toolChoice: 'auto',
+      requiresApproval: false,
+      allowAssistantMessage: true,
+      allowAskUser: true,
+      allowRenderUi: true,
+      allowPlanExit: false,
+      requireToolCall: false
+    };
+  }
+
   return {
     name: stageName,
     mode: 'action',

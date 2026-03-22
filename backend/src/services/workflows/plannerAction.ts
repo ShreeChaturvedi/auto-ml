@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
 import { UiSchema } from '../../types/llmUi.js';
+import { extractJson } from '../nlToSql/jsonNormalization.js';
 
 import type { WorkflowNodeContract } from './contracts.js';
 
@@ -100,7 +101,7 @@ export function parsePlannerResponse(raw: string): WorkflowActionPlan {
   const normalized = fenced?.[1] ?? trimmed;
 
   try {
-    return WorkflowActionPlanSchema.parse(JSON.parse(normalized) as unknown);
+    return WorkflowActionPlanSchema.parse(extractJson(normalized));
   } catch (error) {
     const extracted = extractFirstJsonValue(normalized);
     if (extracted && extracted !== normalized) {

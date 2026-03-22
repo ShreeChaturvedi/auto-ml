@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FeatureEngineeringPanel } from '../FeatureEngineeringPanel';
@@ -117,31 +117,35 @@ vi.mock('@/stores/dataStore', () => ({
 }));
 
 vi.mock('@/stores/featureStore', () => {
-  const storeState = () => ({
-    features: mockState.features,
-    upsertFeature: mockState.upsertFeatureMock,
-    removeFeature: mockState.removeFeatureMock,
-    clearProjectFeatures: mockState.clearProjectFeaturesMock,
-    hydrateFromProject: mockState.hydrateFeaturesMock,
-    versions: mockState.versions,
-    currentVersionId: mockState.currentVersionId,
-    createDraftVersion: mockState.createDraftVersionMock,
-    removeVersion: mockState.removeVersionMock,
-    renameVersion: mockState.renameVersionMock,
-    approveVersion: mockState.approveVersionMock,
-    setCurrentVersion: mockState.setCurrentVersionMock,
-    updateReadinessReport: mockState.updateReadinessReportMock,
-    featureSteps: {},
-    currentStage: null,
-    featureRunId: null,
-    setFeatureStep: vi.fn(),
-    setCurrentStage: vi.fn(),
-    setFeatureRunId: vi.fn(),
-    clearDraft: vi.fn()
-  });
+  const createFeatureStoreState = () => ({
+      features: mockState.features,
+      upsertFeature: mockState.upsertFeatureMock,
+      removeFeature: mockState.removeFeatureMock,
+      clearProjectFeatures: mockState.clearProjectFeaturesMock,
+      hydrateFromProject: mockState.hydrateFeaturesMock,
+      versions: mockState.versions,
+      currentVersionId: mockState.currentVersionId,
+      createDraftVersion: mockState.createDraftVersionMock,
+      removeVersion: mockState.removeVersionMock,
+      renameVersion: mockState.renameVersionMock,
+      approveVersion: mockState.approveVersionMock,
+      setCurrentVersion: mockState.setCurrentVersionMock,
+      updateReadinessReport: mockState.updateReadinessReportMock,
+      featureSteps: {},
+      currentStage: null,
+      featureRunId: null,
+      setFeatureStep: vi.fn(),
+      setCurrentStage: vi.fn(),
+      setFeatureRunId: vi.fn(),
+      clearDraft: vi.fn()
+    });
 
-  const useFeatureStore = (selector: (state: unknown) => unknown) => selector(storeState());
-  useFeatureStore.getState = storeState;
+  const useFeatureStore = Object.assign(
+    (selector: (state: unknown) => unknown) => selector(createFeatureStoreState()),
+    {
+      getState: createFeatureStoreState
+    }
+  );
   return { useFeatureStore };
 });
 
@@ -231,9 +235,11 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.applyFeatureEngineeringMock.mockReset();
   });
 
-  const renderPanel = () => render(
-    <MemoryRouter>
-      <FeatureEngineeringPanel projectId="p1" />
+  const renderPanel = (initialEntries = ['/']) => render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <Routes>
+        <Route path="*" element={<FeatureEngineeringPanel projectId="p1" />} />
+      </Routes>
     </MemoryRouter>
   );
 
@@ -334,6 +340,110 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
 
     await waitFor(() => {
       expect(formatTrigger).toHaveTextContent(/xlsx/i);
+    });
+  });
+
+  it('switches the active draft when the workbook query param changes after mount', async () => {
+    mockState.versions = {
+      p1: [
+        {
+          id: 'v1',
+          projectId: 'p1',
+          name: 'Draft Pipeline v1',
+          status: 'draft',
+          createdAt: new Date('2026-02-24T00:00:00.000Z').toISOString(),
+          readinessReport: {
+            dataSummary: {
+              addedColumns: [],
+              removedColumns: [],
+              renamedColumns: [],
+              typeChanges: [],
+              nullDeltas: [],
+              warnings: []
+            },
+            steps: []
+          }
+        },
+        {
+          id: 'v2',
+          projectId: 'p1',
+          name: 'New Draft Pipeline',
+          status: 'draft',
+          createdAt: new Date('2026-02-24T01:00:00.000Z').toISOString(),
+          readinessReport: {
+            dataSummary: {
+              addedColumns: [],
+              removedColumns: [],
+              renamedColumns: [],
+              typeChanges: [],
+              nullDeltas: [],
+              warnings: []
+            },
+            steps: []
+          }
+        }
+      ]
+    };
+    mockState.currentVersionId = { p1: 'v1' };
+
+    function NavigateToV2Button() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate('/project/p1/feature-engineering?workbook=v2')}>
+          go-v2
+        </button>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/project/p1/feature-engineering?workbook=v1']}>
+        <Routes>
+          <Route
+            path="/project/:projectId/feature-engineering"
+            element={(
+              <>
+                <NavigateToV2Button />
+                <FeatureEngineeringPanel projectId="p1" />
+              </>
+            )}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    mockState.setCurrentVersionMock.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'go-v2' }));
+
+    await waitFor(() => {
+      expect(mockState.setCurrentVersionMock).toHaveBeenCalledWith('p1', 'v2');
+    });
+  });
+
+  it('writes the active draft pipeline into the workbook query param', async () => {
+    function LocationProbe() {
+      const location = useLocation();
+      return <div data-testid="location-search">{location.search}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/project/p1/feature-engineering']}>
+        <Routes>
+          <Route
+            path="/project/:projectId/feature-engineering"
+            element={(
+              <>
+                <LocationProbe />
+                <FeatureEngineeringPanel projectId="p1" />
+              </>
+            )}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-search')).toHaveTextContent('workbook=v1');
     });
   });
 });

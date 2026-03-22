@@ -175,6 +175,25 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
   }
 
   if (turn.phase === 'feature_engineering') {
+    // Build conversation history for the feature engineering model:
+    // - Exclude get_dataset_profile pairs: dataset columns/types/sample are already in the
+    //   user message via the dataset parameter. Including profile results causes either
+    //   oversized context or a re-profiling loop (model sees no history entry but the
+    //   user message says results are available, so it re-calls the tool).
+    // - Limit to the most recent 8 pairs to prevent context explosion on long pipelines.
+    const MAX_FE_HISTORY_PAIRS = 8;
+    const filteredPairs = toolCallHistory
+      .map((call, i) => ({ call, result: toolResultHistory[i] }))
+      .filter(({ call, result }) => call.name !== 'get_dataset_profile' && result !== undefined)
+      .slice(-MAX_FE_HISTORY_PAIRS);
+    const featureToolCallHistory = filteredPairs.map(({ call }) => call);
+    const featureToolResultHistory = filteredPairs.map(({ result }) => result!);
+    // Also exclude profile results from the raw toolResults list used for the user message
+    // summary, to avoid a contradictory "Tool results available for: get_dataset_profile"
+    // line when no profile entry is present in the conversation history.
+    const featureRawToolResults = state.toolResultHistory.filter(
+      (r) => r.tool !== 'get_dataset_profile'
+    );
     return {
       nextStep: 'invoke_model',
       request: buildFeatureEngineeringRequest({
@@ -183,16 +202,19 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         prompt: turn.prompt,
         projectPlan,
         ragSnippets,
-        toolResults: state.toolResultHistory,
-        toolCallHistory,
-        toolResultHistory,
+        toolResults: featureRawToolResults,
+        toolCallHistory: featureToolCallHistory,
+        toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
         toolDefinitions: LLM_FEATURE_ENGINEERING_TOOLS,
         reasoningEffort: turn.reasoningEffort
       }),
       run: {
         ...state.run,
-        currentNode: state.iteration === 0 ? 'plan_feature_pipeline' : 'continue_feature_pipeline',
+        // Always use continue_feature_pipeline (text mode → main model). Dataset
+        // columns, types, and sample rows are already in the user message, so the
+        // plan_feature_pipeline deterministic profile step is not needed.
+        currentNode: 'continue_feature_pipeline',
         activeDatasetId: turn.datasetId,
         activeNotebookId: turn.notebookId
       }

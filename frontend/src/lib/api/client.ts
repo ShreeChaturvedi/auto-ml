@@ -222,6 +222,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     response = await fetch(url, { ...requestInit, headers });
   }
 
+  // Unverified email: clear session so the user is redirected to login
+  if (response.status === 403) {
+    const cloned = response.clone();
+    try {
+      const body = await cloned.json() as { error?: string };
+      if (body?.error === 'Email not verified') {
+        const store = useAuthStore.getState();
+        store.clearAuth();
+        store.setError('Please verify your email address before continuing.');
+      }
+    } catch { /* not JSON — fall through to normal error handling */ }
+  }
+
   return parseResponse<T>(response, options, method, url);
 }
 

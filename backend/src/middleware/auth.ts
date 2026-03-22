@@ -75,6 +75,10 @@ export async function requireAuth(
 
   const cachedUser = getCachedUser(payload.userId);
   if (cachedUser) {
+    if (!cachedUser.email_verified) {
+      res.status(403).json({ error: 'Email not verified' });
+      return;
+    }
     req.user = cachedUser;
     next();
     return;
@@ -84,6 +88,11 @@ export async function requireAuth(
   const user = await userRepository.findById(payload.userId);
   if (!user) {
     res.status(401).json({ error: 'User not found' });
+    return;
+  }
+
+  if (!user.email_verified) {
+    res.status(403).json({ error: 'Email not verified' });
     return;
   }
 
@@ -119,12 +128,12 @@ export async function optionalAuth(
 
     if (payload) {
       const cachedUser = getCachedUser(payload.userId);
-      if (cachedUser) {
+      if (cachedUser?.email_verified) {
         req.user = cachedUser;
-      } else {
+      } else if (!cachedUser) {
         const userRepository = getUserRepository();
         const user = await userRepository.findById(payload.userId);
-        if (user) {
+        if (user?.email_verified) {
           cacheUser(payload.userId, user);
           req.user = user;
         }

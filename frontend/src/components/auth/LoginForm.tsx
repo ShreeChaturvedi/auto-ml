@@ -38,6 +38,8 @@ export function LoginForm() {
   const setUser = useAuthStore((state) => state.setUser);
   const setTokens = useAuthStore((state) => state.setTokens);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const authError = useAuthStore((state) => state.error);
+  const clearError = useAuthStore((state) => state.setError);
   const [formError, setFormError] = useState<string | null>(null);
   const [buttonState, setButtonState] = useState<AuthButtonState>('idle');
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -62,6 +64,7 @@ export function LoginForm() {
 
   const onSubmit = async (data: LoginFormValues) => {
     setFormError(null);
+    clearError(null);
     setButtonState('loading');
     try {
       const response = await loginUser(data);
@@ -100,6 +103,13 @@ export function LoginForm() {
               Enter your credentials to access your account
             </p>
           </div>
+
+          {/* Auth-level error (e.g. unverified email redirect) */}
+          {authError && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+              {authError}
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

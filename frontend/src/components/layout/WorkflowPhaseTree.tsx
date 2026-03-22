@@ -173,7 +173,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           const isExpandable = EXPANDABLE_PHASES.has(phase) && isUnlocked;
           const isExpanded = expandedPhases.has(phase);
           const isWorkbookPhase = WORKBOOK_PHASES.has(phase);
-          const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && isExpandable;
+          const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
 
           const iconColorClass = isActive && activeProject
             ? projectColorClasses[activeProject.color]?.text

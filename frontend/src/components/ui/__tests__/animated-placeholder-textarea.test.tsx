@@ -1,20 +1,24 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnimatedPlaceholderTextarea } from '../animated-placeholder-textarea';
 
-// Silence the matchMedia warning in jsdom
 beforeEach(() => {
-  Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
+  vi.useFakeTimers();
+  vi.spyOn(Math, 'random').mockReturnValue(0);
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    return window.setTimeout(() => callback(performance.now()), 0);
   });
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+    window.clearTimeout(id);
+  });
+});
+
+afterEach(() => {
+  act(() => {
+    vi.runOnlyPendingTimers();
+  });
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('AnimatedPlaceholderTextarea', () => {
@@ -30,14 +34,15 @@ describe('AnimatedPlaceholderTextarea', () => {
   });
 
   it('shows the first placeholder when value is empty', () => {
-    render(
+    const { container } = render(
       <AnimatedPlaceholderTextarea
         placeholders={['Type something here', 'Another placeholder']}
         value=""
         onChange={() => {}}
       />
     );
-    expect(screen.getByText('Type something here')).toBeInTheDocument();
+
+    expect(container.textContent).toContain('Type something here');
   });
 
   it('hides all placeholder overlays when textarea has a value', () => {
@@ -82,7 +87,7 @@ describe('AnimatedPlaceholderTextarea', () => {
   });
 
   it('renders with a single placeholder without crashing', () => {
-    render(
+    const { container } = render(
       <AnimatedPlaceholderTextarea
         placeholders={['Only one']}
         value=""
@@ -90,9 +95,7 @@ describe('AnimatedPlaceholderTextarea', () => {
       />
     );
     expect(screen.getByRole('textbox')).toBeInTheDocument();
-    // With a single placeholder the same text appears in both the current and
-    // next spans, so we expect at least one occurrence.
-    expect(screen.getAllByText('Only one').length).toBeGreaterThan(0);
+    expect(container.textContent).toContain('Only one');
   });
 
   it('renders with an empty placeholder list without crashing', () => {

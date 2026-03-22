@@ -15,14 +15,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
-// 25% faster than the original 300 ms slide.
 export const SLIDE_DURATION_MS = 225;
-// Per-character animation duration — kept separate from the slide so the shine
-// pace can be tuned without affecting the container slide speed.
-// ~20% longer than SLIDE_DURATION_MS so the color bloom lingers visibly.
 export const CHAR_ANIM_DURATION_MS = 270;
-// Stagger delay between each character in the incoming word.
-// Larger value = more obvious wave effect.
 export const CHAR_STAGGER_MS = 30;
 
 const RESET_BUFFER_MS = 20;
@@ -30,6 +24,10 @@ const MIN_RESET_TIMEOUT_MS = SLIDE_DURATION_MS + RESET_BUFFER_MS;
 
 function countCharacters(value: string): number {
   return Array.from(value).length;
+}
+
+function randomIndex(len: number): number {
+  return len > 0 ? Math.floor(Math.random() * len) : 0;
 }
 
 function getResetTimeoutMs(nextPlaceholder: string): number {
@@ -77,38 +75,45 @@ export function useAnimatedPlaceholder({
   disabled,
   readOnly,
 }: UseAnimatedPlaceholderOptions): UseAnimatedPlaceholderResult {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(() => randomIndex(placeholders.length));
   const [isAnimating, setIsAnimating] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  // When true the CSS transition is suppressed so the post-animation snap
-  // back to idle positions is invisible (avoids the backward slide artifact).
+  // Suppresses CSS transition during the post-animation snap-back to idle positions.
   const [skipTransition, setSkipTransition] = useState(false);
 
   const resetTimeoutRef = useRef<number | null>(null);
   const firstRafRef = useRef<number | null>(null);
   const secondRafRef = useRef<number | null>(null);
-  const currentIndexRef = useRef(0);
+  const currentIndexRef = useRef(currentIndex);
   const isAnimatingRef = useRef(false);
-
+  const placeholdersRef = useRef(placeholders);
+  placeholdersRef.current = placeholders;
   const hasValue = hasControlledValue(value);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const placeholderSignature = placeholders.join('\u0000');
 
   useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
+    const idx = randomIndex(placeholdersRef.current.length);
+    currentIndexRef.current = idx;
+    isAnimatingRef.current = false;
+    setCurrentIndex(idx);
+    setIsAnimating(false);
+    setSkipTransition(false);
+  }, [placeholderSignature]);
 
   useEffect(() => {
-    if (placeholders.length === 0) {
+    const len = placeholdersRef.current.length;
+    if (len === 0) {
       currentIndexRef.current = 0;
       if (currentIndex !== 0) setCurrentIndex(0);
       return;
     }
 
-    if (currentIndexRef.current >= placeholders.length) {
+    if (currentIndexRef.current >= len) {
       currentIndexRef.current = 0;
       setCurrentIndex(0);
     }
-  }, [currentIndex, placeholders.length]);
+  }, [currentIndex, placeholderSignature]);
 
   useEffect(() => {
     const clearPendingAnimationWork = () => {
@@ -126,7 +131,8 @@ export function useAnimatedPlaceholder({
       }
     };
 
-    if (hasValue || placeholders.length <= 1 || prefersReducedMotion) {
+    const ph = placeholdersRef.current;
+    if (hasValue || ph.length <= 1 || prefersReducedMotion) {
       clearPendingAnimationWork();
       isAnimatingRef.current = false;
       setIsAnimating(false);
@@ -140,8 +146,9 @@ export function useAnimatedPlaceholder({
       isAnimatingRef.current = true;
       setIsAnimating(true);
 
-      const nextIndex = (currentIndexRef.current + 1) % placeholders.length;
-      const nextPlaceholderText = placeholders[nextIndex] ?? '';
+      const cur = placeholdersRef.current;
+      const nextIndex = (currentIndexRef.current + 1) % cur.length;
+      const nextPlaceholderText = cur[nextIndex] ?? '';
 
       resetTimeoutRef.current = window.setTimeout(() => {
         setCurrentIndex(nextIndex);
@@ -151,7 +158,6 @@ export function useAnimatedPlaceholder({
         isAnimatingRef.current = false;
         resetTimeoutRef.current = null;
 
-        // Re-enable transitions only after the snap frame is committed.
         firstRafRef.current = requestAnimationFrame(() => {
           firstRafRef.current = null;
           secondRafRef.current = requestAnimationFrame(() => {
@@ -169,16 +175,13 @@ export function useAnimatedPlaceholder({
       clearPendingAnimationWork();
       isAnimatingRef.current = false;
     };
-  }, [hasValue, placeholders, interval, prefersReducedMotion]);
+  }, [hasValue, placeholderSignature, interval, prefersReducedMotion]);
 
   const currentPlaceholder = placeholders[currentIndex] ?? '';
   const nextPlaceholder = placeholders[(currentIndex + 1) % placeholders.length] ?? '';
   const showOverlayCaret = !hasValue && isFocused && !disabled && !readOnly;
 
-  // Outgoing span fades AND slides (both transform + opacity transition).
-  // Incoming span only slides — its opacity is snapped to 1 immediately so
-  // the per-character animations fully own visibility and the stagger is not
-  // washed out by a competing container opacity transition.
+  // Incoming span omits opacity transition so per-character animations own visibility.
   const outgoingTransition = skipTransition
     ? 'none'
     : `transform ${SLIDE_DURATION_MS}ms ease-out, opacity ${SLIDE_DURATION_MS}ms ease-out`;

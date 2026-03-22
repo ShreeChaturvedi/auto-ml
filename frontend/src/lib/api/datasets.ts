@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import type { ColumnDataType } from '@/types/file';
+import type { ColumnDataType, EdaSummary } from '@/types/file';
 
 export interface UploadDatasetResponse {
   dataset: {
@@ -16,6 +16,7 @@ export interface UploadDatasetResponse {
     sample: Record<string, unknown>[];
     createdAt: string;
     tableName?: string; // Postgres table name for SQL querying
+    eda?: EdaSummary;
   };
 }
 

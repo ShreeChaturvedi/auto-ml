@@ -198,6 +198,7 @@ export async function processDatasetUpload(
       sample: dataset.sample,
       createdAt: dataset.createdAt,
       tableName,
+      eda,
       warning: loadWarning
     },
     warning: loadWarning

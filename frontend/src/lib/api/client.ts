@@ -241,3 +241,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 export function getApiBaseUrl() {
   return BASE_URL;
 }
+
+/** Build an auth headers object for raw fetch calls that bypass apiRequest. */
+export function getAuthHeaders(): Record<string, string> {
+  const { accessToken } = useAuthStore.getState();
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}

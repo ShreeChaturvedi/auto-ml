@@ -349,3 +349,15 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
 
   return { model: record, success: true, message: 'Model trained successfully.' };
 }
+
+export async function deleteModel(modelId: string): Promise<boolean> {
+  const model = await modelRepository.getById(modelId);
+  if (!model) return false;
+  const deleted = await modelRepository.delete(modelId);
+  if (deleted) {
+    const artifactDir = join(env.modelStorageDir, modelId);
+    await rm(artifactDir, { recursive: true, force: true })
+      .catch((err) => appLogger.warn('[modelTraining] artifact cleanup failed', { modelId, err }));
+  }
+  return deleted;
+}

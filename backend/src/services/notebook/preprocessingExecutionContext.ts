@@ -1,5 +1,6 @@
 import { env } from '../../config.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
+import { createFilePreprocessingRunRepository } from '../../repositories/preprocessingRunRepository.js';
 import type { DatasetFileType } from '../../types/dataset.js';
 import { asRecord, asString } from '../../utils/typeCoercion.js';
 
@@ -13,6 +14,7 @@ export interface PreprocessingExecutionContext {
 }
 
 const DEFAULT_DATAFRAME_NAME = 'df';
+const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
 
 export async function resolvePreprocessingExecutionContext(
   projectId: string,
@@ -21,9 +23,17 @@ export async function resolvePreprocessingExecutionContext(
   const preprocessing = asRecord(asRecord(metadata)?.preprocessing);
   const runId = asString(preprocessing?.runId);
   const stepId = asString(preprocessing?.stepId);
-  const datasetId = asString(preprocessing?.datasetId);
-  if (!runId || !stepId || !datasetId) {
+  let datasetId = asString(preprocessing?.datasetId);
+  if (!runId || !stepId) {
     return null;
+  }
+  if (!datasetId) {
+    const run = await runRepository.getById(runId);
+    const checkpoint = run?.checkpoints.find((cp) => cp.stepIds.includes(stepId));
+    datasetId = checkpoint?.datasetId ?? run?.activeDatasetId;
+    if (!datasetId) {
+      return null;
+    }
   }
 
   const datasetRepository = createDatasetRepository(env.datasetMetadataPath);

@@ -5,13 +5,13 @@ description: Automatically fetch, prioritize, and fix all open GitLab issues for
 
 # Fix All Open Issues
 
-Batch-process open GitLab issues for the current sprint. Each issue gets its own isolated subagent (via `isolation: "worktree"`) so no single fix bloats the orchestrator's context. The orchestrator handles prioritization, git flow, and MR creation. Fixes are submitted as MRs — never merged directly.
+Batch-process open GitLab issues for the current sprint. Each issue gets its own isolated subagent (via `isolation: "worktree"`) so no single fix bloats the orchestrator's context. Subagents handle the full lifecycle: fix → verify → push → create MR → label issue. The orchestrator handles prioritization, dispatching, and cleanup.
 
 ## Orchestration
 
 ### 1. Detect sprint
 
-Extract sprint number from the current branch name (e.g., `sprint9` -> `09`, `sprint10` -> `10`). Pad single digits with a leading zero for the label format `SPRINT::09`.
+Extract sprint number from the current branch name (e.g., `sprint9` -> `09`, `sprint10` -> `10`). Pad single digits with a leading zero for the label format `SPRINT::09`. Also note the unpadded branch name (e.g., `sprint9`) — subagents need it to branch correctly.
 
 If not on a sprint branch, check the most recent issue labels to infer the current sprint.
 
@@ -47,57 +47,21 @@ For each issue in priority order:
 
 #### a. Spawn a fix subagent
 
-Use the `Agent` tool with **`isolation: "worktree"`** and `subagent_type: "general-purpose"`. Pass the **Subagent Prompt** (below) with the issue's details filled in.
+Use the `Agent` tool with **`isolation: "worktree"`** and `subagent_type: "general-purpose"`. Pass the **Subagent Prompt** (below) with the issue's details and the sprint branch name filled in.
 
-Important: spawn ONE subagent at a time (sequential, not parallel). Wait for each to complete before starting the next. This avoids git conflicts and lets you react to failures.
+Important: spawn ONE subagent at a time (sequential, not parallel). Wait for each to complete before starting the next.
 
-#### b. Post-fix quality gates (orchestrator runs these, not the subagent)
+#### b. Handle the result
 
-After the subagent reports `"status": "success"`, the orchestrator runs two skills on the worktree before pushing:
+The subagent handles the full lifecycle: fix → verify → push → create MR → label issue. Parse its JSON report.
 
-1. **Invoke `/simplify`** — use the Skill tool with `skill: "simplify"`. This reviews the subagent's changes for reuse opportunities, code quality, and efficiency, and fixes any issues found. Run this from the worktree directory.
-
-2. **Invoke `/verification-before-completion`** — use the Skill tool with `skill: "superpowers:verification-before-completion"`. This ensures lint and tests genuinely pass with fresh evidence. Do not trust the subagent's claim — verify independently.
-
-If either gate fails (lint errors, test failures, or simplify reveals problems that can't be auto-fixed), mark the issue as `"failed"` and clean up.
-
-#### c. Handle the result
-
-Parse the subagent's JSON status report from its response.
-
-**If `"status": "success"`** and quality gates pass and the result includes a worktree path and branch:
-
-```bash
-# Push from the worktree
-cd {worktree_path}
-git push -u origin fix/issue-{number}
-
-# Create MR
-glab mr create \
-  --title "Fix #{number}: {short_title}" \
-  --description "$(cat <<'EOF'
-Closes #{number}
-
-## Changes
-{brief summary from subagent}
-
-_Automated fix — please review before merging._
-EOF
-)" \
-  --target-branch sprint{N} \
-  --remove-source-branch
-
-# Comment on the issue
-glab issue note {number} --message "Automated fix submitted: {MR_URL}"
-```
-
-Then clean up:
+**If `"status": "success"`**: Extract `mr_url` from the report. Clean up the worktree:
 ```bash
 cd {original_project_dir}
 git worktree remove {worktree_path} --force
 ```
 
-**If `"status": "skipped"` or `"status": "failed"`**: Log the reason. If a worktree was created, clean it up. Continue to the next issue.
+**If `"status": "skipped"` or `"status": "failed"`**: Log the reason. Clean up the worktree. Continue to the next issue.
 
 **Circuit breaker**: If **3 consecutive** issues fail (not skipped — failed), stop the run entirely. Something systemic is likely wrong. Report what happened.
 
@@ -125,7 +89,7 @@ Output a table:
 Use this as the prompt for each subagent. Replace `{variables}` with actual issue data.
 
 ```
-You are fixing GitLab issue #{number} in an automated pipeline. Work autonomously — there is no human to ask.
+You are a senior engineer fixing GitLab issue #{number} in an automated pipeline. Work autonomously — there is no human to ask.
 
 Read CLAUDE.md at the project root for coding conventions before starting.
 
@@ -139,14 +103,20 @@ Description:
 
 ## Process
 
-### 1. Create your branch
-git checkout -b fix/issue-{number}
+### 1. Branch from sprint
+The worktree starts on a default branch — NOT the sprint branch. You must branch from the sprint explicitly:
+git fetch origin {sprint_branch}
+git checkout -b fix/issue-{number} origin/{sprint_branch}
+
+This is critical. Without this, your MR will have merge conflicts and no actual changes.
 
 ### 2. Understand the issue
 Read the description carefully. Identify what needs to change, which files are involved, and what the acceptance criteria are.
 
 ### 3. Explore the code
 Use Grep, Glob, and Read. Trace the data flow through every file mentioned in the issue. Don't guess — read.
+
+Before writing code, Grep for EVERY instance of the pattern you need to change. The issue description may cite outdated line numbers or miss instances — your search is the source of truth.
 
 ### 4. Find root cause (for bugs)
 If this is a bug: trace the data flow backward from the symptom to the root cause. Do NOT patch symptoms. Understand WHY the bug exists before writing any fix. Check recent git changes to the relevant files.
@@ -185,10 +155,33 @@ fix: {concise description} (closes #{number})
 EOF
 )"
 
-### 11. Report
+### 11. Push, create MR, and move issue to review
+git push -u origin fix/issue-{number}
+
+glab mr create --title "Fix #{number}: {short title}" --description "$(cat <<'EOF'
+Closes #{number}
+
+## What changed
+{one bullet per file changed}
+
+## Why
+{root cause or motivation}
+
+## Acceptance criteria
+{each criterion as a checkbox, all checked}
+
+_Automated fix — please review before merging._
+EOF
+)" --target-branch {sprint_branch} --remove-source-branch
+
+Then move the issue to review:
+glab issue update {number} -l "QA::REVIEW NEEDED" -l "DLC::Review"
+glab issue note {number} --message "Automated fix submitted: {MR_URL}"
+
+### 12. Report
 End your response with exactly this JSON (no markdown fence):
 
-{"issue": {number}, "status": "success", "files_changed": [...], "tests_passed": true, "lint_passed": true, "summary": "one-line description of what was fixed"}
+{"issue": {number}, "status": "success", "files_changed": [...], "tests_passed": true, "lint_passed": true, "summary": "one-line description of what was fixed", "mr_url": "the MR URL from glab output"}
 
 ## When to SKIP (status: "skipped")
 - Issue is vague or ambiguous
@@ -209,10 +202,11 @@ Always include the reason in your JSON: {"issue": {number}, "status": "skipped",
 
 ## Cron Integration
 
-This skill runs unattended via cron. Recommended setup:
+This skill runs unattended via cron. The installed crontab:
 
 ```cron
-0 6,18 * * * cd /home/shree/Documents/CSE449/repo && claude --dangerously-skip-permissions -p "/fix-all-issues" >> /tmp/fix-all-issues.log 2>&1
+3 6 * * * cd /home/shree/Documents/CSE449/repo && /home/shree/.local/bin/claude --dangerously-skip-permissions --effort max -n "Cron Issue Fix $(date +\%Y-\%m-\%d) 1" -p "/fix-all-issues" >> /tmp/fix-all-issues.log 2>&1
+3 18 * * * cd /home/shree/Documents/CSE449/repo && /home/shree/.local/bin/claude --dangerously-skip-permissions --effort max -n "Cron Issue Fix $(date +\%Y-\%m-\%d) 2" -p "/fix-all-issues" >> /tmp/fix-all-issues.log 2>&1
 ```
 
 The worktree isolation ensures cron runs don't interfere with active development work.

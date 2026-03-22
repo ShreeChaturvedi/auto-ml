@@ -167,4 +167,38 @@ describe('QueryPanel theme handling', () => {
     expect(await screen.findAllByText(/compare weekly revenue and average order value/i)).not.toHaveLength(0);
     expect(screen.queryByText(/this stale project suggestion should never appear/i)).not.toBeInTheDocument();
   });
+
+  it('keeps english placeholders visible across sql mode toggles', async () => {
+    useNlSuggestionStore.setState({
+      byProject: {
+        'route-project': {
+          suggestions: [
+            {
+              id: 'route-suggestion',
+              prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
+              label: 'Weekly revenue trends',
+              category: 'trend',
+              tables: ['orders'],
+              rationale: 'Uses time and revenue metrics.'
+            }
+          ],
+          schemaFingerprint: 'schema-1'
+        }
+      }
+    });
+
+    const { container } = render(<QueryPanel projectId="route-project" onExecute={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText(/natural language mode/i));
+    expect(container.textContent).toContain(
+      'Compare weekly revenue and average order value over the last 8 weeks.'
+    );
+
+    fireEvent.click(screen.getByLabelText(/sql mode/i));
+    fireEvent.click(screen.getByLabelText(/natural language mode/i));
+
+    expect(container.textContent).toContain(
+      'Compare weekly revenue and average order value over the last 8 weeks.'
+    );
+  });
 });

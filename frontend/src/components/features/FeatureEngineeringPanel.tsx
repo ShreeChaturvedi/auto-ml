@@ -144,7 +144,8 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   const handleDeleteCurrentDraft = useCallback(() => {
     const previousVersionId = currentVersion?.id;
     handleDeleteDraft();
-    const nextVersionId = useFeatureStore.getState().currentVersionId[projectId];
+    const nextState = useFeatureStore.getState();
+    const nextVersionId = nextState.currentVersionId[projectId];
 
     if (nextVersionId && nextVersionId !== previousVersionId) {
       updateWorkbookParam(nextVersionId);
@@ -152,8 +153,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     }
 
     if (!nextVersionId) {
-      const remainingVersions = useFeatureStore.getState().versions[projectId] ?? [];
-      const fallbackVersion = remainingVersions[0];
+      const fallbackVersion = (nextState.versions[projectId] ?? [])[0];
       if (fallbackVersion) {
         setCurrentVersion(projectId, fallbackVersion.id);
         updateWorkbookParam(fallbackVersion.id);

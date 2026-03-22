@@ -108,7 +108,8 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           headers: dataset.columns,
           rows: dataset.sample,
           totalRows: dataset.n_rows,
-          previewRows: dataset.sample.length
+          previewRows: dataset.sample.length,
+          eda: dataset.eda
         });
 
         setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));

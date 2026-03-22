@@ -52,79 +52,28 @@ export async function resolvePreprocessingExecutionContext(
   };
 }
 
+/**
+ * Build the execution code for a preprocessing cell.
+ *
+ * The generated code calls kernel-level helpers injected by KERNEL_INIT_CODE
+ * (load_preprocessing_dataset / save_preprocessing_dataset), so the code that
+ * runs in the kernel matches what the user can see and debug.
+ */
 export function buildPreprocessingExecutionCode(
   context: PreprocessingExecutionContext,
   cellCode: string
 ): string {
-  const metadataJson = JSON.stringify({
-    runId: context.runId,
-    stepId: context.stepId,
-    datasetId: context.datasetId,
-    filename: context.filename
-  });
+  const { filename, datasetId, fileType, dataframeName } = context;
+  const fn = JSON.stringify(filename);
+  const ds = JSON.stringify(datasetId);
+  const ft = JSON.stringify(fileType);
+  const df = JSON.stringify(dataframeName);
 
   return [
-    'import pandas as pd',
-    `_automl_preprocessing = ${metadataJson}`,
-    `_automl_preprocessing["dataset_path"] = resolve_dataset_path(${JSON.stringify(context.filename)}, ${JSON.stringify(context.datasetId)})`,
-    'dataset_path = _automl_preprocessing["dataset_path"]',
-    `active_dataset_id = ${JSON.stringify(context.datasetId)}`,
-    ...buildLoadLines(context),
+    `${dataframeName} = load_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`,
     '',
     cellCode.trim(),
     '',
-    ...buildPersistLines(context)
+    `save_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`
   ].join('\n');
-}
-
-function buildLoadLines(context: PreprocessingExecutionContext): string[] {
-  const dataframeName = context.dataframeName;
-  return [
-    `if "_automl_preprocessing_df" in globals() and isinstance(_automl_preprocessing_df, pd.DataFrame):`,
-    `    ${dataframeName} = _automl_preprocessing_df`,
-    'else:',
-    ...buildIndentedLoaderLines(context.fileType, dataframeName),
-    `    _automl_preprocessing_df = ${dataframeName}`
-  ];
-}
-
-function buildIndentedLoaderLines(fileType: DatasetFileType, dataframeName: string): string[] {
-  return buildLoaderLines(fileType, dataframeName).map((line) => `    ${line}`);
-}
-
-function buildLoaderLines(fileType: DatasetFileType, dataframeName: string): string[] {
-  if (fileType === 'json') {
-    return [
-      'try:',
-      `    ${dataframeName} = pd.read_json(dataset_path)`,
-      'except ValueError:',
-      `    ${dataframeName} = pd.read_json(dataset_path, lines=True)`
-    ];
-  }
-  if (fileType === 'xlsx') {
-    return [`${dataframeName} = pd.read_excel(dataset_path)`];
-  }
-  return [`${dataframeName} = pd.read_csv(dataset_path)`];
-}
-
-function buildPersistLines(context: PreprocessingExecutionContext): string[] {
-  const dataframeName = context.dataframeName;
-  return [
-    `if "${dataframeName}" not in globals():`,
-    `    raise ValueError("Preprocessing cell must leave the active dataframe in variable '${dataframeName}'.")`,
-    `if not isinstance(${dataframeName}, pd.DataFrame):`,
-    `    raise TypeError("Preprocessing variable '${dataframeName}' must be a pandas DataFrame.")`,
-    `_automl_preprocessing_df = ${dataframeName}`,
-    ...buildPersistWriterLines(context.fileType, dataframeName)
-  ];
-}
-
-function buildPersistWriterLines(fileType: DatasetFileType, dataframeName: string): string[] {
-  if (fileType === 'json') {
-    return [`${dataframeName}.to_json(dataset_path, orient="records")`];
-  }
-  if (fileType === 'xlsx') {
-    return [`${dataframeName}.to_excel(dataset_path, index=False)`];
-  }
-  return [`${dataframeName}.to_csv(dataset_path, index=False)`];
 }

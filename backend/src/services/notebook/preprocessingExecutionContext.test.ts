@@ -134,7 +134,7 @@ describe('preprocessingExecutionContext', () => {
     expect(getByIdMock).not.toHaveBeenCalled();
   });
 
-  it('wraps cell code with deterministic dataframe load and persistence', () => {
+  it('emits load helper call, user code, and save helper call', () => {
     const code = buildPreprocessingExecutionCode({
       runId: 'prep-1',
       stepId: 'step-1',
@@ -144,11 +144,42 @@ describe('preprocessingExecutionContext', () => {
       dataframeName: 'df'
     }, 'df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
 
-    expect(code).toContain('dataset_path = _automl_preprocessing["dataset_path"]');
-    expect(code).toContain('df = _automl_preprocessing_df');
-    expect(code).toContain('df = pd.read_csv(dataset_path)');
+    expect(code).toContain('load_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
     expect(code).toContain('df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
-    expect(code).toContain('_automl_preprocessing_df = df');
-    expect(code).toContain('df.to_csv(dataset_path, index=False)');
+    expect(code).toContain('save_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
+  });
+
+  it('does not contain invisible Python wrapping or string-concatenated logic', () => {
+    const code = buildPreprocessingExecutionCode({
+      runId: 'prep-1',
+      stepId: 'step-1',
+      datasetId: 'ds-1',
+      filename: 'data.json',
+      fileType: 'json',
+      dataframeName: 'df'
+    }, 'df = df.dropna()');
+
+    // No invisible globals, no inline pandas import, no raw file I/O
+    expect(code).not.toContain('_automl_preprocessing_df');
+    expect(code).not.toContain('_automl_preprocessing');
+    expect(code).not.toContain('import pandas');
+    expect(code).not.toContain('pd.read_');
+    expect(code).not.toContain('.to_json(');
+    expect(code).not.toContain('.to_csv(');
+  });
+
+  it('handles xlsx file type', () => {
+    const code = buildPreprocessingExecutionCode({
+      runId: 'prep-1',
+      stepId: 'step-1',
+      datasetId: 'ds-1',
+      filename: 'data.xlsx',
+      fileType: 'xlsx',
+      dataframeName: 'my_df'
+    }, 'my_df = my_df.head(10)');
+
+    expect(code).toContain('load_preprocessing_dataset("data.xlsx", "ds-1", "xlsx", "my_df")');
+    expect(code).toContain('my_df = my_df.head(10)');
+    expect(code).toContain('save_preprocessing_dataset("data.xlsx", "ds-1", "xlsx", "my_df")');
   });
 });

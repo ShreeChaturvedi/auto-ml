@@ -10,14 +10,8 @@ import type { ModelRecord, ModelTaskType } from '@/types/model';
 import type { CrossPhaseRecommendation } from '@/types/experiments';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { cn } from '@/lib/utils';
-import { formatMetric, formatDuration, generateRecommendations, PRIMARY_METRIC, detectTaskTypes } from './utils';
+import { formatMetric, formatDuration, generateRecommendations, PRIMARY_METRIC, PRIMARY_METRIC_LABEL, detectTaskTypes } from './utils';
 import { ModelsParallelCoords } from './ModelsParallelCoords';
-
-const PRIMARY_METRIC_LABEL: Record<ModelTaskType, string> = {
-  classification: 'Accuracy',
-  regression: 'R\u00B2',
-  clustering: 'Silhouette',
-};
 
 function findBestModel(
   models: ModelRecord[],

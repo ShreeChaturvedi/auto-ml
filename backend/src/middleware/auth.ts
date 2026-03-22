@@ -8,6 +8,7 @@
 
 import type { Response, NextFunction } from 'express';
 
+import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
@@ -39,6 +40,10 @@ function getCachedUser(userId: string): SafeUser | undefined {
   if (cached && cached.expiry > Date.now()) return cached.user;
   if (cached) userCache.delete(userId);
   return undefined;
+}
+
+function passesEmailGate(user: SafeUser): boolean {
+  return user.email_verified || env.devBypassEmailVerification;
 }
 
 /**
@@ -75,7 +80,7 @@ export async function requireAuth(
 
   const cachedUser = getCachedUser(payload.userId);
   if (cachedUser) {
-    if (!cachedUser.email_verified) {
+    if (!passesEmailGate(cachedUser)) {
       res.status(403).json({ error: 'Email not verified' });
       return;
     }
@@ -91,7 +96,7 @@ export async function requireAuth(
     return;
   }
 
-  if (!user.email_verified) {
+  if (!passesEmailGate(user)) {
     res.status(403).json({ error: 'Email not verified' });
     return;
   }
@@ -128,12 +133,12 @@ export async function optionalAuth(
 
     if (payload) {
       const cachedUser = getCachedUser(payload.userId);
-      if (cachedUser?.email_verified) {
+      if (cachedUser && passesEmailGate(cachedUser)) {
         req.user = cachedUser;
       } else if (!cachedUser) {
         const userRepository = getUserRepository();
         const user = await userRepository.findById(payload.userId);
-        if (user?.email_verified) {
+        if (user && passesEmailGate(user)) {
           cacheUser(payload.userId, user);
           req.user = user;
         }

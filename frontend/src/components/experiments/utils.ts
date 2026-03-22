@@ -23,6 +23,13 @@ export const PRIMARY_METRIC: Record<ModelTaskType, string> = {
   clustering: 'silhouette',
 };
 
+/** Human-readable label for each primary metric. */
+export const PRIMARY_METRIC_LABEL: Record<ModelTaskType, string> = {
+  classification: 'Accuracy',
+  regression: 'R\u00B2',
+  clustering: 'Silhouette',
+};
+
 /** Detect whether models span more than one task type. */
 export function detectTaskTypes(models: ModelRecord[]): ModelTaskType[] {
   return Array.from(new Set(models.map((m) => m.taskType)));

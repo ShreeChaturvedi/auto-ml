@@ -1,8 +1,9 @@
 import { useMemo, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Trophy, ArrowUp, ArrowDown, GitCompareArrows } from 'lucide-react';
+import { Trophy, ArrowUp, ArrowDown, GitCompareArrows, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
@@ -10,7 +11,7 @@ import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn } from '@/lib/utils';
 import { NlFilterBar } from './NlFilterBar';
-import { formatMetric, filterByPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
+import { formatMetric, formatOperator, filterByPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
 
 /* ── Metric helpers ─────────────────────────────────────── */
 
@@ -111,6 +112,8 @@ export function Leaderboard() {
   const sortField = useExperimentsStore((s) => s.sortField);
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
+  const clearFilter = useExperimentsStore((s) => s.clearFilter);
+  const setNlFilter = useExperimentsStore((s) => s.setNlFilter);
 
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
@@ -162,19 +165,55 @@ export function Leaderboard() {
 
   const isEmpty = models.length === 0 && !isLoadingModels;
 
+  const removePredicate = useCallback(
+    (index: number) => {
+      const next = activePredicates.filter((_, i) => i !== index);
+      if (next.length === 0) {
+        clearFilter();
+      } else {
+        setNlFilter('', next);
+      }
+    },
+    [activePredicates, clearFilter, setNlFilter]
+  );
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <Trophy className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm font-semibold">Leaderboard</span>
-          <span className="text-[11px] text-muted-foreground">{models.length} models</span>
-        </div>
+      {/* Header — search integrated inline */}
+      <div className="flex h-14 items-center gap-3 border-b px-3 shrink-0">
+        {!isEmpty && <NlFilterBar />}
+        <span className="text-[11px] text-muted-foreground shrink-0">{models.length} models</span>
       </div>
 
-      {/* NL Filter */}
-      {!isEmpty && <NlFilterBar />}
+      {/* Active filter predicates */}
+      {activePredicates.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5 shrink-0">
+          {activePredicates.map((pred, i) => (
+            <Badge
+              key={`${pred.field}-${pred.operator}-${pred.value}-${i}`}
+              variant="secondary"
+              className="text-[10px] gap-1 pl-2 pr-1 py-0.5"
+            >
+              <span>{pred.field} {formatOperator(pred.operator)} {pred.value}</span>
+              <button
+                type="button"
+                className="rounded-sm hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                onClick={() => removePredicate(i)}
+                aria-label={`Remove filter: ${pred.field} ${formatOperator(pred.operator)} ${pred.value}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </Badge>
+          ))}
+          <button
+            type="button"
+            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+            onClick={clearFilter}
+          >
+            Clear All
+          </button>
+        </div>
+      )}
 
       {/* Empty state */}
       {isEmpty && (

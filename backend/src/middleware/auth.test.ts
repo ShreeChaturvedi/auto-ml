@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => {
   return { findById, verifyAccessToken };
 });
 
+vi.mock('../config.js', () => ({
+  env: { devBypassEmailVerification: false }
+}));
+
 vi.mock('../db.js', () => ({
   getDbPool: vi.fn(),
   hasDatabaseConfiguration: vi.fn(() => true)

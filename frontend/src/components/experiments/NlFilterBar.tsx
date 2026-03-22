@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { Search, X } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Search } from 'lucide-react';
+import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-input';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { readNdjsonStream } from '@/lib/api/streamReader';
 import { fetchInsights } from '@/lib/api/experiments';
@@ -14,22 +13,17 @@ const AVAILABLE_FIELDS = [
   'algorithm', 'name', 'status', 'taskType'
 ];
 
-function formatOperator(op: FilterPredicate['operator']): string {
-  switch (op) {
-    case 'gt': return '>';
-    case 'lt': return '<';
-    case 'gte': return '>=';
-    case 'lte': return '<=';
-    case 'eq': return '=';
-    case 'contains': return 'contains';
-  }
-}
+const FILTER_PLACEHOLDERS = [
+  'Show models with accuracy above 0.9',
+  'Filter by random forest algorithm',
+  'Find models trained today',
+  'Compare regression models by R\u00B2',
+  'Show top classification models',
+];
 
 export function NlFilterBar() {
   const { projectId } = useParams<{ projectId: string }>();
-  const activePredicates = useExperimentsStore((s) => s.activePredicates);
   const setNlFilter = useExperimentsStore((s) => s.setNlFilter);
-  const clearFilter = useExperimentsStore((s) => s.clearFilter);
 
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,11 +49,9 @@ export function NlFilterBar() {
         }
       }
 
-      // Parse the accumulated JSON to extract predicates
       const parsed = JSON.parse(accumulated) as { predicates?: FilterPredicate[] };
       if (parsed.predicates && Array.isArray(parsed.predicates) && parsed.predicates.length > 0) {
         setNlFilter(query, parsed.predicates);
-        setError(null);
       } else {
         setError('Could not parse filter');
         setNlFilter('', []);
@@ -82,75 +74,26 @@ export function NlFilterBar() {
     [handleSubmit]
   );
 
-  const removePredicate = useCallback(
-    (index: number) => {
-      const next = activePredicates.filter((_, i) => i !== index);
-      if (next.length === 0) {
-        clearFilter();
-        setInputText('');
-      } else {
-        setNlFilter(inputText, next);
-      }
-    },
-    [activePredicates, clearFilter, inputText, setNlFilter]
-  );
-
-  const handleClearAll = useCallback(() => {
-    clearFilter();
-    setInputText('');
-    setError(null);
-  }, [clearFilter]);
-
   return (
-    <div className="px-3 py-1.5 border-b space-y-1.5">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-        <Input
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder='Filter models... (e.g., accuracy > 0.8)'
-          className="h-7 pl-8 text-xs"
-          disabled={isLoading}
-        />
-        {isLoading && (
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
-            <div className="h-3.5 w-3.5 border-2 border-muted-foreground/30 border-t-foreground rounded-full animate-spin" />
-          </div>
-        )}
-      </div>
-
-      {error && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
-
-      {activePredicates.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {activePredicates.map((pred, i) => (
-            <Badge
-              key={`${pred.field}-${pred.operator}-${pred.value}-${i}`}
-              variant="secondary"
-              className="text-[10px] gap-1 pl-2 pr-1 py-0.5"
-            >
-              <span>{pred.field} {formatOperator(pred.operator)} {pred.value}</span>
-              <button
-                type="button"
-                className="rounded-sm hover:bg-muted-foreground/20 p-0.5 transition-colors"
-                onClick={() => removePredicate(i)}
-                aria-label={`Remove filter: ${pred.field} ${formatOperator(pred.operator)} ${pred.value}`}
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </Badge>
-          ))}
-          <button
-            type="button"
-            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-            onClick={handleClearAll}
-          >
-            Clear All
-          </button>
+    <div className="relative flex-1 min-w-0">
+      <Search className="absolute left-2 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+      <AnimatedPlaceholderInput
+        placeholders={FILTER_PLACEHOLDERS}
+        interval={4000}
+        value={inputText}
+        onChange={(e) => setInputText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={isLoading}
+        leftPadding={2}
+        className="h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 focus-visible:border-transparent"
+      />
+      {isLoading && (
+        <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
+          <div className="h-3.5 w-3.5 border-2 border-muted-foreground/30 border-t-foreground rounded-full animate-spin" />
         </div>
+      )}
+      {error && (
+        <p className="absolute left-2 top-full text-[10px] text-destructive mt-0.5">{error}</p>
       )}
     </div>
   );

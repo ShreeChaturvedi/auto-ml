@@ -3,10 +3,10 @@ import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Square, RotateCcw, ExternalLink, Trophy, Zap, AlertCircle } from 'lucide-react';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { startTuning as startTuningApi } from '@/lib/api/experiments';
 import { readNdjsonStream } from '@/lib/api/streamReader';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
   const model = useModelStore((s) => s.models.find((m) => m.modelId === modelId));
   const refreshModels = useModelStore((s) => s.refreshModels);
   const selectModel = useExperimentsStore((s) => s.selectModel);
+  const { themeColor } = useProjectThemeColor(projectId ?? '');
 
   const [nTrials, setNTrials] = useState(50);
   const [metric, setMetric] = useState('');
@@ -150,6 +151,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
         taskType={taskType}
         onStart={handleStartTuning}
         disabled={!metric || !projectId}
+        themeColor={themeColor}
       />
     );
   }
@@ -169,7 +171,11 @@ export function TuneTab({ modelId }: TuneTabProps) {
             <span className="text-muted-foreground">{nComplete} / {nTotal} trials complete</span>
             <span className="font-mono tabular-nums text-muted-foreground">{Math.round(progressPercent)}%</span>
           </div>
-          <Progress value={progressPercent} className="h-2.5" />
+          <Progress
+            value={progressPercent}
+            className="h-2.5"
+            indicatorStyle={themeColor ? { backgroundColor: themeColor } : undefined}
+          />
         </div>
         {bestValue != null && (
           <div className="flex items-center gap-2">
@@ -227,74 +233,71 @@ export function TuneTab({ modelId }: TuneTabProps) {
     );
   }
 
-  /* Completed state */
+  /* Completed state — flat layout, no Card wrapper */
   return (
     <div className="space-y-5 p-5">
-      <Card>
-        <CardHeader className="pb-3 pt-4 px-4">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <Zap className="h-4.5 w-4.5 text-emerald-500" />
-            Tuning Complete
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            {bestValue != null && (
-              <div className="space-y-0.5">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Best {metric}</p>
-                <p className="text-lg font-bold tabular-nums text-foreground">{formatValue(bestValue)}</p>
-              </div>
-            )}
-            {improvementDelta != null && (
-              <div className="space-y-0.5">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Improvement</p>
-                <p className={cn(
-                  'text-lg font-bold tabular-nums',
-                  improvementDelta > 0 ? 'text-emerald-600 dark:text-emerald-400'
-                    : improvementDelta < 0 ? 'text-red-600 dark:text-red-400'
-                    : 'text-muted-foreground',
-                )}>
-                  {improvementDelta > 0 ? '+' : ''}{formatValue(improvementDelta)}
-                </p>
-              </div>
-            )}
-            <div className="space-y-0.5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Trials</p>
-              <p className="text-lg font-bold tabular-nums text-foreground">
-                {trials.filter((t) => t.state === 'COMPLETE').length} / {nTotal}
-              </p>
-            </div>
-          </div>
+      <div className="space-y-4">
+        <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <Zap className="h-4 w-4 text-emerald-500" />
+          Tuning Complete
+        </h3>
 
-          {bestParams && Object.keys(bestParams).length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Best Parameters
-              </p>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/40">
-                      <th className="px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">Parameter</th>
-                      <th className="px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(bestParams).map(([key, val]) => (
-                      <tr key={key} className="border-b last:border-0">
-                        <td className="px-3 py-1.5 font-mono text-xs text-foreground">{key}</td>
-                        <td className="px-3 py-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-                          {typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(6)) : String(val)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          {bestValue != null && (
+            <div className="space-y-0.5">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Best {metric}</p>
+              <p className="text-lg font-bold tabular-nums text-foreground">{formatValue(bestValue)}</p>
             </div>
           )}
-        </CardContent>
-      </Card>
+          {improvementDelta != null && (
+            <div className="space-y-0.5">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Improvement</p>
+              <p className={cn(
+                'text-lg font-bold tabular-nums',
+                improvementDelta > 0 ? 'text-emerald-600 dark:text-emerald-400'
+                  : improvementDelta < 0 ? 'text-red-600 dark:text-red-400'
+                  : 'text-muted-foreground',
+              )}>
+                {improvementDelta > 0 ? '+' : ''}{formatValue(improvementDelta)}
+              </p>
+            </div>
+          )}
+          <div className="space-y-0.5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Trials</p>
+            <p className="text-lg font-bold tabular-nums text-foreground">
+              {nComplete} / {nTotal}
+            </p>
+          </div>
+        </div>
+
+        {bestParams && Object.keys(bestParams).length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Best Parameters
+            </p>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40">
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">Parameter</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(bestParams).map(([key, val]) => (
+                    <tr key={key} className="border-b last:border-0">
+                      <td className="px-3 py-1.5 font-mono text-xs text-foreground">{key}</td>
+                      <td className="px-3 py-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+                        {typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(6)) : String(val)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       <OptimizationHistoryChart trials={trials} height={350} />
 

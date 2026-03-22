@@ -5,8 +5,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Target, TrendingUp, Layers, MoreVertical, Download, Trash2, GitCompareArrows } from 'lucide-react';
-import type { ComponentType } from 'react';
+import { MoreVertical, Download, Trash2, GitCompareArrows } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,20 +16,12 @@ import { Button } from '@/components/ui/button';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { getModelArtifactUrl } from '@/lib/api/models';
-import type { ModelTaskType } from '@/types/model';
+import { resolveModelIcon } from '@/components/experiments/modelIcons';
 import { SubtabItem } from './SubtabItem';
 
 interface ModelSubtabsProps {
   projectId: string;
   themeColorClass: string;
-}
-
-function resolveModelIcon(taskType: ModelTaskType): { Icon: ComponentType<{ className?: string }>; colorClass: string } {
-  switch (taskType) {
-    case 'classification': return { Icon: Target, colorClass: 'text-blue-500' };
-    case 'regression':     return { Icon: TrendingUp, colorClass: 'text-green-500' };
-    case 'clustering':     return { Icon: Layers, colorClass: 'text-purple-500' };
-  }
 }
 
 function ModelActionMenu({

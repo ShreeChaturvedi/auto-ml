@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ModelRecord, ModelTaskType } from '@/types/model';
+import type { ModelRecord } from '@/types/model';
 import {
   LazyPlot,
   PlotSuspense,
@@ -8,12 +8,7 @@ import {
   useIsDark,
   PLOTLY_CONFIG_INTERACTIVE,
 } from '@/components/data/eda/edaTheme';
-
-const PRIMARY_METRIC: Record<ModelTaskType, string> = {
-  classification: 'accuracy',
-  regression: 'r2',
-  clustering: 'silhouette',
-};
+import { PRIMARY_METRIC } from './utils';
 
 export function ModelsParallelCoords({ models }: { models: ModelRecord[] }) {
   const isDark = useIsDark();

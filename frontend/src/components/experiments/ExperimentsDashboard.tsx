@@ -1,11 +1,14 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { PanelLeft } from 'lucide-react';
+import type { PanelImperativeHandle } from 'react-resizable-panels';
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable';
+import { Button } from '@/components/ui/button';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { Leaderboard } from './Leaderboard';
@@ -13,7 +16,7 @@ import { ModelDetailPanel } from './ModelDetailPanel';
 import { OverviewDashboard } from './OverviewDashboard';
 import { ComparisonView } from './ComparisonView';
 import { InsightBanner } from './InsightBanner';
-import { formatMetric } from './utils';
+import { formatMetric, PRIMARY_METRIC } from './utils';
 import './experiments.css';
 
 export function ExperimentsDashboard() {
@@ -24,6 +27,9 @@ export function ExperimentsDashboard() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
   const selectModel = useExperimentsStore((s) => s.selectModel);
   const fetchInsightBanner = useExperimentsStore((s) => s.fetchInsightBanner);
+
+  const rightPanelRef = useRef<PanelImperativeHandle>(null);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
 
   // Track previous model count for post-training toast
   const prevModelCount = useRef(models.length);
@@ -40,10 +46,7 @@ export function ExperimentsDashboard() {
     if (models.length > prevModelCount.current && prevModelCount.current > 0) {
       const newest = models[models.length - 1];
       if (newest) {
-        const primaryKey =
-          newest.taskType === 'classification' ? 'accuracy'
-          : newest.taskType === 'regression' ? 'r2'
-          : 'silhouette';
+        const primaryKey = PRIMARY_METRIC[newest.taskType];
         const metricVal = newest.metrics[primaryKey];
         const formatted = formatMetric(metricVal);
         const metricStr =
@@ -68,6 +71,11 @@ export function ExperimentsDashboard() {
     }
   }, [models.length, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handlePanelResize = useCallback((size: { asPercentage: number }) => {
+    const next = size.asPercentage <= 3;
+    setIsRightCollapsed((prev) => (prev === next ? prev : next));
+  }, []);
+
   // Determine right panel content
   const rightPanel = () => {
     if (comparisonModelIds.length >= 2) {
@@ -90,13 +98,34 @@ export function ExperimentsDashboard() {
           </div>
         </ResizablePanel>
         <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={60} minSize={30}>
-          <div
-            key={comparisonModelIds.length >= 2 ? 'compare' : selectedModelId ?? 'overview'}
-            className="flex h-full flex-col overflow-hidden animate-in fade-in-0 duration-150"
-          >
-            {rightPanel()}
-          </div>
+        <ResizablePanel
+          defaultSize={60}
+          minSize={25}
+          collapsible
+          collapsedSize={3}
+          panelRef={rightPanelRef}
+          onResize={handlePanelResize}
+        >
+          {isRightCollapsed ? (
+            <div className="flex h-full items-center justify-center">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => rightPanelRef.current?.expand()}
+                aria-label="Expand detail panel"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div
+              key={comparisonModelIds.length >= 2 ? 'compare' : selectedModelId ?? 'overview'}
+              className="flex h-full flex-col overflow-hidden animate-in fade-in-0 duration-150"
+            >
+              {rightPanel()}
+            </div>
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

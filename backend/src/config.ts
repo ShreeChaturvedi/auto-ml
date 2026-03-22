@@ -108,6 +108,10 @@ export const env = {
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+  // Non-production + DEV_BYPASS_EMAIL_VERIFICATION=true → requireAuth skips email_verified
+  devBypassEmailVerification:
+    process.env.NODE_ENV !== 'production'
+    && process.env.DEV_BYPASS_EMAIL_VERIFICATION === 'true',
 
   // Email (SMTP)
   smtpHost: process.env.SMTP_HOST ?? '',

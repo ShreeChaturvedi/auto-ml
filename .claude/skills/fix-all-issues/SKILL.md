@@ -158,6 +158,8 @@ EOF
 ### 11. Push, create MR, and move issue to review
 git push -u origin fix/issue-{number}
 
+Create the MR. Note: `glab mr create` outputs plain text, NOT JSON. The MR URL is on the last line of stdout. Do not try to parse glab output as JSON.
+
 glab mr create --title "Fix #{number}: {short title}" --description "$(cat <<'EOF'
 Closes #{number}
 

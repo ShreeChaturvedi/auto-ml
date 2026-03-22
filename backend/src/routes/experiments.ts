@@ -42,7 +42,7 @@ export function createExperimentsRouter(): Router {
     if (req.user) {
       const model = await getModelById(modelId);
       if (model?.projectId) {
-        const project = await verifyProjectOwnership(model.projectId, req.user!.user_id, projectRepository);
+        const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
         if (!project) {
           res.status(404).json({ error: 'Evaluation not found' });
           return;
@@ -68,7 +68,7 @@ export function createExperimentsRouter(): Router {
     if (req.user) {
       const model = await getModelById(modelId);
       if (model?.projectId) {
-        const project = await verifyProjectOwnership(model.projectId, req.user!.user_id, projectRepository);
+        const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
         if (!project) {
           res.status(404).json({ error: 'SHAP data not found' });
           return;
@@ -92,7 +92,7 @@ export function createExperimentsRouter(): Router {
     const { projectId } = req.params;
 
     if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user!.user_id, projectRepository);
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
       if (!project) {
         res.status(404).json({ error: 'Not found' });
         return;
@@ -151,7 +151,7 @@ export function createExperimentsRouter(): Router {
     const { projectId } = req.params;
 
     if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user!.user_id, projectRepository);
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
       if (!project) {
         res.status(404).json({ error: 'Not found' });
         return;
@@ -166,7 +166,7 @@ export function createExperimentsRouter(): Router {
     const { projectId } = req.params;
 
     if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user!.user_id, projectRepository);
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
       if (!project) {
         res.status(404).json({ error: 'Not found' });
         return;
@@ -235,7 +235,7 @@ export function createExperimentsRouter(): Router {
     if (req.user) {
       const model = await getModelById(modelId);
       if (model?.projectId) {
-        const project = await verifyProjectOwnership(model.projectId, req.user!.user_id, projectRepository);
+        const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
         if (!project) {
           res.status(404).json({ error: 'Error analysis not available' });
           return;

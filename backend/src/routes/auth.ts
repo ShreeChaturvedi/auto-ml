@@ -24,7 +24,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
-import type { AuthRequest } from '../types/auth.js';
+import type { AuthenticatedRequest } from '../types/auth.js';
 
 import { handleGoogleAuth, handleGoogleCallback } from './auth/oauthHandler.js';
 
@@ -92,7 +92,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const tokens = authService.generateTokens(user);
       const refreshTokenHash = authService.hashRefreshToken(tokens.refreshToken);
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs());
 
       await userRepository.storeRefreshToken(
         user.user_id,
@@ -134,7 +134,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       const tokens = authService.generateTokens(user);
       const refreshTokenHash = authService.hashRefreshToken(tokens.refreshToken);
       const expiresAt = new Date(
-        Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000
+        Date.now() + authService.refreshTokenExpiryMs(rememberMe)
       );
 
       await userRepository.storeRefreshToken(
@@ -180,14 +180,14 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.post(
     '/auth/logout',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       const { refreshToken } = req.body;
       if (refreshToken) {
         const tokenHash = authService.hashRefreshToken(refreshToken);
         await userRepository.revokeRefreshToken(tokenHash);
       }
 
-      appLogger.info(`[auth] logout ${req.user?.email}`);
+      appLogger.info(`[auth] logout ${req.user.email}`);
       return res.status(204).send();
     })
   );
@@ -196,7 +196,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.get(
     '/auth/me',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       return res.json({ user: req.user });
     })
   );
@@ -260,13 +260,13 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.patch(
     '/auth/profile',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       const result = updateProfileSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ errors: result.error.flatten() });
       }
 
-      const userId = req.user!.user_id;
+      const userId = req.user.user_id;
       const updates = result.data;
 
       if (updates.newPassword) {
@@ -274,7 +274,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
           return res.status(400).json({ error: 'Current password required' });
         }
 
-        const userWithHash = await userRepository.findByEmail(req.user!.email);
+        const userWithHash = await userRepository.findByEmail(req.user.email);
         if (!userWithHash) {
           return res.status(404).json({ error: 'User not found' });
         }
@@ -298,7 +298,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       if (Object.keys(updateData).length > 0) {
         const updatedUser = await userRepository.update(userId, updateData);
-        appLogger.info(`[auth] profile updated for ${req.user!.email}`);
+        appLogger.info(`[auth] profile updated for ${req.user.email}`);
         return res.json({ user: updatedUser });
       }
 

@@ -7,14 +7,15 @@ vi.mock('../config.js', async () => {
     env: {
       ...actual.env,
       bcryptRounds: 4,
-      jwtSecret: 'test-jwt-secret'
+      jwtSecret: 'test-jwt-secret',
+      jwtRefreshExpiresIn: '7d'
     }
   };
 });
 
 import { TEST_USER } from '../tests/fixtures.js';
 
-import { AuthService, authService } from './authService.js';
+import { AuthService, authService, parseDuration } from './authService.js';
 
 describe('authService', () => {
   let service: AuthService;
@@ -206,6 +207,54 @@ describe('authService', () => {
         tokens.add(service.generatePasswordResetToken());
       }
       expect(tokens.size).toBe(100);
+    });
+  });
+
+  describe('parseDuration', () => {
+    it('parses days', () => {
+      expect(parseDuration('7d')).toBe(7 * 24 * 60 * 60 * 1000);
+    });
+
+    it('parses hours', () => {
+      expect(parseDuration('24h')).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('parses minutes', () => {
+      expect(parseDuration('15m')).toBe(15 * 60 * 1000);
+    });
+
+    it('parses seconds', () => {
+      expect(parseDuration('30s')).toBe(30 * 1000);
+    });
+
+    it('parses 30d (rememberMe)', () => {
+      expect(parseDuration('30d')).toBe(30 * 24 * 60 * 60 * 1000);
+    });
+
+    it('throws on invalid format', () => {
+      expect(() => parseDuration('abc')).toThrow();
+    });
+
+    it('throws on empty string', () => {
+      expect(() => parseDuration('')).toThrow();
+    });
+  });
+
+  describe('refreshTokenExpiryMs', () => {
+    it('returns configured default when rememberMe is false', () => {
+      // config mock has jwtRefreshExpiresIn = '7d'
+      const ms = service.refreshTokenExpiryMs();
+      expect(ms).toBe(7 * 24 * 60 * 60 * 1000);
+    });
+
+    it('returns 30-day duration when rememberMe is true', () => {
+      const ms = service.refreshTokenExpiryMs(true);
+      expect(ms).toBe(30 * 24 * 60 * 60 * 1000);
+    });
+
+    it('returns configured default when rememberMe is explicitly false', () => {
+      const ms = service.refreshTokenExpiryMs(false);
+      expect(ms).toBe(7 * 24 * 60 * 60 * 1000);
     });
   });
 });

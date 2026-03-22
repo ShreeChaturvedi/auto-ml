@@ -18,6 +18,22 @@ import { env } from '../config.js';
 import type { TokenPayload, AuthTokens } from '../types/auth.js';
 import type { SafeUser } from '../types/user.js';
 
+const REMEMBER_ME_DURATION = '30d';
+
+const UNIT_MS: Record<string, number> = {
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000
+};
+
+/** Parse a duration string (e.g. '7d', '24h', '15m', '30s') into milliseconds. */
+export function parseDuration(duration: string): number {
+  const match = /^(\d+)([smhd])$/.exec(duration);
+  if (!match) throw new Error(`Invalid duration format: "${duration}"`);
+  return Number(match[1]) * UNIT_MS[match[2]];
+}
+
 export class AuthService {
   /**
    * Hash a plaintext password using bcrypt
@@ -92,6 +108,14 @@ export class AuthService {
    */
   generatePasswordResetToken(): string {
     return crypto.randomBytes(32).toString('hex');
+  }
+
+  /**
+   * Get the refresh token expiry duration in milliseconds.
+   * When rememberMe is true, uses 30-day duration; otherwise uses configured default.
+   */
+  refreshTokenExpiryMs(rememberMe?: boolean): number {
+    return parseDuration(rememberMe ? REMEMBER_ME_DURATION : env.jwtRefreshExpiresIn);
   }
 }
 

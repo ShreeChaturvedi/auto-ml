@@ -130,7 +130,7 @@ router.get('/session/:id', async (req: AuthRequest, res: Response) => {
     }
 
     if (req.user && session.projectId) {
-        const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+        const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
         if (!project) {
             res.status(404).json({ error: 'Session not found' });
             return;
@@ -157,7 +157,7 @@ router.delete('/session/:id', async (req: AuthRequest, res: Response) => {
     try {
         const session = getSession(req.params.id);
         if (session && req.user && session.projectId) {
-            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
             if (!project) {
                 res.status(404).json({ error: 'Session not found' });
                 return;
@@ -192,7 +192,7 @@ router.post('/packages', async (req: AuthRequest, res: Response) => {
 
         const session = getSession(parsed.data.sessionId);
         if (session && req.user && session.projectId) {
-            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
             if (!project) {
                 res.status(404).json({ error: 'Session not found' });
                 return;
@@ -252,7 +252,7 @@ router.post('/packages/stream', async (req: AuthRequest, res: Response) => {
 
         const session = getSession(parsed.data.sessionId);
         if (session && req.user && session.projectId) {
-            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
             if (!project) {
                 res.status(404).json({ error: 'Session not found' });
                 return;
@@ -307,7 +307,7 @@ router.get('/packages/:sessionId', async (req: AuthRequest, res: Response) => {
     try {
         const session = getSession(req.params.sessionId);
         if (session && req.user && session.projectId) {
-            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
             if (!project) {
                 res.status(404).json({ error: 'Session not found' });
                 return;

@@ -107,7 +107,7 @@ export function createWorkflowRouter(): Router {
     }
 
     if (req.user && run.run.projectId) {
-      const project = await verifyProjectOwnership(run.run.projectId, req.user!.user_id, projectRepository);
+      const project = await verifyProjectOwnership(run.run.projectId, req.user.user_id, projectRepository);
       if (!project) {
         return res.status(404).json({ error: 'Workflow run not found' });
       }

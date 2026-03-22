@@ -118,7 +118,7 @@ export async function handleGoogleCallback(
   // Generate tokens
   const jwtTokens = authService.generateTokens(safeUser);
   const refreshTokenHash = authService.hashRefreshToken(jwtTokens.refreshToken);
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days for OAuth
+  const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs(true)); // OAuth gets rememberMe duration
 
   await userRepository.storeRefreshToken(
     safeUser.user_id,

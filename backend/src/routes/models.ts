@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { env } from '../config.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
-import { seedModels } from '../services/modelSeedService.js';
+import { seedModels, seedOneModel } from '../services/modelSeedService.js';
 import {
   deleteModel,
   getModelById,
@@ -63,6 +63,34 @@ router.post('/seed', async (req: AuthRequest, res: Response) => {
   }
   const models = await seedModels(projectId);
   res.json({ models });
+});
+
+const seedOneSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  taskType: z.enum(['classification', 'regression', 'clustering']),
+  algorithm: z.string().min(1),
+});
+
+router.post('/seed-one', async (req: AuthRequest, res: Response) => {
+  if (env.nodeEnv === 'production') {
+    res.status(403).json({ error: 'Seed endpoint is disabled in production' });
+    return;
+  }
+  const parsed = seedOneSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    return;
+  }
+  if (req.user) {
+    const project = await verifyProjectOwnership(parsed.data.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+  }
+  const model = await seedOneModel(parsed.data.projectId, parsed.data);
+  res.json({ model });
 });
 
 router.delete('/:id', async (req: AuthRequest, res: Response) => {

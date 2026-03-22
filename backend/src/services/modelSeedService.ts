@@ -10,6 +10,8 @@ const modelRepository = createModelRepository(env.modelMetadataPath);
 const FEATURES = ['age', 'income', 'credit_score', 'years_employed', 'debt_ratio'];
 const FIXED_DATASET_ID = '00000000-0000-0000-0000-000000000001';
 
+type TaskType = 'classification' | 'regression' | 'clustering';
+
 interface SeedSpec {
   name: string;
   taskType: 'classification' | 'regression';
@@ -125,9 +127,20 @@ function buildCrossValidation(mean: number, scoring: string) {
   };
 }
 
+function clusteringEvaluation(metrics: Record<string, number>) {
+  return {
+    taskType: 'clustering' as const,
+    timestamp: new Date().toISOString(),
+    computeMs: 800 + Math.floor(Math.random() * 500),
+    feature_importance: buildFeatureImportance(),
+    learning_curve: buildLearningCurve(metrics.silhouette ?? 0.65),
+    cross_validation: buildCrossValidation(metrics.silhouette ?? 0.65, 'silhouette'),
+  };
+}
+
 // -- shap.json builder --
 
-function buildShap(taskType: 'classification' | 'regression') {
+function buildShap(taskType: TaskType) {
   const nSamples = 20;
   const nFeatures = FEATURES.length;
   const values = Array.from({ length: nSamples }, () =>
@@ -142,11 +155,70 @@ function buildShap(taskType: 'classification' | 'regression') {
   });
   return {
     values,
-    base_values: taskType === 'classification' ? 0.5 : 4.2,
+    base_values: taskType === 'classification' ? 0.5 : taskType === 'regression' ? 4.2 : 0.0,
     data,
     feature_names: FEATURES,
     mean_abs_values: meanAbs,
   };
+}
+
+/** Randomize a value within +/- range */
+function jitter(base: number, range: number) {
+  return parseFloat((base + (Math.random() - 0.5) * 2 * range).toFixed(4));
+}
+
+function randomMetrics(taskType: TaskType): Record<string, number> {
+  switch (taskType) {
+    case 'classification':
+      return { accuracy: jitter(0.91, 0.055), f1: jitter(0.88, 0.055), precision: jitter(0.89, 0.05), recall: jitter(0.87, 0.05) };
+    case 'regression':
+      return { r2: jitter(0.85, 0.06), mse: jitter(0.12, 0.04), mae: jitter(0.28, 0.06), rmse: jitter(0.35, 0.06) };
+    case 'clustering':
+      return { silhouette: jitter(0.62, 0.1), calinski_harabasz: jitter(320, 60), davies_bouldin: jitter(0.75, 0.15) };
+  }
+}
+
+export async function seedOneModel(projectId: string, options: {
+  name: string;
+  taskType: TaskType;
+  algorithm: string;
+}): Promise<ModelRecord> {
+  const metrics = randomMetrics(options.taskType);
+  const record = await modelRepository.create({
+    projectId,
+    datasetId: FIXED_DATASET_ID,
+    name: options.name,
+    templateId: `seed-${options.algorithm.toLowerCase().replace(/\s+/g, '-')}`,
+    taskType: options.taskType,
+    library: 'sklearn',
+    algorithm: options.algorithm,
+    parameters: {},
+    metrics,
+    status: 'completed',
+    trainingMs: 1000 + Math.floor(Math.random() * 4000),
+    targetColumn: options.taskType === 'clustering' ? undefined : 'target',
+    featureColumns: FEATURES,
+    sampleCount: 1000,
+    evaluationStatus: 'ready',
+  });
+
+  const artifactDir = join(env.modelStorageDir, record.modelId);
+  await mkdir(artifactDir, { recursive: true });
+
+  const evaluation = options.taskType === 'classification'
+    ? classificationEvaluation(metrics)
+    : options.taskType === 'regression'
+      ? regressionEvaluation(metrics)
+      : clusteringEvaluation(metrics);
+
+  const shap = buildShap(options.taskType);
+
+  await Promise.all([
+    writeFile(join(artifactDir, 'evaluation.json'), JSON.stringify(evaluation, null, 2), 'utf8'),
+    writeFile(join(artifactDir, 'shap.json'), JSON.stringify(shap, null, 2), 'utf8'),
+  ]);
+
+  return record;
 }
 
 export async function seedModels(projectId: string): Promise<ModelRecord[]> {

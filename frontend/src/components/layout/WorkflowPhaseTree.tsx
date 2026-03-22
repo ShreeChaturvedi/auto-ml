@@ -25,6 +25,7 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { getWorkbookParam } from '@/lib/workbookParam';
+import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
@@ -57,7 +58,8 @@ const PLUS_ACTION_PHASES = new Set<Phase>([
   'upload',
   'preprocessing',
   'feature-engineering',
-  'training'
+  'training',
+  'experiments',
 ]);
 
 interface WorkflowPhaseTreeProps {
@@ -79,6 +81,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
   const allPhases = WORKFLOW_PHASES;
 
   const [expandedPhases, setExpandedPhases] = useState<Set<Phase>>(new Set());
+  const [seedDialogOpen, setSeedDialogOpen] = useState(false);
 
   const activeWorkbookId = getWorkbookParam(searchParams);
 
@@ -239,9 +242,13 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
               {hasPlusAction && !collapsed && (
                 <button
                   type="button"
-                  onClick={isWorkbookPhase ? (e) => handleNewWorkbook(e, phase) : handleNewPlan}
+                  onClick={
+                    isWorkbookPhase ? (e) => handleNewWorkbook(e, phase)
+                    : phase === 'experiments' ? (e) => { e.stopPropagation(); setSeedDialogOpen(true); }
+                    : handleNewPlan
+                  }
                   className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-all opacity-0 group-hover:opacity-100"
-                  title={isWorkbookPhase ? 'New workbook' : 'New plan'}
+                  title={isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
                 >
                   <Plus className="h-3 w-3 text-muted-foreground" />
                 </button>
@@ -310,6 +317,13 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           );
         })}
       </div>
+      {activeProjectId && (
+        <SeedModelDialog
+          projectId={activeProjectId}
+          open={seedDialogOpen}
+          onOpenChange={setSeedDialogOpen}
+        />
+      )}
     </TooltipProvider>
   );
 }

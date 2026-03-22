@@ -93,22 +93,21 @@ function resolvePlannerReasoningEffort(): 'minimal' | 'low' {
   return 'low';
 }
 
-function summarizeRepairRaw(raw: string): string {
-  const trimmed = raw.trim();
-  return trimmed.length <= 4_000 ? trimmed : `${trimmed.slice(0, 3_999)}…`;
-}
-
-export function buildPlannerRequest(
-  state: WorkflowGraphState,
-  contract: WorkflowNodeContract
-): LlmRequest {
-  const allowedOutputs = [
+function resolveAllowedOutputs(contract: WorkflowNodeContract): string[] {
+  return [
     contract.allowedTools.length > 0 ? 'tool_call' : null,
     !contract.requireToolCall && contract.allowAssistantMessage ? 'assistant_message' : null,
     contract.allowAskUser ? 'ask_user' : null,
     contract.allowRenderUi ? 'render_ui' : null,
     contract.allowPlanExit ? 'plan_exit' : null
   ].filter((value): value is string => Boolean(value));
+}
+
+export function buildPlannerRequest(
+  state: WorkflowGraphState,
+  contract: WorkflowNodeContract
+): LlmRequest {
+  const allowedOutputs = resolveAllowedOutputs(contract);
 
   return {
     messages: [
@@ -171,14 +170,6 @@ export function buildPlannerRepairRequest(
   state: WorkflowGraphState,
   contract: WorkflowNodeContract
 ): LlmRequest {
-  const allowedOutputs = [
-    contract.allowedTools.length > 0 ? 'tool_call' : null,
-    !contract.requireToolCall && contract.allowAssistantMessage ? 'assistant_message' : null,
-    contract.allowAskUser ? 'ask_user' : null,
-    contract.allowRenderUi ? 'render_ui' : null,
-    contract.allowPlanExit ? 'plan_exit' : null
-  ].filter((value): value is string => Boolean(value));
-
   return {
     messages: [
       {
@@ -188,7 +179,7 @@ export function buildPlannerRepairRequest(
           'Return exactly one valid JSON object and nothing else.',
           `Workflow phase: ${state.turn.phase}`,
           `Current workflow node: ${state.run.currentNode}`,
-          `Allowed output kinds: ${allowedOutputs.join(', ') || '(none)'}.`,
+          `Allowed output kinds: ${resolveAllowedOutputs(contract).join(', ') || '(none)'}.`,
           contract.requireToolCall
             ? 'The repaired response must be a tool_call.'
             : 'The repaired response may be any allowed output kind.',
@@ -199,7 +190,7 @@ export function buildPlannerRepairRequest(
         role: 'user',
         content: [
           'Repair this malformed planner output into valid JSON:',
-          summarizeRepairRaw(raw),
+          truncate(raw.trim(), 4_000),
           '',
           'Allowed tools:',
           summarizeTools(contract)

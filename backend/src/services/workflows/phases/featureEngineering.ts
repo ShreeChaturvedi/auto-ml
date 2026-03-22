@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { env } from '../../../config.js';
 import { createFileFeaturePipelineRunRepository } from '../../../repositories/featurePipelineRunRepository.js';
 import type { ToolCall } from '../../../types/llm.js';
@@ -54,7 +56,7 @@ function buildInitialProfileAction(state: import('../graphState.js').WorkflowGra
   }
 
   return [{
-    id: `wf-call-profile-${Date.now()}`,
+    id: `wf-call-profile-${randomUUID()}`,
     tool: 'get_dataset_profile',
     args: {
       datasetId: state.turn.datasetId

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../utils/errors.js';
 import type { LlmClient } from '../llm/llmClient.js';
 
 import type { WorkflowNodeContract } from './contracts.js';
@@ -40,9 +41,7 @@ export async function planWorkflowAction(
     }
   } catch (error) {
     return buildPlannerFailure(
-      error instanceof Error
-        ? `Workflow planner did not return a valid action plan: ${error.message}`
-        : 'Workflow planner did not return a valid action plan.',
+      `Workflow planner did not return a valid action plan: ${getErrorMessage(error, 'unknown error')}`,
       'WORKFLOW_PLAN_INVALID'
     );
   }

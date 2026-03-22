@@ -24,15 +24,16 @@ function getControllerAllowedToolNames(state: WorkflowGraphState): string[] | nu
   return allowed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
 }
 
-function resolvePhaseStageContract(state: WorkflowGraphState): WorkflowNodeContract | null {
+function resolvePhaseStageContract(
+  state: WorkflowGraphState,
+  requestToolMap: Map<string, LlmToolDefinition>
+): WorkflowNodeContract | null {
   const phaseConfig = getPhaseConfig(state.turn.phase);
   const currentStage = state.controllerSummary?.currentNode ?? state.run.currentNode;
   if (!phaseConfig || typeof currentStage !== 'string') {
     return null;
   }
 
-  const requestTools = state.request?.tools ?? [];
-  const requestToolMap = new Map(requestTools.map((tool) => [tool.name, tool]));
   const runtimeContext = state.controllerSummary && typeof state.controllerSummary === 'object'
     ? state.controllerSummary as Record<string, unknown>
     : undefined;
@@ -74,7 +75,7 @@ export function resolveWorkflowNodeContract(state: WorkflowGraphState): Workflow
     };
   }
 
-  const phaseStageContract = resolvePhaseStageContract(state);
+  const phaseStageContract = resolvePhaseStageContract(state, requestToolMap);
   if (phaseStageContract) {
     return phaseStageContract;
   }

@@ -188,9 +188,6 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       .slice(-MAX_FE_HISTORY_PAIRS);
     const featureToolCallHistory = filteredPairs.map(({ call }) => call);
     const featureToolResultHistory = filteredPairs.map(({ result }) => result!);
-    // Also exclude profile results from the raw toolResults list used for the user message
-    // summary, to avoid a contradictory "Tool results available for: get_dataset_profile"
-    // line when no profile entry is present in the conversation history.
     const featureRawToolResults = state.toolResultHistory.filter(
       (r) => r.tool !== 'get_dataset_profile'
     );

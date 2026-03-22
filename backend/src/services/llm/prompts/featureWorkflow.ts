@@ -100,9 +100,8 @@ FEATURE ENGINEERING CONTRACT:
       { role: 'user', content: userContent }
     ],
     temperature: 0.3,
-    // Feature engineering renders rich JSON (render_ui with feature suggestions, reports,
-    // code cells). Reasoning models consume output-token budget for reasoning tokens too,
-    // so 4096 often leaves nothing for the actual response. 16000 gives sufficient headroom.
+    // Reasoning models consume output-token budget for thinking, so 4096 often leaves
+    // nothing for the actual response body (rich JSON with feature suggestions, code cells).
     maxOutputTokens: 8000,
     tools,
     toolChoice: 'auto',

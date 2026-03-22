@@ -1,0 +1,37 @@
+{
+  "eval_id": 2,
+  "run_type": "without_skill",
+  "expectations": [
+    {
+      "text": "Identifies SQL injection risk from interpolating tableName into SELECT * FROM {tableName}",
+      "passed": true,
+      "evidence": "Section 1.1: 'SQL Injection via Dynamic Table Name... textbook SQL injection vector.' Also references existing quoteIdentifier() function."
+    },
+    {
+      "text": "Flags missing authentication/authorization (user must own the project)",
+      "passed": true,
+      "evidence": "Section 1.2: 'No Authentication or Authorization... dataset routes have no authentication middleware applied.'"
+    },
+    {
+      "text": "Identifies missing limits (row count, dataset count, or memory/size constraints)",
+      "passed": true,
+      "evidence": "Section 1.4: 'Unbounded SELECT * Without Row Limits... existing codebase enforces strict guardrails... The plan bypasses all of those safeguards.'"
+    },
+    {
+      "text": "Flags GET with query string as problematic for many IDs (URL length limits, should use POST)",
+      "passed": true,
+      "evidence": "Section 4.2: 'Consider POST Instead of GET... very long ID lists could exceed URL length limits. Consider accepting POST with JSON body.'"
+    },
+    {
+      "text": "Mentions error handling for non-existent or inaccessible dataset IDs",
+      "passed": true,
+      "evidence": "Section 3.1: 'Error Handling for Partial Failures... what happens when some datasets exist but others do not.'"
+    },
+    {
+      "text": "Review is structured with clear priority levels (critical vs minor)",
+      "passed": true,
+      "evidence": "Structured with severity levels (Critical/High/Medium/Low), numbered sections, and a Risk Summary table with Severity column."
+    }
+  ],
+  "pass_rate": 1.0
+}

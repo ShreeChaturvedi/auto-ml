@@ -1,0 +1,16 @@
+{
+  "eval_id": 3, "run_type": "without_skill",
+  "expectations": [
+    {"text": "Identifies existing NlApprovalDialog + useNlSuggestions", "passed": true, "evidence": "Issue 1: NlApprovalDialog (50 lines), useNlSuggestions (91 lines)"},
+    {"text": "SSE/streaming lives in lib/api/query.ts, not component", "passed": true, "evidence": "Issue 3: traces full data flow, enumerates actual stream event types from query.ts"},
+    {"text": "Abort controller ref-based identity check pattern", "passed": false, "evidence": "Discusses useImperativeHandle and abort broadly but doesn't describe the specific identity check pattern"},
+    {"text": "Lists 3+ of 4 missing downstream files", "passed": true, "evidence": "Issues 5+6: lists NlWorkflowSteps, SqlRevealBlock, QueryPanel, stream test file"},
+    {"text": "Naming mismatch (chips vs dropdown/dialog)", "passed": true, "evidence": "Issue 2: 'SuggestionChips naming... misrepresents the visual element (these are dropdown list items, not chips)'"},
+    {"text": "Re-export chain from NlQueryReducer", "passed": false, "evidence": "Issue 5 identifies re-exports from NlQueryWorkflow but doesn't trace origin to NlQueryReducer"},
+    {"text": "useNlGeneration alternative with concrete signature", "passed": true, "evidence": "Alternative Approach: useNlGeneration with specific return signature and 5-step plan"},
+    {"text": "Verifies actual line count (~367)", "passed": true, "evidence": "Issue 10: '367 lines including imports, types, and whitespace... actual component logic is roughly 220 lines'"},
+    {"text": "Mentions NlQueryWorkflow.stream.test.tsx", "passed": true, "evidence": "Issue 6: '241 lines' directly tests the extraction target"},
+    {"text": "Structured output", "passed": true, "evidence": "Blocker/Medium/Low severity levels with 10 numbered issues"}
+  ],
+  "pass_rate": 0.7
+}

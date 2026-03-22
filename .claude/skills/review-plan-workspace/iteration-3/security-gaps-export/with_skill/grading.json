@@ -1,0 +1,18 @@
+{
+  "eval_id": 2, "run_type": "with_skill",
+  "expectations": [
+    {"text": "SQL injection with quoteIdentifier reference", "passed": true, "evidence": "Critical #1: references quoteIdentifier, resolveDatasetTableName, datasetRows.ts:38"},
+    {"text": "Cross-project data exfiltration as distinct issue", "passed": true, "evidence": "Critical #2: separate IDOR finding with datasetRepository.listByProject reference"},
+    {"text": "archiver is transitive dependency only", "passed": false, "evidence": "Says 'not in package.json or package-lock.json' but doesn't identify archiver as transitive dep of exceljs"},
+    {"text": "File-backed repository fallback", "passed": true, "evidence": "Strong #5: references datasetRepository.ts:329-339, FileDatasetRepository, and dual-mode pattern"},
+    {"text": "GET/POST method with URL length calculation", "passed": true, "evidence": "Strong #6: 'UUID dataset IDs (36 chars each), the limit could be reached with ~50-60 datasets'"},
+    {"text": "Disk-based alternative with specific benefits", "passed": true, "evidence": "Full Alternative section: 'reduces the entire backend to ~40 lines' with 4 specific steps"},
+    {"text": "COPY TO STDOUT CSV as Postgres-native alternative", "passed": false, "evidence": "Not mentioned — proposes disk-based approach and node:zlib but not Postgres COPY"},
+    {"text": "Partial failure handling for streaming", "passed": true, "evidence": "Strong #8: 'skip failed datasets and append _errors.txt manifest to the ZIP'"},
+    {"text": "Response headers specified", "passed": true, "evidence": "Minor #9: 'Content-Type: application/zip, Content-Disposition: attachment, Transfer-Encoding: chunked'"},
+    {"text": "Concrete revised plan", "passed": true, "evidence": "Full 5-step Revised Plan with files, line estimates, dependencies, and test plan"},
+    {"text": "Structured output", "passed": true, "evidence": "Clear Critical/Strong/Minor/Alternative/Revised Plan sections"},
+    {"text": "3+ line number references", "passed": true, "evidence": "datasetRows.ts:38, identifiers.ts:9, datasetRepository.ts:58-59, 329-339, config.ts:69/78/79, many more"}
+  ],
+  "pass_rate": 0.833
+}

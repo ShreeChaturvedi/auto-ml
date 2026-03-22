@@ -1,0 +1,128 @@
+{
+  "metadata": {
+    "skill_name": "review-plan",
+    "skill_path": "/home/shree/Documents/CSE449/repo/.claude/skills/review-plan",
+    "executor_model": "claude-opus-4-6",
+    "analyzer_model": "claude-opus-4-6",
+    "timestamp": "2026-03-21T23:45:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {"eval_id": 1, "eval_name": "overengineered-caching", "configuration": "with_skill", "run_number": 1,
+     "result": {"pass_rate": 0.8, "passed": 8, "failed": 2, "total": 10, "time_seconds": 206.4, "tokens": 68172, "tool_calls": 42, "errors": 0},
+     "expectations": [
+       {"text": "Identifies 4+ caching layers", "passed": true, "evidence": "6 layers enumerated"},
+       {"text": "getSuggestions() is pure cache read", "passed": true, "evidence": "Explicit: 'never calls the LLM'"},
+       {"text": "pg_notify races with synchronous invalidation", "passed": false, "evidence": "Notes zero precedent but not the race"},
+       {"text": "TTL contradicts fingerprint design", "passed": true, "evidence": "'semantically wrong'"},
+       {"text": "Lists missing files from plan", "passed": true, "evidence": "7 files identified"},
+       {"text": "Notes colocation convention", "passed": false, "evidence": "Mentions queryCache.ts but not colocation argument"},
+       {"text": "Quantified alternative", "passed": true, "evidence": "'15 lines, 0 files, 0 deps' with code"},
+       {"text": "Missing test strategy", "passed": true, "evidence": "Specific categories listed"},
+       {"text": "Structured output", "passed": true, "evidence": "Critical/Strong/Minor"},
+       {"text": "3+ line number refs", "passed": true, "evidence": "15+ line references"}
+     ]},
+    {"eval_id": 1, "eval_name": "overengineered-caching", "configuration": "without_skill", "run_number": 1,
+     "result": {"pass_rate": 0.8, "passed": 8, "failed": 2, "total": 10, "time_seconds": 146.9, "tokens": 71985, "tool_calls": 35, "errors": 0},
+     "expectations": [
+       {"text": "Identifies 4+ caching layers", "passed": true, "evidence": "4 layers identified"},
+       {"text": "getSuggestions() is pure cache read", "passed": true, "evidence": "Referenced"},
+       {"text": "pg_notify races with synchronous invalidation", "passed": false, "evidence": "Not identified"},
+       {"text": "TTL contradicts fingerprint design", "passed": true, "evidence": "'content-addressed caching'"},
+       {"text": "Lists missing files from plan", "passed": true, "evidence": "7+ files listed"},
+       {"text": "Notes colocation convention", "passed": false, "evidence": "Not mentioned"},
+       {"text": "Quantified alternative", "passed": true, "evidence": "4-step plan"},
+       {"text": "Missing test strategy", "passed": true, "evidence": "6 test categories"},
+       {"text": "Structured output", "passed": true, "evidence": "Critical/Moderate/Missed"},
+       {"text": "3+ line number refs", "passed": true, "evidence": "10+ line references"}
+     ]},
+    {"eval_id": 2, "eval_name": "security-gaps-export", "configuration": "with_skill", "run_number": 1,
+     "result": {"pass_rate": 0.833, "passed": 10, "failed": 2, "total": 12, "time_seconds": 369.5, "tokens": 83796, "tool_calls": 58, "errors": 0},
+     "expectations": [
+       {"text": "SQL injection + quoteIdentifier", "passed": true, "evidence": "Critical #1"},
+       {"text": "Cross-project exfiltration", "passed": true, "evidence": "Critical #2 with IDOR framing"},
+       {"text": "archiver is transitive dep", "passed": false, "evidence": "Says not in package.json"},
+       {"text": "File-backed fallback", "passed": true, "evidence": "Strong #5 with line refs"},
+       {"text": "GET/POST + URL length", "passed": true, "evidence": "Strong #6 with UUID calculation"},
+       {"text": "Disk alternative", "passed": true, "evidence": "Full ~40 line alternative"},
+       {"text": "COPY TO STDOUT", "passed": false, "evidence": "Not mentioned"},
+       {"text": "Partial failure handling", "passed": true, "evidence": "Strong #8 with _errors.txt"},
+       {"text": "Response headers", "passed": true, "evidence": "Minor #9"},
+       {"text": "Concrete revised plan", "passed": true, "evidence": "Full 5-step plan with estimates"},
+       {"text": "Structured output", "passed": true, "evidence": "Critical/Strong/Minor/Alternative/Revised"},
+       {"text": "3+ line refs", "passed": true, "evidence": "15+ references"}
+     ]},
+    {"eval_id": 2, "eval_name": "security-gaps-export", "configuration": "without_skill", "run_number": 1,
+     "result": {"pass_rate": 0.667, "passed": 8, "failed": 4, "total": 12, "time_seconds": 150.0, "tokens": 49733, "tool_calls": 32, "errors": 0},
+     "expectations": [
+       {"text": "SQL injection + quoteIdentifier", "passed": true, "evidence": "Issue 1"},
+       {"text": "Cross-project exfiltration", "passed": true, "evidence": "Issue 2"},
+       {"text": "archiver is transitive dep", "passed": false, "evidence": "Says not in package.json"},
+       {"text": "File-backed fallback", "passed": true, "evidence": "Issue 13"},
+       {"text": "GET/POST + URL length", "passed": false, "evidence": "NOT MENTIONED — major miss"},
+       {"text": "Disk alternative", "passed": true, "evidence": "Alternative section"},
+       {"text": "COPY TO STDOUT", "passed": false, "evidence": "Not mentioned"},
+       {"text": "Partial failure handling", "passed": true, "evidence": "Issue 8"},
+       {"text": "Response headers", "passed": true, "evidence": "Issue 9"},
+       {"text": "Concrete revised plan", "passed": false, "evidence": "Only 4 high-level bullets, no estimates"},
+       {"text": "Structured output", "passed": true, "evidence": "Critical/Major/Moderate/Minor"},
+       {"text": "3+ line refs", "passed": true, "evidence": "10+ references"}
+     ]},
+    {"eval_id": 3, "eval_name": "solid-refactor", "configuration": "with_skill", "run_number": 1,
+     "result": {"pass_rate": 0.8, "passed": 8, "failed": 2, "total": 10, "time_seconds": 212.7, "tokens": 64587, "tool_calls": 32, "errors": 0},
+     "expectations": [
+       {"text": "Existing NlApprovalDialog + useNlSuggestions", "passed": true, "evidence": "Critical #1"},
+       {"text": "SSE in lib/api/query.ts not component", "passed": true, "evidence": "Critical #2"},
+       {"text": "Abort controller identity check", "passed": false, "evidence": "Mentions streamAbortRef but not identity pattern"},
+       {"text": "3+ missing downstream files", "passed": true, "evidence": "All 4 listed"},
+       {"text": "Naming mismatch (chips vs dropdown)", "passed": false, "evidence": "Notes 'no chips' but doesn't contrast explicitly"},
+       {"text": "Re-export chain from NlQueryReducer", "passed": true, "evidence": "Alternative C traces full chain"},
+       {"text": "useNlGeneration alternative", "passed": true, "evidence": "Full revised plan"},
+       {"text": "Line count verification", "passed": true, "evidence": "367 lines with extraction table"},
+       {"text": "Stream test file mentioned", "passed": true, "evidence": "Strong #4: 241 lines"},
+       {"text": "Structured output", "passed": true, "evidence": "Critical/Strong/Minor/Alternative/Revised"}
+     ]},
+    {"eval_id": 3, "eval_name": "solid-refactor", "configuration": "without_skill", "run_number": 1,
+     "result": {"pass_rate": 0.7, "passed": 7, "failed": 3, "total": 10, "time_seconds": 140.4, "tokens": 58938, "tool_calls": 26, "errors": 0},
+     "expectations": [
+       {"text": "Existing NlApprovalDialog + useNlSuggestions", "passed": true, "evidence": "Issue 1"},
+       {"text": "SSE in lib/api/query.ts not component", "passed": true, "evidence": "Issue 3"},
+       {"text": "Abort controller identity check", "passed": false, "evidence": "Not identified"},
+       {"text": "3+ missing downstream files", "passed": true, "evidence": "Issues 5+6"},
+       {"text": "Naming mismatch (chips vs dropdown)", "passed": true, "evidence": "Issue 2: 'dropdown list items, not chips'"},
+       {"text": "Re-export chain from NlQueryReducer", "passed": false, "evidence": "Identifies re-exports but not origin file"},
+       {"text": "useNlGeneration alternative", "passed": true, "evidence": "Alternative Approach"},
+       {"text": "Line count verification", "passed": true, "evidence": "367 lines, ~220 logic"},
+       {"text": "Stream test file mentioned", "passed": true, "evidence": "Issue 6: 241 lines"},
+       {"text": "Structured output", "passed": true, "evidence": "Blocker/Medium/Low"}
+     ]}
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 0.811, "stddev": 0.016, "min": 0.8, "max": 0.833},
+      "time_seconds": {"mean": 262.9, "stddev": 72.4, "min": 206.4, "max": 369.5},
+      "tokens": {"mean": 72185, "stddev": 8387, "min": 64587, "max": 83796}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.722, "stddev": 0.056, "min": 0.667, "max": 0.8},
+      "time_seconds": {"mean": 145.8, "stddev": 3.9, "min": 140.4, "max": 150.0},
+      "tokens": {"mean": 60219, "stddev": 9217, "min": 49733, "max": 71985}
+    },
+    "delta": {
+      "pass_rate": "+0.089",
+      "time_seconds": "+117.1",
+      "tokens": "+11966"
+    }
+  },
+  "notes": [
+    "WITH SKILL: 26/32 assertions passed (81.3%). WITHOUT SKILL: 23/32 (71.9%). Delta: +9.4 percentage points.",
+    "TEST 2 (export) shows the largest gap: with-skill 10/12 (83%) vs without-skill 8/12 (67%). The skill caught GET/POST (baseline missed it), produced a detailed revised plan (baseline only gave 4 high-level bullets), and systematically addressed file-backed fallback.",
+    "TEST 3 (refactor) skill advantage: caught re-export chain origin (NlQueryReducer), baseline caught naming mismatch. Net: skill 8/10 vs baseline 7/10.",
+    "TEST 1 (caching) was a tie at 8/10 — both missed the same subtle assertions (pg_notify race, colocation convention).",
+    "Both versions consistently miss: archiver as transitive dep, COPY TO STDOUT CSV alternative, abort controller identity check pattern. These are very subtle findings that require exceptional depth.",
+    "The skill's Codebase Reality Report (import chain analysis, dependency audit, plan claim verification) is the key differentiator — it pre-computes facts that the reviewers then use to catch issues the baseline misses.",
+    "Time tradeoff: skill takes ~2.6x longer (263s vs 146s) due to thorough investigation + sub-subagent overhead. Token usage is ~1.2x higher.",
+    "The skill produces consistently more ACTIONABLE output — the Revised Plan in test 2 (5 steps with file estimates, dependency decisions, and test strategy) vs baseline's 4 high-level bullets is the clearest quality gap."
+  ]
+}

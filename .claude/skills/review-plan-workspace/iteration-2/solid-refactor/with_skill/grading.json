@@ -1,0 +1,13 @@
+{
+  "eval_id": 3,
+  "run_type": "with_skill",
+  "expectations": [
+    {"text": "Identifies that extraction targets already exist (NlApprovalDialog, useNlSuggestions)", "passed": true, "evidence": "Critical Issue #1: 'suggestion dropdown UI is already extracted into NlApprovalDialog.tsx (50 lines)... filtering/state logic already extracted into hooks/useNlSuggestions.ts (91 lines)'"},
+    {"text": "Correctly identifies that SSE/streaming logic lives in lib/api/query.ts, not in the component", "passed": true, "evidence": "Critical Issue #2: 'The actual SSE/NDJSON streaming connection lives in frontend/src/lib/api/query.ts (streamNlQuery function, lines 173-212). The component only dispatches received events.'"},
+    {"text": "Discusses AbortController lifecycle risks", "passed": true, "evidence": "Minor Suggestion #6: 'uses a ref-based identity check (streamAbortRef.current !== controller) to detect stale runs, not just signal.aborted... any extraction must preserve this pattern exactly'"},
+    {"text": "Identifies missing files in the plan's modification list", "passed": true, "evidence": "Strong Recommendation #3: table listing NlWorkflowSteps.tsx, SqlRevealBlock.tsx, QueryPanel.tsx, NlQueryWorkflow.stream.test.tsx"},
+    {"text": "Proposes better alternative (useNlGeneration hook or do nothing)", "passed": true, "evidence": "Alternative Approaches: 'Keep the component as-is (recommended)' and 'If you must extract something, extract only the generation orchestration' into useNlGeneration hook"},
+    {"text": "Structured with priority levels", "passed": true, "evidence": "Clear Critical / Strong Recommendations / Minor / Alternative sections"}
+  ],
+  "pass_rate": 1.0
+}

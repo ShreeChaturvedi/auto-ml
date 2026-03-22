@@ -1,0 +1,118 @@
+{
+  "skill_name": "review-plan",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I've created a plan to add Redis caching to the NL suggestions service. Here's my plan:\n\n## Plan: Add Redis Caching to NL Suggestions\n\n### Goal\nSpeed up NL suggestion generation by caching LLM responses in Redis.\n\n### Steps\n1. Add `redis` and `ioredis` npm packages\n2. Create `backend/src/services/cache/redisClient.ts` — singleton Redis connection\n3. Create `backend/src/services/cache/cacheMiddleware.ts` — Express middleware that checks Redis before hitting route handlers\n4. Create `backend/src/services/cache/cacheWarmer.ts` — background job that pre-generates suggestions for all projects on startup\n5. Modify `backend/src/services/nlSuggestions/index.ts` — add Redis check before LLM call, store result after\n6. Add Redis to docker-compose.yml\n7. Create `backend/src/services/cache/cacheInvalidation.ts` — listen for schema changes via pg_notify and invalidate\n8. Add cache hit/miss metrics endpoint at `/api/cache/stats`\n9. Add TTL configuration with per-project overrides stored in Postgres\n\n### Files to modify\n- backend/src/services/nlSuggestions/index.ts\n- docker-compose.yml\n- backend/src/routes/datasets.ts\n\n### Files to create\n- backend/src/services/cache/redisClient.ts\n- backend/src/services/cache/cacheMiddleware.ts\n- backend/src/services/cache/cacheWarmer.ts\n- backend/src/services/cache/cacheInvalidation.ts\n- backend/src/services/cache/cacheStats.ts\n\nPlease review this plan. /review-plan",
+      "expected_output": "Reviewers should identify: (1) massive over-engineering — the service already has an in-flight dedup map and the nlSuggestionRepository already provides DB-level caching, making Redis redundant; (2) cache warmer on startup is wasteful; (3) pg_notify for cache invalidation adds operational complexity; (4) per-project TTL overrides are unnecessary; (5) simpler alternative: just use the existing DB cache with a fingerprint-based lookup",
+      "files": [],
+      "assertions": [
+        {
+          "id": "existing-cache-identified",
+          "text": "Identifies that the codebase already has caching (nlSuggestionRepository DB cache or inflightSuggestionGenerations map)",
+          "type": "content_check"
+        },
+        {
+          "id": "redis-redundancy",
+          "text": "Flags Redis as redundant or over-engineered given existing caching mechanisms",
+          "type": "content_check"
+        },
+        {
+          "id": "cache-warmer-critique",
+          "text": "Critiques the cache warmer (pre-generating for all projects on startup is wasteful/slow)",
+          "type": "content_check"
+        },
+        {
+          "id": "simpler-alternative",
+          "text": "Proposes a simpler alternative approach (e.g., improve existing DB cache, use fingerprint-based lookup)",
+          "type": "content_check"
+        },
+        {
+          "id": "structured-output",
+          "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list",
+          "type": "format_check"
+        },
+        {
+          "id": "codebase-specific",
+          "text": "References specific files or code from the actual codebase (not generic advice)",
+          "type": "content_check"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Here's my plan to add a bulk dataset export API endpoint:\n\n## Plan: Bulk Dataset Export API\n\n### Goal\nLet users download multiple datasets as a ZIP file via a single API call.\n\n### Steps\n1. Add new route `GET /api/projects/:projectId/export?datasets=id1,id2,id3`\n2. In the handler, query each dataset from Postgres using the IDs from the query string\n3. For each dataset, run `SELECT * FROM {tableName}` to get all rows\n4. Convert each result to CSV using `json2csv` library\n5. Bundle CSVs into a ZIP using `archiver` and stream to response\n6. Add a frontend button in DataViewerTab that collects selected dataset IDs and hits this endpoint\n\n### Files to modify\n- backend/src/routes/datasets.ts (or create datasets/exportHandler.ts)\n- frontend/src/components/data/DataViewerTab.tsx\n\n### Notes\n- Should handle large datasets efficiently via streaming\n- ZIP filename: `{projectName}_export_{timestamp}.zip`\n\nPlease review this plan. /review-plan",
+      "expected_output": "Reviewers should identify: (1) SQL injection via unvalidated tableName interpolation in SELECT * FROM {tableName}; (2) no auth/authorization check mentioned — need to verify user owns the project; (3) no limit on number of datasets or row count — could OOM the server; (4) dataset IDs passed via query string have URL length limits — should use POST; (5) missing error handling for non-existent dataset IDs; (6) no progress indication for large exports on the frontend",
+      "files": [],
+      "assertions": [
+        {
+          "id": "sql-injection",
+          "text": "Identifies SQL injection risk from interpolating tableName into SELECT * FROM {tableName}",
+          "type": "content_check"
+        },
+        {
+          "id": "auth-check",
+          "text": "Flags missing authentication/authorization (user must own the project)",
+          "type": "content_check"
+        },
+        {
+          "id": "resource-limits",
+          "text": "Identifies missing limits (row count, dataset count, or memory/size constraints)",
+          "type": "content_check"
+        },
+        {
+          "id": "http-method",
+          "text": "Flags GET with query string as problematic for many IDs (URL length limits, should use POST)",
+          "type": "content_check"
+        },
+        {
+          "id": "error-handling",
+          "text": "Mentions error handling for non-existent or inaccessible dataset IDs",
+          "type": "content_check"
+        },
+        {
+          "id": "structured-output",
+          "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list",
+          "type": "format_check"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Here's my plan to refactor the NlQueryWorkflow component:\n\n## Plan: Refactor NlQueryWorkflow Component\n\n### Goal\nThe NlQueryWorkflow.tsx file is getting large. Extract the suggestion chips UI and the query streaming logic into separate modules.\n\n### Steps\n1. Extract suggestion chips into `frontend/src/components/data/SuggestionChips.tsx`\n   - Move the chip rendering, click handlers, and loading skeleton\n   - Accept suggestions array and onSelect callback as props\n2. Extract streaming logic into `frontend/src/components/data/hooks/useNlQueryStream.ts`\n   - Move the SSE connection setup, event parsing, and state management\n   - Return { streamedSql, streamedRationale, isStreaming, startStream, cancelStream }\n3. Update NlQueryWorkflow.tsx to import and use both new modules\n4. Update existing tests in __tests__/NlQueryWorkflow.core.test.tsx to work with the refactored structure\n5. Add unit tests for the new SuggestionChips component\n\n### Files to create\n- frontend/src/components/data/SuggestionChips.tsx\n- frontend/src/components/data/hooks/useNlQueryStream.ts\n- frontend/src/components/data/__tests__/SuggestionChips.test.tsx\n\n### Files to modify\n- frontend/src/components/data/NlQueryWorkflow.tsx\n- frontend/src/components/data/__tests__/NlQueryWorkflow.core.test.tsx\n- frontend/src/components/data/__tests__/nlQueryWorkflowTestUtils.ts\n\nPlease review this plan. /review-plan",
+      "expected_output": "This is a solid refactoring plan. Reviewers should mostly confirm it's good, with minor suggestions: (1) check if useNlSuggestions hook already handles some of this; (2) consider whether SuggestionChips needs its own store connection or should be purely presentational; (3) the existing test utils file may need more changes than anticipated; (4) cancelStream should properly abort the SSE connection to avoid memory leaks; (5) the plan is sound — no major issues",
+      "assertions": [
+        {
+          "id": "overall-positive",
+          "text": "Recognizes the plan is fundamentally sound (not overly critical of a good plan)",
+          "type": "content_check"
+        },
+        {
+          "id": "existing-hooks-check",
+          "text": "Mentions checking existing hooks (useNlSuggestions or similar) for overlap with proposed extractions",
+          "type": "content_check"
+        },
+        {
+          "id": "sse-cleanup",
+          "text": "Mentions SSE/stream cleanup (abort controller, memory leak prevention) for cancelStream",
+          "type": "content_check"
+        },
+        {
+          "id": "test-impact",
+          "text": "Discusses impact on existing tests or test utils beyond what the plan covers",
+          "type": "content_check"
+        },
+        {
+          "id": "proportional-criticism",
+          "text": "Criticism is proportional — mostly minor suggestions, not blocking issues for a clean refactor",
+          "type": "tone_check"
+        },
+        {
+          "id": "structured-output",
+          "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list",
+          "type": "format_check"
+        }
+      ]
+    }
+  ]
+}

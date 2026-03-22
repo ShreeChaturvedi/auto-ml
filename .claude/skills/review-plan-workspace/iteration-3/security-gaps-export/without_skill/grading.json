@@ -1,0 +1,18 @@
+{
+  "eval_id": 2, "run_type": "without_skill",
+  "expectations": [
+    {"text": "SQL injection with quoteIdentifier reference", "passed": true, "evidence": "Issue 1: references quoteIdentifier, sanitizeTableName, shows existing parameterized query"},
+    {"text": "Cross-project data exfiltration as distinct issue", "passed": true, "evidence": "Issue 2: identifies DatasetProfile.projectId as optional, describes attack scenario"},
+    {"text": "archiver is transitive dependency only", "passed": false, "evidence": "Says 'Neither json2csv nor archiver appear in backend/package.json' — doesn't identify transitive dep"},
+    {"text": "File-backed repository fallback", "passed": true, "evidence": "Issue 13: references createDatasetRepository, PgDatasetRepository vs FileDatasetRepository"},
+    {"text": "GET/POST method with URL length calculation", "passed": false, "evidence": "NOT MENTIONED — 13 findings but none address HTTP method or URL length. Major miss for baseline."},
+    {"text": "Disk-based alternative with specific benefits", "passed": true, "evidence": "Alternative Approach: 4-step plan to bundle original files from disk"},
+    {"text": "COPY TO STDOUT CSV as Postgres-native alternative", "passed": false, "evidence": "Not mentioned in this run"},
+    {"text": "Partial failure handling for streaming", "passed": true, "evidence": "Issue 8: pre-validate or include errors.json manifest"},
+    {"text": "Response headers specified", "passed": true, "evidence": "Issue 9: Content-Disposition sanitization, references existing download handler"},
+    {"text": "Concrete revised plan", "passed": false, "evidence": "Alternative Approach is 4 high-level bullets without file estimates, line counts, or test strategy"},
+    {"text": "Structured output", "passed": true, "evidence": "Clear Critical/Major/Moderate/Minor severity levels"},
+    {"text": "3+ line number references", "passed": true, "evidence": "datasets.ts lines 80-111, app.ts line 56, datasetRows.ts line 38, many more"}
+  ],
+  "pass_rate": 0.667
+}

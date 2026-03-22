@@ -1,0 +1,13 @@
+{
+  "eval_id": 2,
+  "run_type": "with_skill",
+  "expectations": [
+    {"text": "Identifies SQL injection risk", "passed": true, "evidence": "Critical Issue #1: detailed reference to quoteIdentifier(), resolveDatasetTableName(), datasetRows.ts:38"},
+    {"text": "Flags missing auth/authorization", "passed": true, "evidence": "Critical Issue #2: identifies no auth middleware + cross-project exfiltration risk"},
+    {"text": "Identifies missing resource limits", "passed": true, "evidence": "Critical Issue #3: references env.sqlMaxRows, MAX_DATASET_ROWS_LIMIT, sqlStatementTimeoutMs, 300MB upload limit"},
+    {"text": "Flags GET with URL length limits, suggests POST", "passed": true, "evidence": "Item #4 'IMPORTANT, bordering CRITICAL': calculates 50 UUIDs = ~1,850 chars, cites 2,048-8,192 limits, recommends POST with JSON body. THIS WAS THE ITERATION-1 MISS — NOW FIXED."},
+    {"text": "Mentions error handling for bad dataset IDs", "passed": true, "evidence": "Strong Recommendation #9: 'Validate ALL datasets exist and are accessible BEFORE starting the ZIP stream'"},
+    {"text": "Structured with priority levels", "passed": true, "evidence": "Clear Critical / Strong Recommendations / Minor / Alternative sections with numbered items"}
+  ],
+  "pass_rate": 1.0
+}

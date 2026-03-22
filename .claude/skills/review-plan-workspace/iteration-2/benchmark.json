@@ -1,0 +1,110 @@
+{
+  "metadata": {
+    "skill_name": "review-plan",
+    "skill_path": "/home/shree/Documents/CSE449/repo/.claude/skills/review-plan",
+    "executor_model": "claude-opus-4-6",
+    "analyzer_model": "claude-opus-4-6",
+    "timestamp": "2026-03-21T23:00:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1, "eval_name": "overengineered-caching", "configuration": "with_skill", "run_number": 1,
+      "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 133.1, "tokens": 58360, "tool_calls": 32, "errors": 0},
+      "expectations": [
+        {"text": "Identifies existing caching (DB cache + inflight map)", "passed": true, "evidence": "Most detailed identification across all runs"},
+        {"text": "Flags Redis as redundant/over-engineered", "passed": true, "evidence": "'redundant cache-in-front-of-a-cache'"},
+        {"text": "Critiques cache warmer", "passed": true, "evidence": "'every server restart triggers N LLM calls'"},
+        {"text": "Proposes simpler alternative", "passed": true, "evidence": "In-memory LRU or do nothing"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Critical/Strong/Minor/Alternative sections"},
+        {"text": "References actual codebase files", "passed": true, "evidence": "Extensive line number references"}
+      ]
+    },
+    {
+      "eval_id": 1, "eval_name": "overengineered-caching", "configuration": "without_skill", "run_number": 1,
+      "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 119.2, "tokens": 53457, "tool_calls": 28, "errors": 0},
+      "expectations": [
+        {"text": "Identifies existing caching (DB cache + inflight map)", "passed": true, "evidence": "Identifies all 3 layers"},
+        {"text": "Flags Redis as redundant/over-engineered", "passed": true, "evidence": "'Overengineered'"},
+        {"text": "Critiques cache warmer", "passed": true, "evidence": "'fires expensive LLM calls'"},
+        {"text": "Proposes simpler alternative", "passed": true, "evidence": "Do not implement, add logging"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Severity table, risk assessment"},
+        {"text": "References actual codebase files", "passed": true, "evidence": "Line numbers, function names"}
+      ]
+    },
+    {
+      "eval_id": 2, "eval_name": "security-gaps-export", "configuration": "with_skill", "run_number": 1,
+      "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 143.6, "tokens": 58985, "tool_calls": 30, "errors": 0},
+      "expectations": [
+        {"text": "Identifies SQL injection risk", "passed": true, "evidence": "Critical Issue #1 with quoteIdentifier reference"},
+        {"text": "Flags missing auth/authorization", "passed": true, "evidence": "Critical Issue #2 + cross-project exfiltration"},
+        {"text": "Identifies missing resource limits", "passed": true, "evidence": "Critical Issue #3 with specific config values"},
+        {"text": "Flags GET with URL length limits, suggests POST", "passed": true, "evidence": "Item #4: calculates UUID byte count, cites limits, recommends POST with JSON body — FIXED FROM ITERATION 1"},
+        {"text": "Mentions error handling for bad dataset IDs", "passed": true, "evidence": "Strong Recommendation #9"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Critical/Strong/Minor/Alternative sections"}
+      ]
+    },
+    {
+      "eval_id": 2, "eval_name": "security-gaps-export", "configuration": "without_skill", "run_number": 1,
+      "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 135.5, "tokens": 48202, "tool_calls": 25, "errors": 0},
+      "expectations": [
+        {"text": "Identifies SQL injection risk", "passed": true, "evidence": "Section 1.1"},
+        {"text": "Flags missing auth/authorization", "passed": true, "evidence": "Section 1.2"},
+        {"text": "Identifies missing resource limits", "passed": true, "evidence": "Section 1.4"},
+        {"text": "Flags GET with URL length limits, suggests POST", "passed": true, "evidence": "Section 4.2"},
+        {"text": "Mentions error handling for bad dataset IDs", "passed": true, "evidence": "Section 3.1"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Severity levels, risk table"}
+      ]
+    },
+    {
+      "eval_id": 3, "eval_name": "solid-refactor", "configuration": "with_skill", "run_number": 1,
+      "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 117.0, "tokens": 54603, "tool_calls": 30, "errors": 0},
+      "expectations": [
+        {"text": "Identifies existing decomposition (NlApprovalDialog, useNlSuggestions)", "passed": true, "evidence": "Critical Issue #1: 'already extracted into NlApprovalDialog.tsx (50 lines)... useNlSuggestions.ts (91 lines)'"},
+        {"text": "Correctly identifies streaming logic location", "passed": true, "evidence": "Critical Issue #2: 'SSE/NDJSON streaming lives in lib/api/query.ts, not in component'"},
+        {"text": "Discusses AbortController lifecycle risks", "passed": true, "evidence": "Minor #6: ref-based identity check pattern must be preserved"},
+        {"text": "Identifies missing files in modification list", "passed": true, "evidence": "Strong Rec #3: table of 4 missing files"},
+        {"text": "Proposes better alternative", "passed": true, "evidence": "'Keep as-is' or 'useNlGeneration hook'"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Critical/Strong/Minor/Alternative sections"}
+      ]
+    },
+    {
+      "eval_id": 3, "eval_name": "solid-refactor", "configuration": "without_skill", "run_number": 1,
+      "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 107.3, "tokens": 49950, "tool_calls": 23, "errors": 0},
+      "expectations": [
+        {"text": "Identifies existing decomposition (NlApprovalDialog, useNlSuggestions)", "passed": true, "evidence": "Issue 1: 'NlApprovalDialog (50 lines)' and 'useNlSuggestions (91 lines)'"},
+        {"text": "Correctly identifies streaming logic location", "passed": true, "evidence": "Issue 2: 'NDJSON streaming via fetch+ReadableStream in query.ts'"},
+        {"text": "Discusses AbortController lifecycle risks", "passed": true, "evidence": "Recommended alternative includes streamAbortRef lifecycle"},
+        {"text": "Identifies missing files in modification list", "passed": true, "evidence": "Issue 4: table of 4 missing files"},
+        {"text": "Proposes better alternative", "passed": true, "evidence": "'Do nothing' or 'useNlGeneration hook'"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Severity levels (Critical/Moderate/Minor), checklist"}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 131.2, "stddev": 10.9, "min": 117.0, "max": 143.6},
+      "tokens": {"mean": 57316, "stddev": 1942, "min": 54603, "max": 58985}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 120.7, "stddev": 11.6, "min": 107.3, "max": 135.5},
+      "tokens": {"mean": 50536, "stddev": 2167, "min": 48202, "max": 53457}
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "+10.5",
+      "tokens": "+6780"
+    }
+  },
+  "notes": [
+    "ITERATION 2 vs ITERATION 1: With-skill pass rate improved from 83.3% to 100%. The GET/POST URL length issue (test 2) that was missed in iteration 1 is now caught. Test 3 assertions were corrected to match reality.",
+    "Both configurations now achieve 100% pass rate on all assertions. The skill's value is no longer measured by catch rate (both are perfect) but by output quality dimensions.",
+    "QUALITATIVE IMPROVEMENTS in iteration 2 with-skill outputs: (1) The checklist approach produces more systematic reviews with specific config values and line numbers. (2) The 'verify plan assumptions against reality' nudge in Reviewer B catches plans that misidentify code locations. (3) The GET/POST issue is now caught thanks to the explicit 'API & Protocol' checklist section.",
+    "Time overhead is reduced from +18.6s (it1) to +10.5s (it2) despite more thorough file reading, likely because 2 reviewers is faster than 3.",
+    "Token usage is ~13% higher with skill (57k vs 51k), mainly from the comprehensive checklist in reviewer prompts. This is acceptable given the quality improvements.",
+    "The skill's primary value propositions are now: (1) comprehensive checklist prevents blind spots, (2) independent perspectives catch different things, (3) consistent output structure, (4) explicit verification of plan assumptions against actual code."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "eval_id": 3,
+  "eval_name": "solid-refactor",
+  "prompt": "Review a refactoring plan where extraction targets already exist",
+  "assertions": [
+    {"id": "existing-decomposition", "text": "Identifies NlApprovalDialog and useNlSuggestions as already-extracted equivalents of the proposed SuggestionChips", "type": "depth_check"},
+    {"id": "no-sse-in-component", "text": "Identifies that SSE/streaming lives in lib/api/query.ts, not in the component, and the proposed return signature is wrong", "type": "depth_check"},
+    {"id": "abort-identity-check", "text": "Identifies the subtle ref-based abort controller identity check pattern (streamAbortRef.current !== controller, not just signal.aborted)", "type": "depth_check"},
+    {"id": "all-missing-files", "text": "Lists at least 3 of the 4 missing downstream files (NlWorkflowSteps, SqlRevealBlock, QueryPanel, stream test)", "type": "depth_check"},
+    {"id": "naming-mismatch", "text": "Notes the naming mismatch — 'chips' vs actual 'dropdown/dialog' UI pattern", "type": "depth_check"},
+    {"id": "reexport-chain", "text": "Identifies the ApproveThemeClasses or NlPhase re-export chain from NlQueryReducer through NlQueryWorkflow to consumers", "type": "depth_check"},
+    {"id": "useNlGeneration-alternative", "text": "Proposes useNlGeneration hook as the correct extraction target with a concrete return signature", "type": "quality_check"},
+    {"id": "line-count-verification", "text": "Verifies the actual line count (~367) and argues it's not actually large for an orchestrator", "type": "depth_check"},
+    {"id": "stream-test-file", "text": "Specifically mentions NlQueryWorkflow.stream.test.tsx as an unmentioned file that would be affected", "type": "depth_check"},
+    {"id": "structured-output", "text": "Review uses Critical/Strong/Minor priority structure", "type": "format_check"}
+  ]
+}

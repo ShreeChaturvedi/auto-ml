@@ -1,0 +1,13 @@
+{
+  "eval_id": 3,
+  "eval_name": "solid-refactor",
+  "prompt": "Review a solid NlQueryWorkflow component refactoring plan",
+  "assertions": [
+    {"id": "existing-decomposition", "text": "Identifies that extraction targets already exist (NlApprovalDialog, useNlSuggestions, or similar)", "type": "content_check"},
+    {"id": "streaming-location", "text": "Correctly identifies that SSE/streaming logic lives in lib/api/query.ts, not in the component", "type": "content_check"},
+    {"id": "abort-controller", "text": "Discusses AbortController lifecycle risks from splitting ownership across modules", "type": "content_check"},
+    {"id": "missing-files", "text": "Identifies files that import from NlQueryWorkflow.tsx but aren't in the plan's modification list", "type": "content_check"},
+    {"id": "better-alternative", "text": "Proposes a more accurate refactoring alternative (e.g., useNlGeneration hook)", "type": "content_check"},
+    {"id": "structured-output", "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list", "type": "format_check"}
+  ]
+}

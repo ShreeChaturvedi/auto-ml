@@ -17,11 +17,6 @@ export interface AuthRequest extends Request {
   user?: SafeUser;
 }
 
-// Request type for routes behind requireAuth — user is always present
-export interface AuthenticatedRequest extends Request {
-  user: SafeUser;
-}
-
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;

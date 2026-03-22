@@ -12,6 +12,8 @@ const hoisted = vi.hoisted(() => {
   const mockModelCreate = vi.fn();
   const mockDatasetGetById = vi.fn();
   const mockGetModelTemplate = vi.fn();
+  const mockDbQuery = vi.fn();
+  const mockHasDatabaseConfiguration = vi.fn();
 
   return {
     mockExecute,
@@ -21,6 +23,8 @@ const hoisted = vi.hoisted(() => {
     mockModelCreate,
     mockDatasetGetById,
     mockGetModelTemplate,
+    mockDbQuery,
+    mockHasDatabaseConfiguration,
   };
 });
 
@@ -57,6 +61,11 @@ vi.mock('../modelTemplates.js', () => ({
   getModelTemplate: hoisted.mockGetModelTemplate,
 }));
 
+vi.mock('../../db.js', () => ({
+  getDbPool: () => ({ query: hoisted.mockDbQuery }),
+  hasDatabaseConfiguration: () => hoisted.mockHasDatabaseConfiguration(),
+}));
+
 vi.mock('../../config.js', () => ({
   env: {
     datasetMetadataPath: '/tmp/test-datasets.json',
@@ -85,7 +94,7 @@ vi.mock('node:fs', () => ({
 /* ------------------------------------------------------------------ */
 
 import type { ModelTemplate } from '../../types/model.js';
-import { buildTuningScript, runTuningStudy } from '../tuningService.js';
+import { buildTuningScript, deleteTuningStudiesByModelId, runTuningStudy } from '../tuningService.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -99,6 +108,8 @@ const {
   mockModelCreate,
   mockDatasetGetById,
   mockGetModelTemplate,
+  mockDbQuery,
+  mockHasDatabaseConfiguration,
 } = hoisted;
 
 function makeClassificationTemplate(): ModelTemplate {
@@ -546,5 +557,33 @@ describe('runTuningStudy', () => {
     expect(errorEvent).toBeDefined();
     expect(errorEvent.message).toContain('optuna');
     expect(res.end).toHaveBeenCalled();
+  });
+});
+
+/* ================================================================== */
+/*  deleteTuningStudiesByModelId tests                                 */
+/* ================================================================== */
+
+describe('deleteTuningStudiesByModelId', () => {
+  it('deletes tuning studies referencing the model when DB is configured', async () => {
+    mockHasDatabaseConfiguration.mockReturnValue(true);
+    mockDbQuery.mockResolvedValue({ rowCount: 2 });
+
+    const count = await deleteTuningStudiesByModelId('model-to-delete');
+
+    expect(count).toBe(2);
+    expect(mockDbQuery).toHaveBeenCalledWith(
+      'DELETE FROM tuning_studies WHERE source_model_id = $1 OR result_model_id = $1',
+      ['model-to-delete'],
+    );
+  });
+
+  it('returns 0 and skips query when DB is not configured', async () => {
+    mockHasDatabaseConfiguration.mockReturnValue(false);
+
+    const count = await deleteTuningStudiesByModelId('model-to-delete');
+
+    expect(count).toBe(0);
+    expect(mockDbQuery).not.toHaveBeenCalled();
   });
 });

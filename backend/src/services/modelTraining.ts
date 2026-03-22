@@ -14,6 +14,7 @@ import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
+import { deleteTuningStudiesByModelId } from './tuningService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
@@ -356,8 +357,12 @@ export async function deleteModel(modelId: string): Promise<boolean> {
   const deleted = await modelRepository.delete(modelId);
   if (deleted) {
     const artifactDir = join(env.modelStorageDir, modelId);
-    await rm(artifactDir, { recursive: true, force: true })
-      .catch((err) => appLogger.warn('[modelTraining] artifact cleanup failed', { modelId, err }));
+    await Promise.all([
+      rm(artifactDir, { recursive: true, force: true })
+        .catch((err) => appLogger.warn('[modelTraining] artifact cleanup failed', { modelId, err })),
+      deleteTuningStudiesByModelId(modelId)
+        .catch((err) => appLogger.warn('[modelTraining] tuning study cleanup failed', { modelId, err })),
+    ]);
   }
   return deleted;
 }

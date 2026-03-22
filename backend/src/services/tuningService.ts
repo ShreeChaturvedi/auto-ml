@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import type { Response } from 'express';
 
 import { env } from '../config.js';
+import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
@@ -398,4 +399,18 @@ export async function runTuningStudy(
     writeJsonLine(res, { type: 'error', message });
     res.end();
   }
+}
+
+/**
+ * Delete all tuning study rows that reference a given model ID
+ * (as source or result). Called when a model is deleted to prevent orphans.
+ */
+export async function deleteTuningStudiesByModelId(modelId: string): Promise<number> {
+  if (!hasDatabaseConfiguration()) return 0;
+  const pool = getDbPool();
+  const result = await pool.query(
+    'DELETE FROM tuning_studies WHERE source_model_id = $1 OR result_model_id = $1',
+    [modelId],
+  );
+  return result.rowCount ?? 0;
 }

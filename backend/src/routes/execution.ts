@@ -4,10 +4,12 @@
  * REST API endpoints for Python code execution.
  */
 
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import {
     executeCode,
     createSession,
@@ -20,8 +22,10 @@ import {
     getHealth
 } from '../services/executionService.js';
 import { searchPackages } from '../services/packageIndex.js';
+import type { AuthRequest } from '../types/auth.js';
 
 const router = Router();
+const projectRepository = getProjectRepository();
 
 // Request validation schemas
 const executeSchema = z.object({
@@ -46,7 +50,7 @@ const sessionSchema = z.object({
  * POST /api/execute
  * Execute Python code
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
     try {
         const parsed = executeSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -76,7 +80,7 @@ router.post('/', async (req: Request, res: Response) => {
  * POST /api/execute/session
  * Create a new execution session
  */
-router.post('/session', async (req: Request, res: Response) => {
+router.post('/session', async (req: AuthRequest, res: Response) => {
     try {
         const parsed = sessionSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -117,12 +121,20 @@ router.post('/session', async (req: Request, res: Response) => {
  * GET /api/execute/session/:id
  * Get session details
  */
-router.get('/session/:id', (req: Request, res: Response) => {
+router.get('/session/:id', async (req: AuthRequest, res: Response) => {
     const session = getSession(req.params.id);
 
     if (!session) {
         res.status(404).json({ error: 'Session not found' });
         return;
+    }
+
+    if (req.user && session.projectId) {
+        const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+        if (!project) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
     }
 
     res.json({
@@ -141,8 +153,17 @@ router.get('/session/:id', (req: Request, res: Response) => {
  * DELETE /api/execute/session/:id
  * Destroy a session
  */
-router.delete('/session/:id', async (req: Request, res: Response) => {
+router.delete('/session/:id', async (req: AuthRequest, res: Response) => {
     try {
+        const session = getSession(req.params.id);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
+        }
+
         await destroySession(req.params.id);
         res.json({ success: true });
     } catch (error) {
@@ -158,7 +179,7 @@ router.delete('/session/:id', async (req: Request, res: Response) => {
  * POST /api/execute/packages
  * Install a package
  */
-router.post('/packages', async (req: Request, res: Response) => {
+router.post('/packages', async (req: AuthRequest, res: Response) => {
     try {
         const parsed = packageSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -167,6 +188,15 @@ router.post('/packages', async (req: Request, res: Response) => {
                 details: parsed.error.issues
             });
             return;
+        }
+
+        const session = getSession(parsed.data.sessionId);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
         }
 
         const result = await installPackage(
@@ -188,7 +218,7 @@ router.post('/packages', async (req: Request, res: Response) => {
  * GET /api/execute/packages/suggest
  * Search for package suggestions
  */
-router.get('/packages/suggest', async (req: Request, res: Response) => {
+router.get('/packages/suggest', async (req: AuthRequest, res: Response) => {
     try {
         const q = typeof req.query.q === 'string' ? req.query.q : '';
         const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
@@ -209,7 +239,7 @@ router.get('/packages/suggest', async (req: Request, res: Response) => {
  * POST /api/execute/packages/stream
  * Install a package with streaming progress
  */
-router.post('/packages/stream', async (req: Request, res: Response) => {
+router.post('/packages/stream', async (req: AuthRequest, res: Response) => {
     try {
         const parsed = packageSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -218,6 +248,15 @@ router.post('/packages/stream', async (req: Request, res: Response) => {
                 details: parsed.error.issues
             });
             return;
+        }
+
+        const session = getSession(parsed.data.sessionId);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
         }
 
         res.status(200);
@@ -264,8 +303,17 @@ router.post('/packages/stream', async (req: Request, res: Response) => {
  * GET /api/execute/packages/:sessionId
  * List installed packages
  */
-router.get('/packages/:sessionId', async (req: Request, res: Response) => {
+router.get('/packages/:sessionId', async (req: AuthRequest, res: Response) => {
     try {
+        const session = getSession(req.params.sessionId);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user!.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
+        }
+
         const packages = await listPackages(req.params.sessionId);
         res.json({ packages });
     } catch (error) {
@@ -281,7 +329,7 @@ router.get('/packages/:sessionId', async (req: Request, res: Response) => {
  * GET /api/execute/runtimes
  * List available Python runtimes
  */
-router.get('/runtimes', async (_req: Request, res: Response) => {
+router.get('/runtimes', async (_req: AuthRequest, res: Response) => {
     try {
         const runtimes = await getAvailableRuntimes();
         res.json({ runtimes });
@@ -298,7 +346,7 @@ router.get('/runtimes', async (_req: Request, res: Response) => {
  * GET /api/execute/health
  * Check execution service health
  */
-router.get('/health', async (_req: Request, res: Response) => {
+router.get('/health', async (_req: AuthRequest, res: Response) => {
     try {
         const health = await getHealth();
         res.json(health);

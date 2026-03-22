@@ -18,6 +18,7 @@ export interface ProjectMetadata {
 
 export interface Project {
   id: string;
+  userId?: string;
   name: string;
   description?: string;
   icon?: string;
@@ -29,6 +30,7 @@ export interface Project {
 
 export interface CreateProjectInput {
   name: string;
+  userId?: string;
   description?: string;
   icon?: string;
   color?: string;

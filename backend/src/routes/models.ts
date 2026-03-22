@@ -1,14 +1,18 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import {
   getModelById,
   getModelTemplates,
   listModels,
   trainModel
 } from '../services/modelTraining.js';
+import type { AuthRequest } from '../types/auth.js';
 
 const router = Router();
+const projectRepository = getProjectRepository();
 
 const trainSchema = z.object({
   projectId: z.string().min(1),
@@ -21,36 +25,50 @@ const trainSchema = z.object({
 });
 
 
-router.get('/templates', (_req: Request, res: Response) => {
+router.get('/templates', (_req: AuthRequest, res: Response) => {
   res.json({ templates: getModelTemplates() });
 });
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
   const models = await listModels(projectId);
   models.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ models });
 });
 
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model) {
     res.status(404).json({ error: 'Model not found' });
     return;
   }
+  if (req.user && model.projectId) {
+    const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      res.status(404).json({ error: 'Model not found' });
+      return;
+    }
+  }
   res.json({ model });
 });
 
-router.get('/:id/artifact', async (req: Request, res: Response) => {
+router.get('/:id/artifact', async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model?.artifact?.path) {
     res.status(404).json({ error: 'Model artifact not found' });
     return;
   }
+  if (req.user && model.projectId) {
+    const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      res.status(404).json({ error: 'Model artifact not found' });
+      return;
+    }
+  }
   res.download(model.artifact.path, model.artifact.filename);
 });
 
-router.post('/train', async (req: Request, res: Response) => {
+router.post('/train', async (req: AuthRequest, res: Response) => {
   try {
     const parsed = trainSchema.safeParse(req.body);
     if (!parsed.success) {

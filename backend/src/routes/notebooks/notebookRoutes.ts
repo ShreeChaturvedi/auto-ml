@@ -1,10 +1,13 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 
 import { asyncHandler } from '../../middleware/asyncHandler.js';
+import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../../repositories/projectRepository.js';
 import * as kernelManager from '../../services/kernelManager.js';
 import { getOrEnsureContainer } from '../../services/notebook/cellExecutionService.js';
 import * as notebookService from '../../services/notebook/notebookService.js';
+import type { AuthRequest } from '../../types/auth.js';
 
 const createNotebookSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -18,6 +21,7 @@ const updateNotebookSchema = z.object({
 
 export function createNotebookRoutes(): Router {
   const router = Router();
+  const projectRepository = getProjectRepository();
 
   // ============================================================
   // Notebook Endpoints
@@ -27,8 +31,17 @@ export function createNotebookRoutes(): Router {
    * GET /api/projects/:projectId/notebooks
    * List notebooks for a project.
    */
-  router.get('/projects/:projectId/notebooks', asyncHandler(async (req: Request, res: Response) => {
+  router.get('/projects/:projectId/notebooks', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+    }
+
     const notebooks = await notebookService.listProjectNotebooks(projectId);
     res.json(notebooks);
   }));
@@ -37,8 +50,17 @@ export function createNotebookRoutes(): Router {
    * POST /api/projects/:projectId/notebooks
    * Create a notebook for a project.
    */
-  router.post('/projects/:projectId/notebooks', asyncHandler(async (req: Request, res: Response) => {
+  router.post('/projects/:projectId/notebooks', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+    }
+
     const parsed = createNotebookSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -56,8 +78,22 @@ export function createNotebookRoutes(): Router {
    * PATCH /api/notebooks/:notebookId
    * Update a notebook (name and/or metadata).
    */
-  router.patch('/notebooks/:notebookId', asyncHandler(async (req: Request, res: Response) => {
+  router.patch('/notebooks/:notebookId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { notebookId } = req.params;
+
+    if (req.user) {
+      const existingNotebook = await notebookService.getNotebook(notebookId);
+      if (!existingNotebook) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+      const project = await verifyProjectOwnership(existingNotebook.projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+    }
+
     const parsed = updateNotebookSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -75,8 +111,17 @@ export function createNotebookRoutes(): Router {
    * DELETE /api/projects/:projectId/notebooks/:notebookId
    * Delete a notebook from a project.
    */
-  router.delete('/projects/:projectId/notebooks/:notebookId', asyncHandler(async (req: Request, res: Response) => {
+  router.delete('/projects/:projectId/notebooks/:notebookId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId, notebookId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+    }
+
     const result = await notebookService.deleteProjectNotebook(projectId, notebookId);
     res.json(result);
   }));
@@ -85,8 +130,17 @@ export function createNotebookRoutes(): Router {
    * GET /api/projects/:projectId/notebook
    * Get or create the notebook for a project.
    */
-  router.get('/projects/:projectId/notebook', asyncHandler(async (req: Request, res: Response) => {
+  router.get('/projects/:projectId/notebook', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+    }
+
     const notebook = await notebookService.ensureNotebook(projectId);
     res.json(notebook);
   }));
@@ -99,8 +153,17 @@ export function createNotebookRoutes(): Router {
    * POST /api/projects/:projectId/kernel/restart
    * Restart the Jupyter kernel for a project's container.
    */
-  router.post('/projects/:projectId/kernel/restart', asyncHandler(async (req: Request, res: Response) => {
+  router.post('/projects/:projectId/kernel/restart', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+    }
+
     const container = await getOrEnsureContainer(projectId);
     await kernelManager.restartKernel(container);
     res.json({ success: true });

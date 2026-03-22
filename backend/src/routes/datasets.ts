@@ -7,9 +7,12 @@ import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import { loadDatasetIntoPostgres, resolveDatasetTableName } from '../services/datasetLoader.js';
+import type { AuthRequest } from '../types/auth.js';
 import { getErrorMessage } from '../utils/errors.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
@@ -20,6 +23,7 @@ import { handleDatasetUpload, processDatasetUpload } from './datasets/uploadHand
 export function createDatasetUploadRouter(repository?: DatasetRepository) {
   const router = Router();
   const datasetRepository = repository ?? createDatasetRepository(env.datasetMetadataPath);
+  const projectRepository = getProjectRepository();
 
   // ── List datasets ──────────────────────────────────────────────────
   router.get(
@@ -42,12 +46,20 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Get dataset sample ─────────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/sample',
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
         res.status(404).json({ error: 'Dataset not found' });
         return;
+      }
+
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Dataset not found' });
+          return;
+        }
       }
 
       res.json({
@@ -61,7 +73,20 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Get paged dataset rows ─────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/rows',
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: AuthRequest, res) => {
+      const { datasetId } = req.params;
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        res.status(404).json({ error: 'Dataset not found' });
+        return;
+      }
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Dataset not found' });
+          return;
+        }
+      }
       await getDatasetRows(req, res, datasetRepository);
     })
   );
@@ -69,7 +94,20 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Update column type ─────────────────────────────────────────────
   router.put(
     '/datasets/:datasetId/columns/:columnName',
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: AuthRequest, res) => {
+      const { datasetId } = req.params;
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        res.status(404).json({ error: 'Dataset not found' });
+        return;
+      }
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Dataset not found' });
+          return;
+        }
+      }
       await updateColumnType(req, res, datasetRepository);
     })
   );
@@ -77,12 +115,20 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Download dataset file ──────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/download',
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
         res.status(404).json({ error: 'Dataset not found' });
         return;
+      }
+
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Dataset not found' });
+          return;
+        }
       }
 
       const datasetDir = join(env.datasetStorageDir, datasetId);
@@ -197,12 +243,20 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Delete dataset ─────────────────────────────────────────────────
   router.delete(
     '/datasets/:datasetId',
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
         res.status(404).json({ error: 'Dataset not found' });
         return;
+      }
+
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Dataset not found' });
+          return;
+        }
       }
 
       const deleted = await datasetRepository.delete(datasetId);

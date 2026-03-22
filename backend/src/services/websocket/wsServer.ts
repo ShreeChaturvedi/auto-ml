@@ -1,10 +1,13 @@
+import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'node:crypto';
 
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { env } from '../../config.js';
+import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
+import { authService } from '../../services/authService.js';
 import type { WSClientMessage, WSServerMessage } from '../../types/notebook.js';
 
 // ============================================================
@@ -16,6 +19,7 @@ interface WSClient {
   ws: WebSocket;
   subscribedNotebooks: Set<string>;
   lastPing: Date;
+  userId?: string;
 }
 
 // ============================================================
@@ -44,8 +48,8 @@ export class NotebookWSServer {
   // ============================================================
 
   private setupHandlers(): void {
-    this.wss.on('connection', (ws: WebSocket) => {
-      this.handleConnection(ws);
+    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+      this.handleConnection(ws, req);
     });
 
     this.wss.on('error', (error) => {
@@ -53,13 +57,35 @@ export class NotebookWSServer {
     });
   }
 
-  private handleConnection(ws: WebSocket): void {
+  private handleConnection(ws: WebSocket, req: IncomingMessage): void {
+    let userId: string | undefined;
+
+    if (hasDatabaseConfiguration()) {
+      const url = new URL(req.url ?? '', 'ws://localhost');
+      const token = url.searchParams.get('token');
+
+      if (!token) {
+        ws.close(4401, 'Authentication required');
+        return;
+      }
+
+      const payload = authService.verifyAccessToken(token);
+
+      if (!payload) {
+        ws.close(4401, 'Invalid token');
+        return;
+      }
+
+      userId = payload.userId;
+    }
+
     const clientId = randomUUID();
     const client: WSClient = {
       id: clientId,
       ws,
       subscribedNotebooks: new Set(),
-      lastPing: new Date()
+      lastPing: new Date(),
+      userId
     };
 
     this.clients.set(clientId, client);

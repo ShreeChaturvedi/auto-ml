@@ -8,9 +8,12 @@ import { z } from 'zod';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import { ingestDocument } from '../services/documentIngestion.js';
 import { parseDocument } from '../services/documentParser.js';
 import { searchDocuments } from '../services/documentSearchService.js';
+import type { AuthRequest } from '../types/auth.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -25,6 +28,7 @@ const uploadSchema = z.object({
 
 export function createDocumentRouter() {
   const router = Router();
+  const projectRepository = getProjectRepository();
 
   router.post('/upload/doc', upload.single('file'), async (req, res) => {
     const result = uploadSchema.safeParse(req.body);
@@ -142,7 +146,7 @@ export function createDocumentRouter() {
     }
   });
 
-  router.get('/documents/:documentId/download', async (req, res) => {
+  router.get('/documents/:documentId/download', async (req: AuthRequest, res) => {
     if (!hasDatabaseConfiguration()) {
       return res.status(503).json({ error: 'Database is not configured for document download' });
     }
@@ -152,7 +156,7 @@ export function createDocumentRouter() {
 
     try {
       const result = await pool.query(
-        `SELECT filename, mime_type, storage_path, byte_size
+        `SELECT filename, mime_type, storage_path, byte_size, project_id
          FROM documents
          WHERE document_id = $1`,
         [documentId]
@@ -163,6 +167,15 @@ export function createDocumentRouter() {
       }
 
       const row = result.rows[0];
+
+      const projectId = row.project_id as string | null;
+      if (req.user && projectId) {
+        const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          return res.status(404).json({ error: 'Document not found' });
+        }
+      }
+
       const storagePath = row.storage_path as string | null;
 
       if (!storagePath || !existsSync(storagePath)) {
@@ -184,7 +197,7 @@ export function createDocumentRouter() {
     }
   });
 
-  router.delete('/documents/:documentId', async (req, res) => {
+  router.delete('/documents/:documentId', async (req: AuthRequest, res) => {
     if (!hasDatabaseConfiguration()) {
       return res.status(503).json({ error: 'Database is not configured for document deletion' });
     }
@@ -194,7 +207,7 @@ export function createDocumentRouter() {
 
     try {
       const result = await pool.query(
-        `SELECT storage_path FROM documents WHERE document_id = $1`,
+        `SELECT storage_path, project_id FROM documents WHERE document_id = $1`,
         [documentId]
       );
 
@@ -202,7 +215,17 @@ export function createDocumentRouter() {
         return res.status(404).json({ error: 'Document not found' });
       }
 
-      const storagePath = result.rows[0].storage_path as string | null;
+      const row = result.rows[0];
+
+      const projectId = row.project_id as string | null;
+      if (req.user && projectId) {
+        const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          return res.status(404).json({ error: 'Document not found' });
+        }
+      }
+
+      const storagePath = row.storage_path as string | null;
       await pool.query(`DELETE FROM documents WHERE document_id = $1`, [documentId]);
 
       if (storagePath) {

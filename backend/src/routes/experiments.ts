@@ -1,12 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 
 import { env } from '../config.js';
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
 import { createLlmClient } from '../services/llm/llmClient.js';
+import { getModelById } from '../services/modelTraining.js';
 import { runTuningStudy } from '../services/tuningService.js';
+import type { AuthRequest } from '../types/auth.js';
 
 // ---------------------------------------------------------------------------
 // Insight type → system prompt mapping
@@ -29,10 +33,23 @@ const VALID_INSIGHT_TYPES = new Set(Object.keys(INSIGHT_SYSTEM_PROMPTS));
 
 export function createExperimentsRouter(): Router {
   const router = Router();
+  const projectRepository = getProjectRepository();
 
   // GET /experiments/:modelId/evaluation
-  router.get('/:modelId/evaluation', async (req: Request, res: Response) => {
+  router.get('/:modelId/evaluation', async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
+
+    if (req.user) {
+      const model = await getModelById(modelId);
+      if (model?.projectId) {
+        const project = await verifyProjectOwnership(model.projectId, req.user!.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Evaluation not found' });
+          return;
+        }
+      }
+    }
+
     const filePath = join(env.modelStorageDir, modelId, 'evaluation.json');
 
     try {
@@ -45,8 +62,20 @@ export function createExperimentsRouter(): Router {
   });
 
   // GET /experiments/:modelId/shap
-  router.get('/:modelId/shap', async (req: Request, res: Response) => {
+  router.get('/:modelId/shap', async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
+
+    if (req.user) {
+      const model = await getModelById(modelId);
+      if (model?.projectId) {
+        const project = await verifyProjectOwnership(model.projectId, req.user!.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'SHAP data not found' });
+          return;
+        }
+      }
+    }
+
     const filePath = join(env.modelStorageDir, modelId, 'shap.json');
 
     try {
@@ -59,8 +88,17 @@ export function createExperimentsRouter(): Router {
   });
 
   // POST /experiments/:projectId/tune — Optuna hyperparameter optimization (NDJSON stream)
-  router.post('/:projectId/tune', async (req: Request, res: Response) => {
+  router.post('/:projectId/tune', async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user!.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+    }
+
     const body = req.body as {
       modelId?: string;
       nTrials?: number;
@@ -109,12 +147,32 @@ export function createExperimentsRouter(): Router {
     }
   });
 
-  router.post('/:projectId/compare', (_req: Request, res: Response) => {
+  router.post('/:projectId/compare', async (req: AuthRequest, res: Response) => {
+    const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user!.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+    }
+
     res.status(501).json({ error: 'Not implemented' });
   });
 
   // POST /experiments/:projectId/insights — streaming LLM insights (NDJSON)
-  router.post('/:projectId/insights', async (req: Request, res: Response) => {
+  router.post('/:projectId/insights', async (req: AuthRequest, res: Response) => {
+    const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user!.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+    }
+
     const body = req.body as { type?: string; context?: Record<string, unknown> };
 
     // Validate required field
@@ -171,8 +229,20 @@ export function createExperimentsRouter(): Router {
     }
   });
 
-  router.get('/:modelId/error-analysis', async (req: Request, res: Response) => {
+  router.get('/:modelId/error-analysis', async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
+
+    if (req.user) {
+      const model = await getModelById(modelId);
+      if (model?.projectId) {
+        const project = await verifyProjectOwnership(model.projectId, req.user!.user_id, projectRepository);
+        if (!project) {
+          res.status(404).json({ error: 'Error analysis not available' });
+          return;
+        }
+      }
+    }
+
     const filePath = join(env.modelStorageDir, modelId, 'error_analysis.json');
 
     try {

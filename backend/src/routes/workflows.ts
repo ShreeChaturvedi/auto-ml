@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import { NdjsonResponseSink } from '../services/workflows/eventSink.js';
 import { getPhaseConfig } from '../services/workflows/phaseConfig.js';
 // Phase configs self-register when imported
@@ -10,6 +12,7 @@ import '../services/workflows/phases/preprocessing.js';
 import '../services/workflows/phases/training.js';
 import { getWorkflowRepository } from '../services/workflows/repository/index.js';
 import { executeWorkflowTurn } from '../services/workflows/turnExecutor.js';
+import type { AuthRequest } from '../types/auth.js';
 
 const workflowPhaseSchema = z.enum(['preprocessing', 'feature_engineering', 'training', 'onboarding']);
 const reasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
@@ -47,6 +50,7 @@ const workflowParamsSchema = z.object({
 export function createWorkflowRouter(): Router {
   const router = Router();
   const repository = getWorkflowRepository();
+  const projectRepository = getProjectRepository();
 
   router.post('/workflows/turns/stream', async (req, res) => {
     const parsed = workflowTurnSchema.safeParse(req.body);
@@ -91,7 +95,7 @@ export function createWorkflowRouter(): Router {
     });
   });
 
-  router.get('/workflows/:runId', async (req, res) => {
+  router.get('/workflows/:runId', async (req: AuthRequest, res) => {
     const parsed = workflowParamsSchema.safeParse(req.params);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid workflow id', details: parsed.error.issues });
@@ -100,6 +104,13 @@ export function createWorkflowRouter(): Router {
     const run = await repository.getRun(parsed.data.runId);
     if (!run) {
       return res.status(404).json({ error: 'Workflow run not found' });
+    }
+
+    if (req.user && run.projectId) {
+      const project = await verifyProjectOwnership(run.projectId, req.user!.user_id, projectRepository);
+      if (!project) {
+        return res.status(404).json({ error: 'Workflow run not found' });
+      }
     }
 
     return res.json({ run });

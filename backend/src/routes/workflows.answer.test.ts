@@ -45,6 +45,9 @@ vi.mock('../repositories/datasetRepository.js', () => ({
 vi.mock('../repositories/projectRepository.js', () => ({
   createProjectRepository: vi.fn(() => ({
     getById: projectGetByIdMock
+  })),
+  getProjectRepository: vi.fn(() => ({
+    getById: projectGetByIdMock
   }))
 }));
 

@@ -4,7 +4,9 @@ import type { CreateProjectInput, Project, ProjectMetadata, PhaseValue } from '.
 
 export interface ProjectRepository {
   list(): Promise<Project[]>;
+  listByUser(userId: string): Promise<Project[]>;
   getById(id: string): Promise<Project | undefined>;
+  getByIdAndUser(id: string, userId: string): Promise<Project | undefined>;
   create(input: CreateProjectInput): Promise<Project>;
   update(id: string, input: Partial<CreateProjectInput>): Promise<Project | undefined>;
   delete(id: string): Promise<boolean>;
@@ -36,6 +38,7 @@ export const metadataSchema = z
 
 export const storedProjectSchema = z.object({
   id: z.string(),
+  userId: z.string().optional(),
   name: z.string(),
   description: z.string().optional(),
   icon: z.string().optional(),

@@ -4,8 +4,10 @@ import express, { Request, Response, Router } from 'express';
 import { env } from './config.js';
 import { getDbPool, hasDatabaseConfiguration } from './db.js';
 import { appLogger } from './logging/logger.js';
+import { requireAuth } from './middleware/auth.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { requestTimingMiddleware } from './middleware/requestTiming.js';
+import { requireProjectAccess } from './middleware/requireProjectAccess.js';
 import { createDatasetRepository } from './repositories/datasetRepository.js';
 import { createProjectRepository } from './repositories/projectRepository.js';
 import { createAnswerRouter } from './routes/answer.js';
@@ -52,6 +54,13 @@ export function createApp() {
       res.status(503).json({ error: 'Authentication is unavailable. Configure DATABASE_URL to enable auth.' });
     });
   }
+
+  // Apply authentication + project ownership when database is configured
+  if (hasDatabaseConfiguration()) {
+    router.use(requireAuth);
+    router.use(requireProjectAccess(projectRepository));
+  }
+
   registerProjectRoutes(router, projectRepository);
   router.use(createDatasetUploadRouter(datasetRepository));
   router.use(createDocumentRouter());

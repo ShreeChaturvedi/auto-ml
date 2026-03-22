@@ -1,3 +1,4 @@
+import { env } from '../../config.js';
 import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
 
@@ -25,6 +26,19 @@ export function createProjectRepository(storagePath: string): ProjectRepository 
     appLogger.error('[projectRepository] Falling back to in-memory storage', error);
     return new InMemoryProjectRepository();
   }
+}
+
+let _sharedInstance: ProjectRepository | undefined;
+
+/**
+ * Returns a shared singleton ProjectRepository instance.
+ * Uses env.storagePath from config for file-backed fallback.
+ */
+export function getProjectRepository(): ProjectRepository {
+  if (!_sharedInstance) {
+    _sharedInstance = createProjectRepository(env.storagePath);
+  }
+  return _sharedInstance;
 }
 
 // Re-export everything for backward compatibility

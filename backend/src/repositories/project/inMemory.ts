@@ -22,12 +22,29 @@ export class InMemoryProjectRepository implements ProjectRepository {
     return this.projects.get(id);
   }
 
+  async listByUser(userId: string): Promise<Project[]> {
+    const allProjects = Array.from(this.projects.values());
+    const anyHasUserId = allProjects.some((p) => p.userId != null);
+    if (!anyHasUserId) {
+      return allProjects;
+    }
+    return allProjects.filter((p) => p.userId === userId);
+  }
+
+  async getByIdAndUser(id: string, userId: string): Promise<Project | undefined> {
+    const project = this.projects.get(id);
+    if (!project) return undefined;
+    if (!project.userId) return project;
+    return project.userId === userId ? project : undefined;
+  }
+
   async create(input: CreateProjectInput): Promise<Project> {
     const now = new Date().toISOString();
     const project: Project = {
       id: randomUUID(),
       name: input.name,
       description: input.description,
+      userId: input.userId,
       icon: input.icon ?? 'folder-closed',
       color: input.color ?? 'blue',
       createdAt: now,

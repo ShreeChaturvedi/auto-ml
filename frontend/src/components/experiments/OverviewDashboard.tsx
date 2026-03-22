@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Trophy, Layers, Tag, Clock, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Trophy, Layers, Tag, Clock, ArrowRight, AlertTriangle, LayoutDashboard } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -115,47 +115,56 @@ export function OverviewDashboard() {
     if (projectId) navigate(`/project/${projectId}/${targetPhase}`);
   };
 
-  if (models.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-2">
-          <Trophy className="mx-auto h-10 w-10 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">
-            No models trained yet. Train your first model to see the overview dashboard.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <ScrollArea className="h-full">
-      <div className="space-y-5 p-4">
-        <div className="flex flex-wrap gap-3">
-          {bestModel && <KpiCard icon={Trophy} label={`Best ${bestModel.metricLabel}`} value={formatMetric(bestModel.value)} />}
-          <KpiCard icon={Layers} label="Total Models" value={String(models.length)} />
-          <KpiCard icon={Tag} label="Task Type" value={taskTypeLabel} />
-          {avgTrainingTime != null && <KpiCard icon={Clock} label="Avg Training Time" value={formatDuration(avgTrainingTime)} />}
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <LayoutDashboard className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm font-semibold">Overview</span>
         </div>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Model Comparison</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ModelsParallelCoords models={models} />
-          </CardContent>
-        </Card>
-
-        {recommendations.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-foreground px-1">Cross-Phase Recommendations</h3>
-            {recommendations.map((rec, i) => (
-              <RecommendationCard key={`${rec.title}-${i}`} rec={rec} onNavigate={handleNavigateToPhase} />
-            ))}
-          </div>
-        )}
+        <span className="text-[11px] text-muted-foreground">
+          {models.length} model{models.length !== 1 ? 's' : ''} trained
+        </span>
       </div>
-    </ScrollArea>
+      {models.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center space-y-2">
+            <Trophy className="mx-auto h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">
+              No models trained yet. Train your first model to see the overview dashboard.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <ScrollArea className="flex-1">
+          <div className="space-y-5 p-4">
+            <div className="flex flex-wrap gap-3">
+              {bestModel && <KpiCard icon={Trophy} label={`Best ${bestModel.metricLabel}`} value={formatMetric(bestModel.value)} />}
+              <KpiCard icon={Layers} label="Total Models" value={String(models.length)} />
+              <KpiCard icon={Tag} label="Task Type" value={taskTypeLabel} />
+              {avgTrainingTime != null && <KpiCard icon={Clock} label="Avg Training Time" value={formatDuration(avgTrainingTime)} />}
+            </div>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Model Comparison</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ModelsParallelCoords models={models} />
+              </CardContent>
+            </Card>
+
+            {recommendations.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground px-1">Cross-Phase Recommendations</h3>
+                {recommendations.map((rec, i) => (
+                  <RecommendationCard key={`${rec.title}-${i}`} rec={rec} onNavigate={handleNavigateToPhase} />
+                ))}
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      )}
+    </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useMemo, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Trophy, ArrowUp, ArrowDown } from 'lucide-react';
+import { Trophy, ArrowUp, ArrowDown, GitCompareArrows } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
@@ -10,7 +11,6 @@ import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn } from '@/lib/utils';
 import { NlFilterBar } from './NlFilterBar';
 import { formatMetric, filterByPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
-import { EvalStatusBadge } from './EvalStatusBadge';
 
 /* ── Metric helpers ─────────────────────────────────────── */
 
@@ -32,16 +32,23 @@ const METRIC_COLUMNS: Record<ModelTaskType, [string, string][]> = {
   ],
 };
 
-/** Build combined metric column list (deduped by key). */
-function buildMetricColumns(taskTypes: ModelTaskType[]): [string, string][] {
-  const seen = new Set<string>();
+/** Build smart metric columns: primary metrics first, then fill to cap of 5. */
+function buildSmartColumns(taskTypes: ModelTaskType[]): [string, string][] {
   const cols: [string, string][] = [];
+  const seen = new Set<string>();
+
+  // Always show primary metric for each task type first
+  for (const tt of taskTypes) {
+    const primary = PRIMARY_METRIC[tt];
+    const col = METRIC_COLUMNS[tt].find(([, key]) => key === primary);
+    if (col && !seen.has(col[1])) { seen.add(col[1]); cols.push(col); }
+  }
+
+  // Fill remaining with secondary metrics, cap at 5 total
   for (const tt of taskTypes) {
     for (const col of METRIC_COLUMNS[tt]) {
-      if (!seen.has(col[1])) {
-        seen.add(col[1]);
-        cols.push(col);
-      }
+      if (cols.length >= 5) break;
+      if (!seen.has(col[1])) { seen.add(col[1]); cols.push(col); }
     }
   }
   return cols;
@@ -93,13 +100,14 @@ export function Leaderboard() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
   const selectModel = useExperimentsStore((s) => s.selectModel);
   const toggleComparison = useExperimentsStore((s) => s.toggleComparison);
+  const clearComparison = useExperimentsStore((s) => s.clearComparison);
   const activePredicates = useExperimentsStore((s) => s.activePredicates);
   const sortField = useExperimentsStore((s) => s.sortField);
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
 
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
-  const metricCols = useMemo(() => buildMetricColumns(taskTypes), [taskTypes]);
+  const metricCols = useMemo(() => buildSmartColumns(taskTypes), [taskTypes]);
   const championId = useMemo(() => findChampionId(models), [models]);
 
   const filteredModels = useMemo(
@@ -151,12 +159,12 @@ export function Leaderboard() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0">
-        <Trophy className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-semibold">Leaderboard</span>
-        <span className="text-xs text-muted-foreground ml-auto">
-          {models.length} model{models.length !== 1 ? 's' : ''}
-        </span>
+      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <Trophy className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm font-semibold">Leaderboard</span>
+          <span className="text-[11px] text-muted-foreground">{models.length} models</span>
+        </div>
       </div>
 
       {/* NL Filter */}
@@ -247,7 +255,6 @@ export function Leaderboard() {
                     {label} {sortField === key && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
                   </th>
                 ))}
-                <th className="p-2 text-center font-medium text-muted-foreground whitespace-nowrap">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -300,22 +307,44 @@ export function Leaderboard() {
                       </Tooltip>
                     </td>
                     <td className="p-2 text-left text-muted-foreground truncate max-w-[100px]">
-                      {model.algorithm}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="truncate block">{model.algorithm}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">{model.algorithm}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     </td>
                     {metricCols.map(([, key]) => (
                       <td key={key} className="p-2 text-right tabular-nums metric-counter">
                         {formatMetric(model.metrics[key])}
                       </td>
                     ))}
-                    <td className="p-2 text-center">
-                      <EvalStatusBadge status={model.evaluationStatus ?? model.status} compact />
-                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </ScrollArea>
+      )}
+
+      {comparisonModelIds.length > 0 && (
+        <div className="flex h-11 items-center justify-between border-t px-3 shrink-0 bg-muted/30 bulk-action-enter">
+          <div className="flex items-center gap-2">
+            <GitCompareArrows className="h-3 w-3 text-muted-foreground" />
+            <span className="text-xs font-medium">{comparisonModelIds.length} selected</span>
+            {comparisonModelIds.length === 1 && (
+              <span className="text-[11px] text-muted-foreground">— select 1 more to compare</span>
+            )}
+            {comparisonModelIds.length >= 2 && (
+              <span className="text-[11px] text-muted-foreground">— viewing comparison</span>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={clearComparison}>
+            Clear
+          </Button>
+        </div>
       )}
     </div>
   );

@@ -12,6 +12,9 @@ vi.mock('../../lib/api/experiments', () => ({
   fetchInsights: vi.fn()
 }));
 
+const toastWarning = vi.hoisted(() => vi.fn());
+vi.mock('sonner', () => ({ toast: { warning: toastWarning } }));
+
 const fetchEvaluationMock = vi.mocked(apiFetchEvaluation);
 
 function resetStore() {
@@ -84,12 +87,13 @@ describe('experimentsStore', () => {
     expect(useExperimentsStore.getState().comparisonModelIds).toEqual([]);
   });
 
-  it('toggleComparison() enforces max 5 models', () => {
+  it('toggleComparison() enforces max 5 models and shows toast', () => {
     for (let i = 1; i <= 6; i++) {
       useExperimentsStore.getState().toggleComparison(`model-${i}`);
     }
     expect(useExperimentsStore.getState().comparisonModelIds).toHaveLength(5);
     expect(useExperimentsStore.getState().comparisonModelIds).not.toContain('model-6');
+    expect(toastWarning).toHaveBeenCalledWith(expect.stringContaining('5'));
   });
 
   it('clearComparison() empties comparisonModelIds', () => {

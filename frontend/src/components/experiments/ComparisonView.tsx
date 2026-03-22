@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles, GitCompareArrows } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -79,39 +79,40 @@ export function ComparisonView() {
   );
 
   return (
-    <ScrollArea className="h-full">
-      <div className="space-y-5 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">
-            Comparing {comparisonModelIds.length} Models
-          </h2>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={clearComparison}>
-            <X className="h-3.5 w-3.5" />
-            Clear Selection
-          </Button>
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <GitCompareArrows className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm font-semibold">Comparing {comparisonModelIds.length} Models</span>
         </div>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">AI Comparison Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CompareNarrativeSection />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Metrics Comparison</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MetricsDeltaTable modelIds={comparisonModelIds} />
-          </CardContent>
-        </Card>
-
-        {hasRocData && <OverlaidRocCurves modelIds={comparisonModelIds} evaluations={evaluations} />}
-        {hasLearningCurveData && <OverlaidLearningCurves modelIds={comparisonModelIds} evaluations={evaluations} />}
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearComparison} title="Clear selection">
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </div>
-    </ScrollArea>
+      <ScrollArea className="flex-1">
+        <div className="space-y-5 p-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">AI Comparison Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CompareNarrativeSection />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Metrics Comparison</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MetricsDeltaTable modelIds={comparisonModelIds} />
+            </CardContent>
+          </Card>
+
+          {hasRocData && <OverlaidRocCurves modelIds={comparisonModelIds} evaluations={evaluations} />}
+          {hasLearningCurveData && <OverlaidLearningCurves modelIds={comparisonModelIds} evaluations={evaluations} />}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }

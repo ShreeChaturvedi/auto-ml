@@ -56,12 +56,23 @@
   animation: empty-state-fade-in 400ms ease-out both;
 }
 
+/* Bulk action bar slide-in */
+.bulk-action-enter {
+  animation: bulk-action-slide 200ms ease-out both;
+}
+
+@keyframes bulk-action-slide {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Reduced motion: disable all experiments animations */
 @media (prefers-reduced-motion: reduce) {
   .chart-skeleton,
   .champion-row,
   .trial-best-pulse,
-  .empty-state-enter {
+  .empty-state-enter,
+  .bulk-action-enter {
     animation: none;
   }
   .model-row-selected {

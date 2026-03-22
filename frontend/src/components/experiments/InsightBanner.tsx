@@ -9,7 +9,7 @@ export function InsightBanner() {
   // Loading skeleton
   if (insightBanner.isLoading && !insightBanner.text) {
     return (
-      <div className="shrink-0 border-b border-t bg-muted/50 px-4 py-3">
+      <div className="shrink-0 border-b bg-muted/50 px-4 py-3">
         <div className="timeline-skeleton h-5 w-full rounded" />
       </div>
     );
@@ -19,7 +19,7 @@ export function InsightBanner() {
   if (!insightBanner.text) return null;
 
   return (
-    <div className="shrink-0 border-b border-t bg-muted/50 px-4 py-2.5 flex items-start gap-2.5">
+    <div className="shrink-0 border-b bg-muted/50 px-4 py-2.5 flex items-start gap-2.5">
       <Sparkles className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
       <p className="text-sm text-foreground leading-relaxed flex-1 min-w-0">
         {insightBanner.text}

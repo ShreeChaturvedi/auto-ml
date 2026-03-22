@@ -81,15 +81,22 @@ export function ExperimentsDashboard() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col overflow-hidden bg-background">
       <InsightBanner />
-      <ResizablePanelGroup orientation="horizontal" className="flex-1">
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize={40} minSize={30}>
-          <Leaderboard />
+          <div className="flex h-full flex-col overflow-hidden">
+            <Leaderboard />
+          </div>
         </ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel defaultSize={60} minSize={30}>
-          {rightPanel()}
+          <div
+            key={comparisonModelIds.length >= 2 ? 'compare' : selectedModelId ?? 'overview'}
+            className="flex h-full flex-col overflow-hidden animate-in fade-in-0 duration-150"
+          >
+            {rightPanel()}
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

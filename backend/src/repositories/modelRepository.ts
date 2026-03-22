@@ -1,16 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { appLogger } from '../logging/logger.js';
 import type { ModelRecord } from '../types/model.js';
-
-function ensureDirectory(path: string) {
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
+import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export interface ModelRepository {
   list(projectId?: string): Promise<ModelRecord[]>;
@@ -75,7 +68,7 @@ export class InMemoryModelRepository implements ModelRepository {
 
 export class FileModelRepository implements ModelRepository {
   constructor(private readonly metadataPath: string) {
-    ensureDirectory(metadataPath);
+    ensureDirectoryForFile(metadataPath);
     if (!existsSync(metadataPath)) {
       writeFileSync(metadataPath, JSON.stringify([], null, 2), 'utf8');
     }
@@ -93,7 +86,7 @@ export class FileModelRepository implements ModelRepository {
   }
 
   private writeAll(models: ModelRecord[]) {
-    ensureDirectory(this.metadataPath);
+    ensureDirectoryForFile(this.metadataPath);
     writeFileSync(this.metadataPath, JSON.stringify(models, null, 2), 'utf8');
   }
 

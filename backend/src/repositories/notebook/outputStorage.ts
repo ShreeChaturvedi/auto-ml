@@ -4,8 +4,9 @@ import { join } from 'node:path';
 
 import { getDbPool, hasDatabaseConfiguration } from '../../db.js';
 import type { OutputRef } from '../../types/notebook.js';
+import { ensureDirectory } from '../../utils/fs.js';
 
-import { ensureDirectory, OUTPUT_DIR, OUTPUT_SIZE_THRESHOLD } from './helpers.js';
+import { OUTPUT_DIR, OUTPUT_SIZE_THRESHOLD } from './helpers.js';
 
 // ============================================================
 // Large Output Storage

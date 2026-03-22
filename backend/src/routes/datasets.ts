@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Router } from 'express';
@@ -9,7 +9,8 @@ import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { loadDatasetIntoPostgres, sanitizeTableName } from '../services/datasetLoader.js';
+import { loadDatasetIntoPostgres, resolveDatasetTableName } from '../services/datasetLoader.js';
+import { getErrorMessage } from '../utils/errors.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
 import { regenerateProjectNlSuggestionsSilently } from './datasets/nlSuggestions.js';
@@ -31,10 +32,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
       const withTableNames = datasets.map((dataset) => ({
         ...dataset,
-        tableName:
-          typeof dataset.metadata?.tableName === 'string'
-            ? dataset.metadata.tableName
-            : sanitizeTableName(dataset.filename, dataset.datasetId)
+        tableName: resolveDatasetTableName(dataset)
       }));
 
       res.json({ datasets: withTableNames });
@@ -90,12 +88,16 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const datasetDir = join(env.datasetStorageDir, datasetId);
       const filePath = join(datasetDir, dataset.filename);
 
-      if (!existsSync(filePath)) {
-        res.status(404).json({ error: 'Dataset file not found on disk' });
-        return;
+      let buffer: Buffer;
+      try {
+        buffer = readFileSync(filePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          res.status(404).json({ error: 'Dataset file not found on disk' });
+          return;
+        }
+        throw error;
       }
-
-      const buffer = readFileSync(filePath);
 
       const contentTypes: Record<string, string> = {
         csv: 'text/csv',
@@ -141,12 +143,16 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
           const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
           const filePath = join(datasetDir, dataset.filename);
 
-          if (!existsSync(filePath)) {
-            results.skipped.push(dataset.datasetId);
-            continue;
+          let buffer: Buffer;
+          try {
+            buffer = readFileSync(filePath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+              results.skipped.push(dataset.datasetId);
+              continue;
+            }
+            throw error;
           }
-
-          const buffer = readFileSync(filePath);
           const { tableName, rowsLoaded } = await loadDatasetIntoPostgres({
             datasetId: dataset.datasetId,
             filename: dataset.filename,
@@ -171,11 +177,11 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         } catch (error) {
           appLogger.error(
             `[datasets] Migration failed for ${dataset.filename}:`,
-            error instanceof Error ? error.message : String(error)
+            getErrorMessage(error, String(error))
           );
           results.errors.push({
             datasetId: dataset.datasetId,
-            error: error instanceof Error ? error.message : String(error)
+            error: getErrorMessage(error, String(error))
           });
         }
       }
@@ -207,24 +213,25 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
       // Delete physical files
       const datasetDir = join(env.datasetStorageDir, datasetId);
-      if (existsSync(datasetDir)) {
+      try {
         rmSync(datasetDir, { recursive: true, force: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
       }
 
       // Drop Postgres table if it exists
       if (hasDatabaseConfiguration()) {
         try {
           const pool = getDbPool();
-          const tableName =
-            typeof dataset.metadata?.tableName === 'string'
-              ? dataset.metadata.tableName
-              : sanitizeTableName(dataset.filename, dataset.datasetId);
+          const tableName = resolveDatasetTableName(dataset);
 
           await pool.query(`DROP TABLE IF EXISTS "${tableName}"`);
         } catch (error) {
           appLogger.error(
             `[datasets] Failed to drop table:`,
-            error instanceof Error ? error.message : String(error)
+            getErrorMessage(error, String(error))
           );
         }
       }

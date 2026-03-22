@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../config.js';
 import type { DatasetProfile } from '../types/dataset.js';
 
-import { getDatasetRowsPage, resolveDatasetTableName } from './datasetRows.js';
+import { resolveDatasetTableName } from './datasetLoader.js';
+import { getDatasetRowsPage } from './datasetRows.js';
 
 const mockQuery = vi.fn();
 const mockParseDatasetRows = vi.fn();
@@ -18,10 +19,14 @@ vi.mock('../db.js', () => ({
   hasDatabaseConfiguration: () => mockHasDatabaseConfiguration()
 }));
 
-vi.mock('./datasetLoader.js', () => ({
-  parseDatasetRows: (...args: unknown[]) => mockParseDatasetRows(...args),
-  sanitizeTableName: (filename: string, datasetId: string) => mockSanitizeTableName(filename, datasetId)
-}));
+vi.mock('./datasetLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./datasetLoader.js')>();
+  return {
+    ...actual,
+    parseDatasetRows: (...args: unknown[]) => mockParseDatasetRows(...args),
+    sanitizeTableName: (filename: string, datasetId: string) => mockSanitizeTableName(filename, datasetId)
+  };
+});
 
 function createDataset(overrides?: Partial<DatasetProfile>): DatasetProfile {
   return {

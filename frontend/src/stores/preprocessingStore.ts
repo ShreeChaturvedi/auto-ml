@@ -12,7 +12,7 @@ import type {
   StepCellBinding,
   TransformationEvent
 } from '@/types/preprocessing';
-import { isWorkflowThreadId } from '@/components/preprocessing/storagePersistence';
+import { isWorkflowThreadId } from '@/lib/workflowThread';
 import {
   buildStepBindingsFromSnapshot,
   buildTimelineFromSnapshot,

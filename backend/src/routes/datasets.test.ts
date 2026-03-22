@@ -16,45 +16,49 @@ import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 import { createDatasetUploadRouter } from './datasets.js';
 
 // Mock the datasetLoader to avoid needing Postgres
-vi.mock('../services/datasetLoader.js', () => ({
-  loadDatasetIntoPostgres: vi.fn().mockResolvedValue({
-    tableName: 'mock_table',
-    rowsLoaded: 100
-  }),
-  parseDatasetRows: vi.fn().mockImplementation((buffer: Buffer, fileType: string) => {
-    const content = buffer.toString('utf8');
+vi.mock('../services/datasetLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/datasetLoader.js')>();
+  return {
+    ...actual,
+    loadDatasetIntoPostgres: vi.fn().mockResolvedValue({
+      tableName: 'mock_table',
+      rowsLoaded: 100
+    }),
+    parseDatasetRows: vi.fn().mockImplementation((buffer: Buffer, fileType: string) => {
+      const content = buffer.toString('utf8');
 
-    // Handle JSON files
-    if (fileType === 'json') {
-      try {
-        const parsed = JSON.parse(content);
-        return Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        return [];
+      // Handle JSON files
+      if (fileType === 'json') {
+        try {
+          const parsed = JSON.parse(content);
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return [];
+        }
       }
-    }
 
-    // Handle CSV files
-    const lines = content.trim().split('\n');
-    if (lines.length < 2) return [];
+      // Handle CSV files
+      const lines = content.trim().split('\n');
+      if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim());
-      const row: Record<string, string | number> = {};
-      headers.forEach((header, i) => {
-        const val = values[i];
-        const numVal = Number(val);
-        row[header] = isNaN(numVal) ? val : numVal;
+      const headers = lines[0].split(',').map(h => h.trim());
+      return lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        const row: Record<string, string | number> = {};
+        headers.forEach((header, i) => {
+          const val = values[i];
+          const numVal = Number(val);
+          row[header] = isNaN(numVal) ? val : numVal;
+        });
+        return row;
       });
-      return row;
-    });
-  }),
-  sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
-    const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-    return `${baseName}_${datasetId.slice(0, 8)}`;
-  })
-}));
+    }),
+    sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
+      const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+      return `${baseName}_${datasetId.slice(0, 8)}`;
+    })
+  };
+});
 
 // Mock the db module
 vi.mock('../db.js', () => ({

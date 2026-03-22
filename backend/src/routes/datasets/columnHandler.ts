@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { Request, Response } from 'express';
@@ -10,9 +10,10 @@ import {
   loadDatasetIntoPostgres,
   normalizeValueForColumn,
   parseDatasetRows,
-  sanitizeTableName
+  resolveDatasetTableName
 } from '../../services/datasetLoader.js';
 import type { DatasetProfile } from '../../types/dataset.js';
+import { getErrorMessage } from '../../utils/errors.js';
 
 import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
 import { updateColumnTypeSchema } from './validation.js';
@@ -34,12 +35,6 @@ function formatDatasetResponse(dataset: DatasetProfile, tableName: string) {
     updatedAt: dataset.updatedAt,
     tableName
   };
-}
-
-function resolveTableName(dataset: DatasetProfile): string {
-  return typeof dataset.metadata?.tableName === 'string'
-    ? dataset.metadata.tableName
-    : sanitizeTableName(dataset.filename, dataset.datasetId);
 }
 
 /**
@@ -75,7 +70,7 @@ export async function updateColumnType(
 
   // No-op when the type is already correct
   if (existingColumn.dtype === dtype) {
-    res.json({ dataset: formatDatasetResponse(dataset, resolveTableName(dataset)) });
+    res.json({ dataset: formatDatasetResponse(dataset, resolveDatasetTableName(dataset)) });
     return;
   }
 
@@ -86,12 +81,16 @@ export async function updateColumnType(
   const datasetDir = join(env.datasetStorageDir, datasetId);
   const filePath = join(datasetDir, dataset.filename);
 
-  if (!existsSync(filePath)) {
-    res.status(404).json({ error: 'Dataset file not found on disk' });
-    return;
+  let buffer: Buffer;
+  try {
+    buffer = readFileSync(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      res.status(404).json({ error: 'Dataset file not found on disk' });
+      return;
+    }
+    throw error;
   }
-
-  const buffer = readFileSync(filePath);
   const rows = await parseDatasetRows(buffer, dataset.fileType, dataset.filename);
 
   if (rows.length === 0) {
@@ -107,16 +106,15 @@ export async function updateColumnType(
         columnName
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       res.status(400).json({
         error: 'Type override failed due to incompatible values',
-        details: `Row ${index + 1}: ${message}`
+        details: `Row ${index + 1}: ${getErrorMessage(error, String(error))}`
       });
       return;
     }
   }
 
-  let tableName = resolveTableName(dataset);
+  let tableName = resolveDatasetTableName(dataset);
   let rowsLoaded = dataset.nRows;
 
   if (hasDatabaseConfiguration()) {
@@ -134,10 +132,9 @@ export async function updateColumnType(
       tableName = loadResult.tableName;
       rowsLoaded = loadResult.rowsLoaded;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       res.status(400).json({
         error: 'Type override failed during table reload',
-        details: message
+        details: getErrorMessage(error, 'Unknown error during table reload')
       });
       return;
     }

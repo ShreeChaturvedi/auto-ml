@@ -1,17 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import type { NlSuggestion, StoredNlSuggestionSet } from '../services/nlSuggestions/types.js';
-
-function ensureDirectory(path: string) {
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
+import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export interface NlSuggestionRepository {
   get(params: {
@@ -26,7 +19,7 @@ export interface NlSuggestionRepository {
 
 class FileNlSuggestionRepository implements NlSuggestionRepository {
   constructor(private readonly cachePath: string) {
-    ensureDirectory(cachePath);
+    ensureDirectoryForFile(cachePath);
     if (!existsSync(cachePath)) {
       writeFileSync(cachePath, JSON.stringify([], null, 2), 'utf8');
     }
@@ -44,7 +37,7 @@ class FileNlSuggestionRepository implements NlSuggestionRepository {
   }
 
   private writeAll(entries: StoredNlSuggestionSet[]) {
-    ensureDirectory(this.cachePath);
+    ensureDirectoryForFile(this.cachePath);
     writeFileSync(this.cachePath, JSON.stringify(entries, null, 2), 'utf8');
   }
 

@@ -19,7 +19,6 @@ interface UseFeaturePipelineStateReturn {
   setSelectedDataset: (id: string | null) => void;
   targetColumn: string | undefined;
   setTargetColumn: (column: string | undefined) => void;
-  files: ReturnType<typeof useDataStore.getState>['files'];
   datasetFiles: ReturnType<typeof useDataStore.getState>['files'];
   documentFiles: ReturnType<typeof useDataStore.getState>['files'];
   selectedDatasetFile: ReturnType<typeof useDataStore.getState>['files'][number] | undefined;
@@ -31,7 +30,6 @@ interface UseFeaturePipelineStateReturn {
   currentVersion: PipelineVersion | undefined;
   isApproved: boolean;
   isCurrentVersionDraft: boolean;
-  canDeleteCurrentDraft: boolean;
 
   // Feature state
   projectFeatures: FeatureSpec[];
@@ -226,7 +224,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     approveVersion,
     handleVersionSwitch,
     handleNewDraft,
@@ -284,7 +281,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     setSelectedDataset,
     targetColumn,
     setTargetColumn,
-    files,
     datasetFiles,
     documentFiles,
     selectedDatasetFile,
@@ -294,7 +290,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     projectFeatures,
     activeFeatures,
     featureById,

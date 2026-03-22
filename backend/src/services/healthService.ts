@@ -3,6 +3,7 @@ import os from 'node:os';
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import type { PythonVersion } from '../types/execution.js';
+import { getErrorMessage } from '../utils/errors.js';
 
 import { getImageName, isImageAvailable } from './container/imageManager.js';
 import { execDocker } from './dockerUtils.js';
@@ -138,7 +139,7 @@ async function getDatabaseCheck(deps: HealthServiceDeps): Promise<DatabaseHealth
       critical: true,
       configured: true,
       latencyMs: Date.now() - startedAt,
-      message: error instanceof Error ? error.message : 'Database connectivity check failed.'
+      message: getErrorMessage(error, 'Database connectivity check failed.')
     };
   }
 }
@@ -176,7 +177,7 @@ async function getDockerCheck(deps: HealthServiceDeps): Promise<DockerHealthChec
       enabled: true,
       reachable: false,
       latencyMs: Date.now() - startedAt,
-      message: error instanceof Error ? error.message : 'Docker daemon check failed.'
+      message: getErrorMessage(error, 'Docker daemon check failed.')
     };
   }
 }
@@ -230,7 +231,7 @@ async function getRuntimeImageCheck(
       enabled: true,
       image: imageName,
       available: false,
-      message: error instanceof Error ? error.message : 'Runtime image check failed.'
+      message: getErrorMessage(error, 'Runtime image check failed.')
     };
   }
 }

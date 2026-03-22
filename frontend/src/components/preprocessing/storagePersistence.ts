@@ -1,5 +1,6 @@
 import type { ChatMessage } from '@/types/llmUi';
 import { asRecordOrNull } from '@/lib/typeCoercion';
+import { isWorkflowThreadId } from '@/lib/workflowThread';
 
 export function buildProcessingStorageKey(tabId: string): string {
   return `preprocessing-messages-v5-${tabId}`;
@@ -11,10 +12,7 @@ export function buildProcessingTabsStateKey(projectId: string): string {
 
 // ---- Workbook-era key builders (same format, new prefix for clarity) ------
 
-export function buildWorkbookStorageKey(workbookId: string): string {
-  // Re-uses the same key format — no message migration needed
-  return `preprocessing-messages-v5-${workbookId}`;
-}
+export const buildWorkbookStorageKey = buildProcessingStorageKey;
 
 export function buildWorkbookTabsStateKey(projectId: string): string {
   return `preprocessing-workbooks-v1-${projectId}`;
@@ -149,13 +147,6 @@ function readStoredConversationMessages(rawMessages: string | null): ChatMessage
   } catch {
     return [];
   }
-}
-
-export function isWorkflowThreadId(value: string | null | undefined): boolean {
-  if (!value) {
-    return false;
-  }
-  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
 }
 
 export function extractRawRunReferenceFromStoredMessages(rawMessages: string | null): string | null {

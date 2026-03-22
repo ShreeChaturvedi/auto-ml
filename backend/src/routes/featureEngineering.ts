@@ -9,9 +9,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
-import { sanitizeTableName } from '../services/datasetLoader.js';
+import { resolveDatasetTableName } from '../services/datasetLoader.js';
 import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 import { featureRunRepository } from '../services/workflows/phases/featureEngineering.js';
+import { getErrorMessage } from '../utils/errors.js';
 
 const featureSpecSchema = z.object({
   id: z.string().optional(),
@@ -59,10 +60,7 @@ export function createFeatureEngineeringRouter() {
     try {
       const result = await applyFeatureEngineering(parsed.data);
       const dataset = result.dataset;
-      const tableName =
-        typeof dataset.metadata?.tableName === 'string'
-          ? dataset.metadata.tableName
-          : sanitizeTableName(dataset.filename, dataset.datasetId);
+      const tableName = resolveDatasetTableName(dataset);
 
       return res.status(201).json({
         dataset: {
@@ -83,8 +81,7 @@ export function createFeatureEngineeringRouter() {
       });
     } catch (error) {
       appLogger.error('[feature-engineering] Apply failed:', error);
-      const message = error instanceof Error ? error.message : 'Feature engineering failed';
-      return res.status(400).json({ error: message });
+      return res.status(400).json({ error: getErrorMessage(error, 'Feature engineering failed') });
     }
   });
 
@@ -107,8 +104,7 @@ export function createFeatureEngineeringRouter() {
         runs
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to list feature runs';
-      return res.status(500).json({ error: message });
+      return res.status(500).json({ error: getErrorMessage(error, 'Failed to list feature runs') });
     }
   });
 
@@ -126,8 +122,7 @@ export function createFeatureEngineeringRouter() {
 
       return res.json({ run });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load feature run';
-      return res.status(500).json({ error: message });
+      return res.status(500).json({ error: getErrorMessage(error, 'Failed to load feature run') });
     }
   });
 

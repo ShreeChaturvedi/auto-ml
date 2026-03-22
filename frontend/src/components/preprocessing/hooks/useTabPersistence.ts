@@ -6,10 +6,10 @@ import {
   buildProcessingStorageKey,
   buildWorkbookTabsStateKey,
   extractRawRunReferenceFromStoredMessages,
-  isWorkflowThreadId,
   migrateWorkbookState,
   type StoredPreprocessingTabState
 } from '../storagePersistence';
+import { isWorkflowThreadId } from '@/lib/workflowThread';
 import {
   DEFAULT_WORKBOOK_ID,
   createDefaultWorkbook,
@@ -98,13 +98,14 @@ export function useTabPersistence({
       const storageKey = buildScopedTabStorageKey(tab.id);
       const rawStoredMessages = localStorage.getItem(storageKey);
       const runReference = extractRawRunReferenceFromStoredMessages(rawStoredMessages);
-      if (projectId && isWorkflowThreadId(runReference)) {
+      const isThreadId = isWorkflowThreadId(runReference);
+      if (projectId && isThreadId) {
         localStorage.removeItem(storageKey);
         useWorkflowSessionStore
           .getState()
           .clearSession(buildWorkflowSessionKey(projectId, buildTabStorageKey(tab.id)));
       }
-      const inferredRunId = runReference && !isWorkflowThreadId(runReference) ? runReference : null;
+      const inferredRunId = isThreadId ? null : runReference;
       recoveredTabs.push({
         id: tab.id,
         name: tab.name,
@@ -203,13 +204,14 @@ export function useTabPersistence({
     const storageKey = buildScopedTabStorageKey(activeTab.id);
     const rawStoredMessages = localStorage.getItem(storageKey);
     const runReference = extractRawRunReferenceFromStoredMessages(rawStoredMessages);
-    if (isWorkflowThreadId(runReference)) {
+    const isThreadId = isWorkflowThreadId(runReference);
+    if (isThreadId) {
       localStorage.removeItem(storageKey);
       useWorkflowSessionStore
         .getState()
         .clearSession(buildWorkflowSessionKey(projectId, buildTabStorageKey(activeTab.id)));
     }
-    const inferredRunId = runReference && !isWorkflowThreadId(runReference) ? runReference : null;
+    const inferredRunId = isThreadId ? null : runReference;
     if (inferredRunId) {
       setRunId(inferredRunId);
     }

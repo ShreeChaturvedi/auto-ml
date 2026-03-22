@@ -1,18 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { appLogger } from '../../logging/logger.js';
 import type { CreateProjectInput, Project } from '../../types/project.js';
+import { ensureDirectoryForFile } from '../../utils/fs.js';
 
 import { InMemoryProjectRepository } from './inMemory.js';
 import { sanitizeMetadata, storedProjectsSchema } from './types.js';
-
-function ensureDirectory(filePath: string) {
-  const directory = dirname(filePath);
-  if (!existsSync(directory)) {
-    mkdirSync(directory, { recursive: true });
-  }
-}
 
 function loadProjectsFromFile(filePath: string): Project[] {
   if (!existsSync(filePath)) {
@@ -39,7 +32,7 @@ function loadProjectsFromFile(filePath: string): Project[] {
 
 function persistProjects(filePath: string, projects: Project[]) {
   try {
-    ensureDirectory(filePath);
+    ensureDirectoryForFile(filePath);
     const sanitized = projects.map((project) => ({
       ...project,
       metadata: sanitizeMetadata(project.metadata)
@@ -54,7 +47,7 @@ export class FileProjectRepository extends InMemoryProjectRepository {
   private readonly filePath: string;
 
   constructor(filePath: string) {
-    ensureDirectory(filePath);
+    ensureDirectoryForFile(filePath);
     const initialProjects = loadProjectsFromFile(filePath);
     super(initialProjects);
     this.filePath = filePath;

@@ -12,23 +12,12 @@ vi.mock('../config.js', async () => {
   };
 });
 
-import type { SafeUser } from '../types/user.js';
+import { TEST_USER } from '../tests/fixtures.js';
 
 import { AuthService, authService } from './authService.js';
 
 describe('authService', () => {
   let service: AuthService;
-
-  const mockUser: SafeUser = {
-    user_id: 'test-user-123',
-    email: 'test@example.com',
-    name: 'Test User',
-    role: 'user',
-    email_verified: true,
-    created_at: new Date(),
-    updated_at: new Date(),
-    last_login_at: null
-  };
 
   beforeEach(() => {
     service = new AuthService();
@@ -92,14 +81,14 @@ describe('authService', () => {
 
   describe('generateAccessToken', () => {
     it('returns a JWT token string', () => {
-      const token = service.generateAccessToken(mockUser);
+      const token = service.generateAccessToken(TEST_USER);
       expect(token).toMatch(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/);
     });
 
     it('generates different tokens for different users', () => {
-      const token1 = service.generateAccessToken(mockUser);
+      const token1 = service.generateAccessToken(TEST_USER);
       const token2 = service.generateAccessToken({
-        ...mockUser,
+        ...TEST_USER,
         user_id: 'different-user',
         email: 'other@example.com'
       });
@@ -107,12 +96,12 @@ describe('authService', () => {
     });
 
     it('includes user data in token payload', () => {
-      const token = service.generateAccessToken(mockUser);
+      const token = service.generateAccessToken(TEST_USER);
       const payload = service.verifyAccessToken(token);
       expect(payload).not.toBeNull();
-      expect(payload?.userId).toBe(mockUser.user_id);
-      expect(payload?.email).toBe(mockUser.email);
-      expect(payload?.role).toBe(mockUser.role);
+      expect(payload?.userId).toBe(TEST_USER.user_id);
+      expect(payload?.email).toBe(TEST_USER.email);
+      expect(payload?.role).toBe(TEST_USER.role);
     });
   });
 
@@ -133,28 +122,28 @@ describe('authService', () => {
 
   describe('generateTokens', () => {
     it('returns both access and refresh tokens', () => {
-      const tokens = service.generateTokens(mockUser);
+      const tokens = service.generateTokens(TEST_USER);
       expect(tokens.accessToken).toBeDefined();
       expect(tokens.refreshToken).toBeDefined();
     });
 
     it('access token is valid JWT', () => {
-      const tokens = service.generateTokens(mockUser);
+      const tokens = service.generateTokens(TEST_USER);
       expect(tokens.accessToken).toMatch(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/);
     });
 
     it('refresh token is 128-char hex', () => {
-      const tokens = service.generateTokens(mockUser);
+      const tokens = service.generateTokens(TEST_USER);
       expect(tokens.refreshToken).toMatch(/^[a-f0-9]{128}$/);
     });
   });
 
   describe('verifyAccessToken', () => {
     it('returns payload for valid token', () => {
-      const token = service.generateAccessToken(mockUser);
+      const token = service.generateAccessToken(TEST_USER);
       const payload = service.verifyAccessToken(token);
       expect(payload).not.toBeNull();
-      expect(payload?.userId).toBe(mockUser.user_id);
+      expect(payload?.userId).toBe(TEST_USER.user_id);
     });
 
     it('returns null for invalid token', () => {
@@ -163,7 +152,7 @@ describe('authService', () => {
     });
 
     it('returns null for tampered token', () => {
-      const token = service.generateAccessToken(mockUser);
+      const token = service.generateAccessToken(TEST_USER);
       const tampered = token.slice(0, -5) + 'xxxxx';
       const payload = service.verifyAccessToken(tampered);
       expect(payload).toBeNull();

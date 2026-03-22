@@ -6,12 +6,12 @@ import { hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { getNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
+import { getErrorMessage } from '../utils/errors.js';
 
 import {
   createStreamModelWorkWriter,
   createStreamProgressWriter,
   executeCachedOrLiveQuery,
-  getErrorMessage,
   initializeNdjsonStreamResponse,
   resolveNlQueryExecution,
   writeNdjsonEvent
@@ -72,7 +72,7 @@ export function createQueryRouter() {
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode ?? 400;
         return res.status(statusCode).json({
-          error: error instanceof Error ? error.message : 'Failed to execute query'
+          error: getErrorMessage(error, 'Failed to execute query')
         });
       }
     })

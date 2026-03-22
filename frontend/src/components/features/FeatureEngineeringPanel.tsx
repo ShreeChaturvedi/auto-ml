@@ -60,7 +60,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     activeFeatures,
     featureById,
     readinessReport,
@@ -328,7 +327,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             onReset={handleReset}
             onDeleteDraft={handleDeleteCurrentDraft}
             canRenameDraft={isCurrentVersionDraft}
-            canDeleteDraft={canDeleteCurrentDraft}
+            canDeleteDraft={isCurrentVersionDraft}
           />
         }
         toolbarRight={

@@ -5,9 +5,9 @@ import {
   buildProcessingTabsStateKey,
   discoverProcessingTabIds,
   extractRunIdFromStoredMessages,
-  isWorkflowThreadId,
   parseStoredPreprocessingTabsState
 } from '../storagePersistence';
+import { isWorkflowThreadId } from '@/lib/workflowThread';
 
 afterEach(() => {
   localStorage.clear();

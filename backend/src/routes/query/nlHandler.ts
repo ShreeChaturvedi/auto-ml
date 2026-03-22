@@ -11,6 +11,7 @@ import {
 } from '../../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../../services/queryCache.js';
 import { executeReadOnlyQuery } from '../../services/sqlExecutor.js';
+import { getErrorMessage } from '../../utils/errors.js';
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -25,13 +26,6 @@ export function hasResolvedColumnTypes(payload: { columns?: Array<{ dataType?: s
     const normalized = column.dataType.trim().toLowerCase();
     return normalized.length > 0 && normalized !== 'unknown';
   });
-}
-
-export function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
 }
 
 // ---------------------------------------------------------------------------

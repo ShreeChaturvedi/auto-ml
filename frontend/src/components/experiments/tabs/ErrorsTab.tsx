@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
-import type { EvaluationResult } from '@/types/experiments';
+import type { ErrorAnalysisResult, EvaluationResult } from '@/types/experiments';
 import { AlertTriangle, TreePine } from 'lucide-react';
 import { fetchInsights } from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
@@ -70,7 +70,7 @@ function MisclassificationTable({
   );
 }
 
-function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; errorAnalysis: Record<string, unknown> }) {
+function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; errorAnalysis: ErrorAnalysisResult }) {
   const [text, setText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -193,7 +193,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
       )}
 
       {projectId && (
-        <ErrorNarrative projectId={projectId} errorAnalysis={errorAnalysis as unknown as Record<string, unknown>} />
+        <ErrorNarrative projectId={projectId} errorAnalysis={errorAnalysis} />
       )}
     </div>
   );

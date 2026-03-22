@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { sanitizeTableName } from '../services/datasetLoader.js';
+import { resolveDatasetTableName } from '../services/datasetLoader.js';
 import {
   executePreprocessingTool,
   getPreprocessingRunSnapshot,
@@ -57,10 +57,7 @@ export function createPreprocessingRouter() {
 
       const tables = datasets.map((dataset) => ({
         datasetId: dataset.datasetId,
-        name:
-          typeof dataset.metadata?.tableName === 'string'
-            ? dataset.metadata.tableName
-            : sanitizeTableName(dataset.filename, dataset.datasetId),
+        name: resolveDatasetTableName(dataset),
         filename: dataset.filename,
         sizeBytes: dataset.size,
         nRows: dataset.nRows,

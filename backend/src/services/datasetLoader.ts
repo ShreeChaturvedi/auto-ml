@@ -8,7 +8,7 @@
 
 import { getDbPool } from '../db.js';
 import { appLogger } from '../logging/logger.js';
-import type { DatasetProfileColumn } from '../types/dataset.js';
+import type { DatasetProfile, DatasetProfileColumn } from '../types/dataset.js';
 
 import { insertRows } from './dataLoading/dataInsertion.js';
 import { parseDatasetRows } from './dataLoading/fileParser.js';
@@ -18,6 +18,13 @@ import { generateCreateTableSql, sanitizeTableName } from './dataLoading/schemaI
 export { normalizeValueForColumn } from './dataLoading/dataInsertion.js';
 export { parseDatasetRows } from './dataLoading/fileParser.js';
 export { sanitizeTableName } from './dataLoading/schemaInference.js';
+
+/** Resolve the Postgres table name for a dataset, preferring stored metadata. */
+export function resolveDatasetTableName(dataset: Pick<DatasetProfile, 'datasetId' | 'filename' | 'metadata'>): string {
+  return typeof dataset.metadata?.tableName === 'string'
+    ? dataset.metadata.tableName
+    : sanitizeTableName(dataset.filename, dataset.datasetId);
+}
 
 /**
  * Load a dataset into a Postgres table

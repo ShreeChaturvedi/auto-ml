@@ -6,7 +6,7 @@ import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile } from '../types/dataset.js';
 
-import { parseDatasetRows, sanitizeTableName } from './datasetLoader.js';
+import { parseDatasetRows, resolveDatasetTableName } from './datasetLoader.js';
 import { quoteIdentifier } from './nlToSql/identifiers.js';
 
 export interface DatasetRowsPage {
@@ -24,12 +24,6 @@ export interface DatasetRowsPageRequest {
 
 export const DEFAULT_DATASET_ROWS_LIMIT = 200;
 export const MAX_DATASET_ROWS_LIMIT = 1000;
-
-export function resolveDatasetTableName(dataset: Pick<DatasetProfile, 'datasetId' | 'filename' | 'metadata'>) {
-  return typeof dataset.metadata?.tableName === 'string'
-    ? dataset.metadata.tableName
-    : sanitizeTableName(dataset.filename, dataset.datasetId);
-}
 
 async function readDatasetRowsFromPostgres(dataset: DatasetProfile, page: DatasetRowsPageRequest) {
   const pool = getDbPool();

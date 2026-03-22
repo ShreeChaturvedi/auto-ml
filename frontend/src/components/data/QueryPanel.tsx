@@ -211,7 +211,7 @@ export function QueryPanel({
     [projects, resolvedProjectId]
   );
   const projectSuggestionEntry = useNlSuggestionStore((state) => (
-    projectId ? state.byProject[projectId] : undefined
+    resolvedProjectId ? state.byProject[resolvedProjectId] : undefined
   ));
   const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
   const executeIconColorClass = activeProject
@@ -240,12 +240,12 @@ export function QueryPanel({
   }, [appTheme]);
 
   useEffect(() => {
-    if (!projectId) {
+    if (!resolvedProjectId) {
       return;
     }
 
-    void fetchProjectSuggestions(projectId);
-  }, [fetchProjectSuggestions, projectId]);
+    void fetchProjectSuggestions(resolvedProjectId);
+  }, [fetchProjectSuggestions, resolvedProjectId]);
 
   const showExpandedContent = !collapsed;
 

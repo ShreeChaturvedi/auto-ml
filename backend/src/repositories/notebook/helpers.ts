@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync } from 'node:fs';
-
 import { env } from '../../config.js';
 import type {
   Notebook,
@@ -10,26 +8,8 @@ import type {
   CellRow
 } from '../../types/notebook.js';
 
-// ============================================================
-// Configuration
-// ============================================================
-
 export const OUTPUT_SIZE_THRESHOLD = env.notebookOutputMaxSize ?? 10 * 1024; // 10KB default
 export const OUTPUT_DIR = env.notebookOutputDir ?? 'storage/outputs';
-
-// ============================================================
-// Filesystem Helpers
-// ============================================================
-
-export function ensureDirectory(dirPath: string): void {
-  if (!existsSync(dirPath)) {
-    mkdirSync(dirPath, { recursive: true });
-  }
-}
-
-// ============================================================
-// Row Transformers
-// ============================================================
 
 export function rowToNotebook(row: NotebookRow): Notebook {
   return {

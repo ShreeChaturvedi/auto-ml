@@ -20,7 +20,6 @@ interface UseFeatureVersioningReturn {
   currentVersion: PipelineVersion | undefined;
   isApproved: boolean;
   isCurrentVersionDraft: boolean;
-  canDeleteCurrentDraft: boolean;
   approveVersion: (projectId: string, versionId: string) => void;
   handleVersionSwitch: (value: string) => void;
   handleNewDraft: () => void;
@@ -105,7 +104,6 @@ export function useFeatureVersioning({
 
   const isApproved = currentVersion?.status === 'approved';
   const isCurrentVersionDraft = currentVersion?.status === 'draft';
-  const canDeleteCurrentDraft = Boolean(isCurrentVersionDraft);
 
   // --- Version actions ---
   const handleVersionSwitch = useCallback(
@@ -185,7 +183,6 @@ export function useFeatureVersioning({
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     approveVersion,
     handleVersionSwitch,
     handleNewDraft,

@@ -1,17 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
-
-function ensureDirectory(path: string) {
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
+import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export interface DatasetRepository {
   list(): Promise<DatasetProfile[]>;
@@ -28,7 +21,7 @@ export interface DatasetRepository {
 
 export class FileDatasetRepository implements DatasetRepository {
   constructor(private readonly metadataPath: string) {
-    ensureDirectory(metadataPath);
+    ensureDirectoryForFile(metadataPath);
     if (!existsSync(metadataPath)) {
       writeFileSync(metadataPath, JSON.stringify([], null, 2), 'utf8');
     }
@@ -47,7 +40,7 @@ export class FileDatasetRepository implements DatasetRepository {
   }
 
   private writeAll(profiles: DatasetProfile[]) {
-    ensureDirectory(this.metadataPath);
+    ensureDirectoryForFile(this.metadataPath);
     writeFileSync(this.metadataPath, JSON.stringify(profiles, null, 2), 'utf8');
   }
 

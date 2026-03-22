@@ -120,7 +120,8 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   fetchErrorAnalysis: async (modelId) => {
-    if (get().errorAnalysis[modelId] !== undefined) return;
+    const cached = get().errorAnalysis[modelId];
+    if (cached !== undefined && cached !== null) return;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
       set((state) => ({

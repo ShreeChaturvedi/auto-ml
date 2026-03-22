@@ -72,7 +72,7 @@ export function ExperimentsDashboard() {
   }, [models.length, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePanelResize = useCallback((size: { asPercentage: number }) => {
-    const next = size.asPercentage <= 3;
+    const next = size.asPercentage < 1;
     setIsRightCollapsed((prev) => (prev === next ? prev : next));
   }, []);
 
@@ -89,7 +89,7 @@ export function ExperimentsDashboard() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
+    <div className="relative flex h-full flex-col overflow-hidden bg-background">
       <InsightBanner />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize={40} minSize={30}>
@@ -102,32 +102,31 @@ export function ExperimentsDashboard() {
           defaultSize={60}
           minSize={25}
           collapsible
-          collapsedSize={3}
+          collapsedSize={0}
           panelRef={rightPanelRef}
           onResize={handlePanelResize}
         >
-          {isRightCollapsed ? (
-            <div className="flex h-full items-center justify-center">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => rightPanelRef.current?.expand()}
-                aria-label="Expand detail panel"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <div
-              key={comparisonModelIds.length >= 2 ? 'compare' : selectedModelId ?? 'overview'}
-              className="flex h-full flex-col overflow-hidden animate-in fade-in-0 duration-150"
-            >
-              {rightPanel()}
-            </div>
-          )}
+          <div
+            key={comparisonModelIds.length >= 2 ? 'compare' : selectedModelId ?? 'overview'}
+            className="flex h-full flex-col overflow-hidden animate-in fade-in-0 duration-150"
+          >
+            {rightPanel()}
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+      {isRightCollapsed && (
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 z-20">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 bg-background/80 backdrop-blur-sm"
+            onClick={() => rightPanelRef.current?.resize("60%")}
+            aria-label="Expand detail panel"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

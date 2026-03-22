@@ -139,12 +139,13 @@ Review your own diff critically:
 - If you added more than 200 lines, reconsider — something is probably wrong
 
 ### 9. Verify (MANDATORY — do not skip)
-Run BOTH of these and read the FULL output:
+Run ALL THREE of these in order and read the FULL output:
 
 npm run lint
+npm run build
 npm run test
 
-Both must exit 0 with zero errors and zero test failures. If either fails, fix the problems. Do NOT report success without fresh green output. "It should pass" is not evidence — run it.
+All three must exit 0 with zero errors and zero test failures. If ANY fails, fix the problems and re-run ALL THREE from the top. Do NOT report success without fresh green output from all three commands. "It should pass" is not evidence — run it. A pre-push hook enforces this, but you should catch and fix issues HERE rather than having the hook reject your push.
 
 ### 10. Commit
 Stage only the files you changed:

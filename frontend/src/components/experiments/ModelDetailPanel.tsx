@@ -54,40 +54,47 @@ export function ModelDetailPanel({ modelId }: ModelDetailPanelProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Ribbon — model info + metrics + actions all in one row */}
-      <div className="flex h-14 items-center justify-between gap-2 border-b px-3 shrink-0">
-        {/* Left: icon, name, type badge, algorithm */}
-        <div className="flex min-w-0 items-center gap-2">
+      {/* Ribbon */}
+      <div className="flex h-14 items-center gap-2 border-b px-3 shrink-0">
+        {/* Left: icon + name + type badge */}
+        <div className="flex min-w-0 shrink items-center gap-1.5">
           <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
-          <h2 className="text-sm font-semibold truncate">{model.name}</h2>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <h2 className="text-sm font-semibold truncate min-w-0">{model.name}</h2>
+            </TooltipTrigger>
+            <TooltipContent><p className="text-xs">{model.name}</p></TooltipContent>
+          </Tooltip>
           <Badge
             variant="outline"
-            className={cn('text-[10px] shrink-0', TASK_BADGE_STYLES[model.taskType])}
+            className={cn('shrink-0 text-[10px]', TASK_BADGE_STYLES[model.taskType])}
           >
             {TASK_LABELS[model.taskType]}
           </Badge>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-[11px] text-muted-foreground truncate shrink min-w-0">{model.algorithm}</span>
-            </TooltipTrigger>
-            <TooltipContent><p className="text-xs">{model.algorithm}</p></TooltipContent>
-          </Tooltip>
         </div>
 
-        {/* Right: metrics pills + time + actions */}
-        <div className="flex items-center gap-2 shrink-0">
-          {metricEntries.length > 0 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto max-w-[50%]">
-              {metricEntries.map(([key, value]) => (
-                <span key={key} className="inline-flex items-center gap-1 rounded-md bg-muted/40 px-2 py-0.5 whitespace-nowrap">
-                  <span className="text-[10px] font-medium text-muted-foreground capitalize">{key}</span>
-                  <span className="text-xs font-semibold tabular-nums">{formatMetric(value)}</span>
-                </span>
-              ))}
-            </div>
-          )}
+        {metricEntries.length > 0 && <div className="h-4 w-px shrink-0 bg-border" />}
+
+        {/* Metrics */}
+        {metricEntries.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide min-w-0">
+            {metricEntries.map(([key, value]) => (
+              <Badge
+                key={key}
+                variant="outline"
+                className="gap-1 rounded-md whitespace-nowrap font-normal text-[10px] border-border/60 bg-muted/30 px-1.5 py-0"
+              >
+                <span className="text-muted-foreground capitalize">{key}</span>
+                <span className="font-semibold tabular-nums text-foreground">{formatMetric(value)}</span>
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center gap-1 ml-auto shrink-0">
           {model.trainingMs != null && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap mr-1">
               <Clock className="h-3 w-3" /> {formatDuration(model.trainingMs)}
             </span>
           )}

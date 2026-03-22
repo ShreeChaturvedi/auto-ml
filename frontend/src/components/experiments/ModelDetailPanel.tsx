@@ -8,6 +8,8 @@ import { IconModeToggle, type IconModeToggleOption } from '@/components/data/Ico
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
 import { getModelArtifactUrl } from '@/lib/api/models';
+import { cn } from '@/lib/utils';
+import { resolveModelIcon, TASK_BADGE_STYLES, TASK_LABELS } from './modelIcons';
 import { PlotsTab } from './tabs/PlotsTab';
 import { InterpretabilityTab } from './tabs/InterpretabilityTab';
 import { ErrorsTab } from './tabs/ErrorsTab';
@@ -42,6 +44,7 @@ export function ModelDetailPanel({ modelId }: ModelDetailPanelProps) {
     );
   }
 
+  const { Icon: TaskIcon, colorClass } = resolveModelIcon(model.taskType);
   const evalStatus = model.evaluationStatus;
   const isComputing = evalStatus === 'computing';
   const isFailed = evalStatus === 'failed';
@@ -51,15 +54,40 @@ export function ModelDetailPanel({ modelId }: ModelDetailPanelProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Ribbon */}
-      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
+      {/* Ribbon — model info + metrics + actions all in one row */}
+      <div className="flex h-14 items-center justify-between gap-2 border-b px-3 shrink-0">
+        {/* Left: icon, name, type badge, algorithm */}
         <div className="flex min-w-0 items-center gap-2">
+          <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
           <h2 className="text-sm font-semibold truncate">{model.name}</h2>
-          <Badge variant="secondary" className="text-[10px] shrink-0">{model.algorithm}</Badge>
+          <Badge
+            variant="outline"
+            className={cn('text-[10px] shrink-0', TASK_BADGE_STYLES[model.taskType])}
+          >
+            {TASK_LABELS[model.taskType]}
+          </Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-[11px] text-muted-foreground truncate shrink min-w-0">{model.algorithm}</span>
+            </TooltipTrigger>
+            <TooltipContent><p className="text-xs">{model.algorithm}</p></TooltipContent>
+          </Tooltip>
         </div>
-        <div className="flex items-center gap-1.5">
+
+        {/* Right: metrics pills + time + actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          {metricEntries.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto max-w-[50%]">
+              {metricEntries.map(([key, value]) => (
+                <span key={key} className="inline-flex items-center gap-1 rounded-md bg-muted/40 px-2 py-0.5 whitespace-nowrap">
+                  <span className="text-[10px] font-medium text-muted-foreground capitalize">{key}</span>
+                  <span className="text-xs font-semibold tabular-nums">{formatMetric(value)}</span>
+                </span>
+              ))}
+            </div>
+          )}
           {model.trainingMs != null && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
               <Clock className="h-3 w-3" /> {formatDuration(model.trainingMs)}
             </span>
           )}
@@ -93,20 +121,6 @@ export function ModelDetailPanel({ modelId }: ModelDetailPanelProps) {
             </Tooltip>
           )}
         </div>
-      </div>
-
-      {/* Metrics */}
-      <div className="flex items-center gap-3 border-b px-3 py-2.5 shrink-0">
-        {metricEntries.length === 0 ? (
-          <span className="text-xs text-muted-foreground">No metrics available</span>
-        ) : (
-          metricEntries.map(([key, value]) => (
-            <div key={key} className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1">
-              <span className="text-[11px] font-medium text-muted-foreground capitalize">{key}</span>
-              <span className="text-sm font-semibold tabular-nums text-foreground">{formatMetric(value)}</span>
-            </div>
-          ))
-        )}
       </div>
 
       {/* Tab bar */}

@@ -1,11 +1,10 @@
 import type { EvaluationResult } from '@/types/experiments';
 
 interface EvalTabContentProps {
-  modelId: string;
   isComputing: boolean;
   isFailed: boolean;
   evaluationError?: string;
-  evaluation: EvaluationResult | undefined;
+  evaluation: EvaluationResult | null | undefined;
   failedLabel: string;
   children: (evaluation: EvaluationResult) => React.ReactNode;
 }
@@ -42,10 +41,20 @@ export function EvalTabContent({
     );
   }
 
-  if (!evaluation) {
+  if (evaluation === undefined) {
     return (
       <div className="flex h-64 items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading evaluation data...</p>
+      </div>
+    );
+  }
+
+  if (evaluation === null) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="text-center max-w-sm">
+          <p className="text-sm text-muted-foreground">{failedLabel}</p>
+        </div>
       </div>
     );
   }

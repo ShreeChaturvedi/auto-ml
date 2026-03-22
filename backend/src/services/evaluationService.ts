@@ -266,13 +266,12 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('');
   }
 
-  // ── Save predictions parquet ──
-  lines.push('# Save predictions');
-  lines.push('pred_df = pd.DataFrame({');
-  lines.push('    "y_true": y_test.values,');
-  lines.push('    "y_pred": y_pred,');
-  lines.push('    "original_index": y_test.index.tolist()');
-  lines.push('})');
+  // ── Save predictions parquet (includes features for error analysis) ──
+  lines.push('# Save predictions — include features so error analysis can build an error tree');
+  lines.push('pred_df = X_test.reset_index(drop=True)');
+  lines.push('pred_df["y_true"] = y_test.values');
+  lines.push('pred_df["y_pred"] = y_pred');
+  lines.push('pred_df["original_index"] = y_test.index.tolist()');
   if (taskType === 'classification') {
     lines.push('pred_df["is_correct"] = (pred_df["y_true"] == pred_df["y_pred"])');
     lines.push('if has_proba:');

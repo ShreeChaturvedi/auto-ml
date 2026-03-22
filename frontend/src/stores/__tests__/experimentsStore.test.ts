@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchEvaluation as apiFetchEvaluation } from '../../lib/api/experiments';
+import {
+  fetchEvaluation as apiFetchEvaluation,
+  fetchShap as apiFetchShap,
+  fetchErrorAnalysis as apiFetchErrorAnalysis,
+} from '../../lib/api/experiments';
 import type { EvaluationResult } from '../../types/experiments';
 import { useExperimentsStore } from '../experimentsStore';
 
@@ -16,6 +20,8 @@ const toastWarning = vi.hoisted(() => vi.fn());
 vi.mock('sonner', () => ({ toast: { warning: toastWarning } }));
 
 const fetchEvaluationMock = vi.mocked(apiFetchEvaluation);
+const fetchShapMock = vi.mocked(apiFetchShap);
+const fetchErrorAnalysisMock = vi.mocked(apiFetchErrorAnalysis);
 
 function resetStore() {
   useExperimentsStore.setState({
@@ -126,5 +132,53 @@ describe('experimentsStore', () => {
     await useExperimentsStore.getState().fetchEvaluation('model-1');
 
     expect(fetchEvaluationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetchEvaluation() sets null on API failure instead of leaving undefined', async () => {
+    fetchEvaluationMock.mockRejectedValue(new Error('404'));
+
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
+  });
+
+  it('fetchEvaluation() does not re-fetch after failure (null cached)', async () => {
+    fetchEvaluationMock.mockRejectedValue(new Error('404'));
+
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+
+    expect(fetchEvaluationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetchShap() sets null on API failure', async () => {
+    fetchShapMock.mockRejectedValue(new Error('404'));
+
+    await useExperimentsStore.getState().fetchShap('model-1');
+
+    expect(useExperimentsStore.getState().shapData['model-1']).toBeNull();
+  });
+
+  it('fetchErrorAnalysis() sets null on API failure', async () => {
+    fetchErrorAnalysisMock.mockRejectedValue(new Error('404'));
+
+    await useExperimentsStore.getState().fetchErrorAnalysis('model-1');
+
+    expect(useExperimentsStore.getState().errorAnalysis['model-1']).toBeNull();
+  });
+
+  it('purgeModelCache() resets to undefined so data can be re-fetched', async () => {
+    fetchEvaluationMock.mockRejectedValue(new Error('404'));
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
+
+    useExperimentsStore.getState().purgeModelCache('model-1');
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+
+    // After purge, should re-fetch
+    fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
+    expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
   });
 });

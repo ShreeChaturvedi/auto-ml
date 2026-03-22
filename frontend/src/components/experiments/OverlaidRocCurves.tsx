@@ -16,7 +16,7 @@ export function OverlaidRocCurves({
   evaluations,
 }: {
   modelIds: string[];
-  evaluations: Record<string, EvaluationResult>;
+  evaluations: Record<string, EvaluationResult | null>;
 }) {
   const isDark = useIsDark();
   const models = useModelStore((s) => s.models);

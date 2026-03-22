@@ -16,10 +16,10 @@ interface ExperimentsState {
   selectedModelId: string | null;
   comparisonModelIds: string[];
 
-  // Data caches (keyed by modelId)
-  evaluations: Record<string, EvaluationResult>;
-  shapData: Record<string, ShapResult>;
-  errorAnalysis: Record<string, ErrorAnalysisResult>;
+  // Data caches (keyed by modelId) — undefined = not fetched, null = fetch failed
+  evaluations: Record<string, EvaluationResult | null>;
+  shapData: Record<string, ShapResult | null>;
+  errorAnalysis: Record<string, ErrorAnalysisResult | null>;
 
   // LLM content
   insightBanner: { text: string; isLoading: boolean } | null;
@@ -90,7 +90,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   fetchEvaluation: async (modelId) => {
-    if (get().evaluations[modelId]) return;
+    if (get().evaluations[modelId] !== undefined) return;
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
       set((state) => ({
@@ -98,11 +98,14 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchEvaluation failed:', error);
+      set((state) => ({
+        evaluations: { ...state.evaluations, [modelId]: null }
+      }));
     }
   },
 
   fetchShap: async (modelId) => {
-    if (get().shapData[modelId]) return;
+    if (get().shapData[modelId] !== undefined) return;
     try {
       const result = await experimentsApi.fetchShap(modelId);
       set((state) => ({
@@ -110,11 +113,14 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchShap failed:', error);
+      set((state) => ({
+        shapData: { ...state.shapData, [modelId]: null }
+      }));
     }
   },
 
   fetchErrorAnalysis: async (modelId) => {
-    if (get().errorAnalysis[modelId]) return;
+    if (get().errorAnalysis[modelId] !== undefined) return;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
       set((state) => ({
@@ -122,6 +128,9 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchErrorAnalysis failed:', error);
+      set((state) => ({
+        errorAnalysis: { ...state.errorAnalysis, [modelId]: null }
+      }));
     }
   },
 

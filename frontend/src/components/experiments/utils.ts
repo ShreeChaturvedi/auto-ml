@@ -1,6 +1,19 @@
 import type { FilterPredicate, EvaluationResult, CrossPhaseRecommendation } from '@/types/experiments';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
 
+/* ── Filter predicate formatting ────────────────────────────────── */
+
+export function formatOperator(op: FilterPredicate['operator']): string {
+  switch (op) {
+    case 'gt': return '>';
+    case 'lt': return '<';
+    case 'gte': return '>=';
+    case 'lte': return '<=';
+    case 'eq': return '=';
+    case 'contains': return 'contains';
+  }
+}
+
 /* ── Shared task-type helpers ─────────────────────────────────────── */
 
 /** Primary metric per task type (higher = better). */
@@ -111,7 +124,7 @@ export function getAvailableMetrics(taskType: string) {
  */
 export function generateRecommendations(
   models: ModelRecord[],
-  evaluations: Record<string, EvaluationResult>,
+  evaluations: Record<string, EvaluationResult | null>,
 ): CrossPhaseRecommendation[] {
   const recs: CrossPhaseRecommendation[] = [];
 

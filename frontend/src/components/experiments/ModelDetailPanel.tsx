@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Download, RefreshCcw, Clock, BarChart3, HelpCircle } from 'lucide-react';
+import { Download, RefreshCcw, Clock, BarChart3, Microscope, Bug, History, Wand2, HelpCircle } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
@@ -89,54 +89,35 @@ export function ModelDetailPanel({ modelId }: ModelDetailPanelProps) {
   const evalProps = { modelId, isComputing, isFailed, evaluationError: model.evaluationError, evaluation };
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Sticky Metrics Header */}
-      <div className="sticky top-0 z-10 border-b border-border/60 bg-background pb-3 pt-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-foreground truncate max-w-[260px]">{model.name}</h2>
-          <Badge variant="secondary" className="text-[11px]">{model.algorithm}</Badge>
-          <Badge variant="outline" className="text-[11px] capitalize">{model.taskType}</Badge>
-          <EvalStatusBadge status={evalStatus} />
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Ribbon */}
+      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="text-sm font-semibold truncate">{model.name}</h2>
+          <Badge variant="secondary" className="text-[10px] shrink-0">{model.algorithm}</Badge>
         </div>
-
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {metricEntries.length === 0 ? (
-            <span className="text-xs text-muted-foreground">No metrics available</span>
-          ) : (
-            metricEntries.map(([key, value]) => (
-              <div key={key} className="flex items-baseline gap-1">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{key}</span>
-                <span className="text-sm font-bold text-foreground tabular-nums metric-counter">{formatMetric(value)}</span>
-                <ExplainButton metricKey={key} metricValue={value} model={model} />
-              </div>
-            ))
-          )}
+        <div className="flex items-center gap-1.5">
           {model.trainingMs != null && (
-            <div className="flex items-center gap-1 text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              <span className="text-xs tabular-nums">{formatDuration(model.trainingMs)}</span>
-            </div>
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Clock className="h-3 w-3" /> {formatDuration(model.trainingMs)}
+            </span>
           )}
-        </div>
-
-        <div className="mt-2 flex items-center gap-2">
           {model.artifact && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                   <a href={getModelArtifactUrl(model.modelId)} download>
                     <Download className="h-3.5 w-3.5" />
-                    <span className="text-xs">Download .joblib</span>
                   </a>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Download trained model artifact</TooltipContent>
+              <TooltipContent>Download .joblib</TooltipContent>
             </Tooltip>
           )}
           {isFailed && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={() => {
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
                   useExperimentsStore.setState((s) => {
                     const next = { ...s.evaluations };
                     delete next[modelId];
@@ -145,26 +126,53 @@ export function ModelDetailPanel({ modelId }: ModelDetailPanelProps) {
                   fetchEvaluation(modelId);
                 }}>
                   <RefreshCcw className="h-3.5 w-3.5" />
-                  <span className="text-xs">Retry Evaluation</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Re-run the evaluation pipeline for this model</TooltipContent>
+              <TooltipContent>Retry evaluation</TooltipContent>
             </Tooltip>
           )}
         </div>
       </div>
 
+      {/* Metrics strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-3 py-2 shrink-0">
+        {metricEntries.length === 0 ? (
+          <span className="text-xs text-muted-foreground">No metrics available</span>
+        ) : (
+          metricEntries.map(([key, value]) => (
+            <div key={key} className="flex items-baseline gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{key}</span>
+              <span className="text-sm font-bold text-foreground tabular-nums metric-counter">{formatMetric(value)}</span>
+              <ExplainButton metricKey={key} metricValue={value} model={model} />
+            </div>
+          ))
+        )}
+        <EvalStatusBadge status={evalStatus} compact />
+      </div>
+
       {/* Tab Navigation */}
-      <Tabs defaultValue="plots" className="mt-3 flex min-h-0 flex-1 flex-col">
+      <Tabs defaultValue="plots" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="w-full justify-start">
           <TabsTrigger value="plots" className="gap-1.5">
             <BarChart3 className="h-3.5 w-3.5" />
             Plots
           </TabsTrigger>
-          <TabsTrigger value="interpretability">Interpretability</TabsTrigger>
-          <TabsTrigger value="errors">Errors</TabsTrigger>
-          <TabsTrigger value="provenance">Provenance</TabsTrigger>
-          <TabsTrigger value="tune">Tune</TabsTrigger>
+          <TabsTrigger value="interpretability" className="gap-1.5">
+            <Microscope className="h-3.5 w-3.5" />
+            Interpretability
+          </TabsTrigger>
+          <TabsTrigger value="errors" className="gap-1.5">
+            <Bug className="h-3.5 w-3.5" />
+            Errors
+          </TabsTrigger>
+          <TabsTrigger value="provenance" className="gap-1.5">
+            <History className="h-3.5 w-3.5" />
+            Provenance
+          </TabsTrigger>
+          <TabsTrigger value="tune" className="gap-1.5">
+            <Wand2 className="h-3.5 w-3.5" />
+            Tune
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="plots" className="flex-1">

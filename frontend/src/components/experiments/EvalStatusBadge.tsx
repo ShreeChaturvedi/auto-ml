@@ -5,7 +5,7 @@ export type EvalStatus = 'pending' | 'computing' | 'ready' | 'failed' | undefine
 
 const EVAL_STATUS_CONFIG: Record<
   string,
-  { label: string; className: string; pulse?: boolean }
+  { label: string; className: string; pulse?: boolean; dim?: boolean }
 > = {
   pending: {
     label: 'Evaluation Pending',
@@ -18,7 +18,8 @@ const EVAL_STATUS_CONFIG: Record<
   },
   ready: {
     label: 'Evaluated',
-    className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    className: 'border-muted-foreground/20 bg-muted/20 text-muted-foreground/60',
+    dim: true,
   },
   failed: {
     label: 'Evaluation Failed',
@@ -53,7 +54,7 @@ export function EvalStatusBadge({
   return (
     <Badge
       variant="outline"
-      className={cn(config.className, config.pulse && 'animate-pulse', compact && 'text-[10px]')}
+      className={cn(config.className, config.pulse && 'animate-pulse', config.dim && 'opacity-60', compact && 'text-[10px]')}
     >
       {label}
     </Badge>

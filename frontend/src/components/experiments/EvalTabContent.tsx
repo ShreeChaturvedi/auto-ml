@@ -1,6 +1,3 @@
-import { Button } from '@/components/ui/button';
-import { RefreshCcw } from 'lucide-react';
-import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { EvaluationResult } from '@/types/experiments';
 
 interface EvalTabContentProps {
@@ -14,7 +11,6 @@ interface EvalTabContentProps {
 }
 
 export function EvalTabContent({
-  modelId,
   isComputing,
   isFailed,
   evaluationError,
@@ -22,17 +18,6 @@ export function EvalTabContent({
   failedLabel,
   children,
 }: EvalTabContentProps) {
-  const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
-
-  const retry = () => {
-    useExperimentsStore.setState((s) => {
-      const next = { ...s.evaluations };
-      delete next[modelId];
-      return { evaluations: next };
-    });
-    fetchEvaluation(modelId);
-  };
-
   if (isComputing) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -52,10 +37,6 @@ export function EvalTabContent({
             Evaluation failed{evaluationError ? `: ${evaluationError}` : ''}.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">{failedLabel}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={retry}>
-            <RefreshCcw className="h-3.5 w-3.5" />
-            Retry
-          </Button>
         </div>
       </div>
     );

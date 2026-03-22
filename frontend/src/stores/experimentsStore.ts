@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 
 import type {
   EvaluationResult,
@@ -76,7 +77,10 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     if (current.includes(modelId)) {
       set({ comparisonModelIds: current.filter((id) => id !== modelId) });
     } else {
-      if (current.length >= 5) return;
+      if (current.length >= 5) {
+        toast.warning('Maximum 5 models can be compared');
+        return;
+      }
       set({ comparisonModelIds: [...current, modelId] });
     }
   },

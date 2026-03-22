@@ -156,9 +156,9 @@ export function TuneTab({ modelId }: TuneTabProps) {
 
   if (phase === 'running') {
     return (
-      <div className="space-y-5 p-4">
+      <div className="space-y-5 p-5">
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-foreground">Tuning in Progress</h3>
+          <h3 className="text-sm font-semibold text-foreground">Tuning in Progress</h3>
           <Button variant="destructive" size="sm" onClick={handleCancel} className="gap-1.5">
             <Square className="h-3.5 w-3.5" />
             Cancel
@@ -193,7 +193,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
 
   if (phase === 'error') {
     return (
-      <div className="space-y-5 p-4">
+      <div className="space-y-5 p-5">
         <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
           <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
           <div className="space-y-1">
@@ -229,15 +229,15 @@ export function TuneTab({ modelId }: TuneTabProps) {
 
   /* Completed state */
   return (
-    <div className="space-y-5 p-4">
+    <div className="space-y-5 p-5">
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
+        <CardHeader className="pb-3 pt-4 px-4">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold tracking-tight">
             <Zap className="h-4.5 w-4.5 text-emerald-500" />
             Tuning Complete
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="px-4 pb-4 space-y-4">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {bestValue != null && (
               <div className="space-y-0.5">

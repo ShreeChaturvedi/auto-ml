@@ -40,12 +40,12 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   // If SHAP data is loaded and present
   if (shapData) {
     return (
-      <div className="grid grid-cols-1 gap-4 p-4">
+      <div className="grid grid-cols-1 gap-5 p-5">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Global Feature Importance (SHAP)</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Global Feature Importance (SHAP)</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ShapBarChart
               featureNames={shapData.feature_names}
               importances={shapData.mean_abs_values}
@@ -55,19 +55,19 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">SHAP Beeswarm</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Beeswarm</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ShapBeeswarmChart shapResult={shapData} topN={15} height={500} />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">SHAP Dependence</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Dependence</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ShapDependenceChart shapResult={shapData} />
           </CardContent>
         </Card>
@@ -78,30 +78,30 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   // Still loading
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-4 p-4">
+      <div className="grid grid-cols-1 gap-5 p-5">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Global Feature Importance (SHAP)</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Global Feature Importance (SHAP)</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ChartSkeleton height={400} />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">SHAP Beeswarm</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Beeswarm</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ChartSkeleton height={500} />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">SHAP Dependence</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Dependence</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ChartSkeleton height={400} />
           </CardContent>
         </Card>
@@ -111,7 +111,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
 
   // SHAP unavailable — show fallback with model-based or permutation importance
   return (
-    <div className="grid grid-cols-1 gap-4 p-4">
+    <div className="grid grid-cols-1 gap-5 p-5">
       <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
         <p className="text-sm text-yellow-700 dark:text-yellow-300">
@@ -122,10 +122,10 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
 
       {fallbackImportance && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Feature Importance</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Feature Importance</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ShapBarChart
               featureNames={fallbackImportance.features}
               importances={

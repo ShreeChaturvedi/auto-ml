@@ -32,24 +32,30 @@ const METRIC_COLUMNS: Record<ModelTaskType, [string, string][]> = {
   ],
 };
 
-/** Build smart metric columns: primary metrics first, then fill to cap of 5. */
-function buildSmartColumns(taskTypes: ModelTaskType[]): [string, string][] {
+/** Build metric columns: all columns for dominant type first, then primary for others. */
+function buildSmartColumns(taskTypes: ModelTaskType[], models: ModelRecord[]): [string, string][] {
+  if (taskTypes.length === 0) return [];
+
+  // Find the dominant task type (most models)
+  const counts = new Map<ModelTaskType, number>();
+  for (const m of models) counts.set(m.taskType, (counts.get(m.taskType) ?? 0) + 1);
+  const sorted = [...taskTypes].sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0));
+  const dominant = sorted[0];
+
+  // Show ALL columns for dominant type first
   const cols: [string, string][] = [];
   const seen = new Set<string>();
+  for (const col of METRIC_COLUMNS[dominant]) {
+    seen.add(col[1]);
+    cols.push(col);
+  }
 
-  // Always show primary metric for each task type first
-  for (const tt of taskTypes) {
+  // Then add primary metric for minority types (cap at 6)
+  for (const tt of sorted.slice(1)) {
+    if (cols.length >= 6) break;
     const primary = PRIMARY_METRIC[tt];
     const col = METRIC_COLUMNS[tt].find(([, key]) => key === primary);
     if (col && !seen.has(col[1])) { seen.add(col[1]); cols.push(col); }
-  }
-
-  // Fill remaining with secondary metrics, cap at 5 total
-  for (const tt of taskTypes) {
-    for (const col of METRIC_COLUMNS[tt]) {
-      if (cols.length >= 5) break;
-      if (!seen.has(col[1])) { seen.add(col[1]); cols.push(col); }
-    }
   }
   return cols;
 }
@@ -107,7 +113,7 @@ export function Leaderboard() {
   const setSort = useExperimentsStore((s) => s.setSort);
 
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
-  const metricCols = useMemo(() => buildSmartColumns(taskTypes), [taskTypes]);
+  const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
   const championId = useMemo(() => findChampionId(models), [models]);
 
   const filteredModels = useMemo(
@@ -227,21 +233,21 @@ export function Leaderboard() {
       {/* Table */}
       {!isEmpty && (
         <ScrollArea className="flex-1">
-          <table className="w-full text-xs">
+          <table className="w-full text-sm">
             <thead className="sticky top-0 bg-background z-10 border-b">
               <tr>
                 {/* Checkbox column */}
-                <th className="w-8 p-2" />
+                <th className="w-8 py-2.5 px-3" />
                 {/* Champion indicator */}
-                <th className="w-6 p-2" />
+                <th className="w-6 py-2.5 px-3" />
                 <th
-                  className="p-2 text-left font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
+                  className="py-2.5 px-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
                   onClick={() => handleSort('name')}
                 >
                   Name {sortField === 'name' && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
                 </th>
                 <th
-                  className="p-2 text-left font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
+                  className="py-2.5 px-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
                   onClick={() => handleSort('algorithm')}
                 >
                   Algorithm {sortField === 'algorithm' && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
@@ -249,7 +255,7 @@ export function Leaderboard() {
                 {metricCols.map(([label, key]) => (
                   <th
                     key={key}
-                    className="p-2 text-right font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
+                    className="py-2.5 px-3 text-right text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
                     onClick={() => handleSort(key)}
                   >
                     {label} {sortField === key && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
@@ -268,7 +274,7 @@ export function Leaderboard() {
                   <tr
                     key={model.modelId}
                     className={cn(
-                      'border-b border-border/40 transition-colors cursor-pointer hover:bg-muted/50',
+                      'border-b border-border/20 transition-colors cursor-pointer hover:bg-muted/50',
                       isSelected && 'bg-muted/70 model-row-selected',
                       isChampion && 'champion-row',
                       isCompared && 'ring-1 ring-inset ring-primary/20'
@@ -276,7 +282,7 @@ export function Leaderboard() {
                     onClick={() => selectModel(model.modelId)}
                   >
                     {/* Comparison checkbox */}
-                    <td className="p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={isCompared}
                         onCheckedChange={() => toggleComparison(model.modelId)}
@@ -284,7 +290,7 @@ export function Leaderboard() {
                       />
                     </td>
                     {/* Champion trophy */}
-                    <td className="p-2 text-center">
+                    <td className="py-3 px-3 text-center">
                       {isChampion && (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -296,7 +302,7 @@ export function Leaderboard() {
                         </Tooltip>
                       )}
                     </td>
-                    <td className="p-2 text-left font-medium truncate max-w-[140px]">
+                    <td className="py-3 px-3 text-left font-semibold truncate max-w-[180px]">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="truncate block">{model.name}</span>
@@ -306,7 +312,7 @@ export function Leaderboard() {
                         </TooltipContent>
                       </Tooltip>
                     </td>
-                    <td className="p-2 text-left text-muted-foreground truncate max-w-[100px]">
+                    <td className="py-3 px-3 text-left text-muted-foreground truncate max-w-[130px]">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="truncate block">{model.algorithm}</span>
@@ -317,7 +323,7 @@ export function Leaderboard() {
                       </Tooltip>
                     </td>
                     {metricCols.map(([, key]) => (
-                      <td key={key} className="p-2 text-right tabular-nums metric-counter">
+                      <td key={key} className="py-3 px-3 text-right tabular-nums font-medium metric-counter">
                         {formatMetric(model.metrics[key])}
                       </td>
                     ))}

@@ -102,10 +102,10 @@ function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; error
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Error Narrative</CardTitle>
+      <CardHeader className="pb-3 pt-4 px-4">
+        <CardTitle className="text-sm font-semibold tracking-tight">Error Narrative</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 pb-4">
         {isLoading && !text ? (
           <SkeletonBlock height={60} />
         ) : (
@@ -131,7 +131,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-4 p-4">
+      <div className="grid grid-cols-1 gap-5 p-5">
         <SkeletonBlock height={200} />
         {isClassification && <SkeletonBlock height={300} />}
       </div>
@@ -150,10 +150,10 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-4">
+    <div className="grid grid-cols-1 gap-5 p-5">
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
+        <CardHeader className="pb-3 pt-4 px-4">
+          <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
             <TreePine className="h-4 w-4" />
             Error Tree
           </CardTitle>
@@ -161,7 +161,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
             Decision tree trained on prediction errors to identify which feature combinations lead to mistakes.
           </p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 pb-4">
           {errorAnalysis.error_tree ? (
             <ErrorTreeNodeCard node={errorAnalysis.error_tree} />
           ) : (
@@ -172,8 +172,8 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
 
       {isClassification && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">
               Misclassifications
               {errorAnalysis.misclassifications && (
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -182,7 +182,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             {errorAnalysis.misclassifications && errorAnalysis.misclassifications.length > 0 ? (
               <MisclassificationTable data={errorAnalysis.misclassifications} />
             ) : (

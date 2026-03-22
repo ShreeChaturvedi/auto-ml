@@ -18,14 +18,14 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
   const isRegression = evaluation.taskType === 'regression';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 p-5">
       {/* Classification-specific charts */}
       {isClassification && evaluation.confusion_matrix && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Confusion Matrix</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Confusion Matrix</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ConfusionMatrixChart data={evaluation.confusion_matrix} />
           </CardContent>
         </Card>
@@ -33,10 +33,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
 
       {isClassification && evaluation.roc_curves && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">ROC Curve</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">ROC Curve</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <RocCurveChart data={evaluation.roc_curves} />
           </CardContent>
         </Card>
@@ -44,10 +44,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
 
       {isClassification && evaluation.precision_recall_curves && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Precision-Recall Curve</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Precision-Recall Curve</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <PrCurveChart data={evaluation.precision_recall_curves} />
           </CardContent>
         </Card>
@@ -55,10 +55,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
 
       {isClassification && evaluation.calibration_curve && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Calibration Curve</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Calibration Curve</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <CalibrationChart data={evaluation.calibration_curve} />
           </CardContent>
         </Card>
@@ -67,10 +67,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
       {/* Regression-specific charts */}
       {isRegression && evaluation.residuals && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Residuals vs Predicted</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Residuals vs Predicted</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ResidualsChart data={evaluation.residuals} />
           </CardContent>
         </Card>
@@ -78,10 +78,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
 
       {isRegression && evaluation.residual_histogram && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Residual Distribution</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Residual Distribution</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <ResidualHistogramChart data={evaluation.residual_histogram} />
           </CardContent>
         </Card>
@@ -90,10 +90,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
       {/* Shared charts (classification + regression) */}
       {evaluation.learning_curve && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Learning Curve</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Learning Curve</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <LearningCurveChart data={evaluation.learning_curve} />
           </CardContent>
         </Card>
@@ -101,10 +101,10 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
 
       {evaluation.cross_validation && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Cross-Validation Scores</CardTitle>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Cross-Validation Scores</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             <CvBoxplot data={evaluation.cross_validation} />
           </CardContent>
         </Card>

@@ -137,7 +137,7 @@ export function OverviewDashboard() {
         </div>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="space-y-5 p-4">
+          <div className="space-y-5 p-5">
             <div className="flex flex-wrap gap-3">
               {bestModel && <KpiCard icon={Trophy} label={`Best ${bestModel.metricLabel}`} value={formatMetric(bestModel.value)} />}
               <KpiCard icon={Layers} label="Total Models" value={String(models.length)} />
@@ -146,8 +146,8 @@ export function OverviewDashboard() {
             </div>
 
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Model Comparison</CardTitle>
+              <CardHeader className="pb-3 pt-4 px-4">
+                <CardTitle className="text-sm font-semibold tracking-tight">Model Comparison</CardTitle>
               </CardHeader>
               <CardContent>
                 <ModelsParallelCoords models={models} />

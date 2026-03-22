@@ -90,21 +90,21 @@ export function ComparisonView() {
         </Button>
       </div>
       <ScrollArea className="flex-1">
-        <div className="space-y-5 p-4">
+        <div className="space-y-5 p-5">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">AI Comparison Summary</CardTitle>
+            <CardHeader className="pb-3 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold tracking-tight">AI Comparison Summary</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4">
               <CompareNarrativeSection />
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Metrics Comparison</CardTitle>
+            <CardHeader className="pb-3 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold tracking-tight">Metrics Comparison</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4">
               <MetricsDeltaTable modelIds={comparisonModelIds} />
             </CardContent>
           </Card>

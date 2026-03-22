@@ -51,10 +51,10 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
     : null;
 
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-5 p-5">
       {/* ── Pipeline Timeline ── */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="px-4 pb-4 pt-6">
           <h3 className="text-sm font-semibold text-foreground mb-4">
             Pipeline Timeline
           </h3>
@@ -122,7 +122,7 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
       {/* ── Preprocessing Metadata (if available) ── */}
       {hasProvenanceMetadata && model.metadata && (
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="px-4 pb-4 pt-6">
             <h3 className="text-sm font-semibold text-foreground mb-3">
               Preprocessing Metadata
             </h3>

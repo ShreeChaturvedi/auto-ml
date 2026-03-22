@@ -21,6 +21,14 @@ export async function trainModel(request: TrainModelRequest) {
 }
 
 
+export async function deleteModel(modelId: string) {
+  return apiRequest<void>(`/models/${modelId}`, { method: 'DELETE' });
+}
+
+export async function seedModels(projectId: string) {
+  return apiRequest<{ models: ModelRecord[] }>(`/models/seed?projectId=${projectId}`, { method: 'POST' });
+}
+
 export function getModelArtifactUrl(modelId: string) {
   return `${getApiBaseUrl()}/models/${modelId}/artifact`;
 }

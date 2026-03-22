@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import type { ModelRecord, ModelTemplate, TrainModelRequest } from '@/types/model';
 import * as modelApi from '@/lib/api/models';
+import { useExperimentsStore } from './experimentsStore';
 
 export interface TrainingRunState {
   experimentId: string;
@@ -29,6 +30,7 @@ interface ModelState {
   updateTrainingRun: (experimentId: string, state: Partial<TrainingRunState>) => void;
   setCurrentStage: (stage: string | null) => void;
   setTrainingRunId: (runId: string | null) => void;
+  deleteModel: (modelId: string) => Promise<void>;
   clearTrainingRun: () => void;
 }
 
@@ -110,6 +112,27 @@ export const useModelStore = create<ModelState>((set, get) => ({
   setTrainingRunId: (runId) => {
     if (get().trainingRunId === runId) return;
     set({ trainingRunId: runId });
+  },
+
+  deleteModel: async (modelId) => {
+    try {
+      await modelApi.deleteModel(modelId);
+      set((state) => ({
+        models: state.models.filter((m) => m.modelId !== modelId),
+      }));
+      const expStore = useExperimentsStore.getState();
+      if (expStore.selectedModelId === modelId) {
+        expStore.selectModel(null);
+      }
+      if (expStore.comparisonModelIds.includes(modelId)) {
+        expStore.toggleComparison(modelId);
+      }
+      expStore.purgeModelCache(modelId);
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to delete model.',
+      });
+    }
   },
 
   clearTrainingRun: () => {

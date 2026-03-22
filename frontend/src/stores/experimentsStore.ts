@@ -42,6 +42,7 @@ interface ExperimentsState {
   setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
   setSort: (field: string, direction: 'asc' | 'desc') => void;
+  purgeModelCache: (modelId: string) => void;
 }
 
 export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
@@ -187,5 +188,18 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   setSort: (field, direction) => {
     set({ sortField: field, sortDirection: direction });
+  },
+
+  purgeModelCache: (modelId) => {
+    set((state) => {
+      const { [modelId]: _eval, ...restEvals } = state.evaluations;
+      const { [modelId]: _shap, ...restShap } = state.shapData;
+      const { [modelId]: _err, ...restErrors } = state.errorAnalysis;
+      return {
+        evaluations: restEvals,
+        shapData: restShap,
+        errorAnalysis: restErrors,
+      };
+    });
   }
 }));

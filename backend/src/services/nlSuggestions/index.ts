@@ -29,6 +29,13 @@ interface GenerationResult {
   workflowPlaceholders?: WorkflowPlaceholders;
 }
 
+export interface SuggestionResult {
+  suggestions: NlSuggestion[];
+  cached: boolean;
+  schemaFingerprint: string;
+  workflowPlaceholders?: WorkflowPlaceholders;
+}
+
 const inflightSuggestionGenerations = new Map<string, Promise<GenerationResult>>();
 
 function buildPrompt(params: {
@@ -166,13 +173,6 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
   async function getProjectTables(projectId: string) {
     const datasets = await datasetRepository.listByProject(projectId);
     return buildSchemaSummary(datasets, projectId);
-  }
-
-  interface SuggestionResult {
-    suggestions: NlSuggestion[];
-    cached: boolean;
-    schemaFingerprint: string;
-    workflowPlaceholders?: WorkflowPlaceholders;
   }
 
   async function getSuggestions({

@@ -509,16 +509,21 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
         )}
         style={themeColor ? { '--voice-theme-color': themeColor } as CSSProperties : undefined}
       >
-        {value.length === 0 && !voiceActive && placeholders && placeholders.length > 1 ? (
-          <AnimatedMentionPlaceholder placeholders={placeholders} />
-        ) : value.length === 0 && (placeholders?.[0] ?? placeholder) ? (
-          <span
-            aria-hidden="true"
-            className="mention-input-placeholder pointer-events-none absolute inset-x-3 top-2.5 text-base text-muted-foreground md:text-sm"
-          >
-            {placeholders?.[0] ?? placeholder}
-          </span>
-        ) : null}
+        {(() => {
+          if (value.length > 0) return null;
+          const useAnimated = !voiceActive && placeholders && placeholders.length > 1;
+          if (useAnimated) return <AnimatedMentionPlaceholder placeholders={placeholders} />;
+          const staticText = placeholders?.[0] ?? placeholder;
+          if (!staticText) return null;
+          return (
+            <span
+              aria-hidden="true"
+              className="mention-input-placeholder pointer-events-none absolute inset-x-3 top-2.5 text-base text-muted-foreground md:text-sm"
+            >
+              {staticText}
+            </span>
+          );
+        })()}
 
         {voiceActive && value.length === 0 ? (
           <span

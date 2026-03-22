@@ -46,8 +46,10 @@ function hasSameEntry(left: ProjectNlSuggestionEntry | undefined, right: Project
     return false;
   }
 
-  return left.schemaFingerprint === right.schemaFingerprint
-    && hasSameSuggestions(left.suggestions, right.suggestions);
+  if (left.schemaFingerprint !== right.schemaFingerprint) return false;
+  if (!hasSameSuggestions(left.suggestions, right.suggestions)) return false;
+  if (JSON.stringify(left.workflowPlaceholders) !== JSON.stringify(right.workflowPlaceholders)) return false;
+  return true;
 }
 
 export const useNlSuggestionStore = create<NlSuggestionState>()((set, get) => ({

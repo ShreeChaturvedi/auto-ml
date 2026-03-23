@@ -25,6 +25,7 @@ import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
+import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { createTrainingAdapter } from './TrainingAdapter';
 import { TrainingToolbarLeft } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
@@ -46,7 +47,15 @@ export function TrainingPanel() {
     buildStorageKey: buildTrainingStorageKey,
     handleSwitch: handleWorkbookSwitch,
     handleNew: handleNewWorkbook,
-    handleDelete: handleDeleteWorkbook
+    handleDelete: handleDeleteWorkbook,
+    handleRename: handleRenameWorkbook,
+    handleReplay: handleReplayWorkbook,
+    handleReset: handleResetWorkbook,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    openRenameDialog
   } = useTrainingWorkbooks(projectId);
 
   const [cells, setCells] = useState<Cell[]>([]);
@@ -323,77 +332,89 @@ export function TrainingPanel() {
   ]);
 
   return (
-    <AgenticShell
-      key={activeTrainingWorkbookId}
-      projectId={projectId ?? ''}
-      composerPlaceholders={composerPlaceholders}
-      storageKey={trainingStorageKey}
-      domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
-      domainAdapter={trainingAdapter}
-      renderLeftPane={(renderProps) => {
-        // Sync LLM code cells whenever messages change
-        syncLlmCells(renderProps.messages);
+    <>
+      <AgenticShell
+        key={activeTrainingWorkbookId}
+        projectId={projectId ?? ''}
+        composerPlaceholders={composerPlaceholders}
+        storageKey={trainingStorageKey}
+        domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
+        domainAdapter={trainingAdapter}
+        renderLeftPane={(renderProps) => {
+          // Sync LLM code cells whenever messages change
+          syncLlmCells(renderProps.messages);
 
-        return (
-          <div className="p-6 space-y-4 pb-28">
-            {trainingBlockedByFeGate ? (
-              <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                    Training Locked: Feature Pipeline Approval Required
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
-                  <p>Approve a Feature Engineering pipeline before starting model training.</p>
-                  <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
-                </CardContent>
-              </Card>
-            ) : null}
+          return (
+            <div className="p-6 space-y-4 pb-28">
+              {trainingBlockedByFeGate ? (
+                <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
+                      Training Locked: Feature Pipeline Approval Required
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
+                    <p>Approve a Feature Engineering pipeline before starting model training.</p>
+                    <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
+                  </CardContent>
+                </Card>
+              ) : null}
 
-            {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
+              {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
 
-            <ChatMessageRenderer
-              messages={renderProps.messages}
-              renderLifecycleCard={renderLifecycleCard}
-              activeTextMessageId={renderProps.activeTextMessageId}
-              activeThinkingMessageId={renderProps.activeThinkingMessageId}
-              hydratedMessageIds={renderProps.hydratedMessageIds}
-              onEditMessage={renderProps.onEditMessage}
-              onRevertToMessage={renderProps.onRevertToMessage}
-              editingMessageId={renderProps.editingMessageId}
-              turnDiffs={renderProps.turnDiffs}
-              isGenerating={renderProps.isGenerating}
-            />
-          </div>
-        );
-      }}
-      toolbarLeft={
-        <TrainingToolbarLeft
-          workbooks={trainingWorkbooks}
-          activeWorkbookId={activeTrainingWorkbookId}
-          onSwitch={handleWorkbookSwitch}
-          onNew={handleNewWorkbook}
-          onRename={() => {}}
-          onReplay={() => {}}
-          onReset={() => {}}
-          onDelete={handleDeleteWorkbook}
-          canDelete={trainingWorkbooks.length > 1}
-        />
-      }
-      toolbarRight={
-        projectFeatures.length > 0 ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
-                  <Wand2 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : undefined
-      }
-    />
+              <ChatMessageRenderer
+                messages={renderProps.messages}
+                renderLifecycleCard={renderLifecycleCard}
+                activeTextMessageId={renderProps.activeTextMessageId}
+                activeThinkingMessageId={renderProps.activeThinkingMessageId}
+                hydratedMessageIds={renderProps.hydratedMessageIds}
+                onEditMessage={renderProps.onEditMessage}
+                onRevertToMessage={renderProps.onRevertToMessage}
+                editingMessageId={renderProps.editingMessageId}
+                turnDiffs={renderProps.turnDiffs}
+                isGenerating={renderProps.isGenerating}
+              />
+            </div>
+          );
+        }}
+        toolbarLeft={
+          <TrainingToolbarLeft
+            workbooks={trainingWorkbooks}
+            activeWorkbookId={activeTrainingWorkbookId}
+            onSwitch={handleWorkbookSwitch}
+            onNew={handleNewWorkbook}
+            onRename={openRenameDialog}
+            onReplay={handleReplayWorkbook}
+            onReset={handleResetWorkbook}
+            onDelete={handleDeleteWorkbook}
+            canDelete={trainingWorkbooks.length > 1}
+          />
+        }
+        toolbarRight={
+          projectFeatures.length > 0 ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
+                    <Wand2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : undefined
+        }
+      />
+
+      <RenameTabDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        value={renameDialogValue}
+        onValueChange={setRenameDialogValue}
+        onSave={() => handleRenameWorkbook(renameDialogValue)}
+        title="Rename workbook"
+        description="Update the name of the current training workbook."
+      />
+    </>
   );
 }

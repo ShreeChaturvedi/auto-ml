@@ -398,6 +398,7 @@ export function QueryPanel({
             collapsed={collapsed}
             isExpanding={isExpanding}
             modKey={modKey}
+            projectId={resolvedProjectId}
           />
         ) : (
           <NlQueryWorkflow

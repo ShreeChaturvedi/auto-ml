@@ -16,6 +16,7 @@ export interface WorkflowPlaceholders {
   preprocessing: string[];
   featureEngineering: string[];
   training: string[];
+  explore?: string[];
 }
 
 export interface StoredNlSuggestionSet {

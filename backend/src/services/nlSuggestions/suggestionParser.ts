@@ -3,11 +3,13 @@ import { z } from 'zod';
 import type { NlSuggestion, WorkflowPlaceholders } from './types.js';
 
 const WORKFLOW_PLACEHOLDER_PHASE_SCHEMA = z.array(z.string().min(15).max(150)).min(3).max(6);
+const EXPLORE_SQL_SCHEMA = z.array(z.string().min(10).max(300)).min(3).max(12);
 
 export const WORKFLOW_PLACEHOLDER_SCHEMA = z.object({
   preprocessing: WORKFLOW_PLACEHOLDER_PHASE_SCHEMA,
   featureEngineering: WORKFLOW_PLACEHOLDER_PHASE_SCHEMA,
   training: WORKFLOW_PLACEHOLDER_PHASE_SCHEMA,
+  explore: EXPLORE_SQL_SCHEMA.optional(),
 });
 
 export const SUGGESTION_SCHEMA = z.object({
@@ -84,6 +86,7 @@ export function normalizeWorkflowPlaceholders(
     preprocessing: dedupePhase(raw.preprocessing),
     featureEngineering: dedupePhase(raw.featureEngineering),
     training: dedupePhase(raw.training),
+    ...(raw.explore ? { explore: dedupePhase(raw.explore) } : {}),
   };
 }
 

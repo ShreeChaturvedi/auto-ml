@@ -22,7 +22,7 @@ export type { GetNlSuggestionsOptions, NlSuggestion, WorkflowPlaceholders } from
 const DEFAULT_SUGGESTION_COUNT = 8;
 const MAX_SUGGESTION_COUNT = 12;
 const MAX_SUGGESTION_RETRIES = 2;
-const SUGGESTION_PROMPT_VERSION = 2;
+const SUGGESTION_PROMPT_VERSION = 5;
 
 interface GenerationResult {
   suggestions: NlSuggestion[];
@@ -77,6 +77,7 @@ function buildPrompt(params: {
     '- "preprocessing": 4-5 placeholders about data cleaning, missing values, encoding, or scaling.',
     '- "featureEngineering": 4-5 placeholders about feature creation, interactions, or selection.',
     '- "training": 4-5 placeholders about model selection, training, evaluation, or comparison.',
+    '- "explore": exactly 10 valid, executable SQL SELECT queries using actual table and column names from the schema. Each query must be runnable as-is against the tables and columns defined above. Write queries a senior data analyst would actually run to deeply understand this specific dataset — not toy examples like "SELECT * FROM table LIMIT 10". Every query must reference real column names. Include ALL of the following patterns across the 10 queries: (1) summary statistics for key numeric columns (COUNT, AVG, MIN, MAX, STDDEV in one query), (2) GROUP BY with HAVING to find notable segments, (3) filtered WHERE clauses using domain-relevant conditions, (4) DISTINCT value counts for categorical columns, (5) ORDER BY with LIMIT for top-N / bottom-N analysis, (6) CASE WHEN for binning or conditional aggregation, (7) subqueries or CTEs for comparative analysis, (8) NULL analysis across important columns, (9) cross-column correlation queries (e.g. average of Y grouped by X), (10) date/time analysis if temporal columns exist, otherwise distribution analysis. Each query should be 40-250 characters.',
     '',
     `Project id: ${params.projectId}`,
     `Prompt version: ${SUGGESTION_PROMPT_VERSION}`,

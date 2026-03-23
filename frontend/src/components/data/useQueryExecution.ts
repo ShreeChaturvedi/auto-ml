@@ -5,13 +5,6 @@
 import { useState, useCallback } from 'react';
 import type { QueryMode } from '@/types/file';
 
-const DEFAULT_SQL = `-- Enter your SQL query
--- Use the table name from your uploaded dataset
--- Wrap names with spaces in double quotes (example: "First Name")
--- Press Ctrl+Space for autocomplete suggestions
-
-SELECT * FROM your_table LIMIT 100`;
-
 const DEFAULT_ENGLISH = '';
 
 interface UseQueryExecutionOptions {
@@ -30,7 +23,7 @@ export function useQueryExecution({
   const mode = externalMode ?? internalMode;
 
   // Separate state for each mode to preserve inputs when switching
-  const [sqlQuery, setSqlQuery] = useState<string>(DEFAULT_SQL);
+  const [sqlQuery, setSqlQuery] = useState<string>('');
   const [englishQuery, setEnglishQuery] = useState<string>(DEFAULT_ENGLISH);
 
   const handleModeChange = useCallback(

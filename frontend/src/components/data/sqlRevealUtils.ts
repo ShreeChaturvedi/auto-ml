@@ -25,6 +25,18 @@ export function tokenClassName(type: SqlTokenType): string {
   return TOKEN_CLASS_BY_TYPE[type] ?? '';
 }
 
+/** Inline color map for dimmed placeholder tokens (alpha-channel dimming). */
+export const TOKEN_INLINE_COLORS: Record<SqlTokenType, string> = {
+  keyword:     'hsl(var(--primary) / 0.6)',
+  function:    'hsl(var(--chart-2) / 0.6)',
+  string:      'hsl(var(--chart-3) / 0.6)',
+  number:      'hsl(var(--chart-4) / 0.6)',
+  operator:    'hsl(var(--muted-foreground) / 0.45)',
+  punctuation: 'hsl(var(--muted-foreground) / 0.45)',
+  identifier:  'hsl(var(--foreground) / 0.45)',
+  whitespace:  'transparent',
+};
+
 function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
   if (theme !== 'system') {
     return theme;

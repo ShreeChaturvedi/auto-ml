@@ -22,7 +22,14 @@ export async function fetchErrorAnalysis(modelId: string): Promise<ErrorAnalysis
 /** Returns raw Response for NDJSON streaming (apiRequest parses JSON; we need the raw stream). */
 export async function startTuning(
   projectId: string,
-  body: { modelId: string; nTrials: number; metric: string; timeoutSeconds?: number },
+  body: {
+    modelId: string;
+    nTrials: number;
+    metric: string;
+    timeoutSeconds?: number;
+    sampler?: 'tpe' | 'random';
+    paramOverrides?: Record<string, { min?: number; max?: number; step?: number }>;
+  },
   signal?: AbortSignal
 ): Promise<Response> {
   const response = await apiFetch(`/experiments/${projectId}/tune`, {

@@ -12,9 +12,12 @@ import {
 interface OptimizationHistoryChartProps {
   trials: TuningTrialEvent[];
   height?: number;
+  /** When metric starts with 'neg_' or is r2/accuracy/f1/etc, direction is 'maximize'.
+   *  For raw error metrics (rmse, mae, mse), direction is 'minimize'. Defaults to 'maximize'. */
+  direction?: 'maximize' | 'minimize';
 }
 
-export function OptimizationHistoryChart({ trials, height = 350 }: OptimizationHistoryChartProps) {
+export function OptimizationHistoryChart({ trials, height = 350, direction = 'maximize' }: OptimizationHistoryChartProps) {
   const isDark = useIsDark();
 
   const { plotData, layout } = useMemo(() => {
@@ -26,12 +29,12 @@ export function OptimizationHistoryChart({ trials, height = 350 }: OptimizationH
     const trialNumbers = complete.map((t) => t.trial_number);
     const values = complete.map((t) => t.value as number);
 
-    // Compute running best
+    // Compute running best (direction-aware)
     const bestSoFar: number[] = [];
     let runningBest = values[0];
+    const isBetter = direction === 'minimize' ? (a: number, b: number) => a < b : (a: number, b: number) => a > b;
     for (const v of values) {
-      // Higher is better (most sklearn metrics are maximized; neg_* are already negative)
-      if (v > runningBest) runningBest = v;
+      if (isBetter(v, runningBest)) runningBest = v;
       bestSoFar.push(runningBest);
     }
 
@@ -79,7 +82,7 @@ export function OptimizationHistoryChart({ trials, height = 350 }: OptimizationH
     };
 
     return { plotData: [objectiveTrace, bestTrace], layout: mergedLayout };
-  }, [trials, isDark, height]);
+  }, [trials, isDark, height, direction]);
 
   if (plotData.length === 0) {
     return (

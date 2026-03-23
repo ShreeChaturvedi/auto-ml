@@ -44,6 +44,26 @@ export interface TuningTrialEvent {
   n_total: number;
 }
 
+export interface TuningImportanceEvent {
+  type: 'importance_update';
+  importances: Record<string, number>;
+  n_trials_used: number;
+}
+
+export interface TuningConvergenceEvent {
+  type: 'convergence_update';
+  status: 'exploring' | 'narrowing' | 'converging';
+  trials_since_improvement: number;
+  improvement_rate: number;
+}
+
+export type TuningStreamEvent =
+  | TuningTrialEvent
+  | TuningImportanceEvent
+  | TuningConvergenceEvent
+  | { type: 'done'; resultModelId?: string }
+  | { type: 'error'; message: string };
+
 export interface TuningStudyResult {
   studyId: string;
   sourceModelId: string;

@@ -66,14 +66,27 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Tune phase exit — upward fade for phase transitions */
+@keyframes tune-phase-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+
+.tune-phase-exit {
+  animation: tune-phase-out 150ms ease-in both;
+}
+
 /* Reduced motion: disable all experiments animations */
 @media (prefers-reduced-motion: reduce) {
   .chart-skeleton,
   .champion-row,
   .trial-best-pulse,
   .empty-state-enter,
-  .bulk-action-enter {
+  .bulk-action-enter,
+  .tune-phase-exit {
     animation: none;
+    opacity: 1;
+    transform: none;
   }
   .model-row-selected {
     transform: none;

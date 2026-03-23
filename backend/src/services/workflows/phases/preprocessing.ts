@@ -22,6 +22,7 @@ import {
   CELL_TOOL_DEFINITIONS,
   PREPROCESSING_ORCHESTRATION_TOOLS
 } from '../../llm/toolRegistry.js';
+import { buildPreprocessingCellContent } from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
   LifecycleStageDefinition,
@@ -310,7 +311,7 @@ function inferActionNode(
 
 // -- Deterministic actions (ported from plannerNotebook, plannerExecution, plannerValidation)
 
-function buildWriteCodeAction(state: WorkflowGraphState): import('../../../types/llm.js').ToolCall[] {
+async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
   const step = extractLatestStepNotebookContext(state);
   if (!step) return [];
   if (!step.code) return [];
@@ -333,7 +334,22 @@ function buildWriteCodeAction(state: WorkflowGraphState): import('../../../types
     return parsed.success ? [parsed.data] : [];
   }
 
-  // Otherwise write the cell
+  // Build visible cell content with explicit load/save calls so the user
+  // sees exactly what runs in the kernel (no invisible wrapping at execution).
+  let cellContent = step.code;
+  if (activeDatasetId) {
+    const dataset = await datasetRepository.getById(activeDatasetId);
+    if (dataset && dataset.projectId === state.run.projectId) {
+      cellContent = buildPreprocessingCellContent({
+        filename: dataset.filename,
+        datasetId: dataset.datasetId,
+        fileType: dataset.fileType,
+        dataframeName: 'df',
+        userCode: step.code
+      });
+    }
+  }
+
   const metadata = {
     preprocessing: {
       runId: step.runId,
@@ -352,7 +368,7 @@ function buildWriteCodeAction(state: WorkflowGraphState): import('../../../types
     args: {
       ...(latestCellId ? { cellId: latestCellId } : {}),
       title: step.title ?? `Step ${step.stepId}`,
-      content: step.code,
+      content: cellContent,
       cellType: 'code',
       metadata
     },

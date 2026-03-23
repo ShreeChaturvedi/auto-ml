@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  buildPreprocessingExecutionCode,
+  buildPreprocessingCellContent,
   resolvePreprocessingExecutionContext
 } from './preprocessingExecutionContext.js';
 
@@ -155,52 +155,53 @@ describe('preprocessingExecutionContext', () => {
     }
   });
 
-  it('emits load helper call, user code, and save helper call', () => {
-    const code = buildPreprocessingExecutionCode({
-      runId: 'prep-1',
-      stepId: 'step-1',
-      datasetId: 'ds-1',
-      filename: 'subscriptions.csv',
-      fileType: 'csv',
-      dataframeName: 'df'
-    }, 'df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
+  it('builds visible cell content with load/save helper calls around user code', () => {
+    const content = buildPreprocessingCellContent({
+      filename: 'subscriptions.csv', datasetId: 'ds-1', fileType: 'csv', dataframeName: 'df',
+      userCode: 'df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())'
+    });
 
-    expect(code).toContain('load_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
-    expect(code).toContain('df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
-    expect(code).toContain('save_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
+    expect(content).toContain('load_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
+    expect(content).toContain('df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
+    expect(content).toContain('save_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
   });
 
   it('does not contain invisible Python wrapping or string-concatenated logic', () => {
-    const code = buildPreprocessingExecutionCode({
-      runId: 'prep-1',
-      stepId: 'step-1',
-      datasetId: 'ds-1',
-      filename: 'data.json',
-      fileType: 'json',
-      dataframeName: 'df'
-    }, 'df = df.dropna()');
+    const content = buildPreprocessingCellContent({
+      filename: 'data.json', datasetId: 'ds-1', fileType: 'json', dataframeName: 'df',
+      userCode: 'df = df.dropna()'
+    });
 
     // No invisible globals, no inline pandas import, no raw file I/O
-    expect(code).not.toContain('_automl_preprocessing_df');
-    expect(code).not.toContain('_automl_preprocessing');
-    expect(code).not.toContain('import pandas');
-    expect(code).not.toContain('pd.read_');
-    expect(code).not.toContain('.to_json(');
-    expect(code).not.toContain('.to_csv(');
+    expect(content).not.toContain('_automl_preprocessing_df');
+    expect(content).not.toContain('_automl_preprocessing');
+    expect(content).not.toContain('import pandas');
+    expect(content).not.toContain('pd.read_');
+    expect(content).not.toContain('.to_json(');
+    expect(content).not.toContain('.to_csv(');
   });
 
-  it('handles xlsx file type', () => {
-    const code = buildPreprocessingExecutionCode({
-      runId: 'prep-1',
-      stepId: 'step-1',
-      datasetId: 'ds-1',
-      filename: 'data.xlsx',
-      fileType: 'xlsx',
-      dataframeName: 'my_df'
-    }, 'my_df = my_df.head(10)');
+  it('handles xlsx file type with custom dataframe name', () => {
+    const content = buildPreprocessingCellContent({
+      filename: 'data.xlsx', datasetId: 'ds-1', fileType: 'xlsx', dataframeName: 'my_df',
+      userCode: 'my_df = my_df.head(10)'
+    });
 
-    expect(code).toContain('load_preprocessing_dataset("data.xlsx", "ds-1", "xlsx", "my_df")');
-    expect(code).toContain('my_df = my_df.head(10)');
-    expect(code).toContain('save_preprocessing_dataset("data.xlsx", "ds-1", "xlsx", "my_df")');
+    expect(content).toContain('load_preprocessing_dataset("data.xlsx", "ds-1", "xlsx", "my_df")');
+    expect(content).toContain('my_df = my_df.head(10)');
+    expect(content).toContain('save_preprocessing_dataset("data.xlsx", "ds-1", "xlsx", "my_df")');
+  });
+
+  it('cell content matches what the kernel executes (no invisible wrapping)', () => {
+    const content = buildPreprocessingCellContent({
+      filename: 'data.csv', datasetId: 'ds-1', fileType: 'csv', dataframeName: 'df',
+      userCode: 'df["age"] = df["age"].fillna(0)'
+    });
+
+    // The content IS the execution code — verify its structure
+    const lines = content.split('\n');
+    expect(lines[0]).toBe('df = load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
+    expect(lines[lines.length - 1]).toBe('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
+    expect(content).toContain('df["age"] = df["age"].fillna(0)');
   });
 });

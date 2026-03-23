@@ -14,6 +14,7 @@ loadEnv({ path: resolve(BACKEND_ROOT, '.env') });
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
 const DEFAULT_NL2SQL_MODEL = 'gpt-5.4-mini';
+const DEFAULT_DEV_JWT_SECRET = 'dev-secret-change-in-production';
 const RESOLVED_LLM_MODEL = process.env.OPENAI_DEFAULT_MODEL
   ?? process.env.LLM_MODEL
   ?? DEFAULT_OPENAI_MODEL;
@@ -57,6 +58,17 @@ function parseFloatValue(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseFloat(value);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+export function resolveJwtSecret(
+  jwtSecret: string | undefined,
+  nodeEnv: string
+): string {
+  if (nodeEnv === 'production' && !jwtSecret) {
+    throw new Error('FATAL: JWT_SECRET must be set in production');
+  }
+
+  return jwtSecret ?? DEFAULT_DEV_JWT_SECRET;
 }
 
 export const env = {
@@ -103,7 +115,7 @@ export const env = {
   kernelStartupTimeoutMs: parseInteger(process.env.KERNEL_STARTUP_TIMEOUT_MS, 15000),
 
   // Authentication
-  jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
+  jwtSecret: resolveJwtSecret(process.env.JWT_SECRET, process.env.NODE_ENV ?? 'development'),
   bcryptRounds: parseInteger(process.env.BCRYPT_ROUNDS, 12),
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',

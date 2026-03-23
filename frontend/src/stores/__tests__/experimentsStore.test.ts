@@ -151,20 +151,38 @@ describe('experimentsStore', () => {
     expect(fetchEvaluationMock).toHaveBeenCalledTimes(1);
   });
 
-  it('fetchShap() sets null on API failure', async () => {
-    fetchShapMock.mockRejectedValue(new Error('404'));
+  it('fetchShap() sets null on 404 to prevent infinite loading', async () => {
+    fetchShapMock.mockRejectedValue(new Error('Not found'));
 
     await useExperimentsStore.getState().fetchShap('model-1');
 
     expect(useExperimentsStore.getState().shapData['model-1']).toBeNull();
   });
 
-  it('fetchErrorAnalysis() sets null on API failure', async () => {
-    fetchErrorAnalysisMock.mockRejectedValue(new Error('404'));
+  it('fetchShap() does not re-fetch after 404 (null cached)', async () => {
+    fetchShapMock.mockRejectedValue(new Error('Not found'));
+
+    await useExperimentsStore.getState().fetchShap('model-1');
+    await useExperimentsStore.getState().fetchShap('model-1');
+
+    expect(fetchShapMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetchErrorAnalysis() sets null on 404 to prevent infinite loading', async () => {
+    fetchErrorAnalysisMock.mockRejectedValue(new Error('Not found'));
 
     await useExperimentsStore.getState().fetchErrorAnalysis('model-1');
 
     expect(useExperimentsStore.getState().errorAnalysis['model-1']).toBeNull();
+  });
+
+  it('fetchErrorAnalysis() does not re-fetch after 404 (null cached)', async () => {
+    fetchErrorAnalysisMock.mockRejectedValue(new Error('Not found'));
+
+    await useExperimentsStore.getState().fetchErrorAnalysis('model-1');
+    await useExperimentsStore.getState().fetchErrorAnalysis('model-1');
+
+    expect(fetchErrorAnalysisMock).toHaveBeenCalledTimes(1);
   });
 
   it('purgeModelCache() resets to undefined so data can be re-fetched', async () => {

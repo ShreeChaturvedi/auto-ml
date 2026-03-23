@@ -168,7 +168,11 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('');
 
   // ── Create study and optimize ──
-  lines.push(`study = optuna.create_study(direction='maximize')`);
+  // sklearn scoring: neg_* metrics return negative values (higher=better), so maximize.
+  // Raw error metrics (rmse, mae, mse, log_loss) are lower-is-better, so minimize.
+  const minimizeMetrics = ['rmse', 'mae', 'mse', 'log_loss', 'mean_squared_error', 'mean_absolute_error'];
+  const direction = minimizeMetrics.includes(metric) ? 'minimize' : 'maximize';
+  lines.push(`study = optuna.create_study(direction=${JSON.stringify(direction)})`);
   lines.push(`study.optimize(objective, n_trials=${nTrials}, timeout=${timeoutSeconds}, callbacks=[stream_callback])`);
   lines.push('');
 
@@ -202,7 +206,7 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('running_best = None');
   lines.push('for t in study.trials:');
   lines.push('    if t.state == optuna.trial.TrialState.COMPLETE:');
-  lines.push('        if running_best is None or t.value > running_best:');
+  lines.push(`        if running_best is None or t.value ${direction === 'minimize' ? '<' : '>'} running_best:`);
   lines.push('            running_best = t.value');
   lines.push('        optimization_history["best_values"].append(running_best)');
   lines.push('');

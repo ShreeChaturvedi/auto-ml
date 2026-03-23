@@ -15,12 +15,13 @@ function CompareNarrativeSection() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
   const compareNarrative = useExperimentsStore((s) => s.compareNarrative);
   const fetchCompareNarrative = useExperimentsStore((s) => s.fetchCompareNarrative);
+  const models = useModelStore((s) => s.models);
 
   useEffect(() => {
     if (projectId && comparisonModelIds.length >= 2) {
-      void fetchCompareNarrative(projectId, comparisonModelIds);
+      void fetchCompareNarrative(projectId, comparisonModelIds, models);
     }
-  }, [projectId, comparisonModelIds, fetchCompareNarrative]);
+  }, [projectId, comparisonModelIds, fetchCompareNarrative, models]);
 
   if (!compareNarrative) {
     return <p className="text-sm text-muted-foreground italic">AI comparison unavailable.</p>;

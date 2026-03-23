@@ -26,7 +26,7 @@ const INSIGHT_SYSTEM_PROMPTS: Record<string, string> = {
   error_narrative:
     'Analyze the error patterns in this model. Explain what types of samples are hardest to predict and suggest improvements. Keep it under 4 sentences. Only reference values from the provided data.',
   filter:
-    'Parse the user\'s natural language filter into structured predicates. Return a JSON object with key \'predicates\' containing an array of objects with \'field\', \'operator\', and \'value\'. Valid fields: \'metrics.accuracy\', \'metrics.f1\', \'metrics.r2\', \'algorithm\', \'taskType\'. Valid operators: \'gt\', \'lt\', \'eq\', \'gte\', \'lte\', \'contains\'. Return ONLY the JSON, no explanation.',
+    'Parse the user\'s natural language filter into structured predicates. Return a JSON object with key \'predicates\' containing an array of objects with \'field\', \'operator\', and \'value\'. Valid fields: \'accuracy\', \'precision\', \'recall\', \'f1\', \'rmse\', \'mae\', \'r2\', \'silhouette\', \'algorithm\', \'name\', \'status\', \'taskType\'. Valid operators: \'gt\', \'lt\', \'eq\', \'gte\', \'lte\', \'contains\'. Return ONLY the JSON, no explanation.',
 };
 
 const VALID_INSIGHT_TYPES = new Set(Object.keys(INSIGHT_SYSTEM_PROMPTS));

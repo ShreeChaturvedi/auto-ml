@@ -125,6 +125,59 @@ const MODEL_TEMPLATES: ModelTemplate[] = [
     defaultParams: {}
   },
   {
+    id: 'ridge_regression',
+    name: 'Ridge Regression',
+    taskType: 'regression',
+    description: 'L2-regularized linear regression. Alpha controls regularization strength.',
+    library: 'sklearn',
+    importPath: 'sklearn.linear_model',
+    modelClass: 'Ridge',
+    metrics: ['r2', 'neg_root_mean_squared_error', 'neg_mean_absolute_error'],
+    parameters: [
+      { key: 'alpha', label: 'Regularization (alpha)', type: 'number', default: 1.0, min: 0.001, max: 100 }
+    ],
+    defaultParams: { alpha: 1.0 }
+  },
+  {
+    id: 'knn_classifier',
+    name: 'K-Nearest Neighbors',
+    taskType: 'classification',
+    description: 'Distance-based classifier using nearest neighbor voting.',
+    library: 'sklearn',
+    importPath: 'sklearn.neighbors',
+    modelClass: 'KNeighborsClassifier',
+    metrics: ['accuracy', 'precision', 'recall', 'f1'],
+    parameters: [
+      { key: 'n_neighbors', label: 'Neighbors', type: 'number', default: 5, min: 1, max: 30 },
+      { key: 'weights', label: 'Weight function', type: 'select', default: 'uniform',
+        options: [{ value: 'uniform', label: 'Uniform' }, { value: 'distance', label: 'Distance' }] },
+      { key: 'metric', label: 'Distance metric', type: 'select', default: 'minkowski',
+        options: [
+          { value: 'euclidean', label: 'Euclidean' },
+          { value: 'manhattan', label: 'Manhattan' },
+          { value: 'minkowski', label: 'Minkowski' }
+        ] }
+    ],
+    defaultParams: { n_neighbors: 5, weights: 'uniform', metric: 'minkowski' }
+  },
+  {
+    id: 'gradient_boosting_classifier',
+    name: 'Gradient Boosting',
+    taskType: 'classification',
+    description: 'Sequential ensemble that corrects residual errors.',
+    library: 'sklearn',
+    importPath: 'sklearn.ensemble',
+    modelClass: 'GradientBoostingClassifier',
+    metrics: ['accuracy', 'precision', 'recall', 'f1'],
+    parameters: [
+      { key: 'n_estimators', label: 'Trees', type: 'number', default: 100, min: 50, max: 500, step: 50 },
+      { key: 'learning_rate', label: 'Learning rate', type: 'number', default: 0.1, min: 0.01, max: 0.3 },
+      { key: 'max_depth', label: 'Max depth', type: 'number', default: 3, min: 2, max: 8 },
+      { key: 'min_samples_split', label: 'Min samples split', type: 'number', default: 2, min: 2, max: 20 }
+    ],
+    defaultParams: { n_estimators: 100, learning_rate: 0.1, max_depth: 3, min_samples_split: 2, random_state: 42 }
+  },
+  {
     id: 'kmeans',
     name: 'K-Means',
     taskType: 'clustering',
@@ -164,6 +217,16 @@ export function listModelTemplates(): ModelTemplate[] {
   return MODEL_TEMPLATES;
 }
 
+export const TEMPLATE_ID_ALIASES: Record<string, string> = {
+  'linear-regression': 'linear_regression',
+  'random-forest-classifier': 'random_forest_classifier',
+  'random-forest-regressor': 'random_forest_regressor',
+  'logistic-regression': 'logistic_regression',
+  'knn-classifier': 'knn_classifier',
+  'gradient-boosting-classifier': 'gradient_boosting_classifier',
+};
+
 export function getModelTemplate(templateId: string): ModelTemplate | undefined {
-  return MODEL_TEMPLATES.find((template) => template.id === templateId);
+  const canonical = TEMPLATE_ID_ALIASES[templateId] ?? templateId;
+  return MODEL_TEMPLATES.find((template) => template.id === canonical);
 }

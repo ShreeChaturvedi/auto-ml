@@ -21,11 +21,11 @@ interface SeedSpec {
 }
 
 const SEED_SPECS: SeedSpec[] = [
-  { name: 'RF Classifier v1', taskType: 'classification', templateId: 'random-forest-classifier', algorithm: 'RandomForestClassifier', metrics: { accuracy: 0.94, f1: 0.91, precision: 0.92, recall: 0.90 } },
-  { name: 'KNN Baseline', taskType: 'classification', templateId: 'knn-classifier', algorithm: 'KNeighborsClassifier', metrics: { accuracy: 0.87, f1: 0.83, precision: 0.85, recall: 0.81 } },
-  { name: 'Logistic Regression', taskType: 'classification', templateId: 'logistic-regression', algorithm: 'LogisticRegression', metrics: { accuracy: 0.91, f1: 0.88, precision: 0.89, recall: 0.87 } },
-  { name: 'Gradient Boost', taskType: 'classification', templateId: 'gradient-boosting-classifier', algorithm: 'GradientBoostingClassifier', metrics: { accuracy: 0.96, f1: 0.94, precision: 0.95, recall: 0.93 } },
-  { name: 'Linear Regression', taskType: 'regression', templateId: 'linear-regression', algorithm: 'LinearRegression', metrics: { r2: 0.85, mse: 0.12, mae: 0.28, rmse: 0.35 } },
+  { name: 'RF Classifier v1', taskType: 'classification', templateId: 'random_forest_classifier', algorithm: 'RandomForestClassifier', metrics: { accuracy: 0.94, f1: 0.91, precision: 0.92, recall: 0.90 } },
+  { name: 'KNN Baseline', taskType: 'classification', templateId: 'knn_classifier', algorithm: 'KNeighborsClassifier', metrics: { accuracy: 0.87, f1: 0.83, precision: 0.85, recall: 0.81 } },
+  { name: 'Logistic Regression', taskType: 'classification', templateId: 'logistic_regression', algorithm: 'LogisticRegression', metrics: { accuracy: 0.91, f1: 0.88, precision: 0.89, recall: 0.87 } },
+  { name: 'Gradient Boost', taskType: 'classification', templateId: 'gradient_boosting_classifier', algorithm: 'GradientBoostingClassifier', metrics: { accuracy: 0.96, f1: 0.94, precision: 0.95, recall: 0.93 } },
+  { name: 'Linear Regression', taskType: 'regression', templateId: 'linear_regression', algorithm: 'LinearRegression', metrics: { r2: 0.85, mse: 0.12, mae: 0.28, rmse: 0.35 } },
 ];
 
 // -- evaluation.json builders --
@@ -162,6 +162,17 @@ function buildShap(taskType: TaskType) {
   };
 }
 
+const ALGORITHM_TO_TEMPLATE: Record<string, string> = {
+  'RandomForestClassifier': 'random_forest_classifier',
+  'LogisticRegression': 'logistic_regression',
+  'KNeighborsClassifier': 'knn_classifier',
+  'GradientBoostingClassifier': 'gradient_boosting_classifier',
+  'LinearRegression': 'linear_regression',
+  'Ridge': 'ridge_regression',
+  'RandomForestRegressor': 'random_forest_regressor',
+  'KMeans': 'kmeans',
+};
+
 /** Randomize a value within +/- range */
 function jitter(base: number, range: number) {
   return parseFloat((base + (Math.random() - 0.5) * 2 * range).toFixed(4));
@@ -188,7 +199,7 @@ export async function seedOneModel(projectId: string, options: {
     projectId,
     datasetId: FIXED_DATASET_ID,
     name: options.name,
-    templateId: `seed-${options.algorithm.toLowerCase().replace(/\s+/g, '-')}`,
+    templateId: ALGORITHM_TO_TEMPLATE[options.algorithm] ?? `seed-${options.algorithm.toLowerCase().replace(/\s+/g, '_')}`,
     taskType: options.taskType,
     library: 'sklearn',
     algorithm: options.algorithm,

@@ -72,8 +72,8 @@ export function ExperimentsDashboard() {
   }, [models.length, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePanelResize = useCallback((size: { asPercentage: number }) => {
-    const next = size.asPercentage < 1;
-    setIsRightCollapsed((prev) => (prev === next ? prev : next));
+    const collapsed = size.asPercentage < 1;
+    setIsRightCollapsed(prev => prev === collapsed ? prev : collapsed);
   }, []);
 
   // Determine right panel content
@@ -92,7 +92,7 @@ export function ExperimentsDashboard() {
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
       <InsightBanner />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-        <ResizablePanel defaultSize={40} minSize={30}>
+        <ResizablePanel defaultSize={40} minSize={25}>
           <div className="flex h-full flex-col overflow-hidden">
             <Leaderboard />
           </div>
@@ -100,7 +100,7 @@ export function ExperimentsDashboard() {
         <ResizableHandle withHandle />
         <ResizablePanel
           defaultSize={60}
-          minSize={25}
+          minSize={40}
           collapsible
           collapsedSize={0}
           panelRef={rightPanelRef}
@@ -120,7 +120,10 @@ export function ExperimentsDashboard() {
             variant="outline"
             size="icon"
             className="h-8 w-8 bg-background/80 backdrop-blur-sm"
-            onClick={() => rightPanelRef.current?.resize("60%")}
+            onClick={() => {
+              rightPanelRef.current?.expand();
+              setTimeout(() => rightPanelRef.current?.resize("60%"), 0);
+            }}
             aria-label="Expand detail panel"
           >
             <PanelLeft className="h-4 w-4" />

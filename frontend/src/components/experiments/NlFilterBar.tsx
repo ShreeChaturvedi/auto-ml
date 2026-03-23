@@ -85,7 +85,7 @@ export function NlFilterBar() {
         onKeyDown={handleKeyDown}
         disabled={isLoading}
         leftPadding={2}
-        className="h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 focus-visible:border-transparent"
+        className="pl-8 h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 focus-visible:border-transparent"
       />
       {isLoading && (
         <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Router, type Response } from 'express';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
@@ -174,8 +175,8 @@ export function createExperimentsRouter(): Router {
       }
     }
 
-    const body = req.body as { query?: string };
-    if (!body.query || typeof body.query !== 'string' || !body.query.trim()) {
+    const query = typeof req.body?.query === 'string' ? (req.body.query as string).trim() : '';
+    if (!query) {
       res.status(400).json({ error: 'query is required.' });
       return;
     }
@@ -189,7 +190,7 @@ export function createExperimentsRouter(): Router {
       const result = await requestStructuredJson({
         client: createLlmClient(),
         systemPrompt,
-        userPrompt: body.query.trim(),
+        userPrompt: query,
         schema: NlFilterResponseSchema,
         label: 'nl-filter',
         normalize: normalizer,
@@ -197,8 +198,10 @@ export function createExperimentsRouter(): Router {
       });
 
       res.json({ predicates: result.predicates });
-    } catch {
-      // Graceful degradation — never 500 on LLM/validation failure
+    } catch (err) {
+      appLogger.warn('[nl-filter] failed, returning empty predicates', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       res.json({ predicates: [] });
     }
   });

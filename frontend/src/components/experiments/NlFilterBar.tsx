@@ -1,24 +1,24 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
+import { toast } from 'sonner';
 import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-input';
 import { useExperimentsStore } from '@/stores/experimentsStore';
-import { readNdjsonStream } from '@/lib/api/streamReader';
-import { fetchInsights } from '@/lib/api/experiments';
-import type { FilterPredicate } from '@/types/experiments';
-
-const AVAILABLE_FIELDS = [
-  'accuracy', 'precision', 'recall', 'f1',
-  'rmse', 'mae', 'r2', 'silhouette',
-  'algorithm', 'name', 'status', 'taskType'
-];
+import { parseNlFilter } from '@/lib/api/experiments';
 
 const FILTER_PLACEHOLDERS = [
-  'Show models with accuracy above 0.9',
-  'Filter by random forest algorithm',
-  'Find models trained today',
-  'Compare regression models by R\u00B2',
-  'Show top classification models',
+  'Show me all completed classification models with accuracy above 0.92 and F1 over 0.85',
+  'Filter for random forest and gradient boosting models where precision exceeds 90%',
+  'Find regression experiments with RMSE below 0.3 and R\u00B2 above 0.95',
+  'Which logistic regression models have both recall over 0.8 and precision over 0.75?',
+  'Show only the top-performing clustering models with silhouette scores above 0.7',
+  'Find all failed experiments so I can investigate what went wrong',
+  'Models where accuracy is above 88% but F1 is still under 0.8 \u2014 possible class imbalance',
+  'Show me SVM and decision tree classifiers with recall over 85% on this dataset',
+  'Regression models with low MAE \u2014 under 0.15 \u2014 sorted by R\u00B2',
+  'Which completed models have the best precision-recall tradeoff above 0.9?',
+  'Filter for ensemble methods with accuracy over 0.95 and strong F1 scores',
+  'Find all models where any metric dropped below 0.6 \u2014 likely underfitting',
 ];
 
 export function NlFilterBar() {
@@ -27,40 +27,38 @@ export function NlFilterBar() {
 
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   const handleSubmit = useCallback(async () => {
     const query = inputText.trim();
     if (!query || !projectId) return;
 
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsLoading(true);
-    setError(null);
 
     try {
-      const response = await fetchInsights(projectId, {
-        type: 'filter',
-        context: { query, availableFields: AVAILABLE_FIELDS }
-      });
+      const { predicates } = await parseNlFilter(projectId, query, controller.signal);
+      if (controller.signal.aborted) return;
 
-      let accumulated = '';
-      for await (const event of readNdjsonStream<{ type: string; content?: string }>(response)) {
-        if (event.type === 'token' && event.content) {
-          accumulated += event.content;
-        }
-      }
-
-      const parsed = JSON.parse(accumulated) as { predicates?: FilterPredicate[] };
-      if (parsed.predicates && Array.isArray(parsed.predicates) && parsed.predicates.length > 0) {
-        setNlFilter(query, parsed.predicates);
+      if (predicates.length > 0) {
+        setNlFilter(query, predicates);
       } else {
-        setError('Could not parse filter');
+        toast.warning('No filters could be extracted from that query');
         setNlFilter('', []);
       }
-    } catch {
-      setError('Could not parse filter');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      toast.error('Could not parse filter');
       setNlFilter('', []);
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted) {
+        setIsLoading(false);
+      }
     }
   }, [inputText, projectId, setNlFilter]);
 
@@ -91,9 +89,6 @@ export function NlFilterBar() {
         <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
           <div className="h-3.5 w-3.5 border-2 border-muted-foreground/30 border-t-foreground rounded-full animate-spin" />
         </div>
-      )}
-      {error && (
-        <p className="absolute left-2 top-full text-[10px] text-destructive mt-0.5">{error}</p>
       )}
     </div>
   );

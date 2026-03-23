@@ -7,8 +7,8 @@ export function formatOperator(op: FilterPredicate['operator']): string {
   switch (op) {
     case 'gt': return '>';
     case 'lt': return '<';
-    case 'gte': return '>=';
-    case 'lte': return '<=';
+    case 'gte': return '\u2265';
+    case 'lte': return '\u2264';
     case 'eq': return '=';
     case 'contains': return 'contains';
   }

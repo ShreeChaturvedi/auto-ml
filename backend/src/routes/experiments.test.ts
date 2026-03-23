@@ -6,11 +6,13 @@ import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { EvaluationResult, ShapResult } from '../types/experiments.js';
 
 // Mock fs/promises at the module level
-const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis } = vi.hoisted(() => ({
+const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRequestStructuredJson, mockListModels } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
   mockRunTuningStudy: vi.fn(),
   mockCreateLlmClient: vi.fn(),
   mockRunErrorAnalysis: vi.fn(),
+  mockRequestStructuredJson: vi.fn(),
+  mockListModels: vi.fn(),
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -27,6 +29,15 @@ vi.mock('../services/llm/llmClient.js', () => ({
 
 vi.mock('../services/errorAttributionService.js', () => ({
   runErrorAnalysis: mockRunErrorAnalysis,
+}));
+
+vi.mock('../services/nlToSql/structuredRequest.js', () => ({
+  requestStructuredJson: mockRequestStructuredJson,
+}));
+
+vi.mock('../services/modelTraining.js', () => ({
+  getModelById: vi.fn(),
+  listModels: mockListModels,
 }));
 
 import { createExperimentsRouter } from './experiments.js';
@@ -245,5 +256,69 @@ describeRouteSuite('experiments routes', () => {
     expect(response.body.error_tree.error_rate).toBe(0.3);
     expect(response.body.misclassifications).toHaveLength(1);
     expect(mockRunErrorAnalysis).toHaveBeenCalledWith('model-abc');
+  });
+
+  // ── NL Filter endpoint tests ──────────────────────────────────────
+
+  it('POST /experiments/:projectId/nl-filter returns predicates on valid query', async () => {
+    mockListModels.mockResolvedValueOnce([]);
+    mockRequestStructuredJson.mockResolvedValueOnce({
+      predicates: [{ field: 'accuracy', operator: 'gt', value: 0.9 }],
+    });
+
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/nl-filter')
+      .send({ query: 'accuracy above 0.9' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.predicates).toHaveLength(1);
+    expect(response.body.predicates[0]).toEqual({ field: 'accuracy', operator: 'gt', value: 0.9 });
+  });
+
+  it('POST /experiments/:projectId/nl-filter returns 400 when query is missing', async () => {
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/nl-filter')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('query is required');
+  });
+
+  it('POST /experiments/:projectId/nl-filter returns empty predicates when LLM returns none', async () => {
+    mockListModels.mockResolvedValueOnce([]);
+    mockRequestStructuredJson.mockResolvedValueOnce({ predicates: [] });
+
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/nl-filter')
+      .send({ query: 'show the best model' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.predicates).toEqual([]);
+  });
+
+  it('POST /experiments/:projectId/nl-filter returns empty predicates on LLM failure (never 500)', async () => {
+    mockListModels.mockResolvedValueOnce([]);
+    mockRequestStructuredJson.mockRejectedValueOnce(new Error('Validation failed after 2 attempts'));
+
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/nl-filter')
+      .send({ query: 'something weird' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.predicates).toEqual([]);
+  });
+
+  it('POST /experiments/:projectId/nl-filter returns 400 for empty string query', async () => {
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/nl-filter')
+      .send({ query: '   ' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('query is required');
   });
 });

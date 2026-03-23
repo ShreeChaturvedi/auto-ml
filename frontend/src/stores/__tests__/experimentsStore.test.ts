@@ -13,7 +13,8 @@ vi.mock('../../lib/api/experiments', () => ({
   fetchShap: vi.fn(),
   fetchErrorAnalysis: vi.fn(),
   compareModels: vi.fn(),
-  fetchInsights: vi.fn()
+  fetchInsights: vi.fn(),
+  parseNlFilter: vi.fn(),
 }));
 
 const toastWarning = vi.hoisted(() => vi.fn());

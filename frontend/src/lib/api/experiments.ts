@@ -3,7 +3,8 @@ import type {
   EvaluationResult,
   ShapResult,
   ErrorAnalysisResult,
-  ComparisonResult
+  ComparisonResult,
+  FilterPredicate,
 } from '@/types/experiments';
 
 export async function fetchEvaluation(modelId: string): Promise<EvaluationResult> {
@@ -42,6 +43,17 @@ export async function compareModels(
     method: 'POST',
     body: JSON.stringify({ modelIds })
   });
+}
+
+export async function parseNlFilter(
+  projectId: string,
+  query: string,
+  signal?: AbortSignal
+): Promise<{ predicates: FilterPredicate[] }> {
+  return apiRequest<{ predicates: FilterPredicate[] }>(
+    `/experiments/${projectId}/nl-filter`,
+    { method: 'POST', body: JSON.stringify({ query }), signal }
+  );
 }
 
 /** Returns raw Response for NDJSON streaming. */

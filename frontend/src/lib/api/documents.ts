@@ -1,4 +1,4 @@
-import { apiRequest, getApiBaseUrl, getAuthHeaders } from './client';
+import { apiFetch, apiRequest } from './client';
 
 export interface DocumentUploadResponse {
   document: {
@@ -57,9 +57,8 @@ export async function uploadDocument(projectId: string, file: File): Promise<Doc
   formData.append('file', file);
   formData.append('projectId', projectId);
 
-  const response = await fetch(`${getApiBaseUrl()}/upload/doc`, {
+  const response = await apiFetch('/upload/doc', {
     method: 'POST',
-    headers: getAuthHeaders(),
     body: formData
   });
 
@@ -86,10 +85,7 @@ export async function listDocuments(projectId?: string): Promise<{ documents: Do
 }
 
 export async function downloadDocument(documentId: string): Promise<Blob> {
-  const response = await fetch(`${getApiBaseUrl()}/documents/${documentId}/download`, {
-    method: 'GET',
-    headers: getAuthHeaders()
-  });
+  const response = await apiFetch(`/documents/${documentId}/download`, { method: 'GET' });
 
   if (!response.ok) {
     let message = response.statusText || 'Document download failed';

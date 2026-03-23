@@ -1,4 +1,4 @@
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 import { readNdjsonStream } from './streamReader';
 import type { LlmEnvelope, LlmUsage, ToolCall, ToolResult } from '@/types/llmUi';
 import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
@@ -159,7 +159,7 @@ async function streamLlm(
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+  const response = await apiFetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
     body: JSON.stringify(request),

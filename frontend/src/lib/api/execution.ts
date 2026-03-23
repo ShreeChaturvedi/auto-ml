@@ -4,9 +4,8 @@
  * API client for cloud (Docker) code execution.
  */
 
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 import { readNdjsonStream } from './streamReader';
-import { useAuthStore } from '@/stores/authStore';
 
 // Re-export PyPI types and functions for backward compatibility
 export type { PyPIPackageDetails } from './pypi';
@@ -147,19 +146,12 @@ export async function installPackageStream(
     packageName: string,
     onEvent: (event: PackageInstallEvent) => void
 ): Promise<{ success: boolean; message: string }> {
-    const authState = useAuthStore.getState();
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/x-ndjson'
-    };
-
-    if (authState.accessToken) {
-        headers.Authorization = `Bearer ${authState.accessToken}`;
-    }
-
-    const response = await fetch(`${getApiBaseUrl()}/execute/packages/stream`, {
+    const response = await apiFetch('/execute/packages/stream', {
         method: 'POST',
-        headers,
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/x-ndjson'
+        },
         body: JSON.stringify({ sessionId, packageName })
     });
 

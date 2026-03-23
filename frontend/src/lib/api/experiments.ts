@@ -1,4 +1,4 @@
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 import type {
   EvaluationResult,
   ShapResult,
@@ -25,7 +25,7 @@ export async function startTuning(
   body: { modelId: string; nTrials: number; metric: string; timeoutSeconds?: number },
   signal?: AbortSignal
 ): Promise<Response> {
-  const response = await fetch(`${getApiBaseUrl()}/experiments/${projectId}/tune`, {
+  const response = await apiFetch(`/experiments/${projectId}/tune`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -61,7 +61,7 @@ export async function fetchInsights(
   projectId: string,
   body: { type: string; context: Record<string, unknown> }
 ): Promise<Response> {
-  const response = await fetch(`${getApiBaseUrl()}/experiments/${projectId}/insights`, {
+  const response = await apiFetch(`/experiments/${projectId}/insights`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)

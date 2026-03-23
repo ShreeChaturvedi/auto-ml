@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAuthStore } from '@/stores/authStore';
 import { downloadDocument, uploadDocument } from '../documents';
+import { getRequestHeader } from './testUtils';
 
 describe('downloadDocument', () => {
   beforeEach(() => {
@@ -21,9 +22,7 @@ describe('downloadDocument', () => {
 
     expect(fetch).toHaveBeenCalledOnce();
     const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(init.headers).toEqual(
-      expect.objectContaining({ Authorization: 'Bearer test-access-token' })
-    );
+    expect(getRequestHeader(init, 'Authorization')).toBe('Bearer test-access-token');
   });
 
   it('returns a Blob on success', async () => {
@@ -89,8 +88,6 @@ describe('uploadDocument', () => {
 
     expect(fetch).toHaveBeenCalledOnce();
     const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(init.headers).toEqual(
-      expect.objectContaining({ Authorization: 'Bearer test-access-token' })
-    );
+    expect(getRequestHeader(init, 'Authorization')).toBe('Bearer test-access-token');
   });
 });

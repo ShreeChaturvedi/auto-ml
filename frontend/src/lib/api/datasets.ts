@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiFetch, apiRequest } from './client';
 import type { ColumnDataType, EdaSummary } from '@/types/file';
 
 export interface UploadDatasetResponse {
@@ -126,8 +126,7 @@ export async function deleteDataset(datasetId: string) {
  * Download raw dataset file content
  */
 export async function downloadDataset(datasetId: string): Promise<ArrayBuffer> {
-  const BASE_URL = (import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api').replace(/\/$/, '');
-  const response = await fetch(`${BASE_URL}/datasets/${datasetId}/download`);
+  const response = await apiFetch(`/datasets/${datasetId}/download`);
 
   if (!response.ok) {
     throw new Error(`Failed to download dataset: ${response.statusText}`);

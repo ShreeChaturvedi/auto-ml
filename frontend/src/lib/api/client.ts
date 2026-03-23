@@ -176,7 +176,24 @@ function extractApiErrorMessage(payload: unknown): string | null {
   return null;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function applyAuthSideEffects(response: Response): Promise<void> {
+  // Unverified email: clear session so the user is redirected to login
+  if (response.status === 403) {
+    const cloned = response.clone();
+    try {
+      const body = await cloned.json() as { error?: string };
+      if (body?.error === 'Email not verified') {
+        const store = useAuthStore.getState();
+        store.clearAuth();
+        store.setError('Please verify your email address before continuing.');
+      }
+    } catch {
+      // not JSON — ignore and let caller handle the response normally
+    }
+  }
+}
+
+export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const method = options.method ?? 'GET';
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);
@@ -222,28 +239,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     response = await fetch(url, { ...requestInit, headers });
   }
 
-  // Unverified email: clear session so the user is redirected to login
-  if (response.status === 403) {
-    const cloned = response.clone();
-    try {
-      const body = await cloned.json() as { error?: string };
-      if (body?.error === 'Email not verified') {
-        const store = useAuthStore.getState();
-        store.clearAuth();
-        store.setError('Please verify your email address before continuing.');
-      }
-    } catch { /* not JSON — fall through to normal error handling */ }
-  }
+  await applyAuthSideEffects(response);
+
+  return response;
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method ?? 'GET';
+  const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const response = await apiFetch(path, options);
 
   return parseResponse<T>(response, options, method, url);
 }
 
 export function getApiBaseUrl() {
   return BASE_URL;
-}
-
-/** Build an auth headers object for raw fetch calls that bypass apiRequest. */
-export function getAuthHeaders(): Record<string, string> {
-  const { accessToken } = useAuthStore.getState();
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }

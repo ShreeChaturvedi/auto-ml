@@ -1,4 +1,4 @@
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 import { readNdjsonStream } from './streamReader';
 import type { EdaSummary } from '@/types/file';
 
@@ -183,7 +183,7 @@ export async function streamNlQuery(
   onEvent: (event: NlQueryStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  const response = await fetch(`${getApiBaseUrl()}/query/nl/stream`, {
+  const response = await apiFetch('/query/nl/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
     body: JSON.stringify(request),

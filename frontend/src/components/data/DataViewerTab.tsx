@@ -28,6 +28,7 @@ import {
 } from './hooks/useColumnOperations';
 import { useDatasetPreviewPagination } from './hooks/useDatasetPreviewPagination';
 import { useInsightActions } from '@/hooks/useInsightActions';
+import { DATA_FILE_TYPES } from '@/lib/fileUtils';
 
 function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
   return {
@@ -64,6 +65,7 @@ export function DataViewerTab() {
   const fileTabType = useDataStore((state) => state.fileTabType);
   const openFileTabs = useDataStore((state) => state.openFileTabs);
   const setActiveFileTab = useDataStore((state) => state.setActiveFileTab);
+  const openFileTab = useDataStore((state) => state.openFileTab);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const updateColumnType = useDataStore((state) => state.updateColumnType);
 
@@ -97,22 +99,34 @@ export function DataViewerTab() {
     }
   }, [projectId, hydrateFromBackend]);
 
-  // Auto-select first tab if none selected
+  // Auto-select a tab when none is active or the active tab doesn't belong to this project
   const openFileTabsForProject = useMemo(
     () => openFileTabs.filter((tabId) => files.some((file) => file.id === tabId)),
     [openFileTabs, files]
   );
 
+  const firstDataFileId = useMemo(
+    () => files.find((f) => DATA_FILE_TYPES.has(f.type))?.id ?? null,
+    [files]
+  );
+
   useEffect(() => {
-    if (activeFileTabId) return;
+    const belongs = !!activeFile || queryArtifacts.some((a) => a.id === activeFileTabId);
+    if (belongs) return;
+
     if (openFileTabsForProject.length > 0) {
       setActiveFileTab(openFileTabsForProject[0], 'file');
       return;
     }
     if (queryArtifacts.length > 0) {
       setActiveFileTab(queryArtifacts[0].id, 'artifact');
+      return;
     }
-  }, [activeFileTabId, openFileTabsForProject, queryArtifacts, setActiveFileTab]);
+    // Auto-open first data file when no tabs have been opened yet
+    if (firstDataFileId) {
+      openFileTab(firstDataFileId);
+    }
+  }, [activeFile, activeFileTabId, openFileTabsForProject, queryArtifacts, firstDataFileId, setActiveFileTab, openFileTab]);
 
   // Derive table names and columns for SQL autocomplete
   const { tableNames, columnsByTable } = useColumnOperations(files, previews);

@@ -10,10 +10,6 @@ import * as kernelManager from '../kernelManager.js';
 import { resolveDatasetSyncMode, type DatasetSyncMode } from './datasetSyncMode.js';
 import { getDatasetPaths, copyDatasetsToWorkspace } from './datasetWorkspace.js';
 import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
-import {
-  buildPreprocessingExecutionCode,
-  resolvePreprocessingExecutionContext
-} from './preprocessingExecutionContext.js';
 
 export async function getOrEnsureContainer(projectId: string): Promise<Container> {
   const datasetPaths = await getDatasetPaths(projectId);
@@ -84,10 +80,10 @@ export async function executeCell(
     // Copy dataset files to workspace so filenames work directly.
     // In continue mode, preserve edited working files across actions.
     await copyDatasetsToWorkspace(projectId, datasetSyncMode);
-    const executionCode = await buildExecutionCode(projectId, cell.content, cell.metadata);
 
-    // Execute the code via Jupyter kernel, streaming outputs to WebSocket
-    const result = await kernelManager.execute(container, executionCode, env.executionTimeoutMs, (output) => {
+    // Cell content is executed as-is — preprocessing cells already include
+    // visible load/save helper calls in their content, so no wrapping needed.
+    const result = await kernelManager.execute(container, cell.content, env.executionTimeoutMs, (output) => {
       broadcast(cell.notebookId, 'cell:output', { cellId, output });
     });
 
@@ -222,17 +218,4 @@ function getExtension(type: string): string {
     default:
       return 'txt';
   }
-}
-
-async function buildExecutionCode(
-  projectId: string,
-  content: string,
-  metadata: unknown
-): Promise<string> {
-  const preprocessingContext = await resolvePreprocessingExecutionContext(projectId, metadata);
-  if (!preprocessingContext) {
-    return content;
-  }
-
-  return buildPreprocessingExecutionCode(preprocessingContext, content);
 }

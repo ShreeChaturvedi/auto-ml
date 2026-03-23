@@ -58,26 +58,29 @@ export async function resolvePreprocessingExecutionContext(
 }
 
 /**
- * Build the execution code for a preprocessing cell.
+ * Build visible cell content that includes dataset load/save calls.
  *
- * The generated code calls kernel-level helpers injected by KERNEL_INIT_CODE
- * (load_preprocessing_dataset / save_preprocessing_dataset), so the code that
- * runs in the kernel matches what the user can see and debug.
+ * The returned string is written as the cell's content so the user sees
+ * exactly what runs in the kernel — no invisible wrapping at execution time.
+ * The helpers (load_preprocessing_dataset / save_preprocessing_dataset) are
+ * injected into the kernel via KERNEL_INIT_CODE in kernelManager.ts.
  */
-export function buildPreprocessingExecutionCode(
-  context: PreprocessingExecutionContext,
-  cellCode: string
-): string {
-  const { filename, datasetId, fileType, dataframeName } = context;
-  const fn = JSON.stringify(filename);
-  const ds = JSON.stringify(datasetId);
-  const ft = JSON.stringify(fileType);
-  const df = JSON.stringify(dataframeName);
+export function buildPreprocessingCellContent(opts: {
+  filename: string;
+  datasetId: string;
+  fileType: DatasetFileType;
+  dataframeName: string;
+  userCode: string;
+}): string {
+  const fn = JSON.stringify(opts.filename);
+  const ds = JSON.stringify(opts.datasetId);
+  const ft = JSON.stringify(opts.fileType);
+  const df = JSON.stringify(opts.dataframeName);
 
   return [
-    `${dataframeName} = load_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`,
+    `${opts.dataframeName} = load_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`,
     '',
-    cellCode.trim(),
+    opts.userCode.trim(),
     '',
     `save_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`
   ].join('\n');

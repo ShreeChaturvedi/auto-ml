@@ -220,7 +220,7 @@ export async function invokeModelNode(
   const stageConfig = resolveCurrentStageConfig(state, config);
 
   if (stageConfig?.mode === 'deterministic' && stageConfig.deterministicAction) {
-    const toolCalls = stageConfig.deterministicAction(state);
+    const toolCalls = await stageConfig.deterministicAction(state);
     if (toolCalls.length) {
       return {
         pendingToolCalls: toolCalls,

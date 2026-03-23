@@ -6,11 +6,12 @@ import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { EvaluationResult, ShapResult } from '../types/experiments.js';
 
 // Mock fs/promises at the module level
-const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis } = vi.hoisted(() => ({
+const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockListModels } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
   mockRunTuningStudy: vi.fn(),
   mockCreateLlmClient: vi.fn(),
   mockRunErrorAnalysis: vi.fn(),
+  mockListModels: vi.fn(),
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -27,6 +28,11 @@ vi.mock('../services/llm/llmClient.js', () => ({
 
 vi.mock('../services/errorAttributionService.js', () => ({
   runErrorAnalysis: mockRunErrorAnalysis,
+}));
+
+vi.mock('../services/modelTraining.js', () => ({
+  getModelById: vi.fn(),
+  listModels: mockListModels,
 }));
 
 import { createExperimentsRouter } from './experiments.js';
@@ -145,12 +151,97 @@ describeRouteSuite('experiments routes', () => {
     expect(response.body.error).toContain('nTrials');
   });
 
-  it('POST /experiments/:projectId/compare returns 501', async () => {
+  it('POST /experiments/:projectId/compare returns 400 without modelIds', async () => {
     const app = createTestApp();
-    const response = await request(app).post('/api/experiments/project-1/compare');
+    const response = await request(app).post('/api/experiments/project-1/compare').send({});
 
-    expect(response.status).toBe(501);
-    expect(response.body.error).toBe('Not implemented');
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('modelIds');
+  });
+
+  it('POST /experiments/:projectId/compare returns 400 with only 1 model', async () => {
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/compare')
+      .send({ modelIds: ['model-1'] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('modelIds');
+  });
+
+  it('POST /experiments/:projectId/compare returns 400 with more than 5 models', async () => {
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/compare')
+      .send({ modelIds: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('modelIds');
+  });
+
+  it('POST /experiments/:projectId/compare returns ComparisonResult for 2 models', async () => {
+    const mockModels = [
+      { modelId: 'model-a', projectId: 'project-1', name: 'RF', metrics: { accuracy: 0.92, f1: 0.90 } },
+      { modelId: 'model-b', projectId: 'project-1', name: 'XGB', metrics: { accuracy: 0.95, f1: 0.93 } },
+    ];
+    mockListModels.mockResolvedValueOnce(mockModels);
+
+    // Mock evaluation reads -- both fail (no eval data)
+    mockReadFile.mockRejectedValue(new Error('ENOENT'));
+
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/compare')
+      .send({ modelIds: ['model-a', 'model-b'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.models).toHaveLength(2);
+    expect(response.body.models[0].modelId).toBe('model-a');
+    expect(response.body.models[1].modelId).toBe('model-b');
+    expect(response.body.deltas).toHaveLength(2);
+
+    const accDelta = response.body.deltas.find((d: { metric: string }) => d.metric === 'accuracy');
+    expect(accDelta.delta).toBeCloseTo(0.03);
+    expect(accDelta.values).toEqual([0.92, 0.95]);
+  });
+
+  it('POST /experiments/:projectId/compare includes p-values when evaluation data available', async () => {
+    const mockModels = [
+      { modelId: 'model-a', projectId: 'project-1', name: 'RF', metrics: { accuracy: 0.80 } },
+      { modelId: 'model-b', projectId: 'project-1', name: 'XGB', metrics: { accuracy: 0.95 } },
+    ];
+    mockListModels.mockResolvedValueOnce(mockModels);
+
+    const evalA = { ...sampleEvaluation, cross_validation: { scores: [0.78, 0.80, 0.82, 0.79, 0.81], mean: 0.80, std: 0.01, scoring: 'accuracy' } };
+    const evalB = { ...sampleEvaluation, cross_validation: { scores: [0.94, 0.95, 0.96, 0.95, 0.95], mean: 0.95, std: 0.007, scoring: 'accuracy' } };
+
+    // readFile is called for model-a and model-b evaluation files
+    mockReadFile
+      .mockResolvedValueOnce(JSON.stringify(evalA))
+      .mockResolvedValueOnce(JSON.stringify(evalB));
+
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/compare')
+      .send({ modelIds: ['model-a', 'model-b'] });
+
+    expect(response.status).toBe(200);
+    const accDelta = response.body.deltas.find((d: { metric: string }) => d.metric === 'accuracy');
+    expect(accDelta.pValue).toBeDefined();
+    expect(typeof accDelta.pValue).toBe('number');
+    expect(accDelta.significant).toBe(true);
+  });
+
+  it('POST /experiments/:projectId/compare returns 404 when models not found', async () => {
+    mockListModels.mockResolvedValueOnce([]);
+
+    const app = createTestApp();
+    const response = await request(app)
+      .post('/api/experiments/project-1/compare')
+      .send({ modelIds: ['model-a', 'model-b'] });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toContain('at least 2');
   });
 
   it('POST /experiments/:projectId/insights with type=banner returns NDJSON stream', async () => {

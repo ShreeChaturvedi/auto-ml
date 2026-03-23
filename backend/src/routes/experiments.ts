@@ -8,7 +8,10 @@ import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
 import { createLlmClient } from '../services/llm/llmClient.js';
-import { getModelById } from '../services/modelTraining.js';
+import { getModelById, listModels } from '../services/modelTraining.js';
+import { createNlFilterNormalizer, NlFilterResponseSchema } from '../services/nlFilter/schema.js';
+import { buildNlFilterContext, buildNlFilterPrompt } from '../services/nlFilter/service.js';
+import { requestStructuredJson } from '../services/nlToSql/structuredRequest.js';
 import { runTuningStudy } from '../services/tuningService.js';
 import type { AuthRequest } from '../types/auth.js';
 
@@ -25,8 +28,6 @@ const INSIGHT_SYSTEM_PROMPTS: Record<string, string> = {
     'Compare these models. Identify the winner, explain key tradeoffs, and recommend which to deploy. Keep it under 5 sentences. Only reference values from the provided data.',
   error_narrative:
     'Analyze the error patterns in this model. Explain what types of samples are hardest to predict and suggest improvements. Keep it under 4 sentences. Only reference values from the provided data.',
-  filter:
-    'Parse the user\'s natural language filter into structured predicates. Return a JSON object with key \'predicates\' containing an array of objects with \'field\', \'operator\', and \'value\'. Valid fields: \'metrics.accuracy\', \'metrics.f1\', \'metrics.r2\', \'algorithm\', \'taskType\'. Valid operators: \'gt\', \'lt\', \'eq\', \'gte\', \'lte\', \'contains\'. Return ONLY the JSON, no explanation.',
 };
 
 const VALID_INSIGHT_TYPES = new Set(Object.keys(INSIGHT_SYSTEM_PROMPTS));
@@ -161,6 +162,47 @@ export function createExperimentsRouter(): Router {
     res.status(501).json({ error: 'Not implemented' });
   });
 
+  // POST /experiments/:projectId/nl-filter — NL → structured filter predicates
+  router.post('/:projectId/nl-filter', async (req: AuthRequest, res: Response) => {
+    const { projectId } = req.params;
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+    }
+
+    const body = req.body as { query?: string };
+    if (!body.query || typeof body.query !== 'string' || !body.query.trim()) {
+      res.status(400).json({ error: 'query is required.' });
+      return;
+    }
+
+    try {
+      const models = await listModels(projectId);
+      const ctx = buildNlFilterContext(models);
+      const systemPrompt = buildNlFilterPrompt(ctx);
+      const normalizer = createNlFilterNormalizer(ctx);
+
+      const result = await requestStructuredJson({
+        client: createLlmClient(),
+        systemPrompt,
+        userPrompt: body.query.trim(),
+        schema: NlFilterResponseSchema,
+        label: 'nl-filter',
+        normalize: normalizer,
+        maxOutputTokens: 300,
+      });
+
+      res.json({ predicates: result.predicates });
+    } catch {
+      // Graceful degradation — never 500 on LLM/validation failure
+      res.json({ predicates: [] });
+    }
+  });
+
   // POST /experiments/:projectId/insights — streaming LLM insights (NDJSON)
   router.post('/:projectId/insights', async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
@@ -205,7 +247,6 @@ export function createExperimentsRouter(): Router {
           ],
           temperature: 0.3,
           maxOutputTokens: 1024,
-          responseMimeType: body.type === 'filter' ? 'application/json' : undefined,
         },
         {
           onToken(token: string) {
@@ -231,9 +272,9 @@ export function createExperimentsRouter(): Router {
 
   router.get('/:modelId/error-analysis', async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
+    const model = await getModelById(modelId);
 
     if (req.user) {
-      const model = await getModelById(modelId);
       if (model?.projectId) {
         const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
         if (!project) {
@@ -241,6 +282,16 @@ export function createExperimentsRouter(): Router {
           return;
         }
       }
+    }
+
+    // Check evaluation status before attempting error analysis
+    if (model?.evaluationStatus === 'pending' || model?.evaluationStatus === 'computing') {
+      res.status(404).json({ error: 'Evaluation still in progress' });
+      return;
+    }
+    if (model?.evaluationStatus === 'failed') {
+      res.status(404).json({ error: 'Evaluation failed; error analysis unavailable' });
+      return;
     }
 
     const filePath = join(env.modelStorageDir, modelId, 'error_analysis.json');

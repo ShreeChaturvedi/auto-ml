@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
 import type { ErrorAnalysisResult, EvaluationResult } from '@/types/experiments';
@@ -101,21 +100,17 @@ function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; error
   if (failed && !text) return null;
 
   return (
-    <Card>
-      <CardHeader className="pb-3 pt-4 px-4">
-        <CardTitle className="text-sm font-semibold tracking-tight">Error Narrative</CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-4">
-        {isLoading && !text ? (
-          <SkeletonBlock height={60} />
-        ) : (
-          <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
-            {text}
-            {isLoading && <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm" />}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border border-border/10 p-4">
+      <p className="text-xs font-medium text-muted-foreground mb-2">Error Narrative</p>
+      {isLoading && !text ? (
+        <SkeletonBlock height={60} />
+      ) : (
+        <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+          {text}
+          {isLoading && <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm" />}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -151,45 +146,37 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
 
   return (
     <div className="grid grid-cols-1 gap-5 p-5">
-      <Card>
-        <CardHeader className="pb-3 pt-4 px-4">
-          <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
-            <TreePine className="h-4 w-4" />
-            Error Tree
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Decision tree trained on prediction errors to identify which feature combinations lead to mistakes.
-          </p>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          {errorAnalysis.error_tree ? (
-            <ErrorTreeNodeCard node={errorAnalysis.error_tree} />
-          ) : (
-            <p className="py-6 text-center text-sm text-muted-foreground">Error tree not available.</p>
-          )}
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border border-border/10 p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <TreePine className="h-4 w-4 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground">Error Tree</p>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Decision tree trained on prediction errors to identify which feature combinations lead to mistakes.
+        </p>
+        {errorAnalysis.error_tree ? (
+          <ErrorTreeNodeCard node={errorAnalysis.error_tree} />
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">Error tree not available.</p>
+        )}
+      </div>
 
       {isClassification && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">
-              Misclassifications
-              {errorAnalysis.misclassifications && (
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  (top {errorAnalysis.misclassifications.length} by confidence)
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {errorAnalysis.misclassifications && errorAnalysis.misclassifications.length > 0 ? (
-              <MisclassificationTable data={errorAnalysis.misclassifications} />
-            ) : (
-              <p className="py-6 text-center text-sm text-muted-foreground">Misclassification data not available.</p>
+        <div className="rounded-lg border border-border/10 p-4">
+          <p className="text-xs font-medium text-muted-foreground mb-2">
+            Misclassifications
+            {errorAnalysis.misclassifications && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                (top {errorAnalysis.misclassifications.length} by confidence)
+              </span>
             )}
-          </CardContent>
-        </Card>
+          </p>
+          {errorAnalysis.misclassifications && errorAnalysis.misclassifications.length > 0 ? (
+            <MisclassificationTable data={errorAnalysis.misclassifications} />
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">Misclassification data not available.</p>
+          )}
+        </div>
       )}
 
       {projectId && (

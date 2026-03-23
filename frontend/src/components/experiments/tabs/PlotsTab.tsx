@@ -1,5 +1,4 @@
 import type { EvaluationResult } from '@/types/experiments';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfusionMatrixChart } from '../charts/ConfusionMatrixChart';
 import { RocCurveChart } from '../charts/RocCurveChart';
 import { PrCurveChart } from '../charts/PrCurveChart';
@@ -18,96 +17,99 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
   const isRegression = evaluation.taskType === 'regression';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 p-5">
-      {/* Classification-specific charts */}
-      {isClassification && evaluation.confusion_matrix && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Confusion Matrix</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ConfusionMatrixChart data={evaluation.confusion_matrix} />
-          </CardContent>
-        </Card>
+    <div className="space-y-8 p-5">
+      {/* Classification sections */}
+      {isClassification && (
+        <>
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">Performance</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {evaluation.confusion_matrix && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Confusion Matrix</p>
+                  <ConfusionMatrixChart data={evaluation.confusion_matrix} />
+                </div>
+              )}
+              {evaluation.roc_curves && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">ROC Curve</p>
+                  <RocCurveChart data={evaluation.roc_curves} />
+                </div>
+              )}
+              {evaluation.precision_recall_curves && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Precision-Recall Curve</p>
+                  <PrCurveChart data={evaluation.precision_recall_curves} />
+                </div>
+              )}
+              {evaluation.calibration_curve && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Calibration Curve</p>
+                  <CalibrationChart data={evaluation.calibration_curve} />
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">Learning</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {evaluation.learning_curve && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Learning Curve</p>
+                  <LearningCurveChart data={evaluation.learning_curve} />
+                </div>
+              )}
+              {evaluation.cross_validation && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Cross-Validation Scores</p>
+                  <CvBoxplot data={evaluation.cross_validation} />
+                </div>
+              )}
+            </div>
+          </section>
+        </>
       )}
 
-      {isClassification && evaluation.roc_curves && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">ROC Curve</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <RocCurveChart data={evaluation.roc_curves} />
-          </CardContent>
-        </Card>
-      )}
+      {/* Regression sections */}
+      {isRegression && (
+        <>
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">Error Analysis</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {evaluation.residuals && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Residuals vs Predicted</p>
+                  <ResidualsChart data={evaluation.residuals} />
+                </div>
+              )}
+              {evaluation.residual_histogram && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Residual Distribution</p>
+                  <ResidualHistogramChart data={evaluation.residual_histogram} />
+                </div>
+              )}
+            </div>
+          </section>
 
-      {isClassification && evaluation.precision_recall_curves && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Precision-Recall Curve</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <PrCurveChart data={evaluation.precision_recall_curves} />
-          </CardContent>
-        </Card>
-      )}
-
-      {isClassification && evaluation.calibration_curve && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Calibration Curve</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <CalibrationChart data={evaluation.calibration_curve} />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Regression-specific charts */}
-      {isRegression && evaluation.residuals && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Residuals vs Predicted</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ResidualsChart data={evaluation.residuals} />
-          </CardContent>
-        </Card>
-      )}
-
-      {isRegression && evaluation.residual_histogram && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Residual Distribution</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ResidualHistogramChart data={evaluation.residual_histogram} />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Shared charts (classification + regression) */}
-      {evaluation.learning_curve && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Learning Curve</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <LearningCurveChart data={evaluation.learning_curve} />
-          </CardContent>
-        </Card>
-      )}
-
-      {evaluation.cross_validation && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Cross-Validation Scores</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <CvBoxplot data={evaluation.cross_validation} />
-          </CardContent>
-        </Card>
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">Learning</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {evaluation.learning_curve && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Learning Curve</p>
+                  <LearningCurveChart data={evaluation.learning_curve} />
+                </div>
+              )}
+              {evaluation.cross_validation && (
+                <div className="rounded-lg border border-border/10 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Cross-Validation Scores</p>
+                  <CvBoxplot data={evaluation.cross_validation} />
+                </div>
+              )}
+            </div>
+          </section>
+        </>
       )}
     </div>
   );

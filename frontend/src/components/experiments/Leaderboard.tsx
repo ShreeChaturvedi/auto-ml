@@ -1,9 +1,8 @@
 import { useMemo, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { CircleStar, ArrowUp, ArrowDown, GitCompareArrows, X } from 'lucide-react';
+import { CircleStar, ChevronRight, GitCompareArrows, X, ListFilter } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
@@ -11,6 +10,8 @@ import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn } from '@/lib/utils';
+import { SortHeader } from '@/components/ui/SortHeader';
+import { LOWER_IS_BETTER } from './modelIcons';
 import { NlFilterBar } from './NlFilterBar';
 import { formatMetric, formatOperator, filterByPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
 
@@ -154,6 +155,22 @@ export function Leaderboard() {
     return sorted;
   }, [filteredModels, sortField, sortDirection]);
 
+  const metricExtremes = useMemo(() => {
+    const result: Record<string, { best: number; worst: number }> = {};
+    for (const [, key] of metricCols) {
+      const values = sortedModels
+        .map((m) => m.metrics[key])
+        .filter((v): v is number => v != null && Number.isFinite(v));
+      if (values.length < 2) continue;
+      const lower = LOWER_IS_BETTER.has(key);
+      result[key] = {
+        best: lower ? Math.min(...values) : Math.max(...values),
+        worst: lower ? Math.max(...values) : Math.min(...values),
+      };
+    }
+    return result;
+  }, [sortedModels, metricCols]);
+
   const handleSort = useCallback(
     (field: string) => {
       if (sortField === field) {
@@ -189,30 +206,38 @@ export function Leaderboard() {
 
       {/* Active filter predicates */}
       {activePredicates.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 shrink-0">
+          <ListFilter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           {activePredicates.map((pred, i) => (
-            <Badge
+            <div
               key={`${pred.field}-${pred.operator}-${pred.value}-${i}`}
-              variant="secondary"
-              className="text-[10px] gap-1 pl-2 pr-1 py-0.5"
+              className="group/chip relative isolate inline-flex items-center rounded-md border border-border/60 bg-muted/30 text-muted-foreground overflow-hidden transition-colors hover:bg-muted/60 hover:text-foreground hover:border-border"
             >
-              <span>{pred.field} {formatOperator(pred.operator)} {pred.value}</span>
+              <span
+                className={cn(
+                  'px-2.5 py-1 text-xs whitespace-nowrap select-none',
+                  'group-hover/chip:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]',
+                  'group-hover/chip:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]',
+                )}
+              >
+                {pred.field} {formatOperator(pred.operator)} {pred.value}
+              </span>
               <button
                 type="button"
-                className="rounded-sm hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                className="absolute inset-y-0 right-0 flex items-center justify-center w-7 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/chip:opacity-100 group-hover/chip:pointer-events-auto text-muted-foreground hover:text-foreground"
                 onClick={() => removePredicate(i)}
                 aria-label={`Remove filter: ${pred.field} ${formatOperator(pred.operator)} ${pred.value}`}
               >
-                <X className="h-2.5 w-2.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
-            </Badge>
+            </div>
           ))}
           <button
             type="button"
-            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+            className="ml-1 px-2 py-1 text-xs text-muted-foreground rounded-md transition-colors hover:bg-muted/50 hover:text-foreground"
             onClick={clearFilter}
           >
-            Clear All
+            Clear all
           </button>
         </div>
       )}
@@ -275,31 +300,15 @@ export function Leaderboard() {
       {!isEmpty && (
         <ScrollArea className="flex-1">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-background z-10 border-b">
+            <thead className="sticky top-0 bg-muted/40 backdrop-blur-sm z-10 border-b">
               <tr>
-                {/* Checkbox column */}
-                <th className="w-8 py-2.5 px-3" />
-                <th
-                  className="py-2.5 px-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
-                  onClick={() => handleSort('name')}
-                >
-                  Name {sortField === 'name' && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
-                </th>
-                <th
-                  className="py-2.5 px-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
-                  onClick={() => handleSort('algorithm')}
-                >
-                  Algorithm {sortField === 'algorithm' && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
-                </th>
+                <th className="w-8" />
+                <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
+                <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
                 {metricCols.map(([label, key]) => (
-                  <th
-                    key={key}
-                    className="py-2.5 px-3 text-right text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
-                    onClick={() => handleSort(key)}
-                  >
-                    {label} {sortField === key && (sortDirection === 'asc' ? <ArrowUp className="inline h-3 w-3 ml-0.5" /> : <ArrowDown className="inline h-3 w-3 ml-0.5" />)}
-                  </th>
+                  <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" />
                 ))}
+                <th className="w-8" />
               </tr>
             </thead>
             <tbody>
@@ -313,7 +322,7 @@ export function Leaderboard() {
                   <tr
                     key={model.modelId}
                     className={cn(
-                      'border-b border-border/20 transition-colors cursor-pointer hover:bg-muted/50',
+                      'transition-colors cursor-pointer hover:bg-muted/30 group',
                       isSelected && 'bg-muted/70 model-row-selected',
                       isChampion && 'champion-row',
                       isCompared && 'ring-1 ring-inset ring-primary/20'
@@ -321,14 +330,14 @@ export function Leaderboard() {
                     onClick={() => selectModel(model.modelId)}
                   >
                     {/* Comparison checkbox */}
-                    <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={isCompared}
                         onCheckedChange={() => toggleComparison(model.modelId)}
                         className="h-3.5 w-3.5"
                       />
                     </td>
-                    <td className="py-3 px-3 text-left font-semibold truncate max-w-[180px]">
+                    <td className="py-2.5 px-3 text-left font-semibold truncate max-w-[180px]">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="truncate block">
@@ -345,7 +354,7 @@ export function Leaderboard() {
                         </TooltipContent>
                       </Tooltip>
                     </td>
-                    <td className="py-3 px-3 text-left text-muted-foreground truncate max-w-[130px]">
+                    <td className="py-2.5 px-3 text-left text-muted-foreground truncate max-w-[130px]">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="truncate block">{model.algorithm}</span>
@@ -355,11 +364,27 @@ export function Leaderboard() {
                         </TooltipContent>
                       </Tooltip>
                     </td>
-                    {metricCols.map(([, key]) => (
-                      <td key={key} className="py-3 px-3 text-right tabular-nums font-medium metric-counter">
-                        {formatMetric(model.metrics[key])}
-                      </td>
-                    ))}
+                    {metricCols.map(([, key]) => {
+                      const val = model.metrics[key];
+                      const extremes = metricExtremes[key];
+                      const isBest = extremes && val === extremes.best;
+                      const isWorst = extremes && val === extremes.worst;
+                      return (
+                        <td
+                          key={key}
+                          className={cn(
+                            'py-2.5 px-3 text-right tabular-nums font-medium',
+                            isBest && 'text-emerald-500 dark:text-emerald-400 font-semibold',
+                            isWorst && 'text-red-500/70 dark:text-red-400/70',
+                          )}
+                        >
+                          {formatMetric(val)}
+                        </td>
+                      );
+                    })}
+                    <td className="py-2.5 px-1 text-right">
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 transition-opacity inline-block" />
+                    </td>
                   </tr>
                 );
               })}

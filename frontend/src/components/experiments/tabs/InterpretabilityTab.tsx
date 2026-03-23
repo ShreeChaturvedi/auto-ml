@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { EvaluationResult } from '@/types/experiments';
 import { ShapBarChart } from '../charts/ShapBarChart';
@@ -40,37 +39,30 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   // If SHAP data is loaded and present
   if (shapData) {
     return (
-      <div className="grid grid-cols-1 gap-5 p-5">
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Global Feature Importance (SHAP)</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ShapBarChart
-              featureNames={shapData.feature_names}
-              importances={shapData.mean_abs_values}
-              topN={15}
-            />
-          </CardContent>
-        </Card>
+      <div className="space-y-8 p-5">
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">SHAP Analysis</h3>
+          <div className="space-y-6">
+            <div className="rounded-lg border border-border/10 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Global Feature Importance (SHAP)</p>
+              <ShapBarChart
+                featureNames={shapData.feature_names}
+                importances={shapData.mean_abs_values}
+                topN={15}
+              />
+            </div>
 
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Beeswarm</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ShapBeeswarmChart shapResult={shapData} topN={15} height={500} />
-          </CardContent>
-        </Card>
+            <div className="rounded-lg border border-border/10 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Beeswarm</p>
+              <ShapBeeswarmChart shapResult={shapData} topN={15} height={500} />
+            </div>
 
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Dependence</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ShapDependenceChart shapResult={shapData} />
-          </CardContent>
-        </Card>
+            <div className="rounded-lg border border-border/10 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Dependence</p>
+              <ShapDependenceChart shapResult={shapData} />
+            </div>
+          </div>
+        </section>
       </div>
     );
   }
@@ -78,40 +70,33 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   // Still loading
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-5 p-5">
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Global Feature Importance (SHAP)</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ChartSkeleton height={400} />
-          </CardContent>
-        </Card>
+      <div className="space-y-8 p-5">
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">SHAP Analysis</h3>
+          <div className="space-y-6">
+            <div className="rounded-lg border border-border/10 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Global Feature Importance (SHAP)</p>
+              <ChartSkeleton height={400} />
+            </div>
 
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Beeswarm</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ChartSkeleton height={500} />
-          </CardContent>
-        </Card>
+            <div className="rounded-lg border border-border/10 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Beeswarm</p>
+              <ChartSkeleton height={500} />
+            </div>
 
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">SHAP Dependence</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ChartSkeleton height={400} />
-          </CardContent>
-        </Card>
+            <div className="rounded-lg border border-border/10 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Dependence</p>
+              <ChartSkeleton height={400} />
+            </div>
+          </div>
+        </section>
       </div>
     );
   }
 
   // SHAP unavailable — show fallback with model-based or permutation importance
   return (
-    <div className="grid grid-cols-1 gap-5 p-5">
+    <div className="space-y-8 p-5">
       <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
         <p className="text-sm text-yellow-700 dark:text-yellow-300">
@@ -121,23 +106,19 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
       </div>
 
       {fallbackImportance && (
-        <Card>
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold tracking-tight">Feature Importance</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ShapBarChart
-              featureNames={fallbackImportance.features}
-              importances={
-                'importances' in fallbackImportance
-                  ? fallbackImportance.importances
-                  : fallbackImportance.importances_mean
-              }
-              topN={15}
-              xLabel="Feature Importance"
-            />
-          </CardContent>
-        </Card>
+        <div className="rounded-lg border border-border/10 p-3">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Feature Importance</p>
+          <ShapBarChart
+            featureNames={fallbackImportance.features}
+            importances={
+              'importances' in fallbackImportance
+                ? fallbackImportance.importances
+                : fallbackImportance.importances_mean
+            }
+            topN={15}
+            xLabel="Feature Importance"
+          />
+        </div>
       )}
     </div>
   );

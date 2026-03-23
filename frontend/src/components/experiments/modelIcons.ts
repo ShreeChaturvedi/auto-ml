@@ -1,4 +1,4 @@
-import { Target, TrendingUp, Layers } from 'lucide-react';
+import { Target, TrendingUp, Layers, Crosshair, ScanSearch, Scale, Ruler, Activity, Sigma } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { ModelTaskType } from '@/types/model';
 
@@ -24,3 +24,23 @@ export const TASK_LABELS: Record<ModelTaskType, string> = {
   regression: 'Regression',
   clustering: 'Clustering',
 };
+
+export const TASK_TEXT_STYLES: Record<ModelTaskType, string> = {
+  classification: 'text-blue-600 dark:text-blue-400',
+  regression: 'text-green-600 dark:text-green-400',
+  clustering: 'text-purple-600 dark:text-purple-400',
+};
+
+export const METRIC_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+  accuracy: Target,
+  precision: Crosshair,
+  recall: ScanSearch,
+  f1: Scale,
+  rmse: Ruler,
+  mse: Sigma,
+  mae: Activity,
+  r2: TrendingUp,
+  silhouette: Layers,
+};
+
+export const LOWER_IS_BETTER = new Set(['rmse', 'mse', 'mae']);

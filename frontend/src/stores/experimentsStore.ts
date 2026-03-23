@@ -25,6 +25,9 @@ interface ExperimentsState {
   insightBanner: { text: string; isLoading: boolean } | null;
   compareNarrative: { text: string; isLoading: boolean } | null;
 
+  // Detail dialog tab persistence (keyed by modelId)
+  activeDetailTab: Record<string, string>;
+
   // Filters
   nlFilterText: string;
   activePredicates: FilterPredicate[];
@@ -43,6 +46,7 @@ interface ExperimentsState {
   setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
   setSort: (field: string, direction: 'asc' | 'desc') => void;
+  setActiveDetailTab: (modelId: string, tab: string) => void;
   purgeModelCache: (modelId: string) => void;
 }
 
@@ -59,6 +63,9 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   // LLM content
   insightBanner: null,
   compareNarrative: null,
+
+  // Detail dialog tab persistence
+  activeDetailTab: {},
 
   // Filters
   nlFilterText: '',
@@ -204,15 +211,24 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     set({ sortField: field, sortDirection: direction });
   },
 
+  setActiveDetailTab: (modelId, tab) => {
+    if (get().activeDetailTab[modelId] === tab) return;
+    set((state) => ({
+      activeDetailTab: { ...state.activeDetailTab, [modelId]: tab }
+    }));
+  },
+
   purgeModelCache: (modelId) => {
     set((state) => {
       const evaluations = { ...state.evaluations };
       const shapData = { ...state.shapData };
       const errorAnalysis = { ...state.errorAnalysis };
+      const activeDetailTab = { ...state.activeDetailTab };
       delete evaluations[modelId];
       delete shapData[modelId];
       delete errorAnalysis[modelId];
-      return { evaluations, shapData, errorAnalysis };
+      delete activeDetailTab[modelId];
+      return { evaluations, shapData, errorAnalysis, activeDetailTab };
     });
   }
 }));

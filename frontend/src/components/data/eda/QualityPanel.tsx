@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
-import { ArrowUp, ArrowDown, ArrowUpDown, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { InsightTicker } from '@/components/ui/insight-ticker';
 import type { InsightTickerItem } from '@/components/ui/insight-ticker';
 import {
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/table';
 import type { EdaSummary, ColumnDataType } from '@/types/file';
 import { cn } from '@/lib/utils';
+import { SortHeader } from '@/components/ui/SortHeader';
 import type { EdaInsight } from './edaInsights';
 import { formatPercentage } from './edaFormatters';
 import { getSeverityLabel, mapEDATypeToColumnType } from './edaConstants';
@@ -54,34 +55,6 @@ type QualityKpi = {
   label: string;
   color?: string;
 };
-
-/* ------------------------------------------------------------------ */
-/*  Sort header (module-level to avoid remount on parent re-render)    */
-/* ------------------------------------------------------------------ */
-
-function SortHeader({
-  field, label, sortField, sortDir, onToggle,
-}: {
-  field: SortField; label: string;
-  sortField: SortField; sortDir: 'asc' | 'desc';
-  onToggle: (field: SortField) => void;
-}) {
-  const active = sortField === field;
-  return (
-    <button
-      type="button"
-      onClick={() => onToggle(field)}
-      className="flex items-center gap-1 hover:text-foreground transition-colors"
-    >
-      {label}
-      {active ? (
-        sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-      ) : (
-        <ArrowUpDown className="h-3 w-3 opacity-50" />
-      )}
-    </button>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -200,19 +173,11 @@ export function QualityPanel({ eda, insights, columnTypes, className }: QualityP
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className={cn(CELL, 'text-xs')}>
-                <SortHeader field="column" label="Column" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
-              </TableHead>
+              <SortHeader field="column" label="Column" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
               <TableHead className={cn(CELL, 'text-xs')}>Type</TableHead>
-              <TableHead className={cn(CELL, 'text-xs')}>
-                <SortHeader field="completeness" label="Completeness" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
-              </TableHead>
-              <TableHead className={cn(CELL, 'text-xs')}>
-                <SortHeader field="missing" label="Missing" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
-              </TableHead>
-              <TableHead className={cn(CELL, 'text-xs')}>
-                <SortHeader field="unique" label="Unique" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
-              </TableHead>
+              <SortHeader field="completeness" label="Completeness" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
+              <SortHeader field="missing" label="Missing" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
+              <SortHeader field="unique" label="Unique" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
             </TableRow>
           </TableHeader>
           <TableBody>

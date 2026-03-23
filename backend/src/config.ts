@@ -83,6 +83,7 @@ export const env = {
   nlSuggestionCachePath: resolveBackendPath(process.env.NL_SUGGESTION_CACHE_PATH ?? 'storage/nlSuggestions/cache.json'),
   documentStorageDir: resolveBackendPath(process.env.DOCUMENT_STORAGE_DIR ?? 'storage/documents/files'),
   datasetMetadataPath: resolveBackendPath(process.env.DATASET_METADATA_PATH ?? 'storage/datasets/metadata.json'),
+  insightsCacheDir: resolveBackendPath(process.env.INSIGHTS_CACHE_DIR ?? 'storage/insights'),
   modelStorageDir: resolveBackendPath(process.env.MODEL_STORAGE_DIR ?? 'storage/models/artifacts'),
   modelMetadataPath: resolveBackendPath(process.env.MODEL_METADATA_PATH ?? 'storage/models/metadata.json'),
   databaseUrl: process.env.DATABASE_URL,

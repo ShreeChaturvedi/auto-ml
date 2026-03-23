@@ -22,8 +22,12 @@ interface ExperimentsState {
   errorAnalysis: Record<string, ErrorAnalysisResult | null>;
 
   // LLM content
-  insightBanner: { text: string; isLoading: boolean } | null;
+  projectInsight: { text: string; isLoading: boolean } | null;
+  insightModelHash: string | null;
   compareNarrative: { text: string; isLoading: boolean } | null;
+
+  // View switching
+  experimentView: 'overview' | 'leaderboard';
 
   // Detail dialog tab persistence (keyed by modelId)
   activeDetailTab: Record<string, string>;
@@ -38,10 +42,11 @@ interface ExperimentsState {
   selectModel: (modelId: string | null) => void;
   toggleComparison: (modelId: string) => void;
   clearComparison: () => void;
+  setExperimentView: (view: 'overview' | 'leaderboard') => void;
   fetchEvaluation: (modelId: string) => Promise<void>;
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
-  fetchInsightBanner: (projectId: string, models: ModelRecord[]) => Promise<void>;
+  fetchProjectInsight: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchCompareNarrative: (projectId: string, modelIds: string[], models: ModelRecord[]) => Promise<void>;
   setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
@@ -61,8 +66,12 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   errorAnalysis: {},
 
   // LLM content
-  insightBanner: null,
+  projectInsight: null,
+  insightModelHash: null,
   compareNarrative: null,
+
+  // View switching
+  experimentView: 'overview',
 
   // Detail dialog tab persistence
   activeDetailTab: {},
@@ -94,6 +103,10 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   clearComparison: () => {
     set({ comparisonModelIds: [] });
+  },
+
+  setExperimentView: (view) => {
+    set({ experimentView: view });
   },
 
   fetchEvaluation: async (modelId) => {
@@ -139,8 +152,13 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     }
   },
 
-  fetchInsightBanner: async (projectId, models) => {
-    set({ insightBanner: { text: '', isLoading: true } });
+  fetchProjectInsight: async (projectId, models) => {
+    // Guard: skip if model set hasn't changed and we already have text
+    const hash = models.map((m) => m.modelId).sort().join(',');
+    const current = get();
+    if (hash === current.insightModelHash && current.projectInsight?.text) return;
+
+    set({ projectInsight: { text: '', isLoading: true }, insightModelHash: hash });
     try {
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'banner',
@@ -157,18 +175,18 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
       });
       await accumulateTokenStream(response, (accumulated) => {
         set((state) => ({
-          insightBanner: state.insightBanner
-            ? { ...state.insightBanner, text: accumulated }
+          projectInsight: state.projectInsight
+            ? { ...state.projectInsight, text: accumulated }
             : null
         }));
       });
       set((state) => ({
-        insightBanner: state.insightBanner
-          ? { ...state.insightBanner, isLoading: false }
+        projectInsight: state.projectInsight
+          ? { ...state.projectInsight, isLoading: false }
           : null
       }));
     } catch {
-      set({ insightBanner: null });
+      set({ projectInsight: null });
     }
   },
 
@@ -206,7 +224,9 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   setNlFilter: (text, predicates) => {
-    set({ nlFilterText: text, activePredicates: predicates });
+    const update: Partial<ExperimentsState> = { nlFilterText: text, activePredicates: predicates };
+    if (predicates.length > 0) update.experimentView = 'leaderboard';
+    set(update);
   },
 
   clearFilter: () => {

@@ -1,8 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { X, Sparkles, GitCompareArrows } from 'lucide-react';
+import { Brain } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
@@ -43,7 +42,7 @@ function CompareNarrativeSection() {
 
   return (
     <div className="flex items-start gap-2.5">
-      <Sparkles className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+      <Brain className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
       <p className="text-sm text-foreground leading-relaxed">
         {compareNarrative.text}
         {compareNarrative.isLoading && (
@@ -56,7 +55,6 @@ function CompareNarrativeSection() {
 
 export function ComparisonView() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
-  const clearComparison = useExperimentsStore((s) => s.clearComparison);
   const evaluations = useExperimentsStore((s) => s.evaluations);
   const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
   const models = useModelStore((s) => s.models);
@@ -81,15 +79,6 @@ export function ComparisonView() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <GitCompareArrows className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm font-semibold">Comparing {comparisonModelIds.length} Models</span>
-        </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearComparison} title="Clear selection">
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
       <ScrollArea className="flex-1">
         <div className="space-y-5 p-5">
           <Card>

@@ -31,8 +31,11 @@ function resetStore() {
     evaluations: {},
     shapData: {},
     errorAnalysis: {},
-    insightBanner: null,
+    projectInsight: null,
+    insightModelHash: null,
     compareNarrative: null,
+    experimentView: 'overview',
+    activeDetailTab: {},
     nlFilterText: '',
     activePredicates: [],
     sortField: 'createdAt',
@@ -199,5 +202,26 @@ describe('experimentsStore', () => {
     await useExperimentsStore.getState().fetchEvaluation('model-1');
     expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
     expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+  });
+
+  it('setExperimentView() updates experimentView', () => {
+    expect(useExperimentsStore.getState().experimentView).toBe('overview');
+    useExperimentsStore.getState().setExperimentView('leaderboard');
+    expect(useExperimentsStore.getState().experimentView).toBe('leaderboard');
+  });
+
+  it('setNlFilter() auto-switches to leaderboard when predicates are non-empty', () => {
+    expect(useExperimentsStore.getState().experimentView).toBe('overview');
+    useExperimentsStore.getState().setNlFilter('accuracy > 0.9', [
+      { field: 'accuracy', operator: 'gt', value: '0.9' }
+    ]);
+    expect(useExperimentsStore.getState().experimentView).toBe('leaderboard');
+    expect(useExperimentsStore.getState().activePredicates).toHaveLength(1);
+  });
+
+  it('setNlFilter() does not switch view when predicates are empty', () => {
+    useExperimentsStore.getState().setExperimentView('overview');
+    useExperimentsStore.getState().setNlFilter('', []);
+    expect(useExperimentsStore.getState().experimentView).toBe('overview');
   });
 });

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Trophy, Layers, Tag, Clock, ArrowRight, AlertTriangle, LayoutDashboard } from 'lucide-react';
+import { Trophy, Layers, Tag, Clock, ArrowRight, AlertTriangle, Brain, RefreshCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -82,6 +82,76 @@ function RecommendationCard({ rec, onNavigate }: { rec: CrossPhaseRecommendation
   );
 }
 
+/* ── LLM Summary Card ── */
+
+function ProjectInsightCard() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const projectInsight = useExperimentsStore((s) => s.projectInsight);
+  const fetchProjectInsight = useExperimentsStore((s) => s.fetchProjectInsight);
+  const models = useModelStore((s) => s.models);
+
+  const handleRegenerate = () => {
+    // Clear hash to force re-fetch
+    useExperimentsStore.setState({ projectInsight: null, insightModelHash: null });
+    if (projectId) void fetchProjectInsight(projectId, models);
+  };
+
+  // Nothing to show
+  if (!projectInsight) return null;
+
+  // Loading skeleton (no text yet)
+  if (projectInsight.isLoading && !projectInsight.text) {
+    return (
+      <Card>
+        <CardContent className="pt-4 pb-4 px-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI Summary</span>
+          </div>
+          <div className="space-y-2">
+            <div className="h-4 w-full animate-pulse rounded bg-muted/60" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-muted/60" />
+            <div className="h-4 w-5/6 animate-pulse rounded bg-muted/60" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // No text produced
+  if (!projectInsight.text) return null;
+
+  return (
+    <Card>
+      <CardContent className="pt-4 pb-4 px-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI Summary</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[11px] px-2 gap-1 text-muted-foreground"
+            onClick={handleRegenerate}
+          >
+            <RefreshCcw className="h-3 w-3" />
+            Regenerate
+          </Button>
+        </div>
+        <p className="text-sm text-foreground leading-relaxed">
+          {projectInsight.text}
+          {projectInsight.isLoading && (
+            <span className="inline-block ml-1 h-3 w-1.5 animate-pulse bg-foreground/50 rounded-sm" />
+          )}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Main OverviewDashboard ── */
+
 export function OverviewDashboard() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -110,55 +180,35 @@ export function OverviewDashboard() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm font-semibold">Overview</span>
+    <ScrollArea className="flex-1">
+      <div className="space-y-5 p-5">
+        <div className="flex flex-wrap gap-3">
+          {bestModel && <KpiCard icon={Trophy} label={`Best ${bestModel.metricLabel}`} value={formatMetric(bestModel.value)} />}
+          <KpiCard icon={Layers} label="Total Models" value={String(models.length)} />
+          <KpiCard icon={Tag} label="Task Type" value={taskTypeLabel} />
+          {avgTrainingTime != null && <KpiCard icon={Clock} label="Avg Training Time" value={formatDuration(avgTrainingTime)} />}
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          {models.length} model{models.length !== 1 ? 's' : ''} trained
-        </span>
+
+        <ProjectInsightCard />
+
+        <Card>
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold tracking-tight">Model Comparison</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ModelsParallelCoords models={models} />
+          </CardContent>
+        </Card>
+
+        {recommendations.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground px-1">Cross-Phase Recommendations</h3>
+            {recommendations.map((rec, i) => (
+              <RecommendationCard key={`${rec.title}-${i}`} rec={rec} onNavigate={handleNavigateToPhase} />
+            ))}
+          </div>
+        )}
       </div>
-      {models.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center space-y-2">
-            <Trophy className="mx-auto h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              No models trained yet. Train your first model to see the overview dashboard.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <ScrollArea className="flex-1">
-          <div className="space-y-5 p-5">
-            <div className="flex flex-wrap gap-3">
-              {bestModel && <KpiCard icon={Trophy} label={`Best ${bestModel.metricLabel}`} value={formatMetric(bestModel.value)} />}
-              <KpiCard icon={Layers} label="Total Models" value={String(models.length)} />
-              <KpiCard icon={Tag} label="Task Type" value={taskTypeLabel} />
-              {avgTrainingTime != null && <KpiCard icon={Clock} label="Avg Training Time" value={formatDuration(avgTrainingTime)} />}
-            </div>
-
-            <Card>
-              <CardHeader className="pb-3 pt-4 px-4">
-                <CardTitle className="text-sm font-semibold tracking-tight">Model Comparison</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ModelsParallelCoords models={models} />
-              </CardContent>
-            </Card>
-
-            {recommendations.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground px-1">Cross-Phase Recommendations</h3>
-                {recommendations.map((rec, i) => (
-                  <RecommendationCard key={`${rec.title}-${i}`} rec={rec} onNavigate={handleNavigateToPhase} />
-                ))}
-              </div>
-            )}
-          </div>
-        </ScrollArea>
-      )}
-    </div>
+    </ScrollArea>
   );
 }

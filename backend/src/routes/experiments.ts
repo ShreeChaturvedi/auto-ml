@@ -1,5 +1,7 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { mkdir, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { Router, type Response } from 'express';
 
@@ -385,6 +387,34 @@ export function createExperimentsRouter(): Router {
       return;
     }
 
+    // --- Cache check: hash current model state to detect staleness ---
+    const cachePath = join(env.insightsCacheDir, `${projectId}.json`);
+    let modelHash = '';
+    try {
+      const models = await listModels(projectId);
+      const modelSummaries = models
+        .map(m => ({ modelId: m.modelId, name: m.name, algorithm: m.algorithm, taskType: m.taskType, status: m.status, metrics: m.metrics }))
+        .sort((a, b) => a.modelId.localeCompare(b.modelId));
+      modelHash = createHash('sha256').update(projectId + JSON.stringify(modelSummaries)).digest('hex');
+
+      const raw = await readFile(cachePath, 'utf8');
+      const entry = JSON.parse(raw) as Record<string, { modelHash: string; text: string }>;
+      if (entry[body.type]?.modelHash === modelHash) {
+        // Cache hit — send the cached text as a single NDJSON burst
+        res.status(200);
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        if (typeof res.flushHeaders === 'function') res.flushHeaders();
+        res.write(`${JSON.stringify({ type: 'token', content: entry[body.type].text })}\n`);
+        res.write(`${JSON.stringify({ type: 'done' })}\n`);
+        res.end();
+        return;
+      }
+    } catch {
+      // Cache miss or read error — proceed to LLM
+    }
+
     // Set NDJSON streaming headers
     res.status(200);
     res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
@@ -398,6 +428,7 @@ export function createExperimentsRouter(): Router {
       const client = createLlmClient();
       const systemPrompt = INSIGHT_SYSTEM_PROMPTS[body.type];
       const userMessage = JSON.stringify(body.context ?? {});
+      let accumulated = '';
 
       await client.stream(
         {
@@ -410,12 +441,31 @@ export function createExperimentsRouter(): Router {
         },
         {
           onToken(token: string) {
+            accumulated += token;
             if (!res.writableEnded) {
               res.write(`${JSON.stringify({ type: 'token', content: token })}\n`);
             }
           },
         },
       );
+
+      // Persist to cache (merge with existing entries for other insight types)
+      if (modelHash && accumulated) {
+        try {
+          await mkdir(dirname(cachePath), { recursive: true });
+          let existing: Record<string, unknown> = {};
+          try {
+            existing = JSON.parse(await readFile(cachePath, 'utf8'));
+          } catch { /* no existing cache */ }
+          const updated = {
+            ...existing,
+            [body.type]: { modelHash, text: accumulated, generatedAt: new Date().toISOString() },
+          };
+          writeFileSync(cachePath, JSON.stringify(updated, null, 2), 'utf8');
+        } catch {
+          // Cache write error — non-fatal
+        }
+      }
 
       if (!res.writableEnded) {
         res.write(`${JSON.stringify({ type: 'done' })}\n`);

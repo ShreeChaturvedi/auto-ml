@@ -71,9 +71,12 @@ export function ExperimentsDashboard() {
     }
   }, [models.length, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const handlePanelResize = useCallback((size: { asPercentage: number }) => {
     const collapsed = size.asPercentage < 1;
     setIsRightCollapsed(prev => prev === collapsed ? prev : collapsed);
+    clearTimeout(resizeTimerRef.current);
+    resizeTimerRef.current = setTimeout(() => window.dispatchEvent(new Event('resize')), 150);
   }, []);
 
   // Determine right panel content

@@ -57,6 +57,10 @@ Persistence is split: file-backed (projects.json, dataset metadata) + Postgres (
 - API: Typed fetch wrappers in `lib/api/`
 - UI: shadcn/ui + Radix primitives + Tailwind CSS
 
+## Project Theme Color
+
+Use `projectColorClasses` from `@/types/project` with `activeProjectId` from `useProjectStore` for all project-themed UI. See `IconModeToggle` for the reference pattern. Available fields: `text`, `bg`, `hover`, `border`, `borderAccent`, `fill`, `fillMuted`.
+
 ## Development Principles
 
 **Code quality.** Reduce bloated files, duplicated logic, and hacky workarounds. Extract shared behavior into well-named utilities or components. Proactively refactor when you see existing technical debt — don't layer new code on top of a mess. Leave the codebase cleaner than it was found.

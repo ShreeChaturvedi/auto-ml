@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Trophy, ArrowUp, ArrowDown, GitCompareArrows, X } from 'lucide-react';
+import { CircleStar, ArrowUp, ArrowDown, GitCompareArrows, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn } from '@/lib/utils';
 import { NlFilterBar } from './NlFilterBar';
@@ -115,6 +116,7 @@ export function Leaderboard() {
   const clearFilter = useExperimentsStore((s) => s.clearFilter);
   const setNlFilter = useExperimentsStore((s) => s.setNlFilter);
 
+  const { themeColorClass: trophyColorClass } = useProjectThemeColor();
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
   const championId = useMemo(() => findChampionId(models), [models]);
@@ -277,8 +279,6 @@ export function Leaderboard() {
               <tr>
                 {/* Checkbox column */}
                 <th className="w-8 py-2.5 px-3" />
-                {/* Champion indicator */}
-                <th className="w-6 py-2.5 px-3" />
                 <th
                   className="py-2.5 px-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap"
                   onClick={() => handleSort('name')}
@@ -328,26 +328,20 @@ export function Leaderboard() {
                         className="h-3.5 w-3.5"
                       />
                     </td>
-                    {/* Champion trophy */}
-                    <td className="py-3 px-3 text-center">
-                      {isChampion && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Trophy className="h-3.5 w-3.5 text-amber-500 inline-block" />
-                          </TooltipTrigger>
-                          <TooltipContent side="right">
-                            <p className="text-xs">Champion model</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </td>
                     <td className="py-3 px-3 text-left font-semibold truncate max-w-[180px]">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="truncate block">{model.name}</span>
+                          <span className="truncate block">
+                            {isChampion && (
+                              <CircleStar
+                                className={cn("h-3.5 w-3.5 inline-block mr-1.5 -mt-0.5 shrink-0", trophyColorClass)}
+                              />
+                            )}
+                            {model.name}
+                          </span>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="text-xs">{model.name}</p>
+                          <p className="text-xs">{isChampion ? 'Champion — ' : ''}{model.name}</p>
                         </TooltipContent>
                       </Tooltip>
                     </td>

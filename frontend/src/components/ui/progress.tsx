@@ -7,12 +7,14 @@ interface ProgressProps
   extends React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> {
   /** Optional inline styles for the indicator (e.g. themed backgroundColor). */
   indicatorStyle?: React.CSSProperties;
+  /** Optional Tailwind class for the indicator bg (e.g. from projectColorClasses.fill). Overrides default bg-primary. */
+  indicatorClassName?: string;
 }
 
 const Progress = React.forwardRef<
   React.ComponentRef<typeof ProgressPrimitive.Root>,
   ProgressProps
->(({ className, value, indicatorStyle, ...props }, ref) => (
+>(({ className, value, indicatorStyle, indicatorClassName, ...props }, ref) => (
   <ProgressPrimitive.Root
     ref={ref}
     className={cn(
@@ -22,7 +24,7 @@ const Progress = React.forwardRef<
     {...props}
   >
     <ProgressPrimitive.Indicator
-      className="h-full w-full flex-1 bg-primary transition-all"
+      className={cn("h-full w-full flex-1 transition-all", indicatorClassName || "bg-primary")}
       style={{ transform: `translateX(-${100 - (value || 0)}%)`, ...indicatorStyle }}
     />
   </ProgressPrimitive.Root>

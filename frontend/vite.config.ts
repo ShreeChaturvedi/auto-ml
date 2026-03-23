@@ -37,6 +37,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      'plotly.js/dist/plotly': 'plotly.js-dist-min',
     },
     // Ensure React is deduplicated to prevent multiple instances
     dedupe: ['react', 'react-dom'],

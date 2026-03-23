@@ -33,7 +33,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
   const model = useModelStore((s) => s.models.find((m) => m.modelId === modelId));
   const refreshModels = useModelStore((s) => s.refreshModels);
   const selectModel = useExperimentsStore((s) => s.selectModel);
-  const { themeColor } = useProjectThemeColor(projectId ?? '');
+  const { colorClasses } = useProjectThemeColor();
 
   const [nTrials, setNTrials] = useState(50);
   const [metric, setMetric] = useState('');
@@ -151,7 +151,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
         taskType={taskType}
         onStart={handleStartTuning}
         disabled={!metric || !projectId}
-        themeColor={themeColor}
+        colorClasses={colorClasses}
       />
     );
   }
@@ -174,7 +174,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
           <Progress
             value={progressPercent}
             className="h-2.5"
-            indicatorStyle={themeColor ? { backgroundColor: themeColor } : undefined}
+            indicatorClassName={colorClasses?.fill}
           />
         </div>
         {bestValue != null && (

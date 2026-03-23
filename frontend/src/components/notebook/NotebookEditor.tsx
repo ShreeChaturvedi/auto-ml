@@ -107,7 +107,7 @@ function countCodeChildren(cells: NotebookCellModel[], markdownIndex: number): n
 export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorProps>(
   function NotebookEditor({ projectId, className }, ref) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { themeColor } = useProjectThemeColor(projectId);
+  const { themeColor } = useProjectThemeColor();
 
   useImperativeHandle(ref, () => ({
     scrollToHeading: (slug: string) => scrollToRadixElement(scrollAreaRef.current, slug),

@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { Play } from 'lucide-react';
 import { getAvailableMetrics } from '../utils';
+import type { ProjectColorEntry } from '@/types/project';
 
 export interface TuneConfigFormProps {
   nTrials: number;
@@ -23,7 +24,7 @@ export interface TuneConfigFormProps {
   taskType: string;
   onStart: () => void;
   disabled: boolean;
-  themeColor?: string;
+  colorClasses?: ProjectColorEntry | null;
 }
 
 export function TuneConfigForm({
@@ -36,7 +37,7 @@ export function TuneConfigForm({
   taskType,
   onStart,
   disabled,
-  themeColor,
+  colorClasses,
 }: TuneConfigFormProps) {
   const availableMetrics = getAvailableMetrics(taskType);
 
@@ -54,7 +55,9 @@ export function TuneConfigForm({
             step={10}
             value={[nTrials]}
             onValueChange={([v]) => setNTrials(v)}
-            trackColor={themeColor}
+            rangeClassName={colorClasses?.fill}
+            trackClassName={colorClasses?.fillMuted}
+            thumbClassName={colorClasses?.borderAccent}
             className="flex-1"
           />
           <span className="w-10 text-right text-sm font-mono tabular-nums text-foreground">

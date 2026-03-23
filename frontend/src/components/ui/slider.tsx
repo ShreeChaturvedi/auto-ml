@@ -5,14 +5,18 @@ import { cn } from '@/lib/utils';
 
 interface SliderProps
   extends React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> {
-  /** Hex color for the filled range and thumb border. Falls back to bg-primary / border-primary when unset. */
-  trackColor?: string;
+  /** Tailwind bg class for the filled range (e.g. from projectColorClasses.fill). Falls back to bg-primary. */
+  rangeClassName?: string;
+  /** Tailwind bg class for the unfilled track background (e.g. from projectColorClasses.fillMuted). Falls back to bg-secondary. */
+  trackClassName?: string;
+  /** Tailwind border class for the thumb (e.g. from projectColorClasses.borderAccent). Falls back to border-primary. */
+  thumbClassName?: string;
 }
 
 const Slider = React.forwardRef<
   React.ComponentRef<typeof SliderPrimitive.Root>,
   SliderProps
->(({ className, trackColor, ...props }, ref) => (
+>(({ className, rangeClassName, trackClassName, thumbClassName, ...props }, ref) => (
   <SliderPrimitive.Root
     ref={ref}
     className={cn(
@@ -21,10 +25,9 @@ const Slider = React.forwardRef<
     )}
     {...props}
   >
-    <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-secondary">
+    <SliderPrimitive.Track className={cn('relative h-2 w-full grow overflow-hidden rounded-full', trackClassName || 'bg-secondary')}>
       <SliderPrimitive.Range
-        className={cn('absolute h-full rounded-full', !trackColor && 'bg-primary')}
-        style={trackColor ? { backgroundColor: trackColor } : undefined}
+        className={cn('absolute h-full rounded-full', rangeClassName || 'bg-primary')}
       />
     </SliderPrimitive.Track>
     <SliderPrimitive.Thumb
@@ -32,9 +35,8 @@ const Slider = React.forwardRef<
         'block h-5 w-5 rounded-full border-2 bg-background ring-offset-background transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         'disabled:pointer-events-none disabled:opacity-50',
-        !trackColor && 'border-primary',
+        thumbClassName || 'border-primary',
       )}
-      style={trackColor ? { borderColor: trackColor } : undefined}
     />
   </SliderPrimitive.Root>
 ));

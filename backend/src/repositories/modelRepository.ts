@@ -5,6 +5,17 @@ import { appLogger } from '../logging/logger.js';
 import type { ModelRecord } from '../types/model.js';
 import { ensureDirectoryForFile } from '../utils/fs.js';
 
+/** Return the highest version number for a project within a list of models. */
+function maxVersion(models: Iterable<ModelRecord>, projectId: string): number {
+  let max = 0;
+  for (const m of models) {
+    if (m.projectId === projectId && typeof m.version === 'number' && m.version > max) {
+      max = m.version;
+    }
+  }
+  return max;
+}
+
 export interface ModelRepository {
   list(projectId?: string): Promise<ModelRecord[]>;
   getById(modelId: string): Promise<ModelRecord | undefined>;
@@ -34,6 +45,7 @@ export class InMemoryModelRepository implements ModelRepository {
     const model: ModelRecord = {
       ...input,
       modelId: randomUUID(),
+      version: input.version ?? maxVersion(this.models.values(), input.projectId) + 1,
       createdAt: now,
       updatedAt: now
     };
@@ -101,13 +113,15 @@ export class FileModelRepository implements ModelRepository {
 
   async create(input: Omit<ModelRecord, 'modelId' | 'createdAt' | 'updatedAt'>): Promise<ModelRecord> {
     const now = new Date().toISOString();
+    const all = this.readAll();
+    const version = input.version ?? maxVersion(all, input.projectId) + 1;
     const model: ModelRecord = {
       ...input,
       modelId: randomUUID(),
+      version,
       createdAt: now,
       updatedAt: now
     };
-    const all = this.readAll();
     all.push(model);
     this.writeAll(all);
     return model;

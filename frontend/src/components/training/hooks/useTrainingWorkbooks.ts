@@ -48,6 +48,14 @@ export interface UseTrainingWorkbooksResult {
   handleSwitch: (workbookId: string) => void;
   handleNew: () => void;
   handleDelete: () => void;
+  handleRename: (name: string) => void;
+  handleReplay: () => void;
+  handleReset: () => void;
+  renameDialogOpen: boolean;
+  setRenameDialogOpen: (open: boolean) => void;
+  renameDialogValue: string;
+  setRenameDialogValue: (value: string) => void;
+  openRenameDialog: () => void;
 }
 
 export function useTrainingWorkbooks(projectId: string | undefined): UseTrainingWorkbooksResult {
@@ -56,6 +64,8 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
   const [ready, setReady] = useState(false);
   const hydratedRef = useRef<string | null>(null);
   const skipPersistRef = useRef(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameDialogValue, setRenameDialogValue] = useState('');
 
   // ---- Hydrate from localStorage (with one-time migration) ----------------
 
@@ -162,6 +172,53 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     [projectId]
   );
 
+  // ---- Rename ---------------------------------------------------------------
+
+  const openRenameDialog = useCallback(() => {
+    const current = workbooks.find((wb) => wb.id === activeWorkbookId);
+    if (!current) return;
+    setRenameDialogValue(current.name);
+    setRenameDialogOpen(true);
+  }, [activeWorkbookId, workbooks]);
+
+  const handleRename = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setWorkbooks((prev) => prev.map((wb) =>
+      wb.id === activeWorkbookId ? { ...wb, name: trimmed } : wb
+    ));
+    setRenameDialogOpen(false);
+  }, [activeWorkbookId]);
+
+  // ---- Replay (re-send the last user message) --------------------------------
+
+  const handleReplay = useCallback(() => {
+    if (!projectId) return;
+    // Replay clears the workflow session so the next prompt re-runs from scratch
+    const key = buildMessageKey(activeWorkbookId, projectId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    try {
+      const messages = JSON.parse(raw) as Array<{ role?: string }>;
+      // Find the last user message and keep everything up to (and including) it,
+      // dropping any subsequent assistant/tool messages so they re-generate.
+      let lastUserIdx = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') { lastUserIdx = i; break; }
+      }
+      if (lastUserIdx >= 0) {
+        localStorage.setItem(key, JSON.stringify(messages.slice(0, lastUserIdx + 1)));
+      }
+    } catch { /* ignore parse errors */ }
+  }, [activeWorkbookId, projectId]);
+
+  // ---- Reset (clear all messages for the active workbook) ---------------------
+
+  const handleReset = useCallback(() => {
+    if (!projectId) return;
+    localStorage.removeItem(buildMessageKey(activeWorkbookId, projectId));
+  }, [activeWorkbookId, projectId]);
+
   return {
     workbooks,
     activeWorkbookId,
@@ -170,6 +227,14 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     buildStorageKey,
     handleSwitch,
     handleNew,
-    handleDelete
+    handleDelete,
+    handleRename,
+    handleReplay,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    openRenameDialog
   };
 }

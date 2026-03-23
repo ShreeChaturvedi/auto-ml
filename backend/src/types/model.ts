@@ -50,6 +50,7 @@ export interface ModelRecord {
   status: ModelStatus;
   createdAt: string;
   updatedAt: string;
+  version?: number;
   trainingMs?: number;
   targetColumn?: string;
   featureColumns?: string[];

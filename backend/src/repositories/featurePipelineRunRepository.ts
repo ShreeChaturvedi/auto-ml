@@ -54,6 +54,9 @@ export interface FeaturePipelineRunState {
   runId: string;
   projectId: string;
   features: Record<string, FeatureStepRecord>;
+  lastCheckpointId?: string;
+  lastCheckpointLabel?: string;
+  lastCheckpointAt?: string;
   createdAt: string;
   updatedAt: string;
 }

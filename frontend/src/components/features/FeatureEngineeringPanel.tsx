@@ -84,6 +84,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
     handleReset,
     renameDialogOpen,
     setRenameDialogOpen,
@@ -326,7 +327,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             onVersionSwitch={handleVersionSelect}
             onNewDraft={handleCreateDraft}
             onRenameDraft={handleRenameDraft}
-            onReplay={() => {}}
+            onReplay={handleReplay}
             onReset={handleReset}
             onDeleteDraft={handleDeleteCurrentDraft}
             canRenameDraft={isCurrentVersionDraft}

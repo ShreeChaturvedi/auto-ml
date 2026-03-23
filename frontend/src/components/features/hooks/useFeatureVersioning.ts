@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
+import { fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import type { PipelineVersion } from '@/types/feature';
 import type { SuggestionDraft } from './useFeaturePipelineState';
 
@@ -25,6 +26,7 @@ interface UseFeatureVersioningReturn {
   handleNewDraft: () => void;
   handleDeleteDraft: () => void;
   handleRenameDraft: () => void;
+  handleReplay: () => void;
   handleReset: () => void;
   // Dialog state for rename
   renameDialogOpen: boolean;
@@ -167,6 +169,31 @@ export function useFeatureVersioning({
     setPanelError(null);
   }, [currentVersion, projectId, renameDialogValue, renameVersion, setPanelError]);
 
+  // --- Replay: re-hydrate feature lifecycle state from backend ---
+  const handleReplay = useCallback(() => {
+    void fetchFeatureRuns(projectId, 1)
+      .then(({ runs }) => {
+        if (runs.length === 0) return;
+        const run = runs[0];
+        const store = useFeatureStore.getState();
+        store.setFeatureRunId(run.runId);
+        // Re-hydrate each feature step from the persisted run
+        for (const [featureId, step] of Object.entries(run.features)) {
+          store.setFeatureStep(featureId, {
+            stepId: step.featureId,
+            name: step.name,
+            method: step.method,
+            status: step.status,
+            code: step.code,
+            metrics: step.validation as Record<string, unknown> | undefined
+          });
+        }
+      })
+      .catch(() => {
+        setPanelError('Failed to replay feature pipeline state from backend.');
+      });
+  }, [projectId, setPanelError]);
+
   // --- Reset handler ---
   const handleReset = useCallback(() => {
     clearDraft();
@@ -188,6 +215,7 @@ export function useFeatureVersioning({
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
     handleReset,
     renameDialogOpen,
     setRenameDialogOpen,

@@ -66,6 +66,7 @@ interface UseFeaturePipelineStateReturn {
   handleNewDraft: () => void;
   handleDeleteDraft: () => void;
   handleRenameDraft: () => void;
+  handleReplay: () => void;
   handleReset: () => void;
 
   // Dialog state
@@ -139,7 +140,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
         .then(({ run }) => hydrateRunIntoStore(run))
         .catch(() => { /* Run not found or network error — start fresh */ });
     } else {
-      void fetchFeatureRuns(projectId)
+      void fetchFeatureRuns(projectId, 1)
         .then(({ runs }) => { if (runs.length > 0) hydrateRunIntoStore(runs[0]); })
         .catch(() => { /* Network error — start fresh */ });
     }
@@ -229,6 +230,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
     handleReset,
     renameDialogOpen,
     setRenameDialogOpen,
@@ -314,6 +316,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
     handleReset,
     renameDialogOpen,
     setRenameDialogOpen,

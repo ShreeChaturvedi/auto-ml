@@ -4,6 +4,9 @@ import pino, { type Logger } from 'pino';
 
 import { env } from '../config.js';
 
+/** Vitest sets this; keep test output readable (no pino-pretty noise from expected error paths). */
+const isVitest = process.env.VITEST === 'true';
+
 type AppLogger = {
   debug: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
@@ -15,7 +18,7 @@ type AppLogger = {
 
 const requestLoggerStorage = new AsyncLocalStorage<Logger>();
 
-const loggerTransport = env.nodeEnv === 'production'
+const loggerTransport = isVitest || env.nodeEnv === 'production'
   ? undefined
   : pino.transport({
       target: 'pino-pretty',
@@ -29,7 +32,9 @@ const loggerTransport = env.nodeEnv === 'production'
 
 export const baseLogger = pino(
   {
-    level: process.env.LOG_LEVEL ?? (env.nodeEnv === 'production' ? 'info' : 'debug'),
+    level: isVitest
+      ? 'silent'
+      : (process.env.LOG_LEVEL ?? (env.nodeEnv === 'production' ? 'info' : 'debug')),
     base: { service: 'backend' },
     formatters: {
       level: (label) => ({ level: label })

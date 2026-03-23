@@ -15,6 +15,17 @@ import { translateMimeBundle, type MimeBundle } from '../mimeTranslator.js';
 import type { JupyterMessage, KernelConnection, KernelContainer } from './jupyterProtocol.js';
 import { JUPYTER_PROTOCOL_VERSION, JUPYTER_USERNAME, stripAnsi } from './jupyterProtocol.js';
 
+const PYTHON_WARNING_RE = /^[^:]+:\d+: \w*Warning:/m;
+
+export function cleanKernelPaths(text: string): string {
+    return text.replace(/\/(?:workspace\/\.tmp|tmp)\/ipykernel_\d+\/\d+\.py/g, '<cell>');
+}
+
+export function isStderrWarning(text: string): boolean {
+    const firstLine = text.slice(0, text.indexOf('\n') >>> 0 || text.length);
+    return PYTHON_WARNING_RE.test(stripAnsi(firstLine));
+}
+
 /**
  * Execute code on a kernel connection.
  *
@@ -125,8 +136,9 @@ export async function executeOnKernel(
                         stdout += text;
                         onOutput?.({ type: 'text', content: text });
                     } else if (name === 'stderr') {
-                        stderr += text;
-                        onOutput?.({ type: 'error', content: text });
+                        const cleaned = cleanKernelPaths(text);
+                        stderr += cleaned;
+                        onOutput?.({ type: 'error', content: cleaned });
                     }
                     break;
                 }
@@ -196,9 +208,10 @@ export async function executeOnKernel(
                         outputs.unshift({ type: 'text', content: stdout });
                     }
                     if (stderr && !errorMessage) {
-                        // Only add stderr as a separate output if it's not
-                        // already represented by an error traceback output.
-                        outputs.push({ type: 'error', content: stderr });
+                        outputs.push({
+                            type: isStderrWarning(stderr) ? 'warning' : 'error',
+                            content: stderr,
+                        });
                     }
 
                     // Done — resolve

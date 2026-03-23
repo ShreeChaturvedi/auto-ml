@@ -26,11 +26,13 @@ export function CellOutputRenderer({ outputs, className }: CellOutputRendererPro
 function OutputBody({ output }: { output: RichOutput }) {
     switch (output.type) {
         case 'text':
+        case 'warning':
         case 'error':
             return (
                 <pre className={cn(
                     'whitespace-pre-wrap break-words font-mono text-[12px] leading-5',
-                    output.type === 'error' && 'text-red-400'
+                    output.type === 'error' && 'text-red-400',
+                    output.type === 'warning' && 'text-amber-400'
                 )}>
                     {output.content}
                 </pre>

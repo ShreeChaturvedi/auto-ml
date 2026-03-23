@@ -4,7 +4,7 @@ import { z } from 'zod';
 // Cell Output Types
 // ============================================================
 
-export const CellOutputTypeSchema = z.enum(['text', 'error', 'image', 'html', 'table', 'chart']);
+export const CellOutputTypeSchema = z.enum(['text', 'error', 'warning', 'image', 'html', 'table', 'chart']);
 export type CellOutputType = z.infer<typeof CellOutputTypeSchema>;
 
 export const CellOutputSchema = z.object({

@@ -92,6 +92,65 @@ describe('CellOutputRenderer', () => {
     });
   });
 
+  // 2b. Warning output
+  describe('warning output', () => {
+    it('renders warning content with amber text, not red', () => {
+      const warningMsg = '<cell>:36: FutureWarning: Passing `palette` without assigning `hue` is deprecated';
+      render(
+        <CellOutputRenderer
+          outputs={[makeOutput({ type: 'warning', content: warningMsg })]}
+        />
+      );
+
+      const pre = screen.getByText((_content, element) => {
+        return element?.tagName === 'PRE' && element.textContent === warningMsg;
+      });
+      expect(pre).toBeInTheDocument();
+      expect(pre.tagName).toBe('PRE');
+      expect(pre.className).toContain('text-amber-400');
+      expect(pre.className).not.toContain('text-red-400');
+    });
+
+    it('renders warning in correct position within mixed outputs', () => {
+      const { container } = render(
+        <CellOutputRenderer
+          outputs={[
+            makeOutput({ type: 'text', content: 'stdout line' }),
+            makeOutput({ type: 'warning', content: 'FutureWarning: deprecated' }),
+            makeOutput({ type: 'error', content: 'ValueError: bad input' }),
+          ]}
+        />
+      );
+
+      const wrapper = container.firstElementChild!;
+      const children = Array.from(wrapper.children);
+      expect(children).toHaveLength(3);
+
+      // First: text (no color class)
+      expect(children[0].textContent).toBe('stdout line');
+      expect(children[0].className).not.toContain('text-red-400');
+      expect(children[0].className).not.toContain('text-amber-400');
+
+      // Second: warning (amber)
+      expect(children[1].textContent).toBe('FutureWarning: deprecated');
+      expect(children[1].className).toContain('text-amber-400');
+
+      // Third: error (red)
+      expect(children[2].textContent).toBe('ValueError: bad input');
+      expect(children[2].className).toContain('text-red-400');
+    });
+  });
+
+  // 2c. Warning output in copy text
+  describe('warning in buildOutputCopyText', () => {
+    it('includes warning content in copy text', () => {
+      const outputText = buildOutputCopyText([
+        makeOutput({ type: 'warning', content: 'FutureWarning: deprecated call' }),
+      ]);
+      expect(outputText).toBe('FutureWarning: deprecated call');
+    });
+  });
+
   // 3. Multiple outputs (same type)
   describe('multiple outputs', () => {
     it('renders all outputs in order', () => {

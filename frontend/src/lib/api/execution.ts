@@ -19,7 +19,7 @@ export type PythonVersion = '3.10' | '3.11';
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'error' | 'timeout';
 
 export interface RichOutput {
-    type: 'text' | 'table' | 'image' | 'html' | 'error' | 'chart';
+    type: 'text' | 'table' | 'image' | 'html' | 'error' | 'warning' | 'chart';
     content: string;
     data?: unknown;
     mimeType?: string;

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
+import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
-import type { ModelRecord } from '../types/model.js';
+import type { ModelArtifact, ModelRecord } from '../types/model.js';
 import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export interface ModelRepository {
@@ -146,6 +147,145 @@ export class FileModelRepository implements ModelRepository {
   }
 }
 
+export class PgModelRepository implements ModelRepository {
+  private readonly table = 'models';
+
+  private mapRowToModel(row: Record<string, unknown>): ModelRecord {
+    const record: ModelRecord = {
+      modelId: row.model_id as string,
+      projectId: row.project_id as string,
+      datasetId: row.dataset_id as string,
+      name: row.name as string,
+      templateId: row.template_id as string,
+      taskType: row.task_type as ModelRecord['taskType'],
+      library: row.library as string,
+      algorithm: row.algorithm as string,
+      parameters: (row.parameters as Record<string, unknown>) ?? {},
+      metrics: (row.metrics as Record<string, number>) ?? {},
+      status: row.status as ModelRecord['status'],
+      createdAt: (row.created_at as Date).toISOString(),
+      updatedAt: (row.updated_at as Date).toISOString()
+    };
+
+    if (row.training_ms != null) record.trainingMs = row.training_ms as number;
+    if (row.target_column != null) record.targetColumn = row.target_column as string;
+    if (row.feature_columns != null) record.featureColumns = row.feature_columns as string[];
+    if (row.sample_count != null) record.sampleCount = row.sample_count as number;
+    if (row.artifact != null) record.artifact = row.artifact as ModelArtifact;
+    if (row.error != null) record.error = row.error as string;
+    if (row.metadata != null) record.metadata = row.metadata as Record<string, unknown>;
+    if (row.evaluation_status != null) record.evaluationStatus = row.evaluation_status as ModelRecord['evaluationStatus'];
+    if (row.evaluation_computed_at != null) record.evaluationComputedAt = (row.evaluation_computed_at as Date).toISOString();
+    if (row.evaluation_error != null) record.evaluationError = row.evaluation_error as string;
+
+    return record;
+  }
+
+  async list(projectId?: string): Promise<ModelRecord[]> {
+    const pool = getDbPool();
+    if (projectId) {
+      const result = await pool.query(
+        `SELECT * FROM ${this.table} WHERE project_id = $1 ORDER BY created_at ASC`,
+        [projectId]
+      );
+      return result.rows.map((row) => this.mapRowToModel(row));
+    }
+    const result = await pool.query(`SELECT * FROM ${this.table} ORDER BY created_at ASC`);
+    return result.rows.map((row) => this.mapRowToModel(row));
+  }
+
+  async getById(modelId: string): Promise<ModelRecord | undefined> {
+    const pool = getDbPool();
+    const result = await pool.query(
+      `SELECT * FROM ${this.table} WHERE model_id = $1`,
+      [modelId]
+    );
+    if (result.rowCount === 0) return undefined;
+    return this.mapRowToModel(result.rows[0]);
+  }
+
+  async create(input: Omit<ModelRecord, 'modelId' | 'createdAt' | 'updatedAt'>): Promise<ModelRecord> {
+    const pool = getDbPool();
+    const id = randomUUID();
+    const result = await pool.query(
+      `INSERT INTO ${this.table} (
+        model_id, project_id, dataset_id, name, template_id, task_type,
+        library, algorithm, parameters, metrics, status,
+        training_ms, target_column, feature_columns, sample_count,
+        artifact, error, metadata, evaluation_status, evaluation_computed_at, evaluation_error
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10, $11,
+        $12, $13, $14, $15,
+        $16, $17, $18, $19, $20, $21
+      ) RETURNING *`,
+      [
+        id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
+        input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
+        input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ?? null, input.sampleCount ?? null,
+        input.artifact ?? null, input.error ?? null, input.metadata ?? null,
+        input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
+      ]
+    );
+    return this.mapRowToModel(result.rows[0]);
+  }
+
+  async update(
+    modelId: string,
+    updater: (current: ModelRecord) => ModelRecord
+  ): Promise<ModelRecord | undefined> {
+    const current = await this.getById(modelId);
+    if (!current) return undefined;
+
+    const updated = updater(current);
+    const pool = getDbPool();
+    const result = await pool.query(
+      `UPDATE ${this.table} SET
+        project_id = $2, dataset_id = $3, name = $4, template_id = $5, task_type = $6,
+        library = $7, algorithm = $8, parameters = $9, metrics = $10, status = $11,
+        training_ms = $12, target_column = $13, feature_columns = $14, sample_count = $15,
+        artifact = $16, error = $17, metadata = $18,
+        evaluation_status = $19, evaluation_computed_at = $20, evaluation_error = $21,
+        updated_at = NOW()
+      WHERE model_id = $1
+      RETURNING *`,
+      [
+        modelId, updated.projectId, updated.datasetId, updated.name, updated.templateId, updated.taskType,
+        updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
+        updated.trainingMs ?? null, updated.targetColumn ?? null, updated.featureColumns ?? null, updated.sampleCount ?? null,
+        updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
+        updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null
+      ]
+    );
+
+    if (result.rowCount === 0) return undefined;
+    return this.mapRowToModel(result.rows[0]);
+  }
+
+  async delete(modelId: string): Promise<boolean> {
+    const pool = getDbPool();
+    const result = await pool.query(
+      `DELETE FROM ${this.table} WHERE model_id = $1`,
+      [modelId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async clear(): Promise<void> {
+    const pool = getDbPool();
+    await pool.query(`DELETE FROM ${this.table}`);
+  }
+}
+
 export function createModelRepository(metadataPath: string): ModelRepository {
+  if (hasDatabaseConfiguration()) {
+    try {
+      appLogger.info('[modelRepository] Using Postgres backend');
+      return new PgModelRepository();
+    } catch (error) {
+      appLogger.error('[modelRepository] Postgres failed, falling back to file storage', error);
+    }
+  }
+
   return new FileModelRepository(metadataPath);
 }

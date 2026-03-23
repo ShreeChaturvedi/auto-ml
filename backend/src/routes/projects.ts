@@ -2,6 +2,7 @@ import type { Router } from 'express';
 import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
+import { requireAuth } from '../middleware/auth.js';
 import type { ProjectRepository } from '../repositories/projectRepository.js';
 import { PHASE_VALUES } from '../repositories/projectRepository.js';
 import type { AuthRequest } from '../types/auth.js';
@@ -33,10 +34,8 @@ const projectInputSchema = z
 export function registerProjectRoutes(router: Router, repository: ProjectRepository) {
   const isVitestRuntime = Boolean(process.env.VITEST);
 
-  router.get('/projects', async (req: AuthRequest, res) => {
-    const projects = req.user
-      ? await repository.listByUser(req.user.user_id)
-      : await repository.list();
+  router.get('/projects', requireAuth, async (req: AuthRequest, res) => {
+    const projects = await repository.listByUser(req.user!.user_id);
     res.json({ projects });
   });
 
@@ -49,17 +48,15 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     res.status(204).send();
   });
 
-  router.get('/projects/:id', async (req: AuthRequest, res) => {
-    const project = req.user
-      ? await repository.getByIdAndUser(req.params.id, req.user.user_id)
-      : await repository.getById(req.params.id);
+  router.get('/projects/:id', requireAuth, async (req: AuthRequest, res) => {
+    const project = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
     return res.json({ project });
   });
 
-  router.post('/projects', async (req: AuthRequest, res) => {
+  router.post('/projects', requireAuth, async (req: AuthRequest, res) => {
     const result = projectInputSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
@@ -67,7 +64,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
 
     const project = await repository.create({
       ...result.data,
-      ...(req.user ? { userId: req.user.user_id } : {})
+      userId: req.user!.user_id
     });
     if (!isVitestRuntime) {
       appLogger.info(`[projects] created ${project.id} (${project.name})`);
@@ -75,18 +72,15 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     return res.status(201).json({ project });
   });
 
-  router.patch('/projects/:id', async (req: AuthRequest, res) => {
+  router.patch('/projects/:id', requireAuth, async (req: AuthRequest, res) => {
     const result = projectInputSchema.partial().safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
     }
 
-    // Verify ownership first
-    if (req.user) {
-      const existing = await repository.getByIdAndUser(req.params.id, req.user.user_id);
-      if (!existing) {
-        return res.status(404).json({ error: 'Project not found' });
-      }
+    const existing = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Project not found' });
     }
 
     const project = await repository.update(req.params.id, result.data);
@@ -100,13 +94,10 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     return res.json({ project });
   });
 
-  router.delete('/projects/:id', async (req: AuthRequest, res) => {
-    // Verify ownership first
-    if (req.user) {
-      const existing = await repository.getByIdAndUser(req.params.id, req.user.user_id);
-      if (!existing) {
-        return res.status(404).json({ error: 'Project not found' });
-      }
+  router.delete('/projects/:id', requireAuth, async (req: AuthRequest, res) => {
+    const existing = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Project not found' });
     }
 
     const deleted = await repository.delete(req.params.id);

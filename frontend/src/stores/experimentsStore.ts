@@ -16,7 +16,7 @@ interface ExperimentsState {
   selectedModelId: string | null;
   comparisonModelIds: string[];
 
-  // Data caches (keyed by modelId) — undefined = not fetched, null = fetch failed
+  // Data caches (keyed by modelId; null means fetched but unavailable)
   evaluations: Record<string, EvaluationResult | null>;
   shapData: Record<string, ShapResult | null>;
   errorAnalysis: Record<string, ErrorAnalysisResult | null>;
@@ -42,7 +42,7 @@ interface ExperimentsState {
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
   fetchInsightBanner: (projectId: string, models: ModelRecord[]) => Promise<void>;
-  fetchCompareNarrative: (projectId: string, modelIds: string[]) => Promise<void>;
+  fetchCompareNarrative: (projectId: string, modelIds: string[], models: ModelRecord[]) => Promise<void>;
   setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
   setSort: (field: string, direction: 'asc' | 'desc') => void;
@@ -112,14 +112,13 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   fetchShap: async (modelId) => {
-    if (get().shapData[modelId] !== undefined) return;
+    if (modelId in get().shapData) return;
     try {
       const result = await experimentsApi.fetchShap(modelId);
       set((state) => ({
         shapData: { ...state.shapData, [modelId]: result }
       }));
-    } catch (error) {
-      console.error('[experimentsStore] fetchShap failed:', error);
+    } catch {
       set((state) => ({
         shapData: { ...state.shapData, [modelId]: null }
       }));
@@ -127,15 +126,13 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   fetchErrorAnalysis: async (modelId) => {
-    const cached = get().errorAnalysis[modelId];
-    if (cached !== undefined && cached !== null) return;
+    if (modelId in get().errorAnalysis) return;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
       set((state) => ({
         errorAnalysis: { ...state.errorAnalysis, [modelId]: result }
       }));
-    } catch (error) {
-      console.error('[experimentsStore] fetchErrorAnalysis failed:', error);
+    } catch {
       set((state) => ({
         errorAnalysis: { ...state.errorAnalysis, [modelId]: null }
       }));
@@ -175,12 +172,21 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     }
   },
 
-  fetchCompareNarrative: async (projectId, modelIds) => {
+  fetchCompareNarrative: async (projectId, modelIds, models) => {
     set({ compareNarrative: { text: '', isLoading: true } });
     try {
+      const modelsContext = models
+        .filter((m) => modelIds.includes(m.modelId))
+        .map((m) => ({
+          modelId: m.modelId,
+          name: m.name,
+          algorithm: m.algorithm,
+          taskType: m.taskType,
+          metrics: m.metrics,
+        }));
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'compare',
-        context: { modelIds }
+        context: { modelIds, models: modelsContext }
       });
       await accumulateTokenStream(response, (accumulated) => {
         set((state) => ({

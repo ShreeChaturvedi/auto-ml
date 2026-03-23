@@ -278,7 +278,9 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    for i, cls in enumerate(classes):');
     lines.push('        pred_df[f"proba_{cls}"] = y_proba[:, i]');
   } else {
-    lines.push('pred_df["is_correct"] = False  # not applicable for regression');
+    // For regression: "correct" = residual within 1 std of all residuals
+    lines.push('residuals = (pred_df["y_true"] - pred_df["y_pred"]).abs()');
+    lines.push('pred_df["is_correct"] = residuals <= residuals.std()');
   }
   lines.push('pred_df.to_parquet(os.path.join(output_dir, "predictions.parquet"), index=False)');
   lines.push('');

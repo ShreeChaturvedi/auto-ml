@@ -416,7 +416,7 @@ describe('buildTuningScript', () => {
     expect(script).toContain('flush=True');
 
     // Study creation and optimization
-    expect(script).toContain("optuna.create_study(direction='maximize')");
+    expect(script).toContain('optuna.create_study(direction="maximize")');
     expect(script).toContain('study.optimize(objective, n_trials=50, timeout=600');
     expect(script).toContain('callbacks=[stream_callback]');
 

@@ -224,9 +224,21 @@ export const TEMPLATE_ID_ALIASES: Record<string, string> = {
   'logistic-regression': 'logistic_regression',
   'knn-classifier': 'knn_classifier',
   'gradient-boosting-classifier': 'gradient_boosting_classifier',
+  // Seeded test models that map to the nearest real template
+  'xgboost-classifier': 'gradient_boosting_classifier',
+  'xgboost_classifier': 'gradient_boosting_classifier',
 };
 
 export function getModelTemplate(templateId: string): ModelTemplate | undefined {
-  const canonical = TEMPLATE_ID_ALIASES[templateId] ?? templateId;
-  return MODEL_TEMPLATES.find((template) => template.id === canonical);
+  // 1. Exact match
+  const exact = MODEL_TEMPLATES.find((t) => t.id === templateId);
+  if (exact) return exact;
+
+  // 2. Explicit alias (covers known legacy IDs)
+  const aliased = TEMPLATE_ID_ALIASES[templateId];
+  if (aliased) return MODEL_TEMPLATES.find((t) => t.id === aliased);
+
+  // 3. Normalize: hyphens → underscores, strip common prefixes (seed-, etc.)
+  const normalized = templateId.replace(/^seed-/, '').replace(/-/g, '_');
+  return MODEL_TEMPLATES.find((t) => t.id === normalized);
 }

@@ -15,7 +15,7 @@ import { PlotsTab } from './tabs/PlotsTab';
 import { InterpretabilityTab } from './tabs/InterpretabilityTab';
 import { ErrorsTab } from './tabs/ErrorsTab';
 import { ProvenanceTab } from './tabs/ProvenanceTab';
-import { TuneTab } from './tabs/TuneTab';
+import { TuneTab } from './tabs/tune/TuneTab';
 import { EvalTabContent } from './EvalTabContent';
 import { formatMetric, formatDuration } from './utils';
 

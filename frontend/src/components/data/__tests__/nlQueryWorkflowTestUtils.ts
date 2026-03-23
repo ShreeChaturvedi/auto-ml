@@ -68,7 +68,6 @@ export function buildProps(
   }> = {}
 ) {
   return {
-    suggestions: [],
     englishQuery: 'Show me the first 10 users',
     onQueryChange: vi.fn(),
     onGenerate: vi.fn().mockResolvedValue(MOCK_RESULT),

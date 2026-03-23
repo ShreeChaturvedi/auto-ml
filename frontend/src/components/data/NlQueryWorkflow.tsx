@@ -20,7 +20,6 @@ import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { tokenizeSql } from './sqlTokenize';
 import { useTypewriter } from './hooks/useTypewriter';
-import { useNlSuggestions } from './hooks/useNlSuggestions';
 import {
   applyNlModelWorkEvent,
   applyNlWorkPhaseEvent,
@@ -31,7 +30,6 @@ import {
   markNlWorkPhasesFailed
 } from '@/lib/nlQuery/phaseStateMachine';
 import { NlWorkflowSteps } from './NlWorkflowSteps';
-import { NlApprovalDialog } from './NlApprovalDialog';
 import {
   nlReducer,
   initialNlState,
@@ -138,23 +136,12 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
   const isIdle = phase === 'idle' || phase === 'error';
 
-  const {
-    textareaRef,
-    filteredSuggestions,
-    placeholderPrompts,
-    suggestionsOpen,
-    setSuggestionsOpen,
-    activeSuggestionIndex,
-    setActiveSuggestionIndex,
-    applySuggestion,
-    openSuggestions,
-    closeSuggestionsDelayed,
-    handleInputChange,
-  } = useNlSuggestions({ suggestions, englishQuery, isIdle, onQueryChange });
-
-  const resolvedPlaceholderPrompts = placeholderPrompts.length > 0
-    ? placeholderPrompts
-    : ['Ask a question about your uploaded data.'];
+  const placeholderPrompts = useMemo(() => {
+    const prompts = suggestions
+      .map((s) => s.prompt.trim())
+      .filter((p) => p.length > 0);
+    return prompts.length > 0 ? prompts : ['Ask a question about your uploaded data.'];
+  }, [suggestions]);
 
   const handleGenerate = useCallback(async () => {
     const query = englishQuery.trim();
@@ -247,44 +234,12 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (phase === 'idle' && suggestionsOpen && filteredSuggestions.length > 0) {
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          setActiveSuggestionIndex((previous) => (previous + 1) % filteredSuggestions.length);
-          return;
-        }
-
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          setActiveSuggestionIndex((previous) => (
-            previous === 0 ? filteredSuggestions.length - 1 : previous - 1
-          ));
-          return;
-        }
-
-        if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-          e.preventDefault();
-          const suggestion = filteredSuggestions[activeSuggestionIndex];
-          if (suggestion) {
-            applySuggestion(suggestion);
-          }
-          return;
-        }
-
-        if (e.key === 'Escape') {
-          setSuggestionsOpen(false);
-          return;
-        }
-      }
-
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && phase === 'idle') {
         e.preventDefault();
-        if (phase === 'idle' && englishQuery.trim()) {
-          void handleGenerate();
-        }
+        void handleGenerate();
       }
     },
-    [phase, suggestionsOpen, filteredSuggestions, activeSuggestionIndex, applySuggestion, setSuggestionsOpen, setActiveSuggestionIndex, englishQuery, handleGenerate]
+    [phase, handleGenerate]
   );
 
   return (
@@ -301,42 +256,24 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           isExpanding && 'text-transparent',
         )}
       >
-        <div className="relative h-full">
-          <AnimatedPlaceholderTextarea
-            ref={textareaRef}
-            placeholders={resolvedPlaceholderPrompts}
-            value={englishQuery}
-            autoFocus={isIdle}
-            onChange={(e) => {
-              if (isIdle) {
-                onQueryChange(e.target.value);
-                handleInputChange();
-              }
-            }}
-            onFocus={openSuggestions}
-            onBlur={closeSuggestionsDelayed}
-            onKeyDown={handleKeyDown}
-            readOnly={!isIdle}
-            disabled={phase === 'submitting'}
-            aria-label="Natural language query input"
-            aria-autocomplete="list"
-            aria-expanded={isIdle && suggestionsOpen && filteredSuggestions.length > 0}
-            className={cn(
-              'h-full resize-none leading-relaxed border-0 rounded-none shadow-none',
-              'focus-visible:ring-0 focus-visible:ring-offset-0',
-              'transition-colors duration-200',
-              !isIdle && 'cursor-default',
-            )}
-          />
-
-          {isIdle && suggestionsOpen && filteredSuggestions.length > 0 && (
-            <NlApprovalDialog
-              suggestions={filteredSuggestions}
-              activeSuggestionIndex={activeSuggestionIndex}
-              onApplySuggestion={applySuggestion}
-            />
+        <AnimatedPlaceholderTextarea
+          placeholders={placeholderPrompts}
+          value={englishQuery}
+          autoFocus={isIdle}
+          onChange={(e) => {
+            if (isIdle) onQueryChange(e.target.value);
+          }}
+          onKeyDown={handleKeyDown}
+          readOnly={!isIdle}
+          disabled={phase === 'submitting'}
+          aria-label="Natural language query input"
+          className={cn(
+            'h-full resize-none leading-relaxed border-0 rounded-none shadow-none',
+            'focus-visible:ring-0 focus-visible:ring-offset-0',
+            'transition-colors duration-200',
+            !isIdle && 'cursor-default',
           )}
-        </div>
+        />
       </div>
 
       <NlWorkflowSteps

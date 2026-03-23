@@ -30,10 +30,18 @@ export function createDocumentRouter() {
   const router = Router();
   const projectRepository = getProjectRepository();
 
-  router.post('/upload/doc', upload.single('file'), async (req, res) => {
+  router.post('/upload/doc', upload.single('file'), async (req: AuthRequest, res) => {
     const result = uploadSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
+    }
+
+    // Ownership check after multer parses multipart body
+    if (req.user && result.data.projectId) {
+      const project = await verifyProjectOwnership(result.data.projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
     }
 
     if (!req.file) {

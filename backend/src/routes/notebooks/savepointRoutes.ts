@@ -1,8 +1,12 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 
 import { asyncHandler } from '../../middleware/asyncHandler.js';
+import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../../repositories/projectRepository.js';
+import * as notebookService from '../../services/notebook/notebookService.js';
 import * as savepointService from '../../services/notebook/savepointService.js';
+import type { AuthRequest } from '../../types/auth.js';
 
 const uuidParam = z.string().uuid();
 
@@ -26,40 +30,60 @@ function parseUuidParam(value: string, name: string, res: Response): string | nu
 
 export function createSavepointRoutes(): Router {
   const router = Router();
+  const projectRepository = getProjectRepository();
 
-  router.post('/notebooks/:notebookId/savepoints', asyncHandler(async (req: Request, res: Response) => {
+  /** Verify the authenticated user owns the notebook's parent project. */
+  async function verifyNotebookAccess(req: AuthRequest, res: Response, notebookId: string): Promise<boolean> {
+    if (!req.user) return true;
+    const notebook = await notebookService.getNotebook(notebookId);
+    if (!notebook) { res.status(404).json({ error: 'Not found' }); return false; }
+    const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
+    if (!project) { res.status(404).json({ error: 'Not found' }); return false; }
+    return true;
+  }
+
+  router.post('/notebooks/:notebookId/savepoints', asyncHandler(async (req: AuthRequest, res: Response) => {
     const notebookId = parseUuidParam(req.params.notebookId, 'notebookId', res);
     if (!notebookId) return;
+    if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const body = parseBody(z.object({ turnIndex: z.number().int().min(0), turnMessageId: z.string().min(1) }), req.body, res);
     if (!body) return;
     const savepoint = await savepointService.createSavepoint(notebookId, body.turnIndex, body.turnMessageId);
     res.status(201).json(savepoint);
   }));
 
-  router.get('/notebooks/:notebookId/savepoints', asyncHandler(async (req: Request, res: Response) => {
+  router.get('/notebooks/:notebookId/savepoints', asyncHandler(async (req: AuthRequest, res: Response) => {
     const notebookId = parseUuidParam(req.params.notebookId, 'notebookId', res);
     if (!notebookId) return;
+    if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const savepoints = await savepointService.listSavepoints(notebookId);
     res.json({ savepoints });
   }));
 
-  router.get('/notebooks/:notebookId/savepoints/:savepointId/diff', asyncHandler(async (req: Request, res: Response) => {
+  router.get('/notebooks/:notebookId/savepoints/:savepointId/diff', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const notebookId = parseUuidParam(req.params.notebookId, 'notebookId', res);
+    if (!notebookId) return;
+    if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const savepointId = parseUuidParam(req.params.savepointId, 'savepointId', res);
     if (!savepointId) return;
     const diff = await savepointService.computeDiff(savepointId);
     res.json(diff);
   }));
 
-  router.post('/notebooks/:notebookId/savepoints/:savepointId/restore', asyncHandler(async (req: Request, res: Response) => {
+  router.post('/notebooks/:notebookId/savepoints/:savepointId/restore', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const notebookId = parseUuidParam(req.params.notebookId, 'notebookId', res);
+    if (!notebookId) return;
+    if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const savepointId = parseUuidParam(req.params.savepointId, 'savepointId', res);
     if (!savepointId) return;
     const result = await savepointService.restoreSavepoint(savepointId);
     res.json(result);
   }));
 
-  router.delete('/notebooks/:notebookId/savepoints', asyncHandler(async (req: Request, res: Response) => {
+  router.delete('/notebooks/:notebookId/savepoints', asyncHandler(async (req: AuthRequest, res: Response) => {
     const notebookId = parseUuidParam(req.params.notebookId, 'notebookId', res);
     if (!notebookId) return;
+    if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const body = parseBody(z.object({ afterTurnIndex: z.number().int().min(0) }), req.body, res);
     if (!body) return;
     await savepointService.deleteSavepointsAfter(notebookId, body.afterTurnIndex);

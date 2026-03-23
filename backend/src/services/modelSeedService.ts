@@ -2,13 +2,21 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
+import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord } from '../types/model.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
+const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
 const FEATURES = ['age', 'income', 'credit_score', 'years_employed', 'debt_ratio'];
-const FIXED_DATASET_ID = '00000000-0000-0000-0000-000000000001';
+const FALLBACK_DATASET_ID = '00000000-0000-0000-0000-000000000001';
+
+/** Resolve the project's actual dataset ID so seeded models can be tuned. */
+async function resolveDatasetId(projectId: string): Promise<string> {
+  const datasets = await datasetRepository.listByProject(projectId);
+  return datasets.length > 0 ? datasets[0].datasetId : FALLBACK_DATASET_ID;
+}
 
 type TaskType = 'classification' | 'regression' | 'clustering';
 
@@ -197,7 +205,7 @@ export async function seedOneModel(projectId: string, options: {
   const metrics = randomMetrics(options.taskType);
   const record = await modelRepository.create({
     projectId,
-    datasetId: FIXED_DATASET_ID,
+    datasetId: await resolveDatasetId(projectId),
     name: options.name,
     templateId: ALGORITHM_TO_TEMPLATE[options.algorithm] ?? `seed-${options.algorithm.toLowerCase().replace(/\s+/g, '_')}`,
     taskType: options.taskType,
@@ -238,7 +246,7 @@ export async function seedModels(projectId: string): Promise<ModelRecord[]> {
   for (const spec of SEED_SPECS) {
     const record = await modelRepository.create({
       projectId,
-      datasetId: FIXED_DATASET_ID,
+      datasetId: await resolveDatasetId(projectId),
       name: spec.name,
       templateId: spec.templateId,
       taskType: spec.taskType,

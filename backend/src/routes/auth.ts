@@ -24,7 +24,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
-import type { AuthRequest } from '../types/auth.js';
+import type { AuthenticatedRequest } from '../types/auth.js';
 
 import { handleGoogleAuth, handleGoogleCallback } from './auth/oauthHandler.js';
 
@@ -180,8 +180,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.post(
     '/auth/logout',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
-      if (!req.user) return res.status(401).send();
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       const { refreshToken } = req.body;
       if (refreshToken) {
         const tokenHash = authService.hashRefreshToken(refreshToken);
@@ -197,8 +196,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.get(
     '/auth/me',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
-      if (!req.user) return res.status(401).send();
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       return res.json({ user: req.user });
     })
   );
@@ -262,8 +260,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.patch(
     '/auth/profile',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
-      if (!req.user) return res.status(401).send();
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       const result = updateProfileSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ errors: result.error.flatten() });

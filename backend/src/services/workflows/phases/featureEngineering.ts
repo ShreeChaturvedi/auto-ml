@@ -193,7 +193,18 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
     return [];
   },
 
-  resolveNextStage(current: string): string | null {
+  resolveNextStage(
+    current: string,
+    toolResults: import('../../../types/llm.js').ToolResult[]
+  ): string | null {
+    // On execution failure, loop back to generate_code so the LLM can fix its code
+    const hasExecutionFailure = toolResults.some(
+      (result) => result.tool === 'execute_feature' && result.error
+    );
+    if (hasExecutionFailure && current === 'execute_feature') {
+      return 'generate_code';
+    }
+
     const idx = STAGE_NAMES.indexOf(current);
     if (idx < 0 || idx >= STAGE_NAMES.length - 1) {
       return null;

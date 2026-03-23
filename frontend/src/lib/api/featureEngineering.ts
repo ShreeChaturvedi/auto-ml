@@ -48,6 +48,9 @@ export interface FeaturePipelineRunState {
   runId: string;
   projectId: string;
   features: Record<string, FeatureStepRecord>;
+  lastCheckpointId?: string;
+  lastCheckpointLabel?: string;
+  lastCheckpointAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -62,10 +65,10 @@ interface FeatureRunResponse {
   run: FeaturePipelineRunState;
 }
 
-export async function fetchFeatureRuns(projectId: string): Promise<FeatureRunsListResponse> {
-  return apiRequest<FeatureRunsListResponse>(
-    `/feature-engineering/runs?projectId=${encodeURIComponent(projectId)}`
-  );
+export async function fetchFeatureRuns(projectId: string, limit?: number): Promise<FeatureRunsListResponse> {
+  let url = `/feature-engineering/runs?projectId=${encodeURIComponent(projectId)}`;
+  if (limit != null) url += `&limit=${limit}`;
+  return apiRequest<FeatureRunsListResponse>(url);
 }
 
 export async function fetchFeatureRun(runId: string): Promise<FeatureRunResponse> {

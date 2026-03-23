@@ -61,26 +61,35 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
 };
 
 /**
- * checkpoint_feature_pipeline — snapshot the current feature set.
- * Returns checkpoint confirmation with feature IDs.
+ * checkpoint_feature_pipeline — snapshot the current feature set and persist it.
  */
 export const checkpointFeaturePipeline: FeatureToolHandler = async (ctx: FeatureToolContext) => {
   const { args } = ctx;
   const checkpointId = `fe-ckpt-${Date.now()}`;
 
-  // Collect registered feature IDs from the run if available
   const registeredFeatureIds = ctx.run
     ? Object.keys(ctx.run.features).filter(
         (id) => ctx.run!.features[id].status === 'registered'
       )
     : ((args.featureIds as string[]) ?? []);
 
+  const label = (args.label as string) ?? `Feature checkpoint ${checkpointId}`;
+
+  // Persist checkpoint metadata on the run
+  if (ctx.run && ctx.runRepository) {
+    ctx.run.lastCheckpointId = checkpointId;
+    ctx.run.lastCheckpointLabel = label;
+    ctx.run.lastCheckpointAt = nowIso();
+    ctx.run.updatedAt = nowIso();
+    await ctx.runRepository.save(ctx.run);
+  }
+
   return {
     output: {
       status: 'ok',
       message: 'Feature pipeline checkpoint created',
       checkpointId,
-      label: args.label ?? `Feature checkpoint ${checkpointId}`,
+      label,
       featureIds: registeredFeatureIds,
       datasetId: args.datasetId ?? ctx.datasetId,
       runId: ctx.run?.runId

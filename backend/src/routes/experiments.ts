@@ -184,24 +184,29 @@ export function createExperimentsRouter(): Router {
       }
     }
 
-    const body = req.body as {
+    const { modelId, nTrials, metric, timeoutSeconds, sampler } = req.body as {
       modelId?: string;
       nTrials?: number;
       metric?: string;
       timeoutSeconds?: number;
+      sampler?: string;
     };
 
     // Validate required fields
-    if (!body.modelId || typeof body.modelId !== 'string') {
+    if (!modelId || typeof modelId !== 'string') {
       res.status(400).json({ error: 'modelId is required.' });
       return;
     }
-    if (!body.nTrials || typeof body.nTrials !== 'number' || body.nTrials < 1 || body.nTrials > 200) {
+    if (!nTrials || typeof nTrials !== 'number' || nTrials < 1 || nTrials > 200) {
       res.status(400).json({ error: 'nTrials must be a number between 1 and 200.' });
       return;
     }
-    if (!body.metric || typeof body.metric !== 'string') {
+    if (!metric || typeof metric !== 'string') {
       res.status(400).json({ error: 'metric is required.' });
+      return;
+    }
+    if (sampler && sampler !== 'tpe' && sampler !== 'random') {
+      res.status(400).json({ error: 'sampler must be "tpe" or "random"' });
       return;
     }
 
@@ -217,11 +222,12 @@ export function createExperimentsRouter(): Router {
     try {
       await runTuningStudy(
         projectId,
-        body.modelId,
-        body.nTrials,
-        body.metric,
-        body.timeoutSeconds ?? 600,
+        modelId,
+        nTrials,
+        metric,
+        timeoutSeconds ?? 600,
         res,
+        { sampler: (sampler as 'tpe' | 'random') ?? 'tpe' },
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

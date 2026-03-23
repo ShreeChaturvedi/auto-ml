@@ -416,7 +416,7 @@ describe('buildTuningScript', () => {
     expect(script).toContain('flush=True');
 
     // Study creation and optimization
-    expect(script).toContain('optuna.create_study(direction="maximize")');
+    expect(script).toContain('optuna.create_study(direction="maximize", sampler=sampler)');
     expect(script).toContain('study.optimize(objective, n_trials=50, timeout=600');
     expect(script).toContain('callbacks=[stream_callback]');
 
@@ -430,6 +430,53 @@ describe('buildTuningScript', () => {
 
     // Final done marker
     expect(script).toContain('{"type": "done"}');
+  });
+
+  it('omits random_state when template defaultParams lacks it', () => {
+    const template: ModelTemplate = {
+      id: 'ridge_regression',
+      name: 'Ridge',
+      taskType: 'regression',
+      description: 'Ridge regression.',
+      library: 'sklearn',
+      importPath: 'sklearn.linear_model',
+      modelClass: 'Ridge',
+      metrics: ['r2'],
+      parameters: [
+        { key: 'alpha', label: 'Alpha', type: 'number', default: 1.0, min: 0.001, max: 100 }
+      ],
+      defaultParams: { alpha: 1.0 },
+    };
+    const script = buildTuningScript({
+      template,
+      datasetPath: '/workspace/datasets/data.csv',
+      targetColumn: 'target',
+      testSize: 0.2,
+      nTrials: 10,
+      metric: 'r2',
+      timeoutSeconds: 300,
+      outputDir: '/workspace/tuning/ridge1',
+    });
+    // Model creation lines should NOT contain random_state
+    expect(script).toContain('Ridge(**params)');
+    expect(script).not.toContain('Ridge(**params, random_state=42)');
+    expect(script).not.toContain('Ridge(**best_params, random_state=42)');
+  });
+
+  it('includes convergence tracking in stream callback', () => {
+    const template = makeClassificationTemplate();
+    const script = buildTuningScript({
+      template,
+      datasetPath: '/workspace/datasets/data.csv',
+      targetColumn: 'target',
+      testSize: 0.2,
+      nTrials: 50,
+      metric: 'accuracy',
+      timeoutSeconds: 600,
+      outputDir: '/workspace/tuning/conv1',
+    });
+    expect(script).toContain("'type': 'convergence_update'");
+    expect(script).toContain("'type': 'importance_update'");
   });
 });
 

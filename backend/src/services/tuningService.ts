@@ -43,6 +43,7 @@ export interface BuildTuningScriptOptions {
   metric: string;
   timeoutSeconds: number;
   outputDir: string;
+  sampler?: 'tpe' | 'random';
 }
 
 /**
@@ -113,6 +114,7 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   // ── Suppress Optuna default logging (we stream our own) ──
   lines.push('optuna.logging.set_verbosity(optuna.logging.WARNING)');
+  lines.push(`sampler = optuna.samplers.TPESampler(seed=42) if '${options.sampler ?? 'tpe'}' == 'tpe' else optuna.samplers.RandomSampler(seed=42)`);
   lines.push('');
 
   // ── Load dataset ──
@@ -131,6 +133,10 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push(...buildTrainTestSplitLines({ taskType: template.taskType, testSize }));
   lines.push('');
 
+  // ── Direction (needed for convergence tracking + study creation) ──
+  const minimizeMetrics = ['rmse', 'mae', 'mse', 'log_loss', 'mean_squared_error', 'mean_absolute_error'];
+  const direction = minimizeMetrics.includes(metric) ? 'minimize' : 'maximize';
+
   // ── Objective ──
   lines.push('def objective(trial):');
 
@@ -147,12 +153,16 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
     lines.push('    params = {}');
   }
 
-  lines.push(`    model = ${template.modelClass}(**params, random_state=42)`);
+  const randomStateSuffix = 'random_state' in template.defaultParams ? ', random_state=42' : '';
+  lines.push(`    model = ${template.modelClass}(**params${randomStateSuffix})`);
   lines.push(`    scores = cross_val_score(model, X_train, y_train, cv=5, scoring=${JSON.stringify(metric)})`);
   lines.push('    return scores.mean()');
   lines.push('');
 
   // ── Stream callback ──
+  lines.push(`DIRECTION = ${JSON.stringify(direction)}`);
+  lines.push(`N_TRIALS = ${nTrials}`);
+  lines.push("_best_tracker = {'value': None, 'since': 0}");
   lines.push('def stream_callback(study, trial):');
   lines.push('    print(json.dumps({');
   lines.push("        'type': 'trial_result',");
@@ -165,20 +175,39 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push("        'n_complete': len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]),");
   lines.push(`        'n_total': ${nTrials}`);
   lines.push('    }), flush=True)');
+  lines.push('    # Convergence tracking');
+  lines.push('    _n_complete = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])');
+  lines.push('    _cur_best = study.best_value if len(study.best_trials) > 0 else None');
+  lines.push('    if _cur_best is not None:');
+  lines.push("        if _best_tracker['value'] is None or (DIRECTION == 'maximize' and _cur_best > _best_tracker['value']) or (DIRECTION == 'minimize' and _cur_best < _best_tracker['value']):");
+  lines.push("            _best_tracker['since'] = 0");
+  lines.push("            _best_tracker['value'] = _cur_best");
+  lines.push('        else:');
+  lines.push("            _best_tracker['since'] += 1");
+  lines.push('        _patience = max(10, N_TRIALS // 5)');
+  lines.push("        if _best_tracker['since'] == 0:");
+  lines.push("            _conv_status = 'exploring'");
+  lines.push("        elif _best_tracker['since'] < _patience:");
+  lines.push("            _conv_status = 'narrowing'");
+  lines.push('        else:');
+  lines.push("            _conv_status = 'converging'");
+  lines.push("        print(json.dumps({'type': 'convergence_update', 'status': _conv_status, 'trials_since_improvement': _best_tracker['since'], 'improvement_rate': 0.0}), flush=True)");
+  lines.push('    if _n_complete in {10, 20, 30, 50, 75, 100, 150, 200} and _n_complete >= 10:');
+  lines.push('        try:');
+  lines.push('            _imp = optuna.importance.get_param_importances(study)');
+  lines.push("            print(json.dumps({'type': 'importance_update', 'importances': dict(_imp), 'n_trials_used': _n_complete}), flush=True)");
+  lines.push('        except Exception:');
+  lines.push('            pass');
   lines.push('');
 
   // ── Create study and optimize ──
-  // sklearn scoring: neg_* metrics return negative values (higher=better), so maximize.
-  // Raw error metrics (rmse, mae, mse, log_loss) are lower-is-better, so minimize.
-  const minimizeMetrics = ['rmse', 'mae', 'mse', 'log_loss', 'mean_squared_error', 'mean_absolute_error'];
-  const direction = minimizeMetrics.includes(metric) ? 'minimize' : 'maximize';
-  lines.push(`study = optuna.create_study(direction=${JSON.stringify(direction)})`);
+  lines.push(`study = optuna.create_study(direction=${JSON.stringify(direction)}, sampler=sampler)`);
   lines.push(`study.optimize(objective, n_trials=${nTrials}, timeout=${timeoutSeconds}, callbacks=[stream_callback])`);
   lines.push('');
 
   // ── Refit best model on full train set ──
   lines.push('best_params = study.best_params');
-  lines.push(`best_model = ${template.modelClass}(**best_params, random_state=42)`);
+  lines.push(`best_model = ${template.modelClass}(**best_params${randomStateSuffix})`);
   lines.push('best_model.fit(X_train, y_train)');
   lines.push('');
 
@@ -244,6 +273,7 @@ export async function runTuningStudy(
   metric: string,
   timeoutSeconds: number,
   res: Response,
+  options?: { sampler?: 'tpe' | 'random'; paramOverrides?: Record<string, { min?: number; max?: number; step?: number }> },
 ): Promise<void> {
   try {
     // 1. Read source model + template
@@ -288,7 +318,17 @@ export async function runTuningStudy(
       });
     }
 
-    // 4. Build tuning script
+    // 4. Check for tunable parameters
+    const tunableParams = template.parameters.filter(
+      (p) => p.min !== undefined || p.options !== undefined || p.type === 'boolean'
+    );
+    if (tunableParams.length === 0) {
+      writeJsonLine(res, { type: 'error', message: `Model "${template.name}" has no tunable hyperparameters.` });
+      res.end();
+      return;
+    }
+
+    // 5. Build tuning script
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
 
@@ -301,11 +341,13 @@ export async function runTuningStudy(
       metric,
       timeoutSeconds,
       outputDir: tuningOutputDir,
+      sampler: options?.sampler,
     });
 
-    // 5. Execute with streaming output
+    // 6. Execute with streaming output
     const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
 
+    const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
     const result = await kernelManager.execute(container, script, tuningTimeoutMs, (output) => {
       // Each RichOutput of type 'text' may contain one or more JSON lines
       if (output.type !== 'text') return;
@@ -314,7 +356,7 @@ export async function runTuningStudy(
       for (const line of textLines) {
         try {
           const parsed = JSON.parse(line) as Record<string, unknown>;
-          if (parsed.type === 'trial_result') {
+          if (RELAY_TYPES.has(parsed.type as string)) {
             writeJsonLine(res, parsed);
           }
           // Ignore 'done' here — we emit our own done event below
@@ -324,7 +366,7 @@ export async function runTuningStudy(
       }
     });
 
-    // 6. On success — register the best model as a new ModelRecord
+    // 7. On success — register the best model as a new ModelRecord
     const workspaceOutputDir = join(container.workspacePath, 'tuning', modelId);
     const summaryPath = join(workspaceOutputDir, 'tuning_summary.json');
     const modelArtifactPath = join(workspaceOutputDir, 'model.joblib');

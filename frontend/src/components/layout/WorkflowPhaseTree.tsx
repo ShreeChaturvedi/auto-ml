@@ -204,8 +204,15 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                   isUnlocked && 'cursor-pointer'
                 )}
               >
-                {/* Icon + Chevron overlay container */}
-                <div className="relative shrink-0 h-3.5 w-3.5">
+                {/* Separate click target so expand/collapse is independent
+                    of the parent button's navigation. */}
+                <div
+                  className="relative shrink-0 h-3.5 w-3.5"
+                  onClick={isExpandable ? (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    togglePhaseExpand(phase);
+                  } : undefined}
+                >
                   {/* Phase icon - fades out on hover for expandable phases */}
                   {IconComponent && (
                     <IconComponent

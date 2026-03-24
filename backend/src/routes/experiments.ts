@@ -11,6 +11,11 @@ import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
 import { createLlmClient } from '../services/llm/llmClient.js';
+import {
+  buildExperimentReportSystemPrompt,
+  buildExperimentReportUserMessage,
+  extractEvalSummary,
+} from '../services/llm/prompts/experimentReport.js';
 import { getModelById, listModels } from '../services/modelTraining.js';
 import { createNlFilterNormalizer, NlFilterResponseSchema } from '../services/nlFilter/schema.js';
 import { buildNlFilterContext, buildNlFilterPrompt } from '../services/nlFilter/service.js';
@@ -116,7 +121,7 @@ const INSIGHT_SYSTEM_PROMPTS: Record<string, string> = {
     'Analyze the error patterns in this model. Explain what types of samples are hardest to predict and suggest improvements. Keep it under 4 sentences. Only reference values from the provided data.',
 };
 
-const VALID_INSIGHT_TYPES = new Set(Object.keys(INSIGHT_SYSTEM_PROMPTS));
+const VALID_INSIGHT_TYPES = new Set([...Object.keys(INSIGHT_SYSTEM_PROMPTS), 'report']);
 
 export function createExperimentsRouter(): Router {
   const router = Router();
@@ -387,20 +392,26 @@ export function createExperimentsRouter(): Router {
       return;
     }
 
-    // --- Cache check: hash current model state to detect staleness ---
+    // --- Load models and compute cache hash ---
     const cachePath = join(env.insightsCacheDir, `${projectId}.json`);
     let modelHash = '';
+    let allModels: Awaited<ReturnType<typeof listModels>> = [];
     try {
-      const models = await listModels(projectId);
-      const modelSummaries = models
-        .map(m => ({ modelId: m.modelId, name: m.name, algorithm: m.algorithm, taskType: m.taskType, status: m.status, metrics: m.metrics }))
-        .sort((a, b) => a.modelId.localeCompare(b.modelId));
-      modelHash = createHash('sha256').update(projectId + JSON.stringify(modelSummaries)).digest('hex');
+      allModels = (await listModels(projectId)) ?? [];
+    } catch {
+      // No models available
+    }
 
+    const modelSummaries = allModels
+      .map(m => ({ modelId: m.modelId, name: m.name, algorithm: m.algorithm, taskType: m.taskType, status: m.status, metrics: m.metrics }))
+      .sort((a, b) => a.modelId.localeCompare(b.modelId));
+    modelHash = createHash('sha256').update(projectId + JSON.stringify(modelSummaries)).digest('hex');
+
+    // --- Cache check ---
+    try {
       const raw = await readFile(cachePath, 'utf8');
       const entry = JSON.parse(raw) as Record<string, { modelHash: string; text: string }>;
       if (entry[body.type]?.modelHash === modelHash) {
-        // Cache hit — send the cached text as a single NDJSON burst
         res.status(200);
         res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache');
@@ -415,6 +426,39 @@ export function createExperimentsRouter(): Router {
       // Cache miss or read error — proceed to LLM
     }
 
+    // --- Build prompt (report uses dynamic server-side context, others use body.context) ---
+    const isReport = body.type === 'report';
+    let systemPrompt: string;
+    let userMessage: string;
+
+    if (isReport) {
+      systemPrompt = buildExperimentReportSystemPrompt();
+
+      // Load evaluations and project name concurrently
+      const evaluations: Record<string, ReturnType<typeof extractEvalSummary>> = {};
+      const [, project] = await Promise.all([
+        Promise.all(
+          allModels.map(async (m) => {
+            try {
+              const raw = await readFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'), 'utf8');
+              evaluations[m.modelId] = extractEvalSummary(JSON.parse(raw));
+            } catch { /* eval not available */ }
+          }),
+        ),
+        projectRepository.getById(projectId),
+      ]);
+
+      userMessage = buildExperimentReportUserMessage({
+        projectTitle: project?.name ?? projectId,
+        taskType: allModels[0]?.taskType ?? 'classification',
+        models: modelSummaries,
+        evaluations,
+      });
+    } else {
+      systemPrompt = INSIGHT_SYSTEM_PROMPTS[body.type];
+      userMessage = JSON.stringify(body.context ?? {});
+    }
+
     // Set NDJSON streaming headers
     res.status(200);
     res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
@@ -425,9 +469,7 @@ export function createExperimentsRouter(): Router {
     }
 
     try {
-      const client = createLlmClient();
-      const systemPrompt = INSIGHT_SYSTEM_PROMPTS[body.type];
-      const userMessage = JSON.stringify(body.context ?? {});
+      const client = isReport ? createLlmClient(undefined, 180_000) : createLlmClient();
       let accumulated = '';
 
       await client.stream(
@@ -437,7 +479,7 @@ export function createExperimentsRouter(): Router {
             { role: 'user', content: userMessage },
           ],
           temperature: 0.3,
-          maxOutputTokens: 1024,
+          maxOutputTokens: isReport ? 4096 : 1024,
         },
         {
           onToken(token: string) {

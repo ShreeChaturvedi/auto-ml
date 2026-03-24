@@ -1,6 +1,8 @@
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 
 import { searchDocuments } from './documentSearchService.js';
+import { createLlmClient } from './llm/llmClient.js';
 
 interface AnswerOptions {
   projectId?: string;
@@ -53,20 +55,15 @@ export async function generateAnswer(options: AnswerOptions): Promise<AnswerResp
   });
 
   if (documents.length === 0) {
-    const response: AnswerResponse = {
+    return {
       status: 'not_found',
       answer: 'No supporting documents found.',
       citations: [],
-      meta: {
-        cached: false,
-        latencyMs: Date.now() - startedAt,
-        chunksConsidered: 0
-      }
+      meta: { cached: false, latencyMs: Date.now() - startedAt, chunksConsidered: 0 }
     };
-    return response;
   }
 
-  const answerText = composeAnswer(options.question, documents);
+  const answerText = await composeAnswer(options.question, documents);
   const citations: AnswerCitation[] = documents.map((doc) => ({
     chunkId: doc.chunkId,
     documentId: doc.documentId,
@@ -78,11 +75,7 @@ export async function generateAnswer(options: AnswerOptions): Promise<AnswerResp
     status: 'ok',
     answer: answerText,
     citations,
-    meta: {
-      cached: false,
-      latencyMs: Date.now() - startedAt,
-      chunksConsidered: documents.length
-    }
+    meta: { cached: false, latencyMs: Date.now() - startedAt, chunksConsidered: documents.length }
   };
 
   answerCache.set(cacheKey, {
@@ -98,11 +91,29 @@ function buildCacheKey(options: AnswerOptions): string {
   return `${projectPart}:${options.question.trim().toLowerCase()}:${options.topK ?? 5}`;
 }
 
-function composeAnswer(question: string, docs: { snippet: string }[]): string {
-  const snippets = docs.map((doc) => doc.snippet.trim()).filter(Boolean);
-  const base = snippets.slice(0, 3).join(' ');
-  if (!base) {
-    return `Unable to find supporting evidence for "${question}".`;
+async function composeAnswer(question: string, docs: { snippet: string; filename: string }[]): Promise<string> {
+  const contextBlock = docs
+    .map((doc, i) => `[${i + 1}] (${doc.filename}): ${doc.snippet}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are a document Q&A assistant. Answer the user's question based ONLY on the provided context excerpts. Cite sources using [1], [2], etc. If the context does not contain enough information, say so. Be concise.`;
+
+  const userPrompt = `Context:\n${contextBlock}\n\nQuestion: ${question}`;
+
+  try {
+    const client = createLlmClient();
+    const answer = await client.complete({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      maxOutputTokens: 1024,
+    });
+    return answer.trim();
+  } catch (error) {
+    appLogger.error('[answerService] LLM call failed, falling back to snippet summary', error);
+    // Graceful degradation: return concatenated snippets
+    const snippets = docs.map((doc) => doc.snippet.trim()).filter(Boolean);
+    return snippets.slice(0, 3).join('\n\n') || `Unable to find supporting evidence for "${question}".`;
   }
-  return `${base} (based on retrieved context)`;
 }

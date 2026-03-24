@@ -1,11 +1,22 @@
 import { appLogger } from '../logging/logger.js';
+
 const MIME_TEXT = new Set([
   'text/plain',
   'text/markdown',
   'text/md',
   'text/x-markdown',
   'text/html',
+  'text/xml',
+  'application/xml',
+  'application/xhtml+xml',
   'application/json'
+]);
+
+const MARKUP_MIMES = new Set([
+  'text/html',
+  'text/xml',
+  'application/xml',
+  'application/xhtml+xml'
 ]);
 
 const DOCX_MIME_TYPES = new Set([
@@ -55,8 +66,12 @@ export async function parseDocument(buffer: Buffer, mimeType?: string, filename?
   }
 
   if (mimeType && MIME_TEXT.has(mimeType)) {
+    let text = buffer.toString('utf8');
+    if (MARKUP_MIMES.has(mimeType)) {
+      text = stripMarkup(text);
+    }
     return {
-      text: buffer.toString('utf8'),
+      text,
       mimeType,
       type: mimeType.includes('markdown') ? 'markdown' : 'text'
     };
@@ -70,6 +85,24 @@ export async function parseDocument(buffer: Buffer, mimeType?: string, filename?
     type: text ? 'text' : 'unknown'
   };
 }
+
+/** Strip HTML/XML tags, decode common entities, and collapse whitespace */
+function stripMarkup(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export { stripMarkup };
 
 async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
   try {

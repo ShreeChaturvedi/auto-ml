@@ -97,12 +97,33 @@ describe('documentParser', () => {
         expect(result.type).toBe('markdown');
       });
 
-      it('parses HTML as text', async () => {
-        const buffer = Buffer.from('<html><body>Content</body></html>');
+      it('parses HTML with tags stripped', async () => {
+        const buffer = Buffer.from('<html><body><h1>Title</h1><p>Content</p></body></html>');
         const result = await parseDocument(buffer, 'text/html');
 
+        expect(result.text).toContain('Title');
         expect(result.text).toContain('Content');
+        expect(result.text).not.toContain('<h1>');
+        expect(result.text).not.toContain('<p>');
         expect(result.type).toBe('text');
+      });
+
+      it('strips script and style tags from HTML', async () => {
+        const buffer = Buffer.from('<html><head><style>body{color:red}</style></head><body><script>alert(1)</script>Hello</body></html>');
+        const result = await parseDocument(buffer, 'text/html');
+
+        expect(result.text).toContain('Hello');
+        expect(result.text).not.toContain('alert');
+        expect(result.text).not.toContain('color:red');
+      });
+
+      it('strips XML tags from XML documents', async () => {
+        const buffer = Buffer.from('<root><item attr="val">Data</item></root>');
+        const result = await parseDocument(buffer, 'text/xml');
+
+        expect(result.text).toContain('Data');
+        expect(result.text).not.toContain('<root>');
+        expect(result.text).not.toContain('<item');
       });
 
       it('parses JSON as text', async () => {

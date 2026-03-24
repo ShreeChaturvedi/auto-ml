@@ -1,18 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAuthStore } from '../authStore';
-import type { SafeUser } from '../../types/user';
+import { TEST_USER } from '../../tests/fixtures';
 
 describe('authStore', () => {
-  const mockUser: SafeUser = {
-    user_id: 'test-user-123',
-    email: 'test@example.com',
-    name: 'Test User',
-    role: 'user',
-    email_verified: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_login_at: null
-  };
+  const mockUser = TEST_USER;
 
   beforeEach(() => {
     // Reset store to initial state before each test

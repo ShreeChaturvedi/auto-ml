@@ -46,6 +46,7 @@ vi.mock('../config.js', async () => {
 
 import { env } from '../config.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
+import { TEST_USER } from '../tests/fixtures.js';
 
 import { createRealtimeSessionRouter } from './realtimeSession.js';
 
@@ -63,20 +64,11 @@ describeRouteSuite('realtime session routes', () => {
 
     hasDatabaseConfigurationMock.mockReturnValue(true);
     verifyAccessTokenMock.mockReturnValue({
-      userId: 'user-1',
-      email: 'user@example.com',
-      role: 'user',
+      userId: TEST_USER.user_id,
+      email: TEST_USER.email,
+      role: TEST_USER.role,
     });
-    findByIdMock.mockResolvedValue({
-      user_id: 'user-1',
-      email: 'user@example.com',
-      name: 'Test User',
-      role: 'user',
-      email_verified: true,
-      created_at: new Date('2026-01-01T00:00:00.000Z'),
-      updated_at: new Date('2026-01-01T00:00:00.000Z'),
-      last_login_at: null,
-    });
+    findByIdMock.mockResolvedValue(TEST_USER);
     env.openaiApiKey = 'test-openai-key';
   });
 

@@ -33,19 +33,9 @@ vi.mock('../services/authService.js', () => ({
 
 import { InMemoryProjectRepository } from '../repositories/projectRepository.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
+import { TEST_USER, TEST_USER_B } from '../tests/fixtures.js';
 
 import { registerProjectRoutes } from './projects.js';
-
-const TEST_USER = {
-  user_id: 'user-1',
-  email: 'user@example.com',
-  name: 'Test User',
-  role: 'user' as const,
-  email_verified: true,
-  created_at: new Date('2026-01-01'),
-  updated_at: new Date('2026-01-01'),
-  last_login_at: null
-};
 
 function createTestApp(repository: InMemoryProjectRepository) {
   const app = express();
@@ -105,8 +95,8 @@ describeRouteSuite('project routes', () => {
     });
 
     it('returns only projects owned by the authenticated user', async () => {
-      await repository.create({ name: 'My Project', userId: 'user-1' });
-      await repository.create({ name: 'Other Project', userId: 'user-2' });
+      await repository.create({ name: 'My Project', userId: TEST_USER.user_id });
+      await repository.create({ name: 'Other Project', userId: TEST_USER_B.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -131,7 +121,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('returns project by id when owned by user', async () => {
-      const created = await repository.create({ name: 'Test Project', description: 'A test', userId: 'user-1' });
+      const created = await repository.create({ name: 'Test Project', description: 'A test', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -145,7 +135,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('returns 404 for project owned by another user', async () => {
-      const created = await repository.create({ name: 'Other Project', userId: 'user-2' });
+      const created = await repository.create({ name: 'Other Project', userId: TEST_USER_B.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -179,7 +169,7 @@ describeRouteSuite('project routes', () => {
         .send({ name: 'New Project' });
 
       expect(response.status).toBe(201);
-      expect(response.body.project.userId).toBe('user-1');
+      expect(response.body.project.userId).toBe(TEST_USER.user_id);
     });
 
     it('creates a project with all fields', async () => {
@@ -267,7 +257,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('updates project name', async () => {
-      const created = await repository.create({ name: 'Original', userId: 'user-1' });
+      const created = await repository.create({ name: 'Original', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -280,7 +270,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('updates project description', async () => {
-      const created = await repository.create({ name: 'Test', userId: 'user-1' });
+      const created = await repository.create({ name: 'Test', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -293,7 +283,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('updates project metadata', async () => {
-      const created = await repository.create({ name: 'Test', userId: 'user-1' });
+      const created = await repository.create({ name: 'Test', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -309,7 +299,7 @@ describeRouteSuite('project routes', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-03-11T09:00:00.000Z'));
 
-      const created = await repository.create({ name: 'Test', userId: 'user-1' });
+      const created = await repository.create({ name: 'Test', userId: TEST_USER.user_id });
       const originalUpdatedAt = created.updatedAt;
 
       vi.setSystemTime(new Date('2026-03-11T09:00:01.000Z'));
@@ -329,7 +319,7 @@ describeRouteSuite('project routes', () => {
         description: 'Original description',
         icon: 'folder',
         color: 'blue',
-        userId: 'user-1'
+        userId: TEST_USER.user_id
       });
 
       const app = createTestApp(repository);
@@ -343,7 +333,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('returns 404 when trying to update another user\'s project', async () => {
-      const created = await repository.create({ name: 'Other', userId: 'user-2' });
+      const created = await repository.create({ name: 'Other', userId: TEST_USER_B.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -367,7 +357,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('deletes an existing project', async () => {
-      const created = await repository.create({ name: 'To Delete', userId: 'user-1' });
+      const created = await repository.create({ name: 'To Delete', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
@@ -381,8 +371,8 @@ describeRouteSuite('project routes', () => {
     });
 
     it('only deletes the specified project', async () => {
-      const project1 = await repository.create({ name: 'Keep', userId: 'user-1' });
-      const project2 = await repository.create({ name: 'Delete', userId: 'user-1' });
+      const project1 = await repository.create({ name: 'Keep', userId: TEST_USER.user_id });
+      const project2 = await repository.create({ name: 'Delete', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       await request(app)
@@ -395,7 +385,7 @@ describeRouteSuite('project routes', () => {
     });
 
     it('returns 404 when trying to delete another user\'s project', async () => {
-      const created = await repository.create({ name: 'Other', userId: 'user-2' });
+      const created = await repository.create({ name: 'Other', userId: TEST_USER_B.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)

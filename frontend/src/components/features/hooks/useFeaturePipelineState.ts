@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWorkflowSessionStore, buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
-import { fetchFeatureRun, fetchFeatureRuns } from '@/lib/api/featureEngineering';
+import { fetchFeatureRun } from '@/lib/api/featureEngineering';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useFeatureReadiness } from './useFeatureReadiness';
 import { useFeatureCodeGen } from './useFeatureCodeGen';
@@ -104,21 +104,12 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   useEffect(() => {
     if (hydratedProjectRef.current === projectId) return;
     hydratedProjectRef.current = projectId;
-    hydrateFromBackend(projectId);
-    hydrateFeatures(projectId, { force: true });
+    let cancelled = false;
 
-    // Hydrate feature lifecycle state from backend runs endpoint
-    const store = useFeatureStore.getState();
-
-    // Skip if store already has lifecycle state from this session
-    if (store.featureRunId && Object.keys(store.featureSteps).length > 0) {
-      return;
-    }
-
-    const hydrateRunIntoStore = (run: { runId: string; features: Record<string, import('@/lib/api/featureEngineering').FeatureStepRecord> }) => {
+    const hydrateRunIntoStore = (run: { runId: string; features?: Record<string, import('@/lib/api/featureEngineering').FeatureStepRecord> }) => {
       const featureStore = useFeatureStore.getState();
       featureStore.setFeatureRunId(run.runId);
-      for (const [featureId, step] of Object.entries(run.features)) {
+      for (const [featureId, step] of Object.entries(run.features ?? {})) {
         featureStore.setFeatureStep(featureId, {
           stepId: step.featureId,
           name: step.name,
@@ -130,21 +121,58 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
       }
     };
 
-    const currentVersionId = store.currentVersionId[projectId];
-    const storageKey = `feature-engineering-messages-v3-${currentVersionId ?? 'default'}`;
-    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
-    const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+    void (async () => {
+      try {
+        await hydrateFromBackend(projectId);
+        if (cancelled) {
+          return;
+        }
 
-    if (session?.runId) {
-      void fetchFeatureRun(session.runId)
-        .then(({ run }) => hydrateRunIntoStore(run))
-        .catch(() => { /* Run not found or network error — start fresh */ });
-    } else {
-      void fetchFeatureRuns(projectId, 1)
-        .then(({ runs }) => { if (runs.length > 0) hydrateRunIntoStore(runs[0]); })
-        .catch(() => { /* Network error — start fresh */ });
-    }
-  }, [hydrateFeatures, hydrateFromBackend, projectId]);
+        const hydrationError = useDataStore.getState().hydrationError;
+        if (hydrationError) {
+          setPanelError(hydrationError);
+          return;
+        }
+
+        hydrateFeatures(projectId, { force: true });
+
+        // Hydrate feature lifecycle state from backend runs endpoint
+        const store = useFeatureStore.getState();
+
+        // Skip if store already has lifecycle state from this session
+        if (store.featureRunId && Object.keys(store.featureSteps).length > 0) {
+          return;
+        }
+
+        const currentVersionId = store.currentVersionId[projectId];
+        const storageKey = `feature-engineering-messages-v3-${currentVersionId ?? 'default'}`;
+        const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+        const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+
+        if (session?.runId) {
+          const { run } = await fetchFeatureRun(session.runId);
+          if (cancelled) {
+            return;
+          }
+          hydrateRunIntoStore(run);
+        }
+
+        setPanelError(null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setPanelError(
+          error instanceof Error ? error.message : 'Failed to hydrate feature engineering state.'
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateFeatures, hydrateFromBackend, projectId, setPanelError]);
 
   // --- Derived file data ---
   const files = useMemo(

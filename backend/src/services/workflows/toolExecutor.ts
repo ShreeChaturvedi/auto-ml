@@ -51,12 +51,19 @@ async function executeWorkflowToolCall(
   phaseConfig: PhaseConfig | undefined
 ): Promise<ToolResult> {
   const approvalSource = resolveApprovalSource(state, call.tool);
-  const enrichedArgs = {
+  const enrichedArgs: Record<string, unknown> = {
     ...(call.args ?? {}),
     ...(state.turn.datasetId && call.tool !== 'set_active_dataset' ? { datasetId: state.turn.datasetId } : {}),
     toolCallId: call.id,
     approvalSource
   };
+
+  // Feature engineering lifecycle tools need a draft-scoped run identifier.
+  // If the model omits one, bind them to the current workflow run instead of
+  // falling back to the latest project-level feature run.
+  if (phaseConfig?.phase === 'feature_engineering' && !('runId' in enrichedArgs)) {
+    enrichedArgs.runId = state.run.runId;
+  }
 
   // PhaseConfig dispatch for phase-specific tools
   if (phaseConfig?.isPhaseSpecificTool(call.tool)) {

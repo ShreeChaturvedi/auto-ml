@@ -36,6 +36,31 @@ function createPhaseConfig(): PhaseConfig {
   };
 }
 
+function createFeaturePhaseConfig(): PhaseConfig {
+  return {
+    phase: 'feature_engineering',
+    lifecycle: [],
+    classifyTurn: vi.fn(async () => 'action' as const),
+    getStageConfig: vi.fn(() => ({
+      name: 'continue_feature_pipeline',
+      mode: 'text' as const,
+      allowedTools: [],
+      toolChoice: 'auto' as const,
+      requiresApproval: false,
+      allowAssistantMessage: true,
+      allowAskUser: true,
+      allowRenderUi: true,
+      allowPlanExit: false,
+      requireToolCall: false
+    })),
+    buildSystemPrompt: vi.fn(() => ''),
+    buildUserContext: vi.fn(() => []),
+    resolveNextStage: vi.fn(() => null),
+    isPhaseSpecificTool: vi.fn((toolName: string) => toolName === 'propose_feature'),
+    executePhaseSpecificTool: executePhaseSpecificToolMock
+  };
+}
+
 function createState(): WorkflowGraphState {
   const turn: WorkflowTurnRequest = {
     projectId: 'project-1',
@@ -130,6 +155,46 @@ describe('executeToolsNode', () => {
       expect.objectContaining({
         projectId: 'project-1',
         toolCallId: 'wf-call-1'
+      })
+    );
+  });
+
+  it('binds feature lifecycle tools to the current workflow run when runId is omitted', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.runId = 'wf-feature-1';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-feature-1',
+      tool: 'propose_feature',
+      args: {
+        featureName: 'tenure_bucket',
+        method: 'binning',
+        rationale: 'Capture churn behavior by tenure bucket.'
+      },
+      rationale: 'Create a candidate feature for churn prediction.'
+    }];
+    state.controllerSummary = {
+      currentNode: 'continue_feature_pipeline'
+    };
+
+    await executeToolsNode(state, {
+      configurable: {
+        phaseConfig
+      }
+    } as never);
+
+    expect(executePhaseSpecificToolMock).toHaveBeenCalledWith(
+      'propose_feature',
+      expect.objectContaining({
+        runId: 'wf-feature-1',
+        datasetId: 'dataset-1'
+      }),
+      expect.objectContaining({
+        projectId: 'project-1',
+        toolCallId: 'wf-call-feature-1'
       })
     );
   });

@@ -2,6 +2,22 @@ import { hashCode, nowIso } from '../preprocessingTools/helpers.js';
 
 import type { FeatureToolContext, FeatureToolHandler } from './types.js';
 
+function requireFeatureRun(
+  ctx: FeatureToolContext,
+  toolName: 'propose_feature' | 'materialize_feature_code'
+) {
+  if (!ctx.run || !ctx.runRepository) {
+    return {
+      error: `${toolName} could not persist because the feature run is unavailable. Start a new feature engineering run and try again.`
+    };
+  }
+
+  return {
+    run: ctx.run,
+    runRepository: ctx.runRepository
+  };
+}
+
 /**
  * propose_feature — declare a feature intent with rationale, method, and parameters.
  * Persists the proposal as a FeatureStepRecord when a run is available.
@@ -23,20 +39,23 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
     runId: ctx.run?.runId
   };
 
-  if (ctx.run && ctx.runRepository) {
-    ctx.run.features[featureId] = {
-      featureId,
-      name: (args.featureName as string) ?? featureId,
-      method: (args.method as string) ?? 'unknown',
-      rationale: args.rationale as string | undefined,
-      sourceColumns: (args.sourceColumns as string[]) ?? [],
-      impact: (args.impact as string) ?? 'medium',
-      status: 'proposed',
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
-    await ctx.runRepository.save(ctx.run);
+  const persistence = requireFeatureRun(ctx, 'propose_feature');
+  if ('error' in persistence) {
+    return { error: persistence.error };
   }
+
+  persistence.run.features[featureId] = {
+    featureId,
+    name: (args.featureName as string) ?? featureId,
+    method: (args.method as string) ?? 'unknown',
+    rationale: args.rationale as string | undefined,
+    sourceColumns: (args.sourceColumns as string[]) ?? [],
+    impact: (args.impact as string) ?? 'medium',
+    status: 'proposed',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  await persistence.runRepository.save(persistence.run);
 
   return { output };
 };
@@ -63,16 +82,19 @@ export const materializeFeatureCode: FeatureToolHandler = async (ctx: FeatureToo
     runId: ctx.run?.runId
   };
 
-  if (ctx.run && ctx.runRepository) {
-    const step = ctx.run.features[featureId];
-    if (step) {
-      step.code = code;
-      step.codeHash = hashCode(code);
-      step.outputColumns = (args.outputColumns as string[]) ?? [];
-      step.status = 'code_ready';
-      step.updatedAt = nowIso();
-      await ctx.runRepository.save(ctx.run);
-    }
+  const persistence = requireFeatureRun(ctx, 'materialize_feature_code');
+  if ('error' in persistence) {
+    return { error: persistence.error };
+  }
+
+  const step = persistence.run.features[featureId];
+  if (step) {
+    step.code = code;
+    step.codeHash = hashCode(code);
+    step.outputColumns = (args.outputColumns as string[]) ?? [];
+    step.status = 'code_ready';
+    step.updatedAt = nowIso();
+    await persistence.runRepository.save(persistence.run);
   }
 
   return { output };

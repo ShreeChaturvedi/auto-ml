@@ -150,6 +150,7 @@ export interface WorkflowArtifactUpdatedEvent {
   type: 'artifact_updated';
   artifact: {
     artifactId?: string;
+    runId?: string;
     kind: 'ui' | 'plan' | 'summary';
     label?: string;
     payload?: Record<string, unknown>;

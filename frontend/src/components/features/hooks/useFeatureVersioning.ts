@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import type { PipelineVersion } from '@/types/feature';
 import type { SuggestionDraft } from './useFeaturePipelineState';
@@ -196,13 +197,15 @@ export function useFeatureVersioning({
 
   // --- Reset handler ---
   const handleReset = useCallback(() => {
+    const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
+    useWorkflowSessionStore.getState().clearSession(buildWorkflowSessionKey(projectId, storageKey));
     clearDraft();
     clearProjectFeatures(projectId);
     setSuggestionDrafts({});
     setPanelError(null);
     setApplyStatus('idle');
     setApplyMessage(null);
-  }, [clearDraft, clearProjectFeatures, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+  }, [clearDraft, clearProjectFeatures, currentVersion?.id, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
 
   return {
     versions,

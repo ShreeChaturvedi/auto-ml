@@ -26,6 +26,7 @@ import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
 import { createRealtimeSessionRouter } from './routes/realtimeSession.js';
+import { createSettingsRouter } from './routes/settings.js';
 import { createWorkflowRouter } from './routes/workflows.js';
 
 export function createApp() {
@@ -75,6 +76,7 @@ export function createApp() {
   router.use('/experiments', createExperimentsRouter());
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
+  router.use(createSettingsRouter());
   router.use(createRealtimeSessionRouter());
 
   app.use('/api', router);

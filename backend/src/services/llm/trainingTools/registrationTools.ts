@@ -1,7 +1,8 @@
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
 import { createModelRepository } from '../../../repositories/modelRepository.js';
-import type { ModelTaskType } from '../../../types/model.js';
+import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
+import { runEvaluation } from '../../evaluationService.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
 import { resolveExperiment } from './types.js';
@@ -47,6 +48,11 @@ export const registerModel: TrainingToolHandler = async (
   const modelType = typeof args.modelType === 'string' ? args.modelType : 'unknown';
   const taskType = inferTaskType(experiment);
 
+  // Build artifact reference if the LLM provided an artifact path
+  const artifact: ModelArtifact | undefined = typeof args.artifactPath === 'string'
+    ? { filename: args.artifactPath.split('/').pop() ?? 'model.joblib', path: args.artifactPath, size: 0 }
+    : undefined;
+
   try {
     const record = await modelRepository.create({
       projectId,
@@ -65,6 +71,8 @@ export const registerModel: TrainingToolHandler = async (
       targetColumn: typeof experiment.targetColumn === 'string'
         ? experiment.targetColumn
         : undefined,
+      artifact,
+      evaluationStatus: 'pending',
       metadata: {
         experimentId: experiment.experimentId,
         source: 'llm-workflow',
@@ -73,9 +81,13 @@ export const registerModel: TrainingToolHandler = async (
     });
 
     experiment.persistedModelId = record.modelId;
+
+    // Fire-and-forget evaluation so the model gets eval metrics like the direct API path
+    runEvaluation(record.modelId).catch(err =>
+      appLogger.error('[registerModel] Background evaluation failed', { modelId: record.modelId, error: err })
+    );
   } catch (err) {
     appLogger.error('[registerModel] Failed to persist model', { err });
-    // Don't block the LLM workflow — the in-memory state is still updated
   }
 
   return {

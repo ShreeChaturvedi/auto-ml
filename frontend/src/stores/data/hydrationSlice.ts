@@ -169,6 +169,16 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
           }
         });
 
+        // Auto-select the first data file tab when no tab is currently active.
+        // Only act when activeFileTabId is null — if it points to another
+        // project's file, the DataViewerTab effect handles project-scoped selection.
+        const finalOpenTabs = Array.from(nextOpenSet);
+        const activeTabUpdate: Partial<DataState> = {};
+        if (state.activeFileTabId == null && finalOpenTabs.length > 0) {
+          activeTabUpdate.activeFileTabId = finalOpenTabs[0];
+          activeTabUpdate.fileTabType = 'file';
+        }
+
         return {
           files: [
             ...state.files.filter((file) => file.projectId !== projectId),
@@ -184,8 +194,9 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
             ...hydratedPreviews
           ],
           hydratedProjects: newHydratedProjects,
-          openFileTabs: Array.from(nextOpenSet),
-          isHydrating: false
+          openFileTabs: finalOpenTabs,
+          isHydrating: false,
+          ...activeTabUpdate
         };
       });
 

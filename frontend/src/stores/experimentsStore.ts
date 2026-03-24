@@ -11,6 +11,9 @@ import type { ModelRecord } from '@/types/model';
 import * as experimentsApi from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 
+/** Minimum time (ms) between insight banner LLM calls */
+const INSIGHT_STALE_TIME = 30_000;
+
 interface ExperimentsState {
   // Selection
   selectedModelId: string | null;
@@ -24,6 +27,7 @@ interface ExperimentsState {
   // LLM content
   projectInsight: { text: string; isLoading: boolean } | null;
   insightModelHash: string | null;
+  insightFetchedAt: number;
   compareNarrative: { text: string; isLoading: boolean } | null;
   reportContent: { text: string; isLoading: boolean } | null;
   reportModelHash: string | null;
@@ -71,6 +75,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   // LLM content
   projectInsight: null,
   insightModelHash: null,
+  insightFetchedAt: 0,
   compareNarrative: null,
   reportContent: null,
   reportModelHash: null,
@@ -158,12 +163,14 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   fetchProjectInsight: async (projectId, models) => {
-    // Guard: skip if model set hasn't changed and we already have text
     const hash = models.map((m) => m.modelId).sort().join(',');
     const current = get();
+    // Skip if model set hasn't changed and we already have text
     if (hash === current.insightModelHash && current.projectInsight?.text) return;
+    // Skip if last fetch was within INSIGHT_STALE_TIME (prevents rapid LLM calls)
+    if (current.insightFetchedAt && Date.now() - current.insightFetchedAt < INSIGHT_STALE_TIME) return;
 
-    set({ projectInsight: { text: '', isLoading: true }, insightModelHash: hash });
+    set({ projectInsight: { text: '', isLoading: true }, insightModelHash: hash, insightFetchedAt: Date.now() });
     try {
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'banner',

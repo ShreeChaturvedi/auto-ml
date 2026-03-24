@@ -68,11 +68,14 @@ export function ExperimentsDashboard() {
     prevModelCount.current = models.length;
   }, [models.length, models, selectModel]);
 
-  // Trigger project insight when model membership changes
+  // Trigger project insight when model membership changes (debounced to prevent
+  // rapid LLM calls during seeding, deletion, or hyperparameter tuning)
   useEffect(() => {
-    if (modelIdKey && projectId) {
+    if (!modelIdKey || !projectId) return;
+    const timer = setTimeout(() => {
       void fetchProjectInsight(projectId, models);
-    }
+    }, 5_000);
+    return () => clearTimeout(timer);
   }, [modelIdKey, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const removePredicate = useCallback(

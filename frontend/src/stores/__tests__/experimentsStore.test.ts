@@ -33,6 +33,7 @@ function resetStore() {
     errorAnalysis: {},
     projectInsight: null,
     insightModelHash: null,
+    insightFetchedAt: 0,
     compareNarrative: null,
     experimentView: 'overview',
     activeDetailTab: {},

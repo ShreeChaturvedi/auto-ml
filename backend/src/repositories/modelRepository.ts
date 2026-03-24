@@ -181,6 +181,7 @@ export class PgModelRepository implements ModelRepository {
       updatedAt: (row.updated_at as Date).toISOString()
     };
 
+    if (row.version != null) record.version = row.version as number;
     if (row.training_ms != null) record.trainingMs = row.training_ms as number;
     if (row.target_column != null) record.targetColumn = row.target_column as string;
     if (row.feature_columns != null) record.featureColumns = row.feature_columns as string[];
@@ -221,22 +222,33 @@ export class PgModelRepository implements ModelRepository {
   async create(input: Omit<ModelRecord, 'modelId' | 'createdAt' | 'updatedAt'>): Promise<ModelRecord> {
     const pool = getDbPool();
     const id = randomUUID();
+
+    // Auto-assign version if not provided
+    let version = input.version ?? null;
+    if (version == null) {
+      const versionResult = await pool.query(
+        `SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM ${this.table} WHERE project_id = $1`,
+        [input.projectId]
+      );
+      version = (versionResult.rows[0]?.next_version as number) ?? 1;
+    }
+
     const result = await pool.query(
       `INSERT INTO ${this.table} (
         model_id, project_id, dataset_id, name, template_id, task_type,
         library, algorithm, parameters, metrics, status,
-        training_ms, target_column, feature_columns, sample_count,
+        version, training_ms, target_column, feature_columns, sample_count,
         artifact, error, metadata, evaluation_status, evaluation_computed_at, evaluation_error
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10, $11,
-        $12, $13, $14, $15,
-        $16, $17, $18, $19, $20, $21
+        $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22
       ) RETURNING *`,
       [
         id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
         input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
-        input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ?? null, input.sampleCount ?? null,
+        version, input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ?? null, input.sampleCount ?? null,
         input.artifact ?? null, input.error ?? null, input.metadata ?? null,
         input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
       ]
@@ -257,16 +269,16 @@ export class PgModelRepository implements ModelRepository {
       `UPDATE ${this.table} SET
         project_id = $2, dataset_id = $3, name = $4, template_id = $5, task_type = $6,
         library = $7, algorithm = $8, parameters = $9, metrics = $10, status = $11,
-        training_ms = $12, target_column = $13, feature_columns = $14, sample_count = $15,
-        artifact = $16, error = $17, metadata = $18,
-        evaluation_status = $19, evaluation_computed_at = $20, evaluation_error = $21,
+        version = $12, training_ms = $13, target_column = $14, feature_columns = $15, sample_count = $16,
+        artifact = $17, error = $18, metadata = $19,
+        evaluation_status = $20, evaluation_computed_at = $21, evaluation_error = $22,
         updated_at = NOW()
       WHERE model_id = $1
       RETURNING *`,
       [
         modelId, updated.projectId, updated.datasetId, updated.name, updated.templateId, updated.taskType,
         updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
-        updated.trainingMs ?? null, updated.targetColumn ?? null, updated.featureColumns ?? null, updated.sampleCount ?? null,
+        updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, updated.featureColumns ?? null, updated.sampleCount ?? null,
         updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
         updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null
       ]

@@ -463,6 +463,60 @@ describe('buildTuningScript', () => {
     expect(script).not.toContain('Ridge(**best_params, random_state=42)');
   });
 
+  it('uses minimize direction for lower-is-better metrics (rmse, mae)', () => {
+    const template: ModelTemplate = {
+      id: 'ridge_regression',
+      name: 'Ridge',
+      taskType: 'regression',
+      description: 'Ridge regression.',
+      library: 'sklearn',
+      importPath: 'sklearn.linear_model',
+      modelClass: 'Ridge',
+      metrics: ['r2'],
+      parameters: [
+        { key: 'alpha', label: 'Alpha', type: 'number', default: 1.0, min: 0.001, max: 100 }
+      ],
+      defaultParams: { alpha: 1.0 },
+    };
+
+    for (const metric of ['rmse', 'mae', 'mse', 'log_loss']) {
+      const script = buildTuningScript({
+        template,
+        datasetPath: '/workspace/datasets/data.csv',
+        targetColumn: 'target',
+        testSize: 0.2,
+        nTrials: 10,
+        metric,
+        timeoutSeconds: 300,
+        outputDir: `/workspace/tuning/min-${metric}`,
+      });
+      expect(script).toContain('optuna.create_study(direction="minimize"');
+      expect(script).toContain('DIRECTION = "minimize"');
+      // Optimization history should use < for running best
+      expect(script).toContain('t.value < running_best:');
+    }
+  });
+
+  it('uses maximize direction for higher-is-better metrics (accuracy, r2, f1)', () => {
+    const template = makeClassificationTemplate();
+
+    for (const metric of ['accuracy', 'f1', 'r2', 'precision', 'recall']) {
+      const script = buildTuningScript({
+        template,
+        datasetPath: '/workspace/datasets/data.csv',
+        targetColumn: 'target',
+        testSize: 0.2,
+        nTrials: 10,
+        metric,
+        timeoutSeconds: 300,
+        outputDir: `/workspace/tuning/max-${metric}`,
+      });
+      expect(script).toContain('optuna.create_study(direction="maximize"');
+      expect(script).toContain('DIRECTION = "maximize"');
+      expect(script).toContain('t.value > running_best:');
+    }
+  });
+
   it('includes convergence tracking in stream callback', () => {
     const template = makeClassificationTemplate();
     const script = buildTuningScript({

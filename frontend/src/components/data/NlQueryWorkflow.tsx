@@ -232,6 +232,13 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     [phase, handleGenerate, handleApprove, handleReject]
   );
 
+  const handleTabAccept = useCallback(
+    (placeholder: string) => {
+      if (isIdle) onQueryChange(placeholder);
+    },
+    [isIdle, onQueryChange]
+  );
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && phase === 'idle') {
@@ -263,6 +270,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           onChange={(e) => {
             if (isIdle) onQueryChange(e.target.value);
           }}
+          onTabAccept={handleTabAccept}
           onKeyDown={handleKeyDown}
           readOnly={!isIdle}
           disabled={phase === 'submitting'}

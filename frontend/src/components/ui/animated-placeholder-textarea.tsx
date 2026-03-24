@@ -1,5 +1,5 @@
-import { useRef, forwardRef } from 'react';
-import type { TextareaHTMLAttributes } from 'react';
+import { useRef, useCallback, forwardRef } from 'react';
+import type { TextareaHTMLAttributes, KeyboardEvent } from 'react';
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import {
@@ -13,12 +13,14 @@ interface AnimatedPlaceholderTextareaProps
   placeholders: string[];
   interval?: number;
   autoResize?: boolean;
+  /** Called when Tab is pressed on an empty input to accept the visible placeholder. */
+  onTabAccept?: (placeholder: string) => void;
 }
 
 const AnimatedPlaceholderTextarea = forwardRef<
   HTMLTextAreaElement,
   AnimatedPlaceholderTextareaProps
->(({ placeholders, interval = 3000, autoResize = false, className, value, style, onFocus, onBlur, disabled, readOnly, ...props }, ref) => {
+>(({ placeholders, interval = 3000, autoResize = false, onTabAccept, className, value, style, onFocus, onBlur, onKeyDown, disabled, readOnly, ...props }, ref) => {
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
 
   const {
@@ -33,6 +35,15 @@ const AnimatedPlaceholderTextarea = forwardRef<
     handleFocus,
     handleBlur,
   } = useAnimatedPlaceholder({ placeholders, interval, value, disabled, readOnly });
+
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && !e.shiftKey && !hasValue && currentPlaceholder && onTabAccept) {
+      e.preventDefault();
+      onTabAccept(currentPlaceholder);
+      return;
+    }
+    onKeyDown?.(e);
+  }, [hasValue, currentPlaceholder, onTabAccept, onKeyDown]);
 
   // Auto-resize: adjust textarea height to match content
   useEffect(() => {
@@ -70,6 +81,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
           handleBlur();
           onBlur?.(event);
         }}
+        onKeyDown={handleKeyDown}
         {...props}
       />
       {!hasValue && (

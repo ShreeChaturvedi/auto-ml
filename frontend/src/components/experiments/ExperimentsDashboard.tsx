@@ -10,6 +10,7 @@ import { Leaderboard } from './Leaderboard';
 import { ModelDetailPanel } from './ModelDetailPanel';
 import { ComparisonView } from './ComparisonView';
 import { OverviewDashboard } from './OverviewDashboard';
+import { ReportPane, type ReportPaneHandle } from './ReportPane';
 import { NlFilterBar } from './NlFilterBar';
 import { formatMetric, formatOperator, PRIMARY_METRIC } from './utils';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,7 @@ export function ExperimentsDashboard() {
   const clearFilter = useExperimentsStore((s) => s.clearFilter);
 
   const prevModelCount = useRef(models.length);
+  const reportPaneRef = useRef<ReportPaneHandle>(null);
 
   // Stable model-membership key for triggering insight refresh
   const modelIdKey = useMemo(
@@ -82,80 +84,61 @@ export function ExperimentsDashboard() {
     [activePredicates, clearFilter, setNlFilter]
   );
 
+  const handleCardClick = useCallback((sectionSlug: string) => {
+    reportPaneRef.current?.scrollToSection(sectionSlug);
+  }, []);
+
+  const handleViewChange = useCallback(
+    (val: string) => {
+      if (val === 'overview' || val === 'leaderboard') setExperimentView(val);
+    },
+    [setExperimentView]
+  );
+
   const isEmpty = models.length === 0 && !isLoadingModels;
   const isComparing = comparisonModelIds.length >= 2;
+  const isOverview = !isComparing && experimentView === 'overview';
+
+  /* ── Filter chips (shared renderer) ── */
+  const filterChips = activePredicates.length > 0 && !isComparing && (
+    <div className="flex flex-wrap items-center gap-2 px-1 py-2 shrink-0">
+      <ListFilter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      {activePredicates.map((pred, i) => (
+        <div
+          key={`${pred.field}-${pred.operator}-${pred.value}-${i}`}
+          className="group/chip relative isolate inline-flex items-center rounded-md border border-border/60 bg-muted/30 text-muted-foreground overflow-hidden transition-colors hover:bg-muted/60 hover:text-foreground hover:border-border"
+        >
+          <span
+            className={cn(
+              'px-2.5 py-1 text-xs whitespace-nowrap select-none',
+              'group-hover/chip:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]',
+              'group-hover/chip:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]',
+            )}
+          >
+            {pred.field} {formatOperator(pred.operator)} {pred.value}
+          </span>
+          <button
+            type="button"
+            className="absolute inset-y-0 right-0 flex items-center justify-center w-7 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/chip:opacity-100 group-hover/chip:pointer-events-auto text-muted-foreground hover:text-foreground"
+            onClick={() => removePredicate(i)}
+            aria-label={`Remove filter: ${pred.field} ${formatOperator(pred.operator)} ${pred.value}`}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="ml-1 px-2 py-1 text-xs text-muted-foreground rounded-md transition-colors hover:bg-muted/50 hover:text-foreground"
+        onClick={clearFilter}
+      >
+        Clear all
+      </button>
+    </div>
+  );
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
-      {/* ── Shared header ribbon ── */}
-      {!isEmpty && (
-        <div className="flex h-14 items-center gap-3 border-b px-3 shrink-0">
-          {isComparing ? (
-            <>
-              <GitCompareArrows className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-sm font-semibold">Comparing {comparisonModelIds.length} Models</span>
-              <div className="flex-1" />
-              <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={clearComparison}>
-                Clear
-              </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearComparison} title="Exit comparison">
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </>
-          ) : (
-            <>
-              <NlFilterBar />
-              <span className="text-[11px] text-muted-foreground shrink-0">{models.length} models</span>
-              <IconModeToggle
-                value={experimentView}
-                onValueChange={(val) => {
-                  if (val === 'overview' || val === 'leaderboard') setExperimentView(val);
-                }}
-                options={VIEW_OPTIONS}
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Filter chips (shared across views) ── */}
-      {!isEmpty && activePredicates.length > 0 && !isComparing && (
-        <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 shrink-0">
-          <ListFilter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          {activePredicates.map((pred, i) => (
-            <div
-              key={`${pred.field}-${pred.operator}-${pred.value}-${i}`}
-              className="group/chip relative isolate inline-flex items-center rounded-md border border-border/60 bg-muted/30 text-muted-foreground overflow-hidden transition-colors hover:bg-muted/60 hover:text-foreground hover:border-border"
-            >
-              <span
-                className={cn(
-                  'px-2.5 py-1 text-xs whitespace-nowrap select-none',
-                  'group-hover/chip:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]',
-                  'group-hover/chip:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_36px),transparent_calc(100%_-_24px),transparent_100%)]',
-                )}
-              >
-                {pred.field} {formatOperator(pred.operator)} {pred.value}
-              </span>
-              <button
-                type="button"
-                className="absolute inset-y-0 right-0 flex items-center justify-center w-7 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/chip:opacity-100 group-hover/chip:pointer-events-auto text-muted-foreground hover:text-foreground"
-                onClick={() => removePredicate(i)}
-                aria-label={`Remove filter: ${pred.field} ${formatOperator(pred.operator)} ${pred.value}`}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="ml-1 px-2 py-1 text-xs text-muted-foreground rounded-md transition-colors hover:bg-muted/50 hover:text-foreground"
-            onClick={clearFilter}
-          >
-            Clear all
-          </button>
-        </div>
-      )}
-
       {/* ── Empty state ── */}
       {isEmpty && (
         <div className="flex-1 flex flex-col items-center justify-center relative">
@@ -185,15 +168,69 @@ export function ExperimentsDashboard() {
         </div>
       )}
 
-      {/* ── Main content area ── */}
-      {!isEmpty && (
-        <div className="flex-1 min-h-0 flex flex-col">
-          {isComparing
-            ? <ComparisonView />
-            : experimentView === 'overview'
-              ? <OverviewDashboard />
-              : <Leaderboard />
-          }
+      {/* ── Comparison mode (full-width, own ribbon) ── */}
+      {!isEmpty && isComparing && (
+        <>
+          <div className="flex h-14 items-center gap-3 border-b px-3 shrink-0">
+            <GitCompareArrows className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-sm font-semibold">Comparing {comparisonModelIds.length} Models</span>
+            <div className="flex-1" />
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={clearComparison}>
+              Clear
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearComparison} title="Exit comparison">
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ComparisonView />
+          </div>
+        </>
+      )}
+
+      {/* ── Leaderboard mode (full-width, single ribbon) ── */}
+      {!isEmpty && !isComparing && experimentView === 'leaderboard' && (
+        <>
+          <div className="flex h-14 items-center gap-3 border-b px-3 shrink-0">
+            <NlFilterBar />
+            <IconModeToggle
+              value={experimentView}
+              onValueChange={handleViewChange}
+              options={VIEW_OPTIONS}
+            />
+          </div>
+          {filterChips && (
+            <div className="border-b px-3">{filterChips}</div>
+          )}
+          <div className="flex-1 min-h-0">
+            <Leaderboard />
+          </div>
+        </>
+      )}
+
+      {/* ── Overview mode (2-column split) ── */}
+      {!isEmpty && isOverview && (
+        <div className="flex h-full overflow-hidden">
+          {/* Left column */}
+          <div className="flex flex-col min-w-0 flex-1">
+            {/* Left ribbon */}
+            <div className="flex h-14 items-center gap-3 border-b px-3 shrink-0">
+              <NlFilterBar />
+            </div>
+            {/* Left content */}
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <OverviewDashboard onCardClick={handleCardClick} />
+            </div>
+          </div>
+
+          {/* Right column */}
+          <div className="flex flex-col min-w-0 w-full lg:w-[55%] lg:min-w-[360px] border-t lg:border-t-0 lg:border-l border-border">
+            <ReportPane
+              ref={reportPaneRef}
+              experimentView={experimentView}
+              onViewChange={handleViewChange}
+            />
+          </div>
         </div>
       )}
 

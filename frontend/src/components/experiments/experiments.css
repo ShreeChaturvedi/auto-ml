@@ -76,6 +76,26 @@
   animation: tune-phase-out 150ms ease-in both;
 }
 
+/* KPI card staggered entrance */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-enter {
+  opacity: 0;
+  animation: card-enter 300ms ease-out both;
+}
+
+/* Sparkline draw-on animation */
+@keyframes sparkline-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.sparkline-draw {
+  animation: sparkline-draw 800ms ease-out forwards;
+}
+
 /* Reduced motion: disable all experiments animations */
 @media (prefers-reduced-motion: reduce) {
   .chart-skeleton,
@@ -83,10 +103,13 @@
   .trial-best-pulse,
   .empty-state-enter,
   .bulk-action-enter,
-  .tune-phase-exit {
+  .tune-phase-exit,
+  .card-enter,
+  .sparkline-draw {
     animation: none;
     opacity: 1;
     transform: none;
+    stroke-dashoffset: 0;
   }
   .model-row-selected {
     transform: none;

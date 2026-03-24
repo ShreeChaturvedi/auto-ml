@@ -62,9 +62,9 @@ function highlightText(children: ReactNode, regex: RegExp): ReactNode {
 /**
  * Build react-markdown component overrides for heading IDs and optional search highlighting.
  */
-export function buildMarkdownComponents(searchQuery: string): Components {
+export function buildMarkdownComponents(searchQuery: string, prefix = 'plan-viewer-'): Components {
   const base: Components = {
-    ...buildHeadingComponents('plan-viewer-'),
+    ...buildHeadingComponents(prefix),
   };
 
   if (!searchQuery.trim()) return base;

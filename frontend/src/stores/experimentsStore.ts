@@ -25,6 +25,8 @@ interface ExperimentsState {
   projectInsight: { text: string; isLoading: boolean } | null;
   insightModelHash: string | null;
   compareNarrative: { text: string; isLoading: boolean } | null;
+  reportContent: { text: string; isLoading: boolean } | null;
+  reportModelHash: string | null;
 
   // View switching
   experimentView: 'overview' | 'leaderboard';
@@ -47,6 +49,7 @@ interface ExperimentsState {
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
   fetchProjectInsight: (projectId: string, models: ModelRecord[]) => Promise<void>;
+  fetchReport: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchCompareNarrative: (projectId: string, modelIds: string[], models: ModelRecord[]) => Promise<void>;
   setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
@@ -69,6 +72,8 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   projectInsight: null,
   insightModelHash: null,
   compareNarrative: null,
+  reportContent: null,
+  reportModelHash: null,
 
   // View switching
   experimentView: 'overview',
@@ -187,6 +192,45 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
       }));
     } catch {
       set({ projectInsight: null });
+    }
+  },
+
+  fetchReport: async (projectId, models) => {
+    const hash = models.map((m) => m.modelId).sort().join(',');
+    const current = get();
+    if (hash === current.reportModelHash && current.reportContent?.text) return;
+
+    set({ reportContent: { text: '', isLoading: true }, reportModelHash: hash });
+    let rafId = 0;
+    let latestText = '';
+    try {
+      const response = await experimentsApi.fetchInsights(projectId, {
+        type: 'report',
+        context: { models: models.map((m) => ({ modelId: m.modelId })) }
+      });
+      await accumulateTokenStream(response, (accumulated) => {
+        latestText = accumulated;
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = 0;
+            set((state) => ({
+              reportContent: state.reportContent
+                ? { ...state.reportContent, text: latestText }
+                : null
+            }));
+          });
+        }
+      });
+      // Cancel any trailing rAF before the final flush to avoid a no-op re-render
+      if (rafId) cancelAnimationFrame(rafId);
+      set((state) => ({
+        reportContent: state.reportContent
+          ? { text: latestText, isLoading: false }
+          : null
+      }));
+    } catch {
+      if (rafId) cancelAnimationFrame(rafId);
+      set({ reportContent: null });
     }
   },
 

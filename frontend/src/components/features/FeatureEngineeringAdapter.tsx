@@ -5,6 +5,8 @@ import type { UploadedFile } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import type { WorkflowArtifact } from '@/types/workflow';
+import type { NotebookPhaseMetadata } from '@/types/notebook';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
@@ -13,6 +15,8 @@ export interface FeatureEngineeringAdapterConfig {
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
   sessionKey: string;
+  notebookName?: string;
+  notebookMetadata?: NotebookPhaseMetadata;
 }
 
 function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
@@ -147,14 +151,15 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
         store.setFeatureRunId(output.runId);
       }
 
-      if (featureId && output && !result.error) {
+      if (featureId) {
         store.setFeatureStep(featureId, {
           stepId: featureId,
-          name: (output.featureName ?? call.args?.featureName ?? featureId) as string,
-          method: (output.method ?? call.args?.method ?? call.tool) as string,
-          status: (output.status ?? 'ok') as string,
+          name: (output?.featureName ?? call.args?.featureName ?? featureId) as string,
+          method: (output?.method ?? call.args?.method ?? call.tool) as string,
+          status: result.error ? 'error' : (output?.status ?? 'ok') as string,
+          error: result.error,
           code: call.args?.code as string | undefined,
-          metrics: output.validation as Record<string, unknown> | undefined
+          metrics: output?.validation as Record<string, unknown> | undefined
         });
       }
     }
@@ -165,6 +170,23 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
     registry[tool] = toolHandlers;
   }
   return registry;
+}
+
+function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
+  const payload = artifact.payload;
+  const payloadRunId = (
+    payload
+    && typeof payload === 'object'
+    && !Array.isArray(payload)
+    && typeof (payload as { runId?: unknown }).runId === 'string'
+  )
+    ? (payload as { runId: string }).runId
+    : undefined;
+
+  const runId = typeof artifact.runId === 'string' ? artifact.runId : payloadRunId;
+  if (runId) {
+    useFeatureStore.getState().setFeatureRunId(runId);
+  }
 }
 
 export function createFeatureEngineeringAdapter(
@@ -179,6 +201,23 @@ export function createFeatureEngineeringAdapter(
       }
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
+      const notebookStore = useNotebookStore.getState();
+      let notebookId = notebookStore.activeNotebookId ?? undefined;
+
+      if (!notebookId) {
+        const createdNotebook = await notebookStore.createNotebook(
+          config.notebookName ?? 'Feature Engineering Notebook',
+          config.notebookMetadata
+        );
+        notebookId = createdNotebook?.notebookId ?? useNotebookStore.getState().activeNotebookId ?? undefined;
+      }
+
+      if (!notebookId) {
+        throw new Error(
+          'Feature engineering could not start because no notebook is available for execution.'
+        );
+      }
+
       await streamWorkflowTurn(
         {
           projectId: config.projectId,
@@ -186,7 +225,7 @@ export function createFeatureEngineeringAdapter(
           datasetId: config.datasetId,
           runId: session?.runId,
           threadId: session?.threadId,
-          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
+          notebookId,
           targetColumn: config.targetColumn,
           prompt,
           model: options.model,
@@ -201,6 +240,9 @@ export function createFeatureEngineeringAdapter(
       if (state.runId) {
         useFeatureStore.getState().setFeatureRunId(state.runId);
       }
+    },
+    onWorkflowArtifactUpdate: (artifact) => {
+      syncFeatureRunIdFromArtifact(artifact);
     },
     onRevert: () => {
       useFeatureStore.getState().clearDraft();

@@ -133,16 +133,28 @@ async function executeFeatureToolCall(
 ): Promise<ToolResult> {
   const explicitRunId = asString(args.runId);
 
-  // Resolve run
   let run;
-  if (explicitRunId) {
-    const existing = await featureRunRepository.getById(explicitRunId);
-    if (!existing) {
-      return { error: `Feature run ${explicitRunId} not found` };
+  try {
+    if (explicitRunId) {
+      const existing = await featureRunRepository.getById(explicitRunId);
+      if (!existing) {
+        return { error: `Feature run ${explicitRunId} not found` };
+      }
+      run = existing;
+    } else {
+      run = await featureRunRepository.getOrCreate(projectId);
     }
-    run = existing;
-  } else {
-    run = await featureRunRepository.getOrCreate(projectId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected error';
+    return {
+      error: `Failed to initialize feature run for project ${projectId}: ${message}`
+    };
+  }
+
+  if (!run) {
+    return {
+      error: `Failed to initialize feature run for project ${projectId}.`
+    };
   }
 
   const handler = FEATURE_TOOL_HANDLERS.get(toolName);

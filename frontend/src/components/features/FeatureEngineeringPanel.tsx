@@ -194,9 +194,19 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       targetColumn,
       datasetFiles,
       documentFiles,
-      sessionKey
+      sessionKey,
+      notebookName: currentVersion?.name ?? 'Feature Engineering Notebook',
+      notebookMetadata: currentVersion
+        ? {
+            phase: 'feature-engineering',
+            tabId: currentVersion.id,
+            tabName: currentVersion.name
+          }
+        : {
+            phase: 'feature-engineering'
+          }
     });
-  }, [currentVersion?.id, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
+  }, [currentVersion, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
   const baseRenderLifecycleCard = useLifecycleCards();
 

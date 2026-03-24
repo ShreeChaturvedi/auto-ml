@@ -62,6 +62,7 @@ async function emitUiArtifact(
 
   sink.emit(buildArtifactEvent('ui', {
     artifactId: artifact.artifactId,
+    runId: run.runId,
     label: artifact.label,
     ui: result.uiPayload,
     payload: result.uiPayload as unknown as Record<string, unknown>
@@ -94,6 +95,7 @@ async function emitPlanArtifact(
 
   sink.emit(buildArtifactEvent('plan', {
     artifactId: artifact.artifactId,
+    runId: run.runId,
     label: artifact.label,
     payload: result.planExitPayload as unknown as Record<string, unknown>
   }, savedState));
@@ -122,6 +124,7 @@ async function emitSummaryArtifact(
 
   sink.emit(buildArtifactEvent('summary', {
     artifactId: artifact.artifactId,
+    runId: run.runId,
     label: artifact.label,
     payload: buildSummaryArtifactPayload(message)
   }, savedState));

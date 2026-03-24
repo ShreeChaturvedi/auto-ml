@@ -51,6 +51,7 @@ export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
 export const WorkflowArtifactSchema = z.object({
   artifactId: z.string().min(1).optional(),
+  runId: z.string().min(1).optional(),
   kind: z.string().min(1),
   label: z.string().min(1).optional(),
   payload: z.unknown().optional(),

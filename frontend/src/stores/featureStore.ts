@@ -16,6 +16,7 @@ export interface FeatureLifecycleStep {
   name: string;
   method: string;
   status: string;
+  error?: string;
   code?: string;
   metrics?: Record<string, unknown>;
 }

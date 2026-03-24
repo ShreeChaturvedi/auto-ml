@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { PasswordSection } from './PasswordSection';
+import { RuntimeSettingsSection } from './RuntimeSettingsSection';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuthStore } from '@/stores/authStore';
 import { updateProfile } from '@/lib/api/auth';
@@ -246,6 +247,11 @@ export function ProfileSettings() {
 
         {/* Password Section */}
         <PasswordSection />
+
+        <Separator className="my-8" />
+
+        {/* Runtime Configuration */}
+        <RuntimeSettingsSection />
       </main>
     </div>
   );

@@ -355,10 +355,23 @@ async function startDevServers() {
   });
 }
 
+function ensureSandboxNetwork() {
+  if (!isDockerAvailable()) return;
+  const networkName = 'automl-sandbox';
+  const inspect = spawnSync('docker', ['network', 'inspect', networkName], { stdio: 'ignore' });
+  if (inspect.status === 0) {
+    log(`Sandbox network "${networkName}" already exists.`);
+    return;
+  }
+  log(`Creating isolated sandbox network "${networkName}".`);
+  runCommand('docker', ['network', 'create', '--internal', networkName]);
+}
+
 async function main() {
   const dbConfig = ensureBackendEnv();
   ensureBackendDependencies();
   ensureDatabaseContainer(dbConfig);
+  ensureSandboxNetwork();
   await runMigrationsWithRetry();
   await startDevServers();
 }

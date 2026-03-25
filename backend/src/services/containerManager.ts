@@ -23,6 +23,7 @@ import {
 } from './container/containerCleanup.js';
 import { buildDockerRunArgs } from './container/dockerBuilder.js';
 import { ensureRuntimeImage } from './container/imageManager.js';
+import { ensureIsolatedNetwork } from './container/networkManager.js';
 export type { Container, ContainerConfig } from './container/types.js';
 import type { Container, ContainerConfig } from './container/types.js';
 import { execDocker } from './dockerUtils.js';
@@ -65,6 +66,9 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
     await mkdir(join(workspacePath, '.python'), { recursive: true });
     await mkdir(join(workspacePath, '.tmp'), { recursive: true });
     await mkdir(join(workspacePath, '.cache', 'pip'), { recursive: true });
+
+    // Ensure the isolated network exists before launching the container
+    await ensureIsolatedNetwork();
 
     // Build docker run command with security constraints
     const imageName = await ensureRuntimeImage(config.pythonVersion);

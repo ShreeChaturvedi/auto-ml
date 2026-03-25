@@ -19,7 +19,13 @@ export function requireProjectAccess(repository: ProjectRepository) {
       return;
     }
 
-    const project = await repository.getById(projectId);
+    let project;
+    try {
+      project = await repository.getById(projectId);
+    } catch {
+      res.status(400).json({ error: 'Invalid project identifier' });
+      return;
+    }
     if (!project) {
       res.status(404).json({ error: 'Project not found' });
       return;

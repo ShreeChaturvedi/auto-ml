@@ -251,7 +251,7 @@ describeRouteSuite('dataset routes', () => {
   describe('GET /api/datasets/:datasetId/sample', () => {
     it('returns 404 for non-existent dataset', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).get('/api/datasets/non-existent-id/sample');
+      const response = await request(app).get('/api/datasets/00000000-0000-0000-0000-000000000000/sample');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Dataset not found');
@@ -335,7 +335,7 @@ describeRouteSuite('dataset routes', () => {
   describe('DELETE /api/datasets/:datasetId', () => {
     it('returns 404 for non-existent dataset', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).delete('/api/datasets/non-existent-id');
+      const response = await request(app).delete('/api/datasets/00000000-0000-0000-0000-000000000000');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Dataset not found');

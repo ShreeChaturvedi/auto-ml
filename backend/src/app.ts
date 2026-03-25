@@ -89,9 +89,14 @@ export function createApp() {
     res.status(404).json({ error: 'Not Found' });
   });
 
-  app.use((err: unknown, _req: Request, res: Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, _req: Request, res: Response, _next: unknown) => {
     appLogger.error({ err }, 'Unhandled request error');
-    res.status(500).json({ error: 'Internal Server Error' });
+    if (res.headersSent) return;
+    const message = env.nodeEnv !== 'production' && err instanceof Error
+      ? err.message
+      : 'Internal Server Error';
+    res.status(500).json({ error: message });
   });
 
   return app;

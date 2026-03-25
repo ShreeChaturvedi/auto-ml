@@ -320,6 +320,7 @@ export function PreprocessingPanel() {
               editingMessageId={renderProps.editingMessageId}
               turnDiffs={renderProps.turnDiffs}
               isGenerating={renderProps.isGenerating}
+              onRetryWorkflow={renderProps.onRetryWorkflow}
             />
           </div>
         )}

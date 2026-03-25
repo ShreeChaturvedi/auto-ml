@@ -71,4 +71,6 @@ export interface LeftPaneRenderProps {
   onRevertToMessage?: (messageId: string) => void;
   editingMessageId?: string | null;
   turnDiffs?: ReadonlyMap<string, SavepointDiff>;
+  /** Called when user clicks "Retry" on a retryable workflow error */
+  onRetryWorkflow?: () => void;
 };

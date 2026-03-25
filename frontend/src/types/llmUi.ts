@@ -274,6 +274,6 @@ export type ChatMessage =
   | { id: string; type: 'tool_call'; call: ToolCall; result?: ToolResult }
   | { id: string; type: 'code_cell'; cellId: string }
   | { id: string; type: 'ui'; schema: UiSchema }
-  | { id: string; type: 'error'; message: string }
+  | { id: string; type: 'error'; message: string; retryable?: boolean; code?: string }
   | { id: string; type: 'ask_user'; questions: AskUserQuestion[]; answered?: boolean }
   | { id: string; type: 'plan'; content: string; planName: string; approved?: boolean; hidden?: boolean };

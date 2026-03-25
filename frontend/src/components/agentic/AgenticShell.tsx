@@ -137,6 +137,7 @@ export function AgenticShell({
 
   const {
     messages,
+    setMessages,
     isGenerating,
     error,
     sessionUsages,
@@ -191,6 +192,20 @@ export function AgenticShell({
       void savepointsClearAfter(activeNotebookId, turnIdx);
     }
   }, [messages, revertToTurn, activeNotebookId, savepointsClearAfter]);
+
+  const handleRetryWorkflow = useCallback(() => {
+    if (isGenerating || !projectId) return;
+    // Strip trailing error messages
+    setMessages((prev) => {
+      const trimmed = [...prev];
+      while (trimmed.length > 0 && trimmed[trimmed.length - 1].type === 'error') {
+        trimmed.pop();
+      }
+      return trimmed;
+    });
+    // Re-run with empty prompt (won't add a user message) to retry the workflow turn
+    void runLoop('', { model: assistantModel, reasoningEffort });
+  }, [isGenerating, projectId, setMessages, runLoop, assistantModel, reasoningEffort]);
 
   // Fetch turn diffs only after streaming completes (not during token-by-token updates)
   const [turnDiffs, setTurnDiffs] = useState<ReadonlyMap<string, SavepointDiff>>(new Map());
@@ -334,7 +349,8 @@ export function AgenticShell({
     onEditMessage: handleEditMessage,
     onRevertToMessage: handleRevertToMessage,
     editingMessageId,
-    turnDiffs
+    turnDiffs,
+    onRetryWorkflow: handleRetryWorkflow
   };
 
   const leftPaneContent = renderLeftPane

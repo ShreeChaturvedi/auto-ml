@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { HomePage } from '@/pages/HomePage';
 import { ProjectRedirect, ProjectWorkspace } from '@/pages/ProjectWorkspace';
 import { useAuthBootstrap } from '@/hooks/useAuthBootstrap';
+import { useTokenRefreshTimer } from '@/hooks/useTokenRefreshTimer';
 import { initMonaco } from '@/lib/monaco/preloader';
 
 // Pre-load Monaco editor in the background to eliminate flash on code cells
@@ -85,6 +86,7 @@ function MainApp() {
 
 function App() {
   const authReady = useAuthBootstrap();
+  useTokenRefreshTimer();
 
   if (!authReady) {
     return (

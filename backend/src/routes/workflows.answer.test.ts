@@ -28,7 +28,8 @@ const {
     upsertArtifact: vi.fn(),
     upsertApproval: vi.fn(),
     upsertHandoff: vi.fn(),
-    upsertNotebookBinding: vi.fn()
+    upsertNotebookBinding: vi.fn(),
+    findActiveRun: vi.fn(async () => undefined)
   }
 }));
 

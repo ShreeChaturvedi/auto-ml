@@ -47,6 +47,9 @@ const workflowParamsSchema = z.object({
   runId: z.string().min(1)
 });
 
+/** Runs older than this are considered stale and won't block new runs. */
+const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 export function createWorkflowRouter(): Router {
   const router = Router();
   const repository = getWorkflowRepository();
@@ -56,6 +59,22 @@ export function createWorkflowRouter(): Router {
     const parsed = workflowTurnSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid workflow request', details: parsed.error.issues });
+    }
+
+    // Concurrency guard — only for new runs (not resumptions)
+    if (!parsed.data.runId) {
+      const activeRun = await repository.findActiveRun(parsed.data.projectId, parsed.data.phase);
+      if (activeRun) {
+        const updatedAt = new Date(activeRun.updatedAt).getTime();
+        const isStale = Date.now() - updatedAt > STALE_RUN_THRESHOLD_MS;
+        if (!isStale) {
+          return res.status(409).json({
+            error: 'WORKFLOW_ALREADY_RUNNING',
+            message: `A ${parsed.data.phase} workflow is already running for this project.`,
+            activeRunId: activeRun.runId
+          });
+        }
+      }
     }
 
     res.setHeader('Content-Type', 'application/x-ndjson');

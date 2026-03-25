@@ -66,6 +66,12 @@ vi.mock('../db.js', () => ({
   hasDatabaseConfiguration: vi.fn().mockReturnValue(false)
 }));
 
+vi.mock('../services/workflows/repository/index.js', () => ({
+  getWorkflowRepository: vi.fn(() => ({
+    findRunsByDataset: vi.fn(async () => [])
+  }))
+}));
+
 vi.mock('../services/nlSuggestions/index.js', () => ({
   regenerateNaturalLanguageSuggestions: vi.fn().mockResolvedValue({
     suggestions: [],

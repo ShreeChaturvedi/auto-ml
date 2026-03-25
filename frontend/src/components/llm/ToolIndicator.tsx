@@ -112,7 +112,7 @@ function ToolRow({
 
             {/* Expandable content — rendered by ToolResultRenderer */}
             {expanded && showDropdown && (
-                <div className="ml-[26px] mt-1 p-2.5 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
+                <div className="ml-[26px] mt-1 p-2.5 bg-muted/30 rounded-md border border-border/30 max-h-[300px] overflow-y-auto">
                     <ToolResultRenderer call={call} result={result!} projectColorEntry={projectColorEntry} />
                 </div>
             )}

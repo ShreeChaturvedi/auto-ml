@@ -117,12 +117,6 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     e.stopPropagation();
     if (activeProjectId && unlockedPhases.includes(phase)) {
       navigate(`/project/${activeProjectId}/${phase}`);
-      if (EXPANDABLE_PHASES.has(phase) && phase === currentPhase) {
-        // Toggle only if already on this phase; expansion of the new phase
-        // is handled by the useEffect watching currentPhase to avoid a
-        // flash where isExpanded=true but isActive=false for one frame.
-        togglePhaseExpand(phase);
-      }
     }
   };
 
@@ -194,37 +188,27 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                     : 'text-foreground hover:bg-muted'
               )}
             >
-              <button
-                type="button"
-                onClick={(e) => handlePhaseClick(e, phase)}
-                disabled={!isUnlocked}
-                className={cn(
-                  'flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left rounded-lg',
-                  !isUnlocked && 'cursor-default',
-                  isUnlocked && 'cursor-pointer'
-                )}
-              >
-                {/* Separate click target so expand/collapse is independent
-                    of the parent button's navigation. */}
-                <div
-                  className="relative shrink-0 h-3.5 w-3.5"
-                  onClick={isExpandable ? (e: React.MouseEvent) => {
+              {/* Chevron toggle — separate from the navigation button so
+                  expand/collapse never triggers navigation. */}
+              {isExpandable ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
                     e.stopPropagation();
                     togglePhaseExpand(phase);
-                  } : undefined}
+                  }}
+                  className="shrink-0 pl-3 py-2 cursor-pointer"
+                  aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
                 >
-                  {/* Phase icon - fades out on hover for expandable phases */}
-                  {IconComponent && (
-                    <IconComponent
-                      className={cn(
-                        'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
-                        isExpandable && 'group-hover:opacity-0',
-                        iconColorClass
-                      )}
-                    />
-                  )}
-                  {/* Chevron - fades in on hover, rotates when expanded */}
-                  {isExpandable && (
+                  <div className="relative h-3.5 w-3.5">
+                    {IconComponent && (
+                      <IconComponent
+                        className={cn(
+                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200 group-hover:opacity-0',
+                          iconColorClass
+                        )}
+                      />
+                    )}
                     <ChevronRight
                       className={cn(
                         'absolute inset-0 h-3.5 w-3.5 transition-all duration-200',
@@ -233,11 +217,29 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                         iconColorClass
                       )}
                     />
+                  </div>
+                </button>
+              ) : (
+                <div className="shrink-0 pl-3 py-2">
+                  {IconComponent && (
+                    <IconComponent className={cn('h-3.5 w-3.5', iconColorClass)} />
                   )}
                 </div>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => handlePhaseClick(e, phase)}
+                disabled={!isUnlocked}
+                className={cn(
+                  'flex min-w-0 flex-1 items-center py-2 pr-3 text-left rounded-r-lg',
+                  !isUnlocked && 'cursor-default',
+                  isUnlocked && 'cursor-pointer'
+                )}
+              >
                 <span
                   className={cn(
-                    'flex-1 text-workflow truncate transition-opacity duration-300',
+                    'flex-1 text-workflow truncate transition-opacity duration-300 pl-2',
                     collapsed && 'opacity-0'
                   )}
                 >

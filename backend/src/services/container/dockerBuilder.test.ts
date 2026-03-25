@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildDockerRunArgs } from './dockerBuilder.js';
+import { env } from '../../config.js';
 
 describe('buildDockerRunArgs', () => {
     const baseParams = {
@@ -9,11 +10,11 @@ describe('buildDockerRunArgs', () => {
         workspacePath: '/tmp/workspace',
     };
 
-    it('uses network=none by default to isolate the sandbox', () => {
+    it('passes the configured execution network to isolate the sandbox', () => {
         const args = buildDockerRunArgs(baseParams);
         const networkIdx = args.indexOf('--network');
         expect(networkIdx).toBeGreaterThan(-1);
-        expect(args[networkIdx + 1]).toBe('none');
+        expect(args[networkIdx + 1]).toBe(env.executionNetwork);
     });
 
     it('includes --add-host to block host.docker.internal SSRF', () => {

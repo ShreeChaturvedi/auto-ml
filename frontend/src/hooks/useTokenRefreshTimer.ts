@@ -13,7 +13,7 @@ const RETRY_DELAY_MS = 30_000;
 export function useTokenRefreshTimer() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const refreshToken = useAuthStore((s) => s.refreshToken);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (!accessToken || !refreshToken) return;

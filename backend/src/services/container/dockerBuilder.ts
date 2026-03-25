@@ -35,7 +35,8 @@ export function buildDockerRunArgs(params: {
         '--name', containerName,
         '--memory', `${env.executionMaxMemoryMb}m`,
         '--cpus', `${env.executionMaxCpuPercent / 100}`,
-        '--network', env.executionNetwork, // network policy
+        '--network', env.executionNetwork, // network policy (default: none — fully isolated)
+        '--add-host', 'host.docker.internal:0.0.0.0', // block SSRF to host even if network is overridden
         '--read-only', // read-only root fs
         '--tmpfs', `/tmp:rw,nosuid,size=${env.executionTmpfsMb}m,mode=1777`, // writable tmp
         '--tmpfs', '/home/sandbox/.local:rw,nosuid,size=100m,mode=1777',

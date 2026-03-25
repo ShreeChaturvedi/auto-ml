@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -11,20 +10,24 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
+import { validateEvaluationForErrorAnalysis } from '../services/evaluationStatusValidator.js';
+import {
+  buildModelSummaries,
+  computeModelHash,
+  loadEvaluationSummaries,
+} from '../services/experimentInsights.js';
 import { createLlmClient } from '../services/llm/llmClient.js';
 import {
   buildExperimentReportSystemPrompt,
   buildExperimentReportUserMessage,
-  extractEvalSummary,
 } from '../services/llm/prompts/experimentReport.js';
+import { compareModels } from '../services/modelComparison.js';
 import { getModelById, listModels } from '../services/modelTraining.js';
 import { createNlFilterNormalizer, NlFilterResponseSchema } from '../services/nlFilter/schema.js';
 import { buildNlFilterContext, buildNlFilterPrompt } from '../services/nlFilter/service.js';
 import { requestStructuredJson } from '../services/nlToSql/structuredRequest.js';
-import { welchTTest } from '../services/statisticalTest.js';
 import { runTuningStudy } from '../services/tuningService.js';
 import type { AuthRequest } from '../types/auth.js';
-import type { ComparisonResult, EvaluationResult } from '../types/experiments.js';
 import { loadModelFile } from '../utils/modelFileLoader.js';
 import { setupNdjsonStream } from '../utils/ndjsonStream.js';
 
@@ -183,54 +186,18 @@ export function createExperimentsRouter(): Router {
     }
 
     // Read evaluation data for each model (best-effort)
-    const evaluations = new Map<string, EvaluationResult>();
+    const evaluations = new Map<string, unknown>();
     await Promise.all(
       selected.map(async (m) => {
         const data = await loadModelFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'));
         if (data) {
-          evaluations.set(m.modelId, data as EvaluationResult);
+          evaluations.set(m.modelId, data);
         }
       }),
     );
 
-    // Build models array
-    const models: ComparisonResult['models'] = selected.map((m) => ({
-      modelId: m.modelId,
-      name: m.name,
-      metrics: m.metrics,
-    }));
-
-    // Compute deltas across all shared metric keys
-    const metricKeys = Array.from(new Set(selected.flatMap((m) => Object.keys(m.metrics))));
-    const deltas: ComparisonResult['deltas'] = metricKeys.map((metric) => {
-      const values = selected.map((m) => m.metrics[metric] ?? NaN);
-      const valid = values.filter((v) => Number.isFinite(v));
-      const best = valid.length > 0 ? Math.max(...valid) : 0;
-      const worst = valid.length > 0 ? Math.min(...valid) : 0;
-
-      const entry: ComparisonResult['deltas'][number] = {
-        metric,
-        values,
-        delta: best - worst,
-      };
-
-      // Compute p-value from cross-validation scores when available for exactly 2 models
-      if (selected.length === 2) {
-        const cvA = evaluations.get(selected[0].modelId)?.cross_validation?.scores;
-        const cvB = evaluations.get(selected[1].modelId)?.cross_validation?.scores;
-        if (cvA && cvB && cvA.length >= 2 && cvB.length >= 2) {
-          const pVal = welchTTest(cvA, cvB);
-          if (Number.isFinite(pVal)) {
-            entry.pValue = pVal;
-            entry.significant = pVal < 0.05;
-          }
-        }
-      }
-
-      return entry;
-    });
-
-    const result: ComparisonResult = { models, deltas };
+    // Use model comparison service to compute deltas and significance
+    const result = compareModels(selected, evaluations);
     res.json(result);
   }));
 
@@ -301,7 +268,6 @@ export function createExperimentsRouter(): Router {
 
     // --- Load models and compute cache hash ---
     const cachePath = join(env.insightsCacheDir, `${projectId}.json`);
-    let modelHash = '';
     let allModels: Awaited<ReturnType<typeof listModels>> = [];
     try {
       allModels = (await listModels(projectId)) ?? [];
@@ -309,10 +275,8 @@ export function createExperimentsRouter(): Router {
       // No models available
     }
 
-    const modelSummaries = allModels
-      .map(m => ({ modelId: m.modelId, name: m.name, algorithm: m.algorithm, taskType: m.taskType, status: m.status, metrics: m.metrics }))
-      .sort((a, b) => a.modelId.localeCompare(b.modelId));
-    modelHash = createHash('sha256').update(projectId + JSON.stringify(modelSummaries)).digest('hex');
+    const modelSummaries = buildModelSummaries(allModels);
+    const modelHash = computeModelHash(projectId, modelSummaries);
 
     // --- Cache check ---
     {
@@ -339,16 +303,8 @@ export function createExperimentsRouter(): Router {
       systemPrompt = buildExperimentReportSystemPrompt();
 
       // Load evaluations and project name concurrently
-      const evaluations: Record<string, ReturnType<typeof extractEvalSummary>> = {};
-      const [, project] = await Promise.all([
-        Promise.all(
-          allModels.map(async (m) => {
-            const data = await loadModelFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'));
-            if (data) {
-              evaluations[m.modelId] = extractEvalSummary(data as Record<string, unknown>);
-            }
-          }),
-        ),
+      const [evaluations, project] = await Promise.all([
+        loadEvaluationSummaries(modelSummaries),
         projectRepository.getById(projectId),
       ]);
 
@@ -436,12 +392,9 @@ export function createExperimentsRouter(): Router {
     }
 
     // Check evaluation status before attempting error analysis
-    if (model?.evaluationStatus === 'pending' || model?.evaluationStatus === 'computing') {
-      res.status(404).json({ error: 'Evaluation still in progress' });
-      return;
-    }
-    if (model?.evaluationStatus === 'failed') {
-      res.status(404).json({ error: 'Evaluation failed; error analysis unavailable' });
+    const statusError = validateEvaluationForErrorAnalysis(model?.evaluationStatus);
+    if (statusError) {
+      res.status(404).json({ error: statusError });
       return;
     }
 

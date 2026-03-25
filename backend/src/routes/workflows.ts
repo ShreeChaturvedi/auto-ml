@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { NdjsonResponseSink } from '../services/workflows/eventSink.js';
@@ -55,7 +56,7 @@ export function createWorkflowRouter(): Router {
   const repository = getWorkflowRepository();
   const projectRepository = getProjectRepository();
 
-  router.post('/workflows/turns/stream', async (req, res) => {
+  router.post('/workflows/turns/stream', asyncHandler(async (req, res) => {
     const parsed = workflowTurnSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid workflow request', details: parsed.error.issues });
@@ -98,9 +99,9 @@ export function createWorkflowRouter(): Router {
     }
 
     return undefined;
-  });
+  }));
 
-  router.get('/workflows', async (req, res) => {
+  router.get('/workflows', asyncHandler(async (req, res) => {
     const parsed = workflowListQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid workflow query', details: parsed.error.issues });
@@ -112,9 +113,9 @@ export function createWorkflowRouter(): Router {
       phase: parsed.data.phase,
       runs
     });
-  });
+  }));
 
-  router.get('/workflows/:runId', async (req: AuthRequest, res) => {
+  router.get('/workflows/:runId', asyncHandler(async (req: AuthRequest, res) => {
     const parsed = workflowParamsSchema.safeParse(req.params);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid workflow id', details: parsed.error.issues });
@@ -133,7 +134,7 @@ export function createWorkflowRouter(): Router {
     }
 
     return res.json({ run });
-  });
+  }));
 
   return router;
 }

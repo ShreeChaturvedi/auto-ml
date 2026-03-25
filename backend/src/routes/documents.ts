@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { ingestDocument } from '../services/documentIngestion.js';
@@ -30,7 +31,7 @@ export function createDocumentRouter() {
   const router = Router();
   const projectRepository = getProjectRepository();
 
-  router.post('/upload/doc', upload.single('file'), async (req: AuthRequest, res) => {
+  router.post('/upload/doc', upload.single('file'), asyncHandler(async (req: AuthRequest, res) => {
     const result = uploadSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
@@ -88,9 +89,9 @@ export function createDocumentRouter() {
         details: process.env.NODE_ENV !== 'production' ? errorMessage : undefined
       });
     }
-  });
+  }));
 
-  router.get('/docs/search', async (req, res) => {
+  router.get('/docs/search', asyncHandler(async (req, res) => {
     const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
     const query = typeof req.query.q === 'string' ? req.query.q : '';
     const limit = Number.parseInt(String(req.query.k ?? '5'), 10);
@@ -112,9 +113,9 @@ export function createDocumentRouter() {
     return res.json({
       results
     });
-  });
+  }));
 
-  router.get('/documents', async (req, res) => {
+  router.get('/documents', asyncHandler(async (req, res) => {
     if (!hasDatabaseConfiguration()) {
       return res.status(503).json({ error: 'Database is not configured for document listing' });
     }
@@ -152,9 +153,9 @@ export function createDocumentRouter() {
       appLogger.error('[documents] Failed to list documents:', error);
       return res.status(500).json({ error: 'Failed to list documents' });
     }
-  });
+  }));
 
-  router.get('/documents/:documentId/download', async (req: AuthRequest, res) => {
+  router.get('/documents/:documentId/download', asyncHandler(async (req: AuthRequest, res) => {
     if (!hasDatabaseConfiguration()) {
       return res.status(503).json({ error: 'Database is not configured for document download' });
     }
@@ -203,9 +204,9 @@ export function createDocumentRouter() {
       appLogger.error('[documents] Failed to download document:', error);
       return res.status(500).json({ error: 'Failed to download document' });
     }
-  });
+  }));
 
-  router.delete('/documents/:documentId', async (req: AuthRequest, res) => {
+  router.delete('/documents/:documentId', asyncHandler(async (req: AuthRequest, res) => {
     if (!hasDatabaseConfiguration()) {
       return res.status(503).json({ error: 'Database is not configured for document deletion' });
     }
@@ -246,7 +247,7 @@ export function createDocumentRouter() {
       appLogger.error('[documents] Failed to delete document:', error);
       return res.status(500).json({ error: 'Failed to delete document' });
     }
-  });
+  }));
 
   return router;
 }

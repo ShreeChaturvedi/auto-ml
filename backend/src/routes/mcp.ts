@@ -1,12 +1,13 @@
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { Router } from 'express';
 
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { createMcpServer } from '../services/mcp/mcpServer.js';
 
 export function createMcpRouter() {
   const router = Router();
 
-  router.post('/mcp', async (req, res) => {
+  router.post('/mcp', asyncHandler(async (req, res) => {
     const server = createMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
@@ -29,7 +30,7 @@ export function createMcpRouter() {
         });
       }
     }
-  });
+  }));
 
   router.get('/mcp', (_req, res) => {
     res.status(405).json({

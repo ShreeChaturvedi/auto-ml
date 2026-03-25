@@ -321,6 +321,7 @@ describe('preprocessingStore hydration', () => {
         cellType: 'code',
         content,
         position: 0,
+        metadata: {},
         executionCount: 0,
         executionStatus: 'idle',
         isDirty: false,

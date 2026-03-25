@@ -3,7 +3,7 @@ import { z } from 'zod';
 const ControlSchema = z.object({
   key: z.string(),
   label: z.string(),
-  type: z.enum(['number', 'boolean', 'select', 'text', 'column']),
+  type: z.enum(['number', 'boolean', 'select', 'text', 'column', 'slider']),
   value: z.unknown(),
   min: z.number().optional(),
   max: z.number().optional(),
@@ -50,6 +50,17 @@ const UiItemSchema = z.discriminatedUnion('type', [
     format: z.enum(['text', 'markdown', 'json']).optional()
   }),
   z.object({
+    type: z.literal('input_form'),
+    id: z.string(),
+    title: z.string().optional(),
+    controls: z.array(ControlSchema)
+  }),
+  z.object({
+    type: z.literal('callout'),
+    tone: z.enum(['info', 'warning', 'success']),
+    text: z.string()
+  }),
+  z.object({
     type: z.literal('dataset_summary'),
     datasetId: z.string(),
     filename: z.string(),
@@ -86,11 +97,6 @@ const UiItemSchema = z.discriminatedUnion('type', [
     label: z.string(),
     actionType: z.enum(['insert_code_cell', 'apply_features', 'train_model']),
     payload: z.record(z.string(), z.unknown()).optional()
-  }),
-  z.object({
-    type: z.literal('callout'),
-    tone: z.enum(['info', 'warning', 'success']),
-    text: z.string()
   })
 ]);
 

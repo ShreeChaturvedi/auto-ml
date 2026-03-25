@@ -61,4 +61,4 @@ export function createRequestTimingMiddleware(options: RequestTimingOptions = {}
   };
 }
 
-export const requestTimingMiddleware = createRequestTimingMiddleware();
+export const requestTimingMiddleware: RequestHandler = createRequestTimingMiddleware();

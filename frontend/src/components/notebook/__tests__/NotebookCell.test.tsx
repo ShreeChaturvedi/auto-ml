@@ -40,6 +40,7 @@ function createCell(overrides: Partial<NotebookCell> = {}): NotebookCell {
     cellType: 'code',
     content: 'print("hello")',
     position: 0,
+    metadata: {},
     executionCount: 0,
     executionOrder: null,
     executionStatus: 'idle',

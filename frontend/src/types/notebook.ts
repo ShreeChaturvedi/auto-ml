@@ -40,6 +40,7 @@ export const NotebookCellSchema = z.object({
   title: z.string().nullable().optional(),
   content: z.string(),
   position: z.number().int().min(0),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   executionCount: z.number().int().min(0).default(0),
   executionOrder: z.number().int().min(1).nullable().optional(),
   executionStatus: NotebookCellStatusSchema.default('idle'),

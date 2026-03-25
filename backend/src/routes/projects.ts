@@ -2,6 +2,7 @@ import type { Router } from 'express';
 import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import type { ProjectRepository } from '../repositories/projectRepository.js';
@@ -35,29 +36,29 @@ const projectInputSchema = z
 export function registerProjectRoutes(router: Router, repository: ProjectRepository) {
   const isVitestRuntime = Boolean(process.env.VITEST);
 
-  router.get('/projects', requireAuth, async (req: AuthRequest, res) => {
+  router.get('/projects', requireAuth, asyncHandler(async (req: AuthRequest, res) => {
     const projects = await repository.listByUser(req.user!.user_id);
     res.json({ projects });
-  });
+  }));
 
-  router.delete('/projects/reset', async (req: AuthRequest, res) => {
+  router.delete('/projects/reset', asyncHandler(async (req: AuthRequest, res) => {
     if (!isVitestRuntime) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
     await repository.clear();
     res.status(204).send();
-  });
+  }));
 
-  router.get('/projects/:id', requireAuth, validateUuidParams('id'), async (req: AuthRequest, res) => {
+  router.get('/projects/:id', requireAuth, validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res) => {
     const project = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
     return res.json({ project });
-  });
+  }));
 
-  router.post('/projects', requireAuth, async (req: AuthRequest, res) => {
+  router.post('/projects', requireAuth, asyncHandler(async (req: AuthRequest, res) => {
     const result = projectInputSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
@@ -71,9 +72,9 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
       appLogger.info(`[projects] created ${project.id} (${project.name})`);
     }
     return res.status(201).json({ project });
-  });
+  }));
 
-  router.patch('/projects/:id', requireAuth, validateUuidParams('id'), async (req: AuthRequest, res) => {
+  router.patch('/projects/:id', requireAuth, validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res) => {
     const result = projectInputSchema.partial().safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
@@ -93,9 +94,9 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
       appLogger.info(`[projects] updated ${project.id}`);
     }
     return res.json({ project });
-  });
+  }));
 
-  router.delete('/projects/:id', requireAuth, validateUuidParams('id'), async (req: AuthRequest, res) => {
+  router.delete('/projects/:id', requireAuth, validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res) => {
     const existing = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
     if (!existing) {
       return res.status(404).json({ error: 'Project not found' });
@@ -110,5 +111,5 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
       appLogger.info(`[projects] deleted ${req.params.id}`);
     }
     return res.status(204).send();
-  });
+  }));
 }

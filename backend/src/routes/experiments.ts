@@ -7,6 +7,7 @@ import { Router, type Response } from 'express';
 
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
@@ -128,7 +129,7 @@ export function createExperimentsRouter(): Router {
   const projectRepository = getProjectRepository();
 
   // GET /experiments/:modelId/evaluation
-  router.get('/:modelId/evaluation', async (req: AuthRequest, res: Response) => {
+  router.get('/:modelId/evaluation', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
 
     if (req.user) {
@@ -151,10 +152,10 @@ export function createExperimentsRouter(): Router {
     } catch {
       res.status(404).json({ error: 'Evaluation not found' });
     }
-  });
+  }));
 
   // GET /experiments/:modelId/shap
-  router.get('/:modelId/shap', async (req: AuthRequest, res: Response) => {
+  router.get('/:modelId/shap', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
 
     if (req.user) {
@@ -177,10 +178,10 @@ export function createExperimentsRouter(): Router {
     } catch {
       res.status(404).json({ error: 'SHAP data not found' });
     }
-  });
+  }));
 
   // POST /experiments/:projectId/tune — Optuna hyperparameter optimization (NDJSON stream)
-  router.post('/:projectId/tune', async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/tune', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
 
     if (req.user) {
@@ -243,9 +244,9 @@ export function createExperimentsRouter(): Router {
         res.end();
       }
     }
-  });
+  }));
 
-  router.post('/:projectId/compare', async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/compare', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
 
     if (req.user) {
@@ -325,10 +326,10 @@ export function createExperimentsRouter(): Router {
 
     const result: ComparisonResult = { models, deltas };
     res.json(result);
-  });
+  }));
 
   // POST /experiments/:projectId/nl-filter — NL → structured filter predicates
-  router.post('/:projectId/nl-filter', async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/nl-filter', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
 
     if (req.user) {
@@ -368,10 +369,10 @@ export function createExperimentsRouter(): Router {
       });
       res.json({ predicates: [] });
     }
-  });
+  }));
 
   // POST /experiments/:projectId/insights — streaming LLM insights (NDJSON)
-  router.post('/:projectId/insights', async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/insights', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
 
     if (req.user) {
@@ -520,9 +521,9 @@ export function createExperimentsRouter(): Router {
         res.end();
       }
     }
-  });
+  }));
 
-  router.get('/:modelId/error-analysis', async (req: AuthRequest, res: Response) => {
+  router.get('/:modelId/error-analysis', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
     const model = await getModelById(modelId);
 
@@ -566,7 +567,7 @@ export function createExperimentsRouter(): Router {
         res.status(404).json({ error: 'Error analysis not available' });
       }
     }
-  });
+  }));
 
   return router;
 }

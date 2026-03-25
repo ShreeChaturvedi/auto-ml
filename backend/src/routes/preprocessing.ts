@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { resolveDatasetTableName } from '../services/datasetLoader.js';
 import {
@@ -47,7 +48,7 @@ export function createPreprocessingRouter() {
 
   // ---- Tables listing ----
 
-  router.get('/preprocessing/tables', async (req, res) => {
+  router.get('/preprocessing/tables', asyncHandler(async (req, res) => {
     try {
       const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
       let datasets = await datasetRepository.list();
@@ -71,11 +72,11 @@ export function createPreprocessingRouter() {
       appLogger.error('[preprocessing] Failed to list tables:', error);
       return res.status(500).json({ error: 'Failed to list tables' });
     }
-  });
+  }));
 
   // ---- Step approval / rejection ----
 
-  router.post('/preprocessing/step-decision', async (req, res) => {
+  router.post('/preprocessing/step-decision', asyncHandler(async (req, res) => {
     const parsed = stepDecisionSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
@@ -109,11 +110,11 @@ export function createPreprocessingRouter() {
       const message = error instanceof Error ? error.message : 'Step decision failed';
       return res.status(500).json({ error: message });
     }
-  });
+  }));
 
   // ---- Replay compatibility check ----
 
-  router.post('/preprocessing/check-compatibility', async (req, res) => {
+  router.post('/preprocessing/check-compatibility', asyncHandler(async (req, res) => {
     const parsed = compatibilityCheckSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
@@ -146,11 +147,11 @@ export function createPreprocessingRouter() {
       const message = error instanceof Error ? error.message : 'Compatibility check failed';
       return res.status(500).json({ error: message });
     }
-  });
+  }));
 
   // ---- Run listing and snapshots (migrated from preprocessingHandler) ----
 
-  router.get('/preprocessing/runs', async (req, res) => {
+  router.get('/preprocessing/runs', asyncHandler(async (req, res) => {
     const parsed = preprocessingRunQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
@@ -167,9 +168,9 @@ export function createPreprocessingRouter() {
       const message = error instanceof Error ? error.message : 'Failed to list preprocessing runs';
       return res.status(500).json({ error: message });
     }
-  });
+  }));
 
-  router.get('/preprocessing/runs/:runId', async (req, res) => {
+  router.get('/preprocessing/runs/:runId', asyncHandler(async (req, res) => {
     const parsedParams = preprocessingRunParamsSchema.safeParse(req.params);
     if (!parsedParams.success) {
       return res.status(400).json({ error: 'Invalid request', details: parsedParams.error.issues });
@@ -193,7 +194,7 @@ export function createPreprocessingRouter() {
       const message = error instanceof Error ? error.message : 'Failed to load preprocessing run';
       return res.status(500).json({ error: message });
     }
-  });
+  }));
 
   return router;
 }

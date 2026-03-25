@@ -1,5 +1,5 @@
 import cors from 'cors';
-import express, { Request, Response, Router } from 'express';
+import express, { type NextFunction, Request, Response, Router } from 'express';
 
 import { env } from './config.js';
 import { getDbPool, hasDatabaseConfiguration } from './db.js';
@@ -89,14 +89,12 @@ export function createApp() {
     res.status(404).json({ error: 'Not Found' });
   });
 
+  // Express requires exactly 4 parameters to recognize error-handling middleware.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  app.use((err: unknown, _req: Request, res: Response, _next: unknown) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     appLogger.error({ err }, 'Unhandled request error');
     if (res.headersSent) return;
-    const message = env.nodeEnv !== 'production' && err instanceof Error
-      ? err.message
-      : 'Internal Server Error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: 'Internal Server Error' });
   });
 
   return app;

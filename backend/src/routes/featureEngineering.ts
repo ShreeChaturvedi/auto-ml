@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { resolveDatasetTableName } from '../services/datasetLoader.js';
 import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 import { featureRunRepository } from '../services/workflows/phases/featureEngineering.js';
@@ -48,7 +49,7 @@ const featureRunParamsSchema = z.object({
 export function createFeatureEngineeringRouter() {
   const router = Router();
 
-  router.post('/feature-engineering/apply', async (req, res) => {
+  router.post('/feature-engineering/apply', asyncHandler(async (req, res) => {
     const parsed = applySchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -83,11 +84,11 @@ export function createFeatureEngineeringRouter() {
       appLogger.error('[feature-engineering] Apply failed:', error);
       return res.status(400).json({ error: getErrorMessage(error, 'Feature engineering failed') });
     }
-  });
+  }));
 
   // ---- Run listing and snapshots ------------------------------------------
 
-  router.get('/feature-engineering/runs', async (req, res) => {
+  router.get('/feature-engineering/runs', asyncHandler(async (req, res) => {
     const parsed = featureRunQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
@@ -106,9 +107,9 @@ export function createFeatureEngineeringRouter() {
     } catch (error) {
       return res.status(500).json({ error: getErrorMessage(error, 'Failed to list feature runs') });
     }
-  });
+  }));
 
-  router.get('/feature-engineering/runs/:runId', async (req, res) => {
+  router.get('/feature-engineering/runs/:runId', asyncHandler(async (req, res) => {
     const parsedParams = featureRunParamsSchema.safeParse(req.params);
     if (!parsedParams.success) {
       return res.status(400).json({ error: 'Invalid request', details: parsedParams.error.issues });
@@ -124,7 +125,7 @@ export function createFeatureEngineeringRouter() {
     } catch (error) {
       return res.status(500).json({ error: getErrorMessage(error, 'Failed to load feature run') });
     }
-  });
+  }));
 
   return router;
 }

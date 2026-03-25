@@ -2,6 +2,7 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 
 import { env } from '../config.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
@@ -33,18 +34,18 @@ router.get('/templates', (_req: AuthRequest, res: Response) => {
   res.json({ templates: getModelTemplates() });
 });
 
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
   const models = await listModels(projectId);
   models.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ models });
-});
+}));
 
 const seedSchema = z.object({
   projectId: z.string().min(1),
 });
 
-router.post('/seed', async (req: AuthRequest, res: Response) => {
+router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (env.nodeEnv === 'production') {
     res.status(403).json({ error: 'Seed endpoint is disabled in production' });
     return;
@@ -64,7 +65,7 @@ router.post('/seed', async (req: AuthRequest, res: Response) => {
   }
   const models = await seedModels(projectId);
   res.json({ models });
-});
+}));
 
 const seedOneSchema = z.object({
   projectId: z.string().min(1),
@@ -73,7 +74,7 @@ const seedOneSchema = z.object({
   algorithm: z.string().min(1),
 });
 
-router.post('/seed-one', async (req: AuthRequest, res: Response) => {
+router.post('/seed-one', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (env.nodeEnv === 'production') {
     res.status(403).json({ error: 'Seed endpoint is disabled in production' });
     return;
@@ -92,9 +93,9 @@ router.post('/seed-one', async (req: AuthRequest, res: Response) => {
   }
   const model = await seedOneModel(parsed.data.projectId, parsed.data);
   res.json({ model });
-});
+}));
 
-router.delete('/:id', validateUuidParams('id'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model) {
     res.status(404).json({ error: 'Model not found' });
@@ -109,9 +110,9 @@ router.delete('/:id', validateUuidParams('id'), async (req: AuthRequest, res: Re
   }
   await deleteModel(req.params.id);
   res.status(204).end();
-});
+}));
 
-router.get('/:id', validateUuidParams('id'), async (req: AuthRequest, res: Response) => {
+router.get('/:id', validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model) {
     res.status(404).json({ error: 'Model not found' });
@@ -125,9 +126,9 @@ router.get('/:id', validateUuidParams('id'), async (req: AuthRequest, res: Respo
     }
   }
   res.json({ model });
-});
+}));
 
-router.get('/:id/artifact', validateUuidParams('id'), async (req: AuthRequest, res: Response) => {
+router.get('/:id/artifact', validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model?.artifact?.path) {
     res.status(404).json({ error: 'Model artifact not found' });
@@ -141,9 +142,9 @@ router.get('/:id/artifact', validateUuidParams('id'), async (req: AuthRequest, r
     }
   }
   res.download(model.artifact.path, model.artifact.filename);
-});
+}));
 
-router.post('/train', async (req: AuthRequest, res: Response) => {
+router.post('/train', asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const parsed = trainSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -170,6 +171,6 @@ router.post('/train', async (req: AuthRequest, res: Response) => {
       message
     });
   }
-});
+}));
 
 export default router;

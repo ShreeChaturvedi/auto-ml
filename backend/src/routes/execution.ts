@@ -8,6 +8,7 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import {
@@ -50,7 +51,7 @@ const sessionSchema = z.object({
  * POST /api/execute
  * Execute Python code
  */
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const parsed = executeSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -74,13 +75,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * POST /api/execute/session
  * Create a new execution session
  */
-router.post('/session', async (req: AuthRequest, res: Response) => {
+router.post('/session', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const parsed = sessionSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -115,13 +116,13 @@ router.post('/session', async (req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/session/:id
  * Get session details
  */
-router.get('/session/:id', async (req: AuthRequest, res: Response) => {
+router.get('/session/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const session = getSession(req.params.id);
 
     if (!session) {
@@ -147,13 +148,13 @@ router.get('/session/:id', async (req: AuthRequest, res: Response) => {
             lastUsedAt: session.lastUsedAt
         }
     });
-});
+}));
 
 /**
  * DELETE /api/execute/session/:id
  * Destroy a session
  */
-router.delete('/session/:id', async (req: AuthRequest, res: Response) => {
+router.delete('/session/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const session = getSession(req.params.id);
         if (session && req.user && session.projectId) {
@@ -173,13 +174,13 @@ router.delete('/session/:id', async (req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * POST /api/execute/packages
  * Install a package
  */
-router.post('/packages', async (req: AuthRequest, res: Response) => {
+router.post('/packages', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const parsed = packageSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -212,13 +213,13 @@ router.post('/packages', async (req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/packages/suggest
  * Search for package suggestions
  */
-router.get('/packages/suggest', async (req: AuthRequest, res: Response) => {
+router.get('/packages/suggest', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const q = typeof req.query.q === 'string' ? req.query.q : '';
         const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
@@ -233,13 +234,13 @@ router.get('/packages/suggest', async (req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * POST /api/execute/packages/stream
  * Install a package with streaming progress
  */
-router.post('/packages/stream', async (req: AuthRequest, res: Response) => {
+router.post('/packages/stream', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const parsed = packageSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -297,13 +298,13 @@ router.post('/packages/stream', async (req: AuthRequest, res: Response) => {
         })}\n`);
         res.end();
     }
-});
+}));
 
 /**
  * GET /api/execute/packages/:sessionId
  * List installed packages
  */
-router.get('/packages/:sessionId', async (req: AuthRequest, res: Response) => {
+router.get('/packages/:sessionId', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const session = getSession(req.params.sessionId);
         if (session && req.user && session.projectId) {
@@ -323,13 +324,13 @@ router.get('/packages/:sessionId', async (req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/runtimes
  * List available Python runtimes
  */
-router.get('/runtimes', async (_req: AuthRequest, res: Response) => {
+router.get('/runtimes', asyncHandler(async (_req: AuthRequest, res: Response) => {
     try {
         const runtimes = await getAvailableRuntimes();
         res.json({ runtimes });
@@ -340,13 +341,13 @@ router.get('/runtimes', async (_req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/health
  * Check execution service health
  */
-router.get('/health', async (_req: AuthRequest, res: Response) => {
+router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
     try {
         const health = await getHealth();
         res.json(health);
@@ -357,6 +358,6 @@ router.get('/health', async (_req: AuthRequest, res: Response) => {
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 export default router;

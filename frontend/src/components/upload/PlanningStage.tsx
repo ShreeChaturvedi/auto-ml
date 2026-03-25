@@ -24,7 +24,7 @@ interface PlanningStageProps {
   onChatCreated?: (chatId: string) => void;
 }
 
-export function PlanningStage({ projectId, onPlanApproved, planChatId, onChatCreated: _onChatCreated }: PlanningStageProps) {
+export function PlanningStage({ projectId, onPlanApproved, planChatId }: PlanningStageProps) {
   const files = useDataStore((state) => state.files);
   const projects = useProjectStore((state) => state.projects);
 

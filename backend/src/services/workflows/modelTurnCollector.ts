@@ -29,16 +29,28 @@ function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
 
 const PLAN_MARKDOWN_MAX = 50_000;
 
-function normalizePlanExitArgs(args: Record<string, unknown> | undefined): Record<string, unknown> {
+function normalizePlanExitArgs(args: Record<string, unknown> | string | undefined): Record<string, unknown> {
+  if (typeof args === 'string') return { planMarkdown: args };
   if (!args || typeof args !== 'object') return {};
   const raw = args as Record<string, unknown>;
 
   // Resolve planMarkdown from common model variants
   let markdown = raw.planMarkdown;
   if (typeof markdown !== 'string') {
-    for (const key of ['plan_markdown', 'markdown', 'content', 'plan'] as const) {
+    for (const key of [
+      'plan_markdown', 'markdown', 'content', 'plan',
+      'text', 'body', 'plan_text', 'plan_content', 'output'
+    ] as const) {
       if (typeof raw[key] === 'string') { markdown = raw[key]; break; }
     }
+  }
+
+  // Last-resort: use the first string value longer than 50 chars
+  if (typeof markdown !== 'string') {
+    const firstLongString = Object.values(raw).find(
+      (v) => typeof v === 'string' && v.length > 50
+    );
+    if (typeof firstLongString === 'string') markdown = firstLongString;
   }
 
   // Truncate if too long rather than failing validation
@@ -116,9 +128,13 @@ async function streamWorkflowText(
         const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
         if (parsed.success) {
           planExitPayload = normalizePlanExitPayload(parsed.data);
+          if (!planExitPayload) {
+            appLogger.warn('[modelTurnCollector] plan_exit section validation failed for markdown of length %d', parsed.data.planMarkdown.length);
+            errorMessage = 'Plan is missing required sections (Objective, Data Summary, Approach, Feature Engineering, Evaluation, Risks, Next Steps). Please regenerate with all sections.';
+          }
         } else {
-          appLogger.warn('[modelTurnCollector] plan_exit validation failed:', parsed.error.issues);
-          errorMessage = 'plan_exit payload failed validation.';
+          appLogger.warn('[modelTurnCollector] plan_exit Zod validation failed: %o', parsed.error.issues);
+          errorMessage = `plan_exit payload failed validation: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
         }
         return;
       }

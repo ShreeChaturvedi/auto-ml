@@ -9,11 +9,11 @@ describe('buildDockerRunArgs', () => {
         workspacePath: '/tmp/workspace',
     };
 
-    it('uses network=none by default to isolate the sandbox', () => {
+    it('uses a dedicated sandbox network by default to isolate the container', () => {
         const args = buildDockerRunArgs(baseParams);
         const networkIdx = args.indexOf('--network');
         expect(networkIdx).toBeGreaterThan(-1);
-        expect(args[networkIdx + 1]).toBe('none');
+        expect(args[networkIdx + 1]).toBe('automl-sandbox');
     });
 
     it('includes --add-host to block host.docker.internal SSRF', () => {

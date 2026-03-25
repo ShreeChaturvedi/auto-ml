@@ -166,4 +166,11 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     store.notebookBindings.set(input.runId, bucket);
     return binding;
   }
+
+  async findRunsByDataset(datasetId: string): Promise<WorkflowRunState[]> {
+    return [...store.runs.values()]
+      .filter((run) => run.activeDatasetId === datasetId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, 20);
+  }
 }

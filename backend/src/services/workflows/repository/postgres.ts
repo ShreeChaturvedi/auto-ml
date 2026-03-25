@@ -215,4 +215,16 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
     const result = await pool.query(statement.text, statement.values);
     return mapNotebookBindingRow(result.rows[0] as Record<string, unknown>);
   }
+
+  async findRunsByDataset(datasetId: string): Promise<WorkflowRunState[]> {
+    const pool = getDbPool();
+    const result = await pool.query(
+      `SELECT * FROM workflow_runs
+       WHERE active_dataset_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 20`,
+      [datasetId]
+    );
+    return result.rows.map((row) => mapRunRow(row as Record<string, unknown>));
+  }
 }

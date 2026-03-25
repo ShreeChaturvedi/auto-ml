@@ -95,6 +95,7 @@ export const WorkflowErrorEventSchema = z.object({
   type: z.literal('workflow_error'),
   message: z.string().min(1),
   retryable: z.boolean().optional(),
+  code: z.string().optional(),
   state: WorkflowStateSchema.optional()
 });
 

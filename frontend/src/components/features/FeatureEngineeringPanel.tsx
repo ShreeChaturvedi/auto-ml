@@ -322,6 +322,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   editingMessageId={renderProps.editingMessageId}
                   turnDiffs={renderProps.turnDiffs}
                   isGenerating={renderProps.isGenerating}
+                  onRetryWorkflow={renderProps.onRetryWorkflow}
                 />
               </div>
             </div>

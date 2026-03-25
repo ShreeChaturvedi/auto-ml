@@ -48,12 +48,36 @@ function buildTrainingSuggestions(
 
   if (!hasUserMessages) {
     if (datasetFiles.length > 0) {
-      suggestions.push(
-        {
+      // Infer task type from target column dtype
+      const datasetFile = datasetFiles.find((f) => f.metadata?.datasetId === config.datasetId);
+      const profile = datasetFile?.metadata?.datasetProfile;
+      const targetDtype = config.targetColumn && profile
+        ? profile.dtypes[config.targetColumn]
+        : undefined;
+      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+      const isRegression = targetDtype === 'integer' || targetDtype === 'float';
+
+      if (isClassification) {
+        suggestions.push({
+          id: 'train-initial-baseline',
+          label: 'Classification baseline',
+          prompt: `Train a classification baseline on target "${config.targetColumn}" with cross-validation and appropriate metrics.`
+        });
+      } else if (isRegression) {
+        suggestions.push({
+          id: 'train-initial-baseline',
+          label: 'Regression baseline',
+          prompt: `Train a regression baseline on target "${config.targetColumn}" with cross-validation and error metrics.`
+        });
+      } else {
+        suggestions.push({
           id: 'train-initial-baseline',
           label: 'Baseline model',
           prompt: 'Suggest a strong baseline training plan for this dataset with sensible defaults.'
-        },
+        });
+      }
+
+      suggestions.push(
         {
           id: 'train-initial-recommend',
           label: 'Recommend a model',

@@ -84,7 +84,7 @@ export function usePlanningChat({
   }, [planChatId, setMessages, setPlanDrafts]);
 
   // ── Debounce-persist to store (2s) ───────────────────────────────────
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (!planChatId) return;
     clearTimeout(persistTimerRef.current);

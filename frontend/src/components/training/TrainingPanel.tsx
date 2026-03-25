@@ -20,6 +20,7 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
@@ -121,9 +122,17 @@ export function TrainingPanel() {
 
   useEffect(() => {
     if (!trainingDatasetId && trainingDatasetOptions.length > 0) {
-      setTrainingDatasetId(trainingDatasetOptions[0].datasetId);
+      const previousId = projectId ? getPreviousPhaseDataset(projectId, 'feature-engineering', 'preprocessing') : undefined;
+      const match = previousId
+        ? trainingDatasetOptions.find(o => o.datasetId === previousId)
+        : undefined;
+      setTrainingDatasetId(match?.datasetId ?? trainingDatasetOptions[0].datasetId);
     }
-  }, [trainingDatasetId, trainingDatasetOptions]);
+  }, [trainingDatasetId, trainingDatasetOptions, projectId]);
+
+  useEffect(() => {
+    if (projectId && trainingDatasetId) persistPhaseDataset(projectId, 'training', trainingDatasetId);
+  }, [trainingDatasetId, projectId]);
 
   useEffect(() => {
     const selected = trainingDatasetOptions.find((dataset) => dataset.datasetId === trainingDatasetId);

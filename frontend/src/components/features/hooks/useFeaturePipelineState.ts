@@ -3,6 +3,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWorkflowSessionStore, buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 import { fetchFeatureRun } from '@/lib/api/featureEngineering';
+import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useFeatureReadiness } from './useFeatureReadiness';
 import { useFeatureCodeGen } from './useFeatureCodeGen';
@@ -314,12 +315,21 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   // --- Code preview sync (extracted hook) ---
   useFeatureCodeGen(activeFeatures, selectedDatasetFile);
 
-  // --- Default dataset selection effect ---
+  // --- Default dataset selection effect (prefer previous phase's dataset) ---
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
-      setSelectedDataset(pickBestDataset(datasetFiles).id);
+      const previousId = getPreviousPhaseDataset(projectId, 'preprocessing');
+      const match = previousId
+        ? datasetFiles.find(f => f.id === previousId || f.metadata?.datasetId === previousId)
+        : undefined;
+      setSelectedDataset(match?.id ?? pickBestDataset(datasetFiles).id);
     }
-  }, [datasetFiles, selectedDataset]);
+  }, [datasetFiles, selectedDataset, projectId]);
+
+  // --- Persist selected dataset for cross-phase continuity ---
+  useEffect(() => {
+    if (selectedDataset) persistPhaseDataset(projectId, 'feature-engineering', selectedDataset);
+  }, [selectedDataset, projectId]);
 
   // --- Target column sync effect ---
   useEffect(() => {

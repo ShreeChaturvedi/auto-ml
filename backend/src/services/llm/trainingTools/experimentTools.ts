@@ -5,10 +5,23 @@ import { nowIso } from '../preprocessingTools/helpers.js';
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 
+const MAX_EXPERIMENTS_PER_TURN = 3;
+
 export const configureExperiment: TrainingToolHandler = async (
   ctx: TrainingToolContext
 ): Promise<TrainingToolResult> => {
   const { args, run } = ctx;
+
+  const existingExperiments = Object.keys((run.metadata?.experiments as Record<string, unknown>) ?? {});
+  if (existingExperiments.length >= MAX_EXPERIMENTS_PER_TURN) {
+    return {
+      output: {
+        status: 'rejected',
+        message: `Maximum of ${MAX_EXPERIMENTS_PER_TURN} experiments per turn reached. Proceed to propose_training_plan for one of the configured experiments.`,
+        configuredExperiments: existingExperiments
+      }
+    };
+  }
 
   const experimentId = `exp-${randomUUID()}`;
   const experimentName = (typeof args.experimentName === 'string' ? args.experimentName : null) ?? 'Untitled Experiment';

@@ -24,3 +24,12 @@ export { PreprocessingActionResult } from './PreprocessingActionResult';
 export { ListPackagesResult } from './ListPackagesResult';
 
 export { GenericJsonResult } from './GenericJsonResult';
+
+export { CompareModelsResult } from './CompareModelsResult';
+export type { CompareModelsOutput } from './CompareModelsResult';
+
+export { ConfigureExperimentResult } from './ConfigureExperimentResult';
+export type { ConfigureExperimentOutput } from './ConfigureExperimentResult';
+
+export { CheckpointFeaturePipelineResult } from './CheckpointFeaturePipelineResult';
+export type { CheckpointFeaturePipelineOutput } from './CheckpointFeaturePipelineResult';

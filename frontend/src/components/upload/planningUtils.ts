@@ -62,14 +62,6 @@ export function getNextPlanName(plans: ProjectPlan[], chats: PlanChatEntry[]): s
   return `Plan ${plans.length + chats.length + 1}`;
 }
 
-export function humanizePlanName(slug: string): string {
-  return slug
-    .replace(/\.md$/i, '')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim() || 'Untitled Plan';
-}
-
 export function buildInitialSuggestions(
   projectFiles: UploadedFile[],
   projectTitle?: string,

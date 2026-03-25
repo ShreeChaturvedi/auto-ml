@@ -34,21 +34,24 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     if (isLoading || isAuthenticated || !refreshToken) return;
 
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setExpired(true);
 
     refreshAccessToken(refreshToken).then((token) => {
       if (cancelled) return;
       if (!token) {
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           if (!cancelled) setRedirectNow(true);
         }, REDIRECT_DELAY_MS);
-        return () => clearTimeout(timer);
+      } else {
+        setExpired(false);
       }
-      // Refresh succeeded — auth store update will re-render as authenticated
-      setExpired(false);
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [isAuthenticated, isLoading, refreshToken]);
 
   if (DEV_BYPASS_AUTH) {

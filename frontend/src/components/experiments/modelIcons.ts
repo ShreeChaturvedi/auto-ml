@@ -44,3 +44,8 @@ export const METRIC_ICONS: Record<string, ComponentType<{ className?: string }>>
 };
 
 export const LOWER_IS_BETTER = new Set(['rmse', 'mse', 'mae']);
+
+/** Check if a metric name suggests lower values are better (loss, error, etc.) */
+export function isLowerBetterMetric(name: string): boolean {
+  return /loss|error/i.test(name) || LOWER_IS_BETTER.has(name.toLowerCase());
+}

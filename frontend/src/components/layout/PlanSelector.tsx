@@ -10,8 +10,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
-import { usePlanChatStore } from '@/stores/planChatStore';
+import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
 import { useProjectPlans } from '@/hooks/useProjectPlans';
 import { cn } from '@/lib/utils';
 
@@ -40,11 +41,7 @@ export function PlanSelector({
     effectiveProjectId ?? ''
   );
 
-  const inProgressChats = usePlanChatStore((s) =>
-    Object.values(s.chats)
-      .filter((c) => c.projectId === effectiveProjectId && c.status === 'in_progress')
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-  );
+  const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, effectiveProjectId)));
 
   if (!effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
     return null;

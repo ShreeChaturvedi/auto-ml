@@ -16,6 +16,7 @@ import { formatDuration } from '@/components/experiments/utils';
 import { parseAllTrainingEvents } from '@/lib/training/progressParser';
 import type { TrainingEvent } from '@/lib/training/progressParser';
 import { TrainingProgressCard, type MetricSeries } from '@/components/training/TrainingProgressCard';
+import { isLowerBetterMetric } from '@/components/experiments/modelIcons';
 
 export interface ExecutionCardProps {
   status: 'running' | 'success' | 'failed';
@@ -38,7 +39,7 @@ function buildMetricSeries(events: TrainingEvent[]): MetricSeries[] {
 
   return Array.from(allKeys).map((name) => {
     const values = progressEvents.map((e) => e.metrics[name] ?? 0);
-    const isLossLike = /loss|error|mse|mae|rmse/i.test(name);
+    const isLossLike = isLowerBetterMetric(name);
     const first = values[0] ?? 0;
     const last = values[values.length - 1] ?? 0;
     const improving = isLossLike ? last <= first : last >= first;

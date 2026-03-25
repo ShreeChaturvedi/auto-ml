@@ -36,6 +36,32 @@ interface PlanChatStore {
   getInProgressChats: (projectId: string) => PlanChatEntry[];
 }
 
+/** Shared selector for reactive use in components (avoids inline duplication). */
+export function selectInProgressChats(
+  state: { chats: Record<string, PlanChatEntry> },
+  projectId: string | null | undefined
+): PlanChatEntry[] {
+  if (!projectId) return [];
+  return Object.values(state.chats)
+    .filter((c) => c.projectId === projectId && c.status === 'in_progress')
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function patchChat(
+  state: { chats: Record<string, PlanChatEntry> },
+  chatId: string,
+  fields: Partial<PlanChatEntry>
+) {
+  const chat = state.chats[chatId];
+  if (!chat) return state;
+  return {
+    chats: {
+      ...state.chats,
+      [chatId]: { ...chat, ...fields, updatedAt: Date.now() },
+    },
+  };
+}
+
 export const usePlanChatStore = create<PlanChatStore>()(
   persist(
     (set, get) => ({
@@ -60,22 +86,7 @@ export const usePlanChatStore = create<PlanChatStore>()(
       },
 
       completeChat: (chatId, completedPlanId, newName) => {
-        set((state) => {
-          const chat = state.chats[chatId];
-          if (!chat) return state;
-          return {
-            chats: {
-              ...state.chats,
-              [chatId]: {
-                ...chat,
-                status: 'completed',
-                completedPlanId,
-                name: newName,
-                updatedAt: Date.now(),
-              },
-            },
-          };
-        });
+        set((state) => patchChat(state, chatId, { status: 'completed', completedPlanId, name: newName }));
       },
 
       deleteChat: (chatId) => {
@@ -87,55 +98,19 @@ export const usePlanChatStore = create<PlanChatStore>()(
       },
 
       updateMessages: (chatId, messages) => {
-        set((state) => {
-          const chat = state.chats[chatId];
-          if (!chat) return state;
-          return {
-            chats: {
-              ...state.chats,
-              [chatId]: { ...chat, messages, updatedAt: Date.now() },
-            },
-          };
-        });
+        set((state) => patchChat(state, chatId, { messages }));
       },
 
       updateDrafts: (chatId, drafts) => {
-        set((state) => {
-          const chat = state.chats[chatId];
-          if (!chat) return state;
-          return {
-            chats: {
-              ...state.chats,
-              [chatId]: { ...chat, planDrafts: drafts, updatedAt: Date.now() },
-            },
-          };
-        });
+        set((state) => patchChat(state, chatId, { planDrafts: drafts }));
       },
 
       updateAnswerHistory: (chatId, history) => {
-        set((state) => {
-          const chat = state.chats[chatId];
-          if (!chat) return state;
-          return {
-            chats: {
-              ...state.chats,
-              [chatId]: { ...chat, answerHistory: history, updatedAt: Date.now() },
-            },
-          };
-        });
+        set((state) => patchChat(state, chatId, { answerHistory: history }));
       },
 
       updateRound: (chatId, round) => {
-        set((state) => {
-          const chat = state.chats[chatId];
-          if (!chat) return state;
-          return {
-            chats: {
-              ...state.chats,
-              [chatId]: { ...chat, currentRound: round, updatedAt: Date.now() },
-            },
-          };
-        });
+        set((state) => patchChat(state, chatId, { currentRound: round }));
       },
 
       getProjectChats: (projectId) => {
@@ -145,9 +120,7 @@ export const usePlanChatStore = create<PlanChatStore>()(
       },
 
       getInProgressChats: (projectId) => {
-        return Object.values(get().chats)
-          .filter((c) => c.projectId === projectId && c.status === 'in_progress')
-          .sort((a, b) => b.updatedAt - a.updatedAt);
+        return selectInProgressChats(get(), projectId);
       },
     }),
     {

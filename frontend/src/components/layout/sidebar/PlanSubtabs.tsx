@@ -4,8 +4,9 @@
 
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ClipboardList, MessageSquare } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useProjectPlans } from '@/hooks/useProjectPlans';
-import { usePlanChatStore } from '@/stores/planChatStore';
+import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
 import { SubtabItem } from './SubtabItem';
 
 interface PlanSubtabsProps {
@@ -17,11 +18,7 @@ export function PlanSubtabs({ projectId, themeColorClass }: PlanSubtabsProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { plans, selectedPlanId, handleOpenPlan } = useProjectPlans(projectId);
-  const inProgressChats = usePlanChatStore((s) =>
-    Object.values(s.chats)
-      .filter((c) => c.projectId === projectId && c.status === 'in_progress')
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-  );
+  const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, projectId)));
   const isOnUpload = location.pathname.endsWith('/upload');
   const activeChatId = new URLSearchParams(location.search).get('chatId');
 

@@ -8,6 +8,7 @@ import { startTuning as startTuningApi } from '@/lib/api/experiments';
 import { readNdjsonStream } from '@/lib/api/streamReader';
 import { cn } from '@/lib/utils';
 import { PRIMARY_METRIC } from '@/components/experiments/utils';
+import { isLowerBetterMetric } from '@/components/experiments/modelIcons';
 import type { TuningTrialEvent, TuningStreamEvent } from '@/types/experiments';
 import type { ModelTaskType } from '@/types/model';
 import { IntentPhase } from './phases/IntentPhase';
@@ -23,8 +24,6 @@ const BUDGET_PRESETS = {
 
 type Phase = 'intent' | 'discovery' | 'insight' | 'error';
 type BudgetKey = keyof typeof BUDGET_PRESETS;
-
-const MINIMIZE_METRICS = new Set(['rmse', 'mae', 'mse']);
 
 export interface TuneTabProps { modelId: string }
 
@@ -82,7 +81,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
   const progressPercent = nTotal > 0 ? (nComplete / nTotal) * 100 : 0;
   const sourceMetricValue = model?.metrics ? model.metrics[metric] ?? null : null;
   const improvementDelta = sourceMetricValue != null && bestValue != null ? bestValue - sourceMetricValue : null;
-  const direction: 'maximize' | 'minimize' = metric.startsWith('neg_') || MINIMIZE_METRICS.has(metric)
+  const direction: 'maximize' | 'minimize' = metric.startsWith('neg_') || isLowerBetterMetric(metric)
     ? 'minimize'
     : 'maximize';
 

@@ -15,10 +15,10 @@ export interface DatasetConfigState {
 
 export const createDatasetConfigSlice: StateCreator<
   PreprocessingState,
-  [],
+  [['zustand/persist', unknown]],
   [],
   DatasetConfigState
-> = (set, get: () => PreprocessingState) => ({
+> = (set, get: () => PreprocessingState, _store) => ({  // eslint-disable-line @typescript-eslint/no-unused-vars
   activeProjectId: null,
   tables: [],
   selectedDatasetId: null,

@@ -119,11 +119,11 @@ const initialState: PreprocessingStateData = {
 
 export const usePreprocessingStore = create<PreprocessingState>()(
   persist(
-    (set, get) => {
+    (set, get, store) => {
       // Compose all three slices
-      const datasetSlice = createDatasetConfigSlice(set, get);
-      const runSlice = createRunManagementSlice(set, get);
-      const pipelineSlice = createTransformationPipelineSlice(set, get);
+      const datasetSlice = createDatasetConfigSlice(set, get, store);
+      const runSlice = createRunManagementSlice(set, get, store);
+      const pipelineSlice = createTransformationPipelineSlice(set, get, store);
 
       // Create an augmented dataset slice with project-switch coordination
       const loadTablesWithCoordination = async (projectId: string) => {

@@ -47,10 +47,10 @@ export interface TransformationPipelineState {
 
 export const createTransformationPipelineSlice: StateCreator<
   PreprocessingState,
-  [],
+  [['zustand/persist', unknown]],
   [],
   TransformationPipelineState
-> = (set, get: () => PreprocessingState) => ({
+> = (set, get: () => PreprocessingState, _store) => ({  // eslint-disable-line @typescript-eslint/no-unused-vars
   timeline: [],
   stepBindings: {},
   replayReport: null,

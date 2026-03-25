@@ -23,10 +23,10 @@ export interface RunManagementState {
 
 export const createRunManagementSlice: StateCreator<
   PreprocessingState,
-  [],
+  [['zustand/persist', unknown]],
   [],
   RunManagementState
-> = (set, get: () => PreprocessingState) => ({
+> = (set, get: () => PreprocessingState, _store) => ({  // eslint-disable-line @typescript-eslint/no-unused-vars
   runId: null,
   nextRunCellMode: 'continue',
   latestCheckpointId: null,

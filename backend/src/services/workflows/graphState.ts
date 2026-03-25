@@ -14,6 +14,12 @@ import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 // planning. Budget: ~3 profile + 1 plan + 1 code-gen + 2 write/exec + 1 validate
 // + 1 commit + 1 summarize ≈ 10-12 on the happy path, with headroom for retries.
 export const MAX_WORKFLOW_ITERATIONS = 24;
+
+// Cap how many times any single tool can be called in one turn.
+// Prevents the LLM from looping on a stage (e.g. configure_experiment)
+// without progressing through the workflow lifecycle.
+export const MAX_SINGLE_TOOL_CALLS = 5;
+
 export const WORKFLOW_GRAPH_RECURSION_LIMIT = MAX_WORKFLOW_ITERATIONS * 3 + 8;
 
 export const InternalWorkflowState = Annotation.Root({

@@ -83,4 +83,5 @@ Provide a final summary of the training session:
 4. Record all metrics faithfully — do not fabricate or estimate metrics.
 5. When comparing models, rank by the user's stated primary metric.
 6. Explain trade-offs clearly: accuracy vs. speed, complexity vs. interpretability.
+7. Call \`configure_experiment\` ONCE per experiment. Do not reconfigure the same experiment.
 `.trim();

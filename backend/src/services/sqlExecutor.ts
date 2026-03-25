@@ -5,10 +5,11 @@ import type { PoolClient } from 'pg';
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
+import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import type { QueryResultPayload } from '../types/query.js';
 
 import { buildEdaSummary } from './edaSummary.js';
-import { validateReadOnlySql } from './sqlValidator.js';
+import { extractTableReferences, validateReadOnlySql } from './sqlValidator.js';
 
 interface PgTypeCatalogRow {
   oid: number;
@@ -95,15 +96,38 @@ async function getTypeNames(dataTypeIDs: number[], client: PoolClient): Promise<
   return typeMap;
 }
 
-export async function executeReadOnlyQuery({ sql }: { sql: string }): Promise<QueryResultPayload> {
+export async function executeReadOnlyQuery({ sql, projectId }: { sql: string; projectId?: string }): Promise<QueryResultPayload> {
   if (!hasDatabaseConfiguration()) {
     throw Object.assign(new Error('Database is not configured'), { statusCode: 503 });
   }
 
+  // Build project-scoped allowlist when projectId is provided
+  let allowedTables: Set<string> | undefined;
+  if (projectId) {
+    const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+    const datasets = await datasetRepository.listByProject(projectId);
+    allowedTables = new Set(
+      datasets
+        .map((d) => typeof d.metadata?.tableName === 'string' ? d.metadata.tableName.toLowerCase() : null)
+        .filter((name): name is string => name !== null)
+    );
+  }
+
   const { normalizedSql } = validateReadOnlySql(sql, {
     defaultLimit: env.sqlDefaultLimit,
-    maxRows: env.sqlMaxRows
+    maxRows: env.sqlMaxRows,
+    allowedTables
   });
+
+  // Layer 2: project-scoped table allowlist
+  if (projectId && allowedTables) {
+    const referencedTables = extractTableReferences(normalizedSql);
+    for (const table of referencedTables) {
+      if (!allowedTables.has(table)) {
+        throw new Error(`Table '${table}' is not a dataset in this project`);
+      }
+    }
+  }
 
   const pool = getDbPool();
   const client = await pool.connect();

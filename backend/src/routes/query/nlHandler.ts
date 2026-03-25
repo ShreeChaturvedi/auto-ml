@@ -161,7 +161,7 @@ async function executeAndCacheQuery(params: {
   projectId: string;
   sql: string;
 }): Promise<SqlExecutionPayload> {
-  const queryResult = await executeReadOnlyQuery({ sql: params.sql });
+  const queryResult = await executeReadOnlyQuery({ sql: params.sql, projectId: params.projectId });
   await storeCachedQueryResult({
     projectId: params.projectId,
     sql: params.sql,

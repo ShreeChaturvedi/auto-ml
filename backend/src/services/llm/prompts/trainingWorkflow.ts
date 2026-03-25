@@ -15,6 +15,7 @@ import type { LlmReasoningEffort } from '../modelCatalog.js';
 import { LLM_ALL_TOOLS } from '../toolRegistry.js';
 
 import { buildSystemPrompt } from './system.js';
+import { buildTemplateSummary } from '../../modelTemplates.js';
 
 const MAX_FEATURE_DISPLAY = 20;
 
@@ -80,7 +81,8 @@ export function buildTrainingRequest(params: {
       : null,
     toolResults?.length
       ? `[Previous tool results: ${toolResults.map((r) => `${r.tool}: ${r.error ?? 'success'}`).join(', ')}]`
-      : null
+      : null,
+    buildTemplateSummary()
   ].filter(Boolean);
 
   // User prompt is the PRIMARY content

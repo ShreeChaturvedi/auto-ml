@@ -55,6 +55,11 @@ function buildTrainingSuggestions(
           prompt: 'Suggest a strong baseline training plan for this dataset with sensible defaults.'
         },
         {
+          id: 'train-initial-recommend',
+          label: 'Recommend a model',
+          prompt: 'Analyze the dataset and recommend the best model template with tuned parameters.'
+        },
+        {
           id: 'train-initial-target',
           label: 'Pick target + metric',
           prompt: 'Help me choose the right target column and evaluation metrics for this project.'

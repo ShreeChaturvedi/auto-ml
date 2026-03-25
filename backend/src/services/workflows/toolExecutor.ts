@@ -6,7 +6,7 @@ import { ToolCallSchema } from '../../types/llm.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
 import { buildToolEvent } from './eventWriter.js';
-import { MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
+import { MAX_SINGLE_TOOL_CALLS, MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
 import { extractConfigurable } from './phases/types.js';
 import type { WorkflowPendingInputKind } from './types.js';
@@ -142,8 +142,38 @@ export async function executeToolsNode(
     }
   }
 
+  // Detect per-tool repetition: if any single tool has been called more than
+  // MAX_SINGLE_TOOL_CALLS times in this turn, the model is looping without
+  // progressing through the workflow lifecycle.
+  const allToolCalls = [...state.toolCallHistory, ...state.pendingToolCalls];
+  const toolCallCounts = new Map<string, number>();
+  for (const call of allToolCalls) {
+    toolCallCounts.set(call.tool, (toolCallCounts.get(call.tool) ?? 0) + 1);
+  }
+  let repeatedTool: string | undefined;
+  for (const [tool, count] of toolCallCounts) {
+    if (count > MAX_SINGLE_TOOL_CALLS) {
+      repeatedTool = tool;
+      break;
+    }
+  }
+
   const pauseDetails = getPauseDetails(nextResults);
   const hasExceededIterations = state.iteration + 1 >= MAX_WORKFLOW_ITERATIONS;
+  const hasToolRepetition = repeatedTool !== undefined;
+
+  const isFailing = hasExceededIterations || hasToolRepetition;
+  const errorMessage = hasToolRepetition
+    ? `Training could not progress \u2014 the model called "${repeatedTool}" ${toolCallCounts.get(repeatedTool!)!} times without advancing. Try a simpler prompt or fewer experiments.`
+    : hasExceededIterations
+      ? 'Workflow exceeded the maximum number of model/tool iterations for one turn.'
+      : null;
+  const errorCode = hasToolRepetition
+    ? 'TOOL_CALL_LIMIT_EXCEEDED'
+    : hasExceededIterations
+      ? 'MAX_ITERATIONS_EXCEEDED'
+      : null;
+
   return {
     toolCallHistory: state.pendingToolCalls,
     toolResultHistory: nextResults,
@@ -157,12 +187,10 @@ export async function executeToolsNode(
     pauseReason: pauseDetails?.pauseReason ?? null,
     nextStep: pauseDetails
       ? 'pause'
-      : hasExceededIterations
+      : isFailing
         ? 'fail'
         : 'prepare',
-    errorMessage: hasExceededIterations
-      ? 'Workflow exceeded the maximum number of model/tool iterations for one turn.'
-      : null,
-    errorCode: hasExceededIterations ? 'MAX_ITERATIONS_EXCEEDED' : null
+    errorMessage,
+    errorCode
   };
 }

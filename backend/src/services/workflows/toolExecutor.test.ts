@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
+import { MAX_SINGLE_TOOL_CALLS } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
 import { executeToolsNode } from './toolExecutor.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
@@ -197,5 +198,70 @@ describe('executeToolsNode', () => {
         toolCallId: 'wf-call-feature-1'
       })
     );
+  });
+
+  it('fails with TOOL_CALL_LIMIT_EXCEEDED when a single tool exceeds MAX_SINGLE_TOOL_CALLS', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
+    executePhaseSpecificToolMock.mockResolvedValue({ output: { experimentId: 'exp-1' } });
+
+    const state = createState();
+    state.turn.phase = 'training' as WorkflowTurnRequest['phase'];
+    state.run.phase = 'training' as WorkflowRunState['phase'];
+    state.run.currentNode = 'configure_experiment';
+
+    // Populate history with MAX_SINGLE_TOOL_CALLS calls already made
+    state.toolCallHistory = Array.from({ length: MAX_SINGLE_TOOL_CALLS }, (_, i) => ({
+      id: `prev-call-${i}`,
+      tool: 'configure_experiment',
+      args: { experimentName: `exp-${i}` }
+    }));
+
+    // One more pending call tips it over the limit
+    state.pendingToolCalls = [{
+      id: 'wf-call-overflow',
+      tool: 'configure_experiment',
+      args: { experimentName: 'exp-overflow' }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('fail');
+    expect(result.errorCode).toBe('TOOL_CALL_LIMIT_EXCEEDED');
+    expect(result.errorMessage).toContain('configure_experiment');
+    expect(result.errorMessage).toContain('without advancing');
+  });
+
+  it('does not fail when tool calls are within the per-tool limit', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
+    executePhaseSpecificToolMock.mockResolvedValue({ output: { experimentId: 'exp-1' } });
+
+    const state = createState();
+    state.turn.phase = 'training' as WorkflowTurnRequest['phase'];
+    state.run.phase = 'training' as WorkflowRunState['phase'];
+    state.run.currentNode = 'configure_experiment';
+
+    // History has fewer than the limit
+    state.toolCallHistory = Array.from({ length: MAX_SINGLE_TOOL_CALLS - 1 }, (_, i) => ({
+      id: `prev-call-${i}`,
+      tool: 'configure_experiment',
+      args: { experimentName: `exp-${i}` }
+    }));
+
+    state.pendingToolCalls = [{
+      id: 'wf-call-ok',
+      tool: 'configure_experiment',
+      args: { experimentName: 'exp-ok' }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
   });
 });

@@ -76,7 +76,7 @@ export const EXPANDABLE_TOOLS = new Set([
 interface ToolResultRendererProps {
   call: ToolCall;
   result: ToolResult;
-  projectColorEntry?: { fill?: string };
+  projectColorEntry?: { fill?: string; text?: string; border?: string };
 }
 
 export function ToolResultRenderer({ call, result, projectColorEntry }: ToolResultRendererProps) {
@@ -94,7 +94,7 @@ export function ToolResultRenderer({ call, result, projectColorEntry }: ToolResu
       : Array.isArray((output as { items?: unknown }).items)
         ? ((output as { items: SearchHit[] }).items)
         : [];
-    return <SearchDocumentsResult items={items} projectFill={projectColorEntry?.fill} />;
+    return <SearchDocumentsResult items={items} projectFill={projectColorEntry?.fill} projectText={projectColorEntry?.text} projectBorder={projectColorEntry?.border} />;
   }
 
   if (tool === 'get_dataset_profile') {

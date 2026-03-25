@@ -57,7 +57,7 @@ function ToolRow({
     const hint = getResultHint(call, result);
 
     return (
-        <div className="flex flex-col">
+        <div className={cn('flex flex-col', expanded && 'mb-1')}>
             <button
                 type="button"
                 onClick={() => showDropdown && setExpanded(!expanded)}
@@ -65,7 +65,7 @@ function ToolRow({
                 className={cn(
                     'group flex items-center gap-2 text-sm transition-colors duration-200 motion-reduce:transition-none',
                     'py-1.5 px-2.5 rounded-md w-full text-left',
-                    showDropdown && 'hover:bg-muted cursor-pointer',
+                    showDropdown && 'hover:bg-muted/60 cursor-pointer',
                     !showDropdown && 'cursor-default'
                 )}
             >
@@ -112,7 +112,7 @@ function ToolRow({
 
             {/* Expandable content — rendered by ToolResultRenderer */}
             {expanded && showDropdown && (
-                <div className="ml-[26px] mt-1 p-2.5 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
+                <div className="ml-6 mt-1.5 p-3 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
                     <ToolResultRenderer call={call} result={result!} projectColorEntry={projectColorEntry} />
                 </div>
             )}
@@ -157,7 +157,7 @@ export function ToolIndicator({
     if (displayItems.length === 0) return null;
 
     return (
-        <div className="space-y-0.5 max-w-2xl">
+        <div className="space-y-1 max-w-2xl">
             {displayItems.map((display) => (
                 <ToolRow
                     key={display.call.id}

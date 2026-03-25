@@ -18,9 +18,15 @@ export function scorePercent(score: number): number {
   return Math.round(Math.min(1, Math.max(0, score)) * 100);
 }
 
-/** Colour stop based on relevance score, with optional project-themed fill for top scores */
+/** Colour stop based on relevance score, using project theme fill with opacity tiers */
 export function scoreColor(score: number, projectFill?: string): string {
-  if (score >= 0.7) return projectFill ?? 'bg-emerald-500';
+  if (projectFill) {
+    // All tiers use the project theme color — lower scores use reduced opacity
+    if (score >= 0.7) return projectFill;
+    if (score >= 0.4) return `${projectFill} opacity-60`;
+    return `${projectFill} opacity-35`;
+  }
+  if (score >= 0.7) return 'bg-emerald-500';
   if (score >= 0.4) return 'bg-amber-500';
   return 'bg-rose-400';
 }

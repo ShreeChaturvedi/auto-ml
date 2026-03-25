@@ -12,7 +12,7 @@ export interface SearchHit {
   span?: { start: number; end: number };
 }
 
-export function SearchDocumentsResult({ items }: { items: SearchHit[] }) {
+export function SearchDocumentsResult({ items, projectFill }: { items: SearchHit[]; projectFill?: string }) {
   if (items.length === 0) {
     return <p className="text-xs text-muted-foreground italic">No matching documents found.</p>;
   }
@@ -51,7 +51,7 @@ export function SearchDocumentsResult({ items }: { items: SearchHit[] }) {
             {/* Score bar */}
             <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
               <div
-                className={cn('h-full rounded-full transition-all', scoreColor(hit.score ?? 0))}
+                className={cn('h-full rounded-full transition-all', scoreColor(hit.score ?? 0, projectFill))}
                 style={{ width: `${pct}%` }}
               />
             </div>

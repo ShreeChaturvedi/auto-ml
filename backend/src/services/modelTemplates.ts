@@ -1,4 +1,5 @@
-import type { ModelTemplate } from '../types/model.js';
+import type { ModelTemplate, ModelTaskType } from '../types/model.js';
+import type { DatasetProfileColumn } from '../types/dataset.js';
 
 const MODEL_TEMPLATES: ModelTemplate[] = [
   {
@@ -228,6 +229,49 @@ export const TEMPLATE_ID_ALIASES: Record<string, string> = {
   'xgboost-classifier': 'gradient_boosting_classifier',
   'xgboost_classifier': 'gradient_boosting_classifier',
 };
+
+/**
+ * Infer the ML task type from the target column's dtype and cardinality.
+ */
+export function inferTaskType(
+  targetColumn: string | undefined,
+  columns: DatasetProfileColumn[]
+): ModelTaskType {
+  if (!targetColumn) return 'clustering';
+  const col = columns.find((c) => c.name === targetColumn);
+  if (!col) return 'classification';
+
+  if (col.dtype === 'boolean') return 'classification';
+  if (col.dtype === 'string') return 'classification';
+
+  // Numeric target — use uniqueCount heuristic
+  const unique = col.uniqueCount ?? 0;
+  const samples = col.sampleCount ?? 0;
+  if (unique > 0 && samples > 0 && unique / samples < 0.05) return 'classification';
+  if (unique <= 20) return 'classification';
+
+  return 'regression';
+}
+
+/**
+ * Return ranked model templates for the inferred task type.
+ */
+export function getRecommendedTemplates(
+  taskType: ModelTaskType,
+  limit = 3
+): ModelTemplate[] {
+  return MODEL_TEMPLATES.filter((t) => t.taskType === taskType).slice(0, limit);
+}
+
+/**
+ * Build a concise summary of available templates for LLM context injection.
+ */
+export function buildTemplateSummary(): string {
+  const lines = MODEL_TEMPLATES.map(
+    (t) => `- ${t.id} (${t.taskType}): ${t.name} — ${t.description}`
+  );
+  return `[Available model templates:\n${lines.join('\n')}]`;
+}
 
 export function getModelTemplate(templateId: string): ModelTemplate | undefined {
   // 1. Exact match

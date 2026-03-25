@@ -13,6 +13,7 @@ import {
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
+import { ModelRecommendationCard } from './ModelRecommendationCard';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
@@ -247,6 +248,16 @@ export function TrainingPanel() {
           </div>
         );
       }
+      case 'model_recommendation':
+        return (
+          <ModelRecommendationCard
+            key={item.id}
+            id={item.id}
+            template={item.template}
+            parameters={item.parameters as Record<string, unknown>}
+            rationale={item.rationale}
+          />
+        );
       case 'callout':
         return <div key={item.text} className={cn('rounded-md border px-3 py-2 text-xs', item.tone === 'warning' && 'border-amber-500/40 text-amber-600', item.tone === 'success' && 'border-emerald-500/40 text-emerald-600')}>{item.text}</div>;
       default: return null;

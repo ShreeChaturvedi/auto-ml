@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import DOMPurify from 'dompurify';
 
 /**
  * Renders arbitrary HTML inside an open Shadow DOM root.
@@ -85,7 +86,19 @@ export function ShadowHtml({ html, className }: ShadowHtmlProps) {
     attachShadow(node);
     const shadow = shadowRef.current;
     if (shadow) {
-      shadow.innerHTML = `<style>${SHADOW_STYLES}</style>${html}`;
+      const sanitized = DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'span', 'p',
+          'b', 'i', 'em', 'strong', 'code', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+          'h4', 'h5', 'h6', 'br', 'hr', 'a', 'img', 'svg', 'path', 'figure', 'figcaption',
+          'caption', 'colgroup', 'col', 'sup', 'sub', 'small', 'mark', 'abbr'],
+        ALLOWED_ATTR: ['class', 'style', 'href', 'src', 'alt', 'title', 'width', 'height',
+          'colspan', 'rowspan', 'scope', 'align', 'valign', 'd', 'viewBox', 'fill',
+          'stroke', 'xmlns', 'target', 'rel'],
+        ALLOW_DATA_ATTR: false,
+        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'button'],
+        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur']
+      });
+      shadow.innerHTML = `<style>${SHADOW_STYLES}</style>${sanitized}`;
     }
   }, [attachShadow, html]);
 

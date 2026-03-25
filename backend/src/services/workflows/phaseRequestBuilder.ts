@@ -7,6 +7,7 @@ import {
   loadRagSnippets
 } from '../../routes/llm/shared.js';
 import { FEATURE_METHODS } from '../featureEngineering.js';
+import type { FeatureSpec } from '../featureEngineering.js';
 import { createLlmClient } from '../llm/llmClient.js';
 import { resolvePreprocessingControllerTurn } from '../llm/preprocessing/controller.js';
 import {
@@ -227,6 +228,12 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     };
   }
 
+  const featureSpecs = (
+    Array.isArray(project?.metadata?.features)
+      ? (project.metadata.features as FeatureSpec[]).filter((f) => f.enabled !== false)
+      : []
+  );
+
   return {
     nextStep: 'invoke_model',
     request: buildTrainingRequest({
@@ -237,6 +244,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       ragSnippets,
       toolResults: state.toolResultHistory,
       featureSummary: turn.featureSummary,
+      featureSpecs,
       toolCallHistory,
       toolResultHistory,
       toolDefinitions: await listMcpToolsForLlm().catch(() => LLM_ALL_TOOLS),

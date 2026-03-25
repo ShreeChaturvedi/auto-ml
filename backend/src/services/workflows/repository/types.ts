@@ -12,6 +12,7 @@ export interface WorkflowRepository {
   createRun(input: Omit<WorkflowRunState, 'createdAt' | 'updatedAt' | 'revision'>): Promise<WorkflowRunState>;
   getRun(runId: string): Promise<WorkflowRunSnapshot | undefined>;
   listRuns(projectId: string, phase?: WorkflowRunState['phase']): Promise<WorkflowRunState[]>;
+  findActiveRun(projectId: string, phase: string): Promise<WorkflowRunState | undefined>;
   saveRun(run: WorkflowRunState): Promise<WorkflowRunState>;
   appendEvent(runId: string, eventType: string, payload: Record<string, unknown>): Promise<WorkflowEventRecord>;
   upsertArtifact(input: Omit<WorkflowArtifactRecord, 'createdAt' | 'updatedAt'>): Promise<WorkflowArtifactRecord>;

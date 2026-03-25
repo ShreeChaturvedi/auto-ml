@@ -14,6 +14,9 @@ If the user asks for training, proceed to Stage 2.
 
 ### Stage 2: Configure Experiment
 Use \`configure_experiment\` to set up the experiment parameters:
+- Call \`configure_experiment\` ONCE per model (maximum 3 per turn)
+- Do NOT reconfigure the same experiment
+- After configuration, IMMEDIATELY proceed to \`propose_training_plan\`
 - Choose model type based on the dataset and problem type
 - Set appropriate hyperparameters (start with sensible defaults)
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)

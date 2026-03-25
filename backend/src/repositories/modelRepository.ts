@@ -223,16 +223,6 @@ export class PgModelRepository implements ModelRepository {
     const pool = getDbPool();
     const id = randomUUID();
 
-    // Auto-assign version if not provided
-    let version = input.version ?? null;
-    if (version == null) {
-      const versionResult = await pool.query(
-        `SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM ${this.table} WHERE project_id = $1`,
-        [input.projectId]
-      );
-      version = (versionResult.rows[0]?.next_version as number) ?? 1;
-    }
-
     const result = await pool.query(
       `INSERT INTO ${this.table} (
         model_id, project_id, dataset_id, name, template_id, task_type,
@@ -242,13 +232,14 @@ export class PgModelRepository implements ModelRepository {
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10, $11,
-        $12, $13, $14, $15, $16,
+        COALESCE($12, (SELECT COALESCE(MAX(version), 0) + 1 FROM ${this.table} WHERE project_id = $2)),
+        $13, $14, $15, $16,
         $17, $18, $19, $20, $21, $22
       ) RETURNING *`,
       [
         id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
         input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
-        version, input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ?? null, input.sampleCount ?? null,
+        input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ?? null, input.sampleCount ?? null,
         input.artifact ?? null, input.error ?? null, input.metadata ?? null,
         input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
       ]

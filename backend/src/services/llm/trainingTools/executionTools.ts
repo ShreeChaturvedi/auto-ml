@@ -49,7 +49,6 @@ export const executeTraining: TrainingToolHandler = async (
 
   const cellIds = Array.isArray(args.cellIds) ? (args.cellIds as string[]) : [];
 
-  // If cellIds are provided, execute them in the Docker container via MCP
   let succeeded = args.succeeded === true;
   let executionErrors: string[] = [];
   const startMs = Date.now();

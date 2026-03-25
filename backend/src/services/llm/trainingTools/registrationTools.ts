@@ -48,7 +48,6 @@ export const registerModel: TrainingToolHandler = async (
   const modelType = typeof args.modelType === 'string' ? args.modelType : 'unknown';
   const taskType = inferTaskType(experiment);
 
-  // Build artifact reference if the LLM provided an artifact path
   const artifact: ModelArtifact | undefined = typeof args.artifactPath === 'string'
     ? { filename: args.artifactPath.split('/').pop() ?? 'model.joblib', path: args.artifactPath, size: 0 }
     : undefined;

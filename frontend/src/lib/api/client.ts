@@ -51,13 +51,13 @@ export async function refreshAccessToken(refreshToken: string | null): Promise<s
           return null;
         }
 
-        const data = (await response.json()) as { accessToken?: string };
+        const data = (await response.json()) as { accessToken?: string; refreshToken?: string };
         if (!data.accessToken) {
           return null;
         }
 
         const state = useAuthStore.getState();
-        state.setTokens(data.accessToken, state.refreshToken ?? refreshToken);
+        state.setTokens(data.accessToken, data.refreshToken ?? state.refreshToken ?? refreshToken);
         return data.accessToken;
       } catch (error) {
         console.error('[API] Failed to refresh access token', error);

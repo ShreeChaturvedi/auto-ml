@@ -40,7 +40,7 @@ describe('apiFetch', () => {
         }
 
         if (authSnapshots.length === 2) {
-          return new Response(JSON.stringify({ accessToken: 'fresh-access-token' }), {
+          return new Response(JSON.stringify({ accessToken: 'fresh-access-token', refreshToken: 'rotated-refresh-token' }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
           });
@@ -59,6 +59,7 @@ describe('apiFetch', () => {
     expect(authSnapshots[0]).toBe('Bearer access-token');
     expect(authSnapshots[2]).toBe('Bearer fresh-access-token');
     expect(useAuthStore.getState().accessToken).toBe('fresh-access-token');
+    expect(useAuthStore.getState().refreshToken).toBe('rotated-refresh-token');
   });
 
   it('clears stored auth if refresh fails for a protected raw API fetch', async () => {

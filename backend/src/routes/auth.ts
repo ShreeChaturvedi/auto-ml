@@ -162,8 +162,16 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       const tokenHash = authService.hashRefreshToken(refreshToken);
       const tokenRecord = await userRepository.findRefreshToken(tokenHash);
 
-      if (!tokenRecord || tokenRecord.revoked || new Date() > tokenRecord.expires_at) {
+      if (!tokenRecord || new Date() > tokenRecord.expires_at) {
         return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      }
+
+      // Reuse detection: a revoked token being presented is a compromise signal.
+      // Revoke ALL tokens for the user to force re-authentication everywhere.
+      if (tokenRecord.revoked) {
+        await userRepository.revokeAllUserTokens(tokenRecord.user_id);
+        appLogger.warn(`[auth] refresh token reuse detected for user ${tokenRecord.user_id} — all tokens revoked`);
+        return res.status(401).json({ error: 'Token reuse detected. Please log in again.' });
       }
 
       const user = await userRepository.findById(tokenRecord.user_id);
@@ -171,8 +179,23 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         return res.status(401).json({ error: 'User not found' });
       }
 
-      const accessToken = authService.generateAccessToken(user);
-      return res.json({ accessToken });
+      // Rotate: revoke the old refresh token, issue a new pair
+      await userRepository.revokeRefreshToken(tokenHash);
+
+      const newTokens = authService.generateTokens(user);
+      const newRefreshTokenHash = authService.hashRefreshToken(newTokens.refreshToken);
+      const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs());
+
+      await userRepository.storeRefreshToken(
+        user.user_id,
+        newRefreshTokenHash,
+        expiresAt,
+        req.ip,
+        req.get('user-agent')
+      );
+
+      appLogger.info(`[auth] rotated refresh token for ${user.email}`);
+      return res.json({ accessToken: newTokens.accessToken, refreshToken: newTokens.refreshToken });
     })
   );
 

@@ -129,8 +129,8 @@ async function streamWorkflowText(
         if (parsed.success) {
           planExitPayload = normalizePlanExitPayload(parsed.data);
           if (!planExitPayload) {
-            appLogger.warn('[modelTurnCollector] plan_exit section validation failed for markdown of length %d', parsed.data.planMarkdown.length);
-            errorMessage = 'Plan is missing required sections (Objective, Data Summary, Approach, Feature Engineering, Evaluation, Risks, Next Steps). Please regenerate with all sections.';
+            appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
+            errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
           }
         } else {
           appLogger.warn('[modelTurnCollector] plan_exit Zod validation failed: %o', parsed.error.issues);

@@ -11,16 +11,15 @@ const BLOCKED_TABLES = new Set([
 
 const BLOCKED_SCHEMA_PREFIXES = ['pg_', 'information_schema'];
 
-const TABLE_REF_REGEX = /\b(?:FROM|JOIN)\s+(?:"([^"]+)"|([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?))/gi;
-
 /**
  * Extract table references from a SQL statement.
  * Matches unquoted and double-quoted identifiers after FROM/JOIN keywords.
  */
 export function extractTableReferences(sql: string): string[] {
+  const re = /\b(?:FROM|JOIN)\s+(?:"([^"]+)"|([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?))/gi;
   const tables: string[] = [];
   let match: RegExpExecArray | null;
-  while ((match = TABLE_REF_REGEX.exec(sql)) !== null) {
+  while ((match = re.exec(sql)) !== null) {
     const name = (match[1] ?? match[2]).toLowerCase();
     tables.push(name);
   }

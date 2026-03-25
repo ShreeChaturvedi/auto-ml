@@ -230,7 +230,14 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
 
   const featureSpecs = (
     Array.isArray(project?.metadata?.features)
-      ? (project.metadata.features as FeatureSpec[]).filter((f) => f.enabled !== false)
+      ? (project.metadata.features as unknown[]).filter(
+          (f): f is FeatureSpec =>
+            typeof f === 'object' && f !== null &&
+            typeof (f as FeatureSpec).sourceColumn === 'string' &&
+            typeof (f as FeatureSpec).featureName === 'string' &&
+            typeof (f as FeatureSpec).method === 'string' &&
+            (f as FeatureSpec).enabled !== false
+        )
       : []
   );
 

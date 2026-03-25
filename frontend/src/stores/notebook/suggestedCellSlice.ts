@@ -124,6 +124,7 @@ export const createSuggestedCellSlice: NotebookSlice<SuggestedCellSlice> = (_set
                 cellType: 'code',
                 content: '',
                 position: state.cells.length,
+                metadata: {},
                 executionCount: 0,
                 executionStatus: 'idle',
                 isDirty: false,

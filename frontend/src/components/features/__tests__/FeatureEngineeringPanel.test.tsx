@@ -68,6 +68,7 @@ const mockState = vi.hoisted(() => ({
     title?: string | null;
     content: string;
     position: number;
+    metadata: Record<string, unknown>;
     executionCount: number;
     executionStatus: 'idle' | 'running' | 'success' | 'error';
     createdAt: string;

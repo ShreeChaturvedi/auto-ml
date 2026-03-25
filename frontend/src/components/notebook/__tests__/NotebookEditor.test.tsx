@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
     cellType: 'code' | 'markdown';
     content: string;
     position: number;
+    metadata: Record<string, unknown>;
     executionCount: number;
     executionOrder: number | null;
     executionStatus: 'idle' | 'running' | 'success' | 'error';
@@ -88,6 +89,7 @@ describe('NotebookEditor section collapsing', () => {
         cellType: 'markdown',
         content: '## Section 1',
         position: 0,
+        metadata: {},
         executionCount: 0,
         executionOrder: null,
         executionStatus: 'idle',
@@ -105,6 +107,7 @@ describe('NotebookEditor section collapsing', () => {
         cellType: 'code',
         content: 'print(1)',
         position: 1,
+        metadata: {},
         executionCount: 0,
         executionOrder: null,
         executionStatus: 'idle',
@@ -122,6 +125,7 @@ describe('NotebookEditor section collapsing', () => {
         cellType: 'code',
         content: 'print(2)',
         position: 2,
+        metadata: {},
         executionCount: 0,
         executionOrder: null,
         executionStatus: 'idle',
@@ -139,6 +143,7 @@ describe('NotebookEditor section collapsing', () => {
         cellType: 'markdown',
         content: '## Section 2',
         position: 3,
+        metadata: {},
         executionCount: 0,
         executionOrder: null,
         executionStatus: 'idle',
@@ -156,6 +161,7 @@ describe('NotebookEditor section collapsing', () => {
         cellType: 'code',
         content: 'print(3)',
         position: 4,
+        metadata: {},
         executionCount: 0,
         executionOrder: null,
         executionStatus: 'idle',

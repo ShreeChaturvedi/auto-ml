@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { env } from '../../../config.js';
 import { createFileFeaturePipelineRunRepository } from '../../../repositories/featurePipelineRunRepository.js';
 import type { ToolCall } from '../../../types/llm.js';
+import { getErrorMessage } from '../../../utils/errors.js';
 import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import {
   FEATURE_TOOL_HANDLERS,
@@ -145,9 +146,8 @@ async function executeFeatureToolCall(
       run = await featureRunRepository.getOrCreate(projectId);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected error';
     return {
-      error: `Failed to initialize feature run for project ${projectId}: ${message}`
+      error: `Failed to initialize feature run for project ${projectId}: ${getErrorMessage(error, 'Unexpected error')}`
     };
   }
 

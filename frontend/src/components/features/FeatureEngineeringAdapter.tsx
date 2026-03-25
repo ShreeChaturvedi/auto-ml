@@ -173,17 +173,11 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
 }
 
 function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
-  const payload = artifact.payload;
-  const payloadRunId = (
-    payload
-    && typeof payload === 'object'
-    && !Array.isArray(payload)
-    && typeof (payload as { runId?: unknown }).runId === 'string'
-  )
-    ? (payload as { runId: string }).runId
-    : undefined;
-
-  const runId = typeof artifact.runId === 'string' ? artifact.runId : payloadRunId;
+  // Prefer the first-class runId; fall back to runId inside payload for older events.
+  const runId = artifact.runId
+    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
+      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
+      : undefined);
   if (runId) {
     useFeatureStore.getState().setFeatureRunId(runId);
   }
@@ -209,7 +203,7 @@ export function createFeatureEngineeringAdapter(
           config.notebookName ?? 'Feature Engineering Notebook',
           config.notebookMetadata
         );
-        notebookId = createdNotebook?.notebookId ?? useNotebookStore.getState().activeNotebookId ?? undefined;
+        notebookId = createdNotebook?.notebookId;
       }
 
       if (!notebookId) {

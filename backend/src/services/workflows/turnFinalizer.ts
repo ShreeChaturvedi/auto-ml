@@ -114,19 +114,20 @@ async function emitSummaryArtifact(
   message: string,
   savedState: WorkflowStateEvent['state']
 ) {
+  const payload = buildSummaryArtifactPayload(message);
   const artifact = await repository.upsertArtifact({
     artifactId: randomUUID(),
     runId: run.runId,
     artifactType: 'summary',
     label: `${turn.phase}-summary`,
-    payload: buildSummaryArtifactPayload(message)
+    payload
   });
 
   sink.emit(buildArtifactEvent('summary', {
     artifactId: artifact.artifactId,
     runId: run.runId,
     label: artifact.label,
-    payload: buildSummaryArtifactPayload(message)
+    payload
   }, savedState));
 
   await appendRunEvent(repository, run, 'artifact_updated', {

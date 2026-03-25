@@ -143,7 +143,7 @@ export function ChatMessageRenderer({
           // Try lifecycle card rendering first
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
-            return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
+            return <div key={msg.id} className={cn('max-w-2xl', isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
           }
 
           // Fallback to standard ToolIndicator
@@ -153,7 +153,6 @@ export function ChatMessageRenderer({
                 toolCalls={[msg.call]}
                 results={msg.result ? [msg.result] : []}
                 isRunning={!msg.result}
-                autoExpandPreviewTools
               />
             </div>
           );
@@ -179,7 +178,7 @@ export function ChatMessageRenderer({
           // Lifecycle card hook may handle some ui messages
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
-            return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
+            return <div key={msg.id} className={cn('max-w-2xl', isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
           }
           return null;
         }
@@ -188,7 +187,7 @@ export function ChatMessageRenderer({
         // Delegate to lifecycle card renderer for phase-specific handling
         const extra = renderLifecycleCard?.(msg);
         if (extra != null) {
-          return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{extra}</div>;
+          return <div key={msg.id} className={cn('max-w-2xl', isDimmed && 'opacity-40')}>{extra}</div>;
         }
 
         return null;

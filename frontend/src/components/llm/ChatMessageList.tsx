@@ -151,7 +151,6 @@ export function ChatMessageList({
               toolCalls={[msg.call]}
               results={msg.result ? [msg.result] : []}
               isRunning={!msg.result}
-              autoExpandPreviewTools
             />
           );
         }

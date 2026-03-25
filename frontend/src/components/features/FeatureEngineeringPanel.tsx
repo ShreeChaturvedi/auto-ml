@@ -25,7 +25,7 @@ import { useFeatureStore } from '@/stores/featureStore';
 import { cn } from '@/lib/utils';
 import { getWorkbookParam } from '@/lib/workbookParam';
 
-import { Beaker } from 'lucide-react';
+import { AlertTriangle, Beaker } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -296,6 +296,19 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                   </CardContent>
                 </Card>
               ) : null}
+
+              {!renderProps.isGenerating && activeFeatures.length === 0 && renderProps.messages.some((m) => m.type === 'assistant_text') && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <p className="font-medium text-amber-900 dark:text-amber-200">No features created</p>
+                    <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
+                      The feature engineering workflow completed without registering any features.
+                      Continue the conversation to build features, or proceed to training with the raw dataset.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-4 py-4 pb-28">
                 <ChatMessageRenderer

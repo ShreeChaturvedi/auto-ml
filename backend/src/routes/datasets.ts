@@ -13,6 +13,7 @@ import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { loadDatasetIntoPostgres, resolveDatasetTableName } from '../services/datasetLoader.js';
+import { getWorkflowRepository } from '../services/workflows/repository/index.js';
 import type { AuthRequest } from '../types/auth.js';
 import { getErrorMessage } from '../utils/errors.js';
 
@@ -272,6 +273,21 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
           res.status(404).json({ error: 'Dataset not found' });
           return;
         }
+      }
+
+      // Pre-deletion guard: reject if active workflows reference this dataset
+      const workflowRepo = getWorkflowRepository();
+      const referencingRuns = await workflowRepo.findRunsByDataset(datasetId);
+      const activeWorkflows = referencingRuns.filter(
+        (r) => r.status === 'running' || r.status === 'paused'
+      );
+      if (activeWorkflows.length > 0) {
+        res.status(409).json({
+          error: 'DATASET_IN_USE',
+          message: `Cannot delete dataset: referenced by ${activeWorkflows.length} active workflow(s).`,
+          activeRunIds: activeWorkflows.map((r) => r.runId)
+        });
+        return;
       }
 
       const deleted = await datasetRepository.delete(datasetId);

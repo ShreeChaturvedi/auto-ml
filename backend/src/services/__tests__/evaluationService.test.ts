@@ -1,5 +1,3 @@
-import { copyFile, mkdir } from 'node:fs/promises';
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /* ------------------------------------------------------------------ */
@@ -7,17 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /* ------------------------------------------------------------------ */
 
 const hoisted = vi.hoisted(() => {
-  const mockExecute = vi.fn();
-  const mockGetOrCreateContainer = vi.fn();
-  const mockSyncWorkspaceDatasets = vi.fn();
+  const mockOrchestrateContainerExecution = vi.fn();
+  const mockCopyArtifactsToPermanentStorage = vi.fn();
   const mockGetById = vi.fn();
   const mockUpdate = vi.fn();
   const mockDatasetGetById = vi.fn();
 
   return {
-    mockExecute,
-    mockGetOrCreateContainer,
-    mockSyncWorkspaceDatasets,
+    mockOrchestrateContainerExecution,
+    mockCopyArtifactsToPermanentStorage,
     mockGetById,
     mockUpdate,
     mockDatasetGetById,
@@ -28,16 +24,9 @@ const hoisted = vi.hoisted(() => {
 /*  Mocks                                                              */
 /* ------------------------------------------------------------------ */
 
-vi.mock('../kernelManager.js', () => ({
-  execute: hoisted.mockExecute,
-}));
-
-vi.mock('../containerManager.js', () => ({
-  getOrCreateContainer: hoisted.mockGetOrCreateContainer,
-}));
-
-vi.mock('../executionWorkspace.js', () => ({
-  syncWorkspaceDatasets: hoisted.mockSyncWorkspaceDatasets,
+vi.mock('../../utils/containerOrchestrator.js', () => ({
+  orchestrateContainerExecution: hoisted.mockOrchestrateContainerExecution,
+  copyArtifactsToPermanentStorage: hoisted.mockCopyArtifactsToPermanentStorage,
 }));
 
 vi.mock('../../repositories/modelRepository.js', () => ({
@@ -82,9 +71,8 @@ import { buildEvaluationScript, runEvaluation } from '../evaluationService.js';
 /* ------------------------------------------------------------------ */
 
 const {
-  mockExecute,
-  mockGetOrCreateContainer,
-  mockSyncWorkspaceDatasets,
+  mockOrchestrateContainerExecution,
+  mockCopyArtifactsToPermanentStorage,
   mockGetById,
   mockUpdate,
   mockDatasetGetById,
@@ -135,7 +123,6 @@ function makeContainer() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockSyncWorkspaceDatasets.mockResolvedValue({ links: [], collisions: [] });
 });
 
 afterEach(() => {
@@ -236,13 +223,13 @@ describe('runEvaluation', () => {
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
     mockDatasetGetById.mockResolvedValue(dataset);
-    mockGetOrCreateContainer.mockResolvedValue(container);
-    mockExecute.mockResolvedValue({
-      status: 'success',
-      stdout: 'Evaluation complete',
-      stderr: '',
-      outputs: [],
-      executionMs: 5000,
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'success',
+        stderr: '',
+        executionMs: 5000,
+      },
     });
 
     await runEvaluation('test-model-id');
@@ -272,14 +259,14 @@ describe('runEvaluation', () => {
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
     mockDatasetGetById.mockResolvedValue(dataset);
-    mockGetOrCreateContainer.mockResolvedValue(container);
-    mockExecute.mockResolvedValue({
-      status: 'error',
-      stdout: '',
-      stderr: 'RuntimeError: CUDA out of memory',
-      outputs: [],
-      executionMs: 1000,
-      error: 'Execution failed',
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'error',
+        stderr: 'RuntimeError: CUDA out of memory',
+        error: 'Execution failed',
+        executionMs: 1000,
+      },
     });
 
     await runEvaluation('test-model-id');
@@ -305,41 +292,34 @@ describe('runEvaluation', () => {
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
     mockDatasetGetById.mockResolvedValue(dataset);
-    mockGetOrCreateContainer.mockResolvedValue(container);
-    mockExecute.mockResolvedValue({
-      status: 'success',
-      stdout: 'Evaluation complete',
-      stderr: '',
-      outputs: [],
-      executionMs: 5000,
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'success',
+        stderr: '',
+        executionMs: 5000,
+      },
     });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
 
     await runEvaluation('test-model-id');
 
-    // Verify mkdir was called for the storage dir
-    expect(mkdir).toHaveBeenCalledWith(
-      '/tmp/test-model-storage/test-model-id',
-      { recursive: true },
-    );
+    // Verify copyArtifactsToPermanentStorage was called
+    expect(mockCopyArtifactsToPermanentStorage).toHaveBeenCalledTimes(1);
 
-    // Verify copyFile was called for evaluation.json and predictions.parquet
-    const copyFileMock = vi.mocked(copyFile);
-    const copiedSources = copyFileMock.mock.calls.map(call => call[0]);
+    // Get the call arguments
+    const callArgs = mockCopyArtifactsToPermanentStorage.mock.calls[0];
+    const [modelId, copyContainer, artifacts] = callArgs;
 
-    // Should copy evaluation.json
-    expect(copiedSources).toContain(
-      '/tmp/test-workspaces/test-project/model-runtime/eval/test-model-id/evaluation.json',
-    );
+    // Verify arguments
+    expect(modelId).toBe('test-model-id');
+    expect(copyContainer).toBe(container);
 
-    // Should copy predictions.parquet
-    expect(copiedSources).toContain(
-      '/tmp/test-workspaces/test-project/model-runtime/eval/test-model-id/predictions.parquet',
-    );
-
-    // Should copy shap.json (existsSync is mocked to return true)
-    expect(copiedSources).toContain(
-      '/tmp/test-workspaces/test-project/model-runtime/eval/test-model-id/shap.json',
-    );
+    // Should have artifact entries for evaluation.json, predictions.parquet, and shap.json
+    const artifactWorkspaces = artifacts.map((a: Record<string, unknown>) => a.workspace);
+    expect(artifactWorkspaces).toContain('eval/test-model-id/evaluation.json');
+    expect(artifactWorkspaces).toContain('eval/test-model-id/predictions.parquet');
+    expect(artifactWorkspaces).toContain('eval/test-model-id/shap.json');
   });
 
   it('does not throw when model is not found', async () => {

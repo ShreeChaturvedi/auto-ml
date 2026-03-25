@@ -286,6 +286,12 @@ describe('sqlValidator', () => {
         expect(() => validateReadOnlySql('SELECT * FROM workflow_runs', defaultOptions))
           .toThrow('Access to table "workflow_runs" is not allowed');
       });
+
+      it('allows blocked table name when in allowedTables', () => {
+        const opts = { ...defaultOptions, allowedTables: new Set(['users']) };
+        const result = validateReadOnlySql('SELECT * FROM users', opts);
+        expect(result.normalizedSql).toContain('users');
+      });
     });
   });
 

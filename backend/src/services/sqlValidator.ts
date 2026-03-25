@@ -100,12 +100,15 @@ export function extractTableReferences(sql: string): string[] {
 
 /**
  * Check that the query does not reference any blocked tables.
+ * Tables in the allowedTables set bypass the blocklist (project dataset tables).
  */
-function assertNoBlockedTables(sql: string): void {
+function assertNoBlockedTables(sql: string, allowedTables?: Set<string>): void {
   const tables = extractTableReferences(sql);
   for (const table of tables) {
+    if (allowedTables?.has(table)) continue;
     // Strip schema prefix for comparison (e.g. "public.users" -> "users")
     const unqualified = table.includes('.') ? table.split('.').pop()! : table;
+    if (allowedTables?.has(unqualified)) continue;
     if (BLOCKED_TABLES.has(unqualified)) {
       throw new Error(`Access to table "${unqualified}" is not allowed`);
     }
@@ -151,7 +154,7 @@ export function validateReadOnlySql(sql: string, options: ValidateSqlOptions): V
   }
 
   // Block access to sensitive application tables and system catalogs
-  assertNoBlockedTables(normalizedStatement);
+  assertNoBlockedTables(normalizedStatement, options.allowedTables);
 
   const limitRegex = /\blimit\s+\d+/i;
   if (!limitRegex.test(normalizedStatement)) {

@@ -84,10 +84,14 @@ export const checkpointFeaturePipeline: FeatureToolHandler = async (ctx: Feature
     await ctx.runRepository.save(ctx.run);
   }
 
+  const warning = registeredFeatureIds.length === 0
+    ? 'No features have been registered yet. Consider creating features before checkpointing.'
+    : undefined;
+
   return {
     output: {
-      status: 'ok',
-      message: 'Feature pipeline checkpoint created',
+      status: registeredFeatureIds.length > 0 ? 'ok' : 'warning',
+      message: warning ?? 'Feature pipeline checkpoint created',
       checkpointId,
       label,
       featureIds: registeredFeatureIds,

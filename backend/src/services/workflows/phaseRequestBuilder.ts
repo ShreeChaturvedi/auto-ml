@@ -20,6 +20,7 @@ import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
+import { getPhaseConfig } from './phaseConfig.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
@@ -241,6 +242,17 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       : []
   );
 
+  // Resolve the current training lifecycle stage so that stage-based tool
+  // filtering in the PhaseConfig can restrict which tools the LLM may call.
+  let trainingNode: string;
+  if (state.iteration === 0) {
+    trainingNode = 'configure_experiment';
+  } else {
+    const trainingPhase = getPhaseConfig('training');
+    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, state.toolResultHistory);
+    trainingNode = nextStage ?? state.run.currentNode;
+  }
+
   return {
     nextStep: 'invoke_model',
     request: buildTrainingRequest({
@@ -259,7 +271,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     }),
     run: {
       ...state.run,
-      currentNode: state.iteration === 0 ? 'plan_training_workflow' : 'continue_training_workflow',
+      currentNode: trainingNode,
       activeDatasetId: turn.datasetId,
       activeNotebookId: turn.notebookId
     }

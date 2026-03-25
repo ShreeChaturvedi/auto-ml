@@ -2,6 +2,7 @@ import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agenti
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { useFeatureStore } from '@/stores/featureStore';
 import type { UploadedFile } from '@/types/file';
+import type { ColumnDataType } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
@@ -63,12 +64,43 @@ function buildFeatureSuggestions(
       }
     );
 
-    if (config.targetColumn) {
+    // Dataset-aware suggestions from profile
+    const datasetFile = config.datasetFiles.find(
+      (file) => file.metadata?.datasetId === config.datasetId
+    );
+    const profile = datasetFile?.metadata?.datasetProfile;
+
+    if (config.targetColumn && profile) {
+      const targetDtype: ColumnDataType | undefined = profile.dtypes[config.targetColumn];
+      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+
+      suggestions.push({
+        id: 'fe-initial-target-aware',
+        label: isClassification ? 'Classification features' : 'Regression features',
+        prompt: isClassification
+          ? `Recommend feature transformations for ${sourceName} optimized for classification on target "${config.targetColumn}".`
+          : `Recommend feature transformations for ${sourceName} optimized for regression on target "${config.targetColumn}".`
+      });
+    } else if (config.targetColumn) {
       suggestions.push({
         id: 'fe-initial-target-aware',
         label: 'Target-aware features',
         prompt: `Recommend feature transformations for ${sourceName} given target column "${config.targetColumn}".`
       });
+    }
+
+    if (profile) {
+      const dateCols = Object.entries(profile.dtypes)
+        .filter(([, dtype]) => dtype === 'date')
+        .map(([name]) => name);
+      if (dateCols.length > 0) {
+        const topDates = dateCols.slice(0, 2).join(', ');
+        suggestions.push({
+          id: 'fe-initial-temporal',
+          label: `Temporal features from ${topDates}`,
+          prompt: `Extract temporal features (day of week, month, year, time deltas) from date columns ${topDates} in ${sourceName}.`
+        });
+      }
     }
 
     if (config.documentFiles.length > 0) {

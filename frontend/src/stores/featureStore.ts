@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useProjectStore } from './projectStore';
 import {
@@ -58,7 +59,7 @@ interface FeatureState {
   setCurrentVersion: (projectId: string, versionId: string) => void;
 }
 
-export const useFeatureStore = create<FeatureState>()((set, get) => ({
+export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
   features: [],
   versions: {},
   currentVersionId: {},
@@ -368,6 +369,14 @@ export const useFeatureStore = create<FeatureState>()((set, get) => ({
       console.error('Failed to sync features to project metadata', error);
     }
   }
+}), {
+  name: 'automl-feature-lifecycle-v1',
+  version: 1,
+  partialize: (state) => ({
+    featureRunId: state.featureRunId,
+    currentStage: state.currentStage,
+    featureSteps: state.featureSteps
+  })
 }));
 
 export { buildEmptyReadinessReport } from './featureVersionSlice';

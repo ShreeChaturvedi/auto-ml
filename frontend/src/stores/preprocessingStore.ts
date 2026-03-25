@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 import { ApiError } from '@/lib/api/client';
 import { getPreprocessingRunSnapshot } from '@/lib/api/llm';
@@ -122,7 +123,7 @@ const initialState: PreprocessingStateData = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
+export const usePreprocessingStore = create<PreprocessingState>()(persist((set, get) => ({
   ...initialState,
 
   loadTables: async (projectId: string) => {
@@ -395,4 +396,12 @@ export const usePreprocessingStore = create<PreprocessingState>((set, get) => ({
       error: null
     });
   }
+}), {
+  name: 'automl-preprocessing-lifecycle-v1',
+  version: 1,
+  partialize: (state) => ({
+    activeProjectId: state.activeProjectId,
+    selectedDatasetId: state.selectedDatasetId,
+    runId: state.runId
+  })
 }));

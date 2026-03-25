@@ -65,6 +65,9 @@ export interface FileMetadata {
     height: number;
   };
 
+  // Derived dataset lineage
+  derivedFrom?: string;
+
   // General
   mimeType?: string;
   encoding?: string;

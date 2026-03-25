@@ -11,6 +11,22 @@ import type { PhaseConfig } from './phaseConfig.js';
 import { extractConfigurable } from './phases/types.js';
 import type { WorkflowPendingInputKind } from './types.js';
 
+const MAX_TOOL_RESULT_CHARS = 50_000;
+
+function truncateToolResult(result: ToolResult): ToolResult {
+  const json = JSON.stringify(result.output);
+  if (json.length <= MAX_TOOL_RESULT_CHARS) return result;
+  return {
+    ...result,
+    output: {
+      _truncated: true,
+      _originalSize: json.length,
+      notice: `Result truncated from ${json.length} to ${MAX_TOOL_RESULT_CHARS} characters.`,
+      data: json.slice(0, MAX_TOOL_RESULT_CHARS)
+    }
+  };
+}
+
 function toolResultRequiresPause(result: ToolResult): boolean {
   const output = result.output;
   if (!output || typeof output !== 'object' || Array.isArray(output)) {
@@ -120,7 +136,8 @@ export async function executeToolsNode(
 
   const nextResults: ToolResult[] = [];
   for (const call of state.pendingToolCalls) {
-    const result = await executeWorkflowToolCall(state, call, phaseConfig);
+    const rawResult = await executeWorkflowToolCall(state, call, phaseConfig);
+    const result = truncateToolResult(rawResult);
     nextResults.push(result);
 
     const toolEvent = buildToolEvent(

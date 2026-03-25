@@ -44,6 +44,19 @@ async function listDocuments(projectId: string) {
   }));
 }
 
+const MAX_PROFILE_COLUMNS = 50;
+const MAX_TOP_VALUES = 5;
+const MAX_SAMPLE_ROWS = 10;
+const MAX_SAMPLE_COLUMNS = 30;
+const MAX_STRING_VALUE_LENGTH = 200;
+
+function truncateStringValue(value: unknown): unknown {
+  if (typeof value === 'string' && value.length > MAX_STRING_VALUE_LENGTH) {
+    return value.slice(0, MAX_STRING_VALUE_LENGTH) + '…';
+  }
+  return value;
+}
+
 export async function getDatasetProfile(args: ToolCall['args']) {
   const datasetRef = typeof args?.datasetId === 'string' ? args.datasetId : '';
   if (!datasetRef) {
@@ -53,7 +66,19 @@ export async function getDatasetProfile(args: ToolCall['args']) {
   if (!dataset) {
     throw new Error('Dataset not found');
   }
-  return dataset;
+
+  const truncatedColumns = dataset.columns.slice(0, MAX_PROFILE_COLUMNS).map(col => ({
+    ...col,
+    topValues: (col.topValues ?? []).slice(0, MAX_TOP_VALUES)
+  }));
+
+  return {
+    ...dataset,
+    columns: truncatedColumns,
+    ...(dataset.columns.length > MAX_PROFILE_COLUMNS
+      ? { _truncated: true, _totalColumns: dataset.columns.length }
+      : {})
+  };
 }
 
 export async function getDatasetSample(args: ToolCall['args']) {
@@ -65,10 +90,22 @@ export async function getDatasetSample(args: ToolCall['args']) {
   if (!dataset) {
     throw new Error('Dataset not found');
   }
+  const columnNames = dataset.columns.map(c => c.name).slice(0, MAX_SAMPLE_COLUMNS);
+  const truncatedSample = dataset.sample.slice(0, MAX_SAMPLE_ROWS).map(row => {
+    const truncatedRow: Record<string, unknown> = {};
+    for (const col of columnNames) {
+      truncatedRow[col] = truncateStringValue(row[col]);
+    }
+    return truncatedRow;
+  });
+
   return {
     datasetId: dataset.datasetId,
     filename: dataset.filename,
-    sample: dataset.sample
+    sample: truncatedSample,
+    ...(dataset.sample.length > MAX_SAMPLE_ROWS || dataset.columns.length > MAX_SAMPLE_COLUMNS
+      ? { _truncated: true, _totalRows: dataset.sample.length, _totalColumns: dataset.columns.length }
+      : {})
   };
 }
 

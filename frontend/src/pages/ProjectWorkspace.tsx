@@ -84,6 +84,11 @@ export function ProjectWorkspace() {
     return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
   }
 
+  // Redirect common alias to canonical phase slug
+  if ((phase as string) === 'processing') {
+    return <Navigate to={`/project/${project.id}/preprocessing`} replace />;
+  }
+
   // Render content based on phase
   switch (phase as Phase) {
     case 'upload':

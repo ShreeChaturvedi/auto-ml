@@ -3,19 +3,47 @@
  *
  * Shows a progress shimmer while running, duration + status badge on complete,
  * and a monospace output area for stdout/stderr.
+ *
+ * When training progress markers (__TRAIN_START__, __TRAIN_PROGRESS__, __TRAIN_COMPLETE__)
+ * are detected in stdout, renders TrainingProgressCard for rich visualization.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { formatDuration } from '@/components/experiments/utils';
+import { parseAllTrainingEvents } from '@/lib/training/progressParser';
+import type { TrainingEvent } from '@/lib/training/progressParser';
+import { TrainingProgressCard, type MetricSeries } from '@/components/training/TrainingProgressCard';
 
 export interface ExecutionCardProps {
   status: 'running' | 'success' | 'failed';
   stdout?: string;
   stderr?: string;
   duration?: number;
+}
+
+/** Build metric series from parsed training progress events. */
+function buildMetricSeries(events: TrainingEvent[]): MetricSeries[] {
+  const progressEvents = events.filter(
+    (e): e is TrainingEvent & { type: 'progress' } => e.type === 'progress',
+  );
+  if (progressEvents.length === 0) return [];
+
+  const allKeys = new Set<string>();
+  for (const e of progressEvents) {
+    for (const key of Object.keys(e.metrics)) allKeys.add(key);
+  }
+
+  return Array.from(allKeys).map((name) => {
+    const values = progressEvents.map((e) => e.metrics[name] ?? 0);
+    const isLossLike = /loss|error|mse|mae|rmse/i.test(name);
+    const first = values[0] ?? 0;
+    const last = values[values.length - 1] ?? 0;
+    const improving = isLossLike ? last <= first : last >= first;
+    return { name, values, improving };
+  });
 }
 
 export function ExecutionCard({
@@ -25,6 +53,50 @@ export function ExecutionCard({
   duration,
 }: ExecutionCardProps) {
   const [expanded, setExpanded] = useState(status !== 'success');
+
+  // Parse training progress from stdout
+  const trainingData = useMemo(() => {
+    if (!stdout) return null;
+    const events = parseAllTrainingEvents(stdout);
+    const startEvent = events.find(
+      (e): e is TrainingEvent & { type: 'start' } => e.type === 'start',
+    );
+    if (!startEvent) return null;
+
+    const progressEvents = events.filter(
+      (e): e is TrainingEvent & { type: 'progress' } => e.type === 'progress',
+    );
+    const completeEvent = events.find(
+      (e): e is TrainingEvent & { type: 'complete' } => e.type === 'complete',
+    );
+    const lastProgress = progressEvents[progressEvents.length - 1];
+    const metrics = buildMetricSeries(events);
+
+    return {
+      modelType: startEvent.modelType,
+      totalEpochs: startEvent.totalEpochs,
+      currentEpoch: lastProgress?.epoch ?? 0,
+      metrics,
+      isComplete: !!completeEvent,
+      finalMetrics: completeEvent?.finalMetrics,
+    };
+  }, [stdout]);
+
+  // If training progress was detected, render the rich card
+  if (trainingData) {
+    return (
+      <TrainingProgressCard
+        status={trainingData.isComplete ? 'complete' : 'running'}
+        modelType={trainingData.modelType}
+        currentEpoch={trainingData.currentEpoch}
+        totalEpochs={trainingData.totalEpochs}
+        elapsedSeconds={duration ? duration / 1000 : 0}
+        metrics={trainingData.metrics}
+        finalMetrics={trainingData.finalMetrics}
+      />
+    );
+  }
+
   const hasOutput = !!(stdout || stderr);
 
   return (

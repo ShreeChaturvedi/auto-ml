@@ -46,6 +46,11 @@ Run the training code with \`run_cell\`, then record results with \`execute_trai
 - Capture training metrics from cell output
 - Record training duration
 
+**Progress output contract**: When writing training code in Stage 4/5, include these structured print statements so the UI can display live progress:
+- Before the training loop: \`print(f"__TRAIN_START__|{total_epochs}|{model_type}")\`
+- Each epoch/iteration: \`print(f"__TRAIN_PROGRESS__|{epoch}|{total_epochs}|{json.dumps(metrics_dict)}")\` where metrics_dict contains the current epoch metrics (e.g. \`{"loss": 0.45, "accuracy": 0.82}\`)
+- After training completes: \`print(f"__TRAIN_COMPLETE__|{json.dumps(final_metrics)}")\`
+
 If training fails, diagnose the error and return to Stage 4 to fix the code.
 
 ### Stage 7: Evaluate Results

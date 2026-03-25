@@ -81,7 +81,7 @@ export async function executeCode(request: ExecuteRequest): Promise<ExecutionRes
         '/execute',
         {
             method: 'POST',
-            body: JSON.stringify(request)
+            body: request
         }
     );
     return response.result;
@@ -98,7 +98,7 @@ export async function createSession(
         '/execute/session',
         {
             method: 'POST',
-            body: JSON.stringify({ projectId, pythonVersion })
+            body: { projectId, pythonVersion }
         }
     );
     return response.session;
@@ -134,7 +134,7 @@ export async function installPackage(
 ): Promise<{ success: boolean; message: string }> {
     return apiRequest('/execute/packages', {
         method: 'POST',
-        body: JSON.stringify({ sessionId, packageName })
+        body: { sessionId, packageName }
     });
 }
 
@@ -152,7 +152,7 @@ export async function installPackageStream(
             'Content-Type': 'application/json',
             Accept: 'application/x-ndjson'
         },
-        body: JSON.stringify({ sessionId, packageName })
+        body: { sessionId, packageName }
     });
 
     if (!response.ok || !response.body) {

@@ -7,7 +7,7 @@ import { Router, type Response } from 'express';
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { requireProjectOwnership, verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
 import { validateEvaluationForErrorAnalysis } from '../services/evaluationStatusValidator.js';
@@ -98,16 +98,8 @@ export function createExperimentsRouter(): Router {
   }));
 
   // POST /experiments/:projectId/tune — Optuna hyperparameter optimization (NDJSON stream)
-  router.post('/:projectId/tune', asyncHandler(async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/tune', requireProjectOwnership(projectRepository), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
 
     const { modelId, nTrials, metric, timeoutSeconds, sampler } = req.body as {
       modelId?: string;
@@ -157,16 +149,8 @@ export function createExperimentsRouter(): Router {
     }
   }));
 
-  router.post('/:projectId/compare', asyncHandler(async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/compare', requireProjectOwnership(projectRepository), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
 
     const body = req.body as { modelIds?: string[] };
     if (!Array.isArray(body.modelIds) || body.modelIds.length < 2 || body.modelIds.length > 5) {
@@ -202,16 +186,8 @@ export function createExperimentsRouter(): Router {
   }));
 
   // POST /experiments/:projectId/nl-filter — NL → structured filter predicates
-  router.post('/:projectId/nl-filter', asyncHandler(async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/nl-filter', requireProjectOwnership(projectRepository), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
 
     const query = typeof req.body?.query === 'string' ? (req.body.query as string).trim() : '';
     if (!query) {
@@ -245,16 +221,8 @@ export function createExperimentsRouter(): Router {
   }));
 
   // POST /experiments/:projectId/insights — streaming LLM insights (NDJSON)
-  router.post('/:projectId/insights', asyncHandler(async (req: AuthRequest, res: Response) => {
+  router.post('/:projectId/insights', requireProjectOwnership(projectRepository), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { projectId } = req.params;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
 
     const body = req.body as { type?: string; context?: Record<string, unknown> };
 

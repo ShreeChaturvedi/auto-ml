@@ -7,38 +7,23 @@ describe('typeCoercion', () => {
   // asRecord
   // ---------------------------------------------------------------------------
   describe('asRecord', () => {
-    it('returns a plain object unchanged', () => {
-      const obj = { a: 1, b: 'x' };
-      expect(asRecord(obj)).toBe(obj);
-    });
-
-    it('returns undefined for null', () => {
-      expect(asRecord(null)).toBeUndefined();
-    });
-
-    it('returns undefined for undefined', () => {
-      expect(asRecord(undefined)).toBeUndefined();
-    });
-
-    it('returns undefined for an array', () => {
-      expect(asRecord([1, 2, 3])).toBeUndefined();
-    });
-
-    it('returns undefined for a string', () => {
-      expect(asRecord('hello')).toBeUndefined();
-    });
-
-    it('returns undefined for a number', () => {
-      expect(asRecord(42)).toBeUndefined();
-    });
-
-    it('returns undefined for a boolean', () => {
-      expect(asRecord(true)).toBeUndefined();
-    });
-
-    it('returns an empty object unchanged', () => {
-      const obj = {};
-      expect(asRecord(obj)).toBe(obj);
+    it.each([
+      [{ a: 1, b: 'x' }, { a: 1, b: 'x' }, true],
+      [null, undefined, false],
+      [undefined, undefined, false],
+      [[1, 2, 3], undefined, false],
+      ['hello', undefined, false],
+      [42, undefined, false],
+      [true, undefined, false],
+      [{}, {}, true]
+    ])('returns %o for %o', (input, expected, shouldBeSameRef) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = asRecord(input as any);
+      if (shouldBeSameRef) {
+        expect(result).toBe(input);
+      } else {
+        expect(result).toEqual(expected);
+      }
     });
   });
 
@@ -46,46 +31,22 @@ describe('typeCoercion', () => {
   // asString
   // ---------------------------------------------------------------------------
   describe('asString', () => {
-    it('returns a non-empty string trimmed', () => {
-      expect(asString('  hello  ')).toBe('hello');
-    });
-
-    it('returns undefined for an empty string', () => {
-      expect(asString('')).toBeUndefined();
-    });
-
-    it('returns undefined for a whitespace-only string', () => {
-      expect(asString('   ')).toBeUndefined();
-    });
-
-    it('coerces a number to its string representation', () => {
-      expect(asString(42)).toBe('42');
-      expect(asString(0)).toBe('0');
-      expect(asString(-3.14)).toBe('-3.14');
-    });
-
-    it('coerces true to "true"', () => {
-      expect(asString(true)).toBe('true');
-    });
-
-    it('coerces false to "false"', () => {
-      expect(asString(false)).toBe('false');
-    });
-
-    it('returns undefined for null', () => {
-      expect(asString(null)).toBeUndefined();
-    });
-
-    it('returns undefined for undefined', () => {
-      expect(asString(undefined)).toBeUndefined();
-    });
-
-    it('returns undefined for an array', () => {
-      expect(asString([1, 2])).toBeUndefined();
-    });
-
-    it('returns undefined for a plain object', () => {
-      expect(asString({ a: 1 })).toBeUndefined();
+    it.each([
+      ['  hello  ', 'hello'],
+      ['', undefined],
+      ['   ', undefined],
+      [42, '42'],
+      [0, '0'],
+      [-3.14, '-3.14'],
+      [true, 'true'],
+      [false, 'false'],
+      [null, undefined],
+      [undefined, undefined],
+      [[1, 2], undefined],
+      [{ a: 1 }, undefined]
+    ])('asString(%o) => %o', (input, expected) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(asString(input as any)).toBe(expected);
     });
   });
 
@@ -93,57 +54,24 @@ describe('typeCoercion', () => {
   // asNumber
   // ---------------------------------------------------------------------------
   describe('asNumber', () => {
-    it('returns a finite integer unchanged', () => {
-      expect(asNumber(42)).toBe(42);
-    });
-
-    it('returns a finite float unchanged', () => {
-      expect(asNumber(3.14)).toBe(3.14);
-    });
-
-    it('returns undefined for NaN', () => {
-      expect(asNumber(NaN)).toBeUndefined();
-    });
-
-    it('returns undefined for Infinity', () => {
-      expect(asNumber(Infinity)).toBeUndefined();
-    });
-
-    it('returns undefined for -Infinity', () => {
-      expect(asNumber(-Infinity)).toBeUndefined();
-    });
-
-    it('parses a numeric string', () => {
-      expect(asNumber('42')).toBe(42);
-      expect(asNumber('  3.14  ')).toBe(3.14);
-    });
-
-    it('returns undefined for a non-numeric string', () => {
-      expect(asNumber('abc')).toBeUndefined();
-    });
-
-    it('returns undefined for an empty string', () => {
-      expect(asNumber('')).toBeUndefined();
-    });
-
-    it('returns undefined for a whitespace-only string', () => {
-      expect(asNumber('   ')).toBeUndefined();
-    });
-
-    it('returns undefined for null', () => {
-      expect(asNumber(null)).toBeUndefined();
-    });
-
-    it('returns undefined for undefined', () => {
-      expect(asNumber(undefined)).toBeUndefined();
-    });
-
-    it('returns undefined for a boolean', () => {
-      expect(asNumber(true)).toBeUndefined();
-    });
-
-    it('returns undefined for a plain object', () => {
-      expect(asNumber({})).toBeUndefined();
+    it.each([
+      [42, 42],
+      [3.14, 3.14],
+      [NaN, undefined],
+      [Infinity, undefined],
+      [-Infinity, undefined],
+      ['42', 42],
+      ['  3.14  ', 3.14],
+      ['abc', undefined],
+      ['', undefined],
+      ['   ', undefined],
+      [null, undefined],
+      [undefined, undefined],
+      [true, undefined],
+      [{}, undefined]
+    ])('asNumber(%o) => %o', (input, expected) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(asNumber(input as any)).toBe(expected);
     });
   });
 
@@ -151,36 +79,18 @@ describe('typeCoercion', () => {
   // asBoolean
   // ---------------------------------------------------------------------------
   describe('asBoolean', () => {
-    it('returns true unchanged', () => {
-      expect(asBoolean(true)).toBe(true);
-    });
-
-    it('returns false unchanged', () => {
-      expect(asBoolean(false)).toBe(false);
-    });
-
-    it('returns undefined for 1 (does not coerce numbers)', () => {
-      expect(asBoolean(1)).toBeUndefined();
-    });
-
-    it('returns undefined for 0 (does not coerce numbers)', () => {
-      expect(asBoolean(0)).toBeUndefined();
-    });
-
-    it('returns undefined for the string "true"', () => {
-      expect(asBoolean('true')).toBeUndefined();
-    });
-
-    it('returns undefined for null', () => {
-      expect(asBoolean(null)).toBeUndefined();
-    });
-
-    it('returns undefined for undefined', () => {
-      expect(asBoolean(undefined)).toBeUndefined();
-    });
-
-    it('returns undefined for a plain object', () => {
-      expect(asBoolean({})).toBeUndefined();
+    it.each([
+      [true, true],
+      [false, false],
+      [1, undefined],
+      [0, undefined],
+      ['true', undefined],
+      [null, undefined],
+      [undefined, undefined],
+      [{}, undefined]
+    ])('asBoolean(%o) => %o', (input, expected) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(asBoolean(input as any)).toBe(expected);
     });
   });
 });

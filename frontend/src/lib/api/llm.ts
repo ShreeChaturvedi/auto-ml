@@ -178,8 +178,8 @@ async function streamLlm(
 
   const response = await apiFetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-    body: JSON.stringify(request),
+    headers: { Accept: 'application/x-ndjson' },
+    body: request,
     signal
   });
 

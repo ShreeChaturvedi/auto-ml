@@ -19,15 +19,9 @@ import {
   buildTimelineFromSnapshot,
   getLatestCheckpointId
 } from './preprocessing/eventBuilders';
-import { applyDivergence, computeDivergenceUpdate } from './preprocessing/divergenceSync';
-import { evaluateReplayCompat } from './preprocessing/replayCompat';
-import { commitStepDecision } from './preprocessing/stepDecision';
-import {
-  applyEditStepCode,
-  applyMarkInterrupted,
-  applyProcessToolCall,
-  applyProcessToolResult
-} from './preprocessing/timelineOps';
+import { createDatasetConfigSlice } from './preprocessingSlices/datasetConfigSlice';
+import { createRunManagementSlice } from './preprocessingSlices/runManagementSlice';
+import { createTransformationPipelineSlice } from './preprocessingSlices/transformationPipelineSlice';
 
 export interface PreprocessingChatMessage {
   id: string;
@@ -46,7 +40,7 @@ export interface ReplayCompatibilityReport {
   checkpointId?: string;
 }
 
-interface PreprocessingState {
+export interface PreprocessingState {
   activeProjectId: string | null;
   tables: AvailableTable[];
   selectedDatasetId: string | null;
@@ -123,285 +117,177 @@ const initialState: PreprocessingStateData = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const usePreprocessingStore = create<PreprocessingState>()(persist((set, get) => ({
-  ...initialState,
+export const usePreprocessingStore = create<PreprocessingState>()(
+  persist(
+    (set, get) => {
+      // Compose all three slices
+      const datasetSlice = createDatasetConfigSlice(set, get);
+      const runSlice = createRunManagementSlice(set, get);
+      const pipelineSlice = createTransformationPipelineSlice(set, get);
 
-  loadTables: async (projectId: string) => {
-    const previousProjectId = get().activeProjectId;
-    const switchedProject = previousProjectId !== null && previousProjectId !== projectId;
+      // Create an augmented dataset slice with project-switch coordination
+      const loadTablesWithCoordination = async (projectId: string) => {
+        const previousProjectId = get().activeProjectId;
+        const switchedProject = previousProjectId !== null && previousProjectId !== projectId;
 
-    if (switchedProject) {
-      set({
-        activeProjectId: projectId,
-        tables: [],
-        selectedDatasetId: null,
-        runId: null,
-        nextRunCellMode: 'continue',
-        latestCheckpointId: null,
-        assistantMessages: [],
-        timeline: [],
-        stepBindings: {},
-        replayReport: null,
-        controllerSummary: null,
-        isLoadingTables: true,
-        error: null
-      });
-    } else {
-      set({ activeProjectId: projectId, isLoadingTables: true, error: null });
-    }
-
-    try {
-      const { tables } = await listAvailableTables(projectId);
-      set((state) => {
-        const selectedStillValid = Boolean(
-          state.selectedDatasetId && tables.some((table) => table.datasetId === state.selectedDatasetId)
-        );
-
-        // Preserve selectedDatasetId if it's still valid, or if we're not switching projects
-        if (selectedStillValid || !switchedProject) {
-          return { tables, isLoadingTables: false, error: null };
+        if (switchedProject) {
+          // Project switch: reset all slices
+          set({
+            activeProjectId: projectId,
+            tables: [],
+            selectedDatasetId: null,
+            runId: null,
+            nextRunCellMode: 'continue',
+            latestCheckpointId: null,
+            assistantMessages: [],
+            timeline: [],
+            stepBindings: {},
+            replayReport: null,
+            controllerSummary: null,
+            isLoadingTables: true,
+            error: null
+          });
+        } else {
+          set({ activeProjectId: projectId, isLoadingTables: true, error: null });
         }
 
-        return {
-          tables,
-          selectedDatasetId: null,
-          runId: null,
+        try {
+          const { tables } = await listAvailableTables(projectId);
+          set((state: PreprocessingState) => {
+            const selectedStillValid = Boolean(
+              state.selectedDatasetId && tables.some((table: AvailableTable) => table.datasetId === state.selectedDatasetId)
+            );
+
+            // Preserve selectedDatasetId if it's still valid, or if we're not switching projects
+            if (selectedStillValid || !switchedProject) {
+              return { tables, isLoadingTables: false, error: null };
+            }
+
+            return {
+              tables,
+              selectedDatasetId: null,
+              runId: null,
+              nextRunCellMode: 'continue',
+              latestCheckpointId: null,
+              assistantMessages: [],
+              timeline: [],
+              stepBindings: {},
+              replayReport: null,
+              controllerSummary: null,
+              isLoadingTables: false,
+              error: null
+            };
+          });
+        } catch (error) {
+          console.error('[preprocessingStore] Failed to load tables:', error);
+          set({
+            error: error instanceof Error ? error.message : 'Failed to load tables',
+            isLoadingTables: false
+          });
+        }
+      };
+
+      // Create an augmented dataset slice with run-state clearing
+      const selectDatasetWithCoordination = (datasetId: string) => {
+        set((state: PreprocessingState) => {
+          const exists = state.tables.some((table: AvailableTable) => table.datasetId === datasetId);
+          if (!exists) {
+            return {
+              error: 'Selected dataset is unavailable in this project. Please choose another dataset.'
+            };
+          }
+
+          return {
+            selectedDatasetId: datasetId,
+            runId: null,
+            nextRunCellMode: 'continue',
+            latestCheckpointId: null,
+            assistantMessages: [],
+            timeline: [],
+            stepBindings: {},
+            replayReport: null,
+            controllerSummary: null,
+            error: null
+          };
+        });
+      };
+
+      const applyTabSnapshot = (snapshot: {
+        selectedDatasetId: string | null;
+        runId: string | null;
+        timeline: TransformationEvent[];
+        stepBindings: Record<string, StepCellBinding>;
+        replayReport: ReplayCompatibilityReport | null;
+      }) => {
+        set({
+          selectedDatasetId: snapshot.selectedDatasetId,
+          runId: snapshot.runId,
           nextRunCellMode: 'continue',
           latestCheckpointId: null,
           assistantMessages: [],
-          timeline: [],
-          stepBindings: {},
+          timeline: snapshot.timeline,
+          stepBindings: snapshot.stepBindings,
+          replayReport: snapshot.replayReport,
+          controllerSummary: null,
+          error: null
+        });
+      };
+
+      const hydrateRunSnapshot = (snapshot: PreprocessingRunSnapshot) => {
+        set((state: PreprocessingState) => ({
+          runId: snapshot.runId,
+          latestCheckpointId: getLatestCheckpointId(snapshot),
+          selectedDatasetId: snapshot.activeDatasetId ?? state.selectedDatasetId,
+          timeline: buildTimelineFromSnapshot(snapshot),
+          stepBindings: buildStepBindingsFromSnapshot(snapshot),
           replayReport: null,
           controllerSummary: null,
-          isLoadingTables: false,
           error: null
-        };
-      });
-    } catch (error) {
-      console.error('[preprocessingStore] Failed to load tables:', error);
-      set({
-        error: error instanceof Error ? error.message : 'Failed to load tables',
-        isLoadingTables: false
-      });
-    }
-  },
-
-  selectDataset: (datasetId: string) => {
-    set((state) => {
-      const exists = state.tables.some((table) => table.datasetId === datasetId);
-      if (!exists) {
-        return {
-          error: 'Selected dataset is unavailable in this project. Please choose another dataset.'
-        };
-      }
+        }));
+      };
 
       return {
-        selectedDatasetId: datasetId,
-        runId: null,
-        nextRunCellMode: 'continue',
-        latestCheckpointId: null,
-        assistantMessages: [],
-        timeline: [],
-        stepBindings: {},
-        replayReport: null,
-        controllerSummary: null,
-        error: null
+        ...initialState,
+        ...datasetSlice,
+        ...runSlice,
+        ...pipelineSlice,
+        // Override with coordinated versions
+        loadTables: loadTablesWithCoordination,
+        selectDataset: selectDatasetWithCoordination,
+        applyTabSnapshot,
+        hydrateRunSnapshot,
+        hydrateRunById: async (projectId: string, snapshotRunId: string) => {
+          if (isWorkflowThreadId(snapshotRunId)) {
+            console.warn('[preprocessingStore] Ignoring stale workflow thread reference used as runId:', snapshotRunId);
+            set({ runId: null, timeline: [], stepBindings: {}, error: null });
+            return;
+          }
+
+          try {
+            const { run } = await getPreprocessingRunSnapshot(snapshotRunId, projectId);
+            hydrateRunSnapshot(run);
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 404) {
+              console.warn('[preprocessingStore] Stale run reference cleared (run no longer exists):', snapshotRunId);
+              set({ runId: null, timeline: [], stepBindings: {}, error: null });
+              return;
+            }
+            console.error('[preprocessingStore] Failed to hydrate preprocessing run snapshot:', error);
+            set({
+              error: error instanceof Error ? error.message : 'Failed to hydrate preprocessing run snapshot'
+            });
+          }
+        }
       };
-    });
-  },
-
-  setRunId: (nextRunId) => {
-    set({ runId: nextRunId, latestCheckpointId: nextRunId ? get().latestCheckpointId : null });
-  },
-
-  setNextRunCellMode: (mode) => {
-    set({ nextRunCellMode: mode });
-  },
-
-  consumeRunCellMode: () => {
-    const mode = get().nextRunCellMode;
-    if (mode !== 'continue') {
-      set({ nextRunCellMode: 'continue' });
+    },
+    {
+      name: 'automl-preprocessing-lifecycle-v1',
+      version: 1,
+      partialize: (state: PreprocessingState) => ({
+        activeProjectId: state.activeProjectId,
+        selectedDatasetId: state.selectedDatasetId,
+        runId: state.runId
+      })
     }
-    return mode;
-  },
-
-  applyTabSnapshot: (snapshot) => {
-    set({
-      selectedDatasetId: snapshot.selectedDatasetId,
-      runId: snapshot.runId,
-      nextRunCellMode: 'continue',
-      latestCheckpointId: null,
-      assistantMessages: [],
-      timeline: snapshot.timeline,
-      stepBindings: snapshot.stepBindings,
-      replayReport: snapshot.replayReport,
-      controllerSummary: null,
-      error: null
-    });
-  },
-
-  hydrateRunSnapshot: (snapshot) => {
-    set((state) => ({
-      runId: snapshot.runId,
-      latestCheckpointId: getLatestCheckpointId(snapshot),
-      selectedDatasetId: snapshot.activeDatasetId ?? state.selectedDatasetId,
-      timeline: buildTimelineFromSnapshot(snapshot),
-      stepBindings: buildStepBindingsFromSnapshot(snapshot),
-      replayReport: null,
-      controllerSummary: null,
-      error: null
-    }));
-  },
-
-  hydrateRunById: async (projectId: string, snapshotRunId: string) => {
-    if (isWorkflowThreadId(snapshotRunId)) {
-      console.warn('[preprocessingStore] Ignoring stale workflow thread reference used as runId:', snapshotRunId);
-      set({ runId: null, timeline: [], stepBindings: {}, error: null });
-      return;
-    }
-
-    try {
-      const { run } = await getPreprocessingRunSnapshot(snapshotRunId, projectId);
-      get().hydrateRunSnapshot(run);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 404) {
-        console.warn('[preprocessingStore] Stale run reference cleared (run no longer exists):', snapshotRunId);
-        set({ runId: null, timeline: [], stepBindings: {}, error: null });
-        return;
-      }
-      console.error('[preprocessingStore] Failed to hydrate preprocessing run snapshot:', error);
-      set({
-        error: error instanceof Error ? error.message : 'Failed to hydrate preprocessing run snapshot'
-      });
-    }
-  },
-
-  approveStep: async (projectId: string, stepId: string) => {
-    const state = get();
-    const event = state.timeline.find((candidate) => candidate.stepId === stepId);
-    const runId = event?.runId ?? state.runId;
-    if (!runId) {
-      set({ error: 'Cannot approve step without an active preprocessing run.' });
-      return;
-    }
-    await commitStepDecision({
-      projectId,
-      stepId,
-      runId,
-      selectedDatasetId: state.selectedDatasetId,
-      approved: true,
-      previousStatus: event?.status ?? 'awaiting_approval',
-      set,
-      hydrateRunById: get().hydrateRunById
-    });
-  },
-
-  rejectStep: async (projectId: string, stepId: string, reason?: string) => {
-    const state = get();
-    const event = state.timeline.find((candidate) => candidate.stepId === stepId);
-    const runId = event?.runId ?? state.runId;
-    if (!runId) {
-      set({ error: 'Cannot reject step without an active preprocessing run.' });
-      return;
-    }
-    await commitStepDecision({
-      projectId,
-      stepId,
-      runId,
-      selectedDatasetId: state.selectedDatasetId,
-      approved: false,
-      rejectionReason: reason?.trim() || 'Rejected by user',
-      previousStatus: event?.status ?? 'awaiting_approval',
-      set,
-      hydrateRunById: get().hydrateRunById
-    });
-  },
-
-  editStepCode: (stepId: string, code: string) => {
-    set((state) => applyEditStepCode(state.timeline, state.stepBindings, stepId, code));
-  },
-
-  syncDivergence: async (cells: NotebookCell[]) => {
-    const stateSnapshot = get();
-    const hashByCellId = await computeDivergenceUpdate({
-      cells,
-      stepBindings: stateSnapshot.stepBindings
-    });
-
-    if (!hashByCellId) {
-      return;
-    }
-
-    set((state) => ({
-      timeline: applyDivergence(state.timeline, state.stepBindings, hashByCellId)
-    }));
-  },
-
-  evaluateReplayCompatibility: async (projectId: string) => {
-    const state = get();
-    const report = await evaluateReplayCompat({
-      projectId,
-      tables: state.tables,
-      selectedDatasetId: state.selectedDatasetId,
-      timeline: state.timeline,
-      runId: state.runId,
-      latestCheckpointId: state.latestCheckpointId
-    });
-
-    set({ replayReport: report, error: null });
-  },
-
-  markInterruptedSteps: (reason: string) => {
-    set((state) => applyMarkInterrupted(state.timeline, reason));
-  },
-
-  processToolCall: (call, fallbackRunId) => {
-    const update = applyProcessToolCall(get().timeline, call, fallbackRunId || null);
-    if (!update) return;
-    set(update);
-  },
-
-  processToolResult: (call, result, fallbackRunId) => {
-    set((state) => {
-      const update = applyProcessToolResult(
-        {
-          runId: state.runId,
-          latestCheckpointId: state.latestCheckpointId,
-          timeline: state.timeline,
-          stepBindings: state.stepBindings
-        },
-        call,
-        result,
-        fallbackRunId || null
-      );
-      return update ?? {};
-    });
-  },
-
-  setControllerSummary: (controllerSummary) => {
-    set({ controllerSummary });
-  },
-
-  clearRun: () => {
-    set({
-      runId: null,
-      nextRunCellMode: 'continue',
-      latestCheckpointId: null,
-      assistantMessages: [],
-      timeline: [],
-      stepBindings: {},
-      replayReport: null,
-      controllerSummary: null,
-      error: null
-    });
-  }
-}), {
-  name: 'automl-preprocessing-lifecycle-v1',
-  version: 1,
-  partialize: (state) => ({
-    activeProjectId: state.activeProjectId,
-    selectedDatasetId: state.selectedDatasetId,
-    runId: state.runId
-  })
-}));
+  )
+);

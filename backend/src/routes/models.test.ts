@@ -90,7 +90,7 @@ describeRouteSuite('model routes', () => {
     const response = await request(app).post('/api/models/train').send({ projectId: 'p1' });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe('Invalid request');
+    expect(response.body.error).toBe('Validation failed');
   });
 
   it('trains a model', async () => {

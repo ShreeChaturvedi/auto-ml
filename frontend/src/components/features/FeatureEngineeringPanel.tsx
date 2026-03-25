@@ -2,13 +2,10 @@ import { useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
-import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
-import { FeatureApprovalGate } from './FeatureApprovalGate';
-import { FeatureEngineeringFooter } from './FeatureEngineeringFooter';
 import {
   FeatureEngineeringToolbarLeft,
   FeatureEngineeringToolbarRight
@@ -18,24 +15,12 @@ import {
   hasUiItems,
 } from './featureEngineeringUtils';
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
+import { useFeatureUrlSync } from './hooks/useFeatureUrlSync';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
-import { useFeatureStore } from '@/stores/featureStore';
-
+import { DeletePipelineDialog } from './DeletePipelineDialog';
+import { FeatureEngineeringLeftPane } from './FeatureEngineeringLeftPane';
 import { cn } from '@/lib/utils';
-import { getWorkbookParam } from '@/lib/workbookParam';
-
-import { AlertTriangle, Beaker } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 
 import type { ChatMessage } from '@/types/llmUi';
 
@@ -45,8 +30,7 @@ interface FeatureEngineeringPanelProps {
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const composerPlaceholders = useWorkflowPlaceholders(projectId, 'featureEngineering');
-  const [searchParams, setSearchParams] = useSearchParams();
-  const workbookParam = getWorkbookParam(searchParams);
+  const [searchParams] = useSearchParams();
   const initialNotebookId = searchParams.get('notebook') ?? undefined;
 
   const {
@@ -97,72 +81,20 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     approveVersion
   } = useFeaturePipelineState(projectId);
 
-  const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
-
-  // Sync active draft pipeline from URL changes after mount.
-  useEffect(() => {
-    if (workbookParam && workbookParam !== currentVersion?.id) {
-      handleVersionSwitch(workbookParam);
-    }
-  }, [currentVersion?.id, handleVersionSwitch, workbookParam]);
-
-  // Seed the URL with the current draft pipeline when the page loads without a workbook param.
-  useEffect(() => {
-    if (workbookParam || !currentVersion?.id) {
-      return;
-    }
-
-    const next = new URLSearchParams(searchParams);
-    next.set('workbook', currentVersion.id);
-    setSearchParams(next, { replace: true });
-  }, [currentVersion?.id, searchParams, setSearchParams, workbookParam]);
-
-  const updateWorkbookParam = useCallback((versionId: string, replace = false) => {
-    const next = new URLSearchParams(searchParams);
-    next.set('workbook', versionId);
-    setSearchParams(next, { replace });
-  }, [searchParams, setSearchParams]);
-
-  const handleVersionSelect = useCallback((versionId: string) => {
-    handleVersionSwitch(versionId);
-    updateWorkbookParam(versionId);
-  }, [handleVersionSwitch, updateWorkbookParam]);
-
-  const handleCreateDraft = useCallback(() => {
-    handleNewDraft();
-    const nextVersionId = useFeatureStore.getState().currentVersionId[projectId];
-    if (nextVersionId) {
-      updateWorkbookParam(nextVersionId);
-    }
-  }, [handleNewDraft, projectId, updateWorkbookParam]);
-
-  const handleApproveCurrentVersion = useCallback(() => {
-    if (!currentVersion) {
-      return;
-    }
-    approveVersion(projectId, currentVersion.id);
-    updateWorkbookParam(currentVersion.id);
-  }, [approveVersion, currentVersion, projectId, updateWorkbookParam]);
-
-  const handleDeleteCurrentDraft = useCallback(() => {
-    const previousVersionId = currentVersion?.id;
-    handleDeleteDraft();
-    const nextState = useFeatureStore.getState();
-    const nextVersionId = nextState.currentVersionId[projectId];
-
-    if (nextVersionId && nextVersionId !== previousVersionId) {
-      updateWorkbookParam(nextVersionId);
-      return;
-    }
-
-    if (!nextVersionId) {
-      const fallbackVersion = (nextState.versions[projectId] ?? [])[0];
-      if (fallbackVersion) {
-        setCurrentVersion(projectId, fallbackVersion.id);
-        updateWorkbookParam(fallbackVersion.id);
-      }
-    }
-  }, [currentVersion?.id, handleDeleteDraft, projectId, setCurrentVersion, updateWorkbookParam]);
+  // --- URL synchronization and version management ---
+  const {
+    handleVersionSelect,
+    handleCreateDraft,
+    handleApproveCurrentVersion,
+    handleDeleteCurrentDraft
+  } = useFeatureUrlSync({
+    projectId,
+    currentVersion,
+    handleVersionSwitch,
+    handleNewDraft,
+    handleDeleteDraft,
+    approveVersion
+  });
 
   // Tag notebook with feature-engineering phase metadata
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
@@ -271,78 +203,27 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             : undefined
         }
         renderLeftPane={(renderProps) => (
-          <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
-            <FeatureApprovalGate
-              isApproved={isApproved}
-              isReadyForApproval={isReadyForApproval}
-              panelError={panelError}
-              agentError={renderProps.error}
-              onApprove={handleApproveCurrentVersion}
-              onNewDraft={handleCreateDraft}
-            />
-
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              {!renderProps.messages.some((m) => m.type === 'user') ? (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-                    <Beaker className="h-8 w-8 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">Feature Engineering is ready</p>
-                      <p className="text-xs text-muted-foreground">
-                        Ask the agent to propose candidate features, validate risks, and produce
-                        executable notebook steps.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {!renderProps.isGenerating && activeFeatures.length === 0 && renderProps.messages.some((m) => m.type === 'assistant_text') && (
-                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm dark:border-amber-800 dark:bg-amber-950/30">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <div>
-                    <p className="font-medium text-amber-900 dark:text-amber-200">No features created</p>
-                    <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
-                      The feature engineering workflow completed without registering any features.
-                      Continue the conversation to build features, or proceed to training with the raw dataset.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-4 py-4 pb-28">
-                <ChatMessageRenderer
-                  messages={renderProps.messages}
-                  renderLifecycleCard={renderLifecycleCard}
-                  activeTextMessageId={renderProps.activeTextMessageId}
-                  activeThinkingMessageId={renderProps.activeThinkingMessageId}
-                  hydratedMessageIds={renderProps.hydratedMessageIds}
-                  onEditMessage={renderProps.onEditMessage}
-                  onRevertToMessage={renderProps.onRevertToMessage}
-                  editingMessageId={renderProps.editingMessageId}
-                  turnDiffs={renderProps.turnDiffs}
-                  isGenerating={renderProps.isGenerating}
-                  onRetryWorkflow={renderProps.onRetryWorkflow}
-                />
-              </div>
-            </div>
-
-            <FeatureEngineeringFooter
-              readinessReportUnlocked={readinessReportUnlocked}
-              isReadinessExpanded={isReadinessExpanded}
-              onToggleReadiness={() => setIsReadinessExpanded(!isReadinessExpanded)}
-              readinessReport={readinessReport}
-              outputName={outputName}
-              onOutputNameChange={setOutputName}
-              outputFormat={outputFormat}
-              onOutputFormatChange={setOutputFormat}
-              onApplyFeatures={handleApplyFeatures}
-              applyStatus={applyStatus}
-              applyMessage={applyMessage}
-              isApproved={isApproved}
-              activeFeaturesCount={activeFeatures.length}
-            />
-          </div>
+          <FeatureEngineeringLeftPane
+            renderProps={renderProps}
+            isApproved={isApproved}
+            isReadyForApproval={isReadyForApproval}
+            panelError={panelError}
+            readinessReportUnlocked={readinessReportUnlocked}
+            isReadinessExpanded={isReadinessExpanded}
+            onToggleReadiness={() => setIsReadinessExpanded(!isReadinessExpanded)}
+            readinessReport={readinessReport}
+            outputName={outputName}
+            onOutputNameChange={setOutputName}
+            outputFormat={outputFormat}
+            onOutputFormatChange={setOutputFormat}
+            onApplyFeatures={handleApplyFeatures}
+            applyStatus={applyStatus}
+            applyMessage={applyMessage}
+            activeFeatures={activeFeatures}
+            onApprove={handleApproveCurrentVersion}
+            onNewDraft={handleCreateDraft}
+            renderLifecycleCard={renderLifecycleCard}
+          />
         )}
         toolbarLeft={
           <FeatureEngineeringToolbarLeft
@@ -383,26 +264,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       />
 
       {/* Delete draft confirmation dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete draft pipeline?</DialogTitle>
-            <DialogDescription>
-              {versions.length <= 1
-                ? `Delete draft "${currentVersion?.name}"? A fresh blank draft will be created.`
-                : `Delete draft "${currentVersion?.name}"? This action cannot be undone.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeletePipelineDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        draftName={currentVersion?.name ?? 'draft'}
+        isLastVersion={versions.length <= 1}
+        onConfirm={handleDeleteConfirm}
+      />
     </>
   );
 }

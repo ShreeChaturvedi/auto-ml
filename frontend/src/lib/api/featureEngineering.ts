@@ -17,7 +17,7 @@ export async function applyFeatureEngineering(
 ): Promise<UploadDatasetResponse> {
   return apiRequest<UploadDatasetResponse>('/feature-engineering/apply', {
     method: 'POST',
-    body: JSON.stringify(request)
+    body: request
   });
 }
 

@@ -79,10 +79,7 @@ export async function updateDatasetColumnType(
     `/datasets/${datasetId}/columns/${encodeURIComponent(columnName)}`,
     {
       method: 'PUT',
-      body: JSON.stringify({ dtype }),
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      body: { dtype }
     }
   );
 }

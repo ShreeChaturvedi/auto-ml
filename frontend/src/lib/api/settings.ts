@@ -16,7 +16,7 @@ export async function fetchSettings(): Promise<RuntimeSettings> {
 export async function patchSettings(settings: Partial<RuntimeSettings>): Promise<RuntimeSettings> {
   const res = await apiRequest<{ settings: RuntimeSettings }>('/settings', {
     method: 'PATCH',
-    body: JSON.stringify({ settings }),
+    body: { settings },
   });
   return res.settings;
 }

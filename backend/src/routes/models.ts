@@ -3,8 +3,9 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { requireProjectOwnership, verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
+import { validateRequest } from '../middleware/validateRequest.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { seedModels, seedOneModel } from '../services/modelSeedService.js';
 import {
@@ -45,24 +46,12 @@ const seedSchema = z.object({
   projectId: z.string().min(1),
 });
 
-router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/seed', validateRequest(seedSchema, 'query'), requireProjectOwnership(projectRepository, 'query'), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (env.nodeEnv === 'production') {
     res.status(403).json({ error: 'Seed endpoint is disabled in production' });
     return;
   }
-  const parsed = seedSchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'projectId query parameter is required' });
-    return;
-  }
-  const { projectId } = parsed.data;
-  if (req.user) {
-    const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-    if (!project) {
-      res.status(404).json({ error: 'Project not found' });
-      return;
-    }
-  }
+  const { projectId } = req.query as Record<string, string>;
   const models = await seedModels(projectId);
   res.json({ models });
 }));
@@ -74,24 +63,14 @@ const seedOneSchema = z.object({
   algorithm: z.string().min(1),
 });
 
-router.post('/seed-one', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/seed-one', validateRequest(seedOneSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (env.nodeEnv === 'production') {
     res.status(403).json({ error: 'Seed endpoint is disabled in production' });
     return;
   }
-  const parsed = seedOneSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
-    return;
-  }
-  if (req.user) {
-    const project = await verifyProjectOwnership(parsed.data.projectId, req.user.user_id, projectRepository);
-    if (!project) {
-      res.status(404).json({ error: 'Project not found' });
-      return;
-    }
-  }
-  const model = await seedOneModel(parsed.data.projectId, parsed.data);
+  const data = req.body as z.infer<typeof seedOneSchema>;
+  // Project ownership is verified by requireProjectAccess middleware
+  const model = await seedOneModel(data.projectId, data);
   res.json({ model });
 }));
 
@@ -144,18 +123,10 @@ router.get('/:id/artifact', validateUuidParams('id'), asyncHandler(async (req: A
   res.download(model.artifact.path, model.artifact.filename);
 }));
 
-router.post('/train', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/train', validateRequest(trainSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    const parsed = trainSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request',
-        details: parsed.error.issues
-      });
-      return;
-    }
-
-    const result = await trainModel(parsed.data);
+    const data = req.body as z.infer<typeof trainSchema>;
+    const result = await trainModel(data);
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

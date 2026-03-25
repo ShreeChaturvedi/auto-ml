@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateRequest } from '../middleware/validateRequest.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
@@ -74,13 +75,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/register
   router.post(
     '/auth/register',
+    validateRequest(registerSchema),
     asyncHandler(async (req, res) => {
-      const result = registerSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { email, password, name } = result.data;
+      const { email, password, name } = req.body;
 
       const existing = await userRepository.findByEmail(email);
       if (existing) {
@@ -110,13 +107,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/login
   router.post(
     '/auth/login',
+    validateRequest(loginSchema),
     asyncHandler(async (req, res) => {
-      const result = loginSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { email, password, rememberMe } = result.data;
+      const { email, password, rememberMe } = req.body;
 
       const userWithHash = await userRepository.findByEmail(email);
       if (!userWithHash) {
@@ -227,13 +220,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/forgot-password
   router.post(
     '/auth/forgot-password',
+    validateRequest(forgotPasswordSchema),
     asyncHandler(async (req, res) => {
-      const result = forgotPasswordSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { email } = result.data;
+      const { email } = req.body;
       const user = await userRepository.findByEmail(email);
 
       if (!user) {
@@ -255,13 +244,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/reset-password
   router.post(
     '/auth/reset-password',
+    validateRequest(resetPasswordSchema),
     asyncHandler(async (req, res) => {
-      const result = resetPasswordSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { token, password } = result.data;
+      const { token, password } = req.body;
       const tokenHash = authService.hashRefreshToken(token);
       const tokenRecord = await userRepository.findPasswordResetToken(tokenHash);
 
@@ -283,14 +268,10 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.patch(
     '/auth/profile',
     requireAuth,
+    validateRequest(updateProfileSchema),
     asyncHandler(async (req: AuthenticatedRequest, res) => {
-      const result = updateProfileSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
       const userId = req.user.user_id;
-      const updates = result.data;
+      const updates = req.body;
 
       if (updates.newPassword) {
         if (!updates.currentPassword) {
@@ -335,12 +316,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/google/callback — complete OAuth flow
   router.post(
     '/auth/google/callback',
+    validateRequest(googleCallbackSchema),
     asyncHandler(async (req, res) => {
-      const result = googleCallbackSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
       try {
         return await handleGoogleCallback(req, res, userRepository);
       } catch (error) {

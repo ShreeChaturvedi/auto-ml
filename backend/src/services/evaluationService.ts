@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { copyFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
@@ -7,11 +5,19 @@ import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelTaskType } from '../types/model.js';
+import {
+  copyArtifactsToPermanentStorage,
+  orchestrateContainerExecution,
+} from '../utils/containerOrchestrator.js';
 
-import { getOrCreateContainer } from './containerManager.js';
-import { syncWorkspaceDatasets } from './executionWorkspace.js';
-import * as kernelManager from './kernelManager.js';
-import { buildDatasetLoadLines, buildPreprocessingLines, buildTrainTestSplitLines } from './pythonScriptUtils.js';
+import {
+  buildDatasetLoadLines,
+  buildOutputDirSetup,
+  buildPreprocessingLines,
+  buildResultSaving,
+  buildStandardImports,
+  buildTrainTestSplitLines,
+} from './pythonScriptUtils.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
@@ -42,32 +48,29 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   const lines: string[] = [];
 
   // ── Imports ──
-  lines.push('import json');
-  lines.push('import time');
-  lines.push('import os');
-  lines.push('import numpy as np');
-  lines.push('import pandas as pd');
-  lines.push('import joblib');
-  lines.push('from sklearn.model_selection import train_test_split, cross_val_score, learning_curve');
-  lines.push('from sklearn.inspection import permutation_importance');
+  const extras: string[] = [
+    'import time',
+    'import joblib',
+    'from sklearn.model_selection import train_test_split, cross_val_score, learning_curve',
+    'from sklearn.inspection import permutation_importance',
+  ];
 
   if (taskType === 'classification') {
-    lines.push('from sklearn.metrics import (');
-    lines.push('    confusion_matrix, classification_report, roc_curve, auc,');
-    lines.push('    precision_recall_curve, average_precision_score, calibration_curve');
-    lines.push(')');
+    extras.push('from sklearn.metrics import (');
+    extras.push('    confusion_matrix, classification_report, roc_curve, auc,');
+    extras.push('    precision_recall_curve, average_precision_score, calibration_curve');
+    extras.push(')');
   } else if (taskType === 'regression') {
-    lines.push('from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score');
+    extras.push('from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score');
   }
 
-  lines.push('');
+  lines.push(...buildStandardImports(extras));
+
   lines.push('start_time = time.time()');
   lines.push('');
 
   // ── Output dir ──
-  lines.push(`output_dir = ${JSON.stringify(outputDir)}`);
-  lines.push('os.makedirs(output_dir, exist_ok=True)');
-  lines.push('');
+  lines.push(...buildOutputDirSetup(outputDir));
 
   // ── Load model ──
   lines.push(`model = joblib.load(${JSON.stringify(modelPath)})`);
@@ -292,9 +295,12 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('');
 
   // ── Save evaluation.json ──
-  lines.push('with open(os.path.join(output_dir, "evaluation.json"), "w") as f:');
-  lines.push('    json.dump(result, f)');
-  lines.push('');
+  lines.push(
+    ...buildResultSaving('output_dir', {
+      resultVar: 'result',
+      filename: 'evaluation.json',
+    })
+  );
 
   // ── SHAP computation (best-effort) ──
   lines.push('# SHAP computation (best-effort, failure does not block evaluation)');
@@ -377,77 +383,57 @@ export async function runEvaluation(modelId: string): Promise<void> {
       throw new Error('Dataset not found');
     }
 
-    // 5. Get container
-    const container = await getOrCreateContainer({
+    // 5. Pre-compute workspace paths (same pattern as containerOrchestrator)
+    const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
+    const workspaceModelPath = join(workspacePath, 'models', modelId, 'model.joblib');
+
+    // 6. Orchestrate container execution
+    const { container, executionResult } = await orchestrateContainerExecution({
       projectId: model.projectId,
       pythonVersion: '3.11',
-      workspacePath: join(env.executionWorkspaceDir, model.projectId, 'model-runtime'),
+      scriptBuilder: () =>
+        buildEvaluationScript({
+          modelPath: `/workspace/models/${modelId}/model.joblib`,
+          datasetPath: `/workspace/datasets/${dataset.filename}`,
+          outputDir: `/workspace/eval/${modelId}`,
+          taskType: model.taskType as 'classification' | 'regression',
+          targetColumn: model.targetColumn!,
+          testSize: 0.2,
+        }),
+      filesToCopy: [
+        {
+          permanentPath: model.artifact.path,
+          workspacePath: workspaceModelPath,
+        },
+      ],
+      timeoutMs: EVALUATION_TIMEOUT_MS,
+      containerOutputDir: `/workspace/eval/${modelId}`,
     });
 
-    // 6. Sync workspace datasets
-    if (container.workspacePath) {
-      await syncWorkspaceDatasets(model.projectId, container.workspacePath).catch((error) => {
-        logger.warn('Failed to sync datasets', { modelId, error });
-      });
+    // 7. Check execution result
+    if (executionResult.status !== 'success') {
+      throw new Error(executionResult.stderr || executionResult.error || 'Evaluation execution failed');
     }
 
-    // 7. Build paths
-    const containerModelPath = `/workspace/models/${modelId}/model.joblib`;
-    const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
-    const containerOutputDir = `/workspace/eval/${modelId}`;
+    // 8. Copy artifacts to permanent storage
+    await copyArtifactsToPermanentStorage(modelId, container, [
+      {
+        workspace: `eval/${modelId}/evaluation.json`,
+        permanent: 'evaluation.json',
+      },
+      {
+        workspace: `eval/${modelId}/shap.json`,
+        permanent: 'shap.json',
+        optional: true,
+      },
+      {
+        workspace: `eval/${modelId}/predictions.parquet`,
+        permanent: 'predictions.parquet',
+        optional: true,
+      },
+    ]);
 
-    // Ensure the model artifact is available in the container workspace
-    const workspaceModelDir = join(container.workspacePath, 'models', modelId);
-    const workspaceModelPath = join(workspaceModelDir, 'model.joblib');
-    if (!existsSync(workspaceModelPath)) {
-      await mkdir(workspaceModelDir, { recursive: true });
-      await copyFile(model.artifact.path, workspaceModelPath);
-    }
-
-    // 8. Build evaluation script
-    const script = buildEvaluationScript({
-      modelPath: containerModelPath,
-      datasetPath: containerDatasetPath,
-      outputDir: containerOutputDir,
-      taskType: model.taskType as 'classification' | 'regression',
-      targetColumn: model.targetColumn,
-      testSize: 0.2,
-    });
-
-    // 9. Execute in Docker
-    const result = await kernelManager.execute(container, script, EVALUATION_TIMEOUT_MS);
-
-    // 10. Check result
-    if (result.status !== 'success') {
-      throw new Error(result.stderr || result.error || 'Evaluation execution failed');
-    }
-
-    // 11. Copy artifacts to permanent storage
-    const evalWorkspaceDir = join(container.workspacePath, 'eval', modelId);
-    const storageDir = join(env.modelStorageDir, modelId);
-    await mkdir(storageDir, { recursive: true });
-
-    const evaluationJsonSrc = join(evalWorkspaceDir, 'evaluation.json');
-    const shapJsonSrc = join(evalWorkspaceDir, 'shap.json');
-    const predictionsParquetSrc = join(evalWorkspaceDir, 'predictions.parquet');
-
-    const copyPromises: Promise<void>[] = [];
-
-    if (existsSync(evaluationJsonSrc)) {
-      copyPromises.push(copyFile(evaluationJsonSrc, join(storageDir, 'evaluation.json')));
-    }
-    if (existsSync(shapJsonSrc)) {
-      copyPromises.push(copyFile(shapJsonSrc, join(storageDir, 'shap.json')));
-    }
-    if (existsSync(predictionsParquetSrc)) {
-      copyPromises.push(copyFile(predictionsParquetSrc, join(storageDir, 'predictions.parquet')));
-    } else {
-      logger.warn('predictions.parquet not generated by evaluation script', { modelId });
-    }
-
-    await Promise.all(copyPromises);
-
-    // 12. Set evaluationStatus = 'ready'
+    // 9. Set evaluationStatus = 'ready'
     await modelRepository.update(modelId, (current) => ({
       ...current,
       evaluationStatus: 'ready' as const,

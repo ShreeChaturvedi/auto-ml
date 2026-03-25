@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
@@ -7,10 +6,15 @@ import { appLogger } from '../logging/logger.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ErrorAnalysisResult } from '../types/experiments.js';
 import type { ModelTaskType } from '../types/model.js';
-
-import { getOrCreateContainer } from './containerManager.js';
-import { syncWorkspaceDatasets } from './executionWorkspace.js';
-import * as kernelManager from './kernelManager.js';
+import {
+  buildOutputDirSetup,
+  buildResultSaving,
+  buildStandardImports,
+} from './pythonScriptUtils.js';
+import {
+  copyArtifactsToPermanentStorage,
+  orchestrateContainerExecution,
+} from '../utils/containerOrchestrator.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
@@ -35,17 +39,14 @@ export function buildErrorAnalysisScript(options: BuildErrorAnalysisScriptOption
   const lines: string[] = [];
 
   // ── Imports ──
-  lines.push('import json');
-  lines.push('import os');
-  lines.push('import numpy as np');
-  lines.push('import pandas as pd');
-  lines.push('from sklearn.tree import DecisionTreeClassifier');
-  lines.push('');
+  lines.push(
+    ...buildStandardImports([
+      'from sklearn.tree import DecisionTreeClassifier',
+    ])
+  );
 
   // ── Output dir ──
-  lines.push(`output_dir = ${JSON.stringify(outputDir)}`);
-  lines.push('os.makedirs(output_dir, exist_ok=True)');
-  lines.push('');
+  lines.push(...buildOutputDirSetup(outputDir));
 
   // ── Load predictions ──
   lines.push(`pred_df = pd.read_parquet(${JSON.stringify(predictionsPath)})`);
@@ -127,10 +128,12 @@ export function buildErrorAnalysisScript(options: BuildErrorAnalysisScriptOption
   lines.push('');
 
   // ── Save ──
-  lines.push("# Save error analysis result");
-  lines.push("with open(os.path.join(output_dir, 'error_analysis.json'), 'w') as f:");
-  lines.push('    json.dump(result, f)');
-  lines.push('');
+  lines.push(
+    ...buildResultSaving('output_dir', {
+      resultVar: 'result',
+      filename: 'error_analysis.json',
+    })
+  );
   lines.push('print("Error analysis complete")');
 
   return lines.join('\n');
@@ -163,77 +166,51 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
       return null;
     }
 
-    // 3. Check if predictions.parquet exists in permanent storage
+    // 3. Compute paths
     const storagePredictionsPath = join(env.modelStorageDir, modelId, 'predictions.parquet');
-    if (!existsSync(storagePredictionsPath)) {
-      logger.warn('predictions.parquet not found', { modelId, path: storagePredictionsPath });
-      return null;
-    }
+    const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
+    const workspacePredPath = join(workspacePath, 'eval', modelId, 'predictions.parquet');
 
-    // 4. Get container
-    const container = await getOrCreateContainer({
+    // 4-7. Orchestrate container execution
+    const { container, executionResult } = await orchestrateContainerExecution({
       projectId: model.projectId,
       pythonVersion: '3.11',
-      workspacePath: join(env.executionWorkspaceDir, model.projectId, 'model-runtime'),
+      scriptBuilder: () =>
+        buildErrorAnalysisScript({
+          predictionsPath: `/workspace/eval/${modelId}/predictions.parquet`,
+          outputDir: `/workspace/error-analysis/${modelId}`,
+          targetColumn: model.targetColumn!,
+          taskType: model.taskType as 'classification' | 'regression',
+        }),
+      filesToCopy: [
+        {
+          permanentPath: storagePredictionsPath,
+          workspacePath: workspacePredPath,
+        },
+      ],
+      timeoutMs: ERROR_ANALYSIS_TIMEOUT_MS,
+      containerOutputDir: `/workspace/error-analysis/${modelId}`,
     });
 
-    // 5. Sync workspace datasets (best-effort)
-    if (container.workspacePath) {
-      await syncWorkspaceDatasets(model.projectId, container.workspacePath).catch((error) => {
-        logger.warn('Failed to sync datasets', { modelId, error });
-      });
-    }
-
-    // 6. Build paths
-    const containerPredictionsPath = `/workspace/eval/${modelId}/predictions.parquet`;
-    const containerOutputDir = `/workspace/error-analysis/${modelId}`;
-
-    // Ensure predictions.parquet is in the container workspace
-    const workspaceEvalDir = join(container.workspacePath, 'eval', modelId);
-    const workspacePredPath = join(workspaceEvalDir, 'predictions.parquet');
-    if (!existsSync(workspacePredPath)) {
-      await mkdir(workspaceEvalDir, { recursive: true });
-      await copyFile(storagePredictionsPath, workspacePredPath);
-    }
-
-    // 7. Build and execute script
-    const script = buildErrorAnalysisScript({
-      predictionsPath: containerPredictionsPath,
-      outputDir: containerOutputDir,
-      targetColumn: model.targetColumn,
-      taskType: model.taskType as 'classification' | 'regression',
-    });
-
-    const result = await kernelManager.execute(container, script, ERROR_ANALYSIS_TIMEOUT_MS);
-
-    if (result.status !== 'success') {
+    if (executionResult.status !== 'success') {
       logger.error('Error analysis execution failed', {
         modelId,
-        stderr: result.stderr,
-        error: result.error,
+        stderr: executionResult.stderr,
+        error: executionResult.error,
       });
       return null;
     }
 
     // 8. Copy error_analysis.json to permanent storage
-    const errorAnalysisWorkspacePath = join(
-      container.workspacePath,
-      'error-analysis',
-      modelId,
-      'error_analysis.json',
-    );
-    const storageDir = join(env.modelStorageDir, modelId);
-    await mkdir(storageDir, { recursive: true });
-
-    if (existsSync(errorAnalysisWorkspacePath)) {
-      await copyFile(errorAnalysisWorkspacePath, join(storageDir, 'error_analysis.json'));
-    } else {
-      logger.error('error_analysis.json not produced by script', { modelId });
-      return null;
-    }
+    await copyArtifactsToPermanentStorage(modelId, container, [
+      {
+        workspace: `error-analysis/${modelId}/error_analysis.json`,
+        permanent: 'error_analysis.json',
+      },
+    ]);
 
     // 9. Read and return the result
-    const raw = await readFile(join(storageDir, 'error_analysis.json'), 'utf8');
+    const raw = await readFile(join(env.modelStorageDir, modelId, 'error_analysis.json'), 'utf8');
     const parsed = JSON.parse(raw) as ErrorAnalysisResult;
 
     logger.info('Error analysis completed successfully', { modelId });

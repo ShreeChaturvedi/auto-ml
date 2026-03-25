@@ -16,9 +16,10 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions extends Omit<RequestInit, 'method'> {
+interface RequestOptions extends Omit<RequestInit, 'method' | 'body'> {
   method?: HttpMethod;
   parseJson?: boolean;
+  body?: BodyInit | object | null;
 }
 
 const REFRESH_EXCLUDED_PATHS = new Set([
@@ -193,14 +194,20 @@ async function applyAuthSideEffects(response: Response): Promise<void> {
   }
 }
 
-export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {
   const method = options.method ?? 'GET';
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);
   const normalizedPath = normalizePath(path).split('?')[0];
 
-  const isJsonString = typeof options.body === 'string';
-  if (!headers.has('Content-Type') && isJsonString) {
+  // Auto-serialize object bodies to JSON
+  let body = options.body;
+  if (body && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof Blob) && typeof body !== 'string') {
+    body = JSON.stringify(body);
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+  } else if (!headers.has('Content-Type') && typeof body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -210,7 +217,8 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   }
 
   const requestInit: RequestInit = {
-    ...options,
+    ...(Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'body')) as Omit<RequestInit, 'body'>),
+    body: body as BodyInit,
     method,
     headers
   };

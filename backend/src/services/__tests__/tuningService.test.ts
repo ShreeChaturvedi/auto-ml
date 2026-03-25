@@ -32,8 +32,9 @@ const hoisted = vi.hoisted(() => {
 /*  Mocks                                                              */
 /* ------------------------------------------------------------------ */
 
-vi.mock('../kernelManager.js', () => ({
-  execute: hoisted.mockExecute,
+vi.mock('../../utils/containerOrchestrator.js', () => ({
+  orchestrateContainerExecution: hoisted.mockExecute,
+  copyArtifactsToPermanentStorage: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../containerManager.js', () => ({
@@ -567,28 +568,30 @@ describe('runTuningStudy', () => {
       parameters: { n_estimators: 300, max_depth: 15 },
     });
 
-    // Simulate kernel execute with streaming output
-    mockExecute.mockImplementation(async (_container: unknown, _script: unknown, _timeout: unknown, onOutput?: (output: { type: string; content: string }) => void) => {
+    // Simulate orchestrateContainerExecution with streaming output
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
       // Simulate streaming trial output
-      onOutput?.({
+      cfg.onOutput?.({
         type: 'text',
         content: '{"type": "trial_result", "trial_number": 0, "state": "COMPLETE", "value": 0.85, "params": {"n_estimators": 200}, "best_value": 0.85, "best_params": {"n_estimators": 200}, "n_complete": 1, "n_total": 2}\n',
       });
-      onOutput?.({
+      cfg.onOutput?.({
         type: 'text',
         content: '{"type": "trial_result", "trial_number": 1, "state": "COMPLETE", "value": 0.92, "params": {"n_estimators": 300}, "best_value": 0.92, "best_params": {"n_estimators": 300}, "n_complete": 2, "n_total": 2}\n',
       });
-      onOutput?.({
+      cfg.onOutput?.({
         type: 'text',
         content: '{"type": "done"}\n',
       });
 
       return {
-        status: 'success',
-        stdout: '',
-        stderr: '',
-        outputs: [],
-        executionMs: 10000,
+        container,
+        executionResult: {
+          status: 'success',
+          stderr: '',
+          executionMs: 10000,
+        },
       };
     });
 
@@ -639,12 +642,13 @@ describe('runTuningStudy', () => {
     mockGetOrCreateContainer.mockResolvedValue(container);
 
     mockExecute.mockResolvedValue({
-      status: 'error',
-      stdout: '',
-      stderr: 'ImportError: No module named optuna',
-      outputs: [],
-      executionMs: 500,
-      error: 'Execution failed',
+      container,
+      executionResult: {
+        status: 'error',
+        stderr: 'ImportError: No module named optuna',
+        error: 'Execution failed',
+        executionMs: 500,
+      },
     });
 
     // existsSync returns false for summary path

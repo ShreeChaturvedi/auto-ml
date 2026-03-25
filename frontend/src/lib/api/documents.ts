@@ -122,6 +122,6 @@ export async function getAnswer(
 ): Promise<AnswerResponse> {
   return apiRequest('/answer', {
     method: 'POST',
-    body: JSON.stringify({ projectId, question, topK })
+    body: { projectId, question, topK }
   });
 }

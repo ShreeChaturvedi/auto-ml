@@ -108,3 +108,84 @@ export function buildTrainTestSplitLines(options: TrainTestSplitOptions): string
 
   return lines;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Standard imports                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Return the Python lines for standard imports used across services.
+ * Always includes: json, os, numpy, pandas
+ * Optionally adds extra imports passed in.
+ *
+ * Example: buildStandardImports(['from sklearn.tree import DecisionTreeClassifier'])
+ * produces: import json, import os, import numpy as np, import pandas as pd,
+ *           from sklearn.tree import DecisionTreeClassifier
+ */
+export function buildStandardImports(extras?: string[]): string[] {
+  const lines: string[] = [];
+
+  lines.push('import json');
+  lines.push('import os');
+  lines.push('import numpy as np');
+  lines.push('import pandas as pd');
+
+  if (extras && extras.length > 0) {
+    extras.forEach((extra) => lines.push(extra));
+  }
+
+  lines.push('');
+
+  return lines;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Output directory setup                                             */
+/* ------------------------------------------------------------------ */
+
+export interface OutputDirSetupOptions {
+  outputDirVar?: string;
+}
+
+/**
+ * Return the Python lines to create an output directory.
+ * Default variable name is `output_dir`.
+ *
+ * Produces: output_dir = <path>, os.makedirs(output_dir, exist_ok=True)
+ */
+export function buildOutputDirSetup(outputDir: string, options?: OutputDirSetupOptions): string[] {
+  const varName = options?.outputDirVar ?? 'output_dir';
+  return [
+    `${varName} = ${JSON.stringify(outputDir)}`,
+    `os.makedirs(${varName}, exist_ok=True)`,
+    '',
+  ];
+}
+
+/* ------------------------------------------------------------------ */
+/*  Result saving                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface ResultSavingOptions {
+  resultVar?: string;
+  filename?: string;
+}
+
+/**
+ * Return the Python lines to save a result dictionary to JSON.
+ * Default result variable: `result`
+ * Default filename: `result.json`
+ *
+ * Produces: with open(..., 'w') as f: json.dump(result, f)
+ */
+export function buildResultSaving(outputDirVar: string = 'output_dir', options?: ResultSavingOptions): string[] {
+  const resultVar = options?.resultVar ?? 'result';
+  const filename = options?.filename ?? 'result.json';
+
+  return [
+    "# Save result",
+    `with open(os.path.join(${outputDirVar}, ${JSON.stringify(filename)}), 'w') as f:`,
+    `    json.dump(${resultVar}, f)`,
+    '',
+  ];
+}

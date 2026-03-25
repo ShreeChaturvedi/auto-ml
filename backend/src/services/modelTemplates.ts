@@ -1,5 +1,5 @@
-import type { ModelTemplate, ModelTaskType } from '../types/model.js';
 import type { DatasetProfileColumn } from '../types/dataset.js';
+import type { ModelTemplate, ModelTaskType } from '../types/model.js';
 
 const MODEL_TEMPLATES: ModelTemplate[] = [
   {

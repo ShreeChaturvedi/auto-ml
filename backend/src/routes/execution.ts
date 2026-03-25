@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateRequest } from '../middleware/validateRequest.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import {
     executeCode,
@@ -51,18 +52,9 @@ const sessionSchema = z.object({
  * POST /api/execute
  * Execute Python code
  */
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', validateRequest(executeSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = executeSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
-        }
-
-        const result = await executeCode(parsed.data);
+        const result = await executeCode(req.body);
 
         res.json({
             success: true,
@@ -81,20 +73,11 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
  * POST /api/execute/session
  * Create a new execution session
  */
-router.post('/session', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/session', validateRequest(sessionSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = sessionSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
-        }
-
         const session = await createSession(
-            parsed.data.projectId,
-            parsed.data.pythonVersion,
+            req.body.projectId,
+            req.body.pythonVersion,
             { requireDocker: true }
         );
 
@@ -180,18 +163,9 @@ router.delete('/session/:id', asyncHandler(async (req: AuthRequest, res: Respons
  * POST /api/execute/packages
  * Install a package
  */
-router.post('/packages', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/packages', validateRequest(packageSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = packageSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
-        }
-
-        const session = getSession(parsed.data.sessionId);
+        const session = getSession(req.body.sessionId);
         if (session && req.user && session.projectId) {
             const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
             if (!project) {
@@ -201,8 +175,8 @@ router.post('/packages', asyncHandler(async (req: AuthRequest, res: Response) =>
         }
 
         const result = await installPackage(
-            parsed.data.sessionId,
-            parsed.data.packageName
+            req.body.sessionId,
+            req.body.packageName
         );
 
         res.json(result);
@@ -240,18 +214,9 @@ router.get('/packages/suggest', asyncHandler(async (req: AuthRequest, res: Respo
  * POST /api/execute/packages/stream
  * Install a package with streaming progress
  */
-router.post('/packages/stream', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/packages/stream', validateRequest(packageSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = packageSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
-        }
-
-        const session = getSession(parsed.data.sessionId);
+        const session = getSession(req.body.sessionId);
         if (session && req.user && session.projectId) {
             const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
             if (!project) {
@@ -271,8 +236,8 @@ router.post('/packages/stream', asyncHandler(async (req: AuthRequest, res: Respo
         };
 
         const result = await installPackageWithProgress(
-            parsed.data.sessionId,
-            parsed.data.packageName,
+            req.body.sessionId,
+            req.body.packageName,
             (event) => sendEvent(event)
         );
 

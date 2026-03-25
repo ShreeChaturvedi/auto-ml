@@ -5,14 +5,18 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { EvaluationResult, ShapResult } from '../types/experiments.js';
 
-// Mock fs/promises at the module level
-const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRequestStructuredJson, mockListModels } = vi.hoisted(() => ({
+// Mock fs/promises and repositories at the module level
+const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRequestStructuredJson, mockListModels, mockGetProjectRepository } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
   mockRunTuningStudy: vi.fn(),
   mockCreateLlmClient: vi.fn(),
   mockRunErrorAnalysis: vi.fn(),
   mockRequestStructuredJson: vi.fn(),
   mockListModels: vi.fn(),
+  mockGetProjectRepository: vi.fn(() => ({
+    getById: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Test Project', userId: null }),
+    getByIdAndUser: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Test Project', userId: 'user-1' }),
+  })),
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -34,9 +38,14 @@ vi.mock('../services/errorAttributionService.js', () => ({
 vi.mock('../services/nlToSql/structuredRequest.js', () => ({
   requestStructuredJson: mockRequestStructuredJson,
 }));
+
 vi.mock('../services/modelTraining.js', () => ({
   getModelById: vi.fn(),
   listModels: mockListModels,
+}));
+
+vi.mock('../repositories/projectRepository.js', () => ({
+  getProjectRepository: mockGetProjectRepository,
 }));
 
 import { createExperimentsRouter } from './experiments.js';
@@ -79,6 +88,11 @@ function createTestApp() {
   const app = express();
   app.use(express.json());
   const router = Router();
+  // Add middleware to attach test user for protected routes
+  app.use((req, res, next) => {
+    // Allow routes to proceed without auth (projectRepository middleware handles unauth case)
+    next();
+  });
   router.use('/experiments', createExperimentsRouter());
   app.use('/api', router);
   return app;

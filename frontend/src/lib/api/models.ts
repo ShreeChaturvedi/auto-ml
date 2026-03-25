@@ -15,7 +15,7 @@ export async function trainModel(request: TrainModelRequest) {
     '/models/train',
     {
       method: 'POST',
-      body: JSON.stringify(request)
+      body: request
     }
   );
 }
@@ -32,7 +32,7 @@ export async function seedModels(projectId: string) {
 export async function seedOneModel(projectId: string, options: { name: string; taskType: string; algorithm: string }) {
   return apiRequest<{ model: ModelRecord }>('/models/seed-one', {
     method: 'POST',
-    body: JSON.stringify({ projectId, ...options }),
+    body: { projectId, ...options },
   });
 }
 

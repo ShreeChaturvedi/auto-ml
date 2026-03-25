@@ -5,15 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /* ------------------------------------------------------------------ */
 
 const hoisted = vi.hoisted(() => {
-  const mockExecute = vi.fn();
-  const mockGetOrCreateContainer = vi.fn();
-  const mockSyncWorkspaceDatasets = vi.fn();
+  const mockOrchestrateContainerExecution = vi.fn();
+  const mockCopyArtifactsToPermanentStorage = vi.fn();
   const mockGetById = vi.fn();
 
   return {
-    mockExecute,
-    mockGetOrCreateContainer,
-    mockSyncWorkspaceDatasets,
+    mockOrchestrateContainerExecution,
+    mockCopyArtifactsToPermanentStorage,
     mockGetById,
   };
 });
@@ -22,16 +20,9 @@ const hoisted = vi.hoisted(() => {
 /*  Mocks                                                              */
 /* ------------------------------------------------------------------ */
 
-vi.mock('../kernelManager.js', () => ({
-  execute: hoisted.mockExecute,
-}));
-
-vi.mock('../containerManager.js', () => ({
-  getOrCreateContainer: hoisted.mockGetOrCreateContainer,
-}));
-
-vi.mock('../executionWorkspace.js', () => ({
-  syncWorkspaceDatasets: hoisted.mockSyncWorkspaceDatasets,
+vi.mock('../../utils/containerOrchestrator.js', () => ({
+  orchestrateContainerExecution: hoisted.mockOrchestrateContainerExecution,
+  copyArtifactsToPermanentStorage: hoisted.mockCopyArtifactsToPermanentStorage,
 }));
 
 vi.mock('../../repositories/modelRepository.js', () => ({
@@ -73,9 +64,8 @@ import { buildErrorAnalysisScript, runErrorAnalysis } from '../errorAttributionS
 /* ------------------------------------------------------------------ */
 
 const {
-  mockExecute,
-  mockGetOrCreateContainer,
-  mockSyncWorkspaceDatasets,
+  mockOrchestrateContainerExecution,
+  mockCopyArtifactsToPermanentStorage,
   mockGetById,
 } = hoisted;
 
@@ -124,7 +114,6 @@ function makeContainer() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockSyncWorkspaceDatasets.mockResolvedValue({ links: [], collisions: [] });
 });
 
 afterEach(() => {
@@ -233,14 +222,15 @@ describe('runErrorAnalysis', () => {
     const container = makeContainer();
 
     mockGetById.mockResolvedValue(model);
-    mockGetOrCreateContainer.mockResolvedValue(container);
-    mockExecute.mockResolvedValue({
-      status: 'success',
-      stdout: 'Error analysis complete',
-      stderr: '',
-      outputs: [],
-      executionMs: 2000,
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'success',
+        stderr: '',
+        executionMs: 2000,
+      },
     });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
 
     const result = await runErrorAnalysis('test-model-id');
 
@@ -286,14 +276,14 @@ describe('runErrorAnalysis', () => {
     const container = makeContainer();
 
     mockGetById.mockResolvedValue(model);
-    mockGetOrCreateContainer.mockResolvedValue(container);
-    mockExecute.mockResolvedValue({
-      status: 'error',
-      stdout: '',
-      stderr: 'MemoryError',
-      outputs: [],
-      executionMs: 1000,
-      error: 'Execution failed',
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'error',
+        stderr: 'MemoryError',
+        error: 'Execution failed',
+        executionMs: 1000,
+      },
     });
 
     const result = await runErrorAnalysis('test-model-id');

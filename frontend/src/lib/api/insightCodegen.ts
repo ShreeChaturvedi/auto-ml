@@ -33,10 +33,9 @@ export async function streamSuggestCell(
   const res = await apiFetch(`/notebooks/${notebookId}/cells/suggest`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
       Accept: 'application/x-ndjson',
     },
-    body: JSON.stringify({ insightContext: context }),
+    body: { insightContext: context },
     signal,
   });
 

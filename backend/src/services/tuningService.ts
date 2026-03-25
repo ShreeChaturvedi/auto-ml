@@ -6,8 +6,7 @@
  * display real-time trial progress.
  */
 
-import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Response } from 'express';
@@ -18,12 +17,19 @@ import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelTemplate, ModelTemplateParam } from '../types/model.js';
+import {
+  copyArtifactsToPermanentStorage,
+  orchestrateContainerExecution,
+} from '../utils/containerOrchestrator.js';
 
-import { getOrCreateContainer } from './containerManager.js';
-import { syncWorkspaceDatasets } from './executionWorkspace.js';
-import * as kernelManager from './kernelManager.js';
 import { getModelTemplate } from './modelTemplates.js';
-import { buildPreprocessingLines, buildTrainTestSplitLines } from './pythonScriptUtils.js';
+import {
+  buildOutputDirSetup,
+  buildPreprocessingLines,
+  buildResultSaving,
+  buildStandardImports,
+  buildTrainTestSplitLines,
+} from './pythonScriptUtils.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
@@ -101,16 +107,15 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   const lines: string[] = [];
 
   // ── Imports ──
-  lines.push('import json');
-  lines.push('import sys');
-  lines.push('import os');
-  lines.push('import numpy as np');
-  lines.push('import pandas as pd');
-  lines.push('import joblib');
-  lines.push('import optuna');
-  lines.push('from sklearn.model_selection import train_test_split, cross_val_score');
-  lines.push(`from ${template.importPath} import ${template.modelClass}`);
-  lines.push('');
+  lines.push(
+    ...buildStandardImports([
+      'import sys',
+      'import joblib',
+      'import optuna',
+      'from sklearn.model_selection import train_test_split, cross_val_score',
+      `from ${template.importPath} import ${template.modelClass}`,
+    ])
+  );
 
   // ── Suppress Optuna default logging (we stream our own) ──
   lines.push('optuna.logging.set_verbosity(optuna.logging.WARNING)');
@@ -212,8 +217,7 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('');
 
   // ── Save artifacts ──
-  lines.push(`output_dir = ${JSON.stringify(outputDir)}`);
-  lines.push('os.makedirs(output_dir, exist_ok=True)');
+  lines.push(...buildOutputDirSetup(outputDir));
   lines.push('joblib.dump(best_model, os.path.join(output_dir, "model.joblib"))');
   lines.push('');
 
@@ -246,9 +250,12 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('    "optimization_history": optimization_history,');
   lines.push('    "param_importances": param_importances');
   lines.push('}');
-  lines.push('with open(os.path.join(output_dir, "tuning_summary.json"), "w") as f:');
-  lines.push('    json.dump(summary, f)');
-  lines.push('');
+  lines.push(
+    ...buildResultSaving('output_dir', {
+      resultVar: 'summary',
+      filename: 'tuning_summary.json',
+    })
+  );
 
   // ── Final done marker ──
   lines.push('print(json.dumps({"type": "done"}), flush=True)');
@@ -305,20 +312,7 @@ export async function runTuningStudy(
       return;
     }
 
-    // 3. Get container + sync datasets
-    const container = await getOrCreateContainer({
-      projectId,
-      pythonVersion: '3.11',
-      workspacePath: join(env.executionWorkspaceDir, projectId, 'model-runtime'),
-    });
-
-    if (container.workspacePath) {
-      await syncWorkspaceDatasets(projectId, container.workspacePath).catch((error) => {
-        logger.warn('Failed to sync datasets', { modelId, error });
-      });
-    }
-
-    // 4. Check for tunable parameters
+    // 3. Check for tunable parameters
     const tunableParams = template.parameters.filter(
       (p) => p.min !== undefined || p.options !== undefined || p.type === 'boolean'
     );
@@ -328,50 +322,56 @@ export async function runTuningStudy(
       return;
     }
 
-    // 5. Build tuning script
+    // 4. Pre-compute workspace paths
+    const workspacePath = join(env.executionWorkspaceDir, projectId, 'model-runtime');
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
-
-    const script = buildTuningScript({
-      template,
-      datasetPath: containerDatasetPath,
-      targetColumn: model.targetColumn ?? '',
-      testSize: 0.2,
-      nTrials,
-      metric,
-      timeoutSeconds,
-      outputDir: tuningOutputDir,
-      sampler: options?.sampler,
-    });
-
-    // 6. Execute with streaming output
     const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
 
+    // 5. Orchestrate container execution with streaming callback
     const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
-    const result = await kernelManager.execute(container, script, tuningTimeoutMs, (output) => {
-      // Each RichOutput of type 'text' may contain one or more JSON lines
-      if (output.type !== 'text') return;
-      const text = output.content;
-      const textLines = text.split('\n').filter((l) => l.trim());
-      for (const line of textLines) {
-        try {
-          const parsed = JSON.parse(line) as Record<string, unknown>;
-          if (RELAY_TYPES.has(parsed.type as string)) {
-            writeJsonLine(res, parsed);
+    const { container, executionResult: result } = await orchestrateContainerExecution({
+      projectId,
+      pythonVersion: '3.11',
+      scriptBuilder: () =>
+        buildTuningScript({
+          template,
+          datasetPath: containerDatasetPath,
+          targetColumn: model.targetColumn ?? '',
+          testSize: 0.2,
+          nTrials,
+          metric,
+          timeoutSeconds,
+          outputDir: tuningOutputDir,
+          sampler: options?.sampler,
+        }),
+      filesToCopy: [],
+      timeoutMs: tuningTimeoutMs,
+      containerOutputDir: tuningOutputDir,
+      onOutput: (output) => {
+        // Each RichOutput of type 'text' may contain one or more JSON lines
+        if (output.type !== 'text') return;
+        const text = output.content;
+        const textLines = text.split('\n').filter((l) => l.trim());
+        for (const line of textLines) {
+          try {
+            const parsed = JSON.parse(line) as Record<string, unknown>;
+            if (RELAY_TYPES.has(parsed.type as string)) {
+              writeJsonLine(res, parsed);
+            }
+            // Ignore 'done' here — we emit our own done event below
+          } catch {
+            // Not JSON — skip
           }
-          // Ignore 'done' here — we emit our own done event below
-        } catch {
-          // Not JSON — skip
         }
-      }
+      },
     });
 
-    // 7. On success — register the best model as a new ModelRecord
-    const workspaceOutputDir = join(container.workspacePath, 'tuning', modelId);
+    // 6. On success — register the best model as a new ModelRecord
+    const workspaceOutputDir = join(workspacePath, 'tuning', modelId);
     const summaryPath = join(workspaceOutputDir, 'tuning_summary.json');
-    const modelArtifactPath = join(workspaceOutputDir, 'model.joblib');
 
-    if (result.status === 'success' && existsSync(summaryPath) && existsSync(modelArtifactPath)) {
+    if (result.status === 'success') {
       const summaryRaw = await readFile(summaryPath, 'utf8');
       const summary = JSON.parse(summaryRaw) as {
         best_params: Record<string, unknown>;
@@ -381,20 +381,16 @@ export async function runTuningStudy(
         param_importances: { params?: string[]; importances?: number[] };
       };
 
-      // Copy artifacts to permanent storage
+      // Create new model ID and copy artifacts to permanent storage
       const newModelId = `${modelId}-tuned-${Date.now()}`;
-      const storageDir = join(env.modelStorageDir, newModelId);
-      await mkdir(storageDir, { recursive: true });
-
-      const storedModelPath = join(storageDir, 'model.joblib');
-      const storedSummaryPath = join(storageDir, 'tuning_summary.json');
-
-      const artifactStat = await stat(modelArtifactPath);
-
-      await Promise.all([
-        copyFile(modelArtifactPath, storedModelPath),
-        copyFile(summaryPath, storedSummaryPath),
+      await copyArtifactsToPermanentStorage(newModelId, container, [
+        { workspace: `tuning/${modelId}/model.joblib`, permanent: 'model.joblib' },
+        { workspace: `tuning/${modelId}/tuning_summary.json`, permanent: 'tuning_summary.json' },
       ]);
+
+      // Get artifact size for storage metadata
+      const storedModelPath = join(env.modelStorageDir, newModelId, 'model.joblib');
+      const artifactStat = await stat(storedModelPath);
 
       const dateTag = new Date().toISOString().slice(0, 10);
       const newRecord = await modelRepository.create({

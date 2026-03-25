@@ -149,7 +149,7 @@ export type NlQueryStreamEvent =
 export async function executeSqlQuery(request: SqlQueryRequest) {
   return apiRequest<{ query: QueryResultPayload }>('/query/sql', {
     method: 'POST',
-    body: JSON.stringify(request),
+    body: request,
   });
 }
 
@@ -158,7 +158,7 @@ export async function executeNlQuery(request: NlQueryRequest) {
     nl: NlQueryResponsePayload;
   }>('/query/nl', {
     method: 'POST',
-    body: JSON.stringify(request),
+    body: request,
   });
 }
 
@@ -185,8 +185,8 @@ export async function streamNlQuery(
 ) {
   const response = await apiFetch('/query/nl/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-    body: JSON.stringify(request),
+    headers: { Accept: 'application/x-ndjson' },
+    body: request,
     signal
   });
 

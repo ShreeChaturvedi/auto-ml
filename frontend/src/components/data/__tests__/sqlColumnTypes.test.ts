@@ -7,31 +7,36 @@ import {
 } from '@/lib/sql/sqlColumnTypes';
 
 describe('sqlColumnTypes', () => {
-  it('maps PostgreSQL type names to frontend column data types', () => {
-    expect(mapPostgresTypeToColumnDataType('integer')).toBe('integer');
-    expect(mapPostgresTypeToColumnDataType('int8')).toBe('integer');
-    expect(mapPostgresTypeToColumnDataType('numeric')).toBe('float');
-    expect(mapPostgresTypeToColumnDataType('bool')).toBe('boolean');
-    expect(mapPostgresTypeToColumnDataType('timestamp')).toBe('date');
-    expect(mapPostgresTypeToColumnDataType('varchar')).toBe('string');
-    expect(mapPostgresTypeToColumnDataType('mystery_domain_type')).toBe('unknown');
+  describe('mapPostgresTypeToColumnDataType', () => {
+    it.each([
+      ['integer', 'integer'],
+      ['int8', 'integer'],
+      ['numeric', 'float'],
+      ['bool', 'boolean'],
+      ['timestamp', 'date'],
+      ['varchar', 'string'],
+      ['mystery_domain_type', 'unknown'],
+      ['pg_catalog.int4', 'integer'],
+      ['timestamp(6) with time zone', 'date'],
+      ['_int4', 'integer'],
+      ['varchar[]', 'string'],
+      ['money', 'float']
+    ])('maps %s to %s', (input, expected) => {
+      expect(mapPostgresTypeToColumnDataType(input)).toBe(expected);
+    });
   });
 
-  it('normalizes schema-qualified, parameterized, and array type names', () => {
-    expect(mapPostgresTypeToColumnDataType('pg_catalog.int4')).toBe('integer');
-    expect(mapPostgresTypeToColumnDataType('timestamp(6) with time zone')).toBe('date');
-    expect(mapPostgresTypeToColumnDataType('_int4')).toBe('integer');
-    expect(mapPostgresTypeToColumnDataType('varchar[]')).toBe('string');
-    expect(mapPostgresTypeToColumnDataType('money')).toBe('float');
-  });
-
-  it('falls back to OID mapping when type name is missing', () => {
-    expect(mapColumnToColumnDataType({ name: 'id', dataTypeID: 23 })).toBe('integer');
-    expect(mapColumnToColumnDataType({ name: 'price', dataTypeID: 1700 })).toBe('float');
-    expect(mapColumnToColumnDataType({ name: 'created_at', dataTypeID: 1184 })).toBe('date');
-    expect(mapColumnToColumnDataType({ name: 'is_active', dataTypeID: 16 })).toBe('boolean');
-    expect(mapColumnToColumnDataType({ name: 'name', dataTypeID: 25 })).toBe('string');
-    expect(mapColumnToColumnDataType({ name: 'custom_type', dataTypeID: 999999 })).toBe('unknown');
+  describe('mapColumnToColumnDataType with OID', () => {
+    it.each([
+      [{ name: 'id', dataTypeID: 23 }, 'integer'],
+      [{ name: 'price', dataTypeID: 1700 }, 'float'],
+      [{ name: 'created_at', dataTypeID: 1184 }, 'date'],
+      [{ name: 'is_active', dataTypeID: 16 }, 'boolean'],
+      [{ name: 'name', dataTypeID: 25 }, 'string'],
+      [{ name: 'custom_type', dataTypeID: 999999 }, 'unknown']
+    ])('falls back to OID mapping for %o', (input, expected) => {
+      expect(mapColumnToColumnDataType(input)).toBe(expected);
+    });
   });
 
   it('extracts a full column type map for query results', () => {
@@ -54,15 +59,19 @@ describe('sqlColumnTypes', () => {
     ).toBe('integer');
   });
 
-  it('infers types from row values when metadata is unresolved', () => {
+  describe('inferring types from row values', () => {
     const rows = [
       { ratio: 1.25, happened_at: '2026-03-01T08:30:00Z', active: true },
       { ratio: 2.5, happened_at: '2026-03-02T10:00:00Z', active: false }
     ];
 
-    expect(mapColumnToColumnDataType({ name: 'ratio', dataType: 'unknown' }, rows)).toBe('float');
-    expect(mapColumnToColumnDataType({ name: 'happened_at', dataType: 'unknown' }, rows)).toBe('date');
-    expect(mapColumnToColumnDataType({ name: 'active', dataType: 'unknown' }, rows)).toBe('boolean');
+    it.each([
+      ['ratio', 'float'],
+      ['happened_at', 'date'],
+      ['active', 'boolean']
+    ])('infers %s as %s from row values', (columnName, expected) => {
+      expect(mapColumnToColumnDataType({ name: columnName, dataType: 'unknown' }, rows)).toBe(expected);
+    });
   });
 
   it('falls back to string for unrecognized named PostgreSQL types', () => {

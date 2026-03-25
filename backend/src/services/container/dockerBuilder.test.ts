@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDockerRunArgs } from './dockerBuilder.js';
 import { env } from '../../config.js';
+
+import { buildDockerRunArgs } from './dockerBuilder.js';
 
 describe('buildDockerRunArgs', () => {
     const baseParams = {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { useCallback, useMemo, useRef, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -28,6 +28,8 @@ import { Markdown } from '@/components/ui/Markdown';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildHeadingComponents } from '@/lib/markdown/tocUtils';
 import { MarkdownEmptyState } from './MarkdownEmptyState';
+import { useDebouncedSave } from './hooks/useDebouncedSave';
+import { useMarkdownEditMode } from './hooks/useMarkdownEditMode';
 
 function getSectionLabel(content: string): string {
   const lines = content.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -113,97 +115,38 @@ export function NotebookMarkdownCell({
     ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : theme;
 
-  const [localContent, setLocalContent] = useState(cell.content);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isPreviewMode, setIsPreviewMode] = useState(true);
   const [copied, copy] = useCopyToClipboard();
   const cellRef = useRef<HTMLDivElement>(null);
-  const isExitingRef = useRef(false);
-  const chipInjectedRef = useRef(false);
-  const preChipContentRef = useRef('');
-  const localContentRef = useRef(localContent);
-  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { localContentRef.current = localContent; }, [localContent]);
-  useEffect(() => { hasUnsavedChangesRef.current = hasUnsavedChanges; }, [hasUnsavedChanges]);
+  // --- Extracted hooks for save debouncing and edit mode state ---
+  const {
+    localContent,
+    setLocalContent,
+    setHasUnsavedChanges,
+    localContentRef,
+    handleContentChange,
+    handleFlushSave
+  } = useDebouncedSave({
+    externalContent: cell.content,
+    onContentChange
+  });
 
-  useEffect(() => {
-    if (!hasUnsavedChanges) {
-      setLocalContent(cell.content);
-    }
-  }, [cell.content, hasUnsavedChanges]);
-
-  const handleContentChange = useCallback(
-    (value: string | undefined) => {
-      const content = value ?? '';
-      chipInjectedRef.current = false;
-      setLocalContent(content);
-      setHasUnsavedChanges(true);
-
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      saveTimeoutRef.current = setTimeout(() => {
-        onContentChange(content);
-        setHasUnsavedChanges(false);
-      }, 1000);
-    },
-    [onContentChange]
-  );
-
-  const handleFlushSave = useCallback(() => {
-    if (!hasUnsavedChangesRef.current) {
-      return;
-    }
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    const content = localContentRef.current.trim() === '' ? '' : localContentRef.current;
-    onContentChange(content);
-    setHasUnsavedChanges(false);
-  }, [onContentChange]);
-
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const enterEditMode = useCallback(() => {
-    if (isLocked) return;
-    chipInjectedRef.current = false;
-    setIsPreviewMode(false);
-  }, [isLocked]);
-
-  const enterEditModeWithContent = useCallback((scaffold: string) => {
-    if (isLocked) return;
-    preChipContentRef.current = localContentRef.current;
-    chipInjectedRef.current = true;
-    setLocalContent(scaffold);
-    setHasUnsavedChanges(true);
-    setIsPreviewMode(false);
-  }, [isLocked]);
-
-  const exitEditMode = useCallback(() => {
-    isExitingRef.current = true;
-    if (chipInjectedRef.current) {
-      setLocalContent(preChipContentRef.current);
-      setHasUnsavedChanges(false);
-    } else {
-      handleFlushSave();
-    }
-    chipInjectedRef.current = false;
-    setIsPreviewMode(true);
-  }, [handleFlushSave]);
-
-  const exitEditModeRef = useRef(exitEditMode);
-  useEffect(() => { exitEditModeRef.current = exitEditMode; }, [exitEditMode]);
-  const handleFlushSaveRef = useRef(handleFlushSave);
-  useEffect(() => { handleFlushSaveRef.current = handleFlushSave; }, [handleFlushSave]);
+  const {
+    isPreviewMode,
+    chipInjectedRef,
+    isExitingRef,
+    exitEditModeRef,
+    handleFlushSaveRef,
+    enterEditMode,
+    enterEditModeWithContent,
+    exitEditMode
+  } = useMarkdownEditMode({
+    isLocked,
+    handleFlushSave,
+    setLocalContent,
+    setHasUnsavedChanges,
+    localContentRef
+  });
 
   const sectionLabel = getSectionLabel(localContent);
 

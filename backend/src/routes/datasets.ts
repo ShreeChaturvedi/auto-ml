@@ -169,15 +169,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     '/upload/dataset',
     handleDatasetUpload,
     asyncHandler(async (req: AuthRequest, res) => {
-      // Ownership check after multer parses multipart body
-      const uploadProjectId = req.body?.projectId as string | undefined;
-      if (req.user && uploadProjectId) {
-        const project = await verifyProjectOwnership(uploadProjectId, req.user.user_id, projectRepository);
-        if (!project) {
-          res.status(404).json({ error: 'Project not found' });
-          return;
-        }
-      }
+      // Project ownership is verified by requireProjectAccess middleware
       await processDatasetUpload(req, res, datasetRepository);
     })
   );

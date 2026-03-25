@@ -5,6 +5,7 @@
 import type { DatasetProfile } from '../../../types/dataset.js';
 import type { ToolResult } from '../../../types/llm.js';
 import type { FeatureSpec } from '../../featureEngineering.js';
+import { buildTemplateSummary } from '../../modelTemplates.js';
 import type {
   LlmRequest,
   LlmToolDefinition,
@@ -15,7 +16,6 @@ import type { LlmReasoningEffort } from '../modelCatalog.js';
 import { LLM_ALL_TOOLS } from '../toolRegistry.js';
 
 import { buildSystemPrompt } from './system.js';
-import { buildTemplateSummary } from '../../modelTemplates.js';
 
 const MAX_FEATURE_DISPLAY = 20;
 

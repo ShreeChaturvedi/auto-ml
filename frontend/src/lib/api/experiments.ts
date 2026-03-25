@@ -34,8 +34,7 @@ export async function startTuning(
 ): Promise<Response> {
   const response = await apiFetch(`/experiments/${projectId}/tune`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
     signal
   });
   if (!response.ok) throw new Error(`Tuning request failed: ${response.status}`);
@@ -48,7 +47,7 @@ export async function compareModels(
 ): Promise<ComparisonResult> {
   return apiRequest<ComparisonResult>(`/experiments/${projectId}/compare`, {
     method: 'POST',
-    body: JSON.stringify({ modelIds })
+    body: { modelIds }
   });
 }
 
@@ -59,7 +58,7 @@ export async function parseNlFilter(
 ): Promise<{ predicates: FilterPredicate[] }> {
   return apiRequest<{ predicates: FilterPredicate[] }>(
     `/experiments/${projectId}/nl-filter`,
-    { method: 'POST', body: JSON.stringify({ query }), signal }
+    { method: 'POST', body: { query }, signal }
   );
 }
 
@@ -70,8 +69,7 @@ export async function fetchInsights(
 ): Promise<Response> {
   const response = await apiFetch(`/experiments/${projectId}/insights`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body
   });
   if (!response.ok) throw new Error(`Insights request failed: ${response.status}`);
   return response;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { Router, type Response } from 'express';
@@ -21,95 +21,13 @@ import { getModelById, listModels } from '../services/modelTraining.js';
 import { createNlFilterNormalizer, NlFilterResponseSchema } from '../services/nlFilter/schema.js';
 import { buildNlFilterContext, buildNlFilterPrompt } from '../services/nlFilter/service.js';
 import { requestStructuredJson } from '../services/nlToSql/structuredRequest.js';
+import { welchTTest } from '../services/statisticalTest.js';
 import { runTuningStudy } from '../services/tuningService.js';
 import type { AuthRequest } from '../types/auth.js';
 import type { ComparisonResult, EvaluationResult } from '../types/experiments.js';
+import { loadModelFile } from '../utils/modelFileLoader.js';
+import { setupNdjsonStream } from '../utils/ndjsonStream.js';
 
-// ---------------------------------------------------------------------------
-// Welch's t-test for comparing two sets of cross-validation scores
-// ---------------------------------------------------------------------------
-
-function welchTTest(a: number[], b: number[]): number {
-  const mean = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length;
-  const variance = (arr: number[], m: number) => arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1);
-
-  const mA = mean(a), mB = mean(b);
-  const vA = variance(a, mA), vB = variance(b, mB);
-  const nA = a.length, nB = b.length;
-  const se = Math.sqrt(vA / nA + vB / nB);
-  if (se === 0) return 1;
-
-  const t = Math.abs(mA - mB) / se;
-  // Welch-Satterthwaite degrees of freedom
-  const num = (vA / nA + vB / nB) ** 2;
-  const den = (vA / nA) ** 2 / (nA - 1) + (vB / nB) ** 2 / (nB - 1);
-  const df = num / den;
-  // Approximate two-tailed p-value via regularized incomplete beta function
-  return tDistPValue(t, df);
-}
-
-/** Approximate two-tailed p-value for Student's t-distribution using the incomplete beta function. */
-function tDistPValue(t: number, df: number): number {
-  const x = df / (df + t * t);
-  return regularizedIncompleteBeta(x, df / 2, 0.5);
-}
-
-/** Regularized incomplete beta function I_x(a,b) via continued fraction (Lentz's method). */
-function regularizedIncompleteBeta(x: number, a: number, b: number): number {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-
-  const lnBeta = lnGamma(a) + lnGamma(b) - lnGamma(a + b);
-  const front = Math.exp(a * Math.log(x) + b * Math.log(1 - x) - lnBeta) / a;
-
-  // Lentz continued fraction
-  const maxIter = 200;
-  const eps = 1e-14;
-  let f = 1, c = 1, d = 1 - (a + b) * x / (a + 1);
-  if (Math.abs(d) < eps) d = eps;
-  d = 1 / d;
-  f = d;
-
-  for (let i = 1; i <= maxIter; i++) {
-    const m = i;
-    // even step
-    let num = m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m));
-    d = 1 + num * d; if (Math.abs(d) < eps) d = eps; d = 1 / d;
-    c = 1 + num / c; if (Math.abs(c) < eps) c = eps;
-    f *= d * c;
-    // odd step
-    num = -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1));
-    d = 1 + num * d; if (Math.abs(d) < eps) d = eps; d = 1 / d;
-    c = 1 + num / c; if (Math.abs(c) < eps) c = eps;
-    f *= d * c;
-
-    if (Math.abs(d * c - 1) < eps) break;
-  }
-
-  return front * f;
-}
-
-/** Lanczos approximation for ln(Gamma(x)). */
-function lnGamma(x: number): number {
-  const g = 7;
-  const coef = [
-    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
-    771.32342877765313, -176.61502916214059, 12.507343278686905,
-    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
-  ];
-  if (x < 0.5) {
-    return Math.log(Math.PI / Math.sin(Math.PI * x)) - lnGamma(1 - x);
-  }
-  x -= 1;
-  let a = coef[0];
-  for (let i = 1; i < g + 2; i++) a += coef[i] / (x + i);
-  const t = x + g + 0.5;
-  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
-}
-
-// ---------------------------------------------------------------------------
-// Insight type → system prompt mapping
-// ---------------------------------------------------------------------------
 
 const INSIGHT_SYSTEM_PROMPTS: Record<string, string> = {
   banner:
@@ -144,12 +62,10 @@ export function createExperimentsRouter(): Router {
     }
 
     const filePath = join(env.modelStorageDir, modelId, 'evaluation.json');
-
-    try {
-      const raw = await readFile(filePath, 'utf8');
-      const data = JSON.parse(raw);
+    const data = await loadModelFile(filePath);
+    if (data) {
       res.json(data);
-    } catch {
+    } else {
       res.status(404).json({ error: 'Evaluation not found' });
     }
   }));
@@ -170,12 +86,10 @@ export function createExperimentsRouter(): Router {
     }
 
     const filePath = join(env.modelStorageDir, modelId, 'shap.json');
-
-    try {
-      const raw = await readFile(filePath, 'utf8');
-      const data = JSON.parse(raw);
+    const data = await loadModelFile(filePath);
+    if (data) {
       res.json(data);
-    } catch {
+    } else {
       res.status(404).json({ error: 'SHAP data not found' });
     }
   }));
@@ -219,13 +133,7 @@ export function createExperimentsRouter(): Router {
     }
 
     // Set NDJSON streaming headers
-    res.status(200);
-    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    if (typeof res.flushHeaders === 'function') {
-      res.flushHeaders();
-    }
+    setupNdjsonStream(res);
 
     try {
       await runTuningStudy(
@@ -278,11 +186,9 @@ export function createExperimentsRouter(): Router {
     const evaluations = new Map<string, EvaluationResult>();
     await Promise.all(
       selected.map(async (m) => {
-        try {
-          const raw = await readFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'), 'utf8');
-          evaluations.set(m.modelId, JSON.parse(raw) as EvaluationResult);
-        } catch {
-          // Evaluation data not available for this model -- skip
+        const data = await loadModelFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'));
+        if (data) {
+          evaluations.set(m.modelId, data as EvaluationResult);
         }
       }),
     );
@@ -409,21 +315,18 @@ export function createExperimentsRouter(): Router {
     modelHash = createHash('sha256').update(projectId + JSON.stringify(modelSummaries)).digest('hex');
 
     // --- Cache check ---
-    try {
-      const raw = await readFile(cachePath, 'utf8');
-      const entry = JSON.parse(raw) as Record<string, { modelHash: string; text: string }>;
-      if (entry[body.type]?.modelHash === modelHash) {
-        res.status(200);
-        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
+    {
+      const entry = await loadModelFile(cachePath) as Record<string, { modelHash: string; text: string }> | null;
+      if (entry && entry[body.type]?.modelHash === modelHash) {
+        setupNdjsonStream(res);
         if (typeof res.flushHeaders === 'function') res.flushHeaders();
         res.write(`${JSON.stringify({ type: 'token', content: entry[body.type].text })}\n`);
         res.write(`${JSON.stringify({ type: 'done' })}\n`);
         res.end();
         return;
       }
-    } catch {
+    }
+    {
       // Cache miss or read error — proceed to LLM
     }
 
@@ -440,10 +343,10 @@ export function createExperimentsRouter(): Router {
       const [, project] = await Promise.all([
         Promise.all(
           allModels.map(async (m) => {
-            try {
-              const raw = await readFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'), 'utf8');
-              evaluations[m.modelId] = extractEvalSummary(JSON.parse(raw));
-            } catch { /* eval not available */ }
+            const data = await loadModelFile(join(env.modelStorageDir, m.modelId, 'evaluation.json'));
+            if (data) {
+              evaluations[m.modelId] = extractEvalSummary(data as Record<string, unknown>);
+            }
           }),
         ),
         projectRepository.getById(projectId),
@@ -461,13 +364,7 @@ export function createExperimentsRouter(): Router {
     }
 
     // Set NDJSON streaming headers
-    res.status(200);
-    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    if (typeof res.flushHeaders === 'function') {
-      res.flushHeaders();
-    }
+    setupNdjsonStream(res);
 
     try {
       const client = isReport ? createLlmClient(undefined, 180_000) : createLlmClient();
@@ -497,9 +394,10 @@ export function createExperimentsRouter(): Router {
         try {
           await mkdir(dirname(cachePath), { recursive: true });
           let existing: Record<string, unknown> = {};
-          try {
-            existing = JSON.parse(await readFile(cachePath, 'utf8'));
-          } catch { /* no existing cache */ }
+          const cached = await loadModelFile(cachePath);
+          if (cached) {
+            existing = cached as Record<string, unknown>;
+          }
           const updated = {
             ...existing,
             [body.type]: { modelHash, text: accumulated, generatedAt: new Date().toISOString() },
@@ -549,12 +447,11 @@ export function createExperimentsRouter(): Router {
 
     const filePath = join(env.modelStorageDir, modelId, 'error_analysis.json');
 
-    try {
-      // Try to read a cached result from disk first
-      const raw = await readFile(filePath, 'utf8');
-      const data = JSON.parse(raw);
-      res.json(data);
-    } catch {
+    // Try to read a cached result from disk first
+    const cached = await loadModelFile(filePath);
+    if (cached) {
+      res.json(cached);
+    } else {
       // Not cached — run error analysis on-demand
       try {
         const result = await runErrorAnalysis(modelId);

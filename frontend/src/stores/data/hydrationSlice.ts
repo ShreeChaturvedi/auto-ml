@@ -93,6 +93,7 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
             columnCount: dataset.nCols,
             columns: dataset.columns.map(c => c.name),
             tableName: dataset.tableName ?? dataset.metadata?.tableName ?? sanitizeTableName(dataset.filename, dataset.datasetId),
+            derivedFrom: typeof dataset.metadata?.derivedFrom === 'string' ? dataset.metadata.derivedFrom : undefined,
             datasetProfile: {
               nRows: dataset.nRows,
               nCols: dataset.nCols,

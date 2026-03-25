@@ -83,6 +83,17 @@ interface UseFeaturePipelineStateReturn {
   approveVersion: (projectId: string, versionId: string) => void;
 }
 
+/** Pick the best dataset for feature engineering: prefer derived datasets, then most recent. */
+function pickBestDataset(datasets: ReturnType<typeof useDataStore.getState>['files']): typeof datasets[number] {
+  const sorted = [...datasets].sort((a, b) => {
+    const aDerived = a.metadata?.derivedFrom ? 1 : 0;
+    const bDerived = b.metadata?.derivedFrom ? 1 : 0;
+    if (aDerived !== bDerived) return bDerived - aDerived;
+    return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+  });
+  return sorted[0];
+}
+
 export function useFeaturePipelineState(projectId: string): UseFeaturePipelineStateReturn {
   // --- Data store ---
   const allFiles = useDataStore((state) => state.files);
@@ -155,6 +166,21 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
             return;
           }
           hydrateRunIntoStore(run);
+
+          // Derive currentStage from the last step's status
+          const steps = Object.values(run.features ?? {});
+          if (steps.length > 0) {
+            const lastStep = steps[steps.length - 1];
+            const derivedStage =
+              lastStep.status === 'awaiting_approval' ? 'validate_feature'
+                : lastStep.status === 'completed' || lastStep.status === 'registered' ? 'register_feature'
+                  : lastStep.status === 'executing' ? 'execute_feature'
+                    : lastStep.status === 'rejected' ? 'propose_feature'
+                      : null;
+            if (derivedStage) {
+              useFeatureStore.getState().setCurrentStage(derivedStage);
+            }
+          }
         }
 
         setPanelError(null);
@@ -291,7 +317,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   // --- Default dataset selection effect ---
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
-      setSelectedDataset(datasetFiles[0].id);
+      setSelectedDataset(pickBestDataset(datasetFiles).id);
     }
   }, [datasetFiles, selectedDataset]);
 

@@ -5,10 +5,12 @@ import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { usePlanChatStore } from '@/stores/planChatStore';
 
 import { PlanningStage } from './PlanningStage';
 import { ProcessingStage } from './ProcessingStage';
 import { UploadStage } from './UploadStage';
+import { getNextPlanName } from './planningUtils';
 
 type UploadFlowStage = 'upload' | 'processing' | 'chat';
 
@@ -19,6 +21,7 @@ interface UploadFlowMetadata {
   projectPlan?: string;
   projectPlanName?: string;
   customInstructions?: string;
+  activePlanChatId?: string;
   [key: string]: unknown;
 }
 
@@ -36,12 +39,16 @@ export function UploadArea() {
   const completePhase = useProjectStore((state) => state.completePhase);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
 
+  const createChat = usePlanChatStore((s) => s.createChat);
+  const completeStoreChat = usePlanChatStore((s) => s.completeChat);
+
   const activeProject = useMemo(
     () => (activeProjectId ? projects.find((project) => project.id === activeProjectId) : undefined),
     [activeProjectId, projects]
   );
 
   const [stage, setStage] = useState<UploadFlowStage>('upload');
+  const [activePlanChatId, setActivePlanChatId] = useState<string | null>(null);
   const initializedProjectIdRef = useRef<string | null>(null);
   const persistedMetadataRef = useRef<string>('');
   const syncingFromMetadataRef = useRef(false);
@@ -50,6 +57,11 @@ export function UploadArea() {
     if (!activeProjectId) return;
     void hydrateFromBackend(activeProjectId);
   }, [activeProjectId, hydrateFromBackend]);
+
+  // Reset chat when project changes
+  useEffect(() => {
+    setActivePlanChatId(null);
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (!activeProject) return;
@@ -69,17 +81,34 @@ export function UploadArea() {
     setStage(nextStage);
     persistedMetadataRef.current = snapshot;
     initializedProjectIdRef.current = activeProject.id;
+
+    // Restore persisted active chat ID
+    if (metadata.activePlanChatId) {
+      const chat = usePlanChatStore.getState().chats[metadata.activePlanChatId];
+      if (chat?.status === 'in_progress') {
+        setActivePlanChatId(metadata.activePlanChatId);
+      }
+    }
   }, [activeProject]);
 
+  // Handle ?newPlan=1 — create chat and start processing
   useEffect(() => {
     if (!activeProject) return;
     if (searchParams.get('newPlan') !== '1') return;
+
+    // Count existing plans and chats for naming
+    const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+    const existingPlans = Array.isArray(metadata.plans) ? metadata.plans : [];
+    const inProgressChats = usePlanChatStore.getState().getInProgressChats(activeProject.id);
+    const chatName = getNextPlanName(existingPlans, inProgressChats);
+    const chat = createChat(activeProject.id, chatName);
+    setActivePlanChatId(chat.id);
 
     setStage('processing');
 
     const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     void updateProject(activeProject.id, {
-      metadata: { ...existingMetadata, uploadStage: 'processing' },
+      metadata: { ...existingMetadata, uploadStage: 'processing', activePlanChatId: chat.id },
     }).catch((error) => {
       console.error('Failed to persist new-plan stage metadata', error);
     });
@@ -87,7 +116,37 @@ export function UploadArea() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('newPlan');
     setSearchParams(nextParams, { replace: true });
+  }, [activeProject, searchParams, setSearchParams, updateProject, createChat]);
+
+  // Handle ?chatId=xxx — resume an in-progress chat
+  useEffect(() => {
+    const chatId = searchParams.get('chatId');
+    if (!chatId || !activeProject) return;
+
+    const chat = usePlanChatStore.getState().chats[chatId];
+    if (chat && chat.projectId === activeProject.id && chat.status === 'in_progress') {
+      setActivePlanChatId(chatId);
+      setStage('chat');
+
+      const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+      void updateProject(activeProject.id, {
+        metadata: { ...existingMetadata, uploadStage: 'chat', activePlanChatId: chatId },
+      }).catch(() => {});
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('chatId');
+    setSearchParams(nextParams, { replace: true });
   }, [activeProject, searchParams, setSearchParams, updateProject]);
+
+  // Restore chat when entering chat stage without one
+  useEffect(() => {
+    if (stage !== 'chat' || activePlanChatId || !activeProject) return;
+    const chats = usePlanChatStore.getState().getInProgressChats(activeProject.id);
+    if (chats.length > 0) {
+      setActivePlanChatId(chats[0].id);
+    }
+  }, [stage, activePlanChatId, activeProject]);
 
   useEffect(() => {
     if (!activeProject) return;
@@ -165,12 +224,20 @@ export function UploadArea() {
         {stage === 'chat' ? (
           <PlanningStage
             projectId={activeProject.id}
+            planChatId={activePlanChatId}
             onPlanApproved={(plan, planName) => {
               const metadata = { ...((activeProject.metadata ?? {}) as UploadFlowMetadata) };
               delete metadata.customInstructions;
 
+              // Complete the chat entry in store
+              const newPlanId = `plan-${Date.now()}`;
+              if (activePlanChatId) {
+                completeStoreChat(activePlanChatId, newPlanId, planName);
+                setActivePlanChatId(null);
+              }
+
               // Append new plan to metadata
-              const newPlan = { id: `plan-${Date.now()}`, name: planName, content: plan };
+              const newPlan = { id: newPlanId, name: planName, content: plan };
               const existingPlans = Array.isArray(metadata.plans) ? metadata.plans : [];
 
               // Maintain backward compat
@@ -185,6 +252,7 @@ export function UploadArea() {
                   ...legacyCompat,
                   plans: [...existingPlans, newPlan],
                   activePlanId: newPlan.id,
+                  activePlanChatId: undefined,
                   uploadStage: 'upload',
                 },
               })

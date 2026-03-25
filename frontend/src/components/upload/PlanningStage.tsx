@@ -20,9 +20,10 @@ import { CenteredSuggestionPills, FollowUpSuggestionPills } from './PlanSuggesti
 interface PlanningStageProps {
   projectId: string;
   onPlanApproved: (plan: string, planName: string) => void;
+  planChatId?: string | null;
 }
 
-export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps) {
+export function PlanningStage({ projectId, onPlanApproved, planChatId }: PlanningStageProps) {
   const files = useDataStore((state) => state.files);
   const projects = useProjectStore((state) => state.projects);
 
@@ -77,6 +78,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     uploadPendingAttachments,
     pendingAttachmentsCount,
     onPlanApproved,
+    planChatId,
   });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);

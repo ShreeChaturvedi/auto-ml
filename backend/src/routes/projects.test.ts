@@ -113,7 +113,7 @@ describeRouteSuite('project routes', () => {
     it('returns 404 for non-existent project', async () => {
       const app = createTestApp(repository);
       const response = await request(app)
-        .get('/api/projects/non-existent-id')
+        .get('/api/projects/00000000-0000-0000-0000-000000000000')
         .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(404);
@@ -248,7 +248,7 @@ describeRouteSuite('project routes', () => {
     it('returns 404 for non-existent project', async () => {
       const app = createTestApp(repository);
       const response = await request(app)
-        .patch('/api/projects/non-existent-id')
+        .patch('/api/projects/00000000-0000-0000-0000-000000000000')
         .set('Authorization', 'Bearer valid-token')
         .send({ name: 'Updated' });
 
@@ -349,7 +349,7 @@ describeRouteSuite('project routes', () => {
     it('returns 404 for non-existent project', async () => {
       const app = createTestApp(repository);
       const response = await request(app)
-        .delete('/api/projects/non-existent-id')
+        .delete('/api/projects/00000000-0000-0000-0000-000000000000')
         .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(404);

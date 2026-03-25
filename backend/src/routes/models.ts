@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { env } from '../config.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { seedModels, seedOneModel } from '../services/modelSeedService.js';
 import {
@@ -93,7 +94,7 @@ router.post('/seed-one', async (req: AuthRequest, res: Response) => {
   res.json({ model });
 });
 
-router.delete('/:id', async (req: AuthRequest, res: Response) => {
+router.delete('/:id', validateUuidParams('id'), async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model) {
     res.status(404).json({ error: 'Model not found' });
@@ -110,7 +111,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   res.status(204).end();
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response) => {
+router.get('/:id', validateUuidParams('id'), async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model) {
     res.status(404).json({ error: 'Model not found' });
@@ -126,7 +127,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   res.json({ model });
 });
 
-router.get('/:id/artifact', async (req: AuthRequest, res: Response) => {
+router.get('/:id/artifact', validateUuidParams('id'), async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model?.artifact?.path) {
     res.status(404).json({ error: 'Model artifact not found' });

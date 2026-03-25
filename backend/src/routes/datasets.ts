@@ -8,6 +8,7 @@ import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
@@ -46,6 +47,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Get dataset sample ─────────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/sample',
+    validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
@@ -73,6 +75,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Get paged dataset rows ─────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/rows',
+    validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
@@ -94,6 +97,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Update column type ─────────────────────────────────────────────
   router.put(
     '/datasets/:datasetId/columns/:columnName',
+    validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
@@ -115,6 +119,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Download dataset file ──────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/download',
+    validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
@@ -252,6 +257,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Delete dataset ─────────────────────────────────────────────────
   router.delete(
     '/datasets/:datasetId',
+    validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);

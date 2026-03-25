@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
 import type { ProjectRepository } from '../repositories/projectRepository.js';
 import { PHASE_VALUES } from '../repositories/projectRepository.js';
 import type { AuthRequest } from '../types/auth.js';
@@ -48,7 +49,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     res.status(204).send();
   });
 
-  router.get('/projects/:id', requireAuth, async (req: AuthRequest, res) => {
+  router.get('/projects/:id', requireAuth, validateUuidParams('id'), async (req: AuthRequest, res) => {
     const project = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
@@ -72,7 +73,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     return res.status(201).json({ project });
   });
 
-  router.patch('/projects/:id', requireAuth, async (req: AuthRequest, res) => {
+  router.patch('/projects/:id', requireAuth, validateUuidParams('id'), async (req: AuthRequest, res) => {
     const result = projectInputSchema.partial().safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
@@ -94,7 +95,7 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     return res.json({ project });
   });
 
-  router.delete('/projects/:id', requireAuth, async (req: AuthRequest, res) => {
+  router.delete('/projects/:id', requireAuth, validateUuidParams('id'), async (req: AuthRequest, res) => {
     const existing = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
     if (!existing) {
       return res.status(404).json({ error: 'Project not found' });

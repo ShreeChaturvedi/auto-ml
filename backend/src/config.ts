@@ -107,7 +107,7 @@ export const env = {
   executionDockerPlatform: process.env.EXECUTION_DOCKER_PLATFORM ?? '',
   dockerEnabled: process.env.DOCKER_ENABLED !== 'false',
   dockerImage: process.env.DOCKER_IMAGE ?? 'automl-python-runtime:latest',
-  executionNetwork: process.env.EXECUTION_NETWORK ?? 'bridge',
+  executionNetwork: process.env.EXECUTION_NETWORK ?? 'none',
   executionAutoBuildImage: process.env.EXECUTION_AUTO_BUILD_IMAGE !== 'false',
   executionWorkspaceDir: resolveBackendPath(process.env.EXECUTION_WORKSPACE_DIR ?? 'storage/workspaces'),
 

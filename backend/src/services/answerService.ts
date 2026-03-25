@@ -34,6 +34,7 @@ interface CachedEntry {
   response: AnswerResponse;
 }
 
+const ANSWER_CACHE_MAX_SIZE = 200;
 const answerCache = new Map<string, CachedEntry>();
 
 export async function generateAnswer(options: AnswerOptions): Promise<AnswerResponse> {
@@ -78,6 +79,11 @@ export async function generateAnswer(options: AnswerOptions): Promise<AnswerResp
     meta: { cached: false, latencyMs: Date.now() - startedAt, chunksConsidered: documents.length }
   };
 
+  // Evict oldest entries when cache exceeds max size
+  if (answerCache.size >= ANSWER_CACHE_MAX_SIZE) {
+    const oldest = answerCache.keys().next().value;
+    if (oldest !== undefined) answerCache.delete(oldest);
+  }
   answerCache.set(cacheKey, {
     expiresAt: Date.now() + env.answerCacheTtlMs,
     response

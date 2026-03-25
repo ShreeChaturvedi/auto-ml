@@ -1,6 +1,6 @@
 import { getDbPool } from '../db.js';
 
-import { computeTextEmbedding } from './embeddingService.js';
+import { computeTextEmbedding, toVecLiteral } from './embeddingService.js';
 
 export interface DocumentSearchResult {
   chunkId: string;
@@ -23,7 +23,7 @@ interface SearchOptions {
  */
 export async function searchDocuments(options: SearchOptions): Promise<DocumentSearchResult[]> {
   const queryEmbedding = await computeTextEmbedding(options.query);
-  const vecLiteral = `[${queryEmbedding.join(',')}]`;
+  const vecLiteral = toVecLiteral(queryEmbedding);
   const pool = getDbPool();
 
   const rows = await pool.query(

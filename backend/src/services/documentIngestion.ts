@@ -6,7 +6,7 @@ import { env } from '../config.js';
 import { getDbPool } from '../db.js';
 
 import type { ParsedDocument } from './documentParser.js';
-import { computeEmbeddings, EMBEDDING_DIMENSION } from './embeddingService.js';
+import { computeEmbeddings, EMBEDDING_DIMENSION, toVecLiteral } from './embeddingService.js';
 import { chunkDocument } from './textChunker.js';
 
 interface IngestOptions {
@@ -78,7 +78,7 @@ export async function ingestDocument(options: IngestOptions): Promise<IngestedDo
     const embeddings = await computeEmbeddings(chunkTexts);
     for (let i = 0; i < chunkIds.length; i += 1) {
       const vec = embeddings[i];
-      const vecLiteral = `[${vec.join(',')}]`;
+      const vecLiteral = toVecLiteral(vec);
       await pool.query(
         `INSERT INTO embeddings (embedding_id, chunk_id, project_id, embedding, dimension, embedding_vec)
          VALUES ($1, $2, $3, $4, $5, $6::vector)`,

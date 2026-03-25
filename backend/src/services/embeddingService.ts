@@ -49,6 +49,11 @@ export async function computeTextEmbedding(text: string): Promise<number[]> {
  * Cosine similarity between two vectors.
  * Retained for tests and optional in-memory scoring.
  */
+/** Format a number[] as a pgvector literal string for use in SQL casts. */
+export function toVecLiteral(vec: number[]): string {
+  return `[${vec.join(',')}]`;
+}
+
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;
   let dot = 0;

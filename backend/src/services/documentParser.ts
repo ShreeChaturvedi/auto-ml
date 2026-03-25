@@ -1,4 +1,5 @@
 import { appLogger } from '../logging/logger.js';
+import { getErrorMessage } from '../utils/errors.js';
 
 const MIME_TEXT = new Set([
   'text/plain',
@@ -117,10 +118,9 @@ async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseErr
       parseError: messages.length > 0 ? messages.join('; ') : undefined
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to parse DOCX document';
     return {
       text: '',
-      parseError: message
+      parseError: getErrorMessage(error, 'Failed to parse DOCX document')
     };
   }
 }
@@ -132,9 +132,9 @@ async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseErr
 async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
   await ensurePdfDomPolyfills();
   const primaryAttempt = await parsePdfWithPdfParse(buffer).catch((error) => {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    appLogger.error('[documentParser] PDFParse failed:', message);
-    return { text: '', parseError: message };
+    const msg = getErrorMessage(error, 'Unknown error');
+    appLogger.error('[documentParser] PDFParse failed:', msg);
+    return { text: '', parseError: msg };
   });
 
   if (primaryAttempt.text) {
@@ -142,9 +142,9 @@ async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; parseErro
   }
 
   const fallbackAttempt = await parsePdfWithPdfjs(buffer).catch((error) => {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    appLogger.error('[documentParser] PDF.js fallback failed:', message);
-    return { text: '', parseError: message };
+    const msg = getErrorMessage(error, 'Unknown error');
+    appLogger.error('[documentParser] PDF.js fallback failed:', msg);
+    return { text: '', parseError: msg };
   });
 
   if (fallbackAttempt.text) {

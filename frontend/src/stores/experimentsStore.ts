@@ -31,6 +31,7 @@ interface ExperimentsState {
   compareNarrative: { text: string; isLoading: boolean } | null;
   reportContent: { text: string; isLoading: boolean } | null;
   reportModelHash: string | null;
+  reportFetchedAt: number;
 
   // View switching
   experimentView: 'overview' | 'leaderboard';
@@ -79,6 +80,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   compareNarrative: null,
   reportContent: null,
   reportModelHash: null,
+  reportFetchedAt: 0,
 
   // View switching
   experimentView: 'overview',
@@ -120,7 +122,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   fetchEvaluation: async (modelId) => {
-    if (get().evaluations[modelId] !== undefined) return;
+    if (modelId in get().evaluations) return;
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
       set((state) => ({
@@ -165,9 +167,8 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   fetchProjectInsight: async (projectId, models) => {
     const hash = models.map((m) => m.modelId).sort().join(',');
     const current = get();
-    // Skip if model set hasn't changed and we already have text
     if (hash === current.insightModelHash && current.projectInsight?.text) return;
-    // Skip if last fetch was within INSIGHT_STALE_TIME (prevents rapid LLM calls)
+    if (current.projectInsight?.isLoading) return;
     if (current.insightFetchedAt && Date.now() - current.insightFetchedAt < INSIGHT_STALE_TIME) return;
 
     set({ projectInsight: { text: '', isLoading: true }, insightModelHash: hash, insightFetchedAt: Date.now() });
@@ -206,8 +207,10 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     const hash = models.map((m) => m.modelId).sort().join(',');
     const current = get();
     if (hash === current.reportModelHash && current.reportContent?.text) return;
+    if (current.reportContent?.isLoading) return;
+    if (current.reportFetchedAt && Date.now() - current.reportFetchedAt < INSIGHT_STALE_TIME) return;
 
-    set({ reportContent: { text: '', isLoading: true }, reportModelHash: hash });
+    set({ reportContent: { text: '', isLoading: true }, reportModelHash: hash, reportFetchedAt: Date.now() });
     let rafId = 0;
     let latestText = '';
     try {

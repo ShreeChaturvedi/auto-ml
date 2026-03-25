@@ -172,4 +172,11 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       .filter((run) => run.projectId === projectId && run.phase === phase && run.status === 'running')
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
   }
+
+  async findRunsByDataset(datasetId: string): Promise<WorkflowRunState[]> {
+    return [...store.runs.values()]
+      .filter((run) => run.activeDatasetId === datasetId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, 20);
+  }
 }

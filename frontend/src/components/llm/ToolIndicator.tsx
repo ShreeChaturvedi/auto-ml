@@ -11,12 +11,12 @@
  * - Result count badge shown inline for data-returning tools
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
+import { projectColorClasses, type ProjectColorEntry } from '@/types/project';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { getToolIcon, getToolLabel, getResultHint } from './ToolDisplayHelpers';
 
@@ -24,7 +24,6 @@ interface ToolIndicatorProps {
     toolCalls: ToolCall[];
     results: ToolResult[];
     isRunning: boolean;
-    autoExpandPreviewTools?: boolean;
 }
 
 export type ToolStatus = 'pending' | 'running' | 'done' | 'error';
@@ -40,21 +39,14 @@ interface ToolDisplay {
 const TOOL_TONE_INTERACTION_CLASSES = 'transition-opacity duration-200 motion-reduce:transition-none group-hover:opacity-100 group-focus-visible:opacity-100';
 const TOOL_TONE_FADE_CLASSES = 'opacity-75';
 
-const AUTO_EXPAND_TOOLS = new Set<ToolCall['tool']>([
-    'get_dataset_profile',
-    'get_dataset_sample',
-    'search_documents',
-    'list_project_files'
-]);
-
 // Single tool row component
 function ToolRow({
     display,
-    autoExpandPreviewTools,
+    projectColorEntry,
     projectColorClass
 }: {
     display: ToolDisplay;
-    autoExpandPreviewTools: boolean;
+    projectColorEntry?: ProjectColorEntry;
     projectColorClass?: string;
 }) {
     const [expanded, setExpanded] = useState(false);
@@ -63,15 +55,6 @@ function ToolRow({
     const isLoading = status === 'running';
     const showDropdown = hasDropdown && result != null;
     const hint = getResultHint(call, result);
-
-    useEffect(() => {
-        if (!autoExpandPreviewTools || !showDropdown || status !== 'done') {
-            return;
-        }
-        if (AUTO_EXPAND_TOOLS.has(call.tool)) {
-            setExpanded(true);
-        }
-    }, [autoExpandPreviewTools, call.tool, showDropdown, status]);
 
     return (
         <div className="flex flex-col">
@@ -129,8 +112,8 @@ function ToolRow({
 
             {/* Expandable content — rendered by ToolResultRenderer */}
             {expanded && showDropdown && (
-                <div className="ml-6 mt-1 p-3 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
-                    <ToolResultRenderer call={call} result={result!} />
+                <div className="ml-[26px] mt-1 p-2.5 bg-muted/30 rounded-md border border-muted/50 max-h-[300px] overflow-y-auto">
+                    <ToolResultRenderer call={call} result={result!} projectColorEntry={projectColorEntry} />
                 </div>
             )}
         </div>
@@ -141,14 +124,14 @@ export function ToolIndicator({
     toolCalls,
     results,
     isRunning,
-    autoExpandPreviewTools = false
 }: ToolIndicatorProps) {
     // Get project theme color
     const { activeProjectId, projects } = useProjectStore();
     const activeProject = projects.find((project) => project.id === activeProjectId);
-    const projectColorClass = activeProject
-        ? projectColorClasses[activeProject.color]?.text
+    const projectColorEntry = activeProject
+        ? projectColorClasses[activeProject.color]
         : undefined;
+    const projectColorClass = projectColorEntry?.text;
 
     const displayItems = useMemo<ToolDisplay[]>(() => {
         return toolCalls.map((call) => {
@@ -174,12 +157,12 @@ export function ToolIndicator({
     if (displayItems.length === 0) return null;
 
     return (
-        <div className="space-y-0.5">
+        <div className="space-y-0.5 max-w-2xl">
             {displayItems.map((display) => (
                 <ToolRow
                     key={display.call.id}
                     display={display}
-                    autoExpandPreviewTools={autoExpandPreviewTools}
+                    projectColorEntry={projectColorEntry}
                     projectColorClass={projectColorClass}
                 />
             ))}

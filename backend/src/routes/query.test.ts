@@ -189,7 +189,7 @@ describeRouteSuite('query routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.query).toEqual(freshResult);
-      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users' });
+      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users', projectId: TEST_PROJECT_ID });
       expect(mockStoreCachedQueryResult).toHaveBeenCalled();
     });
 
@@ -226,7 +226,7 @@ describeRouteSuite('query routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.query).toEqual(freshResult);
-      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users' });
+      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users', projectId: TEST_PROJECT_ID });
       expect(mockStoreCachedQueryResult).toHaveBeenCalled();
     });
 
@@ -254,7 +254,7 @@ describeRouteSuite('query routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.query).toEqual(queryResult);
-      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users' });
+      expect(mockExecuteReadOnlyQuery).toHaveBeenCalledWith({ sql: 'SELECT * FROM users', projectId: TEST_PROJECT_ID });
       expect(mockStoreCachedQueryResult).toHaveBeenCalled();
     });
 

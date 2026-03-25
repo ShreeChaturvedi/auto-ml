@@ -1,8 +1,37 @@
 const READ_ONLY_KEYWORDS = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'grant', 'revoke', 'truncate'];
 
+const BLOCKED_TABLES = new Set([
+  'users', 'refresh_tokens', 'user_settings',
+  'notebooks', 'cells', 'cell_outputs', 'savepoints',
+  'workflow_runs', 'workflow_events', 'workflow_artifacts',
+  'workflow_approvals', 'workflow_handoffs', 'workflow_notebook_bindings',
+  'documents', 'embeddings', 'chunks',
+  'query_results', 'schema_migrations',
+]);
+
+const BLOCKED_SCHEMA_PREFIXES = ['pg_', 'information_schema'];
+
+const TABLE_REF_REGEX = /\b(?:FROM|JOIN)\s+(?:"([^"]+)"|([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?))/gi;
+
+/**
+ * Extract table references from a SQL statement.
+ * Matches unquoted and double-quoted identifiers after FROM/JOIN keywords.
+ */
+export function extractTableReferences(sql: string): string[] {
+  const tables: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = TABLE_REF_REGEX.exec(sql)) !== null) {
+    const name = (match[1] ?? match[2]).toLowerCase();
+    tables.push(name);
+  }
+  return tables;
+}
+
 export interface ValidateSqlOptions {
   defaultLimit: number;
   maxRows: number;
+  /** Tables the user is allowed to query (project dataset tables). Bypasses blocklist. */
+  allowedTables?: Set<string>;
 }
 
 export interface ValidateSqlResult {
@@ -53,6 +82,15 @@ export function validateReadOnlySql(sql: string, options: ValidateSqlOptions): V
 
   if (normalizedStatement.includes(';')) {
     throw new Error('Multiple statements are not allowed');
+  }
+
+  const referencedTables = extractTableReferences(normalizedStatement);
+  const allowedTables = options.allowedTables;
+  for (const table of referencedTables) {
+    if (allowedTables?.has(table)) continue;
+    if (BLOCKED_TABLES.has(table) || BLOCKED_SCHEMA_PREFIXES.some((prefix) => table.startsWith(prefix))) {
+      throw new Error(`Access denied: queries against table '${table}' are not permitted`);
+    }
   }
 
   const limitRegex = /\blimit\s+\d+/i;

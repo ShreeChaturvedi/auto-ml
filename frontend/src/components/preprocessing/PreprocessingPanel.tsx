@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
@@ -208,6 +209,9 @@ export function PreprocessingPanel() {
   const requestDatasetContinuityChoice = (prompt: string): Promise<string | null> => {
     if (!selectedDatasetId) {
       openDatasetSelector();
+      toast.info('Select a dataset to get started', {
+        description: 'Choose a dataset from the selector, then re-send your prompt.'
+      });
       return Promise.resolve(null);
     }
     return new Promise<string | null>((resolve) => {
@@ -273,6 +277,7 @@ export function PreprocessingPanel() {
   return (
     <>
       <AgenticShell
+        key={activeTab?.id ?? DEFAULT_WORKBOOK_ID}
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
         composerPlaceholders={composerPlaceholders}

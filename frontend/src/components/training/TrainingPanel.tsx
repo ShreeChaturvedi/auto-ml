@@ -3,12 +3,13 @@
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
+  ArrowRight,
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
@@ -350,12 +351,19 @@ export function TrainingPanel() {
                 <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                      Training Locked: Feature Pipeline Approval Required
+                      Feature Pipeline Approval Required
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
+                  <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-2">
                     <p>Approve a Feature Engineering pipeline before starting model training.</p>
                     <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
+                    <Link
+                      to={`/project/${projectId}/feature-engineering`}
+                      className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200/60 hover:bg-amber-200 dark:bg-amber-800/40 dark:hover:bg-amber-800/60 text-amber-900 dark:text-amber-100 transition-colors"
+                    >
+                      Open Feature Engineering
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
                   </CardContent>
                 </Card>
               ) : null}

@@ -49,7 +49,7 @@ export async function searchDocuments(options: SearchOptions): Promise<DocumentS
     chunkId: row.chunk_id as string,
     documentId: row.document_id as string,
     filename: row.filename as string,
-    score: Number(Number(row.score).toFixed(4)),
+    score: Math.round(Number(row.score) * 10000) / 10000,
     snippet: buildSnippet(row.content as string),
     span: row.span ?? { start: 0, end: 0 }
   }));

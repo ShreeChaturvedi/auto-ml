@@ -1,23 +1,20 @@
 import { appLogger } from '../logging/logger.js';
 import { getErrorMessage } from '../utils/errors.js';
 
-const MIME_TEXT = new Set([
-  'text/plain',
-  'text/markdown',
-  'text/md',
-  'text/x-markdown',
-  'text/html',
-  'text/xml',
-  'application/xml',
-  'application/xhtml+xml',
-  'application/json'
-]);
-
 const MARKUP_MIMES = new Set([
   'text/html',
   'text/xml',
   'application/xml',
   'application/xhtml+xml'
+]);
+
+const MIME_TEXT = new Set([
+  'text/plain',
+  'text/markdown',
+  'text/md',
+  'text/x-markdown',
+  'application/json',
+  ...MARKUP_MIMES
 ]);
 
 const DOCX_MIME_TYPES = new Set([

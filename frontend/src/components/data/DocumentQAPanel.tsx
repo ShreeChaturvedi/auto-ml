@@ -1,14 +1,17 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, FileText, Loader2, MessageSquare, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
-import { getAnswer, type AnswerResponse } from '@/lib/api/documents';
+import { getAnswer, type AnswerResponse, type AnswerCitation } from '@/lib/api/documents';
+
+const MAX_ENTRIES = 50;
 
 interface QAEntry {
   id: string;
   question: string;
-  answer: AnswerResponse['answer'] | null;
+  answerText: string | null;
+  citations: AnswerCitation[];
+  meta: AnswerResponse['answer']['meta'] | null;
   loading: boolean;
   error: string | null;
 }
@@ -22,22 +25,31 @@ interface DocumentQAPanelProps {
 export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: DocumentQAPanelProps) {
   const [entries, setEntries] = useState<QAEntry[]>([]);
   const [input, setInput] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom when entries change
+  useEffect(() => {
+    if (entries.length === 0) return;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    });
+  }, [entries.length]);
 
   const handleAsk = useCallback(async () => {
     const question = input.trim();
     if (!question || !projectId) return;
 
     const id = crypto.randomUUID();
-    const entry: QAEntry = { id, question, answer: null, loading: true, error: null };
-    setEntries((prev) => [...prev, entry]);
+    const entry: QAEntry = { id, question, answerText: null, citations: [], meta: null, loading: true, error: null };
+    setEntries((prev) => [...prev.slice(-(MAX_ENTRIES - 1)), entry]);
     setInput('');
 
     try {
-      const response = await getAnswer(projectId, question, 5);
+      const { answer } = await getAnswer(projectId, question, 5);
       setEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, answer: response.answer, loading: false } : e))
+        prev.map((e) => (e.id === id
+          ? { ...e, answerText: answer.answer, citations: answer.citations, meta: answer.meta, loading: false }
+          : e))
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to get answer';
@@ -45,11 +57,6 @@ export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: Doc
         prev.map((e) => (e.id === id ? { ...e, error: message, loading: false } : e))
       );
     }
-
-    // Scroll to bottom after render
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-    });
   }, [input, projectId]);
 
   const handleKeyDown = useCallback(
@@ -80,7 +87,6 @@ export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: Doc
 
   return (
     <div className="flex h-full w-full flex-col border-l bg-card">
-      {/* Header */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-muted-foreground" />
@@ -97,7 +103,6 @@ export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: Doc
         </Button>
       </div>
 
-      {/* Messages */}
       <ScrollArea className="flex-1 px-3 py-2" ref={scrollRef}>
         {entries.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
@@ -109,13 +114,11 @@ export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: Doc
         <div className="space-y-4">
           {entries.map((entry) => (
             <div key={entry.id} className="space-y-2">
-              {/* Question */}
               <div className="flex gap-2">
                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                 <p className="text-sm font-medium">{entry.question}</p>
               </div>
 
-              {/* Answer */}
               {entry.loading && (
                 <div className="flex items-center gap-2 pl-6 text-sm text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -125,31 +128,31 @@ export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: Doc
               {entry.error && (
                 <div className="pl-6 text-sm text-destructive">{entry.error}</div>
               )}
-              {entry.answer && (
+              {entry.answerText && (
                 <div className="space-y-2 pl-6">
-                  <p className="text-sm whitespace-pre-wrap">{entry.answer.answer}</p>
-                  {entry.answer.citations.length > 0 && (
+                  <p className="text-sm whitespace-pre-wrap">{entry.answerText}</p>
+                  {entry.citations.length > 0 && (
                     <div className="space-y-1">
                       <p className="text-xs font-medium text-muted-foreground">Sources:</p>
-                      {entry.answer.citations.map((cite, i) => (
+                      {entry.citations.map((cite, i) => (
                         <div
                           key={cite.chunkId}
                           className="flex items-center gap-1.5 text-xs text-muted-foreground"
                         >
                           <FileText className="h-3 w-3 shrink-0" />
-                          <span className={cn('truncate', 'max-w-[200px]')}>
+                          <span className="truncate max-w-[200px]">
                             [{i + 1}] {cite.filename}
                           </span>
                         </div>
                       ))}
                     </div>
                   )}
-                  {entry.answer.meta && (
+                  {entry.meta && (
                     <p className="text-[10px] text-muted-foreground/60">
-                      {entry.answer.meta.chunksConsidered} chunks searched
-                      {entry.answer.meta.cached && ' (cached)'}
+                      {entry.meta.chunksConsidered} chunks searched
+                      {entry.meta.cached && ' (cached)'}
                       {' \u00b7 '}
-                      {entry.answer.meta.latencyMs}ms
+                      {entry.meta.latencyMs}ms
                     </p>
                   )}
                 </div>
@@ -159,11 +162,9 @@ export function DocumentQAPanel({ projectId, collapsed, onCollapsedChange }: Doc
         </div>
       </ScrollArea>
 
-      {/* Input */}
       <div className="shrink-0 border-t p-3">
         <div className="flex gap-2">
           <textarea
-            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

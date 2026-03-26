@@ -51,6 +51,8 @@ build:
 
 test:
   stage: test
+  variables:
+    NODE_OPTIONS: --max-old-space-size=4096
   script:
     - npm run test
   cache:

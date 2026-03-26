@@ -86,6 +86,7 @@ export const createRunManagementSlice: StateCreator<
       nextRunCellMode: 'continue',
       latestCheckpointId: null,
       assistantMessages: [],
+      controllerSummary: null,
       error: null
     });
   }

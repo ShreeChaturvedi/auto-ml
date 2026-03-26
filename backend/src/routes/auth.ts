@@ -26,6 +26,7 @@ import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
 import type { AuthenticatedRequest } from '../types/auth.js';
+import { sendBadRequest, sendConflict, sendUnauthorized, sendNotFound } from '../utils/errors.js';
 
 import { handleGoogleAuth, handleGoogleCallback } from './auth/oauthHandler.js';
 
@@ -81,7 +82,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const existing = await userRepository.findByEmail(email);
       if (existing) {
-        return res.status(409).json({ error: 'Email already registered' });
+        sendConflict(res, 'Email already registered');
+        return;
       }
 
       const password_hash = await authService.hashPassword(password);
@@ -113,12 +115,14 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const userWithHash = await userRepository.findByEmail(email);
       if (!userWithHash) {
-        return res.status(401).json({ error: 'Invalid email or password' });
+        sendUnauthorized(res, 'Invalid email or password');
+        return;
       }
 
       const validPassword = await authService.verifyPassword(password, userWithHash.password_hash);
       if (!validPassword) {
-        return res.status(401).json({ error: 'Invalid email or password' });
+        sendUnauthorized(res, 'Invalid email or password');
+        return;
       }
 
       const user = userRepository.toSafeUser(userWithHash);
@@ -149,14 +153,16 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     asyncHandler(async (req, res) => {
       const { refreshToken } = req.body;
       if (!refreshToken) {
-        return res.status(400).json({ error: 'Refresh token required' });
+        sendBadRequest(res, 'Refresh token required');
+        return;
       }
 
       const tokenHash = authService.hashRefreshToken(refreshToken);
       const tokenRecord = await userRepository.findRefreshToken(tokenHash);
 
-      if (!tokenRecord || new Date() > tokenRecord.expires_at) {
-        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      if (!tokenRecord || tokenRecord.revoked || new Date() > tokenRecord.expires_at) {
+        sendUnauthorized(res, 'Invalid or expired refresh token');
+        return;
       }
 
       // Reuse detection: a revoked token being presented is a compromise signal.
@@ -169,7 +175,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const user = await userRepository.findById(tokenRecord.user_id);
       if (!user) {
-        return res.status(401).json({ error: 'User not found' });
+        sendNotFound(res, 'User');
+        return;
       }
 
       // Rotate: revoke the old refresh token, issue a new pair
@@ -251,7 +258,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       const tokenRecord = await userRepository.findPasswordResetToken(tokenHash);
 
       if (!tokenRecord || tokenRecord.used || new Date() > tokenRecord.expires_at) {
-        return res.status(400).json({ error: 'Invalid or expired reset token' });
+        sendBadRequest(res, 'Invalid or expired reset token');
+        return;
       }
 
       const password_hash = await authService.hashPassword(password);
@@ -275,12 +283,14 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       if (updates.newPassword) {
         if (!updates.currentPassword) {
-          return res.status(400).json({ error: 'Current password required' });
+          sendBadRequest(res, 'Current password required');
+          return;
         }
 
         const userWithHash = await userRepository.findByEmail(req.user.email);
         if (!userWithHash) {
-          return res.status(404).json({ error: 'User not found' });
+          sendNotFound(res, 'User');
+          return;
         }
 
         const validPassword = await authService.verifyPassword(
@@ -288,7 +298,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
           userWithHash.password_hash
         );
         if (!validPassword) {
-          return res.status(401).json({ error: 'Current password is incorrect' });
+          sendUnauthorized(res, 'Current password is incorrect');
+          return;
         }
 
         const password_hash = await authService.hashPassword(updates.newPassword);

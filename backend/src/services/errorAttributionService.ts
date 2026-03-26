@@ -7,14 +7,15 @@ import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ErrorAnalysisResult } from '../types/experiments.js';
 import type { ModelTaskType } from '../types/model.js';
 import {
+  copyArtifactsToPermanentStorage,
+  orchestrateContainerExecution,
+} from '../utils/containerOrchestrator.js';
+
+import {
   buildOutputDirSetup,
   buildResultSaving,
   buildStandardImports,
 } from './pythonScriptUtils.js';
-import {
-  copyArtifactsToPermanentStorage,
-  orchestrateContainerExecution,
-} from '../utils/containerOrchestrator.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
 

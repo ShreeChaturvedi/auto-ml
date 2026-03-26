@@ -8,9 +8,8 @@
  * - Loading and error states
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { SafeUser } from '../types/user';
+import { createPersistedStore } from './utils/createPersistedStore';
 
 interface AuthState {
   user: SafeUser | null;
@@ -28,55 +27,53 @@ interface AuthState {
   setError: (error: string | null) => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
+export const useAuthStore = createPersistedStore<AuthState>(
+  'auth',
+  (set) => ({
+    user: null,
+    accessToken: null,
+    refreshToken: null,
+    isAuthenticated: false,
+    isLoading: false,
+    error: null,
 
-      setUser: (user) =>
-        set({
-          user,
-          isAuthenticated: !!user,
-          error: null
-        }),
-
-      setTokens: (accessToken, refreshToken) =>
-        set({ accessToken, refreshToken }),
-
-      clearAuth: () =>
-        set({
-          user: null,
-          accessToken: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          error: null
-        }),
-
-      setLoading: (loading) => set({ isLoading: loading }),
-
-      setError: (error) => set({ error })
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        user: state.user
+    setUser: (user) =>
+      set({
+        user,
+        isAuthenticated: !!user,
+        error: null
       }),
-      merge: (persistedState, currentState) => {
-        const persisted = persistedState as Partial<AuthState> | undefined;
 
-        return {
-          ...currentState,
-          ...persisted,
-          isAuthenticated: !!persisted?.user
-        };
-      }
+    setTokens: (accessToken, refreshToken) =>
+      set({ accessToken, refreshToken }),
+
+    clearAuth: () =>
+      set({
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        error: null
+      }),
+
+    setLoading: (loading) => set({ isLoading: loading }),
+
+    setError: (error) => set({ error })
+  }),
+  (state) => ({
+    accessToken: state.accessToken,
+    refreshToken: state.refreshToken,
+    user: state.user
+  }),
+  {
+    fullName: 'auth-storage',
+    merge: (persistedState, currentState) => {
+      const persisted = persistedState as Partial<AuthState> | undefined;
+      return {
+        ...currentState,
+        ...persisted,
+        isAuthenticated: !!persisted?.user
+      };
     }
-  )
+  }
 );

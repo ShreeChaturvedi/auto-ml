@@ -15,6 +15,7 @@ import { ingestDocument } from '../services/documentIngestion.js';
 import { parseDocument } from '../services/documentParser.js';
 import { searchDocuments } from '../services/documentSearchService.js';
 import type { AuthRequest } from '../types/auth.js';
+import { sendBadRequest, sendError, sendInternalError, sendNotFound } from '../utils/errors.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,11 +41,13 @@ export function createDocumentRouter() {
     // Project ownership is verified by requireProjectAccess middleware
 
     if (!req.file) {
-      return res.status(400).json({ error: 'file field is required' });
+      sendBadRequest(res, 'file field is required');
+      return;
     }
 
     if (!hasDatabaseConfiguration()) {
-      return res.status(503).json({ error: 'Database is not configured for document ingestion' });
+      sendError(res, 503, 'Database is not configured for document ingestion');
+      return;
     }
 
     try {
@@ -78,10 +81,9 @@ export function createDocumentRouter() {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Return more specific error message for debugging
-      return res.status(500).json({
-        error: 'Failed to ingest document',
-        details: process.env.NODE_ENV !== 'production' ? errorMessage : undefined
-      });
+      sendError(res, 500, 'Failed to ingest document',
+        process.env.NODE_ENV !== 'production' ? { message: errorMessage } : undefined
+      );
     }
   }));
 
@@ -91,11 +93,13 @@ export function createDocumentRouter() {
     const limit = Number.parseInt(String(req.query.k ?? '5'), 10);
 
     if (!query.trim()) {
-      return res.status(400).json({ error: 'q parameter is required' });
+      sendBadRequest(res, 'q parameter is required');
+      return;
     }
 
     if (!hasDatabaseConfiguration()) {
-      return res.status(503).json({ error: 'Database is not configured for document search' });
+      sendError(res, 503, 'Database is not configured for document search');
+      return;
     }
 
     const results = await searchDocuments({
@@ -111,7 +115,8 @@ export function createDocumentRouter() {
 
   router.get('/documents', asyncHandler(async (req, res) => {
     if (!hasDatabaseConfiguration()) {
-      return res.status(503).json({ error: 'Database is not configured for document listing' });
+      sendError(res, 503, 'Database is not configured for document listing');
+      return;
     }
 
     const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
@@ -145,13 +150,14 @@ export function createDocumentRouter() {
       return res.json({ documents });
     } catch (error) {
       appLogger.error('[documents] Failed to list documents:', error);
-      return res.status(500).json({ error: 'Failed to list documents' });
+      sendInternalError(res, 'Failed to list documents', error);
     }
   }));
 
   router.get('/documents/:documentId/download', asyncHandler(async (req: AuthRequest, res) => {
     if (!hasDatabaseConfiguration()) {
-      return res.status(503).json({ error: 'Database is not configured for document download' });
+      sendError(res, 503, 'Database is not configured for document download');
+      return;
     }
 
     const { documentId } = req.params;
@@ -166,7 +172,8 @@ export function createDocumentRouter() {
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Document not found' });
+        sendNotFound(res, 'Document');
+        return;
       }
 
       const row = result.rows[0];
@@ -175,14 +182,16 @@ export function createDocumentRouter() {
       if (req.user && projectId) {
         const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
         if (!project) {
-          return res.status(404).json({ error: 'Document not found' });
+          sendNotFound(res, 'Document');
+          return;
         }
       }
 
       const storagePath = row.storage_path as string | null;
 
       if (!storagePath || !existsSync(storagePath)) {
-        return res.status(404).json({ error: 'Document file not found on disk' });
+        sendNotFound(res, 'Document file');
+        return;
       }
 
       res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
@@ -196,13 +205,14 @@ export function createDocumentRouter() {
       return stream.pipe(res);
     } catch (error) {
       appLogger.error('[documents] Failed to download document:', error);
-      return res.status(500).json({ error: 'Failed to download document' });
+      sendInternalError(res, 'Failed to download document', error);
     }
   }));
 
   router.delete('/documents/:documentId', asyncHandler(async (req: AuthRequest, res) => {
     if (!hasDatabaseConfiguration()) {
-      return res.status(503).json({ error: 'Database is not configured for document deletion' });
+      sendError(res, 503, 'Database is not configured for document deletion');
+      return;
     }
 
     const { documentId } = req.params;
@@ -215,7 +225,8 @@ export function createDocumentRouter() {
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Document not found' });
+        sendNotFound(res, 'Document');
+        return;
       }
 
       const row = result.rows[0];
@@ -224,7 +235,8 @@ export function createDocumentRouter() {
       if (req.user && projectId) {
         const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
         if (!project) {
-          return res.status(404).json({ error: 'Document not found' });
+          sendNotFound(res, 'Document');
+          return;
         }
       }
 
@@ -239,7 +251,7 @@ export function createDocumentRouter() {
       return res.json({ success: true });
     } catch (error) {
       appLogger.error('[documents] Failed to delete document:', error);
-      return res.status(500).json({ error: 'Failed to delete document' });
+      sendInternalError(res, 'Failed to delete document', error);
     }
   }));
 

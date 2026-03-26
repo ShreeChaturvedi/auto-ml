@@ -1,5 +1,4 @@
 import { readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { Router } from 'express';
 
@@ -15,7 +14,8 @@ import { getProjectRepository } from '../repositories/projectRepository.js';
 import { loadDatasetIntoPostgres, resolveDatasetTableName } from '../services/datasetLoader.js';
 import { getWorkflowRepository } from '../services/workflows/repository/index.js';
 import type { AuthRequest } from '../types/auth.js';
-import { getErrorMessage } from '../utils/errors.js';
+import { getErrorMessage, sendNotFound } from '../utils/errors.js';
+import { getDatasetPath } from '../utils/pathUtils.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
 import { regenerateProjectNlSuggestionsSilently } from './datasets/nlSuggestions.js';
@@ -53,14 +53,14 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
 
       if (req.user && dataset.projectId) {
         const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
         if (!project) {
-          res.status(404).json({ error: 'Dataset not found' });
+          sendNotFound(res, 'Dataset');
           return;
         }
       }
@@ -81,13 +81,13 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
       if (req.user && dataset.projectId) {
         const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
         if (!project) {
-          res.status(404).json({ error: 'Dataset not found' });
+          sendNotFound(res, 'Dataset');
           return;
         }
       }
@@ -103,13 +103,13 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
       if (req.user && dataset.projectId) {
         const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
         if (!project) {
-          res.status(404).json({ error: 'Dataset not found' });
+          sendNotFound(res, 'Dataset');
           return;
         }
       }
@@ -125,20 +125,19 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
 
       if (req.user && dataset.projectId) {
         const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
         if (!project) {
-          res.status(404).json({ error: 'Dataset not found' });
+          sendNotFound(res, 'Dataset');
           return;
         }
       }
 
-      const datasetDir = join(env.datasetStorageDir, datasetId);
-      const filePath = join(datasetDir, dataset.filename);
+      const filePath = getDatasetPath(datasetId, dataset.filename);
 
       let buffer: Buffer;
       try {
@@ -193,8 +192,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
       for (const dataset of datasets) {
         try {
-          const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
-          const filePath = join(datasetDir, dataset.filename);
+          const filePath = getDatasetPath(dataset.datasetId, dataset.filename);
 
           let buffer: Buffer;
           try {
@@ -255,14 +253,14 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
 
       if (req.user && dataset.projectId) {
         const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
         if (!project) {
-          res.status(404).json({ error: 'Dataset not found' });
+          sendNotFound(res, 'Dataset');
           return;
         }
       }
@@ -284,12 +282,12 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
       const deleted = await datasetRepository.delete(datasetId);
       if (!deleted) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
 
       // Delete physical files
-      const datasetDir = join(env.datasetStorageDir, datasetId);
+      const datasetDir = getDatasetPath(datasetId);
       try {
         rmSync(datasetDir, { recursive: true, force: true });
       } catch (error) {

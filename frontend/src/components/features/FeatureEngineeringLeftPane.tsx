@@ -24,7 +24,7 @@ interface FeatureEngineeringLeftPaneProps {
   onOutputFormatChange: (format: 'csv' | 'json' | 'xlsx') => void;
   onApplyFeatures: () => Promise<void>;
   applyStatus: 'idle' | 'loading' | 'success' | 'error';
-  applyMessage: string;
+  applyMessage: string | null;
   activeFeatures: FeatureSpec[];
   onApprove: () => void;
   onNewDraft: () => void;

@@ -203,7 +203,7 @@ describe('authStore', () => {
             accessToken: 'persisted-access',
             refreshToken: 'persisted-refresh'
           },
-          version: 0
+          version: 1
         })
       );
 

@@ -1,3 +1,4 @@
+import { appLogger } from '../../logging/logger.js';
 import type { LlmEnvelope } from '../../types/llm.js';
 import { UiSchema } from '../../types/llmUi.js';
 
@@ -204,7 +205,7 @@ export function normalizeUiPayload(payload: unknown, kind: 'feature_engineering'
     return parsed.data;
   }
 
-  console.warn('[llm] normalizeUiPayload failed validation', {
+  appLogger.warn('[llm] normalizeUiPayload failed validation', {
     issues: parsed.error.issues.slice(0, 5).map((issue) => ({
       path: issue.path.join('.'),
       message: issue.message

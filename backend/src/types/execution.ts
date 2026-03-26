@@ -17,7 +17,7 @@ export interface ExecutionRequest {
 }
 
 export interface RichOutput {
-  type: 'text' | 'table' | 'image' | 'html' | 'error' | 'chart';
+  type: 'text' | 'table' | 'image' | 'html' | 'error' | 'warning' | 'chart';
   content: string;
   data?: unknown;
   mimeType?: string;

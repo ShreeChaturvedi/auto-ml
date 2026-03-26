@@ -9,7 +9,7 @@
  * - No loading flash due to Monaco pre-loading
  */
 
-import { useState, Suspense, useMemo } from 'react';
+import { Suspense, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -28,6 +28,7 @@ import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import type { RichOutput } from '@/lib/api/execution';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { CodeCellOutput } from './CodeCellOutput';
 
@@ -52,7 +53,7 @@ export function CodeCell({
   isRunning,
   datasetFiles = []
 }: CodeCellProps) {
-  const [copied, setCopied] = useState(false);
+  const [copied, copy] = useCopyToClipboard();
 
   const completionOptions = useMemo(
     () => ({ datasetFiles }),
@@ -75,16 +76,6 @@ export function CodeCell({
     completionOptions,
     preloadMonaco: false
   });
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(localContent);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access can be denied by browser privacy settings.
-    }
-  };
 
   const richOutputs: RichOutput[] = cell.output?.data
     ? (Array.isArray(cell.output.data) ? cell.output.data : [cell.output])
@@ -136,7 +127,7 @@ export function CodeCell({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  onClick={handleCopy}
+                  onClick={() => void copy(localContent)}
                 >
                   {copied ? (
                     <Check className="h-2.5 w-2.5 text-green-500" />

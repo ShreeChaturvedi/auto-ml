@@ -2,9 +2,12 @@ import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agenti
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { useFeatureStore } from '@/stores/featureStore';
 import type { UploadedFile } from '@/types/file';
+import type { ColumnDataType } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import type { WorkflowArtifact } from '@/types/workflow';
+import type { NotebookPhaseMetadata } from '@/types/notebook';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
@@ -13,6 +16,8 @@ export interface FeatureEngineeringAdapterConfig {
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
   sessionKey: string;
+  notebookName?: string;
+  notebookMetadata?: NotebookPhaseMetadata;
 }
 
 function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
@@ -59,12 +64,43 @@ function buildFeatureSuggestions(
       }
     );
 
-    if (config.targetColumn) {
+    // Dataset-aware suggestions from profile
+    const datasetFile = config.datasetFiles.find(
+      (file) => file.metadata?.datasetId === config.datasetId
+    );
+    const profile = datasetFile?.metadata?.datasetProfile;
+
+    if (config.targetColumn && profile) {
+      const targetDtype: ColumnDataType | undefined = profile.dtypes[config.targetColumn];
+      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+
+      suggestions.push({
+        id: 'fe-initial-target-aware',
+        label: isClassification ? 'Classification features' : 'Regression features',
+        prompt: isClassification
+          ? `Recommend feature transformations for ${sourceName} optimized for classification on target "${config.targetColumn}".`
+          : `Recommend feature transformations for ${sourceName} optimized for regression on target "${config.targetColumn}".`
+      });
+    } else if (config.targetColumn) {
       suggestions.push({
         id: 'fe-initial-target-aware',
         label: 'Target-aware features',
         prompt: `Recommend feature transformations for ${sourceName} given target column "${config.targetColumn}".`
       });
+    }
+
+    if (profile) {
+      const dateCols = Object.entries(profile.dtypes)
+        .filter(([, dtype]) => dtype === 'date')
+        .map(([name]) => name);
+      if (dateCols.length > 0) {
+        const topDates = dateCols.slice(0, 2).join(', ');
+        suggestions.push({
+          id: 'fe-initial-temporal',
+          label: `Temporal features from ${topDates}`,
+          prompt: `Extract temporal features (day of week, month, year, time deltas) from date columns ${topDates} in ${sourceName}.`
+        });
+      }
     }
 
     if (config.documentFiles.length > 0) {
@@ -142,14 +178,20 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
       const output = result.output as Record<string, unknown> | undefined;
       const featureId = (output?.featureId ?? call.args?.featureId) as string | undefined;
 
-      if (featureId && output && !result.error) {
+      // Capture runId from tool output (backend now returns it)
+      if (output?.runId && typeof output.runId === 'string') {
+        store.setFeatureRunId(output.runId);
+      }
+
+      if (featureId) {
         store.setFeatureStep(featureId, {
           stepId: featureId,
-          name: (output.featureName ?? call.args?.featureName ?? featureId) as string,
-          method: (output.method ?? call.args?.method ?? call.tool) as string,
-          status: (output.status ?? 'ok') as string,
+          name: (output?.featureName ?? call.args?.featureName ?? featureId) as string,
+          method: (output?.method ?? call.args?.method ?? call.tool) as string,
+          status: result.error ? 'error' : (output?.status ?? 'ok') as string,
+          error: result.error,
           code: call.args?.code as string | undefined,
-          metrics: output.validation as Record<string, unknown> | undefined
+          metrics: output?.validation as Record<string, unknown> | undefined
         });
       }
     }
@@ -160,6 +202,17 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
     registry[tool] = toolHandlers;
   }
   return registry;
+}
+
+function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
+  // Prefer the first-class runId; fall back to runId inside payload for older events.
+  const runId = artifact.runId
+    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
+      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
+      : undefined);
+  if (runId) {
+    useFeatureStore.getState().setFeatureRunId(runId);
+  }
 }
 
 export function createFeatureEngineeringAdapter(
@@ -174,6 +227,23 @@ export function createFeatureEngineeringAdapter(
       }
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
+      const notebookStore = useNotebookStore.getState();
+      let notebookId = notebookStore.activeNotebookId ?? undefined;
+
+      if (!notebookId) {
+        const createdNotebook = await notebookStore.createNotebook(
+          config.notebookName ?? 'Feature Engineering Notebook',
+          config.notebookMetadata
+        );
+        notebookId = createdNotebook?.notebookId;
+      }
+
+      if (!notebookId) {
+        throw new Error(
+          'Feature engineering could not start because no notebook is available for execution.'
+        );
+      }
+
       await streamWorkflowTurn(
         {
           projectId: config.projectId,
@@ -181,7 +251,7 @@ export function createFeatureEngineeringAdapter(
           datasetId: config.datasetId,
           runId: session?.runId,
           threadId: session?.threadId,
-          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
+          notebookId,
           targetColumn: config.targetColumn,
           prompt,
           model: options.model,
@@ -196,6 +266,9 @@ export function createFeatureEngineeringAdapter(
       if (state.runId) {
         useFeatureStore.getState().setFeatureRunId(state.runId);
       }
+    },
+    onWorkflowArtifactUpdate: (artifact) => {
+      syncFeatureRunIdFromArtifact(artifact);
     },
     onRevert: () => {
       useFeatureStore.getState().clearDraft();

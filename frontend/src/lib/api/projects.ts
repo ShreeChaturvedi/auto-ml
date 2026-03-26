@@ -36,14 +36,14 @@ export async function listProjects() {
 export async function createProject(payload: ApiProjectPayload) {
   return apiRequest<{ project: ApiProject }>('/projects', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 
 export async function updateProject(id: string, payload: Partial<ApiProjectPayload>) {
   return apiRequest<{ project: ApiProject }>(`/projects/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 

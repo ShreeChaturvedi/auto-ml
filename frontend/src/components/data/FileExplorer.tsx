@@ -135,7 +135,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const location = useLocation();
   const { dataFiles, contextFiles, activeFileTabId, isOnDataViewer, handleOpenFile, handleDeleteFile, handleDownloadFile } = useFileActions(projectId);
   const { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan } = useProjectPlans(projectId);
-  const { themeColorClass } = useProjectThemeColor(projectId);
+  const { themeColorClass } = useProjectThemeColor();
 
   const isOnUpload = location.pathname.endsWith('/upload');
 

@@ -78,8 +78,12 @@ export interface LlmStreamState {
 
 // ── Hook ─────────────────────────────────────────────────────────────────
 
-export function useLlmStreamState(): LlmStreamState {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function useLlmStreamState(
+  externalSetMessages?: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+): LlmStreamState {
+  const [messages, rawSetMessages] = useState<ChatMessage[]>([]);
+  // When an external setter is provided, route all message mutations there.
+  const setMessages = externalSetMessages ?? rawSetMessages;
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionUsages, setSessionUsages] = useState<LlmUsage[]>([]);
@@ -97,7 +101,7 @@ export function useLlmStreamState(): LlmStreamState {
     setMessages((prev) => markThinkingMessageComplete(prev, thinkingId));
     currentThinkingIdRef.current = null;
     setActiveThinkingMessageId(null);
-  }, []);
+  }, [setMessages]);
 
   const closeTextStream = useCallback(() => {
     currentTextIdRef.current = null;
@@ -117,7 +121,7 @@ export function useLlmStreamState(): LlmStreamState {
         setMessages((prev) => appendAssistantTextDelta(prev, targetId, token));
       }
     },
-    [completeThinking]
+    [completeThinking, setMessages]
   );
 
   const appendThinking = useCallback(
@@ -133,7 +137,7 @@ export function useLlmStreamState(): LlmStreamState {
         setMessages((prev) => appendThinkingDelta(prev, targetId, text));
       }
     },
-    [closeTextStream]
+    [closeTextStream, setMessages]
   );
 
   const resetStreamRefs = useCallback(() => {
@@ -185,7 +189,7 @@ export function useLlmStreamState(): LlmStreamState {
       // envelope, ask_user, plan_exit — caller handles these
       return false;
     },
-    [appendToken, appendThinking, completeThinking, closeTextStream]
+    [appendToken, appendThinking, completeThinking, closeTextStream, setMessages]
   );
 
   return {

@@ -1,129 +1,119 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { computeTextEmbedding, cosineSimilarity, EMBEDDING_DIMENSION } from './embeddingService.js';
+const { createMock } = vi.hoisted(() => {
+  const createMock = vi.fn();
+  return { createMock };
+});
+
+vi.mock('openai', () => {
+  return {
+    default: class {
+      embeddings = { create: createMock };
+    }
+  };
+});
+
+import { computeTextEmbedding, computeEmbeddings, cosineSimilarity, EMBEDDING_DIMENSION } from './embeddingService.js';
+
+function makeFakeEmbedding(seed: number): number[] {
+  const vec = new Array<number>(1536).fill(0);
+  for (let i = 0; i < 1536; i += 1) {
+    vec[i] = Math.sin(seed + i) * 0.01;
+  }
+  return vec;
+}
 
 describe('embeddingService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe('EMBEDDING_DIMENSION', () => {
-    it('has default dimension of 64', () => {
-      expect(EMBEDDING_DIMENSION).toBe(64);
+    it('is 1536 for text-embedding-3-small', () => {
+      expect(EMBEDDING_DIMENSION).toBe(1536);
     });
   });
 
   describe('computeTextEmbedding', () => {
-    it('returns vector of correct default dimension', () => {
-      const embedding = computeTextEmbedding('hello world');
-      expect(embedding).toHaveLength(64);
-    });
-
-    it('returns vector of custom dimension', () => {
-      const embedding = computeTextEmbedding('hello world', 128);
-      expect(embedding).toHaveLength(128);
-    });
-
-    it('returns zero vector for empty string', () => {
-      const embedding = computeTextEmbedding('');
-      expect(embedding.every(v => v === 0)).toBe(true);
-    });
-
-    it('returns zero vector for whitespace-only string', () => {
-      const embedding = computeTextEmbedding('   \t\n  ');
-      expect(embedding.every(v => v === 0)).toBe(true);
-    });
-
-    it('returns normalized vector (unit length)', () => {
-      const embedding = computeTextEmbedding('the quick brown fox');
-      const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
-      expect(norm).toBeCloseTo(1, 5);
-    });
-
-    it('produces non-zero vector for non-empty text', () => {
-      const embedding = computeTextEmbedding('machine learning');
-      const hasNonZero = embedding.some(v => v !== 0);
-      expect(hasNonZero).toBe(true);
-    });
-
-    it('produces same embedding for same text', () => {
-      const text = 'consistent embedding test';
-      const embedding1 = computeTextEmbedding(text);
-      const embedding2 = computeTextEmbedding(text);
-      expect(embedding1).toEqual(embedding2);
-    });
-
-    it('produces different embeddings for different texts', () => {
-      const embedding1 = computeTextEmbedding('apple banana cherry');
-      const embedding2 = computeTextEmbedding('dog cat elephant');
-      expect(embedding1).not.toEqual(embedding2);
-    });
-
-    it('is case insensitive', () => {
-      const embedding1 = computeTextEmbedding('Hello World');
-      const embedding2 = computeTextEmbedding('hello world');
-      expect(embedding1).toEqual(embedding2);
-    });
-
-    it('handles special characters by tokenizing on whitespace', () => {
-      const embedding = computeTextEmbedding('hello! world? test@email.com');
-      expect(embedding).toHaveLength(64);
-      const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
-      expect(norm).toBeCloseTo(1, 5);
-    });
-
-    it('handles unicode text', () => {
-      const embedding = computeTextEmbedding('bonjour monde');
-      expect(embedding).toHaveLength(64);
-      const hasNonZero = embedding.some(v => v !== 0);
-      expect(hasNonZero).toBe(true);
-    });
-
-    it('values are within reasonable range', () => {
-      const embedding = computeTextEmbedding('test embedding values');
-      embedding.forEach(v => {
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThanOrEqual(1);
+    it('returns a 1536-dim vector from OpenAI', async () => {
+      const fakeVec = makeFakeEmbedding(42);
+      createMock.mockResolvedValue({
+        data: [{ index: 0, embedding: fakeVec }]
       });
+
+      const result = await computeTextEmbedding('hello world');
+      expect(result).toEqual(fakeVec);
+      expect(result).toHaveLength(1536);
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'text-embedding-3-small',
+          input: ['hello world']
+        })
+      );
+    });
+  });
+
+  describe('computeEmbeddings', () => {
+    it('returns empty array for empty input', async () => {
+      const result = await computeEmbeddings([]);
+      expect(result).toEqual([]);
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('batches multiple texts in one call', async () => {
+      const vec1 = makeFakeEmbedding(1);
+      const vec2 = makeFakeEmbedding(2);
+      createMock.mockResolvedValue({
+        data: [
+          { index: 0, embedding: vec1 },
+          { index: 1, embedding: vec2 }
+        ]
+      });
+
+      const result = await computeEmbeddings(['text one', 'text two']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual(vec1);
+      expect(result[1]).toEqual(vec2);
+    });
+
+    it('sorts results by index', async () => {
+      const vec0 = makeFakeEmbedding(10);
+      const vec1 = makeFakeEmbedding(20);
+      createMock.mockResolvedValue({
+        data: [
+          { index: 1, embedding: vec1 },
+          { index: 0, embedding: vec0 }
+        ]
+      });
+
+      const result = await computeEmbeddings(['first', 'second']);
+      expect(result[0]).toEqual(vec0);
+      expect(result[1]).toEqual(vec1);
     });
   });
 
   describe('cosineSimilarity', () => {
     it('returns 1 for identical vectors', () => {
       const vec = [0.5, 0.5, 0.5, 0.5];
-      const similarity = cosineSimilarity(vec, vec);
-      expect(similarity).toBeCloseTo(1, 5);
+      expect(cosineSimilarity(vec, vec)).toBeCloseTo(1, 5);
     });
 
     it('returns 0 for orthogonal vectors', () => {
       const vec1 = [1, 0, 0, 0];
       const vec2 = [0, 1, 0, 0];
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBeCloseTo(0, 5);
+      expect(cosineSimilarity(vec1, vec2)).toBeCloseTo(0, 5);
     });
 
     it('returns -1 for opposite vectors', () => {
-      const vec1 = [1, 0];
-      const vec2 = [-1, 0];
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBeCloseTo(-1, 5);
+      expect(cosineSimilarity([1, 0], [-1, 0])).toBeCloseTo(-1, 5);
     });
 
     it('returns 0 for vectors of different lengths', () => {
-      const vec1 = [1, 2, 3];
-      const vec2 = [1, 2];
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBe(0);
+      expect(cosineSimilarity([1, 2, 3], [1, 2])).toBe(0);
     });
 
     it('returns 0 for zero vectors', () => {
-      const vec1 = [0, 0, 0];
-      const vec2 = [0, 0, 0];
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBe(0);
-    });
-
-    it('returns 0 when one vector is zero', () => {
-      const vec1 = [1, 2, 3];
-      const vec2 = [0, 0, 0];
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBe(0);
+      expect(cosineSimilarity([0, 0, 0], [0, 0, 0])).toBe(0);
     });
 
     it('is commutative', () => {
@@ -132,30 +122,8 @@ describe('embeddingService', () => {
       expect(cosineSimilarity(vec1, vec2)).toBeCloseTo(cosineSimilarity(vec2, vec1), 10);
     });
 
-    it('works with normalized vectors', () => {
-      const vec1 = computeTextEmbedding('similar text here');
-      const vec2 = computeTextEmbedding('similar text here');
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBeCloseTo(1, 5);
-    });
-
-    it('returns high similarity for similar texts', () => {
-      const vec1 = computeTextEmbedding('machine learning algorithms');
-      const vec2 = computeTextEmbedding('machine learning models');
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBeGreaterThan(0.5);
-    });
-
-    it('returns lower similarity for different texts', () => {
-      const vec1 = computeTextEmbedding('machine learning');
-      const vec2 = computeTextEmbedding('cooking recipes');
-      const similarity = cosineSimilarity(vec1, vec2);
-      expect(similarity).toBeLessThan(0.5);
-    });
-
     it('handles empty arrays', () => {
-      const similarity = cosineSimilarity([], []);
-      expect(similarity).toBe(0);
+      expect(cosineSimilarity([], [])).toBe(0);
     });
   });
 });

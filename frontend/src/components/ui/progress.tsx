@@ -3,10 +3,18 @@ import * as ProgressPrimitive from "@radix-ui/react-progress"
 
 import { cn } from "@/lib/utils"
 
+interface ProgressProps
+  extends React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> {
+  /** Optional inline styles for the indicator (e.g. themed backgroundColor). */
+  indicatorStyle?: React.CSSProperties;
+  /** Optional Tailwind class for the indicator bg (e.g. from projectColorClasses.fill). Overrides default bg-primary. */
+  indicatorClassName?: string;
+}
+
 const Progress = React.forwardRef<
-  React.ElementRef<typeof ProgressPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root>
->(({ className, value, ...props }, ref) => (
+  React.ComponentRef<typeof ProgressPrimitive.Root>,
+  ProgressProps
+>(({ className, value, indicatorStyle, indicatorClassName, ...props }, ref) => (
   <ProgressPrimitive.Root
     ref={ref}
     className={cn(
@@ -16,15 +24,11 @@ const Progress = React.forwardRef<
     {...props}
   >
     <ProgressPrimitive.Indicator
-      className="h-full w-full flex-1 bg-primary transition-all"
-      style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
+      className={cn("h-full w-full flex-1 transition-all", indicatorClassName || "bg-primary")}
+      style={{ transform: `translateX(-${100 - (value || 0)}%)`, ...indicatorStyle }}
     />
   </ProgressPrimitive.Root>
 ))
 Progress.displayName = ProgressPrimitive.Root.displayName
 
 export { Progress }
-
-
-
-

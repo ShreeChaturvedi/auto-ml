@@ -28,7 +28,8 @@ const {
     upsertArtifact: vi.fn(),
     upsertApproval: vi.fn(),
     upsertHandoff: vi.fn(),
-    upsertNotebookBinding: vi.fn()
+    upsertNotebookBinding: vi.fn(),
+    findActiveRun: vi.fn(async () => undefined)
   }
 }));
 
@@ -44,6 +45,9 @@ vi.mock('../repositories/datasetRepository.js', () => ({
 
 vi.mock('../repositories/projectRepository.js', () => ({
   createProjectRepository: vi.fn(() => ({
+    getById: projectGetByIdMock
+  })),
+  getProjectRepository: vi.fn(() => ({
     getById: projectGetByIdMock
   }))
 }));
@@ -123,10 +127,9 @@ describeRouteSuite('workflow routes answer turns', () => {
   });
 
   it('streams shared workflow events for a feature-engineering answer turn', async () => {
-    llmCompleteMock.mockResolvedValueOnce(JSON.stringify({
-      kind: 'assistant_message',
-      message: 'Start with null-drift, leakage, and schema validation before engineering new features.'
-    }));
+    (llmStreamMock as ReturnType<typeof vi.fn>).mockImplementationOnce(async (_req: unknown, h: Record<string, (...a: unknown[]) => void>) => {
+      h.onToken('Start with null-drift, leakage, and schema validation before engineering new features.');
+    });
 
     const response = await request(createTestApp())
       .post('/api/workflows/turns/stream')
@@ -138,7 +141,7 @@ describeRouteSuite('workflow routes answer turns', () => {
       });
 
     expect(response.status).toBe(200);
-    expect(llmStreamMock).not.toHaveBeenCalled();
+    expect(llmStreamMock).toHaveBeenCalled();
 
     const events = response.text
       .trim()

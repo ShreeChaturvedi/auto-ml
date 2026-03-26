@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 
 import { WebSocket } from 'ws';
 
+import { appLogger } from '../logging/logger.js';
 import type { ExecutionResult, RichOutput } from '../types/execution.js';
 
 import { executeOnKernel } from './kernel/execution.js';
@@ -103,6 +104,48 @@ def _display_df(df):
     from IPython.display import display, HTML
     display(HTML(df.to_html(max_rows=100, max_cols=50, notebook=True)))
 
+# Preprocessing helpers — called by generated cell code so the user sees
+# exactly what runs (no invisible wrapping).
+def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
+    """Load a dataset into the kernel namespace, reusing a cached copy if available."""
+    import pandas as pd
+    cache_key = "_automl_ds_" + df_name
+    if cache_key in globals() and isinstance(globals()[cache_key], pd.DataFrame):
+        globals()[df_name] = globals()[cache_key]
+        return globals()[df_name]
+    path = resolve_dataset_path(filename, dataset_id)
+    if file_type == "json":
+        try:
+            frame = pd.read_json(path)
+        except ValueError:
+            frame = pd.read_json(path, lines=True)
+    elif file_type == "xlsx":
+        frame = pd.read_excel(path)
+    else:
+        frame = pd.read_csv(path)
+    globals()[df_name] = frame
+    globals()[cache_key] = frame
+    globals()["dataset_path"] = path
+    globals()["active_dataset_id"] = dataset_id
+    return frame
+
+def save_preprocessing_dataset(filename, dataset_id, file_type, df_name):
+    """Validate the dataframe and write it back to disk."""
+    import pandas as pd
+    frame = globals().get(df_name)
+    if frame is None:
+        raise ValueError(f"Preprocessing cell must leave the active dataframe in variable '{df_name}'.")
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError(f"Preprocessing variable '{df_name}' must be a pandas DataFrame.")
+    path = resolve_dataset_path(filename, dataset_id)
+    if file_type == "json":
+        frame.to_json(path, orient="records")
+    elif file_type == "xlsx":
+        frame.to_excel(path, index=False)
+    else:
+        frame.to_csv(path, index=False)
+    globals()["_automl_ds_" + df_name] = frame
+
 print("Kernel initialized")
 `.trim();
 
@@ -186,7 +229,7 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
     try {
         await execute(container, KERNEL_INIT_CODE, 30_000);
     } catch (err) {
-        console.warn(
+        appLogger.warn(
             `[kernelManager] Kernel init failed for container ${container.id}:`,
             err instanceof Error ? err.message : err,
         );
@@ -245,6 +288,10 @@ export async function restartKernel(container: KernelContainer): Promise<void> {
     // Reconnect WebSocket with fresh session
     conn.sessionId = randomUUID();
     conn.ws = await openWebSocket(wsUrl(container, conn.kernelId));
+
+    // Re-run init code so helpers (resolve_dataset_path, load/save_preprocessing_dataset)
+    // survive kernel restarts — fixes #132.
+    await execute(container, KERNEL_INIT_CODE, 30_000);
 }
 
 /**
@@ -268,7 +315,7 @@ export async function shutdownKernel(container: KernelContainer): Promise<void> 
     try {
         await gatewayFetch(conn, `/api/kernels/${conn.kernelId}`, 'DELETE', 'shut down');
     } catch (err) {
-        console.warn(`[kernelManager] Error shutting down kernel ${conn.kernelId}:`, err);
+        appLogger.warn(`[kernelManager] Error shutting down kernel ${conn.kernelId}:`, err);
     }
 
     kernels.delete(container.id);

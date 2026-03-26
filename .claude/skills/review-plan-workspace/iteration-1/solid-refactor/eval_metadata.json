@@ -1,0 +1,37 @@
+{
+  "eval_id": 3,
+  "eval_name": "solid-refactor",
+  "prompt": "Review a solid NlQueryWorkflow component refactoring plan",
+  "assertions": [
+    {
+      "id": "overall-positive",
+      "text": "Recognizes the plan is fundamentally sound (not overly critical of a good plan)",
+      "type": "content_check"
+    },
+    {
+      "id": "existing-hooks-check",
+      "text": "Mentions checking existing hooks (useNlSuggestions or similar) for overlap with proposed extractions",
+      "type": "content_check"
+    },
+    {
+      "id": "sse-cleanup",
+      "text": "Mentions SSE/stream cleanup (abort controller, memory leak prevention) for cancelStream",
+      "type": "content_check"
+    },
+    {
+      "id": "test-impact",
+      "text": "Discusses impact on existing tests or test utils beyond what the plan covers",
+      "type": "content_check"
+    },
+    {
+      "id": "proportional-criticism",
+      "text": "Criticism is proportional — mostly minor suggestions, not blocking issues for a clean refactor",
+      "type": "tone_check"
+    },
+    {
+      "id": "structured-output",
+      "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list",
+      "type": "format_check"
+    }
+  ]
+}

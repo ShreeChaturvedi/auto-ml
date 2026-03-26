@@ -1,4 +1,4 @@
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 import { readNdjsonStream } from './streamReader';
 import type { EdaSummary } from '@/types/file';
 
@@ -14,6 +14,13 @@ export interface NlQueryRequest {
   projectId: string;
   query: string;
   tableName?: string;
+}
+
+export interface WorkflowPlaceholders {
+  preprocessing: string[];
+  featureEngineering: string[];
+  training: string[];
+  explore?: string[];
 }
 
 export interface NlSuggestion {
@@ -142,7 +149,7 @@ export type NlQueryStreamEvent =
 export async function executeSqlQuery(request: SqlQueryRequest) {
   return apiRequest<{ query: QueryResultPayload }>('/query/sql', {
     method: 'POST',
-    body: JSON.stringify(request),
+    body: request,
   });
 }
 
@@ -151,7 +158,7 @@ export async function executeNlQuery(request: NlQueryRequest) {
     nl: NlQueryResponsePayload;
   }>('/query/nl', {
     method: 'POST',
-    body: JSON.stringify(request),
+    body: request,
   });
 }
 
@@ -165,6 +172,7 @@ export async function fetchNlSuggestions(projectId: string, limit = 8) {
     suggestions: NlSuggestion[];
     cached: boolean;
     schemaFingerprint: string;
+    workflowPlaceholders?: WorkflowPlaceholders;
   }>(`/query/nl/suggestions?${search.toString()}`, {
     method: 'GET'
   });
@@ -175,10 +183,10 @@ export async function streamNlQuery(
   onEvent: (event: NlQueryStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  const response = await fetch(`${getApiBaseUrl()}/query/nl/stream`, {
+  const response = await apiFetch('/query/nl/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-    body: JSON.stringify(request),
+    headers: { Accept: 'application/x-ndjson' },
+    body: request,
     signal
   });
 

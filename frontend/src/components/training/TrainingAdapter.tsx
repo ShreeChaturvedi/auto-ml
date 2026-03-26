@@ -48,11 +48,40 @@ function buildTrainingSuggestions(
 
   if (!hasUserMessages) {
     if (datasetFiles.length > 0) {
-      suggestions.push(
-        {
+      // Infer task type from target column dtype
+      const datasetFile = datasetFiles.find((f) => f.metadata?.datasetId === config.datasetId);
+      const profile = datasetFile?.metadata?.datasetProfile;
+      const targetDtype = config.targetColumn && profile
+        ? profile.dtypes[config.targetColumn]
+        : undefined;
+      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+      const isRegression = targetDtype === 'integer' || targetDtype === 'float';
+
+      if (isClassification) {
+        suggestions.push({
+          id: 'train-initial-baseline',
+          label: 'Classification baseline',
+          prompt: `Train a classification baseline on target "${config.targetColumn}" with cross-validation and appropriate metrics.`
+        });
+      } else if (isRegression) {
+        suggestions.push({
+          id: 'train-initial-baseline',
+          label: 'Regression baseline',
+          prompt: `Train a regression baseline on target "${config.targetColumn}" with cross-validation and error metrics.`
+        });
+      } else {
+        suggestions.push({
           id: 'train-initial-baseline',
           label: 'Baseline model',
           prompt: 'Suggest a strong baseline training plan for this dataset with sensible defaults.'
+        });
+      }
+
+      suggestions.push(
+        {
+          id: 'train-initial-recommend',
+          label: 'Recommend a model',
+          prompt: 'Analyze the dataset and recommend the best model template with tuned parameters.'
         },
         {
           id: 'train-initial-target',
@@ -152,7 +181,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             experimentId: output.experimentId as string,
             experimentName: (output.experimentName as string) ?? 'Untitled',
             modelType: (output.modelType as string) ?? 'unknown',
@@ -168,7 +197,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: 'proposed'
           });
         }
@@ -181,7 +210,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: output.status === 'failed' ? 'failed' : 'training'
           });
         }
@@ -194,7 +223,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: 'evaluated',
             metrics: (output.metrics as Record<string, unknown>) ?? {}
           });
@@ -208,7 +237,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
       onResult: (_call, result) => {
         const output = result.output as Record<string, unknown> | undefined;
         if (output?.experimentId) {
-          store().updateExperiment(output.experimentId as string, {
+          store().updateTrainingRun(output.experimentId as string, {
             status: 'registered',
             metrics: (output.metrics as Record<string, unknown>) ?? {}
           });

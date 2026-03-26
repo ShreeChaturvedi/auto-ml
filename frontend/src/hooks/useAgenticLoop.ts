@@ -1,14 +1,16 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { ChatMessage, ToolCall, UiSchema } from '@/types/llmUi';
 import type { BuildRequestOptions, DomainAdapter } from '@/types/agentic';
 import { markAllThinkingMessagesComplete } from '@/lib/llm/streamMessageUtils';
-import { useLlmStreamState } from '@/hooks/useLlmStreamState';
 import { createAgenticEventHandler } from '@/hooks/agenticLoopEvents';
-import { hydrateStoredMessages, persistStoredMessages } from '@/hooks/agenticLoopStorage';
 import { applyBackendToolExecution, rebuildToolHistoryFromMessages } from '@/hooks/agenticToolMessages';
 import { useToolExecution } from '@/hooks/useToolExecution';
 import { getMessagesUpToTurn, getTurnIndex } from '@/lib/llm/turnUtils';
+import { useStreamingState } from '@/hooks/useStreamingState';
+import { useMessageAccumulator } from '@/hooks/useMessageAccumulator';
+import { persistStoredMessages } from '@/hooks/agenticLoopStorage';
 import type { WorkflowState } from '@/types/workflow';
+
 export interface UseAgenticLoopOptions {
   projectId?: string;
   storageKey?: string;
@@ -24,84 +26,67 @@ export function useAgenticLoop({
   domainAdapter,
   domainLockReason
 }: UseAgenticLoopOptions) {
-  const stream = useLlmStreamState();
-  const {
-    messages, setMessages,
-    isStreaming, setIsStreaming,
-    error, setError,
-    sessionUsages,
-    activeTextMessageId, activeThinkingMessageId,
-    handleStreamEvent, resetStreamRefs,
-    completeThinking, closeTextStream,
-    appendToken,
-    currentTextIdRef,
-  } = stream;
+  // --- Composed hooks ---
+  const { toolHistoryRef, resetToolHistory } = useToolExecution();
 
-  const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
+  // --- UI state ---
   const [uiSchema, setUiSchema] = useState<UiSchema | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
-  const activeRequestIdRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
-  const skipPersistOnceRef = useRef(false);
-  const savepointsRef = useRef<Record<number, string>>({});
+  // --- Message accumulator (before streaming so setMessages is available) ---
+  const accumulator = useMessageAccumulator({
+    storageKey,
+    projectId,
+    sessionVersion
+  });
+  const {
+    setMessages, messages: accMessages, resetAccumulator,
+    skipPersistOnceRef, messageStorageScope, savepointsRef,
+    hydratedMessageIds, setHydratedMessageIds
+  } = accumulator;
 
-  const { toolHistoryRef, resetToolHistory } = useToolExecution();
+  // --- Streaming state (routes all message mutations to accumulator) ---
+  const streaming = useStreamingState(setMessages);
+  const {
+    cancelCurrentRequest, setIsStreaming, setError, completeThinking,
+    closeTextStream, resetStreamRefs, startRequest, appendToken,
+    handleStreamEvent, isRequestCurrent, activeRequestIdRef,
+    currentTextIdRef, abortRef, isStreaming, error, sessionUsages,
+    activeTextMessageId, activeThinkingMessageId
+  } = streaming;
 
-  const messageStorageScope = storageKey && projectId
-    ? `${storageKey}-${projectId}`
-    : null;
-
+  // --- Setup: reset on session change ---
   useEffect(() => {
     skipPersistOnceRef.current = true;
-    activeRequestIdRef.current += 1;
-    abortRef.current?.abort();
-    abortRef.current = null;
+    cancelCurrentRequest();
     resetStreamRefs();
     resetToolHistory();
     setIsStreaming(false);
     setError(null);
     setUiSchema(null);
-    setHydratedMessageIds(new Set());
-
-    const hydrated = hydrateStoredMessages(messageStorageScope);
-    setMessages(hydrated.messages);
-    setHydratedMessageIds(hydrated.hydratedMessageIds);
-    savepointsRef.current = hydrated.savepoints;
-  }, [messageStorageScope, sessionVersion, resetStreamRefs, resetToolHistory, setIsStreaming, setError, setMessages]);
-
-  useEffect(() => {
-    if (!messageStorageScope) return;
-    if (skipPersistOnceRef.current) {
-      skipPersistOnceRef.current = false;
-      return;
-    }
-    persistStoredMessages(messageStorageScope, messages, savepointsRef.current);
-  }, [messageStorageScope, messages]);
+  }, [ // eslint-disable-line react-hooks/exhaustive-deps
+    messageStorageScope, sessionVersion, cancelCurrentRequest, resetStreamRefs,
+    resetToolHistory, setIsStreaming, setError
+  ]);
 
   const handleStop = useCallback(() => {
-    activeRequestIdRef.current += 1;
-    abortRef.current?.abort();
-    abortRef.current = null;
+    cancelCurrentRequest();
     setIsStreaming(false);
     domainAdapter.onStop?.('Stopped by user.');
     setMessages(markAllThinkingMessagesComplete);
     completeThinking();
     closeTextStream();
     resetStreamRefs();
-  }, [domainAdapter, setIsStreaming, completeThinking, closeTextStream, resetStreamRefs, setMessages]);
+  }, [domainAdapter, cancelCurrentRequest, setIsStreaming, setMessages, completeThinking, closeTextStream, resetStreamRefs]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
-    stream.setSessionUsages([]);
     resetToolHistory();
     setUiSchema(null);
     setHydratedMessageIds(new Set());
     resetStreamRefs();
-    if (messageStorageScope) {
-      localStorage.removeItem(messageStorageScope);
-    }
-  }, [messageStorageScope, setMessages, stream, resetToolHistory, resetStreamRefs]);
+    resetAccumulator();
+  }, [setMessages, setHydratedMessageIds, resetToolHistory, resetStreamRefs, resetAccumulator]);
 
   const appendUiSchema = useCallback((schema: UiSchema) => {
     setUiSchema(schema);
@@ -115,7 +100,7 @@ export function useAgenticLoop({
     nextState?: WorkflowState
   ) => {
     applyBackendToolExecution(call, result, domainAdapter, toolHistoryRef, setMessages, nextState);
-  }, [domainAdapter, setMessages, toolHistoryRef]);
+  }, [domainAdapter, toolHistoryRef, setMessages]);
 
   const runLoop = useCallback(async (
     prompt: string,
@@ -129,10 +114,9 @@ export function useAgenticLoop({
       return;
     }
 
-    abortRef.current?.abort();
-    const requestId = ++activeRequestIdRef.current;
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const requestId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = requestId;
+    const controller = startRequest();
     completeThinking();
     closeTextStream();
 
@@ -191,7 +175,7 @@ export function useAgenticLoop({
       );
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      if (requestId !== activeRequestIdRef.current) return;
+      if (!isRequestCurrent(requestId)) return;
       const message = err instanceof Error ? err.message : 'Failed to execute loop.';
       setError(message);
       domainAdapter.onStreamError?.(message);
@@ -205,18 +189,13 @@ export function useAgenticLoop({
     }
   }, [
     appendBackendToolExecution,
-    appendToken,
     appendUiSchema,
-    closeTextStream,
-    completeThinking,
-    currentTextIdRef,
     domainAdapter,
     domainLockReason,
-    handleStreamEvent,
     resetToolHistory,
-    setError,
-    setIsStreaming,
-    setMessages
+    setError, setIsStreaming, setMessages, startRequest, completeThinking,
+    closeTextStream, activeRequestIdRef, currentTextIdRef, handleStreamEvent,
+    appendToken, isRequestCurrent, abortRef
   ]);
 
   const editMessage = useCallback((msgId: string, newContent: string) => {
@@ -241,12 +220,12 @@ export function useAgenticLoop({
     // 2. Prune savepoints FIRST (before any persist call reads the ref)
     const prunedSavepoints: Record<number, string> = {};
     for (const [k, v] of Object.entries(savepointsRef.current)) {
-      if (Number(k) < turnIndex) prunedSavepoints[Number(k)] = v;
+      if (Number(k) < turnIndex) prunedSavepoints[Number(k)] = v as string;
     }
     savepointsRef.current = prunedSavepoints;
 
     // 3. Slice messages to before this turn (keeps turns 0..turnIndex-1)
-    const slicedMessages = getMessagesUpToTurn(messages, turnIndex);
+    const slicedMessages = getMessagesUpToTurn(accMessages, turnIndex);
 
     if (slicedMessages.length === 0) {
       // Reverting before first turn — clear everything
@@ -278,9 +257,9 @@ export function useAgenticLoop({
     setEditingMessageId(null);
     setError(null);
   }, [
-    isStreaming, handleStop, messages, messageStorageScope,
-    setMessages, resetToolHistory, toolHistoryRef,
-    domainAdapter, resetStreamRefs, setError
+    isStreaming, handleStop, savepointsRef, accMessages, skipPersistOnceRef,
+    setMessages, setHydratedMessageIds, messageStorageScope, resetToolHistory,
+    toolHistoryRef, domainAdapter, resetStreamRefs, setError
   ]);
 
   /**
@@ -292,7 +271,7 @@ export function useAgenticLoop({
     newContent: string,
     requestOptions: BuildRequestOptions
   ) => {
-    const turnIdx = getTurnIndex(messages, messageId);
+    const turnIdx = getTurnIndex(accMessages, messageId);
     if (turnIdx === -1) return;
 
     revertToTurn(turnIdx);
@@ -300,15 +279,15 @@ export function useAgenticLoop({
 
     // Start fresh run with edited content
     void runLoop(newContent, requestOptions);
-  }, [messages, revertToTurn, runLoop]);
+  }, [accMessages, revertToTurn, runLoop]);
 
   /** Register a savepoint ID for a turn index (called externally by useSavepoints). */
   const registerSavepoint = useCallback((turnIndex: number, savepointId: string) => {
     savepointsRef.current = { ...savepointsRef.current, [turnIndex]: savepointId };
-  }, []);
+  }, [savepointsRef]);
 
   return {
-    messages,
+    messages: accMessages,
     setMessages,
     isGenerating: isStreaming,
     error,

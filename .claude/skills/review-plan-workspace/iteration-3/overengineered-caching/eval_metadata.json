@@ -1,0 +1,17 @@
+{
+  "eval_id": 1,
+  "eval_name": "overengineered-caching",
+  "prompt": "Review a plan to add Redis caching to NL suggestions when DB caching already exists",
+  "assertions": [
+    {"id": "existing-cache-layers", "text": "Identifies at least 4 distinct caching layers: Postgres repo, inflight dedup Map, schema fingerprint keying, and frontend Zustand store", "type": "depth_check"},
+    {"id": "getSuggestions-pure-read", "text": "Identifies that getSuggestions() is a pure cache read that NEVER calls the LLM", "type": "depth_check"},
+    {"id": "pg-notify-race", "text": "Identifies that pg_notify would race with existing synchronous invalidation (regenerateProjectNlSuggestionsSilently calls)", "type": "depth_check"},
+    {"id": "ttl-contradicts-fingerprint", "text": "Explains why TTL-based expiry contradicts the fingerprint-based design (suggestions don't go stale with time, only schema changes)", "type": "depth_check"},
+    {"id": "missing-files-list", "text": "Lists specific files the plan forgot to include (config.ts, package.json, scripts/dev/run.mjs, or test files)", "type": "depth_check"},
+    {"id": "colocation-convention", "text": "Notes that existing caches are colocated with services (queryCache.ts, answerService.ts) not in a separate cache/ directory", "type": "depth_check"},
+    {"id": "quantified-alternative", "text": "Proposes an alternative with a concrete size estimate (e.g., '~15 lines', 'zero dependencies')", "type": "quality_check"},
+    {"id": "test-strategy-gap", "text": "Identifies that the plan has no test strategy and enumerates specific test types needed", "type": "depth_check"},
+    {"id": "structured-output", "text": "Review uses Critical/Strong/Minor priority structure", "type": "format_check"},
+    {"id": "line-number-refs", "text": "References at least 3 specific line numbers from the actual codebase", "type": "quality_check"}
+  ]
+}

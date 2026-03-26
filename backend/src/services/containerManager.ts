@@ -13,6 +13,7 @@ import { join, resolve } from 'path';
 import { promisify } from 'util';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 
 import {
     cleanupStaleContainers,
@@ -22,6 +23,7 @@ import {
 } from './container/containerCleanup.js';
 import { buildDockerRunArgs } from './container/dockerBuilder.js';
 import { ensureRuntimeImage } from './container/imageManager.js';
+import { ensureIsolatedNetwork } from './container/networkManager.js';
 export type { Container, ContainerConfig } from './container/types.js';
 import type { Container, ContainerConfig } from './container/types.js';
 import { execDocker } from './dockerUtils.js';
@@ -65,6 +67,9 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
     await mkdir(join(workspacePath, '.tmp'), { recursive: true });
     await mkdir(join(workspacePath, '.cache', 'pip'), { recursive: true });
 
+    // Ensure the isolated network exists before launching the container
+    await ensureIsolatedNetwork();
+
     // Build docker run command with security constraints
     const imageName = await ensureRuntimeImage(config.pythonVersion);
     const containerName = `automl-exec-${id.slice(0, 8)}`;
@@ -86,7 +91,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
             const portMatch = portOutput.match(/:(\d+)/);
             kernelGatewayPort = portMatch ? parseInt(portMatch[1], 10) : 0;
         } catch {
-            console.warn('[containerManager] Could not read Kernel Gateway port mapping');
+            appLogger.warn('[containerManager] Could not read Kernel Gateway port mapping');
         }
 
         const container: Container = {
@@ -101,7 +106,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
         };
 
         containers.set(id, container);
-        console.log(`[containerManager] Created container ${containerName} (${containerId.slice(0, 12)})`);
+        appLogger.info(`[containerManager] Created container ${containerName} (${containerId.slice(0, 12)})`);
 
         // Wait for Kernel Gateway to be ready
         if (kernelGatewayPort > 0) {
@@ -151,9 +156,9 @@ export async function destroyContainer(containerId: string): Promise<void> {
         await rm(container.workspacePath, { recursive: true, force: true }).catch(() => { });
 
         containers.delete(containerId);
-        console.log(`[containerManager] Destroyed container ${container.containerId.slice(0, 12)}`);
+        appLogger.info(`[containerManager] Destroyed container ${container.containerId.slice(0, 12)}`);
     } catch (error) {
-        console.error(`[containerManager] Failed to destroy container: ${error}`);
+        appLogger.error(`[containerManager] Failed to destroy container: ${error}`);
     }
 }
 
@@ -179,7 +184,7 @@ export async function getOrCreateContainer(config: ContainerConfig): Promise<Con
             // the container so execution can proceed.
             const workspacePath = resolve(container.workspacePath);
             if (!existsSync(workspacePath)) {
-                console.warn('[containerManager] Workspace missing for active container; recreating container:', {
+                appLogger.warn('[containerManager] Workspace missing for active container; recreating container:', {
                     containerId: container.containerId,
                     workspacePath
                 });
@@ -213,7 +218,7 @@ setInterval(() => cleanupStaleContainers(containers, destroyContainer), 5 * 60 *
  * Must be called before accepting any execution requests.
  */
 export async function initializeContainerManager(): Promise<void> {
-    console.log('[containerManager] Initializing...');
+    appLogger.info('[containerManager] Initializing...');
 
     // Clean up any orphaned containers from previous runs
     const cleaned = await killOrphanedContainers();
@@ -221,5 +226,5 @@ export async function initializeContainerManager(): Promise<void> {
     // Clean up orphaned workspace directories
     await cleanupOrphanedWorkspaces();
 
-    console.log(`[containerManager] Initialization complete (cleaned ${cleaned} containers)`);
+    appLogger.info(`[containerManager] Initialization complete (cleaned ${cleaned} containers)`);
 }

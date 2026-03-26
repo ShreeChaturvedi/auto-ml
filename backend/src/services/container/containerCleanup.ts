@@ -11,6 +11,7 @@ import { resolve } from 'path';
 import { join } from 'path';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import { execDocker } from '../dockerUtils.js';
 import { clearJediInstallState } from '../pythonCompletions.js';
 
@@ -48,20 +49,20 @@ export async function killOrphanedContainers(): Promise<number> {
         const containerIds = stdout.trim().split('\n').filter(Boolean);
 
         if (containerIds.length === 0) {
-            console.log('[containerManager] No orphaned containers found');
+            appLogger.info('[containerManager] No orphaned containers found');
             return 0;
         }
 
-        console.log(`[containerManager] Found ${containerIds.length} orphaned container(s), cleaning up...`);
+        appLogger.info(`[containerManager] Found ${containerIds.length} orphaned container(s), cleaning up...`);
 
         // Force remove all matching containers
         await execDocker(['rm', '-f', ...containerIds]);
 
-        console.log(`[containerManager] Cleaned up ${containerIds.length} orphaned container(s)`);
+        appLogger.info(`[containerManager] Cleaned up ${containerIds.length} orphaned container(s)`);
         return containerIds.length;
     } catch (error) {
         // Ignore errors - containers may already be gone or Docker unavailable
-        console.warn('[containerManager] Error cleaning up orphaned containers:', error);
+        appLogger.warn('[containerManager] Error cleaning up orphaned containers:', error);
         return 0;
     }
 }
@@ -89,9 +90,9 @@ export async function cleanupOrphanedWorkspaces(): Promise<void> {
             await rm(entryPath, { recursive: true, force: true }).catch(() => {});
         }
 
-        console.log(`[containerManager] Cleaned up ${entries.length} orphaned workspace(s)`);
+        appLogger.info(`[containerManager] Cleaned up ${entries.length} orphaned workspace(s)`);
     } catch (error) {
-        console.warn('[containerManager] Error cleaning up orphaned workspaces:', error);
+        appLogger.warn('[containerManager] Error cleaning up orphaned workspaces:', error);
     }
 }
 
@@ -108,7 +109,7 @@ export async function destroyAllContainers(
         return;
     }
 
-    console.log(`[containerManager] Destroying ${containerList.length} active container(s)...`);
+    appLogger.info(`[containerManager] Destroying ${containerList.length} active container(s)...`);
 
     await Promise.all(
         containerList.map(([id]) => destroyContainer(id).catch(() => {}))
@@ -117,5 +118,5 @@ export async function destroyAllContainers(
     // Clear the jedi tracking set too
     clearJediInstallState();
 
-    console.log('[containerManager] All containers destroyed');
+    appLogger.info('[containerManager] All containers destroyed');
 }

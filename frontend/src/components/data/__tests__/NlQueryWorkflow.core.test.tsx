@@ -3,31 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useProjectStore } from '@/stores/projectStore';
 
-const { mockFetchNlSuggestions } = vi.hoisted(() => ({
-  mockFetchNlSuggestions: vi.fn().mockResolvedValue({
-    suggestions: [
-      {
-        id: 'suggestion-1',
-        prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
-        label: 'Weekly revenue trends',
-        category: 'trend',
-        tables: ['orders'],
-        rationale: 'Uses time and revenue metrics.'
-      }
-    ],
-    cached: false,
-    schemaFingerprint: 'test-schema'
-  })
-}));
-
-vi.mock('@/lib/api/query', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/api/query')>('@/lib/api/query');
-  return {
-    ...actual,
-    fetchNlSuggestions: mockFetchNlSuggestions
-  };
-});
-
 import { NlQueryWorkflow } from '../NlQueryWorkflow';
 import type { NlGenerationResult } from '@/types/nlQuery';
 import {
@@ -40,7 +15,6 @@ import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
 
 describe('NlQueryWorkflow core behavior', () => {
   beforeEach(() => {
-    mockFetchNlSuggestions.mockClear();
     useProjectStore.setState({
       activeProjectId: null
     });
@@ -51,12 +25,26 @@ describe('NlQueryWorkflow core behavior', () => {
     expect(screen.getByRole('textbox')).toBeInTheDocument();
   });
 
-  it('loads dynamic placeholder suggestions when a project id is present', async () => {
-    render(<NlQueryWorkflow {...buildProps({ projectId: 'project-123', englishQuery: '' })} />);
+  it('renders provided suggestions as placeholder prompts', async () => {
+    render(
+      <NlQueryWorkflow
+        {...buildProps({
+          englishQuery: '',
+          suggestions: [
+            {
+              id: 'suggestion-1',
+              prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
+              label: 'Weekly revenue trends',
+              category: 'trend',
+              tables: ['orders'],
+              rationale: 'Uses time and revenue metrics.'
+            }
+          ]
+        })}
+      />
+    );
 
-    await vi.waitFor(() => {
-      expect(mockFetchNlSuggestions).toHaveBeenCalledWith('project-123', 8);
-    });
+    expect(await screen.findAllByText(/compare weekly revenue and average order value/i)).not.toHaveLength(0);
   });
 
   it('calls onQueryChange when user types in the textarea', () => {

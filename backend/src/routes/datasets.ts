@@ -1,39 +1,44 @@
-import { readFileSync, existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, rmSync } from 'node:fs';
 
 import { Router } from 'express';
 
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { loadDatasetIntoPostgres, sanitizeTableName } from '../services/datasetLoader.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
+import { loadDatasetIntoPostgres, resolveDatasetTableName } from '../services/datasetLoader.js';
+import { getWorkflowRepository } from '../services/workflows/repository/index.js';
+import type { AuthRequest } from '../types/auth.js';
+import { getErrorMessage, sendNotFound } from '../utils/errors.js';
+import { getDatasetPath } from '../utils/pathUtils.js';
 
 import { updateColumnType } from './datasets/columnHandler.js';
+import { regenerateProjectNlSuggestionsSilently } from './datasets/nlSuggestions.js';
+import { getDatasetRows } from './datasets/rowHandler.js';
 import { handleDatasetUpload, processDatasetUpload } from './datasets/uploadHandler.js';
 
 export function createDatasetUploadRouter(repository?: DatasetRepository) {
   const router = Router();
   const datasetRepository = repository ?? createDatasetRepository(env.datasetMetadataPath);
+  const projectRepository = getProjectRepository();
 
   // ── List datasets ──────────────────────────────────────────────────
   router.get(
     '/datasets',
     asyncHandler(async (req, res) => {
       const projectId = req.query.projectId as string | undefined;
-      let datasets = await datasetRepository.list();
-
-      if (projectId) {
-        datasets = datasets.filter((d) => d.projectId === projectId);
-      }
+      const datasets = projectId
+        ? await datasetRepository.listByProject(projectId)
+        : await datasetRepository.list();
 
       const withTableNames = datasets.map((dataset) => ({
         ...dataset,
-        tableName:
-          typeof dataset.metadata?.tableName === 'string'
-            ? dataset.metadata.tableName
-            : sanitizeTableName(dataset.filename, dataset.datasetId)
+        tableName: resolveDatasetTableName(dataset)
       }));
 
       res.json({ datasets: withTableNames });
@@ -43,12 +48,21 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Get dataset sample ─────────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/sample',
-    asyncHandler(async (req, res) => {
+    validateUuidParams('datasetId'),
+    asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
+      }
+
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          sendNotFound(res, 'Dataset');
+          return;
+        }
       }
 
       res.json({
@@ -59,10 +73,46 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     })
   );
 
+  // ── Get paged dataset rows ─────────────────────────────────────────
+  router.get(
+    '/datasets/:datasetId/rows',
+    validateUuidParams('datasetId'),
+    asyncHandler(async (req: AuthRequest, res) => {
+      const { datasetId } = req.params;
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        sendNotFound(res, 'Dataset');
+        return;
+      }
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          sendNotFound(res, 'Dataset');
+          return;
+        }
+      }
+      await getDatasetRows(req, res, datasetRepository);
+    })
+  );
+
   // ── Update column type ─────────────────────────────────────────────
   router.put(
     '/datasets/:datasetId/columns/:columnName',
-    asyncHandler(async (req, res) => {
+    validateUuidParams('datasetId'),
+    asyncHandler(async (req: AuthRequest, res) => {
+      const { datasetId } = req.params;
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) {
+        sendNotFound(res, 'Dataset');
+        return;
+      }
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          sendNotFound(res, 'Dataset');
+          return;
+        }
+      }
       await updateColumnType(req, res, datasetRepository);
     })
   );
@@ -70,23 +120,35 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Download dataset file ──────────────────────────────────────────
   router.get(
     '/datasets/:datasetId/download',
-    asyncHandler(async (req, res) => {
+    validateUuidParams('datasetId'),
+    asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
 
-      const datasetDir = join(env.datasetStorageDir, datasetId);
-      const filePath = join(datasetDir, dataset.filename);
-
-      if (!existsSync(filePath)) {
-        res.status(404).json({ error: 'Dataset file not found on disk' });
-        return;
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          sendNotFound(res, 'Dataset');
+          return;
+        }
       }
 
-      const buffer = readFileSync(filePath);
+      const filePath = getDatasetPath(datasetId, dataset.filename);
+
+      let buffer: Buffer;
+      try {
+        buffer = readFileSync(filePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          res.status(404).json({ error: 'Dataset file not found on disk' });
+          return;
+        }
+        throw error;
+      }
 
       const contentTypes: Record<string, string> = {
         csv: 'text/csv',
@@ -105,7 +167,8 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   router.post(
     '/upload/dataset',
     handleDatasetUpload,
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: AuthRequest, res) => {
+      // Project ownership is verified by requireProjectAccess middleware
       await processDatasetUpload(req, res, datasetRepository);
     })
   );
@@ -129,15 +192,18 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
 
       for (const dataset of datasets) {
         try {
-          const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
-          const filePath = join(datasetDir, dataset.filename);
+          const filePath = getDatasetPath(dataset.datasetId, dataset.filename);
 
-          if (!existsSync(filePath)) {
-            results.skipped.push(dataset.datasetId);
-            continue;
+          let buffer: Buffer;
+          try {
+            buffer = readFileSync(filePath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+              results.skipped.push(dataset.datasetId);
+              continue;
+            }
+            throw error;
           }
-
-          const buffer = readFileSync(filePath);
           const { tableName, rowsLoaded } = await loadDatasetIntoPostgres({
             datasetId: dataset.datasetId,
             filename: dataset.filename,
@@ -146,7 +212,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
             columns: dataset.columns
           });
 
-          console.log(
+          appLogger.info(
             `[datasets] Migrated ${dataset.filename} -> "${tableName}" (${rowsLoaded} rows)`
           );
           await datasetRepository.update(dataset.datasetId, (current) => ({
@@ -160,18 +226,18 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
           }));
           results.migrated.push(dataset.datasetId);
         } catch (error) {
-          console.error(
+          appLogger.error(
             `[datasets] Migration failed for ${dataset.filename}:`,
-            error instanceof Error ? error.message : String(error)
+            getErrorMessage(error, String(error))
           );
           results.errors.push({
             datasetId: dataset.datasetId,
-            error: error instanceof Error ? error.message : String(error)
+            error: getErrorMessage(error, String(error))
           });
         }
       }
 
-      console.log(
+      appLogger.info(
         `[datasets] Migration complete: ${results.migrated.length} migrated, ${results.skipped.length} skipped, ${results.errors.length} errors`
       );
 
@@ -182,45 +248,73 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
   // ── Delete dataset ─────────────────────────────────────────────────
   router.delete(
     '/datasets/:datasetId',
-    asyncHandler(async (req, res) => {
+    validateUuidParams('datasetId'),
+    asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
       const dataset = await datasetRepository.getById(datasetId);
       if (!dataset) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
+        return;
+      }
+
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+          sendNotFound(res, 'Dataset');
+          return;
+        }
+      }
+
+      // Pre-deletion guard: reject if active workflows reference this dataset
+      const workflowRepo = getWorkflowRepository();
+      const referencingRuns = await workflowRepo.findRunsByDataset(datasetId);
+      const activeWorkflows = referencingRuns.filter(
+        (r) => r.status === 'running' || r.status === 'paused'
+      );
+      if (activeWorkflows.length > 0) {
+        res.status(409).json({
+          error: 'DATASET_IN_USE',
+          message: `Cannot delete dataset: referenced by ${activeWorkflows.length} active workflow(s).`,
+          activeRunIds: activeWorkflows.map((r) => r.runId)
+        });
         return;
       }
 
       const deleted = await datasetRepository.delete(datasetId);
       if (!deleted) {
-        res.status(404).json({ error: 'Dataset not found' });
+        sendNotFound(res, 'Dataset');
         return;
       }
 
       // Delete physical files
-      const datasetDir = join(env.datasetStorageDir, datasetId);
-      if (existsSync(datasetDir)) {
+      const datasetDir = getDatasetPath(datasetId);
+      try {
         rmSync(datasetDir, { recursive: true, force: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
       }
 
       // Drop Postgres table if it exists
       if (hasDatabaseConfiguration()) {
         try {
           const pool = getDbPool();
-          const tableName =
-            typeof dataset.metadata?.tableName === 'string'
-              ? dataset.metadata.tableName
-              : sanitizeTableName(dataset.filename, dataset.datasetId);
+          const tableName = resolveDatasetTableName(dataset);
 
           await pool.query(`DROP TABLE IF EXISTS "${tableName}"`);
         } catch (error) {
-          console.error(
+          appLogger.error(
             `[datasets] Failed to drop table:`,
-            error instanceof Error ? error.message : String(error)
+            getErrorMessage(error, String(error))
           );
         }
       }
 
-      console.log(`[datasets] Deleted ${datasetId}`);
+      appLogger.info(`[datasets] Deleted ${datasetId}`);
+
+      await regenerateProjectNlSuggestionsSilently(dataset.projectId, 'delete');
+
       res.json({ success: true });
     })
   );

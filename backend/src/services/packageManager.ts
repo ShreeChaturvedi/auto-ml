@@ -5,6 +5,7 @@
  * within Docker containers used for sandboxed Python execution.
  */
 
+import { appLogger } from '../logging/logger.js';
 import type { PackageInfo } from '../types/execution.js';
 
 import type { Container } from './containerManager.js';
@@ -162,7 +163,7 @@ export async function listPackages(container: Container): Promise<PackageInfo[]>
         }
         return parsed.filter((pkg) => Boolean(pkg?.name));
     } catch (error) {
-        console.warn('[packageManager] Failed to list packages:', error);
+        appLogger.warn('[packageManager] Failed to list packages:', error);
         return [];
     }
 }
@@ -183,7 +184,7 @@ export async function installPackageStream(
     const baseArgs = pipInstallBaseArgs(container.containerId);
 
     onEvent({ type: 'progress', progress: 8, stage: 'Checking wheels' });
-    console.info(`[containerManager] pip install phase -> checking-wheels (${requirements.join(', ')})`);
+    appLogger.info(`[containerManager] pip install phase -> checking-wheels (${requirements.join(', ')})`);
 
     const binaryAttempt = await runPipInstallStream(
         [...baseArgs, '--only-binary', ':all:', ...requirements],
@@ -193,7 +194,7 @@ export async function installPackageStream(
 
     if (binaryAttempt.success) {
         onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
-        console.info(`[containerManager] pip install phase -> completed (binary-attempt, ${requirements.join(', ')})`);
+        appLogger.info(`[containerManager] pip install phase -> completed (binary-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`
@@ -217,7 +218,7 @@ export async function installPackageStream(
     }
 
     onEvent({ type: 'progress', progress: 35, stage: 'Building from source' });
-    console.info(`[containerManager] pip install phase -> building-from-source (${requirements.join(', ')})`);
+    appLogger.info(`[containerManager] pip install phase -> building-from-source (${requirements.join(', ')})`);
 
     const sourceAttempt = await runPipInstallStream(
         [...baseArgs, ...requirements],
@@ -227,7 +228,7 @@ export async function installPackageStream(
 
     if (sourceAttempt.success) {
         onEvent({ type: 'progress', progress: 100, stage: 'Completed' });
-        console.info(`[containerManager] pip install phase -> completed (source-attempt, ${requirements.join(', ')})`);
+        appLogger.info(`[containerManager] pip install phase -> completed (source-attempt, ${requirements.join(', ')})`);
         return {
             success: true,
             message: `${aliasNotice}Successfully installed ${requirements.join(', ')}`

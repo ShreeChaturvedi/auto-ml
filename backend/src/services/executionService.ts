@@ -7,6 +7,7 @@
 import { randomUUID } from 'crypto';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import type {
     ExecutionRequest,
     ExecutionResult,
@@ -69,23 +70,23 @@ export async function createSession(
             session.containerId = container.id;
             session.workspacePath = container.workspacePath;
             await syncWorkspaceDatasets(projectId, container.workspacePath).catch((error) => {
-                console.warn('[executionService] Failed to sync datasets:', error);
+                appLogger.warn('[executionService] Failed to sync datasets:', error);
             });
             try {
                 session.installedPackages = await containerListPackages(container);
             } catch (error) {
-                console.warn('[executionService] Failed to read installed packages:', error);
+                appLogger.warn('[executionService] Failed to read installed packages:', error);
             }
         } catch (error) {
             if (options.requireDocker) {
                 throw error;
             }
-            console.warn('[executionService] Docker container creation failed:', error);
+            appLogger.warn('[executionService] Docker container creation failed:', error);
         }
     }
 
     sessions.set(id, session);
-    console.log(`[executionService] Created session ${id} for project ${projectId}`);
+    appLogger.info(`[executionService] Created session ${id} for project ${projectId}`);
 
     return session;
 }
@@ -140,14 +141,14 @@ export async function executeCode(request: ExecutionRequest): Promise<ExecutionR
             session.containerId = container.id;
             session.workspacePath = container.workspacePath;
         } catch (error) {
-            console.warn('[executionService] Container recreation failed:', error);
+            appLogger.warn('[executionService] Container recreation failed:', error);
             return buildErrorResult('Failed to create a runtime container.', startTime);
         }
     }
 
     if (session.workspacePath) {
         await syncWorkspaceDatasets(session.projectId, session.workspacePath).catch((error) => {
-            console.warn('[executionService] Failed to sync datasets:', error);
+            appLogger.warn('[executionService] Failed to sync datasets:', error);
         });
     }
 
@@ -158,7 +159,7 @@ export async function executeCode(request: ExecutionRequest): Promise<ExecutionR
             request.timeout || env.executionTimeoutMs
         );
     } catch (error) {
-        console.warn('[executionService] Container execution failed:', error);
+        appLogger.warn('[executionService] Container execution failed:', error);
         return buildErrorResult('Python execution failed inside the runtime container.', startTime);
     }
 }
@@ -297,7 +298,7 @@ export async function destroySession(sessionId: string): Promise<void> {
     }
 
     sessions.delete(sessionId);
-    console.log(`[executionService] Destroyed session ${sessionId}`);
+    appLogger.info(`[executionService] Destroyed session ${sessionId}`);
 }
 
 /**

@@ -59,7 +59,7 @@ export interface StageConfig {
   allowRenderUi: boolean;
   allowPlanExit: boolean;
   requireToolCall: boolean;
-  deterministicAction?: (state: WorkflowGraphState) => import('../../types/llm.js').ToolCall[];
+  deterministicAction?: (state: WorkflowGraphState) => import('../../types/llm.js').ToolCall[] | Promise<import('../../types/llm.js').ToolCall[]>;
   delegatedAction?: (client: LlmClient, state: WorkflowGraphState) => Promise<import('../../types/llm.js').ToolCall[]>;
 }
 

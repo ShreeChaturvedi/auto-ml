@@ -62,6 +62,7 @@ function makeCellFixture(overrides: Partial<NotebookCell> = {}): NotebookCell {
     title: null,
     content: 'print("hello")',
     position: 0,
+    metadata: {},
     executionCount: 0,
     executionOrder: undefined,
     executionStatus: 'idle',

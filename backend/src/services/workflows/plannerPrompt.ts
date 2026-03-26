@@ -93,17 +93,21 @@ function resolvePlannerReasoningEffort(): 'minimal' | 'low' {
   return 'low';
 }
 
-export function buildPlannerRequest(
-  state: WorkflowGraphState,
-  contract: WorkflowNodeContract
-): LlmRequest {
-  const allowedOutputs = [
-    contract.requireToolCall ? 'tool_call' : null,
+function resolveAllowedOutputs(contract: WorkflowNodeContract): string[] {
+  return [
+    contract.allowedTools.length > 0 ? 'tool_call' : null,
     !contract.requireToolCall && contract.allowAssistantMessage ? 'assistant_message' : null,
     contract.allowAskUser ? 'ask_user' : null,
     contract.allowRenderUi ? 'render_ui' : null,
     contract.allowPlanExit ? 'plan_exit' : null
   ].filter((value): value is string => Boolean(value));
+}
+
+export function buildPlannerRequest(
+  state: WorkflowGraphState,
+  contract: WorkflowNodeContract
+): LlmRequest {
+  const allowedOutputs = resolveAllowedOutputs(contract);
 
   return {
     messages: [
@@ -116,7 +120,9 @@ export function buildPlannerRequest(
           `Current workflow node: ${state.run.currentNode}`,
           contract.requireToolCall
             ? 'This node requires an actual tool call. Do not return assistant_message, ask_user, render_ui, or plan_exit.'
-            : 'Choose the single next action that best advances the workflow.',
+            : contract.allowedTools.length > 0
+              ? 'Choose the single next action that best advances the workflow. tool_call is allowed when another tool step is still needed.'
+              : 'Choose the single next action that best advances the workflow.',
           contract.allowAssistantMessage
             ? 'Use assistant_message only when the user is asking for explanation, diagnosis, or advice and no tool is needed.'
             : 'Do not return assistant_message.',
@@ -130,7 +136,8 @@ export function buildPlannerRequest(
             ? 'Use plan_exit when the right outcome is a markdown plan artifact rather than a tool call.'
             : 'Do not return plan_exit.',
           `Allowed output kinds: ${allowedOutputs.join(', ') || '(none)'}.`,
-          'If you choose tool_call, toolName must be one of the allowed tools and toolArgs must be an object.'
+          'If you choose tool_call, toolName must be one of the allowed tools and toolArgs must be an object.',
+          'Keep the JSON compact. If you choose assistant_message, keep the message concise and avoid code fences or long markdown.'
         ].join('\n')
       },
       {
@@ -153,7 +160,45 @@ export function buildPlannerRequest(
       }
     ],
     responseMimeType: 'application/json',
-    maxOutputTokens: 600,
+    maxOutputTokens: 900,
     reasoningEffort: resolvePlannerReasoningEffort()
+  };
+}
+
+export function buildPlannerRepairRequest(
+  raw: string,
+  state: WorkflowGraphState,
+  contract: WorkflowNodeContract
+): LlmRequest {
+  return {
+    messages: [
+      {
+        role: 'system',
+        content: [
+          'You repair malformed workflow planner outputs.',
+          'Return exactly one valid JSON object and nothing else.',
+          `Workflow phase: ${state.turn.phase}`,
+          `Current workflow node: ${state.run.currentNode}`,
+          `Allowed output kinds: ${resolveAllowedOutputs(contract).join(', ') || '(none)'}.`,
+          contract.requireToolCall
+            ? 'The repaired response must be a tool_call.'
+            : 'The repaired response may be any allowed output kind.',
+          'Preserve the original intent as closely as possible, but make the JSON valid and schema-compliant.'
+        ].join('\n')
+      },
+      {
+        role: 'user',
+        content: [
+          'Repair this malformed planner output into valid JSON:',
+          truncate(raw.trim(), 4_000),
+          '',
+          'Allowed tools:',
+          summarizeTools(contract)
+        ].join('\n')
+      }
+    ],
+    responseMimeType: 'application/json',
+    maxOutputTokens: 700,
+    reasoningEffort: 'minimal'
   };
 }

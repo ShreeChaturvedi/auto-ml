@@ -33,7 +33,19 @@ export const ToolNameSchema = z.enum([
   'insert_cell',
   'install_package',
   'uninstall_package',
-  'list_packages'
+  'list_packages',
+  'propose_feature',
+  'materialize_feature_code',
+  'execute_feature',
+  'validate_feature',
+  'register_feature',
+  'checkpoint_feature_pipeline',
+  'configure_experiment',
+  'propose_training_plan',
+  'execute_training',
+  'evaluate_results',
+  'register_model',
+  'compare_models'
 ]);
 
 export const ToolCallSchema = z.object({
@@ -262,6 +274,6 @@ export type ChatMessage =
   | { id: string; type: 'tool_call'; call: ToolCall; result?: ToolResult }
   | { id: string; type: 'code_cell'; cellId: string }
   | { id: string; type: 'ui'; schema: UiSchema }
-  | { id: string; type: 'error'; message: string }
+  | { id: string; type: 'error'; message: string; retryable?: boolean; code?: string }
   | { id: string; type: 'ask_user'; questions: AskUserQuestion[]; answered?: boolean }
   | { id: string; type: 'plan'; content: string; planName: string; approved?: boolean; hidden?: boolean };

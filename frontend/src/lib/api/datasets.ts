@@ -1,5 +1,5 @@
-import { apiRequest } from './client';
-import type { ColumnDataType } from '@/types/file';
+import { apiFetch, apiRequest } from './client';
+import type { ColumnDataType, EdaSummary } from '@/types/file';
 
 export interface UploadDatasetResponse {
   dataset: {
@@ -16,6 +16,7 @@ export interface UploadDatasetResponse {
     sample: Record<string, unknown>[];
     createdAt: string;
     tableName?: string; // Postgres table name for SQL querying
+    eda?: EdaSummary;
   };
 }
 
@@ -78,10 +79,7 @@ export async function updateDatasetColumnType(
     `/datasets/${datasetId}/columns/${encodeURIComponent(columnName)}`,
     {
       method: 'PUT',
-      body: JSON.stringify({ dtype }),
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      body: { dtype }
     }
   );
 }
@@ -99,6 +97,24 @@ export async function getDatasetSample(datasetId: string) {
   }>(`/datasets/${datasetId}/sample`, { method: 'GET' });
 }
 
+export async function getDatasetRows(
+  datasetId: string,
+  options: { offset: number; limit: number }
+) {
+  const search = new URLSearchParams({
+    offset: String(options.offset),
+    limit: String(options.limit)
+  });
+
+  return apiRequest<{
+    rows: Record<string, unknown>[];
+    columns: string[];
+    rowCount: number;
+    offset: number;
+    limit: number;
+  }>(`/datasets/${datasetId}/rows?${search.toString()}`, { method: 'GET' });
+}
+
 export async function deleteDataset(datasetId: string) {
   return apiRequest<{ success: boolean }>(`/datasets/${datasetId}`, { method: 'DELETE' });
 }
@@ -107,8 +123,7 @@ export async function deleteDataset(datasetId: string) {
  * Download raw dataset file content
  */
 export async function downloadDataset(datasetId: string): Promise<ArrayBuffer> {
-  const BASE_URL = (import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api').replace(/\/$/, '');
-  const response = await fetch(`${BASE_URL}/datasets/${datasetId}/download`);
+  const response = await apiFetch(`/datasets/${datasetId}/download`);
 
   if (!response.ok) {
     throw new Error(`Failed to download dataset: ${response.statusText}`);

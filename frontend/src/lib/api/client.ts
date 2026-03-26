@@ -16,9 +16,10 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions extends Omit<RequestInit, 'method'> {
+interface RequestOptions extends Omit<RequestInit, 'method' | 'body'> {
   method?: HttpMethod;
   parseJson?: boolean;
+  body?: BodyInit | object | null;
 }
 
 const REFRESH_EXCLUDED_PATHS = new Set([
@@ -51,13 +52,13 @@ export async function refreshAccessToken(refreshToken: string | null): Promise<s
           return null;
         }
 
-        const data = (await response.json()) as { accessToken?: string };
+        const data = (await response.json()) as { accessToken?: string; refreshToken?: string };
         if (!data.accessToken) {
           return null;
         }
 
         const state = useAuthStore.getState();
-        state.setTokens(data.accessToken, state.refreshToken ?? refreshToken);
+        state.setTokens(data.accessToken, data.refreshToken ?? state.refreshToken ?? refreshToken);
         return data.accessToken;
       } catch (error) {
         console.error('[API] Failed to refresh access token', error);
@@ -176,14 +177,37 @@ function extractApiErrorMessage(payload: unknown): string | null {
   return null;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function applyAuthSideEffects(response: Response): Promise<void> {
+  // Unverified email: clear session so the user is redirected to login
+  if (response.status === 403) {
+    const cloned = response.clone();
+    try {
+      const body = await cloned.json() as { error?: string };
+      if (body?.error === 'Email not verified') {
+        const store = useAuthStore.getState();
+        store.clearAuth();
+        store.setError('Please verify your email address before continuing.');
+      }
+    } catch {
+      // not JSON — ignore and let caller handle the response normally
+    }
+  }
+}
+
+export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {
   const method = options.method ?? 'GET';
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);
   const normalizedPath = normalizePath(path).split('?')[0];
 
-  const isJsonString = typeof options.body === 'string';
-  if (!headers.has('Content-Type') && isJsonString) {
+  // Auto-serialize object bodies to JSON
+  let body = options.body;
+  if (body && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof Blob) && typeof body !== 'string') {
+    body = JSON.stringify(body);
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+  } else if (!headers.has('Content-Type') && typeof body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -193,7 +217,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   const requestInit: RequestInit = {
-    ...options,
+    ...(Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'body')) as Omit<RequestInit, 'body'>),
+    body: body as BodyInit,
     method,
     headers
   };
@@ -221,6 +246,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers.delete('Authorization');
     response = await fetch(url, { ...requestInit, headers });
   }
+
+  await applyAuthSideEffects(response);
+
+  return response;
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method ?? 'GET';
+  const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const response = await apiFetch(path, options);
 
   return parseResponse<T>(response, options, method, url);
 }

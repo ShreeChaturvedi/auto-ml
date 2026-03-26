@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 
 import { useAuthStore } from '@/stores/authStore';
+import { TEST_USER } from '@/tests/fixtures';
 import { useAuthBootstrap } from '../useAuthBootstrap';
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -67,8 +68,7 @@ describe('useAuthBootstrap', () => {
   });
 
   it('fetches /me with a valid access token (no refresh needed)', async () => {
-    const fakeUser = { id: '1', email: 'test@test.com', name: 'Test' };
-    mockGetCurrentUser.mockResolvedValue({ user: fakeUser });
+    mockGetCurrentUser.mockResolvedValue({ user: TEST_USER });
 
     useAuthStore.setState({
       accessToken: validToken(),
@@ -83,16 +83,15 @@ describe('useAuthBootstrap', () => {
     expect(mockGetCurrentUser).toHaveBeenCalledOnce();
 
     const state = useAuthStore.getState();
-    expect(state.user).toEqual(fakeUser);
+    expect(state.user).toEqual(TEST_USER);
     expect(state.isAuthenticated).toBe(true);
     expect(state.isLoading).toBe(false);
   });
 
   it('refreshes token when access token is expired and refresh token exists', async () => {
     const newAccessToken = validToken();
-    const fakeUser = { id: '1', email: 'test@test.com', name: 'Test' };
     mockRefreshAccessToken.mockResolvedValue(newAccessToken);
-    mockGetCurrentUser.mockResolvedValue({ user: fakeUser });
+    mockGetCurrentUser.mockResolvedValue({ user: TEST_USER });
 
     useAuthStore.setState({
       accessToken: expiredToken(),
@@ -107,7 +106,7 @@ describe('useAuthBootstrap', () => {
     expect(mockGetCurrentUser).toHaveBeenCalledOnce();
 
     const state = useAuthStore.getState();
-    expect(state.user).toEqual(fakeUser);
+    expect(state.user).toEqual(TEST_USER);
     expect(state.isAuthenticated).toBe(true);
   });
 
@@ -115,7 +114,7 @@ describe('useAuthBootstrap', () => {
     useAuthStore.setState({
       accessToken: expiredToken(),
       refreshToken: null,
-      user: { id: '1', email: 'test@test.com', name: 'Test' } as never,
+      user: TEST_USER as never,
     });
 
     const { result } = renderHook(() => useAuthBootstrap());
@@ -136,7 +135,7 @@ describe('useAuthBootstrap', () => {
     useAuthStore.setState({
       accessToken: expiredToken(),
       refreshToken: 'rt-expired',
-      user: { id: '1', email: 'test@test.com', name: 'Test' } as never,
+      user: TEST_USER as never,
     });
 
     const { result } = renderHook(() => useAuthBootstrap());
@@ -173,9 +172,8 @@ describe('useAuthBootstrap', () => {
 
   it('refreshes when access token is null but refresh token exists', async () => {
     const newAccessToken = validToken();
-    const fakeUser = { id: '1', email: 'test@test.com', name: 'Test' };
     mockRefreshAccessToken.mockResolvedValue(newAccessToken);
-    mockGetCurrentUser.mockResolvedValue({ user: fakeUser });
+    mockGetCurrentUser.mockResolvedValue({ user: TEST_USER });
 
     useAuthStore.setState({
       accessToken: null,
@@ -190,7 +188,7 @@ describe('useAuthBootstrap', () => {
     expect(mockGetCurrentUser).toHaveBeenCalledOnce();
 
     const state = useAuthStore.getState();
-    expect(state.user).toEqual(fakeUser);
+    expect(state.user).toEqual(TEST_USER);
     expect(state.isAuthenticated).toBe(true);
   });
 });

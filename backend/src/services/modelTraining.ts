@@ -4,14 +4,17 @@ import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises
 import { join } from 'node:path';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord, TrainModelRequest } from '../types/model.js';
 
 import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
+import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
+import { deleteTuningStudiesByModelId } from './tuningService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
@@ -244,7 +247,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
 
   if (container.workspacePath) {
     await syncWorkspaceDatasets(input.projectId, container.workspacePath).catch((error) => {
-      console.warn('[modelTraining] Failed to sync datasets:', error);
+      appLogger.warn('[modelTraining] Failed to sync datasets:', error);
     });
   }
 
@@ -334,10 +337,32 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     },
     metadata: metricsPayload.clusterSizes
       ? { clusterSizes: metricsPayload.clusterSizes }
-      : undefined
+      : undefined,
+    evaluationStatus: 'pending'
   });
+
+  // Fire-and-forget evaluation — training response returns immediately
+  runEvaluation(record.modelId).catch(err =>
+    appLogger.error('[modelTraining] Background evaluation failed', { modelId: record.modelId, error: err })
+  );
 
   await rm(runDir, { recursive: true, force: true }).catch(() => undefined);
 
   return { model: record, success: true, message: 'Model trained successfully.' };
+}
+
+export async function deleteModel(modelId: string): Promise<boolean> {
+  const model = await modelRepository.getById(modelId);
+  if (!model) return false;
+  const deleted = await modelRepository.delete(modelId);
+  if (deleted) {
+    const artifactDir = join(env.modelStorageDir, modelId);
+    await Promise.all([
+      rm(artifactDir, { recursive: true, force: true })
+        .catch((err) => appLogger.warn('[modelTraining] artifact cleanup failed', { modelId, err })),
+      deleteTuningStudiesByModelId(modelId)
+        .catch((err) => appLogger.warn('[modelTraining] tuning study cleanup failed', { modelId, err })),
+    ]);
+  }
+  return deleted;
 }

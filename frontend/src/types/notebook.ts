@@ -4,7 +4,7 @@ import { z } from 'zod';
 // Cell Output Types
 // ============================================================
 
-export const CellOutputTypeSchema = z.enum(['text', 'error', 'image', 'html', 'table', 'chart']);
+export const CellOutputTypeSchema = z.enum(['text', 'error', 'warning', 'image', 'html', 'table', 'chart']);
 export type CellOutputType = z.infer<typeof CellOutputTypeSchema>;
 
 export const CellOutputSchema = z.object({
@@ -40,6 +40,7 @@ export const NotebookCellSchema = z.object({
   title: z.string().nullable().optional(),
   content: z.string(),
   position: z.number().int().min(0),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   executionCount: z.number().int().min(0).default(0),
   executionOrder: z.number().int().min(1).nullable().optional(),
   executionStatus: NotebookCellStatusSchema.default('idle'),

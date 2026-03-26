@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
+import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
 import { buildDatasetContinuityPrompt } from './continuityPrompt';
 import { RenameTabDialog } from './PreprocessingDialogs';
@@ -39,6 +41,7 @@ function buildInsightPrompt(column: string, issueType: string): string {
 
 export function PreprocessingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const composerPlaceholders = useWorkflowPlaceholders(projectId, 'preprocessing');
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTabIdRef = useRef(getWorkbookParam(searchParams));
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
@@ -97,7 +100,8 @@ export function PreprocessingPanel() {
     setRenameTabDialogOpen,
     renameTabName,
     setRenameTabName,
-    resetActiveTab
+    resetActiveTab,
+    invalidateActiveTabSession
   } = usePreprocessingTabs({
     projectId,
     initialTabId: initialTabIdRef.current,
@@ -107,11 +111,62 @@ export function PreprocessingPanel() {
     }, [openDatasetSelector])
   });
 
+  const syncWorkbookParam = useCallback((workbookId: string, replace = true) => {
+    const currentWorkbookId = getWorkbookParam(searchParams);
+    if (currentWorkbookId === workbookId) {
+      return;
+    }
+
+    const next = new URLSearchParams(searchParams);
+    next.set('workbook', workbookId);
+    next.delete('tab');
+    setSearchParams(next, { replace });
+  }, [searchParams, setSearchParams]);
+
+  const handleWorkbookSwitch = useCallback((value: string) => {
+    handleTabSwitch(value);
+    syncWorkbookParam(value, true);
+  }, [handleTabSwitch, syncWorkbookParam]);
+
+  const handleWorkbookCreate = useCallback(() => {
+    const nextWorkbookId = handleNewTab();
+    if (nextWorkbookId) {
+      syncWorkbookParam(nextWorkbookId, true);
+    }
+  }, [handleNewTab, syncWorkbookParam]);
+
+  const handleWorkbookDelete = useCallback(() => {
+    const nextWorkbookId = handleDeleteTab();
+    if (nextWorkbookId) {
+      syncWorkbookParam(nextWorkbookId, true);
+    }
+  }, [handleDeleteTab, syncWorkbookParam]);
+
   useEffect(() => {
     if (projectId) {
       void loadTables(projectId);
     }
   }, [projectId, loadTables]);
+
+  useEffect(() => {
+    if (!tabsReady || !activeTab?.id) {
+      return;
+    }
+
+    const requestedWorkbookId = getWorkbookParam(searchParams);
+    if (!requestedWorkbookId) {
+      syncWorkbookParam(activeTab.id, true);
+      return;
+    }
+
+    if (requestedWorkbookId === activeTab.id) {
+      return;
+    }
+
+    if (tabs.some((tab) => tab.id === requestedWorkbookId)) {
+      handleTabSwitch(requestedWorkbookId);
+    }
+  }, [activeTab?.id, handleTabSwitch, searchParams, syncWorkbookParam, tabs, tabsReady]);
 
   useEffect(() => {
     if (!projectId || !runId) {
@@ -122,14 +177,21 @@ export function PreprocessingPanel() {
     }
     let cancelled = false;
     void hydrateRunById(projectId, runId).then(() => {
+      const hydratedRunId = usePreprocessingStore.getState().runId;
       if (!cancelled) {
-        lastHydratedRunIdRef.current = runId;
+        if (!hydratedRunId) {
+          invalidateActiveTabSession();
+          lastHydratedRunIdRef.current = null;
+          return;
+        }
+
+        lastHydratedRunIdRef.current = hydratedRunId;
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [hydrateRunById, projectId, runId]);
+  }, [hydrateRunById, invalidateActiveTabSession, projectId, runId]);
 
   const selectedTable = useMemo(
     () => tables.find((table) => table.datasetId === selectedDatasetId),
@@ -147,6 +209,9 @@ export function PreprocessingPanel() {
   const requestDatasetContinuityChoice = (prompt: string): Promise<string | null> => {
     if (!selectedDatasetId) {
       openDatasetSelector();
+      toast.info('Select a dataset to get started', {
+        description: 'Choose a dataset from the selector, then re-send your prompt.'
+      });
       return Promise.resolve(null);
     }
     return new Promise<string | null>((resolve) => {
@@ -212,8 +277,10 @@ export function PreprocessingPanel() {
   return (
     <>
       <AgenticShell
+        key={activeTab?.id ?? DEFAULT_WORKBOOK_ID}
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
+        composerPlaceholders={composerPlaceholders}
         beforeSubmit={requestDatasetContinuityChoice}
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}
@@ -222,14 +289,14 @@ export function PreprocessingPanel() {
           <PreprocessingToolbarLeft
             tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
             activeTabId={activeTab?.id ?? ''}
-            onTabSwitch={handleTabSwitch}
-            onNewTab={handleNewTab}
+            onTabSwitch={handleWorkbookSwitch}
+            onNewTab={handleWorkbookCreate}
             onRenameTab={openRenameTabDialog}
             onReplayCheck={handleReplayCheck}
             onResetTab={resetActiveTab}
-            onDeleteTab={handleDeleteTab}
-            canDeleteTab={tabs.length > 1}
-            selectedDatasetId={selectedDatasetId ?? ''}
+            onDeleteTab={handleWorkbookDelete}
+            canReplay={!!selectedDatasetId}
+            canDelete={tabs.length > 1}
           />
         }
         toolbarRight={
@@ -253,6 +320,7 @@ export function PreprocessingPanel() {
               editingMessageId={renderProps.editingMessageId}
               turnDiffs={renderProps.turnDiffs}
               isGenerating={renderProps.isGenerating}
+              onRetryWorkflow={renderProps.onRetryWorkflow}
             />
           </div>
         )}

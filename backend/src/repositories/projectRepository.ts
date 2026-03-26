@@ -5,6 +5,7 @@ export {
   sanitizeMetadata,
   isValidPhase,
   createProjectRepository,
+  getProjectRepository,
   InMemoryProjectRepository,
   FileProjectRepository,
   PgProjectRepository

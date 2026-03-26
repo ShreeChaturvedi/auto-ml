@@ -1,5 +1,6 @@
 import type { ChatMessage } from '@/types/llmUi';
 import { asRecordOrNull } from '@/lib/typeCoercion';
+import { isWorkflowThreadId } from '@/lib/workflowThread';
 
 export function buildProcessingStorageKey(tabId: string): string {
   return `preprocessing-messages-v5-${tabId}`;
@@ -11,10 +12,7 @@ export function buildProcessingTabsStateKey(projectId: string): string {
 
 // ---- Workbook-era key builders (same format, new prefix for clarity) ------
 
-export function buildWorkbookStorageKey(workbookId: string): string {
-  // Re-uses the same key format — no message migration needed
-  return `preprocessing-messages-v5-${workbookId}`;
-}
+export const buildWorkbookStorageKey = buildProcessingStorageKey;
 
 export function buildWorkbookTabsStateKey(projectId: string): string {
   return `preprocessing-workbooks-v1-${projectId}`;
@@ -134,27 +132,45 @@ export function discoverProcessingTabIds(projectId: string): string[] {
   return [...discovered];
 }
 
-export function extractRunIdFromStoredMessages(rawMessages: string | null): string | null {
+function readStoredConversationMessages(rawMessages: string | null): ChatMessage[] {
   if (!rawMessages) {
-    return null;
+    return [];
   }
 
   try {
-    const parsed = JSON.parse(rawMessages) as ChatMessage[];
-    for (let index = parsed.length - 1; index >= 0; index -= 1) {
-      const message = parsed[index];
-      if (message.type !== 'tool_call' || !message.result) {
-        continue;
-      }
-      const output = asRecordOrNull(message.result.output);
-      const runId = output && typeof output.runId === 'string' ? output.runId : undefined;
-      if (runId && runId.trim()) {
-        return runId;
-      }
-    }
+    const parsed = JSON.parse(rawMessages) as ChatMessage[] | { messages?: ChatMessage[] };
+    return Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.messages)
+        ? parsed.messages
+        : [];
   } catch {
-    return null;
+    return [];
+  }
+}
+
+export function extractRawRunReferenceFromStoredMessages(rawMessages: string | null): string | null {
+  const messages = readStoredConversationMessages(rawMessages);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.type !== 'tool_call' || !message.result) {
+      continue;
+    }
+    const output = asRecordOrNull(message.result.output);
+    const runId = output && typeof output.runId === 'string' ? output.runId : undefined;
+    if (runId && runId.trim()) {
+      return runId;
+    }
   }
 
   return null;
+}
+
+export function extractRunIdFromStoredMessages(rawMessages: string | null): string | null {
+  const runReference = extractRawRunReferenceFromStoredMessages(rawMessages);
+  if (!runReference || isWorkflowThreadId(runReference)) {
+    return null;
+  }
+
+  return runReference;
 }

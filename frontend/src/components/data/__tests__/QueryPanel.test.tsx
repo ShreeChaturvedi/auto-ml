@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useProjectStore } from '@/stores/projectStore';
+import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 import { QueryPanel } from '../QueryPanel';
 
 const mockState = vi.hoisted(() => ({
@@ -49,6 +51,38 @@ describe('QueryPanel theme handling', () => {
     mockState.renderedQuickSuggestions = [];
     mockState.renderedTriggerSuggestions = [];
     mockState.renderedFixedOverflowWidgets = [];
+    useNlSuggestionStore.getState().reset();
+    useProjectStore.setState({
+      projects: [
+        {
+          id: 'route-project',
+          title: 'Route Project',
+          description: '',
+          icon: 'Folder',
+          color: 'blue',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          currentPhase: 'upload',
+          unlockedPhases: ['upload'],
+          completedPhases: [],
+          metadata: {}
+        },
+        {
+          id: 'stale-project',
+          title: 'Stale Project',
+          description: '',
+          icon: 'Folder',
+          color: 'green',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          currentPhase: 'upload',
+          unlockedPhases: ['upload'],
+          completedPhases: [],
+          metadata: {}
+        }
+      ],
+      activeProjectId: 'stale-project'
+    });
   });
 
   it('uses light theme immediately and after remount in light mode', async () => {
@@ -92,5 +126,79 @@ describe('QueryPanel theme handling', () => {
     fireEvent.keyDown(collapsedOverlay!, { key: ' ' });
     expect(onCollapsedChange).toHaveBeenNthCalledWith(1, false);
     expect(onCollapsedChange).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it('uses the route project suggestion entry when english mode opens', async () => {
+    useNlSuggestionStore.setState({
+      byProject: {
+        'route-project': {
+          suggestions: [
+            {
+              id: 'route-suggestion',
+              prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
+              label: 'Weekly revenue trends',
+              category: 'trend',
+              tables: ['orders'],
+              rationale: 'Uses time and revenue metrics.'
+            }
+          ],
+          schemaFingerprint: 'schema-1'
+        },
+        'stale-project': {
+          suggestions: [
+            {
+              id: 'stale-suggestion',
+              prompt: 'This stale project suggestion should never appear.',
+              label: 'Stale suggestion',
+              category: 'summary',
+              tables: ['customers'],
+              rationale: 'Wrong project.'
+            }
+          ],
+          schemaFingerprint: 'schema-2'
+        }
+      }
+    });
+
+    render(<QueryPanel projectId="route-project" onExecute={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText(/natural language mode/i));
+
+    expect(await screen.findAllByText(/compare weekly revenue and average order value/i)).not.toHaveLength(0);
+    expect(screen.queryByText(/this stale project suggestion should never appear/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps english placeholders visible across sql mode toggles', async () => {
+    useNlSuggestionStore.setState({
+      byProject: {
+        'route-project': {
+          suggestions: [
+            {
+              id: 'route-suggestion',
+              prompt: 'Compare weekly revenue and average order value over the last 8 weeks.',
+              label: 'Weekly revenue trends',
+              category: 'trend',
+              tables: ['orders'],
+              rationale: 'Uses time and revenue metrics.'
+            }
+          ],
+          schemaFingerprint: 'schema-1'
+        }
+      }
+    });
+
+    const { container } = render(<QueryPanel projectId="route-project" onExecute={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText(/natural language mode/i));
+    expect(container.textContent).toContain(
+      'Compare weekly revenue and average order value over the last 8 weeks.'
+    );
+
+    fireEvent.click(screen.getByLabelText(/sql mode/i));
+    fireEvent.click(screen.getByLabelText(/natural language mode/i));
+
+    expect(container.textContent).toContain(
+      'Compare weekly revenue and average order value over the last 8 weeks.'
+    );
   });
 });

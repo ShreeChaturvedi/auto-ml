@@ -7,7 +7,8 @@
  */
 
 import { getDbPool } from '../db.js';
-import type { DatasetProfileColumn } from '../types/dataset.js';
+import { appLogger } from '../logging/logger.js';
+import type { DatasetProfile, DatasetProfileColumn } from '../types/dataset.js';
 
 import { insertRows } from './dataLoading/dataInsertion.js';
 import { parseDatasetRows } from './dataLoading/fileParser.js';
@@ -17,6 +18,13 @@ import { generateCreateTableSql, sanitizeTableName } from './dataLoading/schemaI
 export { normalizeValueForColumn } from './dataLoading/dataInsertion.js';
 export { parseDatasetRows } from './dataLoading/fileParser.js';
 export { sanitizeTableName } from './dataLoading/schemaInference.js';
+
+/** Resolve the Postgres table name for a dataset, preferring stored metadata. */
+export function resolveDatasetTableName(dataset: Pick<DatasetProfile, 'datasetId' | 'filename' | 'metadata'>): string {
+  return typeof dataset.metadata?.tableName === 'string'
+    ? dataset.metadata.tableName
+    : sanitizeTableName(dataset.filename, dataset.datasetId);
+}
 
 /**
  * Load a dataset into a Postgres table
@@ -76,12 +84,12 @@ export async function loadDatasetIntoPostgres(params: {
 
     await client.query('COMMIT');
 
-    console.log(`[datasetLoader] Loaded ${rowsLoaded} rows into "${tableName}"`);
+    appLogger.info(`[datasetLoader] Loaded ${rowsLoaded} rows into "${tableName}"`);
 
     return { tableName, rowsLoaded };
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(`[datasetLoader] Failed to load dataset into table "${tableName}"`, error);
+    appLogger.error(`[datasetLoader] Failed to load dataset into table "${tableName}"`, error);
     throw error;
   } finally {
     client.release();

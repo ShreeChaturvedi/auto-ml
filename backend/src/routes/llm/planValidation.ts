@@ -2,14 +2,14 @@ import { z } from 'zod';
 
 import { PlanExitPayloadSchema } from '../../types/llm.js';
 
-const REQUIRED_PLAN_SECTION_PATTERNS = [
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?objective\b[:\s-]*/im,
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:data\s+summary|data\s+overview)\b[:\s-]*/im,
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?approach\b[:\s-]*/im,
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:feature\s+engineering\s+strategy|feature\s+engineering)\b[:\s-]*/im,
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:target\s*(?:&|and)\s*evaluation|evaluation)\b[:\s-]*/im,
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:risks?\s*(?:&|and)\s*assumptions?|assumptions?)\b[:\s-]*/im,
-  /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?next\s+steps\b[:\s-]*/im
+const REQUIRED_PLAN_SECTIONS = [
+  { name: 'Objective',           pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:objective|goals?|purpose)\b[:\s-]*/im },
+  { name: 'Data Summary',        pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:data\s+summary|data\s+overview|data\s+analysis|data\s+description|dataset)\b[:\s-]*/im },
+  { name: 'Approach',            pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:approach|methodology|strategy|method)\b[:\s-]*/im },
+  { name: 'Feature Engineering', pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:feature\s+engineering(?:\s+strategy)?|features?)\b[:\s-]*/im },
+  { name: 'Evaluation',          pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:target\s*(?:&|and)\s*evaluation|evaluation|metrics|success\s+metrics|performance)\b[:\s-]*/im },
+  { name: 'Risks & Assumptions', pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:risks?\s*(?:&|and)\s*assumptions?|assumptions?|considerations|caveats|limitations)\b[:\s-]*/im },
+  { name: 'Next Steps',          pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:next\s+steps|action\s+items|recommendations|timeline)\b[:\s-]*/im },
 ];
 
 export function extractNormalizedPlanMarkdown(rawText: string): string | null {
@@ -34,9 +34,13 @@ export function extractNormalizedPlanMarkdown(rawText: string): string | null {
     return null;
   }
 
-  const hasAllRequiredSections = REQUIRED_PLAN_SECTION_PATTERNS.every((pattern) => pattern.test(candidate));
-  if (!hasAllRequiredSections) {
-    return null;
+  const missingSections = REQUIRED_PLAN_SECTIONS
+    .filter(({ pattern }) => !pattern.test(candidate));
+
+  if (missingSections.length > 0) {
+    console.warn(
+      `[planValidation] Plan missing ${missingSections.length} sections: ${missingSections.map(s => s.name).join(', ')}`
+    );
   }
 
   return candidate;

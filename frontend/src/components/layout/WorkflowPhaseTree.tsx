@@ -7,7 +7,7 @@
  * - Processing/FE/Training: workbooks
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import { ChevronRight, Plus } from 'lucide-react';
@@ -25,26 +25,43 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { getWorkbookParam } from '@/lib/workbookParam';
+import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
+import { ModelSubtabs } from './sidebar/ModelSubtabs';
 
 const EXPANDABLE_PHASES = new Set<Phase>([
   'upload',
   'data-viewer',
   'preprocessing',
   'feature-engineering',
-  'training'
+  'training',
+  'experiments'
 ]);
 
 const WORKBOOK_PHASES = new Set<Phase>(['preprocessing', 'feature-engineering', 'training']);
+
+const EMPTY_PHASES: Phase[] = [];
+
+/**
+ * Connector-line layout constants.
+ *
+ * Phase button: py-2 (8px) padding + icon h-3.5 (14px) → icon bottom at 22px.
+ * SubtabItem:   py-1.5 (6px) padding + icon h-3.5 (14px) → icon center at 13px from item bottom.
+ * Horizontal:   px-3 (12px) + half of w-3.5 (7px) = 19px center, minus 0.5px to center the 1px line.
+ */
+const LINE_STYLE_BASE = { left: '18.5px', top: '22px', bottom: '13px' } as const;
+const LINE_STYLE_ACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'currentColor' };
+const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground))' };
 
 /** Phases that show a "+" action button on hover */
 const PLUS_ACTION_PHASES = new Set<Phase>([
   'upload',
   'preprocessing',
   'feature-engineering',
-  'training'
+  'training',
+  'experiments',
 ]);
 
 interface WorkflowPhaseTreeProps {
@@ -61,11 +78,35 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     ? projects.find((p) => p.id === activeProjectId)
     : undefined;
 
-  const unlockedPhases = activeProject?.unlockedPhases ?? [];
+  const unlockedPhases = activeProject?.unlockedPhases ?? EMPTY_PHASES;
   const currentPhase = activeProject?.currentPhase;
   const allPhases = WORKFLOW_PHASES;
 
   const [expandedPhases, setExpandedPhases] = useState<Set<Phase>>(new Set());
+  const [seedDialogOpen, setSeedDialogOpen] = useState(false);
+  const [shimmeringPhases, setShimmeringPhases] = useState<Set<Phase>>(new Set());
+  const prevUnlockedRef = useRef<Phase[]>(unlockedPhases);
+
+  // Reset shimmer tracking when switching projects
+  useEffect(() => {
+    prevUnlockedRef.current = unlockedPhases;
+    setShimmeringPhases(new Set());
+  }, [activeProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Detect newly-unlocked phases and trigger shimmer via animationend
+  useEffect(() => {
+    const prev = new Set(prevUnlockedRef.current);
+    const newlyUnlocked = unlockedPhases.filter((p: Phase) => !prev.has(p));
+    prevUnlockedRef.current = unlockedPhases;
+
+    if (newlyUnlocked.length === 0) return;
+
+    setShimmeringPhases((s) => {
+      const next = new Set(s);
+      for (const p of newlyUnlocked) next.add(p);
+      return next;
+    });
+  }, [unlockedPhases]);
 
   const activeWorkbookId = getWorkbookParam(searchParams);
 
@@ -101,14 +142,6 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     e.stopPropagation();
     if (activeProjectId && unlockedPhases.includes(phase)) {
       navigate(`/project/${activeProjectId}/${phase}`);
-      if (EXPANDABLE_PHASES.has(phase)) {
-        // Toggle if already on this phase; expand if navigating to it
-        if (phase === currentPhase) {
-          togglePhaseExpand(phase);
-        } else {
-          expandPhase(phase);
-        }
-      }
     }
   };
 
@@ -159,7 +192,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           const isExpandable = EXPANDABLE_PHASES.has(phase) && isUnlocked;
           const isExpanded = expandedPhases.has(phase);
           const isWorkbookPhase = WORKBOOK_PHASES.has(phase);
-          const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && isExpandable;
+          const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
 
           const iconColorClass = isActive && activeProject
             ? projectColorClasses[activeProject.color]?.text
@@ -180,30 +213,27 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                     : 'text-foreground hover:bg-muted'
               )}
             >
-              <button
-                type="button"
-                onClick={(e) => handlePhaseClick(e, phase)}
-                disabled={!isUnlocked}
-                className={cn(
-                  'flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left rounded-lg',
-                  !isUnlocked && 'cursor-default',
-                  isUnlocked && 'cursor-pointer'
-                )}
-              >
-                {/* Icon + Chevron overlay container */}
-                <div className="relative shrink-0 h-3.5 w-3.5">
-                  {/* Phase icon - fades out on hover for expandable phases */}
-                  {IconComponent && (
-                    <IconComponent
-                      className={cn(
-                        'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
-                        isExpandable && 'group-hover:opacity-0',
-                        iconColorClass
-                      )}
-                    />
-                  )}
-                  {/* Chevron - fades in on hover, rotates when expanded */}
-                  {isExpandable && (
+              {/* Chevron toggle — separate from the navigation button so
+                  expand/collapse never triggers navigation. */}
+              {isExpandable ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePhaseExpand(phase);
+                  }}
+                  className="shrink-0 pl-3 py-2 cursor-pointer"
+                  aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
+                >
+                  <div className="relative h-3.5 w-3.5">
+                    {IconComponent && (
+                      <IconComponent
+                        className={cn(
+                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200 group-hover:opacity-0',
+                          iconColorClass
+                        )}
+                      />
+                    )}
                     <ChevronRight
                       className={cn(
                         'absolute inset-0 h-3.5 w-3.5 transition-all duration-200',
@@ -212,13 +242,39 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                         iconColorClass
                       )}
                     />
+                  </div>
+                </button>
+              ) : (
+                <div className="shrink-0 pl-3 py-2">
+                  {IconComponent && (
+                    <IconComponent className={cn('h-3.5 w-3.5', iconColorClass)} />
                   )}
                 </div>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => handlePhaseClick(e, phase)}
+                disabled={!isUnlocked}
+                className={cn(
+                  'flex min-w-0 flex-1 items-center py-2 pr-3 text-left rounded-r-lg',
+                  !isUnlocked && 'cursor-default',
+                  isUnlocked && 'cursor-pointer'
+                )}
+              >
                 <span
                   className={cn(
-                    'flex-1 text-workflow truncate transition-opacity duration-300',
-                    collapsed && 'opacity-0'
+                    'flex-1 text-workflow truncate transition-opacity duration-300 pl-2',
+                    collapsed && 'opacity-0',
+                    shimmeringPhases.has(phase) && 'shimmer-text-once'
                   )}
+                  onAnimationEnd={shimmeringPhases.has(phase) ? () => {
+                    setShimmeringPhases((s) => {
+                      const next = new Set(s);
+                      next.delete(phase);
+                      return next;
+                    });
+                  } : undefined}
                 >
                   {config.label}
                 </span>
@@ -228,9 +284,13 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
               {hasPlusAction && !collapsed && (
                 <button
                   type="button"
-                  onClick={isWorkbookPhase ? (e) => handleNewWorkbook(e, phase) : handleNewPlan}
+                  onClick={
+                    isWorkbookPhase ? (e) => handleNewWorkbook(e, phase)
+                    : phase === 'experiments' ? (e) => { e.stopPropagation(); setSeedDialogOpen(true); }
+                    : handleNewPlan
+                  }
                   className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-all opacity-0 group-hover:opacity-100"
-                  title={isWorkbookPhase ? 'New workbook' : 'New plan'}
+                  title={isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
                 >
                   <Plus className="h-3 w-3 text-muted-foreground" />
                 </button>
@@ -239,16 +299,33 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           );
 
           return (
-            <div key={phase}>
+            <div key={phase} className="relative">
+              {/* Vertical connector line — spans from phase icon/background through subtabs.
+                  Positioned on the phase root so it isn't clipped by the subtabs overflow-hidden. */}
+              {isExpandable && !collapsed && activeProjectId && (
+                <div
+                  className={cn(
+                    'absolute w-px transition-opacity duration-300',
+                    isExpanded ? 'opacity-100' : 'opacity-0',
+                    isActive && themeColorClass
+                  )}
+                  style={isActive ? LINE_STYLE_ACTIVE : LINE_STYLE_INACTIVE}
+                />
+              )}
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   {phaseButton}
                 </TooltipTrigger>
-                {collapsed && (
+                {collapsed ? (
                   <TooltipContent side="right">
                     <p>{config.label}</p>
                   </TooltipContent>
-                )}
+                ) : isUnlocked && !isActive ? (
+                  <TooltipContent side="right">
+                    <p>{config.description}</p>
+                  </TooltipContent>
+                ) : null}
               </Tooltip>
 
               {/* Subtabs — always rendered for animation, visibility controlled by grid-rows */}
@@ -261,12 +338,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                       : 'grid-rows-[0fr] opacity-0'
                   )}
                 >
-                  <div className="relative overflow-hidden">
-                    {/* Vertical connector line — bottom-3 stops at last subitem icon center */}
-                    <div
-                      className="absolute top-0 bottom-3 w-px bg-border"
-                      style={{ left: '19px' }}
-                    />
+                  <div className="overflow-hidden">
                     {phase === 'upload' && (
                       <PlanSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
                     )}
@@ -281,6 +353,9 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                         activeWorkbookId={isActive ? activeWorkbookId : undefined}
                       />
                     )}
+                    {phase === 'experiments' && (
+                      <ModelSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
+                    )}
                   </div>
                 </div>
               )}
@@ -288,6 +363,13 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           );
         })}
       </div>
+      {activeProjectId && (
+        <SeedModelDialog
+          projectId={activeProjectId}
+          open={seedDialogOpen}
+          onOpenChange={setSeedDialogOpen}
+        />
+      )}
     </TooltipProvider>
   );
 }

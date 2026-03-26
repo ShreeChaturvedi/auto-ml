@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut } from 'lucide-react';
+import { ChevronsUpDown, LogOut, Settings, User } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { logoutUser } from '@/lib/api/auth';
 import { cn } from '@/lib/utils';
@@ -80,6 +80,11 @@ export function UserProfile({ collapsed = false }: UserProfileProps) {
             <p className="text-sm font-medium truncate">{displayName}</p>
             <p className="text-xs text-muted-foreground truncate">{displayEmail}</p>
           </div>
+
+          <ChevronsUpDown
+            className="h-4 w-4 shrink-0 text-muted-foreground opacity-50"
+            aria-hidden
+          />
         </div>
       </DropdownMenuTrigger>
 

@@ -4,9 +4,8 @@
  * API client for cloud (Docker) code execution.
  */
 
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 import { readNdjsonStream } from './streamReader';
-import { useAuthStore } from '@/stores/authStore';
 
 // Re-export PyPI types and functions for backward compatibility
 export type { PyPIPackageDetails } from './pypi';
@@ -20,7 +19,7 @@ export type PythonVersion = '3.10' | '3.11';
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'error' | 'timeout';
 
 export interface RichOutput {
-    type: 'text' | 'table' | 'image' | 'html' | 'error' | 'chart';
+    type: 'text' | 'table' | 'image' | 'html' | 'error' | 'warning' | 'chart';
     content: string;
     data?: unknown;
     mimeType?: string;
@@ -82,7 +81,7 @@ export async function executeCode(request: ExecuteRequest): Promise<ExecutionRes
         '/execute',
         {
             method: 'POST',
-            body: JSON.stringify(request)
+            body: request
         }
     );
     return response.result;
@@ -99,7 +98,7 @@ export async function createSession(
         '/execute/session',
         {
             method: 'POST',
-            body: JSON.stringify({ projectId, pythonVersion })
+            body: { projectId, pythonVersion }
         }
     );
     return response.session;
@@ -135,7 +134,7 @@ export async function installPackage(
 ): Promise<{ success: boolean; message: string }> {
     return apiRequest('/execute/packages', {
         method: 'POST',
-        body: JSON.stringify({ sessionId, packageName })
+        body: { sessionId, packageName }
     });
 }
 
@@ -147,20 +146,13 @@ export async function installPackageStream(
     packageName: string,
     onEvent: (event: PackageInstallEvent) => void
 ): Promise<{ success: boolean; message: string }> {
-    const authState = useAuthStore.getState();
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/x-ndjson'
-    };
-
-    if (authState.accessToken) {
-        headers.Authorization = `Bearer ${authState.accessToken}`;
-    }
-
-    const response = await fetch(`${getApiBaseUrl()}/execute/packages/stream`, {
+    const response = await apiFetch('/execute/packages/stream', {
         method: 'POST',
-        headers,
-        body: JSON.stringify({ sessionId, packageName })
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/x-ndjson'
+        },
+        body: { sessionId, packageName }
     });
 
     if (!response.ok || !response.body) {

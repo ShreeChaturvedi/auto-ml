@@ -8,13 +8,42 @@
 
 import type { Response, NextFunction } from 'express';
 
+import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import type { AuthRequest } from '../types/auth.js';
+import type { SafeUser } from '../types/user.js';
 
 function getUserRepository() {
   return new UserRepository(getDbPool());
+}
+
+const USER_CACHE_TTL_MS = 60_000;
+const USER_CACHE_MAX_SIZE = 500;
+const userCache = new Map<string, { user: SafeUser; expiry: number }>();
+
+function evictExpiredUsers() {
+  const now = Date.now();
+  for (const [key, entry] of userCache) {
+    if (entry.expiry <= now) userCache.delete(key);
+  }
+}
+
+function cacheUser(userId: string, user: SafeUser) {
+  if (userCache.size >= USER_CACHE_MAX_SIZE) evictExpiredUsers();
+  userCache.set(userId, { user, expiry: Date.now() + USER_CACHE_TTL_MS });
+}
+
+function getCachedUser(userId: string): SafeUser | undefined {
+  const cached = userCache.get(userId);
+  if (cached && cached.expiry > Date.now()) return cached.user;
+  if (cached) userCache.delete(userId);
+  return undefined;
+}
+
+function passesEmailGate(user: SafeUser): boolean {
+  return user.email_verified || env.devBypassEmailVerification;
 }
 
 /**
@@ -49,13 +78,30 @@ export async function requireAuth(
     return;
   }
 
-  // Load user from database to ensure they still exist
+  const cachedUser = getCachedUser(payload.userId);
+  if (cachedUser) {
+    if (!passesEmailGate(cachedUser)) {
+      res.status(403).json({ error: 'Email not verified' });
+      return;
+    }
+    req.user = cachedUser;
+    next();
+    return;
+  }
+
   const userRepository = getUserRepository();
   const user = await userRepository.findById(payload.userId);
   if (!user) {
     res.status(401).json({ error: 'User not found' });
     return;
   }
+
+  if (!passesEmailGate(user)) {
+    res.status(403).json({ error: 'Email not verified' });
+    return;
+  }
+
+  cacheUser(payload.userId, user);
 
   // Attach user to request for use in route handlers
   req.user = user;
@@ -86,10 +132,16 @@ export async function optionalAuth(
     const payload = authService.verifyAccessToken(token);
 
     if (payload) {
-      const userRepository = getUserRepository();
-      const user = await userRepository.findById(payload.userId);
-      if (user) {
-        req.user = user;
+      const cachedUser = getCachedUser(payload.userId);
+      if (cachedUser && passesEmailGate(cachedUser)) {
+        req.user = cachedUser;
+      } else if (!cachedUser) {
+        const userRepository = getUserRepository();
+        const user = await userRepository.findById(payload.userId);
+        if (user && passesEmailGate(user)) {
+          cacheUser(payload.userId, user);
+          req.user = user;
+        }
       }
     }
   }

@@ -14,13 +14,12 @@ describe('decodeJwtPayload', () => {
     expect(decodeJwtPayload(token)).toEqual({ sub: '123', exp: 999 });
   });
 
-  it('returns null for a malformed token', () => {
-    expect(decodeJwtPayload('not-a-jwt')).toBeNull();
-  });
-
-  it('returns null for garbage base64', () => {
-    expect(decodeJwtPayload('a.!!!.b')).toBeNull();
-  });
+  it.each(['not-a-jwt', 'a.!!!.b'])(
+    'returns null for malformed token %o',
+    (token) => {
+      expect(decodeJwtPayload(token)).toBeNull();
+    }
+  );
 });
 
 describe('isJwtExpired', () => {

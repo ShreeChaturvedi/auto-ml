@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import type { LlmClient, LlmMessage } from '../llm/llmClient.js';
 import type { LlmReasoningEffort } from '../llm/modelCatalog.js';
 
@@ -185,7 +186,7 @@ export async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
       }
     }
 
-    console.warn(`[nlToSqlV2] ${params.label} attempt ${attempt} returned invalid structured output: ${summarizeError(lastError)}`);
+    appLogger.warn(`[nlToSqlV2] ${params.label} attempt ${attempt} returned invalid structured output: ${summarizeError(lastError)}`);
   }
 
   throw lastError ?? new Error(`Failed to produce valid ${params.label} JSON.`);

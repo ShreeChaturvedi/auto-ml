@@ -1,13 +1,15 @@
 import { Router, type Response } from 'express';
 
 import { env } from '../config.js';
+import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import type { AuthRequest } from '../types/auth.js';
 
 export function createRealtimeSessionRouter(): Router {
   const router = Router();
 
-  router.post('/realtime/session', requireAuth, async (_req: AuthRequest, res: Response) => {
+  router.post('/realtime/session', requireAuth, asyncHandler(async (_req: AuthRequest, res: Response) => {
     if (!env.openaiApiKey) {
       res.status(503).json({ error: 'OpenAI API key is not configured' });
       return;
@@ -40,7 +42,7 @@ export function createRealtimeSessionRouter(): Router {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error('[realtimeSession] OpenAI API error:', response.status, errorBody);
+        appLogger.error('[realtimeSession] OpenAI API error:', response.status, errorBody);
         res.status(response.status).json({
           error: `OpenAI API error: ${response.statusText}`,
         });
@@ -60,10 +62,10 @@ export function createRealtimeSessionRouter(): Router {
         expiresAt: secret.expires_at ?? 0,
       });
     } catch (error) {
-      console.error('[realtimeSession] Failed to create transcription session:', error);
+      appLogger.error('[realtimeSession] Failed to create transcription session:', error);
       res.status(500).json({ error: 'Failed to create transcription session' });
     }
-  });
+  }));
 
   return router;
 }

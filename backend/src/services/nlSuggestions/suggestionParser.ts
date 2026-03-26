@@ -1,6 +1,16 @@
 import { z } from 'zod';
 
-import type { NlSuggestion } from './types.js';
+import type { NlSuggestion, WorkflowPlaceholders } from './types.js';
+
+const WORKFLOW_PLACEHOLDER_PHASE_SCHEMA = z.array(z.string().min(15).max(150)).min(3).max(6);
+const EXPLORE_SQL_SCHEMA = z.array(z.string().min(10).max(300)).min(3).max(12);
+
+export const WORKFLOW_PLACEHOLDER_SCHEMA = z.object({
+  preprocessing: WORKFLOW_PLACEHOLDER_PHASE_SCHEMA,
+  featureEngineering: WORKFLOW_PLACEHOLDER_PHASE_SCHEMA,
+  training: WORKFLOW_PLACEHOLDER_PHASE_SCHEMA,
+  explore: EXPLORE_SQL_SCHEMA.optional(),
+});
 
 export const SUGGESTION_SCHEMA = z.object({
   suggestions: z.array(
@@ -11,7 +21,8 @@ export const SUGGESTION_SCHEMA = z.object({
       tables: z.array(z.string().min(1)).min(1).max(4),
       rationale: z.string().min(12).max(180)
     })
-  ).min(4).max(12)
+  ).min(4).max(12),
+  workflowPlaceholders: WORKFLOW_PLACEHOLDER_SCHEMA.optional()
 });
 
 export function normalizeSuggestionId(prompt: string, index: number): string {
@@ -54,6 +65,29 @@ export function normalizeSuggestions(raw: z.infer<typeof SUGGESTION_SCHEMA>, lim
   }
 
   return normalized;
+}
+
+export function normalizeWorkflowPlaceholders(
+  raw: z.infer<typeof WORKFLOW_PLACEHOLDER_SCHEMA>
+): WorkflowPlaceholders {
+  function dedupePhase(items: string[]): string[] {
+    const seen = new Set<string>();
+    return items
+      .map((s) => s.trim().replace(/\s+/g, ' '))
+      .filter((s) => {
+        const key = s.toLowerCase();
+        if (!s || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
+  return {
+    preprocessing: dedupePhase(raw.preprocessing),
+    featureEngineering: dedupePhase(raw.featureEngineering),
+    training: dedupePhase(raw.training),
+    ...(raw.explore ? { explore: dedupePhase(raw.explore) } : {}),
+  };
 }
 
 export function buildSuggestion(

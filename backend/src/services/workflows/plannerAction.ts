@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
 import { UiSchema } from '../../types/llmUi.js';
+import { extractJson } from '../nlToSql/jsonNormalization.js';
 
 import type { WorkflowNodeContract } from './contracts.js';
 
@@ -45,11 +46,69 @@ export const WorkflowActionPlanSchema = z.discriminatedUnion('kind', [
 
 export type WorkflowActionPlan = z.infer<typeof WorkflowActionPlanSchema>;
 
+function extractFirstJsonValue(raw: string): string | null {
+  const start = raw.search(/[[{]/);
+  if (start === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 export function parsePlannerResponse(raw: string): WorkflowActionPlan {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const normalized = fenced?.[1] ?? trimmed;
-  return WorkflowActionPlanSchema.parse(JSON.parse(normalized) as unknown);
+
+  try {
+    return WorkflowActionPlanSchema.parse(extractJson(normalized));
+  } catch (error) {
+    const extracted = extractFirstJsonValue(normalized);
+    if (extracted && extracted !== normalized) {
+      return WorkflowActionPlanSchema.parse(JSON.parse(extracted) as unknown);
+    }
+    throw error;
+  }
 }
 
 export function validatePlan(

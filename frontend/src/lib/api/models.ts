@@ -15,11 +15,26 @@ export async function trainModel(request: TrainModelRequest) {
     '/models/train',
     {
       method: 'POST',
-      body: JSON.stringify(request)
+      body: request
     }
   );
 }
 
+
+export async function deleteModel(modelId: string) {
+  return apiRequest<void>(`/models/${modelId}`, { method: 'DELETE' });
+}
+
+export async function seedModels(projectId: string) {
+  return apiRequest<{ models: ModelRecord[] }>(`/models/seed?projectId=${projectId}`, { method: 'POST' });
+}
+
+export async function seedOneModel(projectId: string, options: { name: string; taskType: string; algorithm: string }) {
+  return apiRequest<{ model: ModelRecord }>('/models/seed-one', {
+    method: 'POST',
+    body: { projectId, ...options },
+  });
+}
 
 export function getModelArtifactUrl(modelId: string) {
   return `${getApiBaseUrl()}/models/${modelId}/artifact`;

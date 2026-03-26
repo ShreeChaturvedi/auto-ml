@@ -4,7 +4,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Markdown } from '@/components/ui/Markdown';
 
 import { PlanViewerToolbar } from './PlanViewerToolbar';
-import { buildMarkdownComponents, extractTocHeadings } from './planViewerUtils';
+import { extractTocHeadings } from '@/lib/markdown/tocUtils';
+import { scrollToRadixElement } from '@/lib/scrollUtils';
+import { buildMarkdownComponents } from './planViewerUtils';
 
 interface PlanViewerPaneProps {
   plan: { id: string; name: string; content: string };
@@ -19,13 +21,7 @@ export function PlanViewerPane({ plan }: PlanViewerPaneProps) {
   const markdownComponents = useMemo(() => buildMarkdownComponents(searchQuery), [searchQuery]);
 
   const scrollToHeading = useCallback((slug: string) => {
-    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
-      '[data-radix-scroll-area-viewport]'
-    );
-    const target = scrollAreaRef.current?.querySelector<HTMLElement>(`#${CSS.escape(slug)}`);
-    if (viewport && target) {
-      viewport.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
-    }
+    scrollToRadixElement(scrollAreaRef.current, slug);
   }, []);
 
   return (

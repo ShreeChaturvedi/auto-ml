@@ -1,56 +1,64 @@
 import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
+import { regenerateNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 
 import { createDatasetUploadRouter } from './datasets.js';
 
 // Mock the datasetLoader to avoid needing Postgres
-vi.mock('../services/datasetLoader.js', () => ({
-  loadDatasetIntoPostgres: vi.fn().mockResolvedValue({
-    tableName: 'mock_table',
-    rowsLoaded: 100
-  }),
-  parseDatasetRows: vi.fn().mockImplementation((buffer: Buffer, fileType: string) => {
-    const content = buffer.toString('utf8');
+vi.mock('../services/datasetLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/datasetLoader.js')>();
+  return {
+    ...actual,
+    loadDatasetIntoPostgres: vi.fn().mockResolvedValue({
+      tableName: 'mock_table',
+      rowsLoaded: 100
+    }),
+    parseDatasetRows: vi.fn().mockImplementation((buffer: Buffer, fileType: string) => {
+      const content = buffer.toString('utf8');
 
-    // Handle JSON files
-    if (fileType === 'json') {
-      try {
-        const parsed = JSON.parse(content);
-        return Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        return [];
+      // Handle JSON files
+      if (fileType === 'json') {
+        try {
+          const parsed = JSON.parse(content);
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return [];
+        }
       }
-    }
 
-    // Handle CSV files
-    const lines = content.trim().split('\n');
-    if (lines.length < 2) return [];
+      // Handle CSV files
+      const lines = content.trim().split('\n');
+      if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim());
-      const row: Record<string, string | number> = {};
-      headers.forEach((header, i) => {
-        const val = values[i];
-        const numVal = Number(val);
-        row[header] = isNaN(numVal) ? val : numVal;
+      const headers = lines[0].split(',').map(h => h.trim());
+      return lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        const row: Record<string, string | number> = {};
+        headers.forEach((header, i) => {
+          const val = values[i];
+          const numVal = Number(val);
+          row[header] = isNaN(numVal) ? val : numVal;
+        });
+        return row;
       });
-      return row;
-    });
-  }),
-  sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
-    const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-    return `${baseName}_${datasetId.slice(0, 8)}`;
-  })
-}));
+    }),
+    sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
+      const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+      return `${baseName}_${datasetId.slice(0, 8)}`;
+    })
+  };
+});
 
 // Mock the db module
 vi.mock('../db.js', () => ({
@@ -58,7 +66,22 @@ vi.mock('../db.js', () => ({
   hasDatabaseConfiguration: vi.fn().mockReturnValue(false)
 }));
 
+vi.mock('../services/workflows/repository/index.js', () => ({
+  getWorkflowRepository: vi.fn(() => ({
+    findRunsByDataset: vi.fn(async () => [])
+  }))
+}));
+
+vi.mock('../services/nlSuggestions/index.js', () => ({
+  regenerateNaturalLanguageSuggestions: vi.fn().mockResolvedValue({
+    suggestions: [],
+    cached: false,
+    schemaFingerprint: 'test-schema'
+  })
+}));
+
 const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
+const mockRegenerateNaturalLanguageSuggestions = vi.mocked(regenerateNaturalLanguageSuggestions);
 
 // In-memory dataset repository for testing
 class InMemoryDatasetRepository implements DatasetRepository {
@@ -66,6 +89,10 @@ class InMemoryDatasetRepository implements DatasetRepository {
 
   async list(): Promise<DatasetProfile[]> {
     return Array.from(this.datasets.values());
+  }
+
+  async listByProject(projectId: string): Promise<DatasetProfile[]> {
+    return Array.from(this.datasets.values()).filter((dataset) => dataset.projectId === projectId);
   }
 
   async get(datasetId: string): Promise<DatasetProfile | undefined> {
@@ -150,12 +177,19 @@ function createMockDataset(overrides?: Partial<DatasetProfile>): DatasetProfile 
   };
 }
 
+function storeDatasetFile(dataset: DatasetProfile, contents: string) {
+  const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
+  mkdirSync(datasetDir, { recursive: true });
+  writeFileSync(join(datasetDir, dataset.filename), contents, 'utf8');
+}
+
 describeRouteSuite('dataset routes', () => {
   let repository: InMemoryDatasetRepository;
 
   beforeEach(() => {
     repository = new InMemoryDatasetRepository();
     mockHasDatabaseConfiguration.mockReturnValue(false);
+    mockRegenerateNaturalLanguageSuggestions.mockClear();
   });
 
   describe('GET /api/datasets', () => {
@@ -223,7 +257,7 @@ describeRouteSuite('dataset routes', () => {
   describe('GET /api/datasets/:datasetId/sample', () => {
     it('returns 404 for non-existent dataset', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).get('/api/datasets/non-existent-id/sample');
+      const response = await request(app).get('/api/datasets/00000000-0000-0000-0000-000000000000/sample');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Dataset not found');
@@ -246,6 +280,49 @@ describeRouteSuite('dataset routes', () => {
     });
   });
 
+  describe('GET /api/datasets/:datasetId/rows', () => {
+    it('returns paged rows for an existing dataset', async () => {
+      const dataset = createMockDataset({
+        sample: [{ id: 1, name: 'Sample' }],
+        nRows: 5,
+        columns: [
+          { name: 'id', dtype: 'integer', nullCount: 0 },
+          { name: 'name', dtype: 'string', nullCount: 0 }
+        ]
+      });
+      repository.addDataset(dataset);
+      storeDatasetFile(dataset, 'id,name\n1,A\n2,B\n3,C\n4,D\n5,E');
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get(`/api/datasets/${dataset.datasetId}/rows`)
+        .query({ offset: 2, limit: 2 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.rows).toEqual([
+        { id: 3, name: 'C' },
+        { id: 4, name: 'D' }
+      ]);
+      expect(response.body.columns).toEqual(['id', 'name']);
+      expect(response.body.rowCount).toBe(5);
+      expect(response.body.offset).toBe(2);
+      expect(response.body.limit).toBe(2);
+    });
+
+    it('returns 400 for invalid pagination params', async () => {
+      const dataset = createMockDataset();
+      repository.addDataset(dataset);
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get(`/api/datasets/${dataset.datasetId}/rows`)
+        .query({ offset: -1, limit: 0 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
+    });
+  });
+
   describe('POST /api/upload/dataset', () => {
     it('rejects legacy XLS uploads with a clear migration message', async () => {
       const app = createTestApp(repository);
@@ -264,14 +341,15 @@ describeRouteSuite('dataset routes', () => {
   describe('DELETE /api/datasets/:datasetId', () => {
     it('returns 404 for non-existent dataset', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).delete('/api/datasets/non-existent-id');
+      const response = await request(app).delete('/api/datasets/00000000-0000-0000-0000-000000000000');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Dataset not found');
     });
 
     it('deletes an existing dataset', async () => {
-      const dataset = createMockDataset();
+      const projectId = randomUUID();
+      const dataset = createMockDataset({ projectId });
       repository.addDataset(dataset);
 
       const app = createTestApp(repository);
@@ -282,6 +360,7 @@ describeRouteSuite('dataset routes', () => {
 
       const remaining = await repository.list();
       expect(remaining).toHaveLength(0);
+      expect(mockRegenerateNaturalLanguageSuggestions).toHaveBeenCalledWith({ projectId });
     });
 
     it('only deletes the specified dataset', async () => {
@@ -375,6 +454,7 @@ describeRouteSuite('dataset routes', () => {
 
       const datasets = await repository.list();
       expect(datasets[0].projectId).toBe(projectId);
+      expect(mockRegenerateNaturalLanguageSuggestions).toHaveBeenCalledWith({ projectId });
     });
 
     it('prioritizes file extension over conflicting MIME type', async () => {
@@ -391,6 +471,19 @@ describeRouteSuite('dataset routes', () => {
       expect(response.status).toBe(201);
       expect(response.body.dataset.fileType).toBe('csv');
       expect(response.body.dataset.filename).toBe('conflicting.csv');
+    });
+
+    it('regenerates NL placeholders silently after upload when a project id is provided', async () => {
+      const projectId = randomUUID();
+      const csvContent = 'id,value\n1,10';
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/upload/dataset')
+        .field('projectId', projectId)
+        .attach('file', Buffer.from(csvContent), 'silent.csv');
+
+      expect(response.status).toBe(201);
+      expect(mockRegenerateNaturalLanguageSuggestions).toHaveBeenCalledWith({ projectId });
     });
   });
 

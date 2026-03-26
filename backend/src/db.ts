@@ -1,6 +1,7 @@
 import { Pool, type PoolConfig } from 'pg';
 
 import { env } from './config.js';
+import { appLogger } from './logging/logger.js';
 
 let pool: Pool | null = null;
 
@@ -35,7 +36,7 @@ export function getDbPool(): Pool {
   if (!pool) {
     pool = new Pool(buildPoolConfig());
     pool.on('error', (error) => {
-      console.error('[db] Unexpected PG pool error', error);
+      appLogger.error('[db] Unexpected PG pool error', error);
     });
   }
   return pool;
@@ -43,14 +44,14 @@ export function getDbPool(): Pool {
 
 export async function verifyDatabaseConnection(): Promise<void> {
   if (!hasDatabaseConfiguration()) {
-    console.info('[db] DATABASE_URL not set, skipping Postgres connection check');
+    appLogger.info('[db] DATABASE_URL not set, skipping Postgres connection check');
     return;
   }
 
   const client = await getDbPool().connect();
   try {
     await client.query('select 1 as ok');
-    console.info('[db] Successfully connected to Postgres');
+    appLogger.info('[db] Successfully connected to Postgres');
   } finally {
     client.release();
   }

@@ -6,7 +6,7 @@ import { env } from '../config.js';
 import { getDbPool } from '../db.js';
 
 import type { ParsedDocument } from './documentParser.js';
-import { computeTextEmbedding, EMBEDDING_DIMENSION } from './embeddingService.js';
+import { computeEmbeddings, EMBEDDING_DIMENSION, toVecLiteral } from './embeddingService.js';
 import { chunkDocument } from './textChunker.js';
 
 interface IngestOptions {
@@ -51,8 +51,13 @@ export async function ingestDocument(options: IngestOptions): Promise<IngestedDo
   const overlap = Math.min(Math.floor(chunkSize / 2), env.docChunkOverlap);
   const chunks = chunkDocument(options.document, { chunkSize, overlap });
 
+  // Insert chunks first
+  const chunkIds: string[] = [];
+  const chunkTexts: string[] = [];
   for (const chunk of chunks) {
     const chunkId = randomUUID();
+    chunkIds.push(chunkId);
+    chunkTexts.push(chunk.text);
     await pool.query(
       `INSERT INTO chunks (chunk_id, document_id, project_id, chunk_index, token_count, span, content)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -66,13 +71,20 @@ export async function ingestDocument(options: IngestOptions): Promise<IngestedDo
         chunk.text
       ]
     );
+  }
 
-    const embedding = computeTextEmbedding(chunk.text);
-    await pool.query(
-      `INSERT INTO embeddings (embedding_id, chunk_id, project_id, embedding, dimension)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [randomUUID(), chunkId, options.projectId ?? null, embedding, embedding.length]
-    );
+  // Batch-compute embeddings via OpenAI, then store both legacy array and pgvector column
+  if (chunkTexts.length > 0) {
+    const embeddings = await computeEmbeddings(chunkTexts);
+    for (let i = 0; i < chunkIds.length; i += 1) {
+      const vec = embeddings[i];
+      const vecLiteral = toVecLiteral(vec);
+      await pool.query(
+        `INSERT INTO embeddings (embedding_id, chunk_id, project_id, embedding, dimension, embedding_vec)
+         VALUES ($1, $2, $3, $4, $5, $6::vector)`,
+        [randomUUID(), chunkIds[i], options.projectId ?? null, vec, vec.length, vecLiteral]
+      );
+    }
   }
 
   return {

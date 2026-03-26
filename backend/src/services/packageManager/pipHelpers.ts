@@ -7,6 +7,7 @@
 
 import { spawn } from 'child_process';
 
+import { appLogger } from '../../logging/logger.js';
 import { execDocker } from '../dockerUtils.js';
 
 import type { PackageInstallEvent } from './types.js';
@@ -148,7 +149,7 @@ export async function runPipInstallStream(
         const installTimeout = setTimeout(() => {
             timedOut = true;
             onEvent({ type: 'log', message: INSTALL_TIMEOUT_MESSAGE });
-            console.warn(`[containerManager] pip install timed out (${attemptLabel})`);
+            appLogger.warn(`[containerManager] pip install timed out (${attemptLabel})`);
             proc.kill('SIGKILL');
         }, PIP_INSTALL_TIMEOUT_MS);
 
@@ -169,7 +170,7 @@ export async function runPipInstallStream(
                 if (marker.match.test(trimmed) && marker.progress > currentProgress) {
                     currentProgress = marker.progress;
                     onEvent({ type: 'progress', progress: currentProgress, stage: marker.stage });
-                    console.info(`[containerManager] pip install phase -> ${marker.stage} (${attemptLabel}, ${currentProgress}%)`);
+                    appLogger.info(`[containerManager] pip install phase -> ${marker.stage} (${attemptLabel}, ${currentProgress}%)`);
                 }
             }
         };
@@ -202,7 +203,7 @@ export async function runPipInstallStream(
                 const finalizingStage = finalizingProgress === 100 ? 'Completed' : 'Finalizing';
                 onEvent({ type: 'progress', progress: finalizingProgress, stage: finalizingStage });
                 currentProgress = finalizingProgress;
-                console.info(`[containerManager] pip install phase -> ${finalizingStage} (${attemptLabel}, ${finalizingProgress}%)`);
+                appLogger.info(`[containerManager] pip install phase -> ${finalizingStage} (${attemptLabel}, ${finalizingProgress}%)`);
             }
 
             finish({

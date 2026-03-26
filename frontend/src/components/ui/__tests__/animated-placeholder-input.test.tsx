@@ -6,6 +6,7 @@ import { AnimatedPlaceholderInput } from '../animated-placeholder-input';
 describe('AnimatedPlaceholderInput', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       return window.setTimeout(() => callback(performance.now()), 0);
     });

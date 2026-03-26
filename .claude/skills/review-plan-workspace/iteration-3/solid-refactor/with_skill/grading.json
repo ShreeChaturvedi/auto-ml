@@ -1,0 +1,16 @@
+{
+  "eval_id": 3, "run_type": "with_skill",
+  "expectations": [
+    {"text": "Identifies existing NlApprovalDialog + useNlSuggestions", "passed": true, "evidence": "Critical #1: NlApprovalDialog (50 lines), useNlSuggestions (91 lines), no chips or skeleton exist"},
+    {"text": "SSE/streaming lives in lib/api/query.ts, not component", "passed": true, "evidence": "Critical #2: traces actual data flow through onGenerate prop, notes proposed return signature doesn't match"},
+    {"text": "Abort controller ref-based identity check pattern", "passed": false, "evidence": "Mentions streamAbortRef management but doesn't describe the specific streamAbortRef.current !== controller identity check"},
+    {"text": "Lists 3+ of 4 missing downstream files", "passed": true, "evidence": "Strong #3: lists all 4 with exact import lines (NlWorkflowSteps, SqlRevealBlock, QueryPanel, stream test)"},
+    {"text": "Naming mismatch (chips vs dropdown/dialog)", "passed": false, "evidence": "Notes 'no chips anywhere' but doesn't explicitly contrast with the dropdown/dialog naming convention"},
+    {"text": "Re-export chain from NlQueryReducer", "passed": true, "evidence": "Alternative C: 'ApproveThemeClasses and NlPhase are defined in NlQueryReducer.ts but re-exported through NlQueryWorkflow.tsx'"},
+    {"text": "useNlGeneration alternative with concrete signature", "passed": true, "evidence": "Revised Plan proposes useNlGeneration with specific steps and file list"},
+    {"text": "Verifies actual line count (~367)", "passed": true, "evidence": "Minor #5: table of 5 extracted modules with line counts, 367-line total"},
+    {"text": "Mentions NlQueryWorkflow.stream.test.tsx", "passed": true, "evidence": "Strong #4: '241 lines of directly relevant tests' entirely omitted"},
+    {"text": "Structured output", "passed": true, "evidence": "Clear Critical/Strong/Minor/Alternative/Revised Plan sections"}
+  ],
+  "pass_rate": 0.8
+}

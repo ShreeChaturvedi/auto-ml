@@ -3,10 +3,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { closeDbPool, getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 
 async function runMigrations() {
   if (!hasDatabaseConfiguration()) {
-    console.error('[migrations] DATABASE_URL is not set. Cannot run migrations.');
+    appLogger.error('[migrations] DATABASE_URL is not set. Cannot run migrations.');
     process.exitCode = 1;
     return;
   }
@@ -17,7 +18,7 @@ async function runMigrations() {
     .sort();
 
   if (migrationFiles.length === 0) {
-    console.warn('[migrations] No .sql files found in migrations directory.');
+    appLogger.warn('[migrations] No .sql files found in migrations directory.');
     return;
   }
 
@@ -27,16 +28,16 @@ async function runMigrations() {
     const filePath = join(migrationsDir, file);
     const sql = readFileSync(filePath, 'utf8');
 
-    console.info(`[migrations] Running ${file}`);
+    appLogger.info(`[migrations] Running ${file}`);
     await pool.query(sql);
   }
 
-  console.info('[migrations] All migrations executed successfully');
+  appLogger.info('[migrations] All migrations executed successfully');
 }
 
 runMigrations()
   .catch((error) => {
-    console.error('[migrations] Failed to run migrations', error);
+    appLogger.error('[migrations] Failed to run migrations', error);
     process.exitCode = 1;
   })
   .finally(async () => {

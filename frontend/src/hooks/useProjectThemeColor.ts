@@ -18,13 +18,19 @@ const PROJECT_COLOR_HEX: Record<string, { light: string; dark: string }> = {
 };
 
 /**
- * Resolves a project's theme color as both a Tailwind class and a CSS hex string.
- * Handles customColor override, standard palette lookup, and dark/light mode.
+ * Returns the active project's theme color as Tailwind classes and a CSS hex string.
+ * Uses activeProjectId from the store — the same path as IconModeToggle, sidebar, etc.
+ * The hex value is only for CSS custom properties (e.g. --voice-theme-color);
+ * prefer projectColorClasses Tailwind fields for all other styling.
  */
-export function useProjectThemeColor(projectId: string) {
-  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
+export function useProjectThemeColor() {
+  const project = useProjectStore((s) => {
+    const id = s.activeProjectId;
+    return id ? s.projects.find((p) => p.id === id) : undefined;
+  });
   const { theme } = useTheme();
-  const themeColorClass = project ? projectColorClasses[project.color]?.text : undefined;
+  const colorClasses = project ? projectColorClasses[project.color] : undefined;
+  const themeColorClass = colorClasses?.text;
 
   const themeColor = useMemo(() => {
     if (project?.customColor) return project.customColor;
@@ -34,5 +40,5 @@ export function useProjectThemeColor(projectId: string) {
     return isDark ? hex.dark : hex.light;
   }, [project?.customColor, project?.color, theme]);
 
-  return { themeColor, themeColorClass };
+  return { themeColor, themeColorClass, colorClasses };
 }

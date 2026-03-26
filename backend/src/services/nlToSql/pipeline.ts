@@ -336,9 +336,11 @@ function phaseValidation(
   ].join('\n'));
 
   try {
+    const allowedTables = new Set(tables.map((t) => t.tableName.toLowerCase()));
     const validation = validateReadOnlySql(execution.sql, {
       defaultLimit: env.sqlDefaultLimit,
-      maxRows: env.sqlMaxRows
+      maxRows: env.sqlMaxRows,
+      allowedTables
     });
     const caseNormalized = normalizeCaseSensitiveIdentifiers(validation.normalizedSql, tables);
 

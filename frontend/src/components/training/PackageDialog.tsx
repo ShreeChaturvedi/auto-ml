@@ -189,9 +189,9 @@ export function PackageDialog({
                   v{displayVersion}
                 </Badge>
                 {isInstalled && (
-                  <Badge variant="outline" className="text-[10px] font-normal text-emerald-500 border-emerald-500/30">
+                  <span className="inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
                     Installed
-                  </Badge>
+                  </span>
                 )}
               </div>
             </div>

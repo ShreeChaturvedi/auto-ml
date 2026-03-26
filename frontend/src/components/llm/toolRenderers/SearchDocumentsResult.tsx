@@ -12,7 +12,23 @@ export interface SearchHit {
   span?: { start: number; end: number };
 }
 
-export function SearchDocumentsResult({ items }: { items: SearchHit[] }) {
+/** Badge border/text classes themed to project color, with opacity tiers by score */
+function scoreBadgeClasses(pct: number, projectText?: string, projectBorder?: string): string {
+  if (projectText && projectBorder) {
+    const opacity = pct >= 70 ? '' : pct >= 40 ? 'opacity-70' : 'opacity-45';
+    return cn(projectBorder, projectText, opacity);
+  }
+  if (pct >= 70) return 'border-emerald-500/40 text-emerald-600';
+  if (pct >= 40) return 'border-amber-500/40 text-amber-600';
+  return 'border-rose-400/40 text-rose-500';
+}
+
+export function SearchDocumentsResult({ items, projectFill, projectText, projectBorder }: {
+  items: SearchHit[];
+  projectFill?: string;
+  projectText?: string;
+  projectBorder?: string;
+}) {
   if (items.length === 0) {
     return <p className="text-xs text-muted-foreground italic">No matching documents found.</p>;
   }
@@ -39,9 +55,7 @@ export function SearchDocumentsResult({ items }: { items: SearchHit[] }) {
                 variant="outline"
                 className={cn(
                   'text-[10px] font-mono tabular-nums px-1.5 py-0',
-                  pct >= 70 && 'border-emerald-500/40 text-emerald-600',
-                  pct >= 40 && pct < 70 && 'border-amber-500/40 text-amber-600',
-                  pct < 40 && 'border-rose-400/40 text-rose-500'
+                  scoreBadgeClasses(pct, projectText, projectBorder)
                 )}
               >
                 {pct}%
@@ -51,7 +65,7 @@ export function SearchDocumentsResult({ items }: { items: SearchHit[] }) {
             {/* Score bar */}
             <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
               <div
-                className={cn('h-full rounded-full transition-all', scoreColor(hit.score ?? 0))}
+                className={cn('h-full rounded-full transition-all', scoreColor(hit.score ?? 0, projectFill))}
                 style={{ width: `${pct}%` }}
               />
             </div>

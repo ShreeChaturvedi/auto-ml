@@ -21,4 +21,16 @@ describe('modelTemplates', () => {
       expect(lookup?.id).toBe(template.id);
     });
   });
+
+  it('resolves legacy hyphenated IDs via aliases', () => {
+    expect(getModelTemplate('random-forest-classifier')?.id).toBe('random_forest_classifier');
+    expect(getModelTemplate('linear-regression')?.id).toBe('linear_regression');
+    expect(getModelTemplate('knn-classifier')?.id).toBe('knn_classifier');
+    expect(getModelTemplate('gradient-boosting-classifier')?.id).toBe('gradient_boosting_classifier');
+    expect(getModelTemplate('logistic-regression')?.id).toBe('logistic_regression');
+  });
+
+  it('returns undefined for truly unknown IDs', () => {
+    expect(getModelTemplate('nonexistent')).toBeUndefined();
+  });
 });

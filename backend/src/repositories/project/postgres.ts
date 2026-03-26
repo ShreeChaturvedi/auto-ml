@@ -25,7 +25,7 @@ export class PgProjectRepository implements ProjectRepository {
   }
 
   private buildSelectColumns(columns: Set<string>) {
-    const select = ['project_id', 'name', 'description', 'metadata', 'created_at', 'updated_at'];
+    const select = ['project_id', 'name', 'description', 'metadata', 'created_at', 'updated_at', 'user_id'];
     if (columns.has('icon')) {
       select.push('icon');
     }
@@ -33,6 +33,20 @@ export class PgProjectRepository implements ProjectRepository {
       select.push('color');
     }
     return select;
+  }
+
+  private mapRowToProject(row: Record<string, unknown>): Project {
+    return {
+      id: row.project_id as string,
+      userId: (row.user_id as string) ?? undefined,
+      name: row.name as string,
+      description: (row.description as string) ?? undefined,
+      icon: (row.icon as string) ?? 'Folder',
+      color: (row.color as string) ?? 'blue',
+      createdAt: (row.created_at as Date).toISOString(),
+      updatedAt: (row.updated_at as Date).toISOString(),
+      metadata: sanitizeMetadata((row.metadata as Record<string, unknown>) ?? undefined)
+    };
   }
 
   async list(): Promise<Project[]> {
@@ -43,16 +57,7 @@ export class PgProjectRepository implements ProjectRepository {
       `SELECT ${selectColumns.join(', ')} FROM ${this.table} ORDER BY created_at ASC`
     );
 
-    return result.rows.map((row) => ({
-      id: row.project_id,
-      name: row.name,
-      description: row.description ?? undefined,
-      icon: row.icon ?? 'Folder',
-      color: row.color ?? 'blue',
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: sanitizeMetadata(row.metadata ?? undefined)
-    }));
+    return result.rows.map((row) => this.mapRowToProject(row));
   }
 
   async getById(id: string): Promise<Project | undefined> {
@@ -66,17 +71,7 @@ export class PgProjectRepository implements ProjectRepository {
     if (result.rowCount === 0) {
       return undefined;
     }
-    const row = result.rows[0];
-    return {
-      id: row.project_id,
-      name: row.name,
-      description: row.description ?? undefined,
-      icon: row.icon ?? 'Folder',
-      color: row.color ?? 'blue',
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: sanitizeMetadata(row.metadata ?? undefined)
-    };
+    return this.mapRowToProject(result.rows[0]);
   }
 
   async create(input: CreateProjectInput): Promise<Project> {
@@ -95,6 +90,10 @@ export class PgProjectRepository implements ProjectRepository {
       insertColumns.push('color');
       values.push(input.color ?? 'blue');
     }
+    if (input.userId) {
+      insertColumns.push('user_id');
+      values.push(input.userId);
+    }
 
     const result = await pool.query(
       `INSERT INTO ${this.table} (${insertColumns.join(', ')})
@@ -103,17 +102,7 @@ export class PgProjectRepository implements ProjectRepository {
       values
     );
 
-    const row = result.rows[0];
-    return {
-      id: row.project_id,
-      name: row.name,
-      description: row.description ?? undefined,
-      icon: row.icon ?? 'Folder',
-      color: row.color ?? 'blue',
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: sanitizeMetadata(row.metadata ?? undefined)
-    };
+    return this.mapRowToProject(result.rows[0]);
   }
 
   async update(id: string, input: Partial<CreateProjectInput>): Promise<Project | undefined> {
@@ -165,17 +154,32 @@ export class PgProjectRepository implements ProjectRepository {
       return undefined;
     }
 
-    const row = result.rows[0];
-    return {
-      id: row.project_id,
-      name: row.name,
-      description: row.description ?? undefined,
-      icon: row.icon ?? 'Folder',
-      color: row.color ?? 'blue',
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: sanitizeMetadata(row.metadata ?? undefined)
-    };
+    return this.mapRowToProject(result.rows[0]);
+  }
+
+  async listByUser(userId: string): Promise<Project[]> {
+    const pool = getDbPool();
+    const columns = await this.getColumns();
+    const selectColumns = this.buildSelectColumns(columns);
+    const result = await pool.query(
+      `SELECT ${selectColumns.join(', ')} FROM ${this.table} WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId]
+    );
+    return result.rows.map((row) => this.mapRowToProject(row));
+  }
+
+  async getByIdAndUser(id: string, userId: string): Promise<Project | undefined> {
+    const pool = getDbPool();
+    const columns = await this.getColumns();
+    const selectColumns = this.buildSelectColumns(columns);
+    const result = await pool.query(
+      `SELECT ${selectColumns.join(', ')} FROM ${this.table} WHERE project_id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+    return this.mapRowToProject(result.rows[0]);
   }
 
   async delete(id: string): Promise<boolean> {

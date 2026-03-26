@@ -2,12 +2,10 @@ import { useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
-import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
+import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createFeatureEngineeringAdapter } from './FeatureEngineeringAdapter';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
-import { FeatureApprovalGate } from './FeatureApprovalGate';
-import { FeatureEngineeringFooter } from './FeatureEngineeringFooter';
 import {
   FeatureEngineeringToolbarLeft,
   FeatureEngineeringToolbarRight
@@ -17,13 +15,12 @@ import {
   hasUiItems,
 } from './featureEngineeringUtils';
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
+import { useFeatureUrlSync } from './hooks/useFeatureUrlSync';
 import { useNotebookStore } from '@/stores/notebookStore';
-
+import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
+import { DeletePipelineDialog } from './DeletePipelineDialog';
+import { FeatureEngineeringLeftPane } from './FeatureEngineeringLeftPane';
 import { cn } from '@/lib/utils';
-import { getWorkbookParam } from '@/lib/workbookParam';
-
-import { Beaker } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 
 import type { ChatMessage } from '@/types/llmUi';
 
@@ -32,8 +29,8 @@ interface FeatureEngineeringPanelProps {
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
+  const composerPlaceholders = useWorkflowPlaceholders(projectId, 'featureEngineering');
   const [searchParams] = useSearchParams();
-  const initialVersionId = getWorkbookParam(searchParams);
   const initialNotebookId = searchParams.get('notebook') ?? undefined;
 
   const {
@@ -49,7 +46,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     activeFeatures,
     featureById,
     readinessReport,
@@ -72,15 +68,33 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    handleRenameConfirm,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    handleDeleteConfirm,
     approveVersion
   } = useFeaturePipelineState(projectId);
 
-  // Apply initial version/notebook from URL search params
-  useEffect(() => {
-    if (initialVersionId && initialVersionId !== currentVersion?.id) {
-      handleVersionSwitch(initialVersionId);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // --- URL synchronization and version management ---
+  const {
+    handleVersionSelect,
+    handleCreateDraft,
+    handleApproveCurrentVersion,
+    handleDeleteCurrentDraft
+  } = useFeatureUrlSync({
+    projectId,
+    currentVersion,
+    handleVersionSwitch,
+    handleNewDraft,
+    handleDeleteDraft,
+    approveVersion
+  });
 
   // Tag notebook with feature-engineering phase metadata
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
@@ -112,9 +126,19 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       targetColumn,
       datasetFiles,
       documentFiles,
-      sessionKey
+      sessionKey,
+      notebookName: currentVersion?.name ?? 'Feature Engineering Notebook',
+      notebookMetadata: currentVersion
+        ? {
+            phase: 'feature-engineering',
+            tabId: currentVersion.id,
+            tabName: currentVersion.name
+          }
+        : {
+            phase: 'feature-engineering'
+          }
     });
-  }, [currentVersion?.id, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
+  }, [currentVersion, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
   const baseRenderLifecycleCard = useLifecycleCards();
 
@@ -166,60 +190,24 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
   );
 
   return (
-    <AgenticShell
-      key={currentVersion?.id ?? 'feature-engineering-default'}
-      projectId={projectId}
-      storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
-      domainAdapter={adapter}
-      domainLockReason={
-        isApproved
-          ? 'This feature pipeline is approved and locked. Start a new draft to continue editing.'
-          : undefined
-      }
-      renderLeftPane={(renderProps) => (
-        <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
-          <FeatureApprovalGate
+    <>
+      <AgenticShell
+        key={currentVersion?.id ?? 'feature-engineering-default'}
+        projectId={projectId}
+        composerPlaceholders={composerPlaceholders}
+        storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
+        domainAdapter={adapter}
+        domainLockReason={
+          isApproved
+            ? 'This feature pipeline is approved and locked. Start a new draft to continue editing.'
+            : undefined
+        }
+        renderLeftPane={(renderProps) => (
+          <FeatureEngineeringLeftPane
+            renderProps={renderProps}
             isApproved={isApproved}
             isReadyForApproval={isReadyForApproval}
             panelError={panelError}
-            agentError={renderProps.error}
-            onApprove={() => currentVersion && approveVersion(projectId, currentVersion.id)}
-            onNewDraft={handleNewDraft}
-          />
-
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            {!renderProps.messages.some((m) => m.type === 'user') ? (
-              <Card className="border-dashed">
-                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-                  <Beaker className="h-8 w-8 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Feature Engineering is ready</p>
-                    <p className="text-xs text-muted-foreground">
-                      Ask the agent to propose candidate features, validate risks, and produce
-                      executable notebook steps.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
-
-            <div className="space-y-4 py-4 pb-28">
-              <ChatMessageRenderer
-                messages={renderProps.messages}
-                renderLifecycleCard={renderLifecycleCard}
-                activeTextMessageId={renderProps.activeTextMessageId}
-                activeThinkingMessageId={renderProps.activeThinkingMessageId}
-                hydratedMessageIds={renderProps.hydratedMessageIds}
-                onEditMessage={renderProps.onEditMessage}
-                onRevertToMessage={renderProps.onRevertToMessage}
-                editingMessageId={renderProps.editingMessageId}
-                turnDiffs={renderProps.turnDiffs}
-                isGenerating={renderProps.isGenerating}
-              />
-            </div>
-          </div>
-
-          <FeatureEngineeringFooter
             readinessReportUnlocked={readinessReportUnlocked}
             isReadinessExpanded={isReadinessExpanded}
             onToggleReadiness={() => setIsReadinessExpanded(!isReadinessExpanded)}
@@ -231,34 +219,58 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             onApplyFeatures={handleApplyFeatures}
             applyStatus={applyStatus}
             applyMessage={applyMessage}
-            isApproved={isApproved}
-            activeFeaturesCount={activeFeatures.length}
+            activeFeatures={activeFeatures}
+            onApprove={handleApproveCurrentVersion}
+            onNewDraft={handleCreateDraft}
+            renderLifecycleCard={renderLifecycleCard}
           />
-        </div>
-      )}
-      toolbarLeft={
-        <FeatureEngineeringToolbarLeft
-          currentVersionId={currentVersion?.id ?? ''}
-          versions={versions.map((version) => ({ id: version.id, name: version.name }))}
-          onVersionSwitch={handleVersionSwitch}
-          onNewDraft={handleNewDraft}
-          onRenameDraft={handleRenameDraft}
-          onDeleteDraft={handleDeleteDraft}
-          canRenameDraft={isCurrentVersionDraft}
-          canDeleteDraft={canDeleteCurrentDraft}
-        />
-      }
-      toolbarRight={
-        <FeatureEngineeringToolbarRight
-          selectedDatasetId={selectedDataset ?? ''}
-          datasetOptions={datasetFiles.map((file) => ({ id: file.id, name: file.name }))}
-          onDatasetSelect={setSelectedDataset}
-          selectedTargetColumn={targetColumn ?? ''}
-          targetColumns={datasetColumns}
-          onTargetColumnSelect={setTargetColumn}
-        />
-      }
-      leftPaneScrollable={false}
-    />
+        )}
+        toolbarLeft={
+          <FeatureEngineeringToolbarLeft
+            currentVersionId={currentVersion?.id ?? ''}
+            versions={versions.map((version) => ({ id: version.id, name: version.name }))}
+            onVersionSwitch={handleVersionSelect}
+            onNewDraft={handleCreateDraft}
+            onRenameDraft={handleRenameDraft}
+            onReplay={handleReplay}
+            onReset={handleReset}
+            onDeleteDraft={handleDeleteCurrentDraft}
+            canRenameDraft={isCurrentVersionDraft}
+            canDeleteDraft={isCurrentVersionDraft}
+          />
+        }
+        toolbarRight={
+          <FeatureEngineeringToolbarRight
+            selectedDatasetId={selectedDataset ?? ''}
+            datasetOptions={datasetFiles.map((file) => ({ id: file.id, name: file.name }))}
+            onDatasetSelect={setSelectedDataset}
+            selectedTargetColumn={targetColumn ?? ''}
+            targetColumns={datasetColumns}
+            onTargetColumnSelect={setTargetColumn}
+          />
+        }
+        leftPaneScrollable={false}
+      />
+
+      {/* Rename draft dialog */}
+      <RenameTabDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        value={renameDialogValue}
+        onValueChange={setRenameDialogValue}
+        onSave={handleRenameConfirm}
+        title="Rename draft pipeline"
+        description="Update the name of the current draft pipeline."
+      />
+
+      {/* Delete draft confirmation dialog */}
+      <DeletePipelineDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        draftName={currentVersion?.name ?? 'draft'}
+        isLastVersion={versions.length <= 1}
+        onConfirm={handleDeleteConfirm}
+      />
+    </>
   );
 }

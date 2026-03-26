@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 
+import { appLogger } from '../../logging/logger.js';
 import {
   generateSqlFromNaturalLanguageV2,
   repairSqlFromExecutionErrorV2,
@@ -10,6 +11,7 @@ import {
 } from '../../services/nlToSql/index.js';
 import { getCachedQueryResult, storeCachedQueryResult } from '../../services/queryCache.js';
 import { executeReadOnlyQuery } from '../../services/sqlExecutor.js';
+import { getErrorMessage } from '../../utils/errors.js';
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -24,13 +26,6 @@ export function hasResolvedColumnTypes(payload: { columns?: Array<{ dataType?: s
     const normalized = column.dataType.trim().toLowerCase();
     return normalized.length > 0 && normalized !== 'unknown';
   });
-}
-
-export function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +161,7 @@ async function executeAndCacheQuery(params: {
   projectId: string;
   sql: string;
 }): Promise<SqlExecutionPayload> {
-  const queryResult = await executeReadOnlyQuery({ sql: params.sql });
+  const queryResult = await executeReadOnlyQuery({ sql: params.sql, projectId: params.projectId });
   await storeCachedQueryResult({
     projectId: params.projectId,
     sql: params.sql,
@@ -283,7 +278,7 @@ export async function resolveNlQueryExecution(params: {
     });
   } catch (executionError) {
     const message = getErrorMessage(executionError, 'Generated SQL failed to execute');
-    console.warn('[query/nl] Generated SQL execution failed:', {
+    appLogger.warn('[query/nl] Generated SQL execution failed:', {
       error: message,
       sql: generated.sql
     });
@@ -346,7 +341,7 @@ export async function resolveNlQueryExecution(params: {
         });
       }
     } catch (repairError) {
-      console.warn('[query/nl] SQL repair failed, returning original SQL for manual review:', repairError);
+      appLogger.warn('[query/nl] SQL repair failed, returning original SQL for manual review:', repairError);
       return buildNlResponsePayload({
         generated,
         cached: false,

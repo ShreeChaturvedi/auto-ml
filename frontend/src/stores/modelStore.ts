@@ -2,8 +2,9 @@ import { create } from 'zustand';
 
 import type { ModelRecord, ModelTemplate, TrainModelRequest } from '@/types/model';
 import * as modelApi from '@/lib/api/models';
+import { useExperimentsStore } from './experimentsStore';
 
-export interface ExperimentState {
+export interface TrainingRunState {
   experimentId: string;
   experimentName: string;
   modelType: string;
@@ -20,15 +21,16 @@ interface ModelState {
   isTraining: boolean;
   error: string | null;
   /** Training lifecycle state */
-  experiments: Record<string, ExperimentState>;
+  trainingRunStates: Record<string, TrainingRunState>;
   currentStage: string | null;
   trainingRunId: string | null;
   fetchTemplates: () => Promise<void>;
   refreshModels: (projectId?: string) => Promise<void>;
   trainModel: (request: TrainModelRequest) => Promise<ModelRecord | null>;
-  updateExperiment: (experimentId: string, state: Partial<ExperimentState>) => void;
+  updateTrainingRun: (experimentId: string, state: Partial<TrainingRunState>) => void;
   setCurrentStage: (stage: string | null) => void;
   setTrainingRunId: (runId: string | null) => void;
+  deleteModel: (modelId: string) => Promise<void>;
   clearTrainingRun: () => void;
 }
 
@@ -39,7 +41,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
   isLoadingModels: false,
   isTraining: false,
   error: null,
-  experiments: {},
+  trainingRunStates: {},
   currentStage: null,
   trainingRunId: null,
 
@@ -90,14 +92,14 @@ export const useModelStore = create<ModelState>((set, get) => ({
     }
   },
 
-  updateExperiment: (experimentId, partial) => {
+  updateTrainingRun: (experimentId, partial) => {
     set((state) => ({
-      experiments: {
-        ...state.experiments,
+      trainingRunStates: {
+        ...state.trainingRunStates,
         [experimentId]: {
-          ...state.experiments[experimentId],
+          ...state.trainingRunStates[experimentId],
           ...partial
-        } as ExperimentState
+        } as TrainingRunState
       }
     }));
   },
@@ -112,11 +114,32 @@ export const useModelStore = create<ModelState>((set, get) => ({
     set({ trainingRunId: runId });
   },
 
+  deleteModel: async (modelId) => {
+    try {
+      await modelApi.deleteModel(modelId);
+      set((state) => ({
+        models: state.models.filter((m) => m.modelId !== modelId),
+      }));
+      const expStore = useExperimentsStore.getState();
+      if (expStore.selectedModelId === modelId) {
+        expStore.selectModel(null);
+      }
+      if (expStore.comparisonModelIds.includes(modelId)) {
+        expStore.toggleComparison(modelId);
+      }
+      expStore.purgeModelCache(modelId);
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to delete model.',
+      });
+    }
+  },
+
   clearTrainingRun: () => {
     set({
       trainingRunId: null,
       currentStage: null,
-      experiments: {},
+      trainingRunStates: {},
       isTraining: false,
       error: null
     });

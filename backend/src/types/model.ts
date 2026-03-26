@@ -50,6 +50,7 @@ export interface ModelRecord {
   status: ModelStatus;
   createdAt: string;
   updatedAt: string;
+  version?: number;
   trainingMs?: number;
   targetColumn?: string;
   featureColumns?: string[];
@@ -57,6 +58,9 @@ export interface ModelRecord {
   artifact?: ModelArtifact;
   error?: string;
   metadata?: Record<string, unknown>;
+  evaluationStatus?: 'pending' | 'computing' | 'ready' | 'failed';
+  evaluationComputedAt?: string;
+  evaluationError?: string;
 }
 
 export interface TrainModelRequest {

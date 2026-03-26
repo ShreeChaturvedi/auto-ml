@@ -1,9 +1,13 @@
 import cors from 'cors';
-import express, { Request, Response, Router } from 'express';
-import morgan from 'morgan';
+import express, { type NextFunction, Request, Response, Router } from 'express';
 
 import { env } from './config.js';
 import { getDbPool, hasDatabaseConfiguration } from './db.js';
+import { appLogger } from './logging/logger.js';
+import { requireAuth } from './middleware/auth.js';
+import { requestContextMiddleware } from './middleware/requestContext.js';
+import { requestTimingMiddleware } from './middleware/requestTiming.js';
+import { requireProjectAccess } from './middleware/requireProjectAccess.js';
 import { createDatasetRepository } from './repositories/datasetRepository.js';
 import { createProjectRepository } from './repositories/projectRepository.js';
 import { createAnswerRouter } from './routes/answer.js';
@@ -11,6 +15,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { createDatasetUploadRouter } from './routes/datasets.js';
 import { createDocumentRouter } from './routes/documents.js';
 import executionRouter from './routes/execution.js';
+import { createExperimentsRouter } from './routes/experiments.js';
 import { createFeatureEngineeringRouter } from './routes/featureEngineering.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { createLlmRouter } from './routes/llm/index.js';
@@ -21,13 +26,13 @@ import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
 import { createRealtimeSessionRouter } from './routes/realtimeSession.js';
+import { createSettingsRouter } from './routes/settings.js';
 import { createWorkflowRouter } from './routes/workflows.js';
 
 export function createApp() {
   const app = express();
   const projectRepository = createProjectRepository(env.storagePath);
   const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
-  const isVitestRuntime = Boolean(process.env.VITEST);
 
   app.set('trust proxy', true);
   app.use(
@@ -36,11 +41,10 @@ export function createApp() {
       credentials: true
     })
   );
+  app.use(requestContextMiddleware);
+  app.use(requestTimingMiddleware);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
-  if (!isVitestRuntime) {
-    app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
-  }
 
   const router = Router();
   registerHealthRoutes(router);
@@ -51,6 +55,13 @@ export function createApp() {
       res.status(503).json({ error: 'Authentication is unavailable. Configure DATABASE_URL to enable auth.' });
     });
   }
+
+  // Apply authentication + project ownership when database is configured
+  if (hasDatabaseConfiguration()) {
+    router.use(requireAuth);
+    router.use(requireProjectAccess(projectRepository));
+  }
+
   registerProjectRoutes(router, projectRepository);
   router.use(createDatasetUploadRouter(datasetRepository));
   router.use(createDocumentRouter());
@@ -62,8 +73,10 @@ export function createApp() {
   router.use(createWorkflowRouter());
   router.use(createMcpRouter());
   router.use('/models', modelRouter);
+  router.use('/experiments', createExperimentsRouter());
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
+  router.use(createSettingsRouter());
   router.use(createRealtimeSessionRouter());
 
   app.use('/api', router);
@@ -76,8 +89,11 @@ export function createApp() {
     res.status(404).json({ error: 'Not Found' });
   });
 
-  app.use((err: unknown, _req: Request, res: Response) => {
-    console.error(err);
+  // Express requires exactly 4 parameters to recognize error-handling middleware.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    appLogger.error({ err }, 'Unhandled request error');
+    if (res.headersSent) return;
     res.status(500).json({ error: 'Internal Server Error' });
   });
 

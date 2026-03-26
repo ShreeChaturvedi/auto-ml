@@ -3,8 +3,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Copy } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import type { UiItem } from '@/types/llmUi';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { FeatureSuggestionCard } from './FeatureSuggestionCard';
 import type { FeatureSuggestionItem } from './featureEngineeringUtils';
 import type { SuggestionDraft } from './hooks/useFeaturePipelineState';
@@ -27,6 +28,8 @@ export function FeatureUiItemRenderer({
   onToggleSuggestion,
   onUpdateSuggestionControl
 }: FeatureUiItemRendererProps) {
+  const [codeCopied, copyCode] = useCopyToClipboard();
+
   switch (item.type) {
     case 'dataset_summary':
       return (
@@ -98,12 +101,14 @@ export function FeatureUiItemRenderer({
               variant="outline"
               size="sm"
               className="gap-2"
-              onClick={() => {
-                void navigator.clipboard.writeText(item.content).catch(() => undefined);
-              }}
+              onClick={() => void copyCode(item.content)}
             >
-              <Copy className="h-3.5 w-3.5" />
-              Copy code
+              {codeCopied ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              {codeCopied ? 'Copied!' : 'Copy code'}
             </Button>
           </CardContent>
         </Card>

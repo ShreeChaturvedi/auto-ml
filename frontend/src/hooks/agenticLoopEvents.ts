@@ -128,7 +128,9 @@ export function createAgenticEventHandler({
       setMessages((prev) => [...prev, {
         id: `workflow-error-${Date.now()}`,
         type: 'error',
-        message: event.message
+        message: event.message,
+        retryable: event.retryable ?? false,
+        code: event.code
       }]);
       setIsStreaming(false);
       return;

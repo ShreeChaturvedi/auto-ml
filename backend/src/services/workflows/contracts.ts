@@ -1,6 +1,7 @@
 import type { LlmToolDefinition } from '../llm/llmClient.js';
 
 import type { WorkflowGraphState } from './graphState.js';
+import { getPhaseConfig } from './phaseConfig.js';
 
 const META_OUTPUT_TOOLS = new Set(['ask_user', 'plan_exit', 'render_ui']);
 
@@ -21,6 +22,34 @@ function getControllerAllowedToolNames(state: WorkflowGraphState): string[] | nu
   }
 
   return allowed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function resolvePhaseStageContract(
+  state: WorkflowGraphState,
+  requestToolMap: Map<string, LlmToolDefinition>
+): WorkflowNodeContract | null {
+  const phaseConfig = getPhaseConfig(state.turn.phase);
+  const currentStage = state.controllerSummary?.currentNode ?? state.run.currentNode;
+  if (!phaseConfig || typeof currentStage !== 'string') {
+    return null;
+  }
+
+  const runtimeContext = state.controllerSummary && typeof state.controllerSummary === 'object'
+    ? state.controllerSummary as Record<string, unknown>
+    : undefined;
+  const stageConfig = phaseConfig.getStageConfig(currentStage, runtimeContext);
+  const allowedTools = stageConfig.allowedTools
+    .map((tool) => requestToolMap.get(tool.name) ?? tool);
+
+  return {
+    mode: stageConfig.mode === 'text' ? 'text' : 'action',
+    allowedTools,
+    allowAssistantMessage: stageConfig.allowAssistantMessage,
+    allowAskUser: stageConfig.allowAskUser,
+    allowRenderUi: stageConfig.allowRenderUi,
+    allowPlanExit: stageConfig.allowPlanExit,
+    requireToolCall: stageConfig.requireToolCall
+  };
 }
 
 export function resolveWorkflowNodeContract(state: WorkflowGraphState): WorkflowNodeContract {
@@ -44,6 +73,11 @@ export function resolveWorkflowNodeContract(state: WorkflowGraphState): Workflow
       allowPlanExit: false,
       requireToolCall
     };
+  }
+
+  const phaseStageContract = resolvePhaseStageContract(state, requestToolMap);
+  if (phaseStageContract) {
+    return phaseStageContract;
   }
 
   if (state.turn.phase === 'onboarding') {

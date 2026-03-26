@@ -13,7 +13,8 @@ loadEnv();
 loadEnv({ path: resolve(BACKEND_ROOT, '.env') });
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
-const DEFAULT_NL2SQL_MODEL = 'gpt-5-mini';
+const DEFAULT_NL2SQL_MODEL = 'gpt-5.4-mini';
+const DEFAULT_DEV_JWT_SECRET = 'dev-secret-change-in-production';
 const RESOLVED_LLM_MODEL = process.env.OPENAI_DEFAULT_MODEL
   ?? process.env.LLM_MODEL
   ?? DEFAULT_OPENAI_MODEL;
@@ -59,16 +60,30 @@ function parseFloatValue(value: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+export function resolveJwtSecret(
+  jwtSecret: string | undefined,
+  nodeEnv: string
+): string {
+  if (nodeEnv === 'production' && !jwtSecret) {
+    throw new Error('FATAL: JWT_SECRET must be set in production');
+  }
+
+  return jwtSecret ?? DEFAULT_DEV_JWT_SECRET;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parsePort(process.env.PORT),
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
   storagePath: resolveBackendPath(process.env.STORAGE_PATH ?? 'storage/projects.json'),
   preprocessingRunsPath: resolveBackendPath(process.env.PREPROCESSING_RUNS_PATH ?? 'storage/preprocessing/runs.json'),
+  featureRunsPath: resolveBackendPath(process.env.FEATURE_ENGINEERING_RUNS_PATH ?? 'storage/feature-engineering/runs.json'),
   datasetStorageDir: resolveBackendPath(process.env.DATASET_STORAGE_DIR ?? 'storage/datasets/files'),
   datasetUploadMaxMb: parseInteger(process.env.DATASET_UPLOAD_MAX_MB, 300),
+  nlSuggestionCachePath: resolveBackendPath(process.env.NL_SUGGESTION_CACHE_PATH ?? 'storage/nlSuggestions/cache.json'),
   documentStorageDir: resolveBackendPath(process.env.DOCUMENT_STORAGE_DIR ?? 'storage/documents/files'),
   datasetMetadataPath: resolveBackendPath(process.env.DATASET_METADATA_PATH ?? 'storage/datasets/metadata.json'),
+  insightsCacheDir: resolveBackendPath(process.env.INSIGHTS_CACHE_DIR ?? 'storage/insights'),
   modelStorageDir: resolveBackendPath(process.env.MODEL_STORAGE_DIR ?? 'storage/models/artifacts'),
   modelMetadataPath: resolveBackendPath(process.env.MODEL_METADATA_PATH ?? 'storage/models/metadata.json'),
   databaseUrl: process.env.DATABASE_URL,
@@ -92,7 +107,7 @@ export const env = {
   executionDockerPlatform: process.env.EXECUTION_DOCKER_PLATFORM ?? '',
   dockerEnabled: process.env.DOCKER_ENABLED !== 'false',
   dockerImage: process.env.DOCKER_IMAGE ?? 'automl-python-runtime:latest',
-  executionNetwork: process.env.EXECUTION_NETWORK ?? 'bridge',
+  executionNetwork: process.env.EXECUTION_NETWORK ?? 'automl-sandbox',
   executionAutoBuildImage: process.env.EXECUTION_AUTO_BUILD_IMAGE !== 'false',
   executionWorkspaceDir: resolveBackendPath(process.env.EXECUTION_WORKSPACE_DIR ?? 'storage/workspaces'),
 
@@ -101,11 +116,15 @@ export const env = {
   kernelStartupTimeoutMs: parseInteger(process.env.KERNEL_STARTUP_TIMEOUT_MS, 15000),
 
   // Authentication
-  jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
+  jwtSecret: resolveJwtSecret(process.env.JWT_SECRET, process.env.NODE_ENV ?? 'development'),
   bcryptRounds: parseInteger(process.env.BCRYPT_ROUNDS, 12),
-  jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
+  jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '1h',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+  // Non-production + DEV_BYPASS_EMAIL_VERIFICATION=true → requireAuth skips email_verified
+  devBypassEmailVerification:
+    process.env.NODE_ENV !== 'production'
+    && process.env.DEV_BYPASS_EMAIL_VERIFICATION === 'true',
 
   // Email (SMTP)
   smtpHost: process.env.SMTP_HOST ?? '',

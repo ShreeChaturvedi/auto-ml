@@ -38,7 +38,10 @@ RUN pip install --no-cache-dir \
     xlrd==2.0.1 \
     ipykernel==6.29.5 \
     jupyter_kernel_gateway==3.0.1 \
-    ipywidgets==8.1.5
+    ipywidgets==8.1.5 \
+    shap==0.46.0 \
+    optuna==4.2.0 \
+    mlxtend==0.23.3
 
 # Set up workspace
 WORKDIR /workspace

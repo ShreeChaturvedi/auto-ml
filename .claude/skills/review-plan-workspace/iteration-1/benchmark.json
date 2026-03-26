@@ -1,0 +1,185 @@
+{
+  "metadata": {
+    "skill_name": "review-plan",
+    "skill_path": "/home/shree/Documents/CSE449/repo/.claude/skills/review-plan",
+    "executor_model": "claude-opus-4-6",
+    "analyzer_model": "claude-opus-4-6",
+    "timestamp": "2026-03-21T22:30:00Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "overengineered-caching",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 130.6,
+        "tokens": 47099,
+        "tool_calls": 17,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Identifies existing caching (DB cache + inflight map)", "passed": true, "evidence": "Identifies NlSuggestionRepository, inflightSuggestionGenerations Map, and frontend Zustand store"},
+        {"text": "Flags Redis as redundant/over-engineered", "passed": true, "evidence": "All 3 reviewers converged: 'severely over-engineered', 'third caching layer'"},
+        {"text": "Critiques cache warmer", "passed": true, "evidence": "Warns about LLM rate limiting, slow boot, wasted quota"},
+        {"text": "Proposes simpler alternative", "passed": true, "evidence": "Recommends 'do nothing', in-process LRU, add observability first"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Clear Critical/Strong/Minor/Alternative sections"},
+        {"text": "References actual codebase files", "passed": true, "evidence": "References nlSuggestionRepository.ts, index.ts, datasets.ts lines, scripts/dev/run.mjs"}
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "overengineered-caching",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 119.2,
+        "tokens": 53457,
+        "tool_calls": 28,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Identifies existing caching (DB cache + inflight map)", "passed": true, "evidence": "Identifies all 3 layers including frontend Zustand store"},
+        {"text": "Flags Redis as redundant/over-engineered", "passed": true, "evidence": "'Overengineered — solves a problem already solved'"},
+        {"text": "Critiques cache warmer", "passed": true, "evidence": "'fires expensive LLM calls for every project on every deploy'"},
+        {"text": "Proposes simpler alternative", "passed": true, "evidence": "'Do not implement. Add timing logs, in-process LRU if needed'"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Severity table, structured sections, risk assessment"},
+        {"text": "References actual codebase files", "passed": true, "evidence": "Line numbers, function names, migration details"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "security-gaps-export",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.833,
+        "passed": 5,
+        "failed": 1,
+        "total": 6,
+        "time_seconds": 148.3,
+        "tokens": 56779,
+        "tool_calls": 20,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Identifies SQL injection risk", "passed": true, "evidence": "Critical Issue #3"},
+        {"text": "Flags missing auth/authorization", "passed": true, "evidence": "Critical Issues #1 and #2"},
+        {"text": "Identifies missing resource limits", "passed": true, "evidence": "Critical Issue #4"},
+        {"text": "Flags GET with URL length limits, suggests POST", "passed": false, "evidence": "Not mentioned. Suggests validating IDs but not the fundamental GET limitation."},
+        {"text": "Mentions error handling for bad dataset IDs", "passed": true, "evidence": "Minor suggestion #14"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Clear Critical/Strong/Minor/Alternative sections"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "security-gaps-export",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 135.5,
+        "tokens": 48202,
+        "tool_calls": 25,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Identifies SQL injection risk", "passed": true, "evidence": "Section 1.1 with existing quoteIdentifier() reference"},
+        {"text": "Flags missing auth/authorization", "passed": true, "evidence": "Section 1.2 'No Authentication or Authorization'"},
+        {"text": "Identifies missing resource limits", "passed": true, "evidence": "Section 1.4 'Unbounded SELECT *'"},
+        {"text": "Flags GET with URL length limits, suggests POST", "passed": true, "evidence": "Section 4.2 'Consider POST Instead of GET'"},
+        {"text": "Mentions error handling for bad dataset IDs", "passed": true, "evidence": "Section 3.1 'Error Handling for Partial Failures'"},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Severity levels, risk summary table"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "solid-refactor",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.667,
+        "passed": 4,
+        "failed": 2,
+        "total": 6,
+        "time_seconds": 139.0,
+        "tokens": 49247,
+        "tool_calls": 19,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Recognizes plan is fundamentally sound", "passed": false, "evidence": "CORRECTLY identified plan as flawed — extractions target already-decomposed code. Assertion premise was wrong."},
+        {"text": "Checks existing hooks for overlap", "passed": true, "evidence": "Extensively discusses useNlSuggestions, NlApprovalDialog, 7 extracted modules"},
+        {"text": "Mentions SSE/stream cleanup (abort controller)", "passed": true, "evidence": "Detailed AbortController lifecycle analysis, race condition risks"},
+        {"text": "Discusses test impact beyond plan's scope", "passed": true, "evidence": "Identifies stream test file, QueryPanel/NlWorkflowSteps/SqlRevealBlock imports"},
+        {"text": "Proportional criticism (mostly minor)", "passed": false, "evidence": "Heavy criticism, but CORRECTLY so — plan IS flawed. Assertion premise was wrong."},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Clear Critical/Strong/Minor/Alternative sections"}
+      ],
+      "notes": ["The 2 'failures' are actually reviewer strengths — the assertions assumed the plan was good, but reviewers correctly discovered it was flawed"]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "solid-refactor",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.667,
+        "passed": 4,
+        "failed": 2,
+        "total": 6,
+        "time_seconds": 107.3,
+        "tokens": 49950,
+        "tool_calls": 23,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Recognizes plan is fundamentally sound", "passed": false, "evidence": "CORRECTLY identified plan as flawed. Assertion premise was wrong."},
+        {"text": "Checks existing hooks for overlap", "passed": true, "evidence": "Discusses useNlSuggestions, NlApprovalDialog, useTypewriter, NlQueryReducer"},
+        {"text": "Mentions SSE/stream cleanup (abort controller)", "passed": true, "evidence": "Discusses AbortController lifecycle in proposed useNlGeneration hook"},
+        {"text": "Discusses test impact beyond plan's scope", "passed": true, "evidence": "Lists 4 missing files, stream test file, renderHook tests"},
+        {"text": "Proportional criticism (mostly minor)", "passed": false, "evidence": "Appropriately harsh — plan IS flawed. Assertion premise was wrong."},
+        {"text": "Structured with priority levels", "passed": true, "evidence": "Severity levels (Critical/Moderate/Minor), checklist summary"}
+      ],
+      "notes": ["Same as with_skill: the 2 'failures' reflect reviewer accuracy, not skill deficiency"]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 0.833, "stddev": 0.136, "min": 0.667, "max": 1.0},
+      "time_seconds": {"mean": 139.3, "stddev": 7.2, "min": 130.6, "max": 148.3},
+      "tokens": {"mean": 51042, "stddev": 4064, "min": 47099, "max": 56779}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.889, "stddev": 0.157, "min": 0.667, "max": 1.0},
+      "time_seconds": {"mean": 120.7, "stddev": 11.6, "min": 107.3, "max": 135.5},
+      "tokens": {"mean": 50536, "stddev": 2167, "min": 48202, "max": 53457}
+    },
+    "delta": {
+      "pass_rate": "-0.056",
+      "time_seconds": "+18.6",
+      "tokens": "+506"
+    }
+  },
+  "notes": [
+    "CRITICAL: Test 3 assertions were based on a flawed premise (that the plan was good). Both with-skill and without-skill correctly identified the plan as fundamentally flawed, causing 2 assertion 'failures' that are actually reviewer strengths. Adjusting for this, effective pass rates are identical.",
+    "The with-skill version missed the GET/POST URL length issue in test 2 that the without-skill version caught (5/6 vs 6/6).",
+    "The without-skill baseline is surprisingly strong — a capable model reviewing a plan reads the codebase thoroughly regardless of skill instructions.",
+    "The with-skill version consistently produces the requested Critical/Strong/Minor/Alternative structure, while the without-skill version uses varying organizational patterns.",
+    "With-skill uses ~15% more time (139s vs 121s avg) likely due to spawning sub-subagents for the 3 reviewer perspectives.",
+    "Token usage is comparable (~51k vs ~51k), suggesting the skill doesn't add significant overhead.",
+    "The skill's primary value is STRUCTURAL CONSISTENCY (guaranteed priority-level output format) rather than ANALYTICAL DEPTH (both find the same issues)."
+  ]
+}

@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 
 import type { NlQueryWorkflowHandle } from '../NlQueryWorkflow';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
+import type { NlSuggestion } from '@/lib/api/query';
 
 export const MOCK_RESULT: NlGenerationResult = {
   sql: 'SELECT id, name FROM users LIMIT 10;',
@@ -54,7 +55,7 @@ export function createDeferred<T>() {
 
 export function buildProps(
   overrides: Partial<{
-    projectId: string | null;
+    suggestions: NlSuggestion[];
     englishQuery: string;
     onQueryChange: (value: string) => void;
     onGenerate: (
@@ -67,7 +68,6 @@ export function buildProps(
   }> = {}
 ) {
   return {
-    projectId: null,
     englishQuery: 'Show me the first 10 users',
     onQueryChange: vi.fn(),
     onGenerate: vi.fn().mockResolvedValue(MOCK_RESULT),

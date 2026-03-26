@@ -13,7 +13,7 @@ export interface Cell {
 }
 
 export interface CellOutput {
-  type: 'text' | 'table' | 'chart' | 'error' | 'html';
+  type: 'text' | 'table' | 'image' | 'chart' | 'error' | 'warning' | 'html';
   content: string;
   data?: unknown;
 }

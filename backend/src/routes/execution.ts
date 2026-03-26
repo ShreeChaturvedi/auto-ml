@@ -4,9 +4,14 @@
  * REST API endpoints for Python code execution.
  */
 
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
 import {
     executeCode,
     createSession,
@@ -19,8 +24,10 @@ import {
     getHealth
 } from '../services/executionService.js';
 import { searchPackages } from '../services/packageIndex.js';
+import type { AuthRequest } from '../types/auth.js';
 
 const router = Router();
+const projectRepository = getProjectRepository();
 
 // Request validation schemas
 const executeSchema = z.object({
@@ -45,50 +52,32 @@ const sessionSchema = z.object({
  * POST /api/execute
  * Execute Python code
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', validateRequest(executeSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = executeSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
-        }
-
-        const result = await executeCode(parsed.data);
+        const result = await executeCode(req.body);
 
         res.json({
             success: true,
             result
         });
     } catch (error) {
-        console.error('[execution] Execute error:', error);
+        appLogger.error('[execution] Execute error:', error);
         res.status(500).json({
             error: 'Execution failed',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * POST /api/execute/session
  * Create a new execution session
  */
-router.post('/session', async (req: Request, res: Response) => {
+router.post('/session', validateRequest(sessionSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = sessionSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
-        }
-
         const session = await createSession(
-            parsed.data.projectId,
-            parsed.data.pythonVersion,
+            req.body.projectId,
+            req.body.pythonVersion,
             { requireDocker: true }
         );
 
@@ -104,24 +93,32 @@ router.post('/session', async (req: Request, res: Response) => {
             }
         });
     } catch (error) {
-        console.error('[execution] Create session error:', error);
+        appLogger.error('[execution] Create session error:', error);
         res.status(500).json({
             error: 'Failed to create session',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/session/:id
  * Get session details
  */
-router.get('/session/:id', (req: Request, res: Response) => {
+router.get('/session/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const session = getSession(req.params.id);
 
     if (!session) {
         res.status(404).json({ error: 'Session not found' });
         return;
+    }
+
+    if (req.user && session.projectId) {
+        const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
+        if (!project) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
     }
 
     res.json({
@@ -134,60 +131,69 @@ router.get('/session/:id', (req: Request, res: Response) => {
             lastUsedAt: session.lastUsedAt
         }
     });
-});
+}));
 
 /**
  * DELETE /api/execute/session/:id
  * Destroy a session
  */
-router.delete('/session/:id', async (req: Request, res: Response) => {
+router.delete('/session/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
+        const session = getSession(req.params.id);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
+        }
+
         await destroySession(req.params.id);
         res.json({ success: true });
     } catch (error) {
-        console.error('[execution] Destroy session error:', error);
+        appLogger.error('[execution] Destroy session error:', error);
         res.status(500).json({
             error: 'Failed to destroy session',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * POST /api/execute/packages
  * Install a package
  */
-router.post('/packages', async (req: Request, res: Response) => {
+router.post('/packages', validateRequest(packageSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = packageSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
+        const session = getSession(req.body.sessionId);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
         }
 
         const result = await installPackage(
-            parsed.data.sessionId,
-            parsed.data.packageName
+            req.body.sessionId,
+            req.body.packageName
         );
 
         res.json(result);
     } catch (error) {
-        console.error('[execution] Install package error:', error);
+        appLogger.error('[execution] Install package error:', error);
         res.status(500).json({
             error: 'Failed to install package',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/packages/suggest
  * Search for package suggestions
  */
-router.get('/packages/suggest', async (req: Request, res: Response) => {
+router.get('/packages/suggest', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
         const q = typeof req.query.q === 'string' ? req.query.q : '';
         const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
@@ -196,27 +202,27 @@ router.get('/packages/suggest', async (req: Request, res: Response) => {
         const suggestions = await searchPackages(q, limit);
         res.json({ suggestions });
     } catch (error) {
-        console.error('[execution] Package search error:', error);
+        appLogger.error('[execution] Package search error:', error);
         res.status(500).json({
             error: 'Failed to search packages',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * POST /api/execute/packages/stream
  * Install a package with streaming progress
  */
-router.post('/packages/stream', async (req: Request, res: Response) => {
+router.post('/packages/stream', validateRequest(packageSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
-        const parsed = packageSchema.safeParse(req.body);
-        if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid request',
-                details: parsed.error.issues
-            });
-            return;
+        const session = getSession(req.body.sessionId);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
         }
 
         res.status(200);
@@ -230,8 +236,8 @@ router.post('/packages/stream', async (req: Request, res: Response) => {
         };
 
         const result = await installPackageWithProgress(
-            parsed.data.sessionId,
-            parsed.data.packageName,
+            req.body.sessionId,
+            req.body.packageName,
             (event) => sendEvent(event)
         );
 
@@ -242,7 +248,7 @@ router.post('/packages/stream', async (req: Request, res: Response) => {
         });
         res.end();
     } catch (error) {
-        console.error('[execution] Stream install error:', error);
+        appLogger.error('[execution] Stream install error:', error);
         if (!res.headersSent) {
             res.status(500).json({
                 error: 'Failed to install package',
@@ -257,57 +263,66 @@ router.post('/packages/stream', async (req: Request, res: Response) => {
         })}\n`);
         res.end();
     }
-});
+}));
 
 /**
  * GET /api/execute/packages/:sessionId
  * List installed packages
  */
-router.get('/packages/:sessionId', async (req: Request, res: Response) => {
+router.get('/packages/:sessionId', asyncHandler(async (req: AuthRequest, res: Response) => {
     try {
+        const session = getSession(req.params.sessionId);
+        if (session && req.user && session.projectId) {
+            const project = await verifyProjectOwnership(session.projectId, req.user.user_id, projectRepository);
+            if (!project) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
+        }
+
         const packages = await listPackages(req.params.sessionId);
         res.json({ packages });
     } catch (error) {
-        console.error('[execution] List packages error:', error);
+        appLogger.error('[execution] List packages error:', error);
         res.status(500).json({
             error: 'Failed to list packages',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/runtimes
  * List available Python runtimes
  */
-router.get('/runtimes', async (_req: Request, res: Response) => {
+router.get('/runtimes', asyncHandler(async (_req: AuthRequest, res: Response) => {
     try {
         const runtimes = await getAvailableRuntimes();
         res.json({ runtimes });
     } catch (error) {
-        console.error('[execution] List runtimes error:', error);
+        appLogger.error('[execution] List runtimes error:', error);
         res.status(500).json({
             error: 'Failed to list runtimes',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 /**
  * GET /api/execute/health
  * Check execution service health
  */
-router.get('/health', async (_req: Request, res: Response) => {
+router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
     try {
         const health = await getHealth();
         res.json(health);
     } catch (error) {
-        console.error('[execution] Health check error:', error);
+        appLogger.error('[execution] Health check error:', error);
         res.status(500).json({
             status: 'error',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
-});
+}));
 
 export default router;

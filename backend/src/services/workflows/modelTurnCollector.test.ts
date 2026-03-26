@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import './phases/featureEngineering.js';
 
 import type { LlmRequest, LlmStreamHandlers } from '../llm/llmClient.js';
 
@@ -128,6 +129,39 @@ describe('invokeModelNode', () => {
     });
   });
 
+  it('accepts planner JSON responses with trailing non-JSON text', async () => {
+    llmCompleteMock.mockResolvedValueOnce(
+      `${JSON.stringify({
+        kind: 'tool_call',
+        toolName: 'propose_transformation_step',
+        toolArgs: {
+          title: 'Impute subscriptions missing values'
+        }
+      })}\nI chose the safest next action.`
+    );
+
+    const result = await invokeModelNode(
+      createBaseState(),
+      {
+        writableEnded: false,
+        destroyed: false,
+        write: vi.fn()
+      } as never
+    );
+
+    expect(result).toMatchObject({
+      nextStep: 'execute_tools',
+      pendingToolCalls: [
+        expect.objectContaining({
+          tool: 'propose_transformation_step',
+          args: {
+            title: 'Impute subscriptions missing values'
+          }
+        })
+      ]
+    });
+  });
+
   it('uses streaming text generation for text-only nodes', async () => {
     const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
       handlers.onToken('Answer only.');
@@ -161,4 +195,5 @@ describe('invokeModelNode', () => {
       nextStep: 'complete'
     });
   });
+
 });

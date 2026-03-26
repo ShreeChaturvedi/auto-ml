@@ -8,7 +8,7 @@ export async function createSavepoint(
 ): Promise<Savepoint> {
   return apiRequest<Savepoint>(`/notebooks/${notebookId}/savepoints`, {
     method: 'POST',
-    body: JSON.stringify({ turnIndex, turnMessageId })
+    body: { turnIndex, turnMessageId }
   });
 }
 
@@ -25,6 +25,6 @@ export async function deleteSavepointsAfter(
 ): Promise<void> {
   await apiRequest(`/notebooks/${notebookId}/savepoints`, {
     method: 'DELETE',
-    body: JSON.stringify({ afterTurnIndex })
+    body: { afterTurnIndex }
   });
 }

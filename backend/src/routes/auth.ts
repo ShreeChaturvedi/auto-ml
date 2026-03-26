@@ -1,29 +1,17 @@
-/**
- * Authentication Routes
- *
- * Endpoints:
- * - POST /auth/register - Create new user account
- * - POST /auth/login - Authenticate and receive tokens
- * - POST /auth/logout - Revoke refresh token
- * - POST /auth/refresh - Get new access token using refresh token
- * - GET /auth/me - Get current user info
- * - POST /auth/forgot-password - Request password reset
- * - POST /auth/reset-password - Reset password with token
- * - PATCH /auth/profile - Update user profile
- * - GET /auth/google - Initiate Google OAuth flow
- * - POST /auth/google/callback - Complete Google OAuth flow
- */
-
-import type { Router } from 'express';
+import type { Request, Router } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateRequest } from '../middleware/validateRequest.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
-import type { AuthRequest } from '../types/auth.js';
+import type { AuthenticatedRequest } from '../types/auth.js';
+import type { SafeUser } from '../types/user.js';
+import { sendBadRequest, sendConflict, sendUnauthorized, sendNotFound } from '../utils/errors.js';
 
 import { handleGoogleAuth, handleGoogleCallback } from './auth/oauthHandler.js';
 
@@ -41,6 +29,10 @@ const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().optional()
+});
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token required')
 });
 
 const forgotPasswordSchema = z.object({
@@ -70,38 +62,33 @@ const googleCallbackSchema = z.object({
 export function registerAuthRoutes(router: Router, pool: Pool) {
   const userRepository = new UserRepository(pool);
 
+  /** Generate tokens and persist the refresh token in one step. */
+  async function issueAndStoreTokens(user: SafeUser, req: Request, rememberMe?: boolean) {
+    const tokens = authService.generateTokens(user);
+    const hash = authService.hashRefreshToken(tokens.refreshToken);
+    const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs(rememberMe));
+    await userRepository.storeRefreshToken(user.user_id, hash, expiresAt, req.ip, req.get('user-agent'));
+    return tokens;
+  }
+
   // POST /auth/register
   router.post(
     '/auth/register',
+    validateRequest(registerSchema),
     asyncHandler(async (req, res) => {
-      const result = registerSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { email, password, name } = result.data;
+      const { email, password, name } = req.body;
 
       const existing = await userRepository.findByEmail(email);
       if (existing) {
-        return res.status(409).json({ error: 'Email already registered' });
+        sendConflict(res, 'Email already registered');
+        return;
       }
 
       const password_hash = await authService.hashPassword(password);
       const user = await userRepository.create({ email, password, name, password_hash });
+      const tokens = await issueAndStoreTokens(user, req);
 
-      const tokens = authService.generateTokens(user);
-      const refreshTokenHash = authService.hashRefreshToken(tokens.refreshToken);
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-      await userRepository.storeRefreshToken(
-        user.user_id,
-        refreshTokenHash,
-        expiresAt,
-        req.ip,
-        req.get('user-agent')
-      );
-
-      console.log(`[auth] registered user ${user.email}`);
+      appLogger.info(`[auth] registered user ${user.email}`);
       return res.status(201).json({ user, ...tokens });
     })
   );
@@ -109,42 +96,27 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/login
   router.post(
     '/auth/login',
+    validateRequest(loginSchema),
     asyncHandler(async (req, res) => {
-      const result = loginSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { email, password, rememberMe } = result.data;
+      const { email, password, rememberMe } = req.body;
 
       const userWithHash = await userRepository.findByEmail(email);
       if (!userWithHash) {
-        return res.status(401).json({ error: 'Invalid email or password' });
+        sendUnauthorized(res, 'Invalid email or password');
+        return;
       }
 
       const validPassword = await authService.verifyPassword(password, userWithHash.password_hash);
       if (!validPassword) {
-        return res.status(401).json({ error: 'Invalid email or password' });
+        sendUnauthorized(res, 'Invalid email or password');
+        return;
       }
 
       const user = userRepository.toSafeUser(userWithHash);
       await userRepository.updateLastLogin(user.user_id);
+      const tokens = await issueAndStoreTokens(user, req, rememberMe);
 
-      const tokens = authService.generateTokens(user);
-      const refreshTokenHash = authService.hashRefreshToken(tokens.refreshToken);
-      const expiresAt = new Date(
-        Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000
-      );
-
-      await userRepository.storeRefreshToken(
-        user.user_id,
-        refreshTokenHash,
-        expiresAt,
-        req.ip,
-        req.get('user-agent')
-      );
-
-      console.log(`[auth] login ${user.email}`);
+      appLogger.info(`[auth] login ${user.email}`);
       return res.json({ user, ...tokens });
     })
   );
@@ -152,26 +124,28 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/refresh
   router.post(
     '/auth/refresh',
+    validateRequest(refreshSchema),
     asyncHandler(async (req, res) => {
       const { refreshToken } = req.body;
-      if (!refreshToken) {
-        return res.status(400).json({ error: 'Refresh token required' });
-      }
-
       const tokenHash = authService.hashRefreshToken(refreshToken);
       const tokenRecord = await userRepository.findRefreshToken(tokenHash);
 
       if (!tokenRecord || tokenRecord.revoked || new Date() > tokenRecord.expires_at) {
-        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+        sendUnauthorized(res, 'Invalid or expired refresh token');
+        return;
       }
 
       const user = await userRepository.findById(tokenRecord.user_id);
       if (!user) {
-        return res.status(401).json({ error: 'User not found' });
+        sendNotFound(res, 'User');
+        return;
       }
 
-      const accessToken = authService.generateAccessToken(user);
-      return res.json({ accessToken });
+      await userRepository.revokeRefreshToken(tokenHash);
+      const tokens = await issueAndStoreTokens(user, req);
+
+      appLogger.info(`[auth] rotated refresh token for ${user.email}`);
+      return res.json({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
     })
   );
 
@@ -179,14 +153,14 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.post(
     '/auth/logout',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       const { refreshToken } = req.body;
       if (refreshToken) {
         const tokenHash = authService.hashRefreshToken(refreshToken);
         await userRepository.revokeRefreshToken(tokenHash);
       }
 
-      console.log(`[auth] logout ${req.user?.email}`);
+      appLogger.info(`[auth] logout ${req.user.email}`);
       return res.status(204).send();
     })
   );
@@ -195,7 +169,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.get(
     '/auth/me',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
       return res.json({ user: req.user });
     })
   );
@@ -203,13 +177,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/forgot-password
   router.post(
     '/auth/forgot-password',
+    validateRequest(forgotPasswordSchema),
     asyncHandler(async (req, res) => {
-      const result = forgotPasswordSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { email } = result.data;
+      const { email } = req.body;
       const user = await userRepository.findByEmail(email);
 
       if (!user) {
@@ -223,7 +193,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       await userRepository.storePasswordResetToken(user.user_id, tokenHash, expiresAt);
       await emailService.sendPasswordResetEmail(email, resetToken);
 
-      console.log(`[auth] password reset requested for ${email}`);
+      appLogger.info(`[auth] password reset requested for ${email}`);
       return res.json({ message: 'If that email exists, a reset link has been sent' });
     })
   );
@@ -231,18 +201,15 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/reset-password
   router.post(
     '/auth/reset-password',
+    validateRequest(resetPasswordSchema),
     asyncHandler(async (req, res) => {
-      const result = resetPasswordSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const { token, password } = result.data;
+      const { token, password } = req.body;
       const tokenHash = authService.hashRefreshToken(token);
       const tokenRecord = await userRepository.findPasswordResetToken(tokenHash);
 
       if (!tokenRecord || tokenRecord.used || new Date() > tokenRecord.expires_at) {
-        return res.status(400).json({ error: 'Invalid or expired reset token' });
+        sendBadRequest(res, 'Invalid or expired reset token');
+        return;
       }
 
       const password_hash = await authService.hashPassword(password);
@@ -250,7 +217,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       await userRepository.markPasswordResetTokenUsed(tokenHash);
       await userRepository.revokeAllUserTokens(tokenRecord.user_id);
 
-      console.log(`[auth] password reset completed for user ${tokenRecord.user_id}`);
+      appLogger.info(`[auth] password reset completed for user ${tokenRecord.user_id}`);
       return res.json({ message: 'Password reset successful' });
     })
   );
@@ -259,23 +226,21 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.patch(
     '/auth/profile',
     requireAuth,
-    asyncHandler(async (req: AuthRequest, res) => {
-      const result = updateProfileSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      const userId = req.user!.user_id;
-      const updates = result.data;
+    validateRequest(updateProfileSchema),
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      const userId = req.user.user_id;
+      const updates = req.body;
 
       if (updates.newPassword) {
         if (!updates.currentPassword) {
-          return res.status(400).json({ error: 'Current password required' });
+          sendBadRequest(res, 'Current password required');
+          return;
         }
 
-        const userWithHash = await userRepository.findByEmail(req.user!.email);
+        const userWithHash = await userRepository.findByEmail(req.user.email);
         if (!userWithHash) {
-          return res.status(404).json({ error: 'User not found' });
+          sendNotFound(res, 'User');
+          return;
         }
 
         const validPassword = await authService.verifyPassword(
@@ -283,7 +248,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
           userWithHash.password_hash
         );
         if (!validPassword) {
-          return res.status(401).json({ error: 'Current password is incorrect' });
+          sendUnauthorized(res, 'Current password is incorrect');
+          return;
         }
 
         const password_hash = await authService.hashPassword(updates.newPassword);
@@ -297,7 +263,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       if (Object.keys(updateData).length > 0) {
         const updatedUser = await userRepository.update(userId, updateData);
-        console.log(`[auth] profile updated for ${req.user!.email}`);
+        appLogger.info(`[auth] profile updated for ${req.user.email}`);
         return res.json({ user: updatedUser });
       }
 
@@ -311,18 +277,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/google/callback — complete OAuth flow
   router.post(
     '/auth/google/callback',
-    asyncHandler(async (req, res) => {
-      const result = googleCallbackSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ errors: result.error.flatten() });
-      }
-
-      try {
-        return await handleGoogleCallback(req, res, userRepository);
-      } catch (error) {
-        console.error('[auth] Google OAuth error:', error);
-        return res.status(500).json({ error: 'Google authentication failed' });
-      }
-    })
+    validateRequest(googleCallbackSchema),
+    asyncHandler(async (req, res) => handleGoogleCallback(req, res, userRepository))
   );
 }

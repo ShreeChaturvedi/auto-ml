@@ -9,6 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNotebookHeadings } from '@/hooks/useNotebookHeadings';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/resizable';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotebookToolbar } from '@/components/notebook/NotebookToolbar';
-import { NotebookEditor } from '@/components/notebook/NotebookEditor';
+import { NotebookEditor, type NotebookEditorHandle } from '@/components/notebook/NotebookEditor';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import { AgenticStepDisplay } from './AgenticStepDisplay';
 import { useAgenticLoop } from '@/hooks/useAgenticLoop';
@@ -51,6 +52,8 @@ interface AgenticShellProps {
    * passing it so it does not re-trigger.
    */
   initialPrompt?: string | null;
+  /** Animated workflow placeholders for the chat composer */
+  composerPlaceholders?: string[];
 }
 
 export function AgenticShell({
@@ -67,10 +70,12 @@ export function AgenticShell({
   leftPaneScrollable = true,
   LeftPaneComponent,
   renderLeftPane,
-  initialPrompt
+  initialPrompt,
+  composerPlaceholders
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
+  const editorRef = useRef<NotebookEditorHandle>(null);
   const {
     selectedModel: assistantModel,
     reasoningEffort,
@@ -109,7 +114,7 @@ export function AgenticShell({
     [mentionCandidates]
   );
 
-  const { themeColor } = useProjectThemeColor(projectId);
+  const { themeColor } = useProjectThemeColor();
 
   const mention = useMentionAutocomplete({
     candidates: mentionCandidates,
@@ -128,8 +133,11 @@ export function AgenticShell({
 
   const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
 
+  const notebookHeadings = useNotebookHeadings();
+
   const {
     messages,
+    setMessages,
     isGenerating,
     error,
     sessionUsages,
@@ -184,6 +192,20 @@ export function AgenticShell({
       void savepointsClearAfter(activeNotebookId, turnIdx);
     }
   }, [messages, revertToTurn, activeNotebookId, savepointsClearAfter]);
+
+  const handleRetryWorkflow = useCallback(() => {
+    if (isGenerating || !projectId) return;
+    // Strip trailing error messages
+    setMessages((prev) => {
+      const trimmed = [...prev];
+      while (trimmed.length > 0 && trimmed[trimmed.length - 1].type === 'error') {
+        trimmed.pop();
+      }
+      return trimmed;
+    });
+    // Re-run with empty prompt (won't add a user message) to retry the workflow turn
+    void runLoop('', { model: assistantModel, reasoningEffort });
+  }, [isGenerating, projectId, setMessages, runLoop, assistantModel, reasoningEffort]);
 
   // Fetch turn diffs only after streaming completes (not during token-by-token updates)
   const [turnDiffs, setTurnDiffs] = useState<ReadonlyMap<string, SavepointDiff>>(new Map());
@@ -327,7 +349,8 @@ export function AgenticShell({
     onEditMessage: handleEditMessage,
     onRevertToMessage: handleRevertToMessage,
     editingMessageId,
-    turnDiffs
+    turnDiffs,
+    onRetryWorkflow: handleRetryWorkflow
   };
 
   const leftPaneContent = renderLeftPane
@@ -394,6 +417,7 @@ export function AgenticShell({
               sessionUsages={sessionUsages}
               handleStop={handleStop}
               chatMetaSlot={chatMetaSlot}
+              composerPlaceholders={composerPlaceholders}
               editingMessageId={editingMessageId}
               onCancelEdit={handleCancelEdit}
             />
@@ -405,8 +429,12 @@ export function AgenticShell({
         {/* ── Right panel: notebook ribbon + cells ── */}
         <ResizablePanel defaultSize={52} minSize={30}>
           <div className="flex h-full flex-col">
-            <NotebookToolbar projectId={projectId} />
-            <NotebookEditor projectId={projectId} className="min-h-0 flex-1" />
+            <NotebookToolbar
+              projectId={projectId}
+              headings={notebookHeadings}
+              onScrollToHeading={(slug) => editorRef.current?.scrollToHeading(slug)}
+            />
+            <NotebookEditor ref={editorRef} projectId={projectId} className="min-h-0 flex-1" />
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>

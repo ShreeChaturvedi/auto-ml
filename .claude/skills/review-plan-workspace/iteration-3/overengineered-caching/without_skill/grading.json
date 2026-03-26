@@ -1,0 +1,16 @@
+{
+  "eval_id": 1, "run_type": "without_skill",
+  "expectations": [
+    {"text": "Identifies 4+ caching layers", "passed": true, "evidence": "Identifies: Postgres repo (File+Pg), inflight dedup Map, schema fingerprint SHA-256, frontend Zustand store"},
+    {"text": "getSuggestions() is pure cache read", "passed": true, "evidence": "'When getSuggestions finds a cache hit, it returns a synchronous Postgres lookup or a file read'"},
+    {"text": "pg_notify races with synchronous invalidation", "passed": false, "evidence": "Notes pg_notify is unnecessary and schema changes already trigger regeneration, but doesn't identify the specific race condition"},
+    {"text": "TTL contradicts fingerprint design", "passed": true, "evidence": "Issue 9: 'content-addressed caching via schema fingerprint -- a fundamentally different and arguably better model'"},
+    {"text": "Lists missing files from plan", "passed": true, "evidence": "Issue 8: lists config.ts, query.ts, nlSuggestionRepository.ts, package.json, run.mjs, .env.example, test files"},
+    {"text": "Notes colocation convention for caches", "passed": false, "evidence": "Discusses wrong abstraction layer but doesn't explicitly note colocation convention"},
+    {"text": "Quantified alternative with size estimate", "passed": true, "evidence": "4-step alternative with '~3 lines' for timing logs"},
+    {"text": "Identifies missing test strategy", "passed": true, "evidence": "Issue 11: 'five new files but mentions no test files' with 6 specific test categories"},
+    {"text": "Structured Critical/Strong/Minor output", "passed": true, "evidence": "Clear Critical/Moderate/Missed sections with numbered issues"},
+    {"text": "3+ line number references", "passed": true, "evidence": "Lines 153-181, 97-141, 157-178, 183-267, 198-212, many more"}
+  ],
+  "pass_rate": 0.8
+}

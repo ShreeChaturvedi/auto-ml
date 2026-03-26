@@ -6,11 +6,13 @@ import multer from 'multer';
 
 import { env } from '../../config.js';
 import { hasDatabaseConfiguration } from '../../db.js';
+import { appLogger } from '../../logging/logger.js';
 import type { DatasetRepository } from '../../repositories/datasetRepository.js';
 import { loadDatasetIntoPostgres, parseDatasetRows, sanitizeTableName } from '../../services/datasetLoader.js';
 import { profileDatasetRows } from '../../services/datasetProfiler.js';
 import { buildEdaSummary } from '../../services/edaSummary.js';
 
+import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
 import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './validation.js';
 
 const EDA_MAX_ROWS = 5000;
@@ -137,12 +139,12 @@ export async function processDatasetUpload(
         dataset = updated;
       }
 
-      console.log(
+      appLogger.info(
         `[datasets] Stored ${req.file.originalname} (${fileType}) -> table "${tableName}" (${rowsLoaded} rows)`
       );
     } catch (loadError) {
       loadWarning = loadError instanceof Error ? loadError.message : String(loadError);
-      console.error(
+      appLogger.error(
         `[datasets] Dataset uploaded but Postgres load failed for ${req.file.originalname}:`,
         loadWarning
       );
@@ -173,10 +175,12 @@ export async function processDatasetUpload(
       dataset = updated;
     }
 
-    console.info(
+    appLogger.info(
       `[datasets] Stored ${req.file.originalname} (${fileType}) without database load`
     );
   }
+
+  await regenerateProjectNlSuggestionsSilently(parseResult.data.projectId, 'upload');
 
   res.status(201).json({
     dataset: {
@@ -194,6 +198,7 @@ export async function processDatasetUpload(
       sample: dataset.sample,
       createdAt: dataset.createdAt,
       tableName,
+      eda,
       warning: loadWarning
     },
     warning: loadWarning

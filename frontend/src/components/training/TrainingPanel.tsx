@@ -3,15 +3,17 @@
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
+  ArrowRight,
   Wand2
 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
+import { ModelRecommendationCard } from './ModelRecommendationCard';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
@@ -19,11 +21,14 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
+import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
+import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { createTrainingAdapter } from './TrainingAdapter';
 import { TrainingToolbarLeft } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
@@ -34,6 +39,7 @@ const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
+  const composerPlaceholders = useWorkflowPlaceholders(projectId, 'training');
   const [searchParams] = useSearchParams();
   const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
 
@@ -43,7 +49,16 @@ export function TrainingPanel() {
     // activeWorkbook not needed here — used by sidebar via registry store
     buildStorageKey: buildTrainingStorageKey,
     handleSwitch: handleWorkbookSwitch,
-    handleNew: handleNewWorkbook
+    handleNew: handleNewWorkbook,
+    handleDelete: handleDeleteWorkbook,
+    handleRename: handleRenameWorkbook,
+    handleReplay: handleReplayWorkbook,
+    handleReset: handleResetWorkbook,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    openRenameDialog
   } = useTrainingWorkbooks(projectId);
 
   const [cells, setCells] = useState<Cell[]>([]);
@@ -108,9 +123,17 @@ export function TrainingPanel() {
 
   useEffect(() => {
     if (!trainingDatasetId && trainingDatasetOptions.length > 0) {
-      setTrainingDatasetId(trainingDatasetOptions[0].datasetId);
+      const previousId = projectId ? getPreviousPhaseDataset(projectId, 'feature-engineering', 'preprocessing') : undefined;
+      const match = previousId
+        ? trainingDatasetOptions.find(o => o.datasetId === previousId)
+        : undefined;
+      setTrainingDatasetId(match?.datasetId ?? trainingDatasetOptions[0].datasetId);
     }
-  }, [trainingDatasetId, trainingDatasetOptions]);
+  }, [trainingDatasetId, trainingDatasetOptions, projectId]);
+
+  useEffect(() => {
+    if (projectId && trainingDatasetId) persistPhaseDataset(projectId, 'training', trainingDatasetId);
+  }, [trainingDatasetId, projectId]);
 
   useEffect(() => {
     const selected = trainingDatasetOptions.find((dataset) => dataset.datasetId === trainingDatasetId);
@@ -225,6 +248,16 @@ export function TrainingPanel() {
           </div>
         );
       }
+      case 'model_recommendation':
+        return (
+          <ModelRecommendationCard
+            key={item.id}
+            id={item.id}
+            template={item.template}
+            parameters={item.parameters as Record<string, unknown>}
+            rationale={item.rationale}
+          />
+        );
       case 'callout':
         return <div key={item.text} className={cn('rounded-md border px-3 py-2 text-xs', item.tone === 'warning' && 'border-amber-500/40 text-amber-600', item.tone === 'success' && 'border-emerald-500/40 text-emerald-600')}>{item.text}</div>;
       default: return null;
@@ -320,71 +353,97 @@ export function TrainingPanel() {
   ]);
 
   return (
-    <AgenticShell
-      key={activeTrainingWorkbookId}
-      projectId={projectId ?? ''}
-      storageKey={trainingStorageKey}
-      domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
-      domainAdapter={trainingAdapter}
-      renderLeftPane={(renderProps) => {
-        // Sync LLM code cells whenever messages change
-        syncLlmCells(renderProps.messages);
+    <>
+      <AgenticShell
+        key={activeTrainingWorkbookId}
+        projectId={projectId ?? ''}
+        composerPlaceholders={composerPlaceholders}
+        storageKey={trainingStorageKey}
+        domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
+        domainAdapter={trainingAdapter}
+        renderLeftPane={(renderProps) => {
+          // Sync LLM code cells whenever messages change
+          syncLlmCells(renderProps.messages);
 
-        return (
-          <div className="p-6 space-y-4 pb-28">
-            {trainingBlockedByFeGate ? (
-              <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                    Training Locked: Feature Pipeline Approval Required
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-1">
-                  <p>Approve a Feature Engineering pipeline before starting model training.</p>
-                  <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
-                </CardContent>
-              </Card>
-            ) : null}
+          return (
+            <div className="p-6 space-y-4 pb-28">
+              {trainingBlockedByFeGate ? (
+                <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
+                      Feature Pipeline Approval Required
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-2">
+                    <p>Approve a Feature Engineering pipeline before starting model training.</p>
+                    <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
+                    <Link
+                      to={`/project/${projectId}/feature-engineering`}
+                      className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200/60 hover:bg-amber-200 dark:bg-amber-800/40 dark:hover:bg-amber-800/60 text-amber-900 dark:text-amber-100 transition-colors"
+                    >
+                      Open Feature Engineering
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </CardContent>
+                </Card>
+              ) : null}
 
-            {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
+              {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
 
-            <ChatMessageRenderer
-              messages={renderProps.messages}
-              renderLifecycleCard={renderLifecycleCard}
-              activeTextMessageId={renderProps.activeTextMessageId}
-              activeThinkingMessageId={renderProps.activeThinkingMessageId}
-              hydratedMessageIds={renderProps.hydratedMessageIds}
-              onEditMessage={renderProps.onEditMessage}
-              onRevertToMessage={renderProps.onRevertToMessage}
-              editingMessageId={renderProps.editingMessageId}
-              turnDiffs={renderProps.turnDiffs}
-              isGenerating={renderProps.isGenerating}
-            />
-          </div>
-        );
-      }}
-      toolbarLeft={
-        <TrainingToolbarLeft
-          workbooks={trainingWorkbooks}
-          activeWorkbookId={activeTrainingWorkbookId}
-          onSwitch={handleWorkbookSwitch}
-          onNew={handleNewWorkbook}
-        />
-      }
-      toolbarRight={
-        projectFeatures.length > 0 ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
-                  <Wand2 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : undefined
-      }
-    />
+              <ChatMessageRenderer
+                messages={renderProps.messages}
+                renderLifecycleCard={renderLifecycleCard}
+                activeTextMessageId={renderProps.activeTextMessageId}
+                activeThinkingMessageId={renderProps.activeThinkingMessageId}
+                hydratedMessageIds={renderProps.hydratedMessageIds}
+                onEditMessage={renderProps.onEditMessage}
+                onRevertToMessage={renderProps.onRevertToMessage}
+                editingMessageId={renderProps.editingMessageId}
+                turnDiffs={renderProps.turnDiffs}
+                isGenerating={renderProps.isGenerating}
+                onRetryWorkflow={renderProps.onRetryWorkflow}
+              />
+            </div>
+          );
+        }}
+        toolbarLeft={
+          <TrainingToolbarLeft
+            workbooks={trainingWorkbooks}
+            activeWorkbookId={activeTrainingWorkbookId}
+            onSwitch={handleWorkbookSwitch}
+            onNew={handleNewWorkbook}
+            onRename={openRenameDialog}
+            onReplay={handleReplayWorkbook}
+            onReset={handleResetWorkbook}
+            onDelete={handleDeleteWorkbook}
+            canDelete={trainingWorkbooks.length > 1}
+          />
+        }
+        toolbarRight={
+          projectFeatures.length > 0 ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
+                    <Wand2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : undefined
+        }
+      />
+
+      <RenameTabDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        value={renameDialogValue}
+        onValueChange={setRenameDialogValue}
+        onSave={() => handleRenameWorkbook(renameDialogValue)}
+        title="Rename workbook"
+        description="Update the name of the current training workbook."
+      />
+    </>
   );
 }

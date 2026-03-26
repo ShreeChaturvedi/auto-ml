@@ -10,7 +10,7 @@ function buildDataset(overrides: Partial<DatasetProfile> = {}): DatasetProfile {
   return {
     datasetId: 'dataset-1',
     projectId: 'project-1',
-    filename: 'users.csv',
+    filename: 'student_data.csv',
     fileType: 'csv',
     size: 100,
     nRows: 1000,
@@ -23,7 +23,7 @@ function buildDataset(overrides: Partial<DatasetProfile> = {}): DatasetProfile {
     sample: [{ id: 1, name: 'Ada', account_id: 2 }],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    metadata: { tableName: 'users' },
+    metadata: { tableName: 'student_data' },
     ...overrides
   };
 }
@@ -97,16 +97,16 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'Show users with account plan',
-        selectedTables: ['users', 'accounts'],
+        selectedTables: ['student_data', 'accounts'],
         joinPlan: [
           {
-            leftTable: 'users',
+            leftTable: 'student_data',
             leftColumn: 'account_id',
             rightTable: 'accounts',
             rightColumn: 'id',
             joinType: 'inner',
             confidence: 0.82,
-            reason: 'users.account_id references accounts.id'
+            reason: 'student_data.account_id references accounts.id'
           }
         ],
         filters: [],
@@ -115,19 +115,19 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.84
       }),
       JSON.stringify({
-        sql: 'SELECT u.name, a.plan FROM users u JOIN accounts a ON u.account_id = a.id LIMIT 50',
-        rationale: 'Join users to accounts using account_id.',
+        sql: 'SELECT u.name, a.plan FROM student_data u JOIN accounts a ON u.account_id = a.id LIMIT 50',
+        rationale: 'Join student_data to accounts using account_id.',
         intentSummary: 'Show users and account plan',
-        selectedTables: ['users', 'accounts'],
+        selectedTables: ['student_data', 'accounts'],
         joinPlan: [
           {
-            leftTable: 'users',
+            leftTable: 'student_data',
             leftColumn: 'account_id',
             rightTable: 'accounts',
             rightColumn: 'id',
             joinType: 'inner',
             confidence: 0.82,
-            reason: 'users.account_id references accounts.id'
+            reason: 'student_data.account_id references accounts.id'
           }
         ],
         filters: [],
@@ -149,8 +149,8 @@ describe('nlToSqlV2 service', () => {
     });
 
     expect(result.sql.toLowerCase()).toContain('select');
-    expect(result.rationale).toContain('Join users');
-    expect(result.explanation.selectedTables).toEqual(expect.arrayContaining(['users', 'accounts']));
+    expect(result.rationale).toContain('Join student_data');
+    expect(result.explanation.selectedTables).toEqual(expect.arrayContaining(['student_data', 'accounts']));
     expect(result.explanation.selectedTables).toHaveLength(2);
     expect(result.explanation.joinPlan).toHaveLength(1);
     expect(result.explanation.validationNotes.length).toBeGreaterThan(0);
@@ -164,7 +164,7 @@ describe('nlToSqlV2 service', () => {
       'this is not json',
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -172,9 +172,9 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.9
       }),
       JSON.stringify({
-        sql: 'SELECT * FROM users LIMIT 25',
+        sql: 'SELECT * FROM student_data LIMIT 25',
         rationale: 'List users.',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -203,7 +203,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -244,10 +244,10 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'Join users and events',
-        selectedTables: ['users', 'events'],
+        selectedTables: ['student_data', 'events'],
         joinPlan: [
           {
-            leftTable: 'users',
+            leftTable: 'student_data',
             leftColumn: 'id',
             rightTable: 'events',
             rightColumn: 'id',
@@ -262,12 +262,12 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.48
       }),
       JSON.stringify({
-        sql: 'SELECT * FROM users u JOIN events e ON u.id = e.id LIMIT 20',
+        sql: 'SELECT * FROM student_data u JOIN events e ON u.id = e.id LIMIT 20',
         rationale: 'Joined on shared id as a best-guess.',
-        selectedTables: ['users', 'events'],
+        selectedTables: ['student_data', 'events'],
         joinPlan: [
           {
-            leftTable: 'users',
+            leftTable: 'student_data',
             leftColumn: 'id',
             rightTable: 'events',
             rightColumn: 'id',
@@ -305,7 +305,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'drop users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -313,9 +313,9 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.99
       }),
       JSON.stringify({
-        sql: 'DROP TABLE users',
-        rationale: 'Remove users table',
-        selectedTables: ['users'],
+        sql: 'DROP TABLE student_data',
+        rationale: 'Remove student_data table',
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -354,7 +354,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: { text: 'Show average response by chapter' },
-        selectedTables: [{ table: 'users' }],
+        selectedTables: [{ table: 'student_data' }],
         joinPlan: [],
         filters: [],
         aggregations: [
@@ -365,9 +365,9 @@ describe('nlToSqlV2 service', () => {
         confidence: '0.88'
       }),
       JSON.stringify({
-        sql: { query: 'SELECT chapter_number, AVG(response::float) AS avg_response FROM users GROUP BY chapter_number LIMIT 10' },
+        sql: { query: 'SELECT chapter_number, AVG(response::float) AS avg_response FROM student_data GROUP BY chapter_number LIMIT 10' },
         rationale: { summary: 'Grouped by chapter and averaged response.' },
-        selectedTables: [{ tableName: 'users' }],
+        selectedTables: [{ tableName: 'student_data' }],
         joinPlan: [],
         filters: [],
         aggregations: [{ metric: 'avg_response by chapter_number' }],
@@ -388,7 +388,7 @@ describe('nlToSqlV2 service', () => {
     });
 
     expect(result.sql.toLowerCase()).toContain('select');
-    expect(result.explanation.selectedTables).toEqual(['users']);
+    expect(result.explanation.selectedTables).toEqual(['student_data']);
     expect(result.explanation.aggregations.length).toBeGreaterThan(0);
     expect(result.explanation.assumptions.some((entry) => entry.toLowerCase().includes('casted'))).toBe(true);
   });
@@ -398,7 +398,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'Rank students by score',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -406,9 +406,9 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.95
       }),
       JSON.stringify({
-        sql: 'SELECT student_id, AVG(response::float) AS avg_score FROM users GROUP BY student_id LIMIT 100',
+        sql: 'SELECT student_id, AVG(response::float) AS avg_score FROM student_data GROUP BY student_id LIMIT 100',
         rationale: 'Rank students by average score.',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -439,7 +439,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -449,7 +449,7 @@ describe('nlToSqlV2 service', () => {
       'not-json',
       'still-not-json',
       JSON.stringify({
-        sql: 'SELECT id, name FROM users LIMIT 25',
+        sql: 'SELECT id, name FROM student_data LIMIT 25',
         rationale: 'List users with id and name.',
         assumptions: ['No filters requested.'],
         confidence: 0.74
@@ -466,7 +466,7 @@ describe('nlToSqlV2 service', () => {
       nlQuery: 'list users'
     });
 
-    expect(result.sql.toLowerCase()).toContain('select id, name from users');
+    expect(result.sql.toLowerCase()).toContain('select id, name from student_data');
     expect(result.explanation.validationNotes.some((note) => note.includes('compact fallback'))).toBe(true);
     expect(result.explanation.assumptions.some((entry) => entry.includes('compact fallback'))).toBe(true);
   });
@@ -564,7 +564,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -572,9 +572,9 @@ describe('nlToSqlV2 service', () => {
         confidence: 95
       }),
       JSON.stringify({
-        sql: 'SELECT id, name FROM users LIMIT 25',
+        sql: 'SELECT id, name FROM student_data LIMIT 25',
         rationale: 'List users.',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -602,7 +602,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -631,7 +631,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -639,9 +639,9 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.9
       }),
       JSON.stringify({
-        sql: 'SELECT id, name FROM users LIMIT 25',
+        sql: 'SELECT id, name FROM student_data LIMIT 25',
         rationale: 'List users.',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -720,7 +720,7 @@ describe('nlToSqlV2 service', () => {
     const client = createClientFromResponses([
       JSON.stringify({
         intentSummary: 'List users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -728,9 +728,9 @@ describe('nlToSqlV2 service', () => {
         confidence: 0.91
       }),
       JSON.stringify({
-        sql: 'SELECT id, name FROM users LIMIT 25',
+        sql: 'SELECT id, name FROM student_data LIMIT 25',
         rationale: 'List users.',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -782,7 +782,7 @@ describe('nlToSqlV2 service', () => {
     const repo = createDatasetRepository([buildDataset()]);
     const client = createClientFromResponses([
       JSON.stringify({
-        sql: 'SELECT id, name FROM users LIMIT 25',
+        sql: 'SELECT id, name FROM student_data LIMIT 25',
         rationale: 'Adjusted to valid columns.',
         assumptions: ['Used id and name as available columns.'],
         validationNotes: ['Repaired invalid column reference.'],
@@ -800,14 +800,14 @@ describe('nlToSqlV2 service', () => {
     const result = await service.repairSqlFromExecutionErrorV2({
       projectId: 'project-1',
       nlQuery: 'show users',
-      failedSql: 'SELECT foo FROM users',
+      failedSql: 'SELECT foo FROM student_data',
       executionError: 'column "foo" does not exist',
       onProgress: (event) => {
         progressEvents.push({ phaseId: event.phaseId, status: event.status });
       },
       priorExplanation: {
         intentSummary: 'Show users',
-        selectedTables: ['users'],
+        selectedTables: ['student_data'],
         joinPlan: [],
         filters: [],
         aggregations: [],
@@ -843,7 +843,7 @@ describe('nlToSqlV2 service', () => {
       service.repairSqlFromExecutionErrorV2({
         projectId: 'project-1',
         nlQuery: 'show users',
-        failedSql: 'SELECT foo FROM users',
+        failedSql: 'SELECT foo FROM student_data',
         executionError: 'column "foo" does not exist',
         onProgress: (event) => {
           progressEvents.push({

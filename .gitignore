@@ -4,11 +4,15 @@
 # Serena MCP config
 .serena/
 
-# Claude Code config
-.claude/
+# Claude Code config (keep skills shared, ignore local config)
+.claude/*
+!.claude/skills/
 
 # Node modules (all workspaces)
 node_modules/
+
+# TypeScript build info
+*.tsbuildinfo
 
 # Temp/debug files
 *.check.txt
@@ -22,14 +26,22 @@ frontend/@/
 # Local environment
 frontend/.env
 
+# Capstone competition research (private)
+docs/capstone-competition-notes.md
+
 # Handoff docs (not for repo)
 LLM_TRAINING_TAB_CONTEXT.md
 NOTEBOOK_IMPLEMENTATION_HANDOFF.md
 TRAINING_TAB_HANDOFF.md
 
-# Agent/coding guidelines (personal preference, not for repo)
-AGENTS.md
-CLAUDE.md
+# GWS CLI skills (installed via `npx skills add`)
+.agents/
+.claude/skills/gws-*
+.claude/skills/persona-*
+.claude/skills/recipe-*
+skills-lock.json
+
+# Agent/coding guidelines (shared with team)
 DECISIONS.md
 PROGRESS.md
 
@@ -43,3 +55,9 @@ Senior Design Project Proposal.pdf
 # Local agent/debug logs
 .cursor/*.log
 .superpowers/
+
+# Git worktrees
+.worktrees/
+
+# Personal todo
+todos.md

@@ -1,8 +1,13 @@
 import type { Router } from 'express';
 import { z } from 'zod';
 
+import { appLogger } from '../logging/logger.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requireAuth } from '../middleware/auth.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
 import type { ProjectRepository } from '../repositories/projectRepository.js';
 import { PHASE_VALUES } from '../repositories/projectRepository.js';
+import type { AuthRequest } from '../types/auth.js';
 
 const metadataSchema = z
   .object({
@@ -31,42 +36,53 @@ const projectInputSchema = z
 export function registerProjectRoutes(router: Router, repository: ProjectRepository) {
   const isVitestRuntime = Boolean(process.env.VITEST);
 
-  router.get('/projects', async (_req, res) => {
-    const projects = await repository.list();
+  router.get('/projects', requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+    const projects = await repository.listByUser(req.user!.user_id);
     res.json({ projects });
-  });
+  }));
 
-  router.delete('/projects/reset', async (_req, res) => {
+  router.delete('/projects/reset', asyncHandler(async (req: AuthRequest, res) => {
+    if (!isVitestRuntime) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
     await repository.clear();
     res.status(204).send();
-  });
+  }));
 
-  router.get('/projects/:id', async (req, res) => {
-    const project = await repository.getById(req.params.id);
+  router.get('/projects/:id', requireAuth, validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res) => {
+    const project = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-
     return res.json({ project });
-  });
+  }));
 
-  router.post('/projects', async (req, res) => {
+  router.post('/projects', requireAuth, asyncHandler(async (req: AuthRequest, res) => {
     const result = projectInputSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
     }
 
-    const project = await repository.create(result.data);
+    const project = await repository.create({
+      ...result.data,
+      userId: req.user!.user_id
+    });
     if (!isVitestRuntime) {
-      console.log(`[projects] created ${project.id} (${project.name})`);
+      appLogger.info(`[projects] created ${project.id} (${project.name})`);
     }
     return res.status(201).json({ project });
-  });
+  }));
 
-  router.patch('/projects/:id', async (req, res) => {
+  router.patch('/projects/:id', requireAuth, validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res) => {
     const result = projectInputSchema.partial().safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ errors: result.error.flatten() });
+    }
+
+    const existing = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Project not found' });
     }
 
     const project = await repository.update(req.params.id, result.data);
@@ -75,20 +91,25 @@ export function registerProjectRoutes(router: Router, repository: ProjectReposit
     }
 
     if (!isVitestRuntime) {
-      console.log(`[projects] updated ${project.id}`);
+      appLogger.info(`[projects] updated ${project.id}`);
     }
     return res.json({ project });
-  });
+  }));
 
-  router.delete('/projects/:id', async (req, res) => {
+  router.delete('/projects/:id', requireAuth, validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res) => {
+    const existing = await repository.getByIdAndUser(req.params.id, req.user!.user_id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
     const deleted = await repository.delete(req.params.id);
     if (!deleted) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
     if (!isVitestRuntime) {
-      console.log(`[projects] deleted ${req.params.id}`);
+      appLogger.info(`[projects] deleted ${req.params.id}`);
     }
     return res.status(204).send();
-  });
+  }));
 }

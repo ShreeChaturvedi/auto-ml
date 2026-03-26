@@ -14,6 +14,9 @@ If the user asks for training, proceed to Stage 2.
 
 ### Stage 2: Configure Experiment
 Use \`configure_experiment\` to set up the experiment parameters:
+- Call \`configure_experiment\` ONCE per model (maximum 3 per turn)
+- Do NOT reconfigure the same experiment
+- After configuration, IMMEDIATELY proceed to \`propose_training_plan\`
 - Choose model type based on the dataset and problem type
 - Set appropriate hyperparameters (start with sensible defaults)
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)
@@ -45,6 +48,11 @@ Run the training code with \`run_cell\`, then record results with \`execute_trai
 - Set \`succeeded: true/false\` based on execution outcome
 - Capture training metrics from cell output
 - Record training duration
+
+**Progress output contract**: When writing training code in Stage 4/5, include these structured print statements so the UI can display live progress:
+- Before the training loop: \`print(f"__TRAIN_START__|{total_epochs}|{model_type}")\`
+- Each epoch/iteration: \`print(f"__TRAIN_PROGRESS__|{epoch}|{total_epochs}|{json.dumps(metrics_dict)}")\` where metrics_dict contains the current epoch metrics (e.g. \`{"loss": 0.45, "accuracy": 0.82}\`)
+- After training completes: \`print(f"__TRAIN_COMPLETE__|{json.dumps(final_metrics)}")\`
 
 If training fails, diagnose the error and return to Stage 4 to fix the code.
 
@@ -83,4 +91,5 @@ Provide a final summary of the training session:
 4. Record all metrics faithfully — do not fabricate or estimate metrics.
 5. When comparing models, rank by the user's stated primary metric.
 6. Explain trade-offs clearly: accuracy vs. speed, complexity vs. interpretability.
+7. Call \`configure_experiment\` ONCE per experiment. Do not reconfigure the same experiment.
 `.trim();

@@ -18,25 +18,15 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('normalizeSqlIdentifier', () => {
-  it('returns plain identifiers unchanged', () => {
-    expect(normalizeSqlIdentifier('employees')).toBe('employees');
-  });
-
-  it('strips surrounding double quotes', () => {
-    expect(normalizeSqlIdentifier('"First Name"')).toBe('First Name');
-  });
-
-  it('unescapes internal doubled double-quotes', () => {
-    expect(normalizeSqlIdentifier('"Employee ""Level"""')).toBe('Employee "Level"');
-  });
-
-  it('returns empty string for blank input', () => {
-    expect(normalizeSqlIdentifier('')).toBe('');
-    expect(normalizeSqlIdentifier('   ')).toBe('');
-  });
-
-  it('trims leading/trailing whitespace before processing', () => {
-    expect(normalizeSqlIdentifier('  employees  ')).toBe('employees');
+  it.each([
+    ['employees', 'employees'],
+    ['"First Name"', 'First Name'],
+    ['"Employee ""Level"""', 'Employee "Level"'],
+    ['', ''],
+    ['   ', ''],
+    ['  employees  ', 'employees']
+  ])('normalizeSqlIdentifier(%o) => %o', (input, expected) => {
+    expect(normalizeSqlIdentifier(input)).toBe(expected);
   });
 });
 
@@ -45,21 +35,17 @@ describe('normalizeSqlIdentifier', () => {
 // ---------------------------------------------------------------------------
 
 describe('sanitizeSuggestionToken', () => {
-  it('returns trimmed string for non-empty strings', () => {
-    expect(sanitizeSuggestionToken('  hello  ')).toBe('hello');
-    expect(sanitizeSuggestionToken('employees')).toBe('employees');
-  });
-
-  it('returns null for empty strings', () => {
-    expect(sanitizeSuggestionToken('')).toBeNull();
-    expect(sanitizeSuggestionToken('   ')).toBeNull();
-  });
-
-  it('returns null for non-string values', () => {
-    expect(sanitizeSuggestionToken(null)).toBeNull();
-    expect(sanitizeSuggestionToken(undefined)).toBeNull();
-    expect(sanitizeSuggestionToken(42)).toBeNull();
-    expect(sanitizeSuggestionToken({})).toBeNull();
+  it.each([
+    ['  hello  ', 'hello'],
+    ['employees', 'employees'],
+    ['', null],
+    ['   ', null],
+    [null, null],
+    [undefined, null],
+    [42, null],
+    [{}, null]
+  ])('sanitizeSuggestionToken(%o) => %o', (input, expected) => {
+    expect(sanitizeSuggestionToken(input as unknown)).toBe(expected);
   });
 });
 
@@ -99,24 +85,17 @@ describe('resolveColumnsForTable', () => {
 // ---------------------------------------------------------------------------
 
 describe('inferSqlSuggestionContext', () => {
-  it('returns "table" after FROM keyword with a partial table name', () => {
-    expect(inferSqlSuggestionContext('SELECT * FROM emp')).toBe('table');
-    expect(inferSqlSuggestionContext('SELECT * FROM employees')).toBe('table');
-  });
-
-  it('returns "table" after JOIN keyword with a partial table name', () => {
-    expect(inferSqlSuggestionContext('SELECT * FROM t1 JOIN dep')).toBe('table');
-  });
-
-  it('returns "alias-column" when a dot follows an identifier', () => {
-    expect(inferSqlSuggestionContext('SELECT t1.')).toBe('alias-column');
-    expect(inferSqlSuggestionContext('SELECT emp.na')).toBe('alias-column');
-  });
-
-  it('returns "general" for other positions', () => {
-    expect(inferSqlSuggestionContext('SELECT ')).toBe('general');
-    expect(inferSqlSuggestionContext('WHERE ')).toBe('general');
-    expect(inferSqlSuggestionContext('')).toBe('general');
+  it.each([
+    ['SELECT * FROM emp', 'table'],
+    ['SELECT * FROM employees', 'table'],
+    ['SELECT * FROM t1 JOIN dep', 'table'],
+    ['SELECT t1.', 'alias-column'],
+    ['SELECT emp.na', 'alias-column'],
+    ['SELECT ', 'general'],
+    ['WHERE ', 'general'],
+    ['', 'general']
+  ])('inferSqlSuggestionContext(%o) => %o', (input, expected) => {
+    expect(inferSqlSuggestionContext(input)).toBe(expected);
   });
 });
 
@@ -125,14 +104,13 @@ describe('inferSqlSuggestionContext', () => {
 // ---------------------------------------------------------------------------
 
 describe('getAliasBeforeDot', () => {
-  it('extracts the alias token before a dot', () => {
-    expect(getAliasBeforeDot('SELECT t1.')).toBe('t1');
-    expect(getAliasBeforeDot('SELECT emp.name')).toBe('emp');
-  });
-
-  it('returns null when there is no dot pattern', () => {
-    expect(getAliasBeforeDot('SELECT * FROM employees')).toBeNull();
-    expect(getAliasBeforeDot('')).toBeNull();
+  it.each([
+    ['SELECT t1.', 't1'],
+    ['SELECT emp.name', 'emp'],
+    ['SELECT * FROM employees', null],
+    ['', null]
+  ])('getAliasBeforeDot(%o) => %o', (input, expected) => {
+    expect(getAliasBeforeDot(input)).toBe(expected);
   });
 });
 
@@ -230,23 +208,22 @@ describe('buildSqlMarkers', () => {
 // ---------------------------------------------------------------------------
 
 describe('SQL_KEYWORDS', () => {
-  it('includes common DML keywords', () => {
-    expect(SQL_KEYWORDS).toContain('SELECT');
-    expect(SQL_KEYWORDS).toContain('FROM');
-    expect(SQL_KEYWORDS).toContain('WHERE');
-    expect(SQL_KEYWORDS).toContain('JOIN');
-    expect(SQL_KEYWORDS).toContain('GROUP BY');
-  });
+  it.each(['SELECT', 'FROM', 'WHERE', 'JOIN', 'GROUP BY'])(
+    'includes %s keyword',
+    (keyword) => {
+      expect(SQL_KEYWORDS).toContain(keyword);
+    }
+  );
 });
 
 describe('SQL_FUNCTIONS', () => {
-  it('contains expected aggregates', () => {
-    const labels = SQL_FUNCTIONS.map((f) => f.label);
-    expect(labels).toContain('COUNT');
-    expect(labels).toContain('SUM');
-    expect(labels).toContain('AVG');
-    expect(labels).toContain('COALESCE');
-  });
+  it.each(['COUNT', 'SUM', 'AVG', 'COALESCE'])(
+    'contains %s aggregate',
+    (aggregate) => {
+      const labels = SQL_FUNCTIONS.map((f) => f.label);
+      expect(labels).toContain(aggregate);
+    }
+  );
 
   it('each function has insertText and documentation', () => {
     for (const fn of SQL_FUNCTIONS) {
@@ -257,10 +234,11 @@ describe('SQL_FUNCTIONS', () => {
 });
 
 describe('SQL_SNIPPETS', () => {
-  it('contains SELECT, JOIN, and GROUP BY templates', () => {
-    const labels = SQL_SNIPPETS.map((s) => s.label);
-    expect(labels).toContain('SELECT template');
-    expect(labels).toContain('JOIN template');
-    expect(labels).toContain('GROUP BY template');
-  });
+  it.each(['SELECT template', 'JOIN template', 'GROUP BY template'])(
+    'contains %s',
+    (template) => {
+      const labels = SQL_SNIPPETS.map((s) => s.label);
+      expect(labels).toContain(template);
+    }
+  );
 });

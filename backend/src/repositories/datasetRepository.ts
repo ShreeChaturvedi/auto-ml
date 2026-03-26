@@ -1,19 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
-
-function ensureDirectory(path: string) {
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
+import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export interface DatasetRepository {
   list(): Promise<DatasetProfile[]>;
+  listByProject(projectId: string): Promise<DatasetProfile[]>;
   get(datasetId: string): Promise<DatasetProfile | undefined>;
   getById(datasetId: string): Promise<DatasetProfile | undefined>;  // Alias for get
   create(input: DatasetProfileInput): Promise<DatasetProfile>;
@@ -26,7 +21,7 @@ export interface DatasetRepository {
 
 export class FileDatasetRepository implements DatasetRepository {
   constructor(private readonly metadataPath: string) {
-    ensureDirectory(metadataPath);
+    ensureDirectoryForFile(metadataPath);
     if (!existsSync(metadataPath)) {
       writeFileSync(metadataPath, JSON.stringify([], null, 2), 'utf8');
     }
@@ -39,18 +34,22 @@ export class FileDatasetRepository implements DatasetRepository {
       const data = JSON.parse(raw) as DatasetProfile[];
       return data;
     } catch (error) {
-      console.error('[datasetRepository] Failed to read metadata', error);
+      appLogger.error('[datasetRepository] Failed to read metadata', error);
       return [];
     }
   }
 
   private writeAll(profiles: DatasetProfile[]) {
-    ensureDirectory(this.metadataPath);
+    ensureDirectoryForFile(this.metadataPath);
     writeFileSync(this.metadataPath, JSON.stringify(profiles, null, 2), 'utf8');
   }
 
   async list(): Promise<DatasetProfile[]> {
     return this.readAll();
+  }
+
+  async listByProject(projectId: string): Promise<DatasetProfile[]> {
+    return this.readAll().filter((dataset) => dataset.projectId === projectId);
   }
 
   async get(datasetId: string): Promise<DatasetProfile | undefined> {
@@ -118,6 +117,30 @@ export class FileDatasetRepository implements DatasetRepository {
 class PgDatasetRepository implements DatasetRepository {
   private readonly table = 'datasets';
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private mapRow(row: any): DatasetProfile {
+    const profile = (row.profile ?? {}) as {
+      columns?: DatasetProfile['columns'];
+      sample?: DatasetProfile['sample'];
+      metadata?: Record<string, unknown>;
+    };
+
+    return {
+      datasetId: row.dataset_id,
+      projectId: row.project_id ?? undefined,
+      filename: row.filename,
+      fileType: row.file_type,
+      size: Number(row.byte_size ?? 0),
+      nRows: row.row_count ?? 0,
+      nCols: row.column_count ?? 0,
+      columns: profile.columns ?? [],
+      sample: profile.sample ?? [],
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+      metadata: profile.metadata
+    };
+  }
+
   async list(): Promise<DatasetProfile[]> {
     const pool = getDbPool();
     const result = await pool.query(
@@ -135,28 +158,29 @@ class PgDatasetRepository implements DatasetRepository {
        ORDER BY created_at ASC`
     );
 
-    return result.rows.map((row) => {
-      const profile = (row.profile ?? {}) as {
-        columns?: DatasetProfile['columns'];
-        sample?: DatasetProfile['sample'];
-        metadata?: Record<string, unknown>;
-      };
+    return result.rows.map((row) => this.mapRow(row));
+  }
 
-      return {
-        datasetId: row.dataset_id,
-        projectId: row.project_id ?? undefined,
-        filename: row.filename,
-        fileType: row.file_type,
-        size: Number(row.byte_size ?? 0),
-        nRows: row.row_count ?? 0,
-        nCols: row.column_count ?? 0,
-        columns: profile.columns ?? [],
-        sample: profile.sample ?? [],
-        createdAt: row.created_at.toISOString(),
-        updatedAt: row.updated_at.toISOString(),
-        metadata: profile.metadata
-      };
-    });
+  async listByProject(projectId: string): Promise<DatasetProfile[]> {
+    const pool = getDbPool();
+    const result = await pool.query(
+      `SELECT dataset_id,
+              project_id,
+              filename,
+              file_type,
+              byte_size,
+              row_count,
+              column_count,
+              profile,
+              created_at,
+              updated_at
+       FROM ${this.table}
+       WHERE project_id = $1
+       ORDER BY created_at ASC`,
+      [projectId]
+    );
+
+    return result.rows.map((row) => this.mapRow(row));
   }
 
   async get(datasetId: string): Promise<DatasetProfile | undefined> {
@@ -181,27 +205,7 @@ class PgDatasetRepository implements DatasetRepository {
       return undefined;
     }
 
-    const row = result.rows[0];
-    const profile = (row.profile ?? {}) as {
-      columns?: DatasetProfile['columns'];
-      sample?: DatasetProfile['sample'];
-      metadata?: Record<string, unknown>;
-    };
-
-    return {
-      datasetId: row.dataset_id,
-      projectId: row.project_id ?? undefined,
-      filename: row.filename,
-      fileType: row.file_type,
-      size: Number(row.byte_size ?? 0),
-      nRows: row.row_count ?? 0,
-      nCols: row.column_count ?? 0,
-      columns: profile.columns ?? [],
-      sample: profile.sample ?? [],
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: profile.metadata
-    };
+    return this.mapRow(result.rows[0]);
   }
 
   async create(input: DatasetProfileInput): Promise<DatasetProfile> {
@@ -247,27 +251,7 @@ class PgDatasetRepository implements DatasetRepository {
       ]
     );
 
-    const row = result.rows[0];
-    const profile = (row.profile ?? {}) as {
-      columns?: DatasetProfile['columns'];
-      sample?: DatasetProfile['sample'];
-      metadata?: Record<string, unknown>;
-    };
-
-    return {
-      datasetId: row.dataset_id,
-      projectId: row.project_id ?? undefined,
-      filename: row.filename,
-      fileType: row.file_type,
-      size: Number(row.byte_size ?? 0),
-      nRows: row.row_count ?? 0,
-      nCols: row.column_count ?? 0,
-      columns: profile.columns ?? [],
-      sample: profile.sample ?? [],
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: profile.metadata
-    };
+    return this.mapRow(result.rows[0]);
   }
 
   async update(
@@ -318,27 +302,7 @@ class PgDatasetRepository implements DatasetRepository {
 
     if (result.rowCount === 0) return undefined;
 
-    const row = result.rows[0];
-    const profile = (row.profile ?? {}) as {
-      columns?: DatasetProfile['columns'];
-      sample?: DatasetProfile['sample'];
-      metadata?: Record<string, unknown>;
-    };
-
-    return {
-      datasetId: row.dataset_id,
-      projectId: row.project_id ?? undefined,
-      filename: row.filename,
-      fileType: row.file_type,
-      size: Number(row.byte_size ?? 0),
-      nRows: row.row_count ?? 0,
-      nCols: row.column_count ?? 0,
-      columns: profile.columns ?? [],
-      sample: profile.sample ?? [],
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      metadata: profile.metadata
-    };
+    return this.mapRow(result.rows[0]);
   }
 
   async getById(datasetId: string): Promise<DatasetProfile | undefined> {
@@ -360,7 +324,7 @@ export function createDatasetRepository(metadataPath: string): DatasetRepository
     try {
       return new PgDatasetRepository();
     } catch (error) {
-      console.error('[datasetRepository] Failed to create Postgres dataset repository, falling back to file store', error);
+      appLogger.error('[datasetRepository] Failed to create Postgres dataset repository, falling back to file store', error);
     }
   }
 

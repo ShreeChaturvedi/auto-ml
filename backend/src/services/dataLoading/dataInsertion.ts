@@ -4,6 +4,7 @@
 
 import type { PoolClient } from 'pg';
 
+import { appLogger } from '../../logging/logger.js';
 import type { ColumnDataType, DatasetProfileColumn } from '../../types/dataset.js';
 import {
   coerceBoolean,
@@ -137,7 +138,7 @@ export async function insertRows(
     totalRowsInserted += batch.length;
 
     if (batch.length < batchSize) {
-      console.log(`[datasetLoader] Inserted ${totalRowsInserted} rows in ${Math.ceil(rows.length / batchSize)} batches`);
+      appLogger.info(`[datasetLoader] Inserted ${totalRowsInserted} rows in ${Math.ceil(rows.length / batchSize)} batches`);
     }
   }
 

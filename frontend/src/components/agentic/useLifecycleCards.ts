@@ -74,6 +74,10 @@ function classifyTool(toolName: string): CardType | null {
     return 'commit';
   }
 
+  if (toolName === 'configure_experiment') return 'proposal';
+  if (toolName === 'compare_models') return 'validation';
+  if (toolName === 'checkpoint_feature_pipeline') return 'commit';
+
   return null;
 }
 

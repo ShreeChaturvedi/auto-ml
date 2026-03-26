@@ -40,7 +40,6 @@ export function buildPhaseState(metadata?: ApiProjectMetadata) {
   if (!unlocked.includes(current)) {
     unlocked.push(current);
   }
-
   return {
     unlockedPhases: unlocked.length > 0 ? unlocked : [...DEFAULT_PHASE_STATE.unlockedPhases],
     completedPhases: completed,

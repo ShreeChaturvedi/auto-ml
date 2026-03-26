@@ -1,9 +1,10 @@
+import { getErrorMessage } from '../../utils/errors.js';
 import type { LlmClient } from '../llm/llmClient.js';
 
 import type { WorkflowNodeContract } from './contracts.js';
 import type { WorkflowGraphState } from './graphState.js';
 import { parsePlannerResponse, validatePlan } from './plannerAction.js';
-import { buildPlannerRequest } from './plannerPrompt.js';
+import { buildPlannerRepairRequest, buildPlannerRequest } from './plannerPrompt.js';
 
 function buildPlannerFailure(message: string, code: string): Partial<WorkflowGraphState> {
   return {
@@ -24,13 +25,23 @@ export async function planWorkflowAction(
   let parsedPlan;
 
   try {
-    const raw = await client.complete(buildPlannerRequest(state, contract));
-    parsedPlan = parsePlannerResponse(raw);
+    const request = buildPlannerRequest(state, contract);
+    let raw = await client.complete(request);
+    if (!raw.trim()) {
+      raw = await client.complete(request);
+    }
+    if (!raw.trim()) {
+      throw new Error('Model returned an empty response.');
+    }
+    try {
+      parsedPlan = parsePlannerResponse(raw);
+    } catch {
+      const repaired = await client.complete(buildPlannerRepairRequest(raw, state, contract));
+      parsedPlan = parsePlannerResponse(repaired);
+    }
   } catch (error) {
     return buildPlannerFailure(
-      error instanceof Error
-        ? `Workflow planner did not return a valid action plan: ${error.message}`
-        : 'Workflow planner did not return a valid action plan.',
+      `Workflow planner did not return a valid action plan: ${getErrorMessage(error, 'unknown error')}`,
       'WORKFLOW_PLAN_INVALID'
     );
   }

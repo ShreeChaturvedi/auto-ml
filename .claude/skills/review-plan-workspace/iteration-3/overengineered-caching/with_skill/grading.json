@@ -1,0 +1,16 @@
+{
+  "eval_id": 1, "run_type": "with_skill",
+  "expectations": [
+    {"text": "Identifies 4+ caching layers", "passed": true, "evidence": "Enumerates: Postgres repo, file fallback, inflight dedup Map, schema fingerprint, getSuggestions pure cache, frontend Zustand store"},
+    {"text": "getSuggestions() is pure cache read", "passed": true, "evidence": "'getSuggestions() (line 153) is read-only from the repository cache. It never calls the LLM.'"},
+    {"text": "pg_notify races with synchronous invalidation", "passed": false, "evidence": "Notes pg_notify has zero precedent and is unnecessary, but doesn't identify the specific race with existing synchronous regenerateProjectNlSuggestionsSilently calls"},
+    {"text": "TTL contradicts fingerprint design", "passed": true, "evidence": "Synthesis #6: 'TTL-based expiry is semantically wrong... go stale when schema changes. Fingerprint-based invalidation is strictly better.'"},
+    {"text": "Lists missing files from plan", "passed": true, "evidence": "Synthesis #7: lists routes/query.ts, datasets/nlSuggestions.ts, uploadHandler.ts, columnHandler.ts, and 3 test files"},
+    {"text": "Notes colocation convention for caches", "passed": false, "evidence": "Mentions queryCache.ts as existing pattern but doesn't make the explicit argument that caches are colocated with services, not in a separate cache/ directory"},
+    {"text": "Quantified alternative with size estimate", "passed": true, "evidence": "'15 lines of code, 0 new files, 0 new dependencies' with code snippet"},
+    {"text": "Identifies missing test strategy", "passed": true, "evidence": "Reviewer A: 'Existing tests would need significant rework' with specific categories"},
+    {"text": "Structured Critical/Strong/Minor output", "passed": true, "evidence": "Clear sections with numbered items"},
+    {"text": "3+ line number references", "passed": true, "evidence": "Lines 153, 183, 26, 169-174, 246-252, 113, 157-178, many more"}
+  ],
+  "pass_rate": 0.8
+}

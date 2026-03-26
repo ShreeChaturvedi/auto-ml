@@ -11,8 +11,9 @@ import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
-import { DataViewerTabBar } from './DataViewerTabBar';
+import { FileTabBar } from './FileTabBar';
 import { DataViewerContent } from './DataViewerContent';
+import { DocumentQAPanel } from './DocumentQAPanel';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
@@ -26,7 +27,9 @@ import {
   buildQueryArtifactMeta,
   useColumnOperations
 } from './hooks/useColumnOperations';
+import { useDatasetPreviewPagination } from './hooks/useDatasetPreviewPagination';
 import { useInsightActions } from '@/hooks/useInsightActions';
+import { DATA_FILE_TYPES } from '@/lib/fileUtils';
 
 function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl']): NlGenerationResult {
   return {
@@ -43,12 +46,12 @@ function toNlGenerationResult(nl: Awaited<ReturnType<typeof executeNlQuery>>['nl
 
 export function DataViewerTab() {
   const [isExecuting, setIsExecuting] = useState(false);
-  const [queryError, setQueryError] = useState<string | null>(null);
   const [queryPanelCollapsed, setQueryPanelCollapsed] = useState(false);
   const [queryPanelIsExpanding, setQueryPanelIsExpanding] = useState(false);
   const [queryPanelIsTransitioning, setQueryPanelIsTransitioning] = useState(false);
   const [queryMode, setQueryMode] = useState<QueryMode>('sql');
   const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
+  const [qaPanelCollapsed, setQaPanelCollapsed] = useState(true);
   const { projectId } = useParams();
   const projects = useProjectStore((state) => state.projects);
   const activeProject = projects.find((p) => p.id === projectId);
@@ -64,6 +67,7 @@ export function DataViewerTab() {
   const fileTabType = useDataStore((state) => state.fileTabType);
   const openFileTabs = useDataStore((state) => state.openFileTabs);
   const setActiveFileTab = useDataStore((state) => state.setActiveFileTab);
+  const openFileTab = useDataStore((state) => state.openFileTab);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const updateColumnType = useDataStore((state) => state.updateColumnType);
 
@@ -81,6 +85,14 @@ export function DataViewerTab() {
     () => allArtifacts.filter((artifact) => artifact.projectId === projectId),
     [allArtifacts, projectId]
   );
+  const activeFile = useMemo(
+    () => (fileTabType === 'file' ? files.find((file) => file.id === activeFileTabId) : undefined),
+    [activeFileTabId, fileTabType, files]
+  );
+  const activePreview = useMemo(
+    () => (activeFile ? previews.find((preview) => preview.fileId === activeFile.id) : undefined),
+    [activeFile, previews]
+  );
 
   // Hydrate data from backend on mount
   useEffect(() => {
@@ -89,22 +101,34 @@ export function DataViewerTab() {
     }
   }, [projectId, hydrateFromBackend]);
 
-  // Auto-select first tab if none selected
+  // Auto-select a tab when none is active or the active tab doesn't belong to this project
   const openFileTabsForProject = useMemo(
     () => openFileTabs.filter((tabId) => files.some((file) => file.id === tabId)),
     [openFileTabs, files]
   );
 
+  const firstDataFileId = useMemo(
+    () => files.find((f) => DATA_FILE_TYPES.has(f.type))?.id ?? null,
+    [files]
+  );
+
   useEffect(() => {
-    if (activeFileTabId) return;
+    const belongs = !!activeFile || queryArtifacts.some((a) => a.id === activeFileTabId);
+    if (belongs) return;
+
     if (openFileTabsForProject.length > 0) {
       setActiveFileTab(openFileTabsForProject[0], 'file');
       return;
     }
     if (queryArtifacts.length > 0) {
       setActiveFileTab(queryArtifacts[0].id, 'artifact');
+      return;
     }
-  }, [activeFileTabId, openFileTabsForProject, queryArtifacts, setActiveFileTab]);
+    // Auto-open first data file when no tabs have been opened yet
+    if (firstDataFileId) {
+      openFileTab(firstDataFileId);
+    }
+  }, [activeFile, activeFileTabId, openFileTabsForProject, queryArtifacts, firstDataFileId, setActiveFileTab, openFileTab]);
 
   // Derive table names and columns for SQL autocomplete
   const { tableNames, columnsByTable } = useColumnOperations(files, previews);
@@ -116,7 +140,6 @@ export function DataViewerTab() {
       if (!activeProject) return;
 
       setIsExecuting(true);
-      setQueryError(null);
 
       try {
         // Execute SQL using backend Postgres
@@ -137,7 +160,9 @@ export function DataViewerTab() {
         console.error('Query execution failed:', error);
         const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
 
-        setQueryError(withSqlIdentifierHint(errorMessage, mode, tableNames[0]));
+        toast.error('Query failed', {
+          description: withSqlIdentifierHint(errorMessage, mode, tableNames[0])
+        });
       } finally {
         setIsExecuting(false);
       }
@@ -214,7 +239,6 @@ export function DataViewerTab() {
       if (!activeProject) return;
 
       setIsExecuting(true);
-      setQueryError(null);
 
       try {
         let queryResult = result.queryResult;
@@ -245,8 +269,9 @@ export function DataViewerTab() {
         console.error('NL query approval failed:', error);
         const errorMessage = extractApiErrorMessage(error) || 'Unknown error occurred';
 
-        setQueryError(withSqlIdentifierHint(errorMessage, 'english', tableNames[0]));
-        toast.error(`Query failed: ${errorMessage}`);
+        toast.error('Query failed', {
+          description: withSqlIdentifierHint(errorMessage, 'english', tableNames[0])
+        });
       } finally {
         setIsExecuting(false);
       }
@@ -297,8 +322,11 @@ export function DataViewerTab() {
     onSuggestSql: handleSuggestSql,
     datasetSchema,
   });
-
-  const handleDismissError = useCallback(() => setQueryError(null), []);
+  const datasetIncrementalLoad = useDatasetPreviewPagination({
+    file: activeFile,
+    preview: activePreview,
+    extractApiErrorMessage
+  });
 
   useEffect(() => {
     if (!queryPanelIsTransitioning) {
@@ -334,11 +362,9 @@ export function DataViewerTab() {
       {/* Main Content Area (left side) */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {projectId && (
-          <DataViewerTabBar
+          <FileTabBar
             projectId={projectId}
             queryIconColorClassName={projectTypeColorClassName}
-            queryError={queryError}
-            onDismissError={handleDismissError}
           />
         )}
 
@@ -356,6 +382,7 @@ export function DataViewerTab() {
               controlsPortalTarget={activeControlsPortalTarget}
               updateColumnType={updateColumnType}
               extractApiErrorMessage={extractApiErrorMessage}
+              datasetIncrementalLoad={datasetIncrementalLoad}
               onInsightAction={handleInsightAction}
             />
           ) : (
@@ -364,6 +391,20 @@ export function DataViewerTab() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Document Q&A Panel */}
+      <div
+        className={cn(
+          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out',
+          qaPanelCollapsed ? 'w-12' : 'w-[340px]'
+        )}
+      >
+        <DocumentQAPanel
+          projectId={projectId}
+          collapsed={qaPanelCollapsed}
+          onCollapsedChange={setQaPanelCollapsed}
+        />
       </div>
 
       {/* Query Panel (right side) */}
@@ -383,6 +424,7 @@ export function DataViewerTab() {
         }}
       >
         <QueryPanel
+          projectId={projectId}
           onExecute={handleExecuteQuery}
           isExecuting={isExecuting}
           className="w-full"

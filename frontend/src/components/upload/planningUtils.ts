@@ -1,5 +1,7 @@
 import type { ChatMessage } from '@/types/llmUi';
 import type { UploadedFile } from '@/types/file';
+import type { ProjectPlan } from '@/hooks/useProjectPlans';
+import type { PlanChatEntry } from '@/stores/planChatStore';
 
 export interface SuggestionPill {
   id: string;
@@ -54,6 +56,10 @@ export function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill
 
 export function truncateSuggestionLabel(label: string, maxLength = 56): string {
   return label.length > maxLength ? `${label.slice(0, maxLength - 1)}…` : label;
+}
+
+export function getNextPlanName(plans: ProjectPlan[], chats: PlanChatEntry[]): string {
+  return `Plan ${plans.length + chats.length + 1}`;
 }
 
 export function buildInitialSuggestions(

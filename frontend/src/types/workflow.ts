@@ -51,6 +51,7 @@ export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
 export const WorkflowArtifactSchema = z.object({
   artifactId: z.string().min(1).optional(),
+  runId: z.string().min(1).optional(),
   kind: z.string().min(1),
   label: z.string().min(1).optional(),
   payload: z.unknown().optional(),
@@ -94,6 +95,7 @@ export const WorkflowErrorEventSchema = z.object({
   type: z.literal('workflow_error'),
   message: z.string().min(1),
   retryable: z.boolean().optional(),
+  code: z.string().optional(),
   state: WorkflowStateSchema.optional()
 });
 

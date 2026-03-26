@@ -1,4 +1,6 @@
-import { apiRequest, getApiBaseUrl } from './client';
+import { useAuthStore } from '@/stores/authStore';
+import { decodeJwtPayload } from '@/lib/auth/jwt';
+import { apiFetch, apiRequest, refreshAccessToken } from './client';
 import { readNdjsonStream } from './streamReader';
 import type { LlmEnvelope, LlmUsage, ToolCall, ToolResult } from '@/types/llmUi';
 import type { AssistantModelKind, ReasoningEffort } from '@/components/llm/modelOptions';
@@ -153,16 +155,31 @@ export async function listLlmModels() {
   });
 }
 
+const PRE_STREAM_REFRESH_THRESHOLD_SEC = 120;
+
+async function ensureFreshToken() {
+  const { accessToken, refreshToken } = useAuthStore.getState();
+  if (!accessToken || !refreshToken) return;
+  const payload = decodeJwtPayload(accessToken);
+  if (!payload?.exp) return;
+  const remaining = payload.exp - Math.floor(Date.now() / 1000);
+  if (remaining < PRE_STREAM_REFRESH_THRESHOLD_SEC) {
+    await refreshAccessToken(refreshToken);
+  }
+}
+
 async function streamLlm(
   endpoint: string,
   request: LlmPlanRequest | OnboardingStreamRequest,
   onEvent: (event: LlmStreamEvent) => void,
   signal?: AbortSignal
 ) {
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+  await ensureFreshToken();
+
+  const response = await apiFetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-    body: JSON.stringify(request),
+    headers: { Accept: 'application/x-ndjson' },
+    body: request,
     signal
   });
 

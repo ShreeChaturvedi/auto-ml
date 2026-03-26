@@ -112,9 +112,11 @@ export async function runRepairPipeline(
       }
     });
 
+    const allowedTables = new Set(tables.map((t) => t.tableName.toLowerCase()));
     const validation = validateReadOnlySql(repaired.sql, {
       defaultLimit: env.sqlDefaultLimit,
-      maxRows: env.sqlMaxRows
+      maxRows: env.sqlMaxRows,
+      allowedTables
     });
     const caseNormalized = normalizeCaseSensitiveIdentifiers(validation.normalizedSql, tables);
     const caseNormalizationNote = buildCaseNormalizationValidationNote(caseNormalized.replacements);

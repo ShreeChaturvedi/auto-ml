@@ -1,0 +1,19 @@
+{
+  "eval_id": 2,
+  "eval_name": "security-gaps-export",
+  "prompt": "Review a plan to add bulk dataset export API with security and safety gaps",
+  "assertions": [
+    {"id": "sql-injection", "text": "Identifies SQL injection risk and references the existing quoteIdentifier() utility", "type": "depth_check"},
+    {"id": "cross-project-exfil", "text": "Identifies cross-project data exfiltration as a distinct issue (dataset IDs not validated against projectId)", "type": "depth_check"},
+    {"id": "archiver-transitive", "text": "Identifies that archiver is only a transitive dependency (via exceljs or similar), not direct", "type": "depth_check"},
+    {"id": "file-backed-fallback", "text": "Identifies file-backed repository fallback — if no Postgres, SELECT * FROM table won't work", "type": "depth_check"},
+    {"id": "get-post-method", "text": "Flags GET method as wrong and calculates or mentions URL length with UUID-sized IDs", "type": "depth_check"},
+    {"id": "disk-alternative", "text": "Proposes reading original files from disk instead of re-querying Postgres, with specific benefits listed", "type": "quality_check"},
+    {"id": "copy-to-stdout", "text": "Mentions COPY TO STDOUT CSV as a Postgres-native alternative to SELECT + json2csv", "type": "depth_check"},
+    {"id": "partial-failure", "text": "Identifies partial failure handling — what happens when headers are already sent (200) but a dataset fails mid-stream", "type": "depth_check"},
+    {"id": "response-headers", "text": "Specifies required response headers (Content-Type, Content-Disposition, or Transfer-Encoding)", "type": "depth_check"},
+    {"id": "concrete-revised-plan", "text": "Proposes a concrete alternative plan or revised implementation approach (not just 'fix these issues')", "type": "quality_check"},
+    {"id": "structured-output", "text": "Review uses Critical/Strong/Minor priority structure", "type": "format_check"},
+    {"id": "line-number-refs", "text": "References at least 3 specific line numbers from the actual codebase", "type": "quality_check"}
+  ]
+}

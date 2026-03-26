@@ -17,21 +17,21 @@ import type {
 export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   return apiRequest<AuthResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 
 export async function registerUser(payload: RegisterPayload): Promise<AuthResponse> {
   return apiRequest<AuthResponse>('/auth/register', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 
 export async function logoutUser(refreshToken: string): Promise<void> {
   return apiRequest<void>('/auth/logout', {
     method: 'POST',
-    body: JSON.stringify({ refreshToken })
+    body: { refreshToken }
   });
 }
 
@@ -42,21 +42,21 @@ export async function getCurrentUser(): Promise<{ user: SafeUser }> {
 export async function forgotPassword(payload: ForgotPasswordPayload): Promise<{ message: string }> {
   return apiRequest<{ message: string }>('/auth/forgot-password', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 
 export async function resetPassword(payload: ResetPasswordPayload): Promise<{ message: string }> {
   return apiRequest<{ message: string }>('/auth/reset-password', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 
 export async function updateProfile(payload: UpdateProfilePayload): Promise<{ user: SafeUser }> {
   return apiRequest<{ user: SafeUser }>('/auth/profile', {
     method: 'PATCH',
-    body: JSON.stringify(payload)
+    body: payload
   });
 }
 
@@ -77,6 +77,6 @@ export async function googleAuth(): Promise<{ authUrl: string }> {
 export async function googleCallback(code: string): Promise<AuthResponse> {
   return apiRequest<AuthResponse>('/auth/google/callback', {
     method: 'POST',
-    body: JSON.stringify({ code })
+    body: { code }
   });
 }

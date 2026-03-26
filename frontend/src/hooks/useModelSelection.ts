@@ -5,6 +5,7 @@ import {
   DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
+  normalizeAssistantModelValue,
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
 import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
@@ -78,8 +79,9 @@ export function useModelSelection(): UseModelSelectionReturn {
       return;
     }
 
-    const nextModel = allModelOptions.some((option) => option.value === selectedModel)
-      ? selectedModel
+    const normalizedSelectedModel = normalizeAssistantModelValue(selectedModel);
+    const nextModel = allModelOptions.some((option) => option.value === normalizedSelectedModel)
+      ? normalizedSelectedModel
       : defaultModel;
 
     if (nextModel !== selectedModel) {
@@ -98,8 +100,9 @@ export function useModelSelection(): UseModelSelectionReturn {
 
   const handleModelChange = useCallback(
     (model: string) => {
-      setSelectedModel(model);
-      setReasoningEffort(getDefaultReasoningEffort(model, allModelOptions));
+      const normalizedModel = normalizeAssistantModelValue(model);
+      setSelectedModel(normalizedModel);
+      setReasoningEffort(getDefaultReasoningEffort(normalizedModel, allModelOptions));
     },
     [allModelOptions]
   );

@@ -1,12 +1,28 @@
+import { env } from '../../../config.js';
+import { appLogger } from '../../../logging/logger.js';
+import { createModelRepository } from '../../../repositories/modelRepository.js';
+import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
+import { runEvaluation } from '../../evaluationService.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 
+const modelRepository = createModelRepository(env.modelMetadataPath);
+
+/** Best-effort task type inference from experiment metadata. */
+function inferTaskType(experiment: Record<string, unknown>): ModelTaskType {
+  const modelType = String(experiment.modelType ?? experiment.registeredModelType ?? '').toLowerCase();
+  if (/cluster|kmeans|dbscan/.test(modelType)) return 'clustering';
+  if (/regress|svr|ridge|lasso|elastic/.test(modelType)) return 'regression';
+  // If a target column is set, it's supervised; default to classification.
+  return 'classification';
+}
+
 export const registerModel: TrainingToolHandler = async (
   ctx: TrainingToolContext
 ): Promise<TrainingToolResult> => {
-  const { args, run } = ctx;
+  const { args, run, projectId, datasetId } = ctx;
 
   const resolved = resolveExperiment(run, args);
   if ('error' in resolved) return resolved;
@@ -21,15 +37,67 @@ export const registerModel: TrainingToolHandler = async (
   experiment.tags = args.tags;
   experiment.updatedAt = nowIso();
 
+  // Persist to model repository so the model appears in the Experiments leaderboard
+  const metricsRecord = (args.metrics && typeof args.metrics === 'object'
+    ? args.metrics
+    : {}) as Record<string, number>;
+  const hyperparameters = (args.hyperparameters && typeof args.hyperparameters === 'object'
+    ? args.hyperparameters
+    : {}) as Record<string, unknown>;
+  const modelName = typeof args.modelName === 'string' ? args.modelName : 'Untitled Model';
+  const modelType = typeof args.modelType === 'string' ? args.modelType : 'unknown';
+  const taskType = inferTaskType(experiment);
+
+  const artifact: ModelArtifact | undefined = typeof args.artifactPath === 'string'
+    ? { filename: args.artifactPath.split('/').pop() ?? 'model.joblib', path: args.artifactPath, size: 0 }
+    : undefined;
+
+  try {
+    const record = await modelRepository.create({
+      projectId,
+      datasetId: datasetId ?? '',
+      name: modelName,
+      templateId: `llm-${modelType}`,
+      taskType,
+      library: 'llm-guided',
+      algorithm: modelType,
+      parameters: hyperparameters,
+      metrics: metricsRecord,
+      status: 'completed',
+      trainingMs: typeof experiment.trainingDurationMs === 'number'
+        ? experiment.trainingDurationMs
+        : undefined,
+      targetColumn: typeof experiment.targetColumn === 'string'
+        ? experiment.targetColumn
+        : undefined,
+      artifact,
+      evaluationStatus: 'pending',
+      metadata: {
+        experimentId: experiment.experimentId,
+        source: 'llm-workflow',
+        tags: args.tags ?? []
+      }
+    });
+
+    experiment.persistedModelId = record.modelId;
+
+    // Fire-and-forget evaluation so the model gets eval metrics like the direct API path
+    runEvaluation(record.modelId).catch(err =>
+      appLogger.error('[registerModel] Background evaluation failed', { modelId: record.modelId, error: err })
+    );
+  } catch (err) {
+    appLogger.error('[registerModel] Failed to persist model', { err });
+  }
+
   return {
     output: {
       experimentId: experiment.experimentId,
-      modelName: args.modelName,
-      modelType: args.modelType,
+      modelName,
+      modelType,
       status: 'registered',
       metrics: args.metrics,
       tags: args.tags ?? [],
-      message: `Model "${args.modelName as string}" registered successfully for experiment ${experiment.experimentId as string}.`
+      message: `Model "${modelName}" registered successfully for experiment ${experiment.experimentId as string}.`
     }
   };
 };

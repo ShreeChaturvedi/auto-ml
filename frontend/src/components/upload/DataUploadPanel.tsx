@@ -8,9 +8,9 @@
  * - Horizontal separators between files
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileStack, Loader2 } from 'lucide-react';
+import { Upload, FileStack } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
@@ -19,6 +19,16 @@ import { getFileType, DATA_FILE_TYPES } from '@/lib/fileUtils';
 import { FileRow } from './FileRow';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
+
+/** Static style for the shimmer band at rest (hoisted to avoid allocation per render). */
+const SHIMMER_RESTING_STYLE: React.CSSProperties = {
+  opacity: 0,
+  transform: 'translateX(-120%) skewX(-15deg)',
+  background:
+    'linear-gradient(90deg, transparent 0%, hsl(var(--muted-foreground) / 0.06) 20%, hsl(var(--muted-foreground) / 0.14) 50%, hsl(var(--muted-foreground) / 0.06) 80%, transparent 100%)',
+};
 
 // Accepted file types (data files and context documents only - NO images)
 const acceptedFileTypes = {
@@ -52,6 +62,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const allFiles = useDataStore((state) => state.files);
+  const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
 
   // Filter files for this project using useMemo to avoid infinite loops
   const projectFiles = useMemo(
@@ -97,7 +108,8 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           headers: dataset.columns,
           rows: dataset.sample,
           totalRows: dataset.n_rows,
-          previewRows: dataset.sample.length
+          previewRows: dataset.sample.length,
+          eda: dataset.eda
         });
 
         setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
@@ -157,18 +169,26 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         file
       }));
 
+      const datasetUploads: Promise<unknown>[] = [];
+
       // Add to store
       newFiles.forEach((file) => {
         addFile(file);
         // Auto-upload dataset files
         if (DATA_FILE_TYPES.has(file.type)) {
-          void uploadDatasetToBackend(file);
+          datasetUploads.push(uploadDatasetToBackend(file));
         } else {
           void uploadDocumentToBackend(file);
         }
       });
+
+      if (datasetUploads.length > 0) {
+        void Promise.allSettled(datasetUploads).then(() => (
+          fetchProjectSuggestions(projectId, { force: true })
+        ));
+      }
     },
-    [projectId, addFile, uploadDatasetToBackend, uploadDocumentToBackend]
+    [projectId, addFile, fetchProjectSuggestions, uploadDatasetToBackend, uploadDocumentToBackend]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -190,6 +210,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         delete next[fileId];
         return next;
       });
+
     } catch (error) {
       console.error('[DataUploadPanel] Failed to delete file:', error);
       setUploadErrors((prev) => ({
@@ -208,33 +229,45 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
     }
     return [data, context] as const;
   }, [projectFiles]);
-  const isUploading = Object.values(uploadStatus).some(status => status === 'uploading');
+  const shimmerRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = usePrefersReducedMotion();
+
+  /** Fire-and-forget: one sweep across the surface, then hidden again. */
+  const triggerShimmer = useCallback(() => {
+    if (reducedMotion || isDragActive) return;
+    const el = shimmerRef.current;
+    if (!el || el.getAnimations().length > 0) return;
+    el.animate(
+      [
+        { transform: 'translateX(-120%) skewX(-15deg)', opacity: 1 },
+        { transform: 'translateX(220%) skewX(-15deg)', opacity: 1 },
+      ],
+      { duration: 1200, easing: 'ease-in-out', fill: 'none' },
+    );
+  }, [reducedMotion, isDragActive]);
 
   return (
     <div className="h-full flex flex-col" data-testid="data-upload-panel">
-      {isUploading ? (
-        <div className="mb-3 flex justify-end">
-          <Badge variant="secondary" className="gap-1.5 text-xs">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Uploading...
-          </Badge>
-        </div>
-      ) : null}
-
       {/* Drop Zone + File List Container */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Drop Zone - Full height when empty, compact when has files */}
+        {/* Drop Zone - Fills entire area when empty, compact when has files */}
         <div
           {...getRootProps()}
+          onMouseEnter={triggerShimmer}
           className={cn(
-            'flex flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer',
-            hasFiles ? 'py-6 mb-4' : 'flex-1 min-h-[300px]',
-            isDragActive
-              ? 'border-primary bg-primary/5 scale-[1.01]'
-              : 'border-border hover:border-primary/50 hover:bg-accent/20'
+            'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden',
+            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border border-dashed border-border hover:border-muted-foreground/30' : 'flex-1',
+            isDragActive && 'bg-primary/5'
           )}
         >
           <input {...getInputProps()} />
+
+          {/* Metallic shimmer band — hidden at rest, sweeps once on hover via WAAPI */}
+          <div
+            ref={shimmerRef}
+            className="pointer-events-none absolute inset-y-0 w-[60%]"
+            style={SHIMMER_RESTING_STYLE}
+          />
 
           <div className={cn(
             'rounded-2xl p-3 mb-3 transition-transform',
@@ -259,7 +292,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
         {/* File List - Simple rows with separators */}
         {hasFiles && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 pb-4">
             {/* Header with counts */}
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium">Uploaded Files</span>

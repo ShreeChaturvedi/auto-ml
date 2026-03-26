@@ -39,7 +39,7 @@ export async function createNotebook(
 ): Promise<Notebook> {
   return apiRequest<Notebook>(`/projects/${projectId}/notebooks`, {
     method: 'POST',
-    body: JSON.stringify(request)
+    body: request
   });
 }
 
@@ -52,7 +52,7 @@ export async function updateNotebook(
 ): Promise<Notebook> {
   return apiRequest<Notebook>(`/notebooks/${notebookId}`, {
     method: 'PATCH',
-    body: JSON.stringify(request)
+    body: request
   });
 }
 
@@ -99,7 +99,7 @@ export async function createCell(
 ): Promise<NotebookCell> {
   return apiRequest<NotebookCell>(`/notebooks/${notebookId}/cells`, {
     method: 'POST',
-    body: JSON.stringify(request)
+    body: request
   });
 }
 
@@ -112,7 +112,7 @@ export async function updateCell(
 ): Promise<NotebookCell> {
   return apiRequest<NotebookCell>(`/cells/${cellId}`, {
     method: 'PATCH',
-    body: JSON.stringify(request)
+    body: request
   });
 }
 
@@ -138,7 +138,7 @@ export async function runCell(
 ): Promise<ExecutionResult> {
   return apiRequest<ExecutionResult>(`/cells/${cellId}/run`, {
     method: 'POST',
-    body: JSON.stringify({ projectId })
+    body: { projectId }
   });
 }
 
@@ -155,7 +155,7 @@ export async function interruptKernel(
 ): Promise<{ success: boolean }> {
   return apiRequest<{ success: boolean }>(`/cells/${cellId}/interrupt`, {
     method: 'POST',
-    body: JSON.stringify({ projectId })
+    body: { projectId }
   });
 }
 
@@ -183,7 +183,7 @@ export async function reorderCells(
 ): Promise<void> {
   return apiRequest<void>(`/notebooks/${notebookId}/reorder`, {
     method: 'POST',
-    body: JSON.stringify(request)
+    body: request
   });
 }
 
@@ -280,7 +280,7 @@ export async function getPythonCompletions(
   try {
     const response = await apiRequest<{ completions: PythonCompletion[] }>('/python/completions', {
       method: 'POST',
-      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+      body: { code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) }
     });
     return response.completions;
   } catch (error) {
@@ -303,7 +303,7 @@ export async function getPythonHover(
   try {
     const response = await apiRequest<{ hover: HoverResult }>('/python/hover', {
       method: 'POST',
-      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+      body: { code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) }
     });
     return response.hover;
   } catch (error) {
@@ -326,7 +326,7 @@ export async function getPythonSignatures(
   try {
     const response = await apiRequest<{ signatures: SignatureResult[] }>('/python/signatures', {
       method: 'POST',
-      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+      body: { code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) }
     });
     return response.signatures;
   } catch (error) {
@@ -349,7 +349,7 @@ export async function getPythonDiagnostics(
   try {
     const response = await apiRequest<{ diagnostics: DiagnosticResult[] }>('/python/diagnostics', {
       method: 'POST',
-      body: JSON.stringify({ code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) })
+      body: { code, line, column, projectId, ...(cells && { cells }), ...(currentCellId && { currentCellId }) }
     });
     return response.diagnostics;
   } catch (error) {

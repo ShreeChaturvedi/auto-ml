@@ -1,0 +1,13 @@
+{
+  "eval_id": 2,
+  "eval_name": "security-gaps-export",
+  "prompt": "Review a plan to add bulk dataset export API with security and safety gaps",
+  "assertions": [
+    {"id": "sql-injection", "text": "Identifies SQL injection risk from interpolating tableName into SELECT * FROM {tableName}", "type": "content_check"},
+    {"id": "auth-check", "text": "Flags missing authentication/authorization (user must own the project)", "type": "content_check"},
+    {"id": "resource-limits", "text": "Identifies missing limits (row count, dataset count, or memory/size constraints)", "type": "content_check"},
+    {"id": "http-method", "text": "Flags GET with query string as problematic for many IDs (URL length limits, should use POST)", "type": "content_check"},
+    {"id": "error-handling", "text": "Mentions error handling for non-existent or inaccessible dataset IDs", "type": "content_check"},
+    {"id": "structured-output", "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list", "type": "format_check"}
+  ]
+}

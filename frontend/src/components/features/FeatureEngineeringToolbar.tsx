@@ -4,15 +4,9 @@ import {
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
   compactToolbarSelectClass
 } from '@/components/agentic/toolbarStyles';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
+import { WorkbookActionsMenu } from '@/components/agentic/WorkbookActionsMenu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Database, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Database, Plus } from 'lucide-react';
 
 interface FeatureVersionOption {
   id: string;
@@ -30,9 +24,11 @@ interface FeatureEngineeringToolbarLeftProps {
   onVersionSwitch: (value: string) => void;
   onNewDraft: () => void;
   onRenameDraft: () => void;
-  onDeleteDraft: () => void;
+  onReplay: () => void;
+  onReset: () => void;
+  onDeleteDraft?: () => void;
   canRenameDraft: boolean;
-  canDeleteDraft: boolean;
+  canDeleteDraft?: boolean;
 }
 
 interface FeatureEngineeringToolbarRightProps {
@@ -50,6 +46,8 @@ export function FeatureEngineeringToolbarLeft({
   onVersionSwitch,
   onNewDraft,
   onRenameDraft,
+  onReplay,
+  onReset,
   onDeleteDraft,
   canRenameDraft,
   canDeleteDraft
@@ -79,33 +77,15 @@ export function FeatureEngineeringToolbarLeft({
         <Plus className="h-3.5 w-3.5" />
       </Button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS}
-            disabled={!currentVersionId}
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onSelect={onRenameDraft} disabled={!canRenameDraft}>
-            <Pencil className="h-3.5 w-3.5 mr-2" />
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={onDeleteDraft}
-            className="text-destructive focus:text-destructive"
-            disabled={!canDeleteDraft}
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-2" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <WorkbookActionsMenu
+        onRename={onRenameDraft}
+        onReplay={onReplay}
+        onReset={onReset}
+        onDelete={onDeleteDraft}
+        disableAll={!currentVersionId}
+        disableRename={!canRenameDraft}
+        disableDelete={!canDeleteDraft}
+      />
     </div>
   );
 }

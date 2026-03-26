@@ -1,8 +1,14 @@
-import { asRecord } from '../../../utils/typeCoercion.js';
+import { randomUUID } from 'node:crypto';
+
+import { env } from '../../../config.js';
+import { createFileFeaturePipelineRunRepository } from '../../../repositories/featurePipelineRunRepository.js';
+import type { ToolCall } from '../../../types/llm.js';
+import { getErrorMessage } from '../../../utils/errors.js';
+import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import {
   FEATURE_TOOL_HANDLERS,
-  toFeatureToolContext
 } from '../../llm/featureTools/index.js';
+import type { FeatureToolContext } from '../../llm/featureTools/types.js';
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { FEATURE_ENGINEERING_CONTRACT } from '../../llm/prompts/featureContract.js';
 import { FEATURE_TOOL_NAMES } from '../../llm/tools/featureTools.js';
@@ -23,6 +29,12 @@ import { registerPhaseConfig } from '../phaseConfig.js';
 // register -> checkpoint stages.  Always in 'action' mode.
 // ---------------------------------------------------------------------------
 
+// -- Module-level singleton (same pattern as preprocessing.ts:146) ----------
+
+export const featureRunRepository = createFileFeaturePipelineRunRepository(env.featureRunsPath);
+
+// -- Lifecycle stages -------------------------------------------------------
+
 const FEATURE_ENGINEERING_LIFECYCLE: LifecycleStageDefinition[] = [
   { name: 'answer', label: 'Answer', order: 0 },
   { name: 'analyze_data', label: 'Analyze Data', order: 1 },
@@ -39,11 +51,60 @@ const FEATURE_ENGINEERING_LIFECYCLE: LifecycleStageDefinition[] = [
 const STAGE_NAMES = FEATURE_ENGINEERING_LIFECYCLE.map((s) => s.name);
 const FEATURE_TOOL_NAME_SET: Set<string> = new Set(FEATURE_TOOL_NAMES);
 
+function buildInitialProfileAction(state: import('../graphState.js').WorkflowGraphState): ToolCall[] {
+  if (!state.turn.datasetId) {
+    return [];
+  }
+
+  return [{
+    id: `wf-call-profile-${randomUUID()}`,
+    tool: 'get_dataset_profile',
+    args: {
+      datasetId: state.turn.datasetId
+    },
+    rationale: 'Profile the active dataset before proposing candidate features.'
+  }];
+}
+
 function buildStageConfig(
   stageName: string,
   tools: LlmToolDefinition[]
 ): StageConfig {
   const isReview = stageName === 'await_review';
+  const isInitialPlanningStage = stageName === 'plan_feature_pipeline';
+  const isContinueStage = stageName === 'continue_feature_pipeline';
+
+  if (isInitialPlanningStage) {
+    return {
+      name: stageName,
+      mode: 'deterministic',
+      allowedTools: tools.filter((tool) => tool.name === 'get_dataset_profile'),
+      toolChoice: 'required',
+      requiresApproval: false,
+      allowAssistantMessage: false,
+      allowAskUser: false,
+      allowRenderUi: false,
+      allowPlanExit: false,
+      requireToolCall: true,
+      deterministicAction: buildInitialProfileAction
+    };
+  }
+
+  if (isContinueStage) {
+    return {
+      name: stageName,
+      mode: 'text',
+      allowedTools: [],
+      toolChoice: 'auto',
+      requiresApproval: false,
+      allowAssistantMessage: true,
+      allowAskUser: true,
+      allowRenderUi: true,
+      allowPlanExit: false,
+      requireToolCall: false
+    };
+  }
+
   return {
     name: stageName,
     mode: 'action',
@@ -57,6 +118,69 @@ function buildStageConfig(
     requireToolCall: !isReview
   };
 }
+
+// ---------------------------------------------------------------------------
+// Private dispatch — follows the preprocessing.ts:497-536 pattern.
+// Resolves the feature run from the repository and builds the handler
+// context with closure access to the module-level singleton.
+// ---------------------------------------------------------------------------
+
+async function executeFeatureToolCall(
+  projectId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  toolCallId: string | undefined,
+  datasetId: string | undefined
+): Promise<ToolResult> {
+  const explicitRunId = asString(args.runId);
+
+  let run;
+  try {
+    if (explicitRunId) {
+      const existing = await featureRunRepository.getById(explicitRunId);
+      if (!existing) {
+        return { error: `Feature run ${explicitRunId} not found` };
+      }
+      run = existing;
+    } else {
+      run = await featureRunRepository.getOrCreate(projectId);
+    }
+  } catch (error) {
+    return {
+      error: `Failed to initialize feature run for project ${projectId}: ${getErrorMessage(error, 'Unexpected error')}`
+    };
+  }
+
+  if (!run) {
+    return {
+      error: `Failed to initialize feature run for project ${projectId}.`
+    };
+  }
+
+  const handler = FEATURE_TOOL_HANDLERS.get(toolName);
+  if (!handler) {
+    return { error: `Unknown feature tool: ${toolName}` };
+  }
+
+  try {
+    const featureCtx: FeatureToolContext = {
+      projectId,
+      toolCallId,
+      args,
+      datasetId,
+      run,
+      runRepository: featureRunRepository
+    };
+    return await handler(featureCtx);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected error';
+    return { error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PhaseConfig
+// ---------------------------------------------------------------------------
 
 export const featureEngineeringPhaseConfig: PhaseConfig = {
   phase: 'feature_engineering',
@@ -81,7 +205,18 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
     return [];
   },
 
-  resolveNextStage(current: string): string | null {
+  resolveNextStage(
+    current: string,
+    toolResults: import('../../../types/llm.js').ToolResult[]
+  ): string | null {
+    // On execution failure, loop back to generate_code so the LLM can fix its code
+    const hasExecutionFailure = toolResults.some(
+      (result) => result.tool === 'execute_feature' && result.error
+    );
+    if (hasExecutionFailure && current === 'execute_feature') {
+      return 'generate_code';
+    }
+
     const idx = STAGE_NAMES.indexOf(current);
     if (idx < 0 || idx >= STAGE_NAMES.length - 1) {
       return null;
@@ -98,17 +233,13 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
     args: unknown,
     ctx: ToolContext
   ): Promise<ToolResult> {
-    const handler = FEATURE_TOOL_HANDLERS.get(name);
-    if (!handler) {
-      return { error: `Unknown feature tool: ${name}` };
-    }
-
-    const featureCtx = toFeatureToolContext({
-      ...ctx,
-      args: asRecord(args) ?? {}
-    });
-
-    return handler(featureCtx);
+    return executeFeatureToolCall(
+      ctx.projectId,
+      name,
+      asRecord(args) ?? {},
+      ctx.toolCallId,
+      ctx.turn.datasetId
+    );
   }
 };
 

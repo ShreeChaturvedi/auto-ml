@@ -2,8 +2,38 @@ import express, { Router } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const {
+  hasDatabaseConfigurationMock,
+  getDbPoolMock,
+  verifyAccessTokenMock,
+  findByIdMock
+} = vi.hoisted(() => ({
+  hasDatabaseConfigurationMock: vi.fn(),
+  getDbPoolMock: vi.fn(() => ({})),
+  verifyAccessTokenMock: vi.fn(),
+  findByIdMock: vi.fn()
+}));
+
+vi.mock('../db.js', () => ({
+  hasDatabaseConfiguration: hasDatabaseConfigurationMock,
+  getDbPool: getDbPoolMock
+}));
+
+vi.mock('../repositories/userRepository.js', () => ({
+  UserRepository: class MockUserRepository {
+    findById = findByIdMock;
+  }
+}));
+
+vi.mock('../services/authService.js', () => ({
+  authService: {
+    verifyAccessToken: verifyAccessTokenMock
+  }
+}));
+
 import { InMemoryProjectRepository } from '../repositories/projectRepository.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
+import { TEST_USER, TEST_USER_B } from '../tests/fixtures.js';
 
 import { registerProjectRoutes } from './projects.js';
 
@@ -16,59 +46,103 @@ function createTestApp(repository: InMemoryProjectRepository) {
   return app;
 }
 
+/** Helper: make an authenticated request by setting up the mock chain */
+function setupAuth(user = TEST_USER) {
+  hasDatabaseConfigurationMock.mockReturnValue(true);
+  verifyAccessTokenMock.mockReturnValue({ userId: user.user_id, email: user.email, role: user.role });
+  findByIdMock.mockResolvedValue(user);
+}
+
 describeRouteSuite('project routes', () => {
   let repository: InMemoryProjectRepository;
 
   beforeEach(() => {
     repository = new InMemoryProjectRepository();
+    vi.clearAllMocks();
+    setupAuth();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
+  describe('authentication', () => {
+    it('returns 401 when no auth header is provided', async () => {
+      const app = createTestApp(repository);
+      const response = await request(app).get('/api/projects');
+      expect(response.status).toBe(401);
+    });
+
+    it('returns 401 for invalid token', async () => {
+      verifyAccessTokenMock.mockReturnValue(null);
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get('/api/projects')
+        .set('Authorization', 'Bearer bad-token');
+      expect(response.status).toBe(401);
+    });
+  });
+
   describe('GET /api/projects', () => {
     it('returns empty array when no projects exist', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).get('/api/projects');
+      const response = await request(app)
+        .get('/api/projects')
+        .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(200);
       expect(response.body.projects).toEqual([]);
     });
 
-    it('returns all projects', async () => {
-      await repository.create({ name: 'Project 1' });
-      await repository.create({ name: 'Project 2' });
+    it('returns only projects owned by the authenticated user', async () => {
+      await repository.create({ name: 'My Project', userId: TEST_USER.user_id });
+      await repository.create({ name: 'Other Project', userId: TEST_USER_B.user_id });
 
       const app = createTestApp(repository);
-      const response = await request(app).get('/api/projects');
+      const response = await request(app)
+        .get('/api/projects')
+        .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(200);
-      expect(response.body.projects).toHaveLength(2);
-      expect(response.body.projects[0].name).toBe('Project 1');
-      expect(response.body.projects[1].name).toBe('Project 2');
+      expect(response.body.projects).toHaveLength(1);
+      expect(response.body.projects[0].name).toBe('My Project');
     });
   });
 
   describe('GET /api/projects/:id', () => {
     it('returns 404 for non-existent project', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).get('/api/projects/non-existent-id');
+      const response = await request(app)
+        .get('/api/projects/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Project not found');
     });
 
-    it('returns project by id', async () => {
-      const created = await repository.create({ name: 'Test Project', description: 'A test' });
+    it('returns project by id when owned by user', async () => {
+      const created = await repository.create({ name: 'Test Project', description: 'A test', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
-      const response = await request(app).get(`/api/projects/${created.id}`);
+      const response = await request(app)
+        .get(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(200);
       expect(response.body.project.id).toBe(created.id);
       expect(response.body.project.name).toBe('Test Project');
       expect(response.body.project.description).toBe('A test');
+    });
+
+    it('returns 404 for project owned by another user', async () => {
+      const created = await repository.create({ name: 'Other Project', userId: TEST_USER_B.user_id });
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(404);
     });
   });
 
@@ -77,6 +151,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'New Project' });
 
       expect(response.status).toBe(201);
@@ -86,10 +161,22 @@ describeRouteSuite('project routes', () => {
       expect(response.body.project.updatedAt).toBeDefined();
     });
 
+    it('sets userId from authenticated user', async () => {
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ name: 'New Project' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.project.userId).toBe(TEST_USER.user_id);
+    });
+
     it('creates a project with all fields', async () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Full Project',
           description: 'A complete project',
@@ -114,6 +201,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({ description: 'No name' });
 
       expect(response.status).toBe(400);
@@ -124,6 +212,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: '' });
 
       expect(response.status).toBe(400);
@@ -134,6 +223,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'Persisted Project' });
 
       const projects = await repository.list();
@@ -145,6 +235,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'Default Metadata Project' });
 
       expect(response.body.project.metadata).toBeDefined();
@@ -157,7 +248,8 @@ describeRouteSuite('project routes', () => {
     it('returns 404 for non-existent project', async () => {
       const app = createTestApp(repository);
       const response = await request(app)
-        .patch('/api/projects/non-existent-id')
+        .patch('/api/projects/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'Updated' });
 
       expect(response.status).toBe(404);
@@ -165,11 +257,12 @@ describeRouteSuite('project routes', () => {
     });
 
     it('updates project name', async () => {
-      const created = await repository.create({ name: 'Original' });
+      const created = await repository.create({ name: 'Original', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
         .patch(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'Updated Name' });
 
       expect(response.status).toBe(200);
@@ -177,11 +270,12 @@ describeRouteSuite('project routes', () => {
     });
 
     it('updates project description', async () => {
-      const created = await repository.create({ name: 'Test' });
+      const created = await repository.create({ name: 'Test', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
         .patch(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token')
         .send({ description: 'New description' });
 
       expect(response.status).toBe(200);
@@ -189,11 +283,12 @@ describeRouteSuite('project routes', () => {
     });
 
     it('updates project metadata', async () => {
-      const created = await repository.create({ name: 'Test' });
+      const created = await repository.create({ name: 'Test', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
       const response = await request(app)
         .patch(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token')
         .send({ metadata: { currentPhase: 'preprocessing' } });
 
       expect(response.status).toBe(200);
@@ -204,7 +299,7 @@ describeRouteSuite('project routes', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-03-11T09:00:00.000Z'));
 
-      const created = await repository.create({ name: 'Test' });
+      const created = await repository.create({ name: 'Test', userId: TEST_USER.user_id });
       const originalUpdatedAt = created.updatedAt;
 
       vi.setSystemTime(new Date('2026-03-11T09:00:01.000Z'));
@@ -212,6 +307,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .patch(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'Updated' });
 
       expect(response.body.project.updatedAt).not.toBe(originalUpdatedAt);
@@ -222,33 +318,51 @@ describeRouteSuite('project routes', () => {
         name: 'Test',
         description: 'Original description',
         icon: 'folder',
-        color: 'blue'
+        color: 'blue',
+        userId: TEST_USER.user_id
       });
 
       const app = createTestApp(repository);
       const response = await request(app)
         .patch(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token')
         .send({ name: 'New Name' });
 
       expect(response.body.project.name).toBe('New Name');
       expect(response.body.project.description).toBe('Original description');
+    });
+
+    it('returns 404 when trying to update another user\'s project', async () => {
+      const created = await repository.create({ name: 'Other', userId: TEST_USER_B.user_id });
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .patch(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token')
+        .send({ name: 'Hijacked' });
+
+      expect(response.status).toBe(404);
     });
   });
 
   describe('DELETE /api/projects/:id', () => {
     it('returns 404 for non-existent project', async () => {
       const app = createTestApp(repository);
-      const response = await request(app).delete('/api/projects/non-existent-id');
+      const response = await request(app)
+        .delete('/api/projects/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Project not found');
     });
 
     it('deletes an existing project', async () => {
-      const created = await repository.create({ name: 'To Delete' });
+      const created = await repository.create({ name: 'To Delete', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
-      const response = await request(app).delete(`/api/projects/${created.id}`);
+      const response = await request(app)
+        .delete(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token');
 
       expect(response.status).toBe(204);
 
@@ -257,15 +371,32 @@ describeRouteSuite('project routes', () => {
     });
 
     it('only deletes the specified project', async () => {
-      const project1 = await repository.create({ name: 'Keep' });
-      const project2 = await repository.create({ name: 'Delete' });
+      const project1 = await repository.create({ name: 'Keep', userId: TEST_USER.user_id });
+      const project2 = await repository.create({ name: 'Delete', userId: TEST_USER.user_id });
 
       const app = createTestApp(repository);
-      await request(app).delete(`/api/projects/${project2.id}`);
+      await request(app)
+        .delete(`/api/projects/${project2.id}`)
+        .set('Authorization', 'Bearer valid-token');
 
       const projects = await repository.list();
       expect(projects).toHaveLength(1);
       expect(projects[0].id).toBe(project1.id);
+    });
+
+    it('returns 404 when trying to delete another user\'s project', async () => {
+      const created = await repository.create({ name: 'Other', userId: TEST_USER_B.user_id });
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .delete(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(404);
+
+      // Verify it wasn't actually deleted
+      const project = await repository.getById(created.id);
+      expect(project).toBeDefined();
     });
   });
 
@@ -297,6 +428,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Project',
           extraField: 'should not cause error',
@@ -311,6 +443,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Project',
           metadata: { currentPhase: 'invalid-phase' }
@@ -325,6 +458,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Project',
           metadata: { currentPhase: 'preprocessing' }
@@ -338,6 +472,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Project',
           metadata: { projectPlan: 'a'.repeat(50000) }
@@ -351,6 +486,7 @@ describeRouteSuite('project routes', () => {
       const app = createTestApp(repository);
       const response = await request(app)
         .post('/api/projects')
+        .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Project',
           metadata: { projectPlan: 'a'.repeat(50001) }
@@ -358,6 +494,21 @@ describeRouteSuite('project routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.errors).toBeDefined();
+    });
+  });
+
+  describe('legacy projects (no userId)', () => {
+    it('allows access to legacy projects without a userId', async () => {
+      // Legacy projects have no userId set
+      const created = await repository.create({ name: 'Legacy Project' });
+
+      const app = createTestApp(repository);
+      const response = await request(app)
+        .get(`/api/projects/${created.id}`)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(200);
+      expect(response.body.project.name).toBe('Legacy Project');
     });
   });
 });

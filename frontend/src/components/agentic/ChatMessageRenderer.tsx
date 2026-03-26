@@ -8,12 +8,15 @@
  */
 
 import { useMemo, type ReactNode } from 'react';
+import { AlertTriangle, RotateCcw, XCircle } from 'lucide-react';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
+import { Button } from '@/components/ui/button';
 import { UserMessageBubble } from './UserMessageBubble';
 import { AssistantMessageBubble } from './AssistantMessageBubble';
 import { useHighlightStore } from '@/stores/highlightStore';
 import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
+import { resolveErrorDisplay } from '@/lib/errorMessages';
 import type { ChatMessage } from '@/types/llmUi';
 import type { SavepointDiff } from '@/types/savepoint';
 import { cn } from '@/lib/utils';
@@ -38,6 +41,8 @@ export interface ChatMessageRendererProps {
   editingMessageId?: string | null;
   turnDiffs?: ReadonlyMap<string, SavepointDiff>;
   isGenerating?: boolean;
+  /** Called when user clicks "Retry" on a retryable workflow error */
+  onRetryWorkflow?: () => void;
 }
 
 export function ChatMessageRenderer({
@@ -52,6 +57,7 @@ export function ChatMessageRenderer({
   editingMessageId,
   turnDiffs,
   isGenerating,
+  onRetryWorkflow,
 }: ChatMessageRendererProps) {
   // Find the index of the editing message for dimming
   const editingIndex = useMemo(() => {
@@ -143,7 +149,7 @@ export function ChatMessageRenderer({
           // Try lifecycle card rendering first
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
-            return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
+            return <div key={msg.id} className={cn('max-w-2xl', isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
           }
 
           // Fallback to standard ToolIndicator
@@ -153,7 +159,6 @@ export function ChatMessageRenderer({
                 toolCalls={[msg.call]}
                 results={msg.result ? [msg.result] : []}
                 isRunning={!msg.result}
-                autoExpandPreviewTools
               />
             </div>
           );
@@ -161,15 +166,43 @@ export function ChatMessageRenderer({
 
         // ── error ────────────────────────────────────────────────────────
         if (msg.type === 'error') {
+          const isRetryable = msg.retryable === true;
+          const display = resolveErrorDisplay(msg.code, msg.message);
+          const Icon = isRetryable ? AlertTriangle : XCircle;
+          const borderClass = isRetryable
+            ? 'border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/30'
+            : 'border-destructive/40 bg-destructive/10';
+          const iconClass = isRetryable ? 'text-amber-600 dark:text-amber-400' : 'text-destructive';
+          const titleClass = isRetryable ? 'text-amber-700 dark:text-amber-300' : 'text-destructive';
+
           return (
             <div
               key={msg.id}
               className={cn(
-                'rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive',
+                'max-w-2xl rounded-lg border px-4 py-3',
+                borderClass,
                 isDimmed && 'opacity-40'
               )}
             >
-              {msg.message}
+              <div className="flex items-start gap-3">
+                <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', iconClass)} />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className={cn('text-sm font-medium', titleClass)}>{display.title}</p>
+                  <p className="text-xs text-muted-foreground">{display.description}</p>
+                  {isRetryable && onRetryWorkflow && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onRetryWorkflow}
+                      disabled={isGenerating}
+                      className="mt-2 h-7 gap-1.5 border-amber-500/30 text-amber-700 hover:bg-amber-100/50 dark:text-amber-300 dark:hover:bg-amber-900/30"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Retry
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
           );
         }
@@ -179,7 +212,7 @@ export function ChatMessageRenderer({
           // Lifecycle card hook may handle some ui messages
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
-            return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
+            return <div key={msg.id} className={cn('max-w-2xl', isDimmed && 'opacity-40')}>{lifecycleCard}</div>;
           }
           return null;
         }
@@ -188,7 +221,7 @@ export function ChatMessageRenderer({
         // Delegate to lifecycle card renderer for phase-specific handling
         const extra = renderLifecycleCard?.(msg);
         if (extra != null) {
-          return <div key={msg.id} className={cn(isDimmed && 'opacity-40')}>{extra}</div>;
+          return <div key={msg.id} className={cn('max-w-2xl', isDimmed && 'opacity-40')}>{extra}</div>;
         }
 
         return null;

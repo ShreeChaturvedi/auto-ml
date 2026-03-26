@@ -1,0 +1,37 @@
+{
+  "eval_id": 1,
+  "eval_name": "overengineered-caching",
+  "prompt": "Review a plan to add Redis caching to NL suggestions when DB caching already exists",
+  "assertions": [
+    {
+      "id": "existing-cache-identified",
+      "text": "Identifies that the codebase already has caching (nlSuggestionRepository DB cache or inflightSuggestionGenerations map)",
+      "type": "content_check"
+    },
+    {
+      "id": "redis-redundancy",
+      "text": "Flags Redis as redundant or over-engineered given existing caching mechanisms",
+      "type": "content_check"
+    },
+    {
+      "id": "cache-warmer-critique",
+      "text": "Critiques the cache warmer (pre-generating for all projects on startup is wasteful/slow)",
+      "type": "content_check"
+    },
+    {
+      "id": "simpler-alternative",
+      "text": "Proposes a simpler alternative approach (e.g., improve existing DB cache, use fingerprint-based lookup)",
+      "type": "content_check"
+    },
+    {
+      "id": "structured-output",
+      "text": "Review is structured with clear priority levels (critical vs minor) rather than a flat list",
+      "type": "format_check"
+    },
+    {
+      "id": "codebase-specific",
+      "text": "References specific files or code from the actual codebase (not generic advice)",
+      "type": "content_check"
+    }
+  ]
+}

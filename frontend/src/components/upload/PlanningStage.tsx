@@ -20,9 +20,11 @@ import { CenteredSuggestionPills, FollowUpSuggestionPills } from './PlanSuggesti
 interface PlanningStageProps {
   projectId: string;
   onPlanApproved: (plan: string, planName: string) => void;
+  planChatId?: string | null;
+  onChatCreated?: (chatId: string) => void;
 }
 
-export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps) {
+export function PlanningStage({ projectId, onPlanApproved, planChatId }: PlanningStageProps) {
   const files = useDataStore((state) => state.files);
   const projects = useProjectStore((state) => state.projects);
 
@@ -77,6 +79,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
     uploadPendingAttachments,
     pendingAttachmentsCount,
     onPlanApproved,
+    planChatId,
   });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -190,7 +193,7 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
 
             if (msg.type === 'ask_user' && !msg.answered) {
               return (
-                <div key={msg.id} className="space-y-2">
+                <div key={msg.id} className="max-w-2xl py-1">
                   <QuestionCards
                     questions={msg.questions}
                     onSubmit={(answers) => handleQuestionAnswer(msg.id, answers)}
@@ -202,8 +205,8 @@ export function PlanningStage({ projectId, onPlanApproved }: PlanningStageProps)
 
             if (msg.type === 'ask_user' && msg.answered) {
               return (
-                <Card key={msg.id} className="border-muted/40 bg-muted/10 opacity-60">
-                  <CardContent className="p-3 text-xs text-muted-foreground italic">
+                <Card key={msg.id} className="max-w-2xl border-muted/40 bg-muted/10 opacity-60">
+                  <CardContent className="px-3 py-2 text-xs text-muted-foreground italic">
                     Questions answered
                   </CardContent>
                 </Card>

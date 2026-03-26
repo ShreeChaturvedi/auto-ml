@@ -1,10 +1,20 @@
+import { appLogger } from '../logging/logger.js';
+import { getErrorMessage } from '../utils/errors.js';
+
+const MARKUP_MIMES = new Set([
+  'text/html',
+  'text/xml',
+  'application/xml',
+  'application/xhtml+xml'
+]);
+
 const MIME_TEXT = new Set([
   'text/plain',
   'text/markdown',
   'text/md',
   'text/x-markdown',
-  'text/html',
-  'application/json'
+  'application/json',
+  ...MARKUP_MIMES
 ]);
 
 const DOCX_MIME_TYPES = new Set([
@@ -54,8 +64,12 @@ export async function parseDocument(buffer: Buffer, mimeType?: string, filename?
   }
 
   if (mimeType && MIME_TEXT.has(mimeType)) {
+    let text = buffer.toString('utf8');
+    if (MARKUP_MIMES.has(mimeType)) {
+      text = stripMarkup(text);
+    }
     return {
-      text: buffer.toString('utf8'),
+      text,
       mimeType,
       type: mimeType.includes('markdown') ? 'markdown' : 'text'
     };
@@ -70,6 +84,24 @@ export async function parseDocument(buffer: Buffer, mimeType?: string, filename?
   };
 }
 
+/** Strip HTML/XML tags, decode common entities, and collapse whitespace */
+function stripMarkup(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export { stripMarkup };
+
 async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
   try {
     const mammothModule = await import('mammoth');
@@ -83,10 +115,9 @@ async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseErr
       parseError: messages.length > 0 ? messages.join('; ') : undefined
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to parse DOCX document';
     return {
       text: '',
-      parseError: message
+      parseError: getErrorMessage(error, 'Failed to parse DOCX document')
     };
   }
 }
@@ -98,9 +129,9 @@ async function parseDocxBuffer(buffer: Buffer): Promise<{ text: string; parseErr
 async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; parseError?: string }> {
   await ensurePdfDomPolyfills();
   const primaryAttempt = await parsePdfWithPdfParse(buffer).catch((error) => {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[documentParser] PDFParse failed:', message);
-    return { text: '', parseError: message };
+    const msg = getErrorMessage(error, 'Unknown error');
+    appLogger.error('[documentParser] PDFParse failed:', msg);
+    return { text: '', parseError: msg };
   });
 
   if (primaryAttempt.text) {
@@ -108,9 +139,9 @@ async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; parseErro
   }
 
   const fallbackAttempt = await parsePdfWithPdfjs(buffer).catch((error) => {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[documentParser] PDF.js fallback failed:', message);
-    return { text: '', parseError: message };
+    const msg = getErrorMessage(error, 'Unknown error');
+    appLogger.error('[documentParser] PDF.js fallback failed:', msg);
+    return { text: '', parseError: msg };
   });
 
   if (fallbackAttempt.text) {
@@ -144,7 +175,7 @@ async function ensurePdfDomPolyfills(): Promise<void> {
       (globalThis as { DOMRect?: unknown }).DOMRect = domRect;
     }
   } catch (error) {
-    console.warn('[documentParser] DOMMatrix polyfill failed:', error);
+    appLogger.warn('[documentParser] DOMMatrix polyfill failed:', error);
   }
 
   if (typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix === 'undefined') {

@@ -68,6 +68,9 @@ export interface AgenticStepDisplayProps {
   handleStop: () => void;
   chatMetaSlot?: React.ReactNode;
 
+  /* Animated workflow placeholders */
+  composerPlaceholders?: string[];
+
   /* Edit mode */
   editingMessageId?: string | null;
   onCancelEdit?: () => void;
@@ -99,6 +102,7 @@ export function AgenticStepDisplay({
   sessionUsages,
   handleStop,
   chatMetaSlot,
+  composerPlaceholders,
   editingMessageId,
   onCancelEdit,
 }: AgenticStepDisplayProps) {
@@ -200,6 +204,7 @@ export function AgenticStepDisplay({
               }
             },
             placeholder: "Ask the agent to plan, execute, and validate... (@ to mention files)",
+            placeholders: composerPlaceholders,
             disabled: isGenerating || !!domainLockReason,
             isStreaming: isGenerating,
             onSend: () => submitPrompt(chatInput),

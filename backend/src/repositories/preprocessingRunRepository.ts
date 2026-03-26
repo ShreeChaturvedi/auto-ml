@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
+import { appLogger } from '../logging/logger.js';
+import { ensureDirectoryForFile } from '../utils/fs.js';
 
 export type StepStatus =
   | 'pending'
@@ -121,12 +123,6 @@ export interface PreprocessingRunRepository {
   save(run: PreprocessingRunState): Promise<void>;
 }
 
-function ensureDirectory(path: string): void {
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -138,7 +134,7 @@ function emptyStore(): StoredPreprocessingRuns {
 
 class FilePreprocessingRunRepository implements PreprocessingRunRepository {
   constructor(private readonly filePath: string) {
-    ensureDirectory(filePath);
+    ensureDirectoryForFile(filePath);
     if (!existsSync(filePath)) {
       writeFileSync(filePath, JSON.stringify(emptyStore(), null, 2), 'utf8');
     }
@@ -158,13 +154,13 @@ class FilePreprocessingRunRepository implements PreprocessingRunRepository {
 
       return { runs: parsed.runs };
     } catch (error) {
-      console.error('[preprocessingRunRepository] Failed to read run state file', error);
+      appLogger.error('[preprocessingRunRepository] Failed to read run state file', error);
       return emptyStore();
     }
   }
 
   private writeAll(store: StoredPreprocessingRuns): void {
-    ensureDirectory(this.filePath);
+    ensureDirectoryForFile(this.filePath);
     writeFileSync(this.filePath, JSON.stringify(store, null, 2), 'utf8');
   }
 

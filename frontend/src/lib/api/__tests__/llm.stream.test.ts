@@ -1,27 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { streamPreprocessingPlan, type LlmStreamEvent } from '../llm';
-
-function createNdjsonResponse(lines: string[]): Response {
-  const encoder = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const line of lines) {
-        controller.enqueue(encoder.encode(line));
-      }
-      controller.close();
-    }
-  });
-
-  return new Response(body, {
-    status: 200,
-    headers: { 'Content-Type': 'application/x-ndjson' }
-  });
-}
+import { createNdjsonResponse, getRequestHeader } from './testUtils';
+import { useAuthStore } from '@/stores/authStore';
 
 describe('streamPreprocessingPlan workflow events', () => {
+  beforeEach(() => {
+    useAuthStore.getState().setTokens('llm-access-token', 'llm-refresh-token');
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+    useAuthStore.getState().clearAuth();
   });
 
   it('parses backend-owned workflow runtime events and appends a terminal done event', async () => {
@@ -117,5 +107,24 @@ describe('streamPreprocessingPlan workflow events', () => {
       })
     ]));
     expect(events.at(-1)?.type).toBe('done');
+  });
+
+  it('sends the bearer token for workflow streaming requests', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      createNdjsonResponse([`${JSON.stringify({ type: 'done' })}\n`])
+    );
+
+    await streamPreprocessingPlan(
+      {
+        projectId: 'project-1',
+        datasetId: 'dataset-1',
+        prompt: 'Validate and pause if needed.'
+      },
+      () => undefined
+    );
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(getRequestHeader(init, 'Authorization')).toBe('Bearer llm-access-token');
+    expect(getRequestHeader(init, 'Accept')).toBe('application/x-ndjson');
   });
 });

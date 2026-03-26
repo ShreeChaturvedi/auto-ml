@@ -1,4 +1,4 @@
-import { apiRequest, getApiBaseUrl } from './client';
+import { apiFetch, apiRequest } from './client';
 
 export interface DocumentUploadResponse {
   document: {
@@ -57,7 +57,7 @@ export async function uploadDocument(projectId: string, file: File): Promise<Doc
   formData.append('file', file);
   formData.append('projectId', projectId);
 
-  const response = await fetch(`${getApiBaseUrl()}/upload/doc`, {
+  const response = await apiFetch('/upload/doc', {
     method: 'POST',
     body: formData
   });
@@ -85,12 +85,14 @@ export async function listDocuments(projectId?: string): Promise<{ documents: Do
 }
 
 export async function downloadDocument(documentId: string): Promise<Blob> {
-  const response = await fetch(`${getApiBaseUrl()}/documents/${documentId}/download`, {
-    method: 'GET'
-  });
+  const response = await apiFetch(`/documents/${documentId}/download`, { method: 'GET' });
 
   if (!response.ok) {
-    const message = response.statusText || 'Document download failed';
+    let message = response.statusText || 'Document download failed';
+    try {
+      const body = await response.json() as { error?: string };
+      if (body?.error) message = body.error;
+    } catch { /* non-JSON response, use statusText */ }
     throw new Error(message);
   }
 
@@ -120,6 +122,6 @@ export async function getAnswer(
 ): Promise<AnswerResponse> {
   return apiRequest('/answer', {
     method: 'POST',
-    body: JSON.stringify({ projectId, question, topK })
+    body: { projectId, question, topK }
   });
 }

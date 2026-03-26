@@ -1,8 +1,10 @@
+import { nowIso } from '../preprocessingTools/helpers.js';
+
 import type { FeatureToolContext, FeatureToolHandler } from './types.js';
 
 /**
  * register_feature — commit a validated feature to the pipeline registry.
- * Stub implementation: returns registration confirmation.
+ * Persists registration status when a run is available.
  */
 export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContext) => {
   const { args } = ctx;
@@ -15,14 +17,36 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
   const approved = (args.approved as boolean) ?? true;
 
   if (!approved) {
+    if (ctx.run && ctx.runRepository) {
+      const step = ctx.run.features[featureId];
+      if (step) {
+        step.status = 'rejected';
+        step.rejectionReason = (args.rejectionReason as string) ?? 'Rejected by user';
+        step.updatedAt = nowIso();
+        await ctx.runRepository.save(ctx.run);
+      }
+    }
+
     return {
       output: {
         status: 'rejected',
         message: 'Feature registration rejected',
         featureId,
-        rejectionReason: args.rejectionReason ?? 'Rejected by user'
+        rejectionReason: args.rejectionReason ?? 'Rejected by user',
+        runId: ctx.run?.runId
       }
     };
+  }
+
+  if (ctx.run && ctx.runRepository) {
+    const step = ctx.run.features[featureId];
+    if (step) {
+      const now = nowIso();
+      step.status = 'registered';
+      step.registeredAt = now;
+      step.updatedAt = now;
+      await ctx.runRepository.save(ctx.run);
+    }
   }
 
   return {
@@ -30,27 +54,49 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
       status: 'ok',
       message: 'Feature registered',
       featureId,
-      datasetId: args.datasetId ?? ctx.datasetId
+      datasetId: args.datasetId ?? ctx.datasetId,
+      runId: ctx.run?.runId
     }
   };
 };
 
 /**
- * checkpoint_feature_pipeline — snapshot the current feature set.
- * Stub implementation: returns checkpoint confirmation.
+ * checkpoint_feature_pipeline — snapshot the current feature set and persist it.
  */
 export const checkpointFeaturePipeline: FeatureToolHandler = async (ctx: FeatureToolContext) => {
   const { args } = ctx;
   const checkpointId = `fe-ckpt-${Date.now()}`;
 
+  const registeredFeatureIds = ctx.run
+    ? Object.keys(ctx.run.features).filter(
+        (id) => ctx.run!.features[id].status === 'registered'
+      )
+    : ((args.featureIds as string[]) ?? []);
+
+  const label = (args.label as string) ?? `Feature checkpoint ${checkpointId}`;
+
+  // Persist checkpoint metadata on the run
+  if (ctx.run && ctx.runRepository) {
+    ctx.run.lastCheckpointId = checkpointId;
+    ctx.run.lastCheckpointLabel = label;
+    ctx.run.lastCheckpointAt = nowIso();
+    ctx.run.updatedAt = nowIso();
+    await ctx.runRepository.save(ctx.run);
+  }
+
+  const warning = registeredFeatureIds.length === 0
+    ? 'No features have been registered yet. Consider creating features before checkpointing.'
+    : undefined;
+
   return {
     output: {
-      status: 'ok',
-      message: 'Feature pipeline checkpoint created',
+      status: registeredFeatureIds.length > 0 ? 'ok' : 'warning',
+      message: warning ?? 'Feature pipeline checkpoint created',
       checkpointId,
-      label: args.label ?? `Feature checkpoint ${checkpointId}`,
-      featureIds: args.featureIds ?? [],
-      datasetId: args.datasetId ?? ctx.datasetId
+      label,
+      featureIds: registeredFeatureIds,
+      datasetId: args.datasetId ?? ctx.datasetId,
+      runId: ctx.run?.runId
     }
   };
 };

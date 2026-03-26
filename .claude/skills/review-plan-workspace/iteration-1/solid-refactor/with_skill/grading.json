@@ -1,0 +1,38 @@
+{
+  "eval_id": 3,
+  "run_type": "with_skill",
+  "expectations": [
+    {
+      "text": "Recognizes the plan is fundamentally sound (not overly critical of a good plan)",
+      "passed": false,
+      "evidence": "Review says plan 'needs significant revision' and both extraction targets are phantom/misidentified. NOTE: The assertion was based on a premise the plan was good, but both reviewers correctly discovered the plan is actually flawed — extractions target already-decomposed code. The 'failure' here reflects the reviewer being MORE accurate than the assertion."
+    },
+    {
+      "text": "Mentions checking existing hooks (useNlSuggestions or similar) for overlap with proposed extractions",
+      "passed": true,
+      "evidence": "Extensively discusses useNlSuggestions hook (91 lines), NlApprovalDialog (51 lines), and lists 7 already-extracted modules. Identifies SuggestionChips as duplicating NlApprovalDialog."
+    },
+    {
+      "text": "Mentions SSE/stream cleanup (abort controller, memory leak prevention) for cancelStream",
+      "passed": true,
+      "evidence": "Reviewer 2 devotes significant analysis to AbortController lifecycle risks: 'splitting abort controller ownership is a common source of race conditions', stale closure risks, double-cleanup on unmount."
+    },
+    {
+      "text": "Discusses impact on existing tests or test utils beyond what the plan covers",
+      "passed": true,
+      "evidence": "Identifies stream test file not mentioned in plan, QueryPanel/NlWorkflowSteps/SqlRevealBlock imports from NlQueryWorkflow, and notes SuggestionChips.test.tsx would duplicate existing coverage."
+    },
+    {
+      "text": "Criticism is proportional — mostly minor suggestions, not blocking issues for a clean refactor",
+      "passed": false,
+      "evidence": "Criticism is heavy (2 Critical Issues, 3 Strong Recommendations). NOTE: Appropriately so — the plan IS flawed (targets already-extracted code). This assertion was based on a flawed premise that the plan was solid."
+    },
+    {
+      "text": "Review is structured with clear priority levels (critical vs minor)",
+      "passed": true,
+      "evidence": "Explicit 'Critical Issues', 'Strong Recommendations', 'Minor Suggestions', and 'Alternative Approaches' sections."
+    }
+  ],
+  "pass_rate": 0.667,
+  "notes": "The 2 'failures' are actually strengths — the reviewer was more accurate than the assertions, which assumed the plan was solid. Both reviewers correctly discovered the plan targets already-decomposed code."
+}

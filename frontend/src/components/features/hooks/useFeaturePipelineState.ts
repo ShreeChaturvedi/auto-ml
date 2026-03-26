@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
+import { useWorkflowSessionStore, buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
+import { fetchFeatureRun } from '@/lib/api/featureEngineering';
+import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useFeatureReadiness } from './useFeatureReadiness';
 import { useFeatureCodeGen } from './useFeatureCodeGen';
@@ -17,7 +20,6 @@ interface UseFeaturePipelineStateReturn {
   setSelectedDataset: (id: string | null) => void;
   targetColumn: string | undefined;
   setTargetColumn: (column: string | undefined) => void;
-  files: ReturnType<typeof useDataStore.getState>['files'];
   datasetFiles: ReturnType<typeof useDataStore.getState>['files'];
   documentFiles: ReturnType<typeof useDataStore.getState>['files'];
   selectedDatasetFile: ReturnType<typeof useDataStore.getState>['files'][number] | undefined;
@@ -29,7 +31,6 @@ interface UseFeaturePipelineStateReturn {
   currentVersion: PipelineVersion | undefined;
   isApproved: boolean;
   isCurrentVersionDraft: boolean;
-  canDeleteCurrentDraft: boolean;
 
   // Feature state
   projectFeatures: FeatureSpec[];
@@ -66,9 +67,32 @@ interface UseFeaturePipelineStateReturn {
   handleNewDraft: () => void;
   handleDeleteDraft: () => void;
   handleRenameDraft: () => void;
+  handleReplay: () => void;
+  handleReset: () => void;
+
+  // Dialog state
+  renameDialogOpen: boolean;
+  setRenameDialogOpen: (open: boolean) => void;
+  renameDialogValue: string;
+  setRenameDialogValue: (value: string) => void;
+  handleRenameConfirm: () => void;
+  deleteDialogOpen: boolean;
+  setDeleteDialogOpen: (open: boolean) => void;
+  handleDeleteConfirm: () => void;
 
   // Store actions (passed through for toolbar/approval gate)
   approveVersion: (projectId: string, versionId: string) => void;
+}
+
+/** Pick the best dataset for feature engineering: prefer derived datasets, then most recent. */
+function pickBestDataset(datasets: ReturnType<typeof useDataStore.getState>['files']): typeof datasets[number] {
+  const sorted = [...datasets].sort((a, b) => {
+    const aDerived = a.metadata?.derivedFrom ? 1 : 0;
+    const bDerived = b.metadata?.derivedFrom ? 1 : 0;
+    if (aDerived !== bDerived) return bDerived - aDerived;
+    return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+  });
+  return sorted[0];
 }
 
 export function useFeaturePipelineState(projectId: string): UseFeaturePipelineStateReturn {
@@ -92,9 +116,90 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   useEffect(() => {
     if (hydratedProjectRef.current === projectId) return;
     hydratedProjectRef.current = projectId;
-    hydrateFromBackend(projectId);
-    hydrateFeatures(projectId, { force: true });
-  }, [hydrateFeatures, hydrateFromBackend, projectId]);
+    let cancelled = false;
+
+    const hydrateRunIntoStore = (run: { runId: string; features?: Record<string, import('@/lib/api/featureEngineering').FeatureStepRecord> }) => {
+      const featureStore = useFeatureStore.getState();
+      featureStore.setFeatureRunId(run.runId);
+      for (const [featureId, step] of Object.entries(run.features ?? {})) {
+        featureStore.setFeatureStep(featureId, {
+          stepId: step.featureId,
+          name: step.name,
+          method: step.method,
+          status: step.status,
+          code: step.code,
+          metrics: step.validation as Record<string, unknown> | undefined
+        });
+      }
+    };
+
+    void (async () => {
+      try {
+        await hydrateFromBackend(projectId);
+        if (cancelled) {
+          return;
+        }
+
+        const hydrationError = useDataStore.getState().hydrationError;
+        if (hydrationError) {
+          setPanelError(hydrationError);
+          return;
+        }
+
+        hydrateFeatures(projectId, { force: true });
+
+        // Hydrate feature lifecycle state from backend runs endpoint
+        const store = useFeatureStore.getState();
+
+        // Skip if store already has lifecycle state from this session
+        if (store.featureRunId && Object.keys(store.featureSteps).length > 0) {
+          return;
+        }
+
+        const currentVersionId = store.currentVersionId[projectId];
+        const storageKey = `feature-engineering-messages-v3-${currentVersionId ?? 'default'}`;
+        const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+        const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+
+        if (session?.runId) {
+          const { run } = await fetchFeatureRun(session.runId);
+          if (cancelled) {
+            return;
+          }
+          hydrateRunIntoStore(run);
+
+          // Derive currentStage from the last step's status
+          const steps = Object.values(run.features ?? {});
+          if (steps.length > 0) {
+            const lastStep = steps[steps.length - 1];
+            const derivedStage =
+              lastStep.status === 'awaiting_approval' ? 'validate_feature'
+                : lastStep.status === 'completed' || lastStep.status === 'registered' ? 'register_feature'
+                  : lastStep.status === 'executing' ? 'execute_feature'
+                    : lastStep.status === 'rejected' ? 'propose_feature'
+                      : null;
+            if (derivedStage) {
+              useFeatureStore.getState().setCurrentStage(derivedStage);
+            }
+          }
+        }
+
+        setPanelError(null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setPanelError(
+          error instanceof Error ? error.message : 'Failed to hydrate feature engineering state.'
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateFeatures, hydrateFromBackend, projectId, setPanelError]);
 
   // --- Derived file data ---
   const files = useMemo(
@@ -175,12 +280,21 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     approveVersion,
     handleVersionSwitch,
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    handleRenameConfirm,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    handleDeleteConfirm,
   } = useFeatureVersioning({
     projectId,
     setSuggestionDrafts,
@@ -201,12 +315,21 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   // --- Code preview sync (extracted hook) ---
   useFeatureCodeGen(activeFeatures, selectedDatasetFile);
 
-  // --- Default dataset selection effect ---
+  // --- Default dataset selection effect (prefer previous phase's dataset) ---
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
-      setSelectedDataset(datasetFiles[0].id);
+      const previousId = getPreviousPhaseDataset(projectId, 'preprocessing');
+      const match = previousId
+        ? datasetFiles.find(f => f.id === previousId || f.metadata?.datasetId === previousId)
+        : undefined;
+      setSelectedDataset(match?.id ?? pickBestDataset(datasetFiles).id);
     }
-  }, [datasetFiles, selectedDataset]);
+  }, [datasetFiles, selectedDataset, projectId]);
+
+  // --- Persist selected dataset for cross-phase continuity ---
+  useEffect(() => {
+    if (selectedDataset) persistPhaseDataset(projectId, 'feature-engineering', selectedDataset);
+  }, [selectedDataset, projectId]);
 
   // --- Target column sync effect ---
   useEffect(() => {
@@ -224,7 +347,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     setSelectedDataset,
     targetColumn,
     setTargetColumn,
-    files,
     datasetFiles,
     documentFiles,
     selectedDatasetFile,
@@ -234,7 +356,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     currentVersion,
     isApproved,
     isCurrentVersionDraft,
-    canDeleteCurrentDraft,
     projectFeatures,
     activeFeatures,
     featureById,
@@ -259,6 +380,16 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleNewDraft,
     handleDeleteDraft,
     handleRenameDraft,
+    handleReplay,
+    handleReset,
+    renameDialogOpen,
+    setRenameDialogOpen,
+    renameDialogValue,
+    setRenameDialogValue,
+    handleRenameConfirm,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    handleDeleteConfirm,
     approveVersion
   };
 }

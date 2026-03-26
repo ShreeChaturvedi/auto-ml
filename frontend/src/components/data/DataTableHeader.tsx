@@ -100,12 +100,15 @@ export function DataTableHeaderCell({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <span
-          className={cn(typeColorClassName ?? 'text-primary')}
+        <div
+          className={cn(
+            'flex items-center justify-center h-7 w-7',
+            typeColorClassName ?? 'text-primary'
+          )}
           title={`Column type: ${getTypeLabel(currentType)}`}
         >
           <TypeIcon type={currentType} className="h-3.5 w-3.5" />
-        </span>
+        </div>
       )}
 
       <Button

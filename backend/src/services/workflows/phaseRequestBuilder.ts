@@ -7,6 +7,7 @@ import {
   loadRagSnippets
 } from '../../routes/llm/shared.js';
 import { FEATURE_METHODS } from '../featureEngineering.js';
+import type { FeatureSpec } from '../featureEngineering.js';
 import { createLlmClient } from '../llm/llmClient.js';
 import { resolvePreprocessingControllerTurn } from '../llm/preprocessing/controller.js';
 import {
@@ -19,6 +20,7 @@ import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
+import { getPhaseConfig } from './phaseConfig.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
@@ -175,6 +177,22 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
   }
 
   if (turn.phase === 'feature_engineering') {
+    // Build conversation history for the feature engineering model:
+    // - Exclude get_dataset_profile pairs: dataset columns/types/sample are already in the
+    //   user message via the dataset parameter. Including profile results causes either
+    //   oversized context or a re-profiling loop (model sees no history entry but the
+    //   user message says results are available, so it re-calls the tool).
+    // - Limit to the most recent 8 pairs to prevent context explosion on long pipelines.
+    const MAX_FE_HISTORY_PAIRS = 8;
+    const filteredPairs = toolCallHistory
+      .map((call, i) => ({ call, result: toolResultHistory[i] }))
+      .filter(({ call, result }) => call.name !== 'get_dataset_profile' && result !== undefined)
+      .slice(-MAX_FE_HISTORY_PAIRS);
+    const featureToolCallHistory = filteredPairs.map(({ call }) => call);
+    const featureToolResultHistory = filteredPairs.map(({ result }) => result!);
+    const featureRawToolResults = state.toolResultHistory.filter(
+      (r) => r.tool !== 'get_dataset_profile'
+    );
     return {
       nextStep: 'invoke_model',
       request: buildFeatureEngineeringRequest({
@@ -183,16 +201,19 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         prompt: turn.prompt,
         projectPlan,
         ragSnippets,
-        toolResults: state.toolResultHistory,
-        toolCallHistory,
-        toolResultHistory,
+        toolResults: featureRawToolResults,
+        toolCallHistory: featureToolCallHistory,
+        toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
         toolDefinitions: LLM_FEATURE_ENGINEERING_TOOLS,
         reasoningEffort: turn.reasoningEffort
       }),
       run: {
         ...state.run,
-        currentNode: state.iteration === 0 ? 'plan_feature_pipeline' : 'continue_feature_pipeline',
+        // Always use continue_feature_pipeline (text mode → main model). Dataset
+        // columns, types, and sample rows are already in the user message, so the
+        // plan_feature_pipeline deterministic profile step is not needed.
+        currentNode: 'continue_feature_pipeline',
         activeDatasetId: turn.datasetId,
         activeNotebookId: turn.notebookId
       }
@@ -208,6 +229,30 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     };
   }
 
+  const featureSpecs = (
+    Array.isArray(project?.metadata?.features)
+      ? (project.metadata.features as unknown[]).filter(
+          (f): f is FeatureSpec =>
+            typeof f === 'object' && f !== null &&
+            typeof (f as FeatureSpec).sourceColumn === 'string' &&
+            typeof (f as FeatureSpec).featureName === 'string' &&
+            typeof (f as FeatureSpec).method === 'string' &&
+            (f as FeatureSpec).enabled !== false
+        )
+      : []
+  );
+
+  // Resolve the current training lifecycle stage so that stage-based tool
+  // filtering in the PhaseConfig can restrict which tools the LLM may call.
+  let trainingNode: string;
+  if (state.iteration === 0) {
+    trainingNode = 'configure_experiment';
+  } else {
+    const trainingPhase = getPhaseConfig('training');
+    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, state.toolResultHistory);
+    trainingNode = nextStage ?? state.run.currentNode;
+  }
+
   return {
     nextStep: 'invoke_model',
     request: buildTrainingRequest({
@@ -218,6 +263,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       ragSnippets,
       toolResults: state.toolResultHistory,
       featureSummary: turn.featureSummary,
+      featureSpecs,
       toolCallHistory,
       toolResultHistory,
       toolDefinitions: await listMcpToolsForLlm().catch(() => LLM_ALL_TOOLS),
@@ -225,7 +271,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     }),
     run: {
       ...state.run,
-      currentNode: state.iteration === 0 ? 'plan_training_workflow' : 'continue_training_workflow',
+      currentNode: trainingNode,
       activeDatasetId: turn.datasetId,
       activeNotebookId: turn.notebookId
     }

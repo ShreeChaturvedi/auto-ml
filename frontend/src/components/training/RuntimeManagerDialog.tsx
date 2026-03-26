@@ -1,5 +1,5 @@
 /**
- * RuntimeManagerDialog - Configure Python runtime, packages, and datasets
+ * RuntimeManagerDialog - Configure Python runtime and packages
  */
 
 import {
@@ -16,15 +16,12 @@ import {
   DialogTitle,
   DialogTrigger
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useExecutionStore } from '@/stores/executionStore';
-import { useDataStore } from '@/stores/dataStore';
 import { type PackageInfo } from '@/lib/api/execution';
 import { toast } from 'sonner';
-import { Settings2 } from 'lucide-react';
+import { Package, Server, Settings2 } from 'lucide-react';
+import { IconModeToggle } from '@/components/data/IconModeToggle';
 import { PackageDialog } from './PackageDialog';
 import { usePackageSearch } from './hooks/usePackageSearch';
 import { ContainerStatusCard } from './ContainerStatusCard';
@@ -37,6 +34,7 @@ interface RuntimeManagerDialogProps {
 
 export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialogProps) {
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'runtime' | 'packages'>('runtime');
   const [refreshingPackages, setRefreshingPackages] = useState(false);
   const [packageDialogOpen, setPackageDialogOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<PackageInfo | null>(null);
@@ -50,28 +48,6 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
   const installedPackages = useExecutionStore((state) => state.installedPackages);
   const refreshPackages = useExecutionStore((state) => state.refreshPackages);
   const initializeCloud = useExecutionStore((state) => state.initializeCloud);
-
-  const files = useDataStore((state) => state.files);
-  const projectFiles = useMemo(
-    () => files.filter((file) => file.projectId === projectId),
-    [files, projectId]
-  );
-  const datasetFiles = useMemo(
-    () => projectFiles.filter((file) => file.metadata?.datasetId),
-    [projectFiles]
-  );
-  const datasetNameCounts = useMemo(
-    () =>
-      datasetFiles.reduce<Record<string, number>>((acc, file) => {
-        acc[file.name] = (acc[file.name] ?? 0) + 1;
-        return acc;
-      }, {}),
-    [datasetFiles]
-  );
-  const documentFiles = useMemo(
-    () => projectFiles.filter((file) => file.metadata?.documentId),
-    [projectFiles]
-  );
 
   const handleSuggestionSelect = useCallback((pkg: PackageInfo) => {
     setSelectedPackage(pkg);
@@ -140,22 +116,26 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
           )}
         </DialogTrigger>
         <DialogContent className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Runtime Manager</DialogTitle>
-            <DialogDescription>
-              Configure Python runtime, packages, and dataset mounts.
-            </DialogDescription>
+          <DialogHeader className="flex flex-row items-start justify-between gap-4">
+            <div>
+              <DialogTitle>Runtime Manager</DialogTitle>
+              <DialogDescription>
+                Manage your cloud runtime environment.
+              </DialogDescription>
+            </div>
+            <IconModeToggle
+              value={activeTab}
+              onValueChange={(val) => { if (val) setActiveTab(val as 'runtime' | 'packages'); }}
+              options={[
+                { value: 'runtime', ariaLabel: 'Runtime', icon: Server, tooltip: 'Runtime' },
+                { value: 'packages', ariaLabel: 'Packages', icon: Package, tooltip: 'Packages' },
+              ]}
+              useProjectColor={false}
+            />
           </DialogHeader>
 
-          <Tabs defaultValue="runtime" className="flex-1 flex flex-col min-h-0">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="runtime">Runtime</TabsTrigger>
-              <TabsTrigger value="packages">Packages</TabsTrigger>
-              <TabsTrigger value="datasets">Datasets</TabsTrigger>
-            </TabsList>
-
-            {/* Runtime Tab */}
-            <TabsContent value="runtime" className="flex-1 space-y-4 mt-4">
+          {activeTab === 'runtime' && (
+            <div className="flex-1 space-y-4 mt-4">
               <ContainerStatusCard
                 cloudAvailable={cloudAvailable}
                 cloudInitializing={cloudInitializing}
@@ -165,10 +145,11 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
                 setPythonVersion={setPythonVersion}
                 onConnect={() => initializeCloud(projectId)}
               />
-            </TabsContent>
+            </div>
+          )}
 
-            {/* Packages Tab */}
-            <TabsContent value="packages" className="flex-1 flex flex-col min-h-0 space-y-4 mt-4">
+          {activeTab === 'packages' && (
+            <div className="flex-1 flex flex-col min-h-0 space-y-4 mt-4">
               <PackageManagerSection
                 packageInput={packageInput}
                 setPackageInput={setPackageInput}
@@ -188,58 +169,8 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
                 refreshingPackages={refreshingPackages}
                 onRefreshPackages={handleRefreshPackages}
               />
-            </TabsContent>
-
-            {/* Datasets Tab */}
-            <TabsContent value="datasets" className="flex-1 flex flex-col min-h-0 space-y-4 mt-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="text-xs">
-                  {datasetFiles.length} dataset{datasetFiles.length === 1 ? '' : 's'}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  {documentFiles.length} context doc{documentFiles.length === 1 ? '' : 's'}
-                </Badge>
-              </div>
-
-              <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Quick load</p>
-                <code className="mt-1 block font-mono text-[11px] bg-background/50 p-2 rounded">
-                  df = pd.read_csv(resolve_dataset_path("your_file.csv"))
-                </code>
-              </div>
-
-              <div className="flex-1 min-h-0">
-                <ScrollArea className="h-[180px] rounded-md border">
-                  <div className="p-3 space-y-2">
-                    {datasetFiles.length === 0 ? (
-                      <p className="text-xs text-muted-foreground py-4 text-center">
-                        Upload a dataset to see it here.
-                      </p>
-                    ) : (
-                      datasetFiles.map((file) => (
-                        <div
-                          key={file.id}
-                          className="flex items-center justify-between gap-3 px-2 py-1.5 rounded-md hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">{file.name}</p>
-                            <code className="text-[10px] text-muted-foreground font-mono">
-                              {datasetNameCounts[file.name] > 1 && file.metadata?.datasetId
-                                ? `resolve_dataset_path("${file.name}", "${file.metadata.datasetId}")`
-                                : `resolve_dataset_path("${file.name}")`}
-                            </code>
-                          </div>
-                          <Badge variant="secondary" className="text-[10px] shrink-0">
-                            {file.type}
-                          </Badge>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-            </TabsContent>
-          </Tabs>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

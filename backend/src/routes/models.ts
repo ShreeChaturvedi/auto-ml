@@ -1,14 +1,25 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 
+import { env } from '../config.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requireProjectOwnership, verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import { getProjectRepository } from '../repositories/projectRepository.js';
+import { seedModels, seedOneModel } from '../services/modelSeedService.js';
 import {
+  deleteModel,
   getModelById,
   getModelTemplates,
   listModels,
   trainModel
 } from '../services/modelTraining.js';
+import type { AuthRequest } from '../types/auth.js';
+import { sendError, sendNotFound, sendForbidden } from '../utils/errors.js';
 
 const router = Router();
+const projectRepository = getProjectRepository();
 
 const trainSchema = z.object({
   projectId: z.string().min(1),
@@ -21,47 +32,102 @@ const trainSchema = z.object({
 });
 
 
-router.get('/templates', (_req: Request, res: Response) => {
+router.get('/templates', (_req: AuthRequest, res: Response) => {
   res.json({ templates: getModelTemplates() });
 });
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
   const models = await listModels(projectId);
   models.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ models });
+}));
+
+const seedSchema = z.object({
+  projectId: z.string().min(1),
 });
 
-router.get('/:id', async (req: Request, res: Response) => {
+router.post('/seed', validateRequest(seedSchema, 'query'), requireProjectOwnership(projectRepository, 'query'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (env.nodeEnv === 'production') {
+    sendForbidden(res, 'Seed endpoint is disabled in production');
+    return;
+  }
+  const { projectId } = req.query as Record<string, string>;
+  const models = await seedModels(projectId);
+  res.json({ models });
+}));
+
+const seedOneSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  taskType: z.enum(['classification', 'regression', 'clustering']),
+  algorithm: z.string().min(1),
+});
+
+router.post('/seed-one', validateRequest(seedOneSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (env.nodeEnv === 'production') {
+    sendForbidden(res, 'Seed endpoint is disabled in production');
+    return;
+  }
+  const data = req.body as z.infer<typeof seedOneSchema>;
+  // Project ownership is verified by requireProjectAccess middleware
+  const model = await seedOneModel(data.projectId, data);
+  res.json({ model });
+}));
+
+router.delete('/:id', validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const model = await getModelById(req.params.id);
   if (!model) {
-    res.status(404).json({ error: 'Model not found' });
+    sendNotFound(res, 'Model');
     return;
   }
-  res.json({ model });
-});
-
-router.get('/:id/artifact', async (req: Request, res: Response) => {
-  const model = await getModelById(req.params.id);
-  if (!model?.artifact?.path) {
-    res.status(404).json({ error: 'Model artifact not found' });
-    return;
-  }
-  res.download(model.artifact.path, model.artifact.filename);
-});
-
-router.post('/train', async (req: Request, res: Response) => {
-  try {
-    const parsed = trainSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: 'Invalid request',
-        details: parsed.error.issues
-      });
+  if (req.user && model.projectId) {
+    const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      sendNotFound(res, 'Model');
       return;
     }
+  }
+  await deleteModel(req.params.id);
+  res.status(204).end();
+}));
 
-    const result = await trainModel(parsed.data);
+router.get('/:id', validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const model = await getModelById(req.params.id);
+  if (!model) {
+    sendNotFound(res, 'Model');
+    return;
+  }
+  if (req.user && model.projectId) {
+    const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      sendNotFound(res, 'Model');
+      return;
+    }
+  }
+  res.json({ model });
+}));
+
+router.get('/:id/artifact', validateUuidParams('id'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const model = await getModelById(req.params.id);
+  if (!model?.artifact?.path) {
+    sendNotFound(res, 'Model artifact');
+    return;
+  }
+  if (req.user && model.projectId) {
+    const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      sendNotFound(res, 'Model artifact');
+      return;
+    }
+  }
+  res.download(model.artifact.path, model.artifact.filename);
+}));
+
+router.post('/train', validateRequest(trainSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const data = req.body as z.infer<typeof trainSchema>;
+    const result = await trainModel(data);
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -72,11 +138,8 @@ router.post('/train', async (req: Request, res: Response) => {
         ? 400
         : 500;
 
-    res.status(status).json({
-      error: 'Failed to train model',
-      message
-    });
+    sendError(res, status, 'Failed to train model', { message });
   }
-});
+}));
 
 export default router;

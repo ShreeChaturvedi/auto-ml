@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/authStore';
 import type {
   WSClientMessage,
   WSServerMessage,
@@ -70,7 +71,9 @@ export class NotebookWSClient {
       console.log('[ws] Connecting to', this.baseUrl);
 
       try {
-        this.ws = new WebSocket(this.baseUrl);
+        const token = useAuthStore.getState().accessToken;
+        const url = token ? `${this.baseUrl}?token=${encodeURIComponent(token)}` : this.baseUrl;
+        this.ws = new WebSocket(url);
 
         this.ws.onopen = () => {
           console.log('[ws] Connected');

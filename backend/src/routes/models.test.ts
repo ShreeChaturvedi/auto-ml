@@ -79,7 +79,7 @@ describeRouteSuite('model routes', () => {
 
   it('returns 404 for missing model', async () => {
     const app = createTestApp();
-    const response = await request(app).get('/api/models/missing');
+    const response = await request(app).get('/api/models/00000000-0000-0000-0000-000000000000');
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe('Model not found');
@@ -90,7 +90,7 @@ describeRouteSuite('model routes', () => {
     const response = await request(app).post('/api/models/train').send({ projectId: 'p1' });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe('Invalid request');
+    expect(response.body.error).toBe('Validation failed');
   });
 
   it('trains a model', async () => {

@@ -5,7 +5,7 @@ import { DataViewerTab } from '@/components/data/DataViewerTab';
 import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPanel';
 import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
 import { TrainingPanel } from '@/components/training/TrainingPanel';
-import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel';
+import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
 import { NotebookPage } from '@/components/notebook/NotebookPage';
 import { useProjectStore } from '@/stores/projectStore';
 import { isAuxiliaryPhase } from '@/types/phase';
@@ -84,6 +84,11 @@ export function ProjectWorkspace() {
     return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
   }
 
+  // Redirect common alias to canonical phase slug
+  if ((phase as string) === 'processing') {
+    return <Navigate to={`/project/${project.id}/preprocessing`} replace />;
+  }
+
   // Render content based on phase
   switch (phase as Phase) {
     case 'upload':
@@ -102,7 +107,7 @@ export function ProjectWorkspace() {
       return <TrainingPanel />;
 
     case 'experiments':
-      return <ExperimentsPanel />;
+      return <ExperimentsDashboard />;
 
     case 'deployment':
       return (

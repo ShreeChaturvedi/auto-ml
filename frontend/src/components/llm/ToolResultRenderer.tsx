@@ -26,7 +26,7 @@ import {
   PreprocessingActionResult,
   ListPackagesResult,
   GenericJsonResult,
-} from './toolRenderers';
+} from './toolRenderers/index';
 import type {
   SearchHit,
   DatasetProfileOutput,
@@ -36,7 +36,7 @@ import type {
   ListCellsOutput,
   EditCellOutput,
   ReadCellOutput,
-} from './toolRenderers';
+} from './toolRenderers/index';
 
 // ─── Tool visibility sets ───────────────────────────────────────
 
@@ -76,9 +76,10 @@ export const EXPANDABLE_TOOLS = new Set([
 interface ToolResultRendererProps {
   call: ToolCall;
   result: ToolResult;
+  projectColorEntry?: { fill?: string; text?: string; border?: string };
 }
 
-export function ToolResultRenderer({ call, result }: ToolResultRendererProps) {
+export function ToolResultRenderer({ call, result, projectColorEntry }: ToolResultRendererProps) {
   const output = result.output;
   if (output == null) return null;
 
@@ -93,7 +94,7 @@ export function ToolResultRenderer({ call, result }: ToolResultRendererProps) {
       : Array.isArray((output as { items?: unknown }).items)
         ? ((output as { items: SearchHit[] }).items)
         : [];
-    return <SearchDocumentsResult items={items} />;
+    return <SearchDocumentsResult items={items} projectFill={projectColorEntry?.fill} projectText={projectColorEntry?.text} projectBorder={projectColorEntry?.border} />;
   }
 
   if (tool === 'get_dataset_profile') {

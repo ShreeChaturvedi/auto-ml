@@ -1,0 +1,38 @@
+{
+  "eval_id": 3,
+  "run_type": "without_skill",
+  "expectations": [
+    {
+      "text": "Recognizes the plan is fundamentally sound (not overly critical of a good plan)",
+      "passed": false,
+      "evidence": "Review says 'Summary Verdict: The plan has the right instinct but misidentifies what to extract.' Both extraction targets identified as phantom/misidentified. NOTE: The assertion was based on a flawed premise — the plan IS actually bad. The reviewer was correct."
+    },
+    {
+      "text": "Mentions checking existing hooks (useNlSuggestions or similar) for overlap with proposed extractions",
+      "passed": true,
+      "evidence": "Extensively discusses useNlSuggestions (91 lines), NlApprovalDialog (50 lines), useTypewriter, NlQueryReducer, phaseStateMachine. Lists 6+ already-extracted modules."
+    },
+    {
+      "text": "Mentions SSE/stream cleanup (abort controller, memory leak prevention) for cancelStream",
+      "passed": true,
+      "evidence": "Issue 2 discusses AbortController lifecycle in detail: 'Creates an AbortController, resets work phase state, provides a scoped stream event handler.' Proposed alternative hook includes streamAbortRef lifecycle."
+    },
+    {
+      "text": "Discusses impact on existing tests or test utils beyond what the plan covers",
+      "passed": true,
+      "evidence": "Issue 4: Lists 4 missing files (NlWorkflowSteps, SqlRevealBlock, QueryPanel, stream test). Issue 5: Discusses stream test file (241 lines), renderHook tests, integration coverage risk."
+    },
+    {
+      "text": "Criticism is proportional — mostly minor suggestions, not blocking issues for a clean refactor",
+      "passed": false,
+      "evidence": "2 Critical issues, 2 Moderate issues, 2 Minor issues. Concludes with checklist showing 5/7 items as 'No'. NOTE: Appropriately harsh — the plan IS flawed."
+    },
+    {
+      "text": "Review is structured with clear priority levels (critical vs minor)",
+      "passed": true,
+      "evidence": "Uses explicit severity levels (Critical, Moderate, Minor) for each issue. Includes checklist summary table."
+    }
+  ],
+  "pass_rate": 0.667,
+  "notes": "Same as with_skill: the 2 'failures' reflect the reviewer being more accurate than the assertions. The plan was actually flawed."
+}

@@ -207,7 +207,7 @@ export function Leaderboard() {
                       'bg-muted/40 border-l-2',
                       colorClasses?.borderAccent ?? 'border-primary',
                     ],
-                    isChampion && !isSelected && 'border-l-2 border-amber-500/60 bg-amber-500/[0.03]',
+                    isChampion && !isSelected && 'bg-muted/10',
                     isCompared && 'ring-1 ring-inset ring-primary/20'
                   )}
                   tabIndex={0}

@@ -112,7 +112,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogPortal>
-        <DialogOverlay className="z-50 bg-black/70 backdrop-blur-sm" />
+        <DialogOverlay className="z-50 bg-black/70" />
         <DialogPrimitive.Content
           className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 origin-center
             w-[90vw] h-[85vh] bg-background border border-border/30 rounded-lg shadow-2xl

@@ -82,6 +82,8 @@ export interface TuningStudyResult {
 
 // ── Error Analysis ──
 export interface ErrorAnalysisResult {
+  /** Backend sends `{ available: false }` when error analysis isn't possible */
+  available?: boolean;
   error_tree: ErrorTreeNode;
   misclassifications: Array<{
     index: number; y_true: string; y_pred: string;

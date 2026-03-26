@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useModelStore } from '@/stores/modelStore';
 import { cn } from '@/lib/utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { ChartCard } from '../shared/ChartCard';
 
 /* ------------------------------------------------------------------ */
 /*  Phase pipeline data                                                */
@@ -54,7 +55,7 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
   return (
     <div className="space-y-5 p-5">
       {/* -- Pipeline Timeline -- */}
-      <div className="rounded-xl border border-border/20 bg-card/50 p-6">
+      <ChartCard delay={0} className="p-6">
         <h3 className="text-sm font-semibold text-foreground mb-5">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 mr-2" />
           Pipeline Timeline
@@ -110,7 +111,7 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
             );
           })}
         </div>
-      </div>
+      </ChartCard>
 
       {/* -- Info Banner -- */}
       <div className={cn('flex gap-3 rounded-xl border p-4', colorClasses?.border ?? 'border-primary/15', colorClasses?.fillMuted ?? 'bg-primary/[0.03]')}>
@@ -124,16 +125,13 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
 
       {/* -- Preprocessing Metadata (if available) -- */}
       {hasProvenanceMetadata && model.metadata && (
-        <div className="rounded-xl border border-border/20 bg-card/50 p-6">
-          <h3 className="text-sm font-semibold text-foreground mb-3">
-            Preprocessing Metadata
-          </h3>
+        <ChartCard label="Preprocessing Metadata" delay={160} className="p-6">
           <div className="rounded-lg bg-background/80 border border-border/10 p-4 overflow-x-auto">
             <pre className="font-mono text-xs text-muted-foreground whitespace-pre-wrap break-words">
               {JSON.stringify(model.metadata, null, 2)}
             </pre>
           </div>
-        </div>
+        </ChartCard>
       )}
     </div>
   );

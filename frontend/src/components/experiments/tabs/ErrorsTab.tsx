@@ -6,6 +6,7 @@ import { AlertTriangle, TreePine } from 'lucide-react';
 import { fetchInsights } from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 import { ErrorTreeNodeCard } from './ErrorTreeNodeCard';
+import { ChartCard } from '../shared/ChartCard';
 import { SkeletonBlock } from '../shared/Skeleton';
 
 interface ErrorsTabProps {
@@ -97,8 +98,7 @@ function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; error
   if (failed && !text) return null;
 
   return (
-    <div className="rounded-xl border border-border/20 bg-card/50 p-5">
-      <p className="text-xs font-medium text-muted-foreground mb-2">Error Narrative</p>
+    <ChartCard label="Error Narrative" delay={160} className="p-5">
       {isLoading && !text ? (
         <SkeletonBlock height={60} />
       ) : (
@@ -107,7 +107,7 @@ function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; error
           {isLoading && <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/60 animate-pulse rounded-sm" />}
         </p>
       )}
-    </div>
+    </ChartCard>
   );
 }
 
@@ -143,7 +143,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
 
   return (
     <div className="space-y-5 p-5">
-      <div className="rounded-xl border border-border/20 bg-card/50 p-5">
+      <ChartCard delay={0} className="p-5">
         <div className="flex items-center gap-2 mb-2">
           <TreePine className="h-4 w-4 text-muted-foreground" />
           <p className="text-xs font-medium text-muted-foreground">Error Tree</p>
@@ -156,10 +156,10 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
         ) : (
           <p className="py-6 text-center text-sm text-muted-foreground">Error tree not available.</p>
         )}
-      </div>
+      </ChartCard>
 
       {isClassification && (
-        <div className="rounded-xl border border-border/20 bg-card/50 p-5">
+        <ChartCard delay={80} className="p-5">
           <p className="text-xs font-medium text-muted-foreground mb-2">
             Misclassifications
             {errorAnalysis.misclassifications && (
@@ -173,7 +173,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
           ) : (
             <p className="py-6 text-center text-sm text-muted-foreground">Misclassification data not available.</p>
           )}
-        </div>
+        </ChartCard>
       )}
 
       {projectId && (

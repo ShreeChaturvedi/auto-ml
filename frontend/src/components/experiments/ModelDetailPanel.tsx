@@ -94,13 +94,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
 
-  if (!model || !modelId) {
-    return (
-      <Dialog open={false}>
-        <DialogPortal><DialogOverlay className="bg-black/60 backdrop-blur-sm" /></DialogPortal>
-      </Dialog>
-    );
-  }
+  if (!model || !modelId) return null;
 
   const { Icon: TaskIcon, colorClass } = resolveModelIcon(model.taskType);
   const evalStatus = model.evaluationStatus;

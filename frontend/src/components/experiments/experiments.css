@@ -11,30 +11,6 @@
   border-radius: 0.5rem;
 }
 
-/* Champion indicator — gold left border with gradient */
-.champion-row {
-  border-left: 3px solid transparent;
-  border-image: linear-gradient(180deg, #f59e0b, #d97706, #f59e0b) 1;
-  animation: champion-border-shift 3s linear infinite;
-}
-
-@keyframes champion-border-shift {
-  0%, 100% { border-image: linear-gradient(180deg, #f59e0b, #d97706, #f59e0b) 1; }
-  50% { border-image: linear-gradient(180deg, #d97706, #f59e0b, #d97706) 1; }
-}
-
-/* Selection elevation */
-.model-row-selected {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px -2px hsl(var(--foreground) / 0.1);
-  transition: transform 200ms ease, box-shadow 200ms ease;
-}
-
-/* Metric counter animation */
-.metric-counter {
-  font-variant-numeric: tabular-nums;
-}
-
 /* Optuna trial pulse on best value update */
 @keyframes trial-pulse {
   0% { transform: scale(1); }
@@ -58,11 +34,11 @@
 
 /* Bulk action bar slide-in */
 .bulk-action-enter {
-  animation: bulk-action-slide 200ms ease-out both;
+  animation: bulk-action-slide 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes bulk-action-slide {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -84,7 +60,7 @@
 
 .card-enter {
   opacity: 0;
-  animation: card-enter 300ms ease-out both;
+  animation: card-enter 250ms ease-out both;
 }
 
 /* Sparkline draw-on animation */
@@ -99,7 +75,6 @@
 /* Reduced motion: disable all experiments animations */
 @media (prefers-reduced-motion: reduce) {
   .chart-skeleton,
-  .champion-row,
   .trial-best-pulse,
   .empty-state-enter,
   .bulk-action-enter,
@@ -110,9 +85,5 @@
     opacity: 1;
     transform: none;
     stroke-dashoffset: 0;
-  }
-  .model-row-selected {
-    transform: none;
-    transition: none;
   }
 }

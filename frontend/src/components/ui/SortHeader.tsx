@@ -23,6 +23,7 @@ export function SortHeader<T extends string>({
 
   return (
     <th
+      scope="col"
       aria-sort={ariaSort}
       className={cn('px-3 py-2 text-xs font-medium text-muted-foreground', className)}
     >

@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { EvaluationResult } from '@/types/experiments';
+import { ChartCard } from '../shared/ChartCard';
 import { ShapBarChart } from '../charts/ShapBarChart';
 import { ShapBeeswarmChart } from '../charts/ShapBeeswarmChart';
 import { ShapDependenceChart } from '../charts/ShapDependenceChart';
 import { AlertTriangle } from 'lucide-react';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
 interface InterpretabilityTabProps {
   modelId: string;
@@ -14,7 +16,7 @@ interface InterpretabilityTabProps {
 function ChartSkeleton({ height = 400 }: { height?: number }) {
   return (
     <div
-      className="timeline-skeleton rounded-md"
+      className="card-enter timeline-skeleton rounded-md"
       style={{ height }}
     />
   );
@@ -23,6 +25,7 @@ function ChartSkeleton({ height = 400 }: { height?: number }) {
 export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTabProps) {
   const fetchShap = useExperimentsStore((s) => s.fetchShap);
   const shapData = useExperimentsStore((s) => s.shapData[modelId]);
+  const { colorClasses } = useProjectThemeColor();
 
   useEffect(() => {
     fetchShap(modelId);
@@ -41,26 +44,26 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
     return (
       <div className="space-y-8 p-5">
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">SHAP Analysis</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${colorClasses?.fill ?? 'bg-primary/60'} mr-2`} />
+            SHAP Analysis
+          </h3>
           <div className="space-y-6">
-            <div className="rounded-lg border border-border/10 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">Global Feature Importance (SHAP)</p>
+            <ChartCard label="Global Feature Importance (SHAP)" delay={0}>
               <ShapBarChart
                 featureNames={shapData.feature_names}
                 importances={shapData.mean_abs_values}
                 topN={15}
               />
-            </div>
+            </ChartCard>
 
-            <div className="rounded-lg border border-border/10 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Beeswarm</p>
+            <ChartCard label="SHAP Beeswarm" delay={80}>
               <ShapBeeswarmChart shapResult={shapData} topN={15} height={500} />
-            </div>
+            </ChartCard>
 
-            <div className="rounded-lg border border-border/10 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Dependence</p>
+            <ChartCard label="SHAP Dependence" delay={160}>
               <ShapDependenceChart shapResult={shapData} />
-            </div>
+            </ChartCard>
           </div>
         </section>
       </div>
@@ -72,22 +75,22 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
     return (
       <div className="space-y-8 p-5">
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">SHAP Analysis</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${colorClasses?.fill ?? 'bg-primary/60'} mr-2`} />
+            SHAP Analysis
+          </h3>
           <div className="space-y-6">
-            <div className="rounded-lg border border-border/10 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">Global Feature Importance (SHAP)</p>
+            <ChartCard label="Global Feature Importance (SHAP)" delay={0}>
               <ChartSkeleton height={400} />
-            </div>
+            </ChartCard>
 
-            <div className="rounded-lg border border-border/10 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Beeswarm</p>
+            <ChartCard label="SHAP Beeswarm" delay={80}>
               <ChartSkeleton height={500} />
-            </div>
+            </ChartCard>
 
-            <div className="rounded-lg border border-border/10 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">SHAP Dependence</p>
+            <ChartCard label="SHAP Dependence" delay={160}>
               <ChartSkeleton height={400} />
-            </div>
+            </ChartCard>
           </div>
         </section>
       </div>
@@ -97,7 +100,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   // SHAP unavailable — show fallback with model-based or permutation importance
   return (
     <div className="space-y-8 p-5">
-      <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
+      <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
         <p className="text-sm text-yellow-700 dark:text-yellow-300">
           SHAP computation timed out or model type is unsupported. Feature
@@ -106,8 +109,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
       </div>
 
       {fallbackImportance && (
-        <div className="rounded-lg border border-border/10 p-3">
-          <p className="text-xs font-medium text-muted-foreground mb-2">Feature Importance</p>
+        <ChartCard label="Feature Importance" delay={0}>
           <ShapBarChart
             featureNames={fallbackImportance.features}
             importances={
@@ -118,7 +120,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
             topN={15}
             xLabel="Feature Importance"
           />
-        </div>
+        </ChartCard>
       )}
     </div>
   );

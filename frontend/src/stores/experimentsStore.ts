@@ -154,8 +154,10 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     if (modelId in get().errorAnalysis) return;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
+      // Backend returns { available: false } when error analysis isn't possible
+      const resolved = result && 'available' in result && !(result as Record<string, unknown>).available ? null : result;
       set((state) => ({
-        errorAnalysis: { ...state.errorAnalysis, [modelId]: result }
+        errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved }
       }));
     } catch {
       set((state) => ({

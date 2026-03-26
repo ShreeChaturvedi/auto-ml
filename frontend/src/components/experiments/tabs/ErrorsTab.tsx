@@ -12,8 +12,8 @@ interface ErrorsTabProps {
   evaluation: EvaluationResult;
 }
 
-function SkeletonBlock({ height = 200 }: { height?: number }) {
-  return <div className="timeline-skeleton rounded-md" style={{ height }} />;
+function SkeletonBlock({ height = 200, delay = 0 }: { height?: number; delay?: number }) {
+  return <div className="card-enter timeline-skeleton rounded-md" style={{ height, animationDelay: `${delay}ms` }} />;
 }
 
 type SortDir = 'asc' | 'desc';
@@ -35,11 +35,11 @@ function MisclassificationTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th className="px-3 py-2 font-medium">Index</th>
-            <th className="px-3 py-2 font-medium">True Label</th>
-            <th className="px-3 py-2 font-medium">Predicted Label</th>
-            <th className="px-3 py-2 font-medium">
+          <tr className="bg-card/80 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+            <th className="px-3 py-2">Index</th>
+            <th className="px-3 py-2">True Label</th>
+            <th className="px-3 py-2">Predicted Label</th>
+            <th className="px-3 py-2">
               <button
                 type="button"
                 onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
@@ -53,10 +53,10 @@ function MisclassificationTable({
         </thead>
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={`${row.index}-${i}`} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
+            <tr key={`${row.index}-${i}`} className="border-b border-border/10 hover:bg-muted/15 transition-colors">
               <td className="px-3 py-2 tabular-nums text-muted-foreground">{row.index}</td>
               <td className="px-3 py-2 font-medium">{row.y_true}</td>
-              <td className="px-3 py-2 font-medium text-destructive">{row.y_pred}</td>
+              <td className="px-3 py-2 font-medium text-red-400/80">{row.y_pred}</td>
               <td className="px-3 py-2 tabular-nums">{(row.confidence * 100).toFixed(1)}%</td>
             </tr>
           ))}
@@ -100,7 +100,7 @@ function ErrorNarrative({ projectId, errorAnalysis }: { projectId: string; error
   if (failed && !text) return null;
 
   return (
-    <div className="rounded-lg border border-border/10 p-4">
+    <div className="rounded-xl border border-border/20 bg-card/50 p-5">
       <p className="text-xs font-medium text-muted-foreground mb-2">Error Narrative</p>
       {isLoading && !text ? (
         <SkeletonBlock height={60} />
@@ -126,32 +126,32 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-5 p-5">
-        <SkeletonBlock height={200} />
-        {isClassification && <SkeletonBlock height={300} />}
+      <div className="space-y-5 p-5">
+        <SkeletonBlock height={200} delay={0} />
+        {isClassification && <SkeletonBlock height={300} delay={80} />}
       </div>
     );
   }
 
   if (!errorAnalysis) {
     return (
-      <div className="flex h-64 items-center justify-center">
+      <div className="flex py-16 items-center justify-center">
         <div className="text-center">
-          <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
-          <p className="text-sm text-muted-foreground">Prediction data unavailable for this model.</p>
+          <AlertTriangle className="mx-auto mb-2 h-10 w-10 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground/70">Prediction data unavailable for this model.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 p-5">
-      <div className="rounded-lg border border-border/10 p-4">
-        <div className="flex items-center gap-2 mb-1">
+    <div className="space-y-5 p-5">
+      <div className="rounded-xl border border-border/20 bg-card/50 p-5">
+        <div className="flex items-center gap-2 mb-2">
           <TreePine className="h-4 w-4 text-muted-foreground" />
           <p className="text-xs font-medium text-muted-foreground">Error Tree</p>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
+        <p className="text-xs text-muted-foreground/60 mb-4">
           Decision tree trained on prediction errors to identify which feature combinations lead to mistakes.
         </p>
         {errorAnalysis.error_tree ? (
@@ -162,7 +162,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
       </div>
 
       {isClassification && (
-        <div className="rounded-lg border border-border/10 p-4">
+        <div className="rounded-xl border border-border/20 bg-card/50 p-5">
           <p className="text-xs font-medium text-muted-foreground mb-2">
             Misclassifications
             {errorAnalysis.misclassifications && (

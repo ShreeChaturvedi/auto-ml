@@ -83,7 +83,7 @@ export function IntentPhase({
         </Button>
 
         <div className="flex items-center gap-3">
-          <Button onClick={onStart} disabled={disabled} size="sm" className="gap-1.5">
+          <Button onClick={onStart} disabled={disabled} size="sm" className="gap-1.5 shadow-sm">
             <Play className="h-3.5 w-3.5" />
             Start Tuning
           </Button>
@@ -95,7 +95,7 @@ export function IntentPhase({
 
       {/* Layer 2 -- Advanced */}
       {advancedOpen && (
-        <div className="space-y-4 rounded-lg border border-border/30 bg-muted/20 p-4">
+        <div className="space-y-4 rounded-xl border border-border/20 bg-card/50 p-5">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Trials</Label>
@@ -139,11 +139,11 @@ export function IntentPhase({
       )}
 
       {/* Layer 3 -- Info card (always visible in intent) */}
-      <div className="flex items-start gap-3 rounded-lg border border-border/30 bg-muted/20 p-4 mt-4">
-        <Zap className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
+      <div className="flex items-start gap-3 rounded-xl border border-amber-500/15 bg-amber-500/[0.03] p-5 mt-4">
+        <Zap className="h-4 w-4 mt-0.5 shrink-0 text-amber-400/60" />
         <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">Hyperparameter Tuning</p>
-          <p className="text-xs text-muted-foreground leading-relaxed">
+          <p className="text-xs text-muted-foreground/80 leading-relaxed">
             Optuna will search for the best hyperparameter combination using Bayesian optimization.
             The search space is derived from the model template. Results are saved as a new model variant.
           </p>

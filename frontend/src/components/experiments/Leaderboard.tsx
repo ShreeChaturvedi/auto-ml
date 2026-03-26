@@ -58,15 +58,17 @@ function buildSmartColumns(taskTypes: ModelTaskType[], models: ModelRecord[]): [
   return cols;
 }
 
-/** Champion is the model with the highest primary metric among completed models. */
+/** Champion is the model with the best primary metric among completed models. */
 function findChampionId(models: ModelRecord[]): string | null {
   let best: ModelRecord | null = null;
-  let bestVal = -Infinity;
+  let bestVal = NaN;
   for (const m of models) {
     if (m.status !== 'completed') continue;
     const primary = PRIMARY_METRIC[m.taskType];
-    const val = m.metrics[primary] ?? -Infinity;
-    if (val > bestVal) {
+    const val = m.metrics[primary];
+    if (val == null || !Number.isFinite(val)) continue;
+    const lower = LOWER_IS_BETTER.has(primary);
+    if (Number.isNaN(bestVal) || (lower ? val < bestVal : val > bestVal)) {
       bestVal = val;
       best = m;
     }
@@ -81,7 +83,7 @@ function GhostRows() {
   return (
     <>
       {Array.from({ length: 4 }).map((_, i) => (
-        <tr key={i} className="opacity-[0.04]">
+        <tr key={i} className="opacity-[0.08]">
           <td className="p-2"><div className="timeline-skeleton h-4 w-4 rounded" /></td>
           <td className="p-2"><div className="timeline-skeleton h-4 w-24 rounded" /></td>
           <td className="p-2"><div className="timeline-skeleton h-4 w-16 rounded" /></td>
@@ -109,7 +111,7 @@ export function Leaderboard() {
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
 
-  const { themeColorClass: trophyColorClass } = useProjectThemeColor();
+  const { themeColorClass: trophyColorClass, colorClasses } = useProjectThemeColor();
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
   const championId = useMemo(() => findChampionId(models), [models]);
@@ -178,15 +180,15 @@ export function Leaderboard() {
       {/* Table */}
       <ScrollArea className="flex-1">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/40 backdrop-blur-sm z-10 border-b">
+          <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-10 border-b border-border/20">
             <tr>
-              <th className="w-8" />
-              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
-              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
+              <th scope="col" className="w-8" />
+              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="text-[11px] uppercase tracking-wider" />
+              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="text-[11px] uppercase tracking-wider" />
               {metricCols.map(([label, key]) => (
-                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" />
+                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" className="text-[11px] uppercase tracking-wider" />
               ))}
-              <th className="w-8" />
+              <th scope="col" className="w-8" />
             </tr>
           </thead>
           <tbody>
@@ -200,18 +202,28 @@ export function Leaderboard() {
                 <tr
                   key={model.modelId}
                   className={cn(
-                    'transition-colors cursor-pointer hover:bg-muted/30 group',
-                    isSelected && 'bg-muted/70 model-row-selected',
-                    isChampion && 'champion-row',
+                    'transition-colors cursor-pointer border-b border-border/10 hover:bg-muted/20 group',
+                    isSelected && [
+                      'bg-muted/40 border-l-2',
+                      colorClasses?.borderAccent ?? 'border-primary',
+                    ],
+                    isChampion && !isSelected && 'border-l-2 border-amber-500/60 bg-amber-500/[0.03]',
                     isCompared && 'ring-1 ring-inset ring-primary/20'
                   )}
+                  tabIndex={0}
                   onClick={() => selectModel(model.modelId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      selectModel(model.modelId);
+                    }
+                  }}
                 >
                   <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={isCompared}
                       onCheckedChange={() => toggleComparison(model.modelId)}
-                      className="h-3.5 w-3.5"
+                      className="h-3.5 w-3.5 group-hover:ring-1 group-hover:ring-muted-foreground/20 transition-shadow"
                     />
                   </td>
                   <td className="py-2.5 px-3 text-left font-semibold truncate max-w-[180px]">
@@ -250,9 +262,9 @@ export function Leaderboard() {
                       <td
                         key={key}
                         className={cn(
-                          'py-2.5 px-3 text-right tabular-nums font-medium',
-                          isBest && 'text-emerald-500 dark:text-emerald-400 font-semibold',
-                          isWorst && 'text-red-500/70 dark:text-red-400/70',
+                          'py-2.5 px-3 text-right tabular-nums font-medium text-foreground/80',
+                          isBest && 'text-emerald-400 font-semibold',
+                          isWorst && 'text-red-400/50',
                         )}
                       >
                         {formatMetric(val)}
@@ -270,10 +282,12 @@ export function Leaderboard() {
       </ScrollArea>
 
       {comparisonModelIds.length > 0 && (
-        <div className="flex h-11 items-center justify-between border-t px-3 shrink-0 bg-muted/30 bulk-action-enter">
-          <div className="flex items-center gap-2">
+        <div className="flex h-11 items-center justify-between border-t border-border/20 px-3 shrink-0 bg-card bulk-action-enter">
+          <div className="flex items-center gap-2.5">
             <GitCompareArrows className="h-3 w-3 text-muted-foreground" />
-            <span className="text-xs font-medium">{comparisonModelIds.length} selected</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-muted/60 rounded-full px-2.5 py-0.5">
+              <span className="tabular-nums">{comparisonModelIds.length}</span> selected
+            </span>
             {comparisonModelIds.length === 1 && (
               <span className="text-[11px] text-muted-foreground">— select 1 more to compare</span>
             )}

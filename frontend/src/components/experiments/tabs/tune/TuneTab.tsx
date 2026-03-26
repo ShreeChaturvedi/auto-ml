@@ -58,6 +58,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
   const [convergenceStatus, setConvergenceStatus] = useState<'exploring' | 'narrowing' | 'converging' | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const bestValueRef = useRef<number | null>(null);
 
   // Auto-select metric on mount
   const taskType = (model?.taskType ?? 'classification') as ModelTaskType;
@@ -95,6 +96,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
 
     // Reset session
     setTrials([]);
+    bestValueRef.current = null;
     setBestValue(null);
     setPrevBestValue(null);
     setBestParams(null);
@@ -121,7 +123,9 @@ export function TuneTab({ modelId }: TuneTabProps) {
         switch (event.type) {
           case 'trial_result': {
             setTrials((prev) => [...prev, event]);
-            setBestValue((prev) => { setPrevBestValue(prev); return event.best_value; });
+            setPrevBestValue(bestValueRef.current);
+            bestValueRef.current = event.best_value;
+            setBestValue(event.best_value);
             setBestParams(event.best_params);
             break;
           }
@@ -163,6 +167,7 @@ export function TuneTab({ modelId }: TuneTabProps) {
 
   const handleReset = useCallback(() => {
     setTrials([]);
+    bestValueRef.current = null;
     setBestValue(null);
     setPrevBestValue(null);
     setBestParams(null);
@@ -210,7 +215,6 @@ export function TuneTab({ modelId }: TuneTabProps) {
         <DiscoveryPhase
           metric={metric}
           budget={budget}
-          nTrials={nTrials}
           trials={trials}
           bestValue={bestValue}
           prevBestValue={prevBestValue}

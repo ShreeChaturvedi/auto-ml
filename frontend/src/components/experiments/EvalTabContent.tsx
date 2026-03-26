@@ -1,3 +1,4 @@
+import { AlertTriangle, BarChart3 } from 'lucide-react';
 import type { EvaluationResult } from '@/types/experiments';
 
 interface EvalTabContentProps {
@@ -9,6 +10,23 @@ interface EvalTabContentProps {
   children: (evaluation: EvaluationResult) => React.ReactNode;
 }
 
+function SkeletonGrid() {
+  const heights = [200, 250, 200];
+  return (
+    <div className="p-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {heights.map((h, i) => (
+          <div
+            key={i}
+            className="card-enter timeline-skeleton rounded-lg bg-muted/30"
+            style={{ height: `${h}px`, animationDelay: `${i * 100}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function EvalTabContent({
   isComputing,
   isFailed,
@@ -18,41 +36,33 @@ export function EvalTabContent({
   children,
 }: EvalTabContentProps) {
   if (isComputing) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-          <p className="text-sm text-muted-foreground">Evaluation computing...</p>
-        </div>
-      </div>
-    );
+    return <SkeletonGrid />;
   }
 
   if (isFailed) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="text-center max-w-sm">
-          <p className="text-sm text-destructive">
-            Evaluation failed{evaluationError ? `: ${evaluationError}` : ''}.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">{failedLabel}</p>
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-6">
+          <AlertTriangle className="h-8 w-8 text-destructive/60" />
+          <p className="text-sm font-medium text-destructive mt-3">Evaluation failed</p>
+          {evaluationError && (
+            <p className="text-xs text-muted-foreground mt-1">{evaluationError}</p>
+          )}
+          <p className="text-xs text-muted-foreground mt-2">{failedLabel}</p>
         </div>
       </div>
     );
   }
 
   if (evaluation === undefined) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading evaluation data...</p>
-      </div>
-    );
+    return <SkeletonGrid />;
   }
 
   if (evaluation === null) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="text-center max-w-sm">
+        <div className="text-center space-y-2 py-16">
+          <BarChart3 className="h-10 w-10 text-muted-foreground/30 mx-auto" />
           <p className="text-sm text-muted-foreground">{failedLabel}</p>
         </div>
       </div>

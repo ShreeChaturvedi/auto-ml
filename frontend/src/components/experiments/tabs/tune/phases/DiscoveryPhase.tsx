@@ -11,7 +11,6 @@ import { ParamImportanceChart } from '../charts/ParamImportanceChart';
 interface DiscoveryPhaseProps {
   metric: string;
   budget: string;
-  nTrials: number;
   trials: TuningTrialEvent[];
   bestValue: number | null;
   prevBestValue: number | null;
@@ -48,11 +47,11 @@ export function DiscoveryPhase({
     <div className="space-y-4">
       {/* Summary bar */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Badge variant="secondary" className="text-xs">{metric}</Badge>
-        <Badge variant="outline" className="text-xs capitalize">{budget}</Badge>
+        <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20">{metric}</Badge>
+        <Badge variant="outline" className="text-xs capitalize border-border/30">{budget}</Badge>
         <Badge variant="outline" className="text-xs font-mono tabular-nums">{nComplete}/{nTotal}</Badge>
         <div className="ml-auto">
-          <Button variant="ghost" size="sm" onClick={onCancel} className="gap-1.5 text-xs">
+          <Button variant="ghost" size="sm" onClick={onCancel} className="gap-1.5 text-xs text-red-400/70 hover:text-red-400 hover:bg-red-400/10">
             <Square className="h-3 w-3" />
             Stop
           </Button>
@@ -61,14 +60,17 @@ export function DiscoveryPhase({
 
       {/* Progress bar */}
       <div className="space-y-1.5">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[11px] text-muted-foreground">Progress</span>
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">
+            {Math.round(progressPercent)}%
+          </span>
+        </div>
         <Progress
           value={progressPercent}
           className="h-2.5"
           indicatorClassName={colorClasses?.fill}
         />
-        <p className="text-xs text-muted-foreground font-mono tabular-nums text-right">
-          {Math.round(progressPercent)}%
-        </p>
       </div>
 
       {/* Stat cards */}

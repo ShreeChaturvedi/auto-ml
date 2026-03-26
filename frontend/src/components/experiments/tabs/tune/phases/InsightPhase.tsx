@@ -64,10 +64,10 @@ export function InsightPhase({
       )}
 
       {/* Actions */}
-      <div className="flex items-center justify-between pt-2">
+      <div className="flex items-center justify-between border-t border-border/10 pt-4 mt-2">
         <div className="flex items-center gap-2">
           {resultModelId && (
-            <Button onClick={onViewTunedModel} size="sm" className="gap-1.5">
+            <Button onClick={onViewTunedModel} size="sm" className="gap-1.5 bg-primary text-primary-foreground shadow-sm">
               <ExternalLink className="h-3.5 w-3.5" />
               View Tuned Model
             </Button>

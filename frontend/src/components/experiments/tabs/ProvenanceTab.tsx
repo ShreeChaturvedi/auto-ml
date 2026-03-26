@@ -7,10 +7,10 @@ import {
   BarChart3,
   Info,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useModelStore } from '@/stores/modelStore';
 import { cn } from '@/lib/utils';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
 /* ------------------------------------------------------------------ */
 /*  Phase pipeline data                                                */
@@ -34,6 +34,7 @@ export interface ProvenanceTabProps {
 
 export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
   const model = useModelStore((s) => s.models.find((m) => m.modelId === modelId));
+  const { colorClasses } = useProjectThemeColor();
 
   const hasProvenanceMetadata = useMemo(() => {
     if (!model?.metadata) return false;
@@ -52,66 +53,68 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
 
   return (
     <div className="space-y-5 p-5">
-      {/* ── Pipeline Timeline ── */}
-      <Card>
-        <CardContent className="px-4 pb-4 pt-6">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            Pipeline Timeline
-          </h3>
+      {/* -- Pipeline Timeline -- */}
+      <div className="rounded-xl border border-border/20 bg-card/50 p-6">
+        <h3 className="text-sm font-semibold text-foreground mb-5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 mr-2" />
+          Pipeline Timeline
+        </h3>
 
-          <div className="flex items-center justify-between gap-0">
-            {PHASES.map((phase, i) => {
-              const Icon = phase.icon;
-              const isTraining = phase.key === 'training';
+        <div className="flex items-center justify-between gap-0">
+          {PHASES.map((phase, i) => {
+            const Icon = phase.icon;
+            const isTraining = phase.key === 'training';
 
-              return (
-                <div key={phase.key} className="flex items-center flex-1 last:flex-none">
-                  {/* Node */}
-                  <div className="flex flex-col items-center gap-1.5 min-w-[80px]">
-                    <div
-                      className={cn(
-                        'flex h-10 w-10 items-center justify-center rounded-lg border',
-                        isTraining
-                          ? 'border-primary/40 bg-primary/10 text-primary'
-                          : 'border-border bg-muted/50 text-muted-foreground',
-                      )}
-                    >
-                      <Icon className="h-4.5 w-4.5" />
-                    </div>
-                    <span
-                      className={cn(
-                        'text-[11px] font-medium',
-                        isTraining ? 'text-primary' : 'text-muted-foreground',
-                      )}
-                    >
-                      {phase.label}
-                    </span>
-                    {isTraining && trainingDate && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {trainingDate}
-                      </span>
+            return (
+              <div key={phase.key} className="flex items-center flex-1 last:flex-none">
+                {/* Node */}
+                <div
+                  className="card-enter flex flex-col items-center gap-1.5 min-w-[80px]"
+                  style={{ animationDelay: `${i * 80}ms` }}
+                >
+                  <div
+                    className={cn(
+                      'flex items-center justify-center',
+                      isTraining
+                        ? 'h-11 w-11 rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-[0_0_12px_-3px] shadow-primary/20'
+                        : 'h-11 w-11 rounded-xl border border-border/20 bg-muted/30 text-muted-foreground',
                     )}
-                    {isTraining && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        {model.algorithm}
-                      </Badge>
-                    )}
+                  >
+                    <Icon className="h-4.5 w-4.5" />
                   </div>
-
-                  {/* Connector line (not after last node) */}
-                  {i < PHASES.length - 1 && (
-                    <div className="flex-1 h-px bg-border mx-1 min-w-[12px]" />
+                  <span
+                    className={cn(
+                      'text-[11px] font-medium tracking-wide',
+                      isTraining ? 'text-primary' : 'text-muted-foreground',
+                    )}
+                  >
+                    {phase.label}
+                  </span>
+                  {isTraining && trainingDate && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {trainingDate}
+                    </span>
+                  )}
+                  {isTraining && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      {model.algorithm}
+                    </Badge>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* ── Info Banner ── */}
-      <div className="flex gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
-        <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                {/* Connector line (not after last node) */}
+                {i < PHASES.length - 1 && (
+                  <div className="flex-1 h-px bg-gradient-to-r from-border/40 via-border/20 to-border/40 mx-1 min-w-[12px]" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* -- Info Banner -- */}
+      <div className={cn('flex gap-3 rounded-xl border p-4', colorClasses?.border ?? 'border-primary/15', colorClasses?.fillMuted ?? 'bg-primary/[0.03]')}>
+        <Info className={cn('h-4 w-4 shrink-0 mt-0.5', colorClasses?.text ?? 'text-primary/60')} />
         <p className="text-sm text-muted-foreground leading-relaxed">
           Provenance tracking captures how preprocessing decisions affect model
           performance. Models trained after provenance tracking is enabled will
@@ -119,20 +122,18 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
         </p>
       </div>
 
-      {/* ── Preprocessing Metadata (if available) ── */}
+      {/* -- Preprocessing Metadata (if available) -- */}
       {hasProvenanceMetadata && model.metadata && (
-        <Card>
-          <CardContent className="px-4 pb-4 pt-6">
-            <h3 className="text-sm font-semibold text-foreground mb-3">
-              Preprocessing Metadata
-            </h3>
-            <div className="rounded-md border bg-muted/30 p-3 overflow-x-auto">
-              <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
-                {JSON.stringify(model.metadata, null, 2)}
-              </pre>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-border/20 bg-card/50 p-6">
+          <h3 className="text-sm font-semibold text-foreground mb-3">
+            Preprocessing Metadata
+          </h3>
+          <div className="rounded-lg bg-background/80 border border-border/10 p-4 overflow-x-auto">
+            <pre className="font-mono text-xs text-muted-foreground whitespace-pre-wrap break-words">
+              {JSON.stringify(model.metadata, null, 2)}
+            </pre>
+          </div>
+        </div>
       )}
     </div>
   );

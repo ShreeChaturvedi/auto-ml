@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useModelStore } from '@/stores/modelStore';
+import { useExperimentsStore } from '@/stores/experimentsStore';
 import { cn } from '@/lib/utils';
 import { formatMetric } from './utils';
 
@@ -9,6 +10,7 @@ interface MetricsDeltaTableProps {
 
 export function MetricsDeltaTable({ modelIds }: MetricsDeltaTableProps) {
   const models = useModelStore((s) => s.models);
+  const selectModel = useExperimentsStore((s) => s.selectModel);
   const selected = useMemo(
     () => modelIds.map((id) => models.find((m) => m.modelId === id)).filter(Boolean),
     [models, modelIds],
@@ -38,7 +40,14 @@ export function MetricsDeltaTable({ modelIds }: MetricsDeltaTableProps) {
           <tr className="border-b">
             <th className="text-left py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Metric</th>
             {selected.map((m) => (
-              <th key={m!.modelId} className="text-right py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wide max-w-[120px] truncate">
+              <th
+                key={m!.modelId}
+                className="text-right py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wide max-w-[120px] truncate cursor-pointer hover:text-foreground transition-colors"
+                onClick={() => selectModel(m!.modelId)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectModel(m!.modelId); } }}
+              >
                 {m!.name}
               </th>
             ))}

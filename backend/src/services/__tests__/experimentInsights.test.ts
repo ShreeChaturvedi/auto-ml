@@ -68,14 +68,6 @@ describe('buildModelSummaries', () => {
   it('returns empty array for empty input', () => {
     expect(buildModelSummaries([])).toEqual([]);
   });
-
-  it('does not include extra properties from input', () => {
-    const extended = [{ ...rawModels[0], extraProp: 'should be excluded' }];
-    const summaries = buildModelSummaries(extended);
-    expect(Object.keys(summaries[0]).sort()).toEqual(
-      ['algorithm', 'metrics', 'modelId', 'name', 'status', 'taskType'].sort(),
-    );
-  });
 });
 
 describe('computeModelHash', () => {

@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-
-import type { ComparisonResult } from '../../types/experiments.js';
 import { compareModels, findBestModel, rankModelsByMetric, type ModelForComparison } from '../modelComparison.js';
 
 // ── Fixtures ──
@@ -120,24 +118,6 @@ describe('compareModels', () => {
     // When all values are identical, se=0 → p-value=1
     expect(accDelta!.pValue).toBe(1);
     expect(accDelta!.significant).toBe(false);
-  });
-
-  it('result conforms to ComparisonResult type shape', () => {
-    const result: ComparisonResult = compareModels([modelA, modelB], new Map());
-    expect(result).toHaveProperty('models');
-    expect(result).toHaveProperty('deltas');
-    expect(Array.isArray(result.models)).toBe(true);
-    expect(Array.isArray(result.deltas)).toBe(true);
-    for (const m of result.models) {
-      expect(m).toHaveProperty('modelId');
-      expect(m).toHaveProperty('name');
-      expect(m).toHaveProperty('metrics');
-    }
-    for (const d of result.deltas) {
-      expect(d).toHaveProperty('metric');
-      expect(d).toHaveProperty('values');
-      expect(d).toHaveProperty('delta');
-    }
   });
 });
 

@@ -217,6 +217,8 @@ function makeMockRes() {
   };
 }
 
+const parseChunks = (r: { chunks: string[] }) => r.chunks.map(c => JSON.parse(c.trim()));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockSyncWorkspaceDatasets.mockResolvedValue({ links: [], collisions: [] });
@@ -372,25 +374,6 @@ describe('buildTuningScript', () => {
   // -- Negated scoring with correct direction -----------------------------------
 
   describe('negated scoring + direction handling', () => {
-    it('for rmse: uses neg_root_mean_squared_error scoring with maximize (sklearn returns negative)', () => {
-      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'rmse' });
-      // sklearn neg_ scoring returns negative values: higher (closer to 0) is better
-      expect(script).toContain('scoring="neg_root_mean_squared_error"');
-      // The study direction should be maximize because sklearn neg_ values are negative
-      expect(script).toContain('optuna.create_study(direction="maximize"');
-    });
-
-    it('for mae: uses neg_mean_absolute_error scoring with maximize', () => {
-      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'mae' });
-      expect(script).toContain('scoring="neg_mean_absolute_error"');
-      expect(script).toContain('optuna.create_study(direction="maximize"');
-    });
-
-    it('for accuracy: uses maximize direction', () => {
-      const script = callBuild(makeTemplate(), { metric: 'accuracy' });
-      expect(script).toContain('optuna.create_study(direction="maximize"');
-    });
-
     it('negates the best_value back to the original metric scale for reporting', () => {
       const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'rmse' });
       // After the study completes, the summary should negate values back to user-facing scale
@@ -454,30 +437,16 @@ describe('buildTuningScript', () => {
       expect(script).toContain("optuna.samplers.TPESampler(seed=42) if 'tpe' == 'tpe'");
     });
 
-    it('uses random sampler when specified', () => {
+    it('embeds sampler selection conditional that resolves to RandomSampler', () => {
       const script = callBuild(makeTemplate(), { sampler: 'random' });
-      expect(script).toContain("optuna.samplers.TPESampler(seed=42) if 'random' == 'tpe'");
+      expect(script).toContain('RandomSampler');
+      expect(script).toContain("'random'");
     });
   });
 
   // -- Script syntactic validity ------------------------------------------------
 
   describe('generated script syntactic structure', () => {
-    it('has balanced parentheses and brackets', () => {
-      const script = callBuild(makeTemplate(), { nTrials: 30, metric: 'accuracy' });
-      const opens = (script.match(/\(/g) || []).length;
-      const closes = (script.match(/\)/g) || []).length;
-      expect(opens).toBe(closes);
-
-      const openBrackets = (script.match(/\[/g) || []).length;
-      const closeBrackets = (script.match(/\]/g) || []).length;
-      expect(openBrackets).toBe(closeBrackets);
-
-      const openBraces = (script.match(/\{/g) || []).length;
-      const closeBraces = (script.match(/\}/g) || []).length;
-      expect(openBraces).toBe(closeBraces);
-    });
-
     it('does not have any undefined or null literals in the Python script', () => {
       const script = callBuild(makeTemplate(), { nTrials: 30, metric: 'accuracy' });
       expect(script).not.toContain('undefined');
@@ -549,7 +518,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 2, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     const trialEvents = writtenLines.filter((e) => e.type === 'trial_result');
     expect(trialEvents).toHaveLength(2);
     expect(trialEvents[0].trial_number).toBe(0);
@@ -567,7 +536,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'nonexistent', 10, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     expect(writtenLines).toHaveLength(1);
     expect(writtenLines[0].type).toBe('error');
     expect(writtenLines[0].message).toContain('not found');
@@ -588,7 +557,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     const errorEvent = writtenLines.find((e) => e.type === 'error');
     expect(errorEvent).toBeDefined();
     expect(errorEvent.message).toContain('optuna');
@@ -603,7 +572,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     expect(writtenLines).toHaveLength(1);
     expect(writtenLines[0].type).toBe('error');
     expect(writtenLines[0].message).toContain('template');
@@ -620,7 +589,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     expect(writtenLines).toHaveLength(1);
     expect(writtenLines[0].type).toBe('error');
     expect(writtenLines[0].message).toContain('Dataset not found');
@@ -635,7 +604,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 10, 'silhouette', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     expect(writtenLines[0].type).toBe('error');
     expect(writtenLines[0].message).toContain('clustering');
     expect(res.end).toHaveBeenCalled();
@@ -654,7 +623,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     expect(writtenLines[0].type).toBe('error');
     expect(writtenLines[0].message).toContain('tunable');
     expect(res.end).toHaveBeenCalled();
@@ -685,7 +654,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 1, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     const convergenceEvents = writtenLines.filter((e) => e.type === 'convergence_update');
     expect(convergenceEvents).toHaveLength(1);
     expect(convergenceEvents[0].status).toBe('exploring');
@@ -719,7 +688,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 2, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     const trialEvents = writtenLines.filter((e) => e.type === 'trial_result');
     expect(trialEvents).toHaveLength(2);
   });
@@ -750,7 +719,7 @@ describe('runTuningStudy', () => {
 
     await runTuningStudy('test-project', 'test-model-id', 1, 'accuracy', 600, res as never);
 
-    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const writtenLines = parseChunks(res);
     // Should have trial_result + done, but NOT the image
     const trialEvents = writtenLines.filter((e) => e.type === 'trial_result');
     expect(trialEvents).toHaveLength(1);

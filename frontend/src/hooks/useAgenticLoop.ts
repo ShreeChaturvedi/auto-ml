@@ -27,72 +27,80 @@ export function useAgenticLoop({
   domainLockReason
 }: UseAgenticLoopOptions) {
   // --- Composed hooks ---
-  const streaming = useStreamingState();
+  const { toolHistoryRef, resetToolHistory } = useToolExecution();
+
+  // --- UI state ---
+  const [uiSchema, setUiSchema] = useState<UiSchema | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+
+  // --- Message accumulator (before streaming so setMessages is available) ---
   const accumulator = useMessageAccumulator({
     storageKey,
     projectId,
-    sessionVersion,
-    onHydrate: (_messages, hydratedIds) => {
-      setHydratedMessageIds(hydratedIds);
-      streaming.cancelCurrentRequest();
-      streaming.setIsStreaming(false);
-      streaming.setError(null);
-    }
+    sessionVersion
   });
+  const {
+    setMessages, messages: accMessages, resetAccumulator,
+    skipPersistOnceRef, messageStorageScope, savepointsRef,
+    hydratedMessageIds, setHydratedMessageIds
+  } = accumulator;
 
-  const { toolHistoryRef, resetToolHistory } = useToolExecution();
-
-  // --- UI state (not extracted to hooks) ---
-  const [uiSchema, setUiSchema] = useState<UiSchema | null>(null);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [hydratedMessageIds, setHydratedMessageIds] = useState<Set<string>>(new Set());
+  // --- Streaming state (routes all message mutations to accumulator) ---
+  const streaming = useStreamingState(setMessages);
+  const {
+    cancelCurrentRequest, setIsStreaming, setError, completeThinking,
+    closeTextStream, resetStreamRefs, startRequest, appendToken,
+    handleStreamEvent, isRequestCurrent, activeRequestIdRef,
+    currentTextIdRef, abortRef, isStreaming, error, sessionUsages,
+    activeTextMessageId, activeThinkingMessageId
+  } = streaming;
 
   // --- Setup: reset on session change ---
   useEffect(() => {
-    accumulator.skipPersistOnceRef.current = true;
-    streaming.cancelCurrentRequest();
-    streaming.resetStreamRefs();
+    skipPersistOnceRef.current = true;
+    cancelCurrentRequest();
+    resetStreamRefs();
     resetToolHistory();
-    streaming.setIsStreaming(false);
-    streaming.setError(null);
+    setIsStreaming(false);
+    setError(null);
     setUiSchema(null);
   }, [ // eslint-disable-line react-hooks/exhaustive-deps
-    accumulator.messageStorageScope, sessionVersion, streaming, resetToolHistory
+    messageStorageScope, sessionVersion, cancelCurrentRequest, resetStreamRefs,
+    resetToolHistory, setIsStreaming, setError
   ]);
 
   const handleStop = useCallback(() => {
-    streaming.cancelCurrentRequest();
-    streaming.setIsStreaming(false);
+    cancelCurrentRequest();
+    setIsStreaming(false);
     domainAdapter.onStop?.('Stopped by user.');
-    accumulator.setMessages(markAllThinkingMessagesComplete);
-    streaming.completeThinking();
-    streaming.closeTextStream();
-    streaming.resetStreamRefs();
-  }, [domainAdapter, streaming, accumulator]);
+    setMessages(markAllThinkingMessagesComplete);
+    completeThinking();
+    closeTextStream();
+    resetStreamRefs();
+  }, [domainAdapter, cancelCurrentRequest, setIsStreaming, setMessages, completeThinking, closeTextStream, resetStreamRefs]);
 
   const clearMessages = useCallback(() => {
-    accumulator.setMessages([]);
-    // Note: sessionUsages is not part of public API, but would be cleared here if needed
+    setMessages([]);
     resetToolHistory();
     setUiSchema(null);
     setHydratedMessageIds(new Set());
-    streaming.resetStreamRefs();
-    accumulator.resetAccumulator();
-  }, [streaming, accumulator, resetToolHistory]);
+    resetStreamRefs();
+    resetAccumulator();
+  }, [setMessages, setHydratedMessageIds, resetToolHistory, resetStreamRefs, resetAccumulator]);
 
   const appendUiSchema = useCallback((schema: UiSchema) => {
     setUiSchema(schema);
     const id = `ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    accumulator.setMessages((prev) => [...prev, { id, type: 'ui', schema }]);
-  }, [accumulator]);
+    setMessages((prev) => [...prev, { id, type: 'ui', schema }]);
+  }, [setMessages]);
 
   const appendBackendToolExecution = useCallback((
     call: ToolCall,
     result: import('@/types/llmUi').ToolResult,
     nextState?: WorkflowState
   ) => {
-    applyBackendToolExecution(call, result, domainAdapter, toolHistoryRef, accumulator.setMessages, nextState);
-  }, [domainAdapter, accumulator, toolHistoryRef]);
+    applyBackendToolExecution(call, result, domainAdapter, toolHistoryRef, setMessages, nextState);
+  }, [domainAdapter, toolHistoryRef, setMessages]);
 
   const runLoop = useCallback(async (
     prompt: string,
@@ -102,15 +110,15 @@ export function useAgenticLoop({
     userMessageId?: string
   ) => {
     if (domainLockReason) {
-      streaming.setError(domainLockReason);
+      setError(domainLockReason);
       return;
     }
 
-    const requestId = streaming.activeRequestIdRef.current + 1;
-    streaming.activeRequestIdRef.current = requestId;
-    const controller = streaming.startRequest();
-    streaming.completeThinking();
-    streaming.closeTextStream();
+    const requestId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = requestId;
+    const controller = startRequest();
+    completeThinking();
+    closeTextStream();
 
     const isRestream = Boolean(toolResultsOverride?.length);
 
@@ -127,12 +135,12 @@ export function useAgenticLoop({
           content: prompt,
           timestamp: Date.now()
         };
-        accumulator.setMessages(prev => [...prev, userChatMessage]);
+        setMessages(prev => [...prev, userChatMessage]);
       }
     }
 
-    streaming.setError(null);
-    streaming.setIsStreaming(true);
+    setError(null);
+    setIsStreaming(true);
 
     try {
       await domainAdapter.buildRequest(
@@ -147,17 +155,17 @@ export function useAgenticLoop({
             continuation: isRestream
           },
           domainAdapter,
-          activeRequestIdRef: streaming.activeRequestIdRef,
-          currentTextIdRef: streaming.currentTextIdRef,
-          handleStreamEvent: streaming.handleStreamEvent,
-          completeThinking: streaming.completeThinking,
-          closeTextStream: streaming.closeTextStream,
-          appendToken: streaming.appendToken,
+          activeRequestIdRef,
+          currentTextIdRef,
+          handleStreamEvent,
+          completeThinking,
+          closeTextStream,
+          appendToken,
           appendUiSchema,
           appendBackendToolExecution,
-          setMessages: accumulator.setMessages,
-          setError: streaming.setError,
-          setIsStreaming: streaming.setIsStreaming
+          setMessages,
+          setError,
+          setIsStreaming
         }),
         controller.signal,
         {
@@ -167,16 +175,16 @@ export function useAgenticLoop({
       );
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      if (!streaming.isRequestCurrent(requestId)) return;
+      if (!isRequestCurrent(requestId)) return;
       const message = err instanceof Error ? err.message : 'Failed to execute loop.';
-      streaming.setError(message);
+      setError(message);
       domainAdapter.onStreamError?.(message);
-      streaming.setIsStreaming(false);
-      streaming.completeThinking();
-      streaming.closeTextStream();
+      setIsStreaming(false);
+      completeThinking();
+      closeTextStream();
     } finally {
-      if (streaming.abortRef.current === controller) {
-        streaming.abortRef.current = null;
+      if (abortRef.current === controller) {
+        abortRef.current = null;
       }
     }
   }, [
@@ -185,17 +193,18 @@ export function useAgenticLoop({
     domainAdapter,
     domainLockReason,
     resetToolHistory,
-    streaming,
-    accumulator
+    setError, setIsStreaming, setMessages, startRequest, completeThinking,
+    closeTextStream, activeRequestIdRef, currentTextIdRef, handleStreamEvent,
+    appendToken, isRequestCurrent, abortRef
   ]);
 
   const editMessage = useCallback((msgId: string, newContent: string) => {
-    accumulator.setMessages((prev) => {
+    setMessages((prev) => {
       const idx = prev.findIndex(m => m.id === msgId);
       if (idx === -1) return prev;
       return [...prev.slice(0, idx), { ...prev[idx], content: newContent } as ChatMessage];
     });
-  }, [accumulator]);
+  }, [setMessages]);
 
   /**
    * Revert to a specific turn index.
@@ -204,29 +213,29 @@ export function useAgenticLoop({
    */
   const revertToTurn = useCallback((turnIndex: number) => {
     // 1. Abort in-flight stream
-    if (streaming.isStreaming) {
+    if (isStreaming) {
       handleStop();
     }
 
     // 2. Prune savepoints FIRST (before any persist call reads the ref)
     const prunedSavepoints: Record<number, string> = {};
-    for (const [k, v] of Object.entries(accumulator.savepointsRef.current)) {
+    for (const [k, v] of Object.entries(savepointsRef.current)) {
       if (Number(k) < turnIndex) prunedSavepoints[Number(k)] = v as string;
     }
-    accumulator.savepointsRef.current = prunedSavepoints;
+    savepointsRef.current = prunedSavepoints;
 
     // 3. Slice messages to before this turn (keeps turns 0..turnIndex-1)
-    const slicedMessages = getMessagesUpToTurn(accumulator.messages, turnIndex);
+    const slicedMessages = getMessagesUpToTurn(accMessages, turnIndex);
 
     if (slicedMessages.length === 0) {
       // Reverting before first turn — clear everything
-      accumulator.skipPersistOnceRef.current = true;
-      accumulator.setMessages([]);
-      if (accumulator.messageStorageScope) {
-        persistStoredMessages(accumulator.messageStorageScope, [], prunedSavepoints);
+      skipPersistOnceRef.current = true;
+      setMessages([]);
+      if (messageStorageScope) {
+        persistStoredMessages(messageStorageScope, [], prunedSavepoints);
       }
     } else {
-      accumulator.setMessages(slicedMessages);
+      setMessages(slicedMessages);
     }
 
     // 4. Rebuild tool history from remaining messages
@@ -243,13 +252,14 @@ export function useAgenticLoop({
     setUiSchema(lastUi?.type === 'ui' ? lastUi.schema : null);
 
     // 7. Reset stream refs + hydrated IDs
-    streaming.resetStreamRefs();
+    resetStreamRefs();
     setHydratedMessageIds(new Set(slicedMessages.map(m => m.id)));
     setEditingMessageId(null);
-    streaming.setError(null);
+    setError(null);
   }, [
-    streaming, handleStop, accumulator, resetToolHistory, toolHistoryRef,
-    domainAdapter
+    isStreaming, handleStop, savepointsRef, accMessages, skipPersistOnceRef,
+    setMessages, setHydratedMessageIds, messageStorageScope, resetToolHistory,
+    toolHistoryRef, domainAdapter, resetStreamRefs, setError
   ]);
 
   /**
@@ -261,7 +271,7 @@ export function useAgenticLoop({
     newContent: string,
     requestOptions: BuildRequestOptions
   ) => {
-    const turnIdx = getTurnIndex(accumulator.messages, messageId);
+    const turnIdx = getTurnIndex(accMessages, messageId);
     if (turnIdx === -1) return;
 
     revertToTurn(turnIdx);
@@ -269,22 +279,22 @@ export function useAgenticLoop({
 
     // Start fresh run with edited content
     void runLoop(newContent, requestOptions);
-  }, [accumulator, revertToTurn, runLoop]);
+  }, [accMessages, revertToTurn, runLoop]);
 
   /** Register a savepoint ID for a turn index (called externally by useSavepoints). */
   const registerSavepoint = useCallback((turnIndex: number, savepointId: string) => {
-    accumulator.savepointsRef.current = { ...accumulator.savepointsRef.current, [turnIndex]: savepointId };
-  }, [accumulator]);
+    savepointsRef.current = { ...savepointsRef.current, [turnIndex]: savepointId };
+  }, [savepointsRef]);
 
   return {
-    messages: accumulator.messages,
-    setMessages: accumulator.setMessages,
-    isGenerating: streaming.isStreaming,
-    error: streaming.error,
+    messages: accMessages,
+    setMessages,
+    isGenerating: isStreaming,
+    error,
     uiSchema,
-    sessionUsages: streaming.sessionUsages,
-    activeTextMessageId: streaming.activeTextMessageId,
-    activeThinkingMessageId: streaming.activeThinkingMessageId,
+    sessionUsages,
+    activeTextMessageId,
+    activeThinkingMessageId,
     hydratedMessageIds,
     runLoop,
     handleStop,

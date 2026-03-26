@@ -7,7 +7,7 @@
  */
 
 import { useRef, useCallback } from 'react';
-import type { LlmUsage } from '@/types/llmUi';
+import type { ChatMessage, LlmUsage } from '@/types/llmUi';
 import type { LlmStreamEvent } from '@/lib/api/llm';
 import { useLlmStreamState } from '@/hooks/useLlmStreamState';
 
@@ -37,8 +37,10 @@ export interface UseStreamingStateReturn {
   isRequestCurrent: (requestId: number) => boolean;
 }
 
-export function useStreamingState(): UseStreamingStateReturn {
-  const stream = useLlmStreamState();
+export function useStreamingState(
+  setMessages?: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+): UseStreamingStateReturn {
+  const stream = useLlmStreamState(setMessages);
 
   const activeRequestIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);

@@ -28,7 +28,7 @@ export function VoiceInputButton({
 }: VoiceInputButtonProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const rafRef = useRef<number>(0);
-  const timeDataRef = useRef<Uint8Array | null>(null);
+  const timeDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const smoothedLevelRef = useRef(0);
   const phaseRef = useRef(0);
 

@@ -5,12 +5,9 @@ import { useAgenticLoop } from '@/hooks/useAgenticLoop';
 import type { DomainAdapter } from '@/types/agentic';
 import type { WorkflowPauseEvent, WorkflowState } from '@/types/workflow';
 
-vi.mock('@/lib/api/llm', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/api/llm')>('@/lib/api/llm');
-  return {
-    ...actual
-  };
-});
+vi.mock('@/lib/api/llm', () => ({
+  streamLlmResponse: vi.fn()
+}));
 
 function createDomainAdapter(
   buildRequest: DomainAdapter['buildRequest'],

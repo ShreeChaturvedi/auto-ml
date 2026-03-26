@@ -1,20 +1,4 @@
-/**
- * Authentication Routes
- *
- * Endpoints:
- * - POST /auth/register - Create new user account
- * - POST /auth/login - Authenticate and receive tokens
- * - POST /auth/logout - Revoke refresh token
- * - POST /auth/refresh - Get new access token using refresh token
- * - GET /auth/me - Get current user info
- * - POST /auth/forgot-password - Request password reset
- * - POST /auth/reset-password - Reset password with token
- * - PATCH /auth/profile - Update user profile
- * - GET /auth/google - Initiate Google OAuth flow
- * - POST /auth/google/callback - Complete Google OAuth flow
- */
-
-import type { Router } from 'express';
+import type { Request, Router } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 
@@ -26,6 +10,7 @@ import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
 import type { AuthenticatedRequest } from '../types/auth.js';
+import type { SafeUser } from '../types/user.js';
 import { sendBadRequest, sendConflict, sendUnauthorized, sendNotFound } from '../utils/errors.js';
 
 import { handleGoogleAuth, handleGoogleCallback } from './auth/oauthHandler.js';
@@ -44,6 +29,10 @@ const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().optional()
+});
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token required')
 });
 
 const forgotPasswordSchema = z.object({
@@ -73,6 +62,15 @@ const googleCallbackSchema = z.object({
 export function registerAuthRoutes(router: Router, pool: Pool) {
   const userRepository = new UserRepository(pool);
 
+  /** Generate tokens and persist the refresh token in one step. */
+  async function issueAndStoreTokens(user: SafeUser, req: Request, rememberMe?: boolean) {
+    const tokens = authService.generateTokens(user);
+    const hash = authService.hashRefreshToken(tokens.refreshToken);
+    const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs(rememberMe));
+    await userRepository.storeRefreshToken(user.user_id, hash, expiresAt, req.ip, req.get('user-agent'));
+    return tokens;
+  }
+
   // POST /auth/register
   router.post(
     '/auth/register',
@@ -88,18 +86,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const password_hash = await authService.hashPassword(password);
       const user = await userRepository.create({ email, password, name, password_hash });
-
-      const tokens = authService.generateTokens(user);
-      const refreshTokenHash = authService.hashRefreshToken(tokens.refreshToken);
-      const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs());
-
-      await userRepository.storeRefreshToken(
-        user.user_id,
-        refreshTokenHash,
-        expiresAt,
-        req.ip,
-        req.get('user-agent')
-      );
+      const tokens = await issueAndStoreTokens(user, req);
 
       appLogger.info(`[auth] registered user ${user.email}`);
       return res.status(201).json({ user, ...tokens });
@@ -127,20 +114,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const user = userRepository.toSafeUser(userWithHash);
       await userRepository.updateLastLogin(user.user_id);
-
-      const tokens = authService.generateTokens(user);
-      const refreshTokenHash = authService.hashRefreshToken(tokens.refreshToken);
-      const expiresAt = new Date(
-        Date.now() + authService.refreshTokenExpiryMs(rememberMe)
-      );
-
-      await userRepository.storeRefreshToken(
-        user.user_id,
-        refreshTokenHash,
-        expiresAt,
-        req.ip,
-        req.get('user-agent')
-      );
+      const tokens = await issueAndStoreTokens(user, req, rememberMe);
 
       appLogger.info(`[auth] login ${user.email}`);
       return res.json({ user, ...tokens });
@@ -150,13 +124,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   // POST /auth/refresh
   router.post(
     '/auth/refresh',
+    validateRequest(refreshSchema),
     asyncHandler(async (req, res) => {
       const { refreshToken } = req.body;
-      if (!refreshToken) {
-        sendBadRequest(res, 'Refresh token required');
-        return;
-      }
-
       const tokenHash = authService.hashRefreshToken(refreshToken);
       const tokenRecord = await userRepository.findRefreshToken(tokenHash);
 
@@ -165,37 +135,17 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         return;
       }
 
-      // Reuse detection: a revoked token being presented is a compromise signal.
-      // Revoke ALL tokens for the user to force re-authentication everywhere.
-      if (tokenRecord.revoked) {
-        await userRepository.revokeAllUserTokens(tokenRecord.user_id);
-        appLogger.warn(`[auth] refresh token reuse detected for user ${tokenRecord.user_id} — all tokens revoked`);
-        return res.status(401).json({ error: 'Token reuse detected. Please log in again.' });
-      }
-
       const user = await userRepository.findById(tokenRecord.user_id);
       if (!user) {
         sendNotFound(res, 'User');
         return;
       }
 
-      // Rotate: revoke the old refresh token, issue a new pair
       await userRepository.revokeRefreshToken(tokenHash);
-
-      const newTokens = authService.generateTokens(user);
-      const newRefreshTokenHash = authService.hashRefreshToken(newTokens.refreshToken);
-      const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs());
-
-      await userRepository.storeRefreshToken(
-        user.user_id,
-        newRefreshTokenHash,
-        expiresAt,
-        req.ip,
-        req.get('user-agent')
-      );
+      const tokens = await issueAndStoreTokens(user, req);
 
       appLogger.info(`[auth] rotated refresh token for ${user.email}`);
-      return res.json({ accessToken: newTokens.accessToken, refreshToken: newTokens.refreshToken });
+      return res.json({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
     })
   );
 
@@ -328,13 +278,6 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   router.post(
     '/auth/google/callback',
     validateRequest(googleCallbackSchema),
-    asyncHandler(async (req, res) => {
-      try {
-        return await handleGoogleCallback(req, res, userRepository);
-      } catch (error) {
-        appLogger.error('[auth] Google OAuth error:', error);
-        return res.status(500).json({ error: 'Google authentication failed' });
-      }
-    })
+    asyncHandler(async (req, res) => handleGoogleCallback(req, res, userRepository))
   );
 }

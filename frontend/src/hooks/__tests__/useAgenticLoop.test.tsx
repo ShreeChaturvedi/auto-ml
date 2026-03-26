@@ -260,6 +260,26 @@ describe('useAgenticLoop', () => {
     ]));
   });
 
+  it('returns referentially stable callbacks across re-renders', () => {
+    const domainAdapter = createDomainAdapter(async () => undefined);
+
+    const { result, rerender } = renderHook(() => useAgenticLoop({
+      projectId: 'project-1',
+      storageKey: 'stability-test',
+      domainAdapter
+    }));
+
+    const firstRunLoop = result.current.runLoop;
+    const firstHandleStop = result.current.handleStop;
+    const firstClearMessages = result.current.clearMessages;
+
+    rerender();
+
+    expect(result.current.runLoop).toBe(firstRunLoop);
+    expect(result.current.handleStop).toBe(firstHandleStop);
+    expect(result.current.clearMessages).toBe(firstClearMessages);
+  });
+
   it('rehydrates stored messages for one scope and clears them when the scope changes', () => {
     localStorage.setItem('preprocessing-tab-a-project-1', JSON.stringify([
       {

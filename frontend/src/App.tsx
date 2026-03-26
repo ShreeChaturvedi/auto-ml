@@ -5,8 +5,9 @@
  * - / : Home page (project selection)
  * - /project/:id : Redirects to current phase
  * - /project/:id/:phase : Project workspace with phase content
- *
- * TODO: Add more routes as features are built (settings, profile, etc.)
+ * - /profile : User profile settings
+ * - /docs : Documentation page
+ * - /login, /signup, /forgot-password, /reset-password : Auth flows
  */
 
 import { useEffect } from 'react';

@@ -57,7 +57,7 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
       {/* -- Pipeline Timeline -- */}
       <ChartCard delay={0} className="p-6">
         <h3 className="text-sm font-semibold text-foreground mb-5">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 mr-2" />
+          <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-2', colorClasses?.fill ?? 'bg-primary/50')} />
           Pipeline Timeline
         </h3>
 

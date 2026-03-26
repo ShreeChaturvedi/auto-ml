@@ -13,10 +13,13 @@ interface SortHeaderProps<T extends string> {
   /** Text alignment — defaults to 'left' */
   align?: 'left' | 'right';
   className?: string;
+  /** Header text styling — defaults to small uppercase tracking */
+  headerClassName?: string;
 }
 
 export function SortHeader<T extends string>({
   field, label, sortField, sortDir, onToggle, icon: Icon, align = 'left', className,
+  headerClassName = 'text-[11px] uppercase tracking-wider',
 }: SortHeaderProps<T>) {
   const active = sortField === field;
   const ariaSort = active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
@@ -25,7 +28,7 @@ export function SortHeader<T extends string>({
     <th
       scope="col"
       aria-sort={ariaSort}
-      className={cn('px-3 py-2 text-xs font-medium text-muted-foreground', className)}
+      className={cn('px-3 py-2 text-xs font-medium text-muted-foreground', headerClassName, className)}
     >
       <button
         type="button"

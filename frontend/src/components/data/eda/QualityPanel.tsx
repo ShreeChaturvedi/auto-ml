@@ -173,11 +173,11 @@ export function QualityPanel({ eda, insights, columnTypes, className }: QualityP
         <Table>
           <TableHeader>
             <TableRow>
-              <SortHeader field="column" label="Column" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
+              <SortHeader field="column" label="Column" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} headerClassName="" className={cn(CELL, 'text-xs')} />
               <TableHead className={cn(CELL, 'text-xs')}>Type</TableHead>
-              <SortHeader field="completeness" label="Completeness" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
-              <SortHeader field="missing" label="Missing" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
-              <SortHeader field="unique" label="Unique" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} className={cn(CELL, 'text-xs')} />
+              <SortHeader field="completeness" label="Completeness" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} headerClassName="" className={cn(CELL, 'text-xs')} />
+              <SortHeader field="missing" label="Missing" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} headerClassName="" className={cn(CELL, 'text-xs')} />
+              <SortHeader field="unique" label="Unique" sortField={sortField} sortDir={sortDir} onToggle={toggleSort} headerClassName="" className={cn(CELL, 'text-xs')} />
             </TableRow>
           </TableHeader>
           <TableBody>

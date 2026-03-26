@@ -7,6 +7,7 @@ import { ShapBarChart } from '../charts/ShapBarChart';
 import { ShapBeeswarmChart } from '../charts/ShapBeeswarmChart';
 import { ShapDependenceChart } from '../charts/ShapDependenceChart';
 import { AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
 interface InterpretabilityTabProps {
@@ -31,15 +32,19 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   // We treat undefined as "still loading" and null-ish as "not available"
   const isLoading = shapData === undefined;
 
+  const shapHeading = (
+    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
+      <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-2', colorClasses?.fill ?? 'bg-primary/60')} />
+      SHAP Analysis
+    </h3>
+  );
+
   // If SHAP data is loaded and present
   if (shapData) {
     return (
       <div className="space-y-8 p-5">
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
-            <span className={`inline-block w-1.5 h-1.5 rounded-full ${colorClasses?.fill ?? 'bg-primary/60'} mr-2`} />
-            SHAP Analysis
-          </h3>
+          {shapHeading}
           <div className="space-y-6">
             <ChartCard label="Global Feature Importance (SHAP)" delay={0}>
               <ShapBarChart
@@ -67,10 +72,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
     return (
       <div className="space-y-8 p-5">
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
-            <span className={`inline-block w-1.5 h-1.5 rounded-full ${colorClasses?.fill ?? 'bg-primary/60'} mr-2`} />
-            SHAP Analysis
-          </h3>
+          {shapHeading}
           <div className="space-y-6">
             <ChartCard label="Global Feature Importance (SHAP)" delay={0}>
               <SkeletonBlock height={400} />

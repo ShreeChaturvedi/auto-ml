@@ -183,10 +183,10 @@ export function Leaderboard() {
           <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-10 border-b border-border/20">
             <tr>
               <th scope="col" className="w-8" />
-              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="text-[11px] uppercase tracking-wider" />
-              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="text-[11px] uppercase tracking-wider" />
+              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
+              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
               {metricCols.map(([label, key]) => (
-                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" className="text-[11px] uppercase tracking-wider" />
+                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" />
               ))}
               <th scope="col" className="w-8" />
             </tr>

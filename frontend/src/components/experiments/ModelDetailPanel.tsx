@@ -18,6 +18,7 @@ import { TuneTab } from './tabs/tune/TuneTab';
 import { EvalTabContent } from './EvalTabContent';
 import { formatMetric, formatDuration } from './utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
 const TABS = [
   { value: 'plots', label: 'Plots' },
@@ -33,11 +34,9 @@ export interface ModelDetailPanelProps {
   onClose: () => void;
 }
 
-/** Fixed reference width for transform-based tab indicator animation. */
 const TAB_INDICATOR_REF_WIDTH = 1;
 
-/** Animated underline tab indicator using compositor-only transforms. */
-function TabIndicator({ containerRef, activeValue, themeColor }: { containerRef: React.RefObject<HTMLDivElement | null>; activeValue: string; themeColor: string | undefined }) {
+function TabIndicator({ containerRef, activeValue, themeColor, prefersReducedMotion }: { containerRef: React.RefObject<HTMLDivElement | null>; activeValue: string; themeColor: string | undefined; prefersReducedMotion: boolean }) {
   const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0 });
 
   const measure = useCallback(() => {
@@ -49,18 +48,16 @@ function TabIndicator({ containerRef, activeValue, themeColor }: { containerRef:
     const aRect = active.getBoundingClientRect();
     const offset = aRect.left - cRect.left;
     const ratio = aRect.width / TAB_INDICATOR_REF_WIDTH;
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setStyle({
       width: TAB_INDICATOR_REF_WIDTH,
       transformOrigin: 'left',
       transform: `translateX(${offset}px) scaleX(${ratio})`,
-      willChange: 'transform',
       opacity: 1,
       transition: prefersReducedMotion
         ? 'none'
         : 'transform 200ms cubic-bezier(.4,0,.2,1), opacity 150ms',
     });
-  }, [containerRef, activeValue]);
+  }, [containerRef, activeValue, prefersReducedMotion]);
 
   useLayoutEffect(() => {
     measure();
@@ -69,8 +66,10 @@ function TabIndicator({ containerRef, activeValue, themeColor }: { containerRef:
   }, [measure]);
 
   useEffect(() => {
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    let rafId = 0;
+    const throttled = () => { cancelAnimationFrame(rafId); rafId = requestAnimationFrame(measure); };
+    window.addEventListener('resize', throttled);
+    return () => { window.removeEventListener('resize', throttled); cancelAnimationFrame(rafId); };
   }, [measure]);
 
   return (
@@ -82,6 +81,9 @@ function TabIndicator({ containerRef, activeValue, themeColor }: { containerRef:
   );
 }
 
+const iconBtnCls = 'h-7 w-7 rounded-md text-muted-foreground hover:text-foreground';
+const ToolbarDivider = () => <div className="h-5 w-px bg-border/40 mx-1" />;
+
 export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelProps) {
   const model = useModelStore((s) => modelId ? s.models.find((m) => m.modelId === modelId) : undefined);
   const evaluation = useExperimentsStore((s) => modelId ? s.evaluations[modelId] : undefined);
@@ -89,6 +91,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
   const { themeColor } = useProjectThemeColor();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const tabBarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
@@ -123,7 +126,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
           }}
         >
-          {/* Top accent line — project theme gradient */}
           <div
             className="h-[1px] w-full shrink-0"
             style={{
@@ -133,7 +135,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             }}
           />
 
-          {/* Row 1: Model info bar */}
           <div className="flex h-14 items-center gap-3 border-b border-border/40 px-5 shrink-0">
             <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
             <DialogTitle className="text-sm font-semibold truncate min-w-0">
@@ -143,12 +144,10 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {TASK_LABELS[model.taskType]}
             </span>
 
-            {/* Gradient separator */}
             {metricEntries.length > 0 && (
               <div className="h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-border/60 to-transparent" />
             )}
 
-            {/* Metric chips */}
             {metricEntries.length > 0 && (
               <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide min-w-0">
                 {metricEntries.map(([key, value]) => {
@@ -176,7 +175,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               </div>
             )}
 
-            {/* Toolbar: duration + actions */}
             <div className="flex items-center gap-1 ml-auto shrink-0">
               {model.trainingMs != null && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap mr-1">
@@ -184,15 +182,14 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
                 </span>
               )}
 
-              {/* Divider before action buttons */}
               {(model.artifact || isFailed) && (
-                <div className="h-5 w-px bg-border/40 mx-1" />
+                <ToolbarDivider />
               )}
 
               {model.artifact && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground" asChild>
+                    <Button variant="ghost" size="icon" className={iconBtnCls} asChild>
                       <a href={getModelArtifactUrl(model.modelId)} download>
                         <Download className="h-3.5 w-3.5" />
                       </a>
@@ -204,7 +201,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {isFailed && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground" onClick={() => {
+                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => {
                       useExperimentsStore.setState((s) => {
                         const next = { ...s.evaluations };
                         delete next[modelId];
@@ -219,17 +216,15 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
                 </Tooltip>
               )}
 
-              {/* Divider before close */}
-              <div className="h-5 w-px bg-border/40 mx-1" />
+              <ToolbarDivider />
 
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground" onClick={onClose}>
+              <Button variant="ghost" size="icon" className={iconBtnCls} onClick={onClose}>
                 <X className="h-3.5 w-3.5" />
                 <span className="sr-only">Close</span>
               </Button>
             </div>
           </div>
 
-          {/* Row 2: Underline tab bar */}
           <div className="border-b border-border/40 px-5 shrink-0">
             <div
               ref={tabBarRef}
@@ -267,11 +262,10 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
                   {t.label}
                 </button>
               ))}
-              <TabIndicator containerRef={tabBarRef} activeValue={activeTab} themeColor={themeColor} />
+              <TabIndicator containerRef={tabBarRef} activeValue={activeTab} themeColor={themeColor} prefersReducedMotion={prefersReducedMotion} />
             </div>
           </div>
 
-          {/* Tab content */}
           <div className="flex-1 min-h-0" role="tabpanel" id={`tabpanel-${modelId}`} aria-labelledby={`tab-${activeTab}-${modelId}`}>
             <ScrollArea key={modelId} className="h-full">
               {activeTab === 'plots' && (

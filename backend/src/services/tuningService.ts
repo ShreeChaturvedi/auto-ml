@@ -31,6 +31,46 @@ import {
   buildTrainTestSplitLines,
 } from './pythonScriptUtils.js';
 
+/* ------------------------------------------------------------------ */
+/*  Sklearn scoring-string mapping                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Map user-facing metric names to valid sklearn scoring strings.
+ *
+ * sklearn's `cross_val_score` does NOT accept bare names like "rmse" or "mae".
+ * Error metrics must use the `neg_` prefix (sklearn convention: higher = better
+ * for all scorers, so error metrics are negated).
+ *
+ * When we use a negated scorer the raw values from `cross_val_score` are negative,
+ * so the Optuna study direction must be "maximize" (closer to zero = better).
+ */
+const METRIC_TO_SKLEARN_SCORING: Record<string, string> = {
+  rmse: 'neg_root_mean_squared_error',
+  mae: 'neg_mean_absolute_error',
+  mse: 'neg_mean_squared_error',
+  mean_squared_error: 'neg_mean_squared_error',
+  mean_absolute_error: 'neg_mean_absolute_error',
+  log_loss: 'neg_log_loss',
+};
+
+/**
+ * Return the sklearn scoring string for a given user-facing metric name.
+ * Metrics not in the mapping are passed through unchanged (e.g. "accuracy", "r2", "f1").
+ */
+export function toSklearnScoring(metric: string): string {
+  return METRIC_TO_SKLEARN_SCORING[metric] ?? metric;
+}
+
+/**
+ * Whether the sklearn scoring string is a negated scorer.
+ * When true, the raw CV values are negative and Optuna must maximize
+ * (higher = closer to zero = less error).
+ */
+export function isNegatedScorer(sklearnScoring: string): boolean {
+  return sklearnScoring.startsWith('neg_');
+}
+
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
@@ -138,9 +178,12 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push(...buildTrainTestSplitLines({ taskType: template.taskType, testSize }));
   lines.push('');
 
-  // ── Direction (needed for convergence tracking + study creation) ──
-  const minimizeMetrics = ['rmse', 'mae', 'mse', 'log_loss', 'mean_squared_error', 'mean_absolute_error'];
-  const direction = minimizeMetrics.includes(metric) ? 'minimize' : 'maximize';
+  // ── Scoring + direction ──
+  const sklearnScoring = toSklearnScoring(metric);
+  const negated = isNegatedScorer(sklearnScoring);
+  // sklearn scoring convention: higher = better for all scorers.
+  // Error metrics use neg_ prefix (negative values), so maximizing still works.
+  const direction = 'maximize';
 
   // ── Objective ──
   lines.push('def objective(trial):');
@@ -160,7 +203,7 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   const randomStateSuffix = 'random_state' in template.defaultParams ? ', random_state=42' : '';
   lines.push(`    model = ${template.modelClass}(**params${randomStateSuffix})`);
-  lines.push(`    scores = cross_val_score(model, X_train, y_train, cv=5, scoring=${JSON.stringify(metric)})`);
+  lines.push(`    scores = cross_val_score(model, X_train, y_train, cv=5, scoring=${JSON.stringify(sklearnScoring)})`);
   lines.push('    return scores.mean()');
   lines.push('');
 
@@ -168,23 +211,26 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push(`DIRECTION = ${JSON.stringify(direction)}`);
   lines.push(`N_TRIALS = ${nTrials}`);
   lines.push("_best_tracker = {'value': None, 'since': 0}");
+  if (negated) {
+    lines.push('_negate = lambda v: abs(v) if v is not None else None');
+  }
   lines.push('def stream_callback(study, trial):');
+  lines.push('    _n_complete = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])');
   lines.push('    print(json.dumps({');
   lines.push("        'type': 'trial_result',");
   lines.push("        'trial_number': trial.number,");
   lines.push("        'state': trial.state.name,");
-  lines.push("        'value': trial.value,");
+  lines.push(`        'value': ${negated ? '_negate(trial.value)' : 'trial.value'},`);
   lines.push("        'params': trial.params,");
-  lines.push("        'best_value': study.best_value,");
+  lines.push(`        'best_value': ${negated ? '_negate(study.best_value)' : 'study.best_value'},`);
   lines.push("        'best_params': study.best_params,");
-  lines.push("        'n_complete': len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]),");
+  lines.push("        'n_complete': _n_complete,");
   lines.push(`        'n_total': ${nTrials}`);
   lines.push('    }), flush=True)');
   lines.push('    # Convergence tracking');
-  lines.push('    _n_complete = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])');
   lines.push('    _cur_best = study.best_value if len(study.best_trials) > 0 else None');
   lines.push('    if _cur_best is not None:');
-  lines.push("        if _best_tracker['value'] is None or (DIRECTION == 'maximize' and _cur_best > _best_tracker['value']) or (DIRECTION == 'minimize' and _cur_best < _best_tracker['value']):");
+  lines.push("        if _best_tracker['value'] is None or _cur_best > _best_tracker['value']:");
   lines.push("            _best_tracker['since'] = 0");
   lines.push("            _best_tracker['value'] = _cur_best");
   lines.push('        else:');
@@ -239,13 +285,19 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('running_best = None');
   lines.push('for t in study.trials:');
   lines.push('    if t.state == optuna.trial.TrialState.COMPLETE:');
-  lines.push(`        if running_best is None or t.value ${direction === 'minimize' ? '<' : '>'} running_best:`);
+  lines.push('        if running_best is None or t.value > running_best:');
   lines.push('            running_best = t.value');
   lines.push('        optimization_history["best_values"].append(running_best)');
   lines.push('');
+  if (negated) {
+    lines.push('optimization_history["values"] = [abs(v) for v in optimization_history["values"]]');
+    lines.push('optimization_history["best_values"] = [abs(v) for v in optimization_history["best_values"]]');
+  }
+  lines.push('');
+
   lines.push('summary = {');
-  lines.push('    "best_params": study.best_params,');
-  lines.push('    "best_value": study.best_value,');
+  lines.push(`    "best_params": study.best_params,`);
+  lines.push(`    "best_value": ${negated ? 'abs(study.best_value)' : 'study.best_value'},`);
   lines.push('    "best_trial_number": study.best_trial.number,');
   lines.push('    "optimization_history": optimization_history,');
   lines.push('    "param_importances": param_importances');

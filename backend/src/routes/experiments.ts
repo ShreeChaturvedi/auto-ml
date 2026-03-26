@@ -362,7 +362,7 @@ export function createExperimentsRouter(): Router {
     // Check evaluation status before attempting error analysis
     const statusError = validateEvaluationForErrorAnalysis(model?.evaluationStatus);
     if (statusError) {
-      res.status(404).json({ error: statusError });
+      res.json({ available: false, reason: statusError });
       return;
     }
 
@@ -379,10 +379,10 @@ export function createExperimentsRouter(): Router {
         if (result) {
           res.json(result);
         } else {
-          res.status(404).json({ error: 'Error analysis not available' });
+          res.json({ available: false, reason: 'Error analysis not available' });
         }
       } catch {
-        res.status(404).json({ error: 'Error analysis not available' });
+        res.json({ available: false, reason: 'Error analysis not available' });
       }
     }
   }));

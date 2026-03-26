@@ -328,15 +328,15 @@ describeRouteSuite('experiments routes', () => {
     expect(response.body.error_tree.error_rate).toBe(0.25);
   });
 
-  it('GET /experiments/:modelId/error-analysis returns 404 when analysis unavailable', async () => {
+  it('GET /experiments/:modelId/error-analysis returns 200 with available:false when analysis unavailable', async () => {
     mockReadFile.mockRejectedValueOnce(new Error('ENOENT'));
     mockRunErrorAnalysis.mockResolvedValueOnce(null);
 
     const app = createTestApp();
     const response = await request(app).get('/api/experiments/model-abc/error-analysis');
 
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe('Error analysis not available');
+    expect(response.status).toBe(200);
+    expect(response.body.available).toBe(false);
   });
 
   it('GET /experiments/:modelId/error-analysis runs on-demand when not cached', async () => {

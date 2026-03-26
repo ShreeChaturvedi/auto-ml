@@ -239,7 +239,7 @@ export class PgModelRepository implements ModelRepository {
       [
         id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
         input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
-        input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ?? null, input.sampleCount ?? null,
+        input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ? JSON.stringify(input.featureColumns) : null, input.sampleCount ?? null,
         input.artifact ?? null, input.error ?? null, input.metadata ?? null,
         input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
       ]
@@ -269,7 +269,7 @@ export class PgModelRepository implements ModelRepository {
       [
         modelId, updated.projectId, updated.datasetId, updated.name, updated.templateId, updated.taskType,
         updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
-        updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, updated.featureColumns ?? null, updated.sampleCount ?? null,
+        updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, updated.featureColumns ? JSON.stringify(updated.featureColumns) : null, updated.sampleCount ?? null,
         updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
         updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null
       ]

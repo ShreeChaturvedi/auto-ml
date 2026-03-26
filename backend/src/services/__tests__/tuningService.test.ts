@@ -72,7 +72,7 @@ vi.mock('node:fs', () => ({
 
 import type { ModelTemplate } from '../../types/model.js';
 import type { BuildTuningScriptOptions } from '../tuningService.js';
-import { buildTuningScript, deleteTuningStudiesByModelId, runTuningStudy } from '../tuningService.js';
+import { buildTuningScript, deleteTuningStudiesByModelId, isNegatedScorer, runTuningStudy, toSklearnScoring } from '../tuningService.js';
 
 const {
   mockExecute,
@@ -226,6 +226,45 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// -- toSklearnScoring ---------------------------------------------------------
+
+describe('toSklearnScoring', () => {
+  it.each([
+    ['rmse', 'neg_root_mean_squared_error'],
+    ['mae', 'neg_mean_absolute_error'],
+    ['mse', 'neg_mean_squared_error'],
+    ['mean_squared_error', 'neg_mean_squared_error'],
+    ['mean_absolute_error', 'neg_mean_absolute_error'],
+    ['log_loss', 'neg_log_loss'],
+  ])('maps %s → %s', (input, expected) => {
+    expect(toSklearnScoring(input)).toBe(expected);
+  });
+
+  it.each(['accuracy', 'r2', 'f1', 'precision', 'recall'])('passes %s through unchanged', (metric) => {
+    expect(toSklearnScoring(metric)).toBe(metric);
+  });
+
+  it('passes unknown metric through unchanged', () => {
+    expect(toSklearnScoring('custom_metric')).toBe('custom_metric');
+  });
+});
+
+// -- isNegatedScorer ----------------------------------------------------------
+
+describe('isNegatedScorer', () => {
+  it('returns true for neg_ prefixed scorers', () => {
+    expect(isNegatedScorer('neg_root_mean_squared_error')).toBe(true);
+    expect(isNegatedScorer('neg_mean_absolute_error')).toBe(true);
+    expect(isNegatedScorer('neg_log_loss')).toBe(true);
+  });
+
+  it('returns false for non-negated scorers', () => {
+    expect(isNegatedScorer('accuracy')).toBe(false);
+    expect(isNegatedScorer('r2')).toBe(false);
+    expect(isNegatedScorer('f1')).toBe(false);
+  });
+});
+
 // -- buildTuningScript --------------------------------------------------------
 
 describe('buildTuningScript', () => {
@@ -309,11 +348,12 @@ describe('buildTuningScript', () => {
     expect(script).not.toContain('Ridge(**best_params, random_state=42)');
   });
 
-  it.each(['rmse', 'mae', 'mse', 'log_loss'])('uses minimize direction for %s', (metric) => {
+  it.each(['rmse', 'mae', 'mse', 'log_loss'])('uses maximize direction for %s (negated scorer)', (metric) => {
     const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric });
-    expect(script).toContain('optuna.create_study(direction="minimize"');
-    expect(script).toContain('DIRECTION = "minimize"');
-    expect(script).toContain('t.value < running_best:');
+    // sklearn neg_ scorers return negative values — Optuna maximizes (closer to 0 = better)
+    expect(script).toContain('optuna.create_study(direction="maximize"');
+    expect(script).toContain('DIRECTION = "maximize"');
+    expect(script).toContain('t.value > running_best:');
   });
 
   it.each(['accuracy', 'f1', 'r2', 'precision', 'recall'])('uses maximize direction for %s', (metric) => {
@@ -327,6 +367,141 @@ describe('buildTuningScript', () => {
     const script = callBuild(makeTemplate(), { nTrials: 50, timeoutSeconds: 600 });
     expect(script).toContain("'type': 'convergence_update'");
     expect(script).toContain("'type': 'importance_update'");
+  });
+
+  // -- Negated scoring with correct direction -----------------------------------
+
+  describe('negated scoring + direction handling', () => {
+    it('for rmse: uses neg_root_mean_squared_error scoring with maximize (sklearn returns negative)', () => {
+      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'rmse' });
+      // sklearn neg_ scoring returns negative values: higher (closer to 0) is better
+      expect(script).toContain('scoring="neg_root_mean_squared_error"');
+      // The study direction should be maximize because sklearn neg_ values are negative
+      expect(script).toContain('optuna.create_study(direction="maximize"');
+    });
+
+    it('for mae: uses neg_mean_absolute_error scoring with maximize', () => {
+      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'mae' });
+      expect(script).toContain('scoring="neg_mean_absolute_error"');
+      expect(script).toContain('optuna.create_study(direction="maximize"');
+    });
+
+    it('for accuracy: uses maximize direction', () => {
+      const script = callBuild(makeTemplate(), { metric: 'accuracy' });
+      expect(script).toContain('optuna.create_study(direction="maximize"');
+    });
+
+    it('negates the best_value back to the original metric scale for reporting', () => {
+      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'rmse' });
+      // After the study completes, the summary should negate values back to user-facing scale
+      expect(script).toContain('abs(study.best_value)');
+    });
+
+    it('negates streaming trial values for negated scorers', () => {
+      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'mae' });
+      // Streaming callback should negate values for frontend display
+      expect(script).toContain('_negate(trial.value)');
+      expect(script).toContain('_negate(study.best_value)');
+    });
+
+    it('negates optimization_history values for negated scorers', () => {
+      const script = callBuild(makeTemplate(RIDGE_OVERRIDES), { metric: 'mse' });
+      expect(script).toContain('[abs(v) for v in optimization_history["values"]]');
+      expect(script).toContain('[abs(v) for v in optimization_history["best_values"]]');
+    });
+
+    it('does NOT negate values for non-negated scorers', () => {
+      const script = callBuild(makeTemplate(), { metric: 'accuracy' });
+      expect(script).not.toContain('abs(study.best_value)');
+      expect(script).not.toContain('_negate');
+      expect(script).toContain("'value': trial.value");
+      expect(script).toContain("'best_value': study.best_value");
+    });
+  });
+
+  // -- Boolean parameter handling -----------------------------------------------
+
+  describe('boolean parameter handling', () => {
+    it('maps type=boolean to trial.suggest_categorical with [True, False]', () => {
+      const template = makeTemplate({
+        parameters: [
+          { key: 'warm_start', label: 'Warm start', type: 'boolean', default: false },
+          { key: 'n_estimators', label: 'Trees', type: 'number', default: 100, min: 10, max: 500 },
+        ],
+        defaultParams: { warm_start: false, n_estimators: 100, random_state: 42 },
+      });
+      const script = callBuild(template);
+      expect(script).toContain('trial.suggest_categorical("warm_start", [True, False])');
+    });
+  });
+
+  // -- Empty/edge case parameters -----------------------------------------------
+
+  describe('edge case parameter handling', () => {
+    it('handles template with no tunable params (only has params without min/max/options)', () => {
+      const template = makeTemplate({
+        parameters: [
+          { key: 'fit_intercept', label: 'Fit intercept', type: 'string', default: 'auto' },
+        ],
+        defaultParams: { fit_intercept: 'auto' },
+      });
+      const script = callBuild(template);
+      expect(script).toContain('params = {}');
+    });
+
+    it('uses TPE sampler by default', () => {
+      const script = callBuild(makeTemplate());
+      expect(script).toContain("optuna.samplers.TPESampler(seed=42) if 'tpe' == 'tpe'");
+    });
+
+    it('uses random sampler when specified', () => {
+      const script = callBuild(makeTemplate(), { sampler: 'random' });
+      expect(script).toContain("optuna.samplers.TPESampler(seed=42) if 'random' == 'tpe'");
+    });
+  });
+
+  // -- Script syntactic validity ------------------------------------------------
+
+  describe('generated script syntactic structure', () => {
+    it('has balanced parentheses and brackets', () => {
+      const script = callBuild(makeTemplate(), { nTrials: 30, metric: 'accuracy' });
+      const opens = (script.match(/\(/g) || []).length;
+      const closes = (script.match(/\)/g) || []).length;
+      expect(opens).toBe(closes);
+
+      const openBrackets = (script.match(/\[/g) || []).length;
+      const closeBrackets = (script.match(/\]/g) || []).length;
+      expect(openBrackets).toBe(closeBrackets);
+
+      const openBraces = (script.match(/\{/g) || []).length;
+      const closeBraces = (script.match(/\}/g) || []).length;
+      expect(openBraces).toBe(closeBraces);
+    });
+
+    it('does not have any undefined or null literals in the Python script', () => {
+      const script = callBuild(makeTemplate(), { nTrials: 30, metric: 'accuracy' });
+      expect(script).not.toContain('undefined');
+      expect(script).not.toContain('null');
+      expect(script).not.toContain('NaN');
+    });
+
+    it('produces script with all required sections in correct order', () => {
+      const script = callBuild(makeTemplate(), { nTrials: 30, metric: 'accuracy' });
+      const importIdx = script.indexOf('import optuna');
+      const objectiveIdx = script.indexOf('def objective(trial):');
+      const callbackIdx = script.indexOf('def stream_callback(study, trial):');
+      const studyIdx = script.indexOf('optuna.create_study');
+      const optimizeIdx = script.indexOf('study.optimize');
+      const refitIdx = script.indexOf('best_model.fit');
+      const doneIdx = script.indexOf('{"type": "done"}');
+
+      expect(importIdx).toBeLessThan(objectiveIdx);
+      expect(objectiveIdx).toBeLessThan(callbackIdx);
+      expect(callbackIdx).toBeLessThan(studyIdx);
+      expect(studyIdx).toBeLessThan(optimizeIdx);
+      expect(optimizeIdx).toBeLessThan(refitIdx);
+      expect(refitIdx).toBeLessThan(doneIdx);
+    });
   });
 });
 
@@ -417,6 +592,218 @@ describe('runTuningStudy', () => {
     const errorEvent = writtenLines.find((e) => e.type === 'error');
     expect(errorEvent).toBeDefined();
     expect(errorEvent.message).toContain('optuna');
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('writes error when template not found', async () => {
+    const res = makeMockRes();
+    const model = makeModelRecord();
+    mockModelGetById.mockResolvedValue(model);
+    mockGetModelTemplate.mockReturnValue(undefined);
+
+    await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    expect(writtenLines).toHaveLength(1);
+    expect(writtenLines[0].type).toBe('error');
+    expect(writtenLines[0].message).toContain('template');
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('writes error when dataset not found', async () => {
+    const res = makeMockRes();
+    const model = makeModelRecord();
+    const template = makeTemplate();
+    mockModelGetById.mockResolvedValue(model);
+    mockGetModelTemplate.mockReturnValue(template);
+    mockDatasetGetById.mockResolvedValue(undefined);
+
+    await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    expect(writtenLines).toHaveLength(1);
+    expect(writtenLines[0].type).toBe('error');
+    expect(writtenLines[0].message).toContain('Dataset not found');
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('writes error for clustering models', async () => {
+    const res = makeMockRes();
+    const template = makeTemplate({ taskType: 'clustering' });
+    mockModelGetById.mockResolvedValue(makeModelRecord({ taskType: 'clustering', templateId: 'kmeans' }));
+    mockGetModelTemplate.mockReturnValue(template);
+
+    await runTuningStudy('test-project', 'test-model-id', 10, 'silhouette', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    expect(writtenLines[0].type).toBe('error');
+    expect(writtenLines[0].message).toContain('clustering');
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('writes error when template has no tunable parameters', async () => {
+    const res = makeMockRes();
+    const template = makeTemplate({
+      id: 'linear_regression',
+      parameters: [],
+      defaultParams: {},
+    });
+    mockModelGetById.mockResolvedValue(makeModelRecord({ templateId: 'linear_regression' }));
+    mockGetModelTemplate.mockReturnValue(template);
+    mockDatasetGetById.mockResolvedValue(dataset);
+
+    await runTuningStudy('test-project', 'test-model-id', 10, 'accuracy', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    expect(writtenLines[0].type).toBe('error');
+    expect(writtenLines[0].message).toContain('tunable');
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('relays convergence_update events to the response stream', async () => {
+    const { container } = setupRunMocks();
+    const res = makeMockRes();
+
+    const { readFile: mockReadFile } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: { n_estimators: 300 },
+      best_value: 0.92,
+      best_trial_number: 7,
+      optimization_history: { trial_numbers: [0], values: [0.92], best_values: [0.92] },
+      param_importances: {},
+    }));
+
+    mockModelCreate.mockResolvedValue({ ...makeModelRecord(), modelId: 'new-id' });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      cfg.onOutput?.({ type: 'text', content: '{"type": "trial_result", "trial_number": 0, "state": "COMPLETE", "value": 0.92, "params": {}, "best_value": 0.92, "best_params": {}, "n_complete": 1, "n_total": 1}\n' });
+      cfg.onOutput?.({ type: 'text', content: '{"type": "convergence_update", "status": "exploring", "trials_since_improvement": 0, "improvement_rate": 0.0}\n' });
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container, executionResult: { status: 'success', stderr: '', executionMs: 5000 } };
+    });
+
+    await runTuningStudy('test-project', 'test-model-id', 1, 'accuracy', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const convergenceEvents = writtenLines.filter((e) => e.type === 'convergence_update');
+    expect(convergenceEvents).toHaveLength(1);
+    expect(convergenceEvents[0].status).toBe('exploring');
+  });
+
+  it('handles multiple JSON lines in a single output chunk', async () => {
+    const { container } = setupRunMocks();
+    const res = makeMockRes();
+
+    const { readFile: mockReadFile } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: { n_estimators: 300 },
+      best_value: 0.92,
+      best_trial_number: 1,
+      optimization_history: { trial_numbers: [0, 1], values: [0.85, 0.92], best_values: [0.85, 0.92] },
+      param_importances: {},
+    }));
+
+    mockModelCreate.mockResolvedValue({ ...makeModelRecord(), modelId: 'new-id' });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      // Send TWO trial_result lines in a single output chunk (as happens in real execution)
+      cfg.onOutput?.({
+        type: 'text',
+        content: '{"type": "trial_result", "trial_number": 0, "state": "COMPLETE", "value": 0.85, "params": {}, "best_value": 0.85, "best_params": {}, "n_complete": 1, "n_total": 2}\n{"type": "trial_result", "trial_number": 1, "state": "COMPLETE", "value": 0.92, "params": {}, "best_value": 0.92, "best_params": {}, "n_complete": 2, "n_total": 2}\n',
+      });
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container, executionResult: { status: 'success', stderr: '', executionMs: 5000 } };
+    });
+
+    await runTuningStudy('test-project', 'test-model-id', 2, 'accuracy', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    const trialEvents = writtenLines.filter((e) => e.type === 'trial_result');
+    expect(trialEvents).toHaveLength(2);
+  });
+
+  it('ignores non-text output types', async () => {
+    const { container } = setupRunMocks();
+    const res = makeMockRes();
+
+    const { readFile: mockReadFile } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: {},
+      best_value: 0.92,
+      best_trial_number: 0,
+      optimization_history: { trial_numbers: [0], values: [0.92], best_values: [0.92] },
+      param_importances: {},
+    }));
+
+    mockModelCreate.mockResolvedValue({ ...makeModelRecord(), modelId: 'new-id' });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      // Send an 'image' output that should be ignored
+      cfg.onOutput?.({ type: 'image', content: 'base64data' });
+      cfg.onOutput?.({ type: 'text', content: '{"type": "trial_result", "trial_number": 0, "state": "COMPLETE", "value": 0.92, "params": {}, "best_value": 0.92, "best_params": {}, "n_complete": 1, "n_total": 1}\n' });
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container, executionResult: { status: 'success', stderr: '', executionMs: 5000 } };
+    });
+
+    await runTuningStudy('test-project', 'test-model-id', 1, 'accuracy', 600, res as never);
+
+    const writtenLines = res.chunks.map((c) => JSON.parse(c.trim()));
+    // Should have trial_result + done, but NOT the image
+    const trialEvents = writtenLines.filter((e) => e.type === 'trial_result');
+    expect(trialEvents).toHaveLength(1);
+  });
+
+  it('registers a new model record with tuning metadata on success', async () => {
+    const { model, container } = setupRunMocks();
+    const res = makeMockRes();
+
+    const { readFile: mockReadFile } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: { n_estimators: 300, max_depth: 15 },
+      best_value: 0.92,
+      best_trial_number: 7,
+      optimization_history: { trial_numbers: [0, 1], values: [0.85, 0.92], best_values: [0.85, 0.92] },
+      param_importances: { params: ['n_estimators'], importances: [0.8] },
+    }));
+
+    mockModelCreate.mockResolvedValue({
+      ...model,
+      modelId: 'new-tuned-model-id',
+    });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container, executionResult: { status: 'success', stderr: '', executionMs: 10000 } };
+    });
+
+    await runTuningStudy('test-project', 'test-model-id', 2, 'accuracy', 600, res as never);
+
+    expect(mockModelCreate).toHaveBeenCalledTimes(1);
+    const createArg = mockModelCreate.mock.calls[0][0];
+    expect(createArg.projectId).toBe('test-project');
+    expect(createArg.status).toBe('completed');
+    expect(createArg.parameters).toEqual({ n_estimators: 300, max_depth: 15 });
+    expect(createArg.metadata?.tuning).toBeDefined();
+    expect(createArg.metadata.tuning.sourceModelId).toBe('test-model-id');
+    expect(createArg.metadata.tuning.nTrials).toBe(2);
+    expect(createArg.metadata.tuning.metric).toBe('accuracy');
+  });
+
+  it('writes error when response stream is already ended', async () => {
+    const res = makeMockRes();
+    res.writableEnded = true; // Simulate stream already ended
+
+    mockModelGetById.mockResolvedValue(undefined);
+
+    await runTuningStudy('test-project', 'nonexistent', 10, 'accuracy', 600, res as never);
+
+    // writeJsonLine checks writableEnded, so write should NOT be called
+    expect(res.write).not.toHaveBeenCalled();
+    // But end will still be called
     expect(res.end).toHaveBeenCalled();
   });
 });

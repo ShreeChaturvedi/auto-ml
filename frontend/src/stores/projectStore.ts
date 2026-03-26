@@ -8,6 +8,7 @@ import {
 } from '@/lib/api/projects';
 import type { ApiProject, ApiProjectMetadata, ApiProjectPayload } from '@/lib/api/projects';
 import type { Phase } from '@/types/phase';
+import { getNextPhase } from '@/types/phase';
 import type { Project, ProjectFormData, ProjectColor } from '@/types/project';
 import {
   DEFAULT_PHASE_STATE,
@@ -276,11 +277,20 @@ export const useProjectStore = createPersistedStore<ProjectState>(
 
       setCurrentPhase(projectId, phase) {
         set((state) => ({
-          projects: state.projects.map((project) =>
-            project.id === projectId
-              ? { ...project, currentPhase: phase, updatedAt: new Date() }
-              : project
-          )
+          projects: state.projects.map((project) => {
+            if (project.id !== projectId) return project;
+
+            const nextPhase = getNextPhase(phase);
+            const needsUnlock = !!nextPhase && !project.unlockedPhases.includes(nextPhase);
+
+            if (project.currentPhase === phase && !needsUnlock) return project;
+
+            const unlockedPhases = needsUnlock
+              ? [...project.unlockedPhases, nextPhase]
+              : project.unlockedPhases;
+
+            return { ...project, currentPhase: phase, unlockedPhases, updatedAt: new Date() };
+          })
         }));
 
         void syncProjectMetadata(projectId);

@@ -282,8 +282,9 @@
   @apply mb-0;
 }
 
-/* Loading shimmer text animation for LLM tool indicators */
-.shimmer-text {
+/* Shimmer text base — metallic sweep gradient */
+.shimmer-text,
+.shimmer-text-once {
   background: linear-gradient(90deg,
       currentColor 0%,
       currentColor 35%,
@@ -294,17 +295,18 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: shimmer-sweep 2s ease-in-out infinite;
 }
 
-@keyframes shimmer-sweep {
-  0% {
-    background-position: 100% 0;
-  }
+.shimmer-text { animation: shimmer-sweep 2s ease-in-out infinite; }
+.shimmer-text-once { animation: shimmer-sweep 1.5s ease-in-out 1 forwards; }
 
-  100% {
-    background-position: -100% 0;
-  }
+@keyframes shimmer-sweep {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text-once { animation: none; }
 }
 
 /* Per-character stagger animation for AnimatedPlaceholderInput.

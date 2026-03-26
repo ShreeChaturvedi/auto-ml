@@ -7,7 +7,7 @@
  * - Processing/FE/Training: workbooks
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import { ChevronRight, Plus } from 'lucide-react';
@@ -41,6 +41,8 @@ const EXPANDABLE_PHASES = new Set<Phase>([
 ]);
 
 const WORKBOOK_PHASES = new Set<Phase>(['preprocessing', 'feature-engineering', 'training']);
+
+const EMPTY_PHASES: Phase[] = [];
 
 /**
  * Connector-line layout constants.
@@ -76,12 +78,35 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     ? projects.find((p) => p.id === activeProjectId)
     : undefined;
 
-  const unlockedPhases = activeProject?.unlockedPhases ?? [];
+  const unlockedPhases = activeProject?.unlockedPhases ?? EMPTY_PHASES;
   const currentPhase = activeProject?.currentPhase;
   const allPhases = WORKFLOW_PHASES;
 
   const [expandedPhases, setExpandedPhases] = useState<Set<Phase>>(new Set());
   const [seedDialogOpen, setSeedDialogOpen] = useState(false);
+  const [shimmeringPhases, setShimmeringPhases] = useState<Set<Phase>>(new Set());
+  const prevUnlockedRef = useRef<Phase[]>(unlockedPhases);
+
+  // Reset shimmer tracking when switching projects
+  useEffect(() => {
+    prevUnlockedRef.current = unlockedPhases;
+    setShimmeringPhases(new Set());
+  }, [activeProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Detect newly-unlocked phases and trigger shimmer via animationend
+  useEffect(() => {
+    const prev = new Set(prevUnlockedRef.current);
+    const newlyUnlocked = unlockedPhases.filter((p: Phase) => !prev.has(p));
+    prevUnlockedRef.current = unlockedPhases;
+
+    if (newlyUnlocked.length === 0) return;
+
+    setShimmeringPhases((s) => {
+      const next = new Set(s);
+      for (const p of newlyUnlocked) next.add(p);
+      return next;
+    });
+  }, [unlockedPhases]);
 
   const activeWorkbookId = getWorkbookParam(searchParams);
 
@@ -240,8 +265,16 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 <span
                   className={cn(
                     'flex-1 text-workflow truncate transition-opacity duration-300 pl-2',
-                    collapsed && 'opacity-0'
+                    collapsed && 'opacity-0',
+                    shimmeringPhases.has(phase) && 'shimmer-text-once'
                   )}
+                  onAnimationEnd={shimmeringPhases.has(phase) ? () => {
+                    setShimmeringPhases((s) => {
+                      const next = new Set(s);
+                      next.delete(phase);
+                      return next;
+                    });
+                  } : undefined}
                 >
                   {config.label}
                 </span>
@@ -284,11 +317,15 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 <TooltipTrigger asChild>
                   {phaseButton}
                 </TooltipTrigger>
-                {collapsed && (
+                {collapsed ? (
                   <TooltipContent side="right">
                     <p>{config.label}</p>
                   </TooltipContent>
-                )}
+                ) : isUnlocked && !isActive ? (
+                  <TooltipContent side="right">
+                    <p>{config.description}</p>
+                  </TooltipContent>
+                ) : null}
               </Tooltip>
 
               {/* Subtabs — always rendered for animation, visibility controlled by grid-rows */}

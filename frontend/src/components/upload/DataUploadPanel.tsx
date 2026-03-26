@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileStack, Loader2 } from 'lucide-react';
+import { Upload, FileStack } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
@@ -229,8 +229,6 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
     }
     return [data, context] as const;
   }, [projectFiles]);
-  const isUploading = Object.values(uploadStatus).some(status => status === 'uploading');
-
   const shimmerRef = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
 
@@ -250,15 +248,6 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
   return (
     <div className="h-full flex flex-col" data-testid="data-upload-panel">
-      {isUploading ? (
-        <div className="absolute top-2 right-3 z-10">
-          <Badge variant="secondary" className="gap-1.5 text-xs">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Uploading...
-          </Badge>
-        </div>
-      ) : null}
-
       {/* Drop Zone + File List Container */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Drop Zone - Fills entire area when empty, compact when has files */}

@@ -6,6 +6,8 @@ import { appLogger } from '../logging/logger.js';
 import type { ModelArtifact, ModelRecord } from '../types/model.js';
 import { ensureDirectoryForFile } from '../utils/fs.js';
 
+const toJsonb = (v: unknown) => v != null ? JSON.stringify(v) : null;
+
 /** Return the highest version number for a project within a list of models. */
 function maxVersion(models: Iterable<ModelRecord>, projectId: string): number {
   let max = 0;
@@ -239,7 +241,7 @@ export class PgModelRepository implements ModelRepository {
       [
         id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
         input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
-        input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, input.featureColumns ? JSON.stringify(input.featureColumns) : null, input.sampleCount ?? null,
+        input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, toJsonb(input.featureColumns), input.sampleCount ?? null,
         input.artifact ?? null, input.error ?? null, input.metadata ?? null,
         input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
       ]
@@ -269,7 +271,7 @@ export class PgModelRepository implements ModelRepository {
       [
         modelId, updated.projectId, updated.datasetId, updated.name, updated.templateId, updated.taskType,
         updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
-        updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, updated.featureColumns ? JSON.stringify(updated.featureColumns) : null, updated.sampleCount ?? null,
+        updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, toJsonb(updated.featureColumns), updated.sampleCount ?? null,
         updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
         updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null
       ]

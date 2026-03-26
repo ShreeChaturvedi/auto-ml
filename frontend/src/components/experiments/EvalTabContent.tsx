@@ -1,5 +1,6 @@
 import { AlertTriangle, BarChart3 } from 'lucide-react';
 import type { EvaluationResult } from '@/types/experiments';
+import { SkeletonBlock } from './shared/Skeleton';
 
 interface EvalTabContentProps {
   isComputing: boolean;
@@ -16,10 +17,11 @@ function SkeletonGrid() {
     <div className="p-5">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {heights.map((h, i) => (
-          <div
+          <SkeletonBlock
             key={i}
-            className="card-enter timeline-skeleton rounded-lg bg-muted/30"
-            style={{ height: `${h}px`, animationDelay: `${i * 100}ms` }}
+            height={h}
+            delay={i * 100}
+            className="rounded-lg bg-muted/30"
           />
         ))}
       </div>

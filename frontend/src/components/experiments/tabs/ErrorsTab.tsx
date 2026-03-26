@@ -6,14 +6,11 @@ import { AlertTriangle, TreePine } from 'lucide-react';
 import { fetchInsights } from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 import { ErrorTreeNodeCard } from './ErrorTreeNodeCard';
+import { SkeletonBlock } from '../shared/Skeleton';
 
 interface ErrorsTabProps {
   modelId: string;
   evaluation: EvaluationResult;
-}
-
-function SkeletonBlock({ height = 200, delay = 0 }: { height?: number; delay?: number }) {
-  return <div className="card-enter timeline-skeleton rounded-md" style={{ height, animationDelay: `${delay}ms` }} />;
 }
 
 type SortDir = 'asc' | 'desc';

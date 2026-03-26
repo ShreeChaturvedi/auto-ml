@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { EvaluationResult } from '@/types/experiments';
 import { ChartCard } from '../shared/ChartCard';
+import { SkeletonBlock } from '../shared/Skeleton';
 import { ShapBarChart } from '../charts/ShapBarChart';
 import { ShapBeeswarmChart } from '../charts/ShapBeeswarmChart';
 import { ShapDependenceChart } from '../charts/ShapDependenceChart';
@@ -11,15 +12,6 @@ import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 interface InterpretabilityTabProps {
   modelId: string;
   evaluation: EvaluationResult;
-}
-
-function ChartSkeleton({ height = 400 }: { height?: number }) {
-  return (
-    <div
-      className="card-enter timeline-skeleton rounded-md"
-      style={{ height }}
-    />
-  );
 }
 
 export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTabProps) {
@@ -81,15 +73,15 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
           </h3>
           <div className="space-y-6">
             <ChartCard label="Global Feature Importance (SHAP)" delay={0}>
-              <ChartSkeleton height={400} />
+              <SkeletonBlock height={400} />
             </ChartCard>
 
             <ChartCard label="SHAP Beeswarm" delay={80}>
-              <ChartSkeleton height={500} />
+              <SkeletonBlock height={500} />
             </ChartCard>
 
             <ChartCard label="SHAP Dependence" delay={160}>
-              <ChartSkeleton height={400} />
+              <SkeletonBlock height={400} />
             </ChartCard>
           </div>
         </section>

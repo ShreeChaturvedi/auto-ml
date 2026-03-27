@@ -13,7 +13,6 @@ import { QueryPanel } from './QueryPanel';
 import { withSqlIdentifierHint } from './sqlIdentifiers';
 import { FileTabBar } from './FileTabBar';
 import { DataViewerContent } from './DataViewerContent';
-import { DocumentQAPanel } from './DocumentQAPanel';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
@@ -51,7 +50,6 @@ export function DataViewerTab() {
   const [queryPanelIsTransitioning, setQueryPanelIsTransitioning] = useState(false);
   const [queryMode, setQueryMode] = useState<QueryMode>('sql');
   const [controlsPortalTarget, setControlsPortalTarget] = useState<HTMLElement | null>(null);
-  const [qaPanelCollapsed, setQaPanelCollapsed] = useState(true);
   const { projectId } = useParams();
   const projects = useProjectStore((state) => state.projects);
   const activeProject = projects.find((p) => p.id === projectId);
@@ -391,20 +389,6 @@ export function DataViewerTab() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Document Q&A Panel */}
-      <div
-        className={cn(
-          'min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out',
-          qaPanelCollapsed ? 'w-12' : 'w-[340px]'
-        )}
-      >
-        <DocumentQAPanel
-          projectId={projectId}
-          collapsed={qaPanelCollapsed}
-          onCollapsedChange={setQaPanelCollapsed}
-        />
       </div>
 
       {/* Query Panel (right side) */}

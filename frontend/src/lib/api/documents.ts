@@ -31,27 +31,6 @@ export interface DocumentListItem {
   createdAt?: string;
 }
 
-export interface AnswerCitation {
-  chunkId: string;
-  documentId: string;
-  filename: string;
-  span: { start: number; end: number };
-}
-
-export interface AnswerResponse {
-  answer: {
-    status: 'ok' | 'not_found';
-    answer: string;
-    citations: AnswerCitation[];
-    meta: {
-      cached: boolean;
-      latencyMs: number;
-      chunksConsidered: number;
-      cacheTimestamp?: string;
-    };
-  };
-}
-
 export async function uploadDocument(projectId: string, file: File): Promise<DocumentUploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
@@ -112,16 +91,5 @@ export async function searchDocuments(
 ): Promise<{ results: SearchResult[] }> {
   return apiRequest(`/docs/search?projectId=${projectId}&q=${encodeURIComponent(query)}&k=${topK}`, {
     method: 'GET'
-  });
-}
-
-export async function getAnswer(
-  projectId: string,
-  question: string,
-  topK: number = 3
-): Promise<AnswerResponse> {
-  return apiRequest('/answer', {
-    method: 'POST',
-    body: { projectId, question, topK }
   });
 }

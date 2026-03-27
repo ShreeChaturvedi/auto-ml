@@ -10,7 +10,6 @@ import { requestTimingMiddleware } from './middleware/requestTiming.js';
 import { requireProjectAccess } from './middleware/requireProjectAccess.js';
 import { createDatasetRepository } from './repositories/datasetRepository.js';
 import { createProjectRepository } from './repositories/projectRepository.js';
-import { createAnswerRouter } from './routes/answer.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { createDatasetUploadRouter } from './routes/datasets.js';
 import { createDocumentRouter } from './routes/documents.js';
@@ -66,7 +65,6 @@ export function createApp() {
   router.use(createDatasetUploadRouter(datasetRepository));
   router.use(createDocumentRouter());
   router.use(createQueryRouter());
-  router.use(createAnswerRouter());
   router.use(createPreprocessingRouter());
   router.use(createFeatureEngineeringRouter());
   router.use(createLlmRouter());

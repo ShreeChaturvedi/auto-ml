@@ -97,7 +97,6 @@ export const env = {
   queryCacheMaxEntries: parseInteger(process.env.QUERY_CACHE_MAX_ENTRIES, 500),
   docChunkSize: parseInteger(process.env.DOC_CHUNK_SIZE, 500),
   docChunkOverlap: parseInteger(process.env.DOC_CHUNK_OVERLAP, 50),
-  answerCacheTtlMs: parseInteger(process.env.ANSWER_CACHE_TTL_MS, 2 * 60 * 1000),
 
   // Execution Environment
   executionTimeoutMs: parseInteger(process.env.EXECUTION_TIMEOUT_MS, 30000),

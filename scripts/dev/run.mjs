@@ -9,7 +9,7 @@ const root = process.cwd();
 const backendEnvPath = join(root, 'backend', '.env');
 const backendEnvExamplePath = join(root, 'backend', '.env.example');
 const defaultDatabaseUrl = 'postgres://postgres:postgres@localhost:5433/automl';
-const postgresImage = 'postgres:16';
+const postgresImage = 'pgvector/pgvector:pg16';
 
 function log(message) {
   console.log(`[dev] ${message}`);
@@ -155,27 +155,40 @@ function listContainerNames({ all = false } = {}) {
     .filter(Boolean);
 }
 
-function readContainerEnv(containerName) {
-  const result = spawnSync(
-    'docker',
-    ['inspect', containerName, '--format', '{{range .Config.Env}}{{println .}}{{end}}'],
-    { encoding: 'utf8' }
-  );
+function readContainerMetadata(containerName) {
+  const result = spawnSync('docker', ['inspect', containerName, '--format', '{{json .Config}}'], {
+    encoding: 'utf8'
+  });
   if (result.status !== 0) {
-    return {};
+    return {
+      env: {},
+      image: ''
+    };
   }
-  return result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .reduce((acc, line) => {
-      const separator = line.indexOf('=');
-      if (separator === -1) return acc;
-      const key = line.slice(0, separator);
-      const value = line.slice(separator + 1);
-      acc[key] = value;
-      return acc;
-    }, {});
+
+  try {
+    const config = JSON.parse(result.stdout.trim());
+    const env = Array.isArray(config?.Env)
+      ? config.Env.reduce((acc, line) => {
+          const separator = line.indexOf('=');
+          if (separator === -1) return acc;
+          const key = line.slice(0, separator);
+          const value = line.slice(separator + 1);
+          acc[key] = value;
+          return acc;
+        }, {})
+      : {};
+
+    return {
+      env,
+      image: typeof config?.Image === 'string' ? config.Image.trim() : ''
+    };
+  } catch {
+    return {
+      env: {},
+      image: ''
+    };
+  }
 }
 
 function ensureDatabaseContainer(dbConfig) {
@@ -190,16 +203,21 @@ function ensureDatabaseContainer(dbConfig) {
   let isRunning = runningContainers.includes(containerName);
 
   if (hasContainer) {
-    const containerEnv = readContainerEnv(containerName);
+    const { env: containerEnv, image: containerImage } = readContainerMetadata(containerName);
     const currentPassword = containerEnv.POSTGRES_PASSWORD ?? '';
     const currentDb = containerEnv.POSTGRES_DB ?? 'postgres';
     const currentUser = containerEnv.POSTGRES_USER ?? 'postgres';
 
+    const recreateReasons = [];
+    if (containerImage !== postgresImage) {
+      recreateReasons.push(`image "${containerImage || 'unknown'}" is incompatible with required "${postgresImage}"`);
+    }
     if (currentPassword !== password || currentDb !== database || currentUser !== username) {
-      log(
-        `Container "${containerName}" credentials do not match backend/.env DATABASE_URL. ` +
-        'Recreating container with backend/.env credentials.'
-      );
+      recreateReasons.push('credentials do not match backend/.env DATABASE_URL');
+    }
+
+    if (recreateReasons.length > 0) {
+      log(`Container "${containerName}" will be recreated because ${recreateReasons.join(' and ')}.`);
       runCommand('docker', ['rm', '-f', containerName]);
       hasContainer = false;
       isRunning = false;

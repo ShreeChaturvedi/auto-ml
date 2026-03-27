@@ -158,5 +158,5 @@ Legacy preprocessing endpoints remain mounted only as deprecated guards and retu
 ## Notes
 
 - Dataset profiling uses the first 5,000 rows for column stats and sampling; row counts reflect the full parsed file.
-- Embeddings are lightweight hash-based vectors (no pgvector yet).
+- Embeddings use `pgvector` for semantic search in Postgres-backed environments.
 - NL→SQL is deterministic and only intended as a placeholder.

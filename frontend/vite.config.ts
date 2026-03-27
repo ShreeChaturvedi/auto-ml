@@ -35,10 +35,13 @@ function getVendorChunkName(id: string): string | undefined {
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      'plotly.js/dist/plotly': 'plotly.js-dist-min',
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      { find: 'plotly.js/dist/plotly', replacement: 'plotly.js-dist-min' },
+      // Exact-match: swap Shiki's full bundle (~300+ grammars) for the web bundle (~57).
+      // Uses regex with $ anchor so subpath imports like shiki/engine/javascript pass through.
+      { find: /^shiki$/, replacement: 'shiki/bundle/web' },
+    ],
     // Ensure React is deduplicated to prevent multiple instances
     dedupe: ['react', 'react-dom'],
   },

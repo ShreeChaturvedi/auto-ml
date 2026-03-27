@@ -210,7 +210,7 @@ function ensureDatabaseContainer(dbConfig) {
 
     const recreateReasons = [];
     if (containerImage !== postgresImage) {
-      recreateReasons.push(`image "${containerImage || 'unknown'}" is incompatible with required "${postgresImage}"`);
+      recreateReasons.push(`image mismatch: "${containerImage || 'unknown'}" vs required "${postgresImage}"`);
     }
     if (currentPassword !== password || currentDb !== database || currentUser !== username) {
       recreateReasons.push('credentials do not match backend/.env DATABASE_URL');

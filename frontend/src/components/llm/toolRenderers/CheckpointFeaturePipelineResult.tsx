@@ -1,6 +1,7 @@
 import { Bookmark, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { asRecord, asString, asStringArray } from '@/lib/typeCoercion';
+import { DetailGrid, StatusBadge, type DetailField } from './sharedComponents';
 
 export interface CheckpointFeaturePipelineOutput {
   status: string;
@@ -20,15 +21,14 @@ export function CheckpointFeaturePipelineResult({ output }: { output: unknown })
   const featureIds = asStringArray(out.featureIds);
   const datasetId = asString(out.datasetId);
 
-  const fields: [string, string | undefined, boolean?][] = [
-    ['Label', label],
-    ['ID', checkpointId ? checkpointId.slice(0, 12) : undefined, true],
-    ['Dataset', datasetId ? datasetId.slice(0, 12) : undefined, true],
+  const fields: DetailField[] = [
+    { label: 'Label', value: label },
+    { label: 'ID', value: checkpointId ? checkpointId.slice(0, 12) : undefined, mono: true },
+    { label: 'Dataset', value: datasetId ? datasetId.slice(0, 12) : undefined, mono: true },
   ];
 
   return (
     <div className="space-y-1.5 text-xs">
-      {/* Header */}
       <div className="flex items-center gap-1.5">
         <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-medium text-foreground">Feature checkpoint</span>
@@ -42,28 +42,11 @@ export function CheckpointFeaturePipelineResult({ output }: { output: unknown })
         >
           {featureIds.length} feature{featureIds.length !== 1 ? 's' : ''}
         </Badge>
-        {status && (
-          <Badge variant="outline" className="text-[10px] capitalize ml-auto">
-            {status.replaceAll('_', ' ')}
-          </Badge>
-        )}
+        {status && <StatusBadge status={status} className="ml-auto" />}
       </div>
 
-      {/* Key-value details */}
-      {fields.some(([, v]) => v) && (
-        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
-          {fields.map(([fieldLabel, value, mono]) =>
-            value ? (
-              <div key={fieldLabel} className="contents">
-                <span>{fieldLabel}</span>
-                <span className={mono ? 'font-mono' : 'text-foreground'}>{value}</span>
-              </div>
-            ) : null,
-          )}
-        </div>
-      )}
+      <DetailGrid fields={fields} />
 
-      {/* Empty features warning */}
       {featureIds.length === 0 && (
         <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
           <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -71,7 +54,6 @@ export function CheckpointFeaturePipelineResult({ output }: { output: unknown })
         </div>
       )}
 
-      {/* Message */}
       {message && <p className="text-muted-foreground">{message}</p>}
     </div>
   );

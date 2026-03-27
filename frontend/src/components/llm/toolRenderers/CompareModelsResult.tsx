@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils';
 import { asRecord, asString, asNumber } from '@/lib/typeCoercion';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, AlertTriangle, Crown } from 'lucide-react';
+import { DetailGrid, StatusBadge, type DetailField } from './sharedComponents';
 
 interface ModelComparison {
   rank: number;
@@ -18,27 +19,23 @@ export interface CompareModelsOutput {
   bestExperiment: string;
 }
 
-/** Subtle rank indicator — colored dot for top 3, muted number for the rest. */
+const RANK_DOT_COLORS: Record<number, string> = {
+  1: 'bg-amber-400',
+  2: 'bg-zinc-400',
+  3: 'bg-amber-700 dark:bg-amber-600',
+};
+
 function RankCell({ rank }: { rank: number }) {
-  const dotColor =
-    rank === 1
-      ? 'bg-amber-400'
-      : rank === 2
-        ? 'bg-zinc-400'
-        : rank === 3
-          ? 'bg-amber-700 dark:bg-amber-600'
-          : undefined;
+  const dotColor = RANK_DOT_COLORS[rank];
 
-  if (dotColor) {
-    return (
-      <span className="flex items-center gap-1.5">
-        <span className={cn('h-1.5 w-1.5 rounded-full', dotColor)} />
-        <span className="text-muted-foreground">#{rank}</span>
-      </span>
-    );
-  }
-
-  return <span className="text-muted-foreground pl-[11px]">#{rank}</span>;
+  return (
+    <span className="flex items-center gap-1.5">
+      {dotColor
+        ? <span className={cn('h-1.5 w-1.5 rounded-full', dotColor)} />
+        : <span className="h-1.5 w-1.5" />}
+      <span className="text-muted-foreground">#{rank}</span>
+    </span>
+  );
 }
 
 function parseComparison(raw: unknown): ModelComparison[] {
@@ -68,33 +65,26 @@ export function CompareModelsResult({ output }: { output: unknown }) {
     return <p className="text-xs text-muted-foreground italic">No experiments evaluated yet.</p>;
   }
 
-  // Single model — compact metric card
   if (comparison.length === 1) {
     const model = comparison[0];
+    const fields: DetailField[] = [
+      { label: 'Type', value: model.modelType },
+      { label: primaryMetric, value: model.primaryMetricValue.toFixed(4), mono: true },
+    ];
     return (
       <div className="space-y-1.5 text-xs">
         <div className="flex items-center gap-1.5 text-foreground font-medium">
           <Trophy className="h-3.5 w-3.5 text-muted-foreground" />
           {model.experimentName}
         </div>
-        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
-          <span>Type</span>
-          <span>{model.modelType}</span>
-          <span>{primaryMetric}</span>
-          <span className="font-mono tabular-nums text-foreground">
-            {model.primaryMetricValue.toFixed(4)}
-          </span>
-        </div>
-        <Badge variant="outline" className="text-[10px] capitalize">
-          {model.status.replaceAll('_', ' ')}
-        </Badge>
+        <DetailGrid fields={fields} />
+        <StatusBadge status={model.status} />
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      {/* Header */}
       <div className="flex items-center gap-1.5 text-xs">
         <Trophy className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-medium text-foreground">Model comparison</span>
@@ -103,7 +93,6 @@ export function CompareModelsResult({ output }: { output: unknown }) {
         </Badge>
       </div>
 
-      {/* Comparison table */}
       <div className="overflow-x-auto">
         <table className="w-full text-[11px]">
           <thead>
@@ -132,9 +121,7 @@ export function CompareModelsResult({ output }: { output: unknown }) {
                   <td className="py-1.5 pr-3 text-foreground font-medium">
                     <span className="flex items-center gap-1.5">
                       {model.experimentName}
-                      {isBest && (
-                        <Crown className="h-3 w-3 text-amber-500" />
-                      )}
+                      {isBest && <Crown className="h-3 w-3 text-amber-500" />}
                     </span>
                   </td>
                   <td className="py-1.5 pr-3 text-muted-foreground">{model.modelType}</td>
@@ -142,9 +129,7 @@ export function CompareModelsResult({ output }: { output: unknown }) {
                     {model.primaryMetricValue.toFixed(4)}
                   </td>
                   <td className="py-1.5">
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">
-                      {model.status.replaceAll('_', ' ')}
-                    </Badge>
+                    <StatusBadge status={model.status} className="px-1.5 py-0" />
                   </td>
                 </tr>
               );
@@ -153,7 +138,6 @@ export function CompareModelsResult({ output }: { output: unknown }) {
         </table>
       </div>
 
-      {/* Missing experiments warning */}
       {missingExperiments.length > 0 && (
         <div className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
           <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />

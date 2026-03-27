@@ -1,4 +1,4 @@
-import { Bookmark } from 'lucide-react';
+import { Bookmark, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { asRecord, asString, asStringArray } from '@/lib/typeCoercion';
 
@@ -20,41 +20,58 @@ export function CheckpointFeaturePipelineResult({ output }: { output: unknown })
   const featureIds = asStringArray(out.featureIds);
   const datasetId = asString(out.datasetId);
 
+  const fields: [string, string | undefined, boolean?][] = [
+    ['Label', label],
+    ['ID', checkpointId ? checkpointId.slice(0, 12) : undefined, true],
+    ['Dataset', datasetId ? datasetId.slice(0, 12) : undefined, true],
+  ];
+
   return (
     <div className="space-y-1.5 text-xs">
-      <div className="flex items-center gap-1.5 text-foreground font-medium">
+      {/* Header */}
+      <div className="flex items-center gap-1.5">
         <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
-        Feature pipeline checkpoint
-        {status && (
-          <span className="text-muted-foreground font-normal capitalize">· {status.replaceAll('_', ' ')}</span>
-        )}
-      </div>
-      {label && <p className="text-muted-foreground">Label: {label}</p>}
-      {checkpointId && (
-        <p className="text-muted-foreground">
-          ID: <span className="font-mono">{checkpointId.slice(0, 12)}</span>
-        </p>
-      )}
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <span>Features:</span>
+        <span className="font-medium text-foreground">Feature checkpoint</span>
         <Badge
           variant="outline"
-          className={featureIds.length > 0
-            ? 'text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
-            : 'text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800'
+          className={
+            featureIds.length > 0
+              ? 'text-[10px] text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700'
+              : 'text-[10px] text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700'
           }
         >
-          {featureIds.length}
+          {featureIds.length} feature{featureIds.length !== 1 ? 's' : ''}
         </Badge>
+        {status && (
+          <Badge variant="outline" className="text-[10px] capitalize ml-auto">
+            {status.replaceAll('_', ' ')}
+          </Badge>
+        )}
       </div>
+
+      {/* Key-value details */}
+      {fields.some(([, v]) => v) && (
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
+          {fields.map(([fieldLabel, value, mono]) =>
+            value ? (
+              <div key={fieldLabel} className="contents">
+                <span>{fieldLabel}</span>
+                <span className={mono ? 'font-mono' : 'text-foreground'}>{value}</span>
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
+
+      {/* Empty features warning */}
       {featureIds.length === 0 && (
-        <p className="text-amber-600 dark:text-amber-400">⚠ No features included in this checkpoint.</p>
+        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          <span>No features included in this checkpoint.</span>
+        </div>
       )}
-      {datasetId && (
-        <p className="text-muted-foreground">
-          Dataset: <span className="font-mono">{datasetId.slice(0, 12)}</span>
-        </p>
-      )}
+
+      {/* Message */}
       {message && <p className="text-muted-foreground">{message}</p>}
     </div>
   );

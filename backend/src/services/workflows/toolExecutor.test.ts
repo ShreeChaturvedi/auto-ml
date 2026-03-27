@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
-import { MAX_SINGLE_TOOL_CALLS } from './graphState.js';
+import { MAX_IDENTICAL_TOOL_CALLS, MAX_SINGLE_TOOL_CALLS } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
 import { executeToolsNode } from './toolExecutor.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
@@ -211,6 +211,7 @@ describe('executeToolsNode', () => {
     state.run.currentNode = 'configure_experiment';
 
     // Populate history with MAX_SINGLE_TOOL_CALLS calls already made
+    // Each call uses different args so they don't trigger the identical-call check
     state.toolCallHistory = Array.from({ length: MAX_SINGLE_TOOL_CALLS }, (_, i) => ({
       id: `prev-call-${i}`,
       tool: 'configure_experiment',
@@ -244,7 +245,7 @@ describe('executeToolsNode', () => {
     state.run.phase = 'training' as WorkflowRunState['phase'];
     state.run.currentNode = 'configure_experiment';
 
-    // History has fewer than the limit
+    // History has fewer than the limit; each call uses different args
     state.toolCallHistory = Array.from({ length: MAX_SINGLE_TOOL_CALLS - 1 }, (_, i) => ({
       id: `prev-call-${i}`,
       tool: 'configure_experiment',
@@ -263,5 +264,135 @@ describe('executeToolsNode', () => {
 
     expect(result.nextStep).toBe('prepare');
     expect(result.errorCode).toBeNull();
+  });
+
+  it('fails when the same tool is called with identical arguments more than MAX_IDENTICAL_TOOL_CALLS times', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
+    executePhaseSpecificToolMock.mockResolvedValue({ output: { ok: true } });
+
+    const state = createState();
+    state.turn.phase = 'preprocessing';
+    state.run.phase = 'preprocessing';
+    state.run.currentNode = 'plan_step';
+
+    // All calls have the exact same arguments — the model is stuck
+    const identicalArgs = { runId: 'r1', stepId: 's1' };
+    state.toolCallHistory = Array.from({ length: MAX_IDENTICAL_TOOL_CALLS }, (_, i) => ({
+      id: `stuck-call-${i}`,
+      tool: 'propose_transformation_step',
+      args: identicalArgs
+    }));
+
+    state.pendingToolCalls = [{
+      id: 'stuck-call-final',
+      tool: 'propose_transformation_step',
+      args: identicalArgs
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('fail');
+    expect(result.errorCode).toBe('TOOL_CALL_LIMIT_EXCEEDED');
+    expect(result.errorMessage).toContain('identical arguments');
+    expect(result.errorMessage).toContain('propose_transformation_step');
+  });
+
+  it('does not fail for repeated tool with different arguments within the raw-count limit', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
+    executePhaseSpecificToolMock.mockResolvedValue({ output: { ok: true } });
+
+    const state = createState();
+    state.turn.phase = 'feature_engineering' as WorkflowTurnRequest['phase'];
+    state.run.phase = 'feature_engineering' as WorkflowRunState['phase'];
+    state.run.currentNode = 'propose_feature';
+
+    // 8 calls with different args — below the default MAX_SINGLE_TOOL_CALLS (10)
+    state.toolCallHistory = Array.from({ length: 8 }, (_, i) => ({
+      id: `feature-call-${i}`,
+      tool: 'propose_feature',
+      args: { featureName: `feature_${i}` }
+    }));
+
+    state.pendingToolCalls = [{
+      id: 'feature-call-9',
+      tool: 'propose_feature',
+      args: { featureName: 'feature_9' }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
+  });
+
+  it('respects per-phase maxSingleToolCalls override', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
+    phaseConfig.maxSingleToolCalls = 15;
+    executePhaseSpecificToolMock.mockResolvedValue({ output: { ok: true } });
+
+    const state = createState();
+    state.turn.phase = 'preprocessing';
+    state.run.phase = 'preprocessing';
+    state.run.currentNode = 'plan_step';
+
+    // 12 calls with different args — would exceed default (10) but under override (15)
+    state.toolCallHistory = Array.from({ length: 12 }, (_, i) => ({
+      id: `pp-call-${i}`,
+      tool: 'profile_active_dataset',
+      args: { variant: `v${i}` }
+    }));
+
+    state.pendingToolCalls = [{
+      id: 'pp-call-13',
+      tool: 'profile_active_dataset',
+      args: { variant: 'v13' }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
+  });
+
+  it('still fails when per-phase override is exceeded', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
+    phaseConfig.maxSingleToolCalls = 6;
+    executePhaseSpecificToolMock.mockResolvedValue({ output: { ok: true } });
+
+    const state = createState();
+    state.turn.phase = 'preprocessing';
+    state.run.phase = 'preprocessing';
+    state.run.currentNode = 'plan_step';
+
+    // 6 calls + 1 pending = 7, exceeds override of 6
+    state.toolCallHistory = Array.from({ length: 6 }, (_, i) => ({
+      id: `pp-call-${i}`,
+      tool: 'profile_active_dataset',
+      args: { variant: `v${i}` }
+    }));
+
+    state.pendingToolCalls = [{
+      id: 'pp-call-overflow',
+      tool: 'profile_active_dataset',
+      args: { variant: 'v-overflow' }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('fail');
+    expect(result.errorCode).toBe('TOOL_CALL_LIMIT_EXCEEDED');
+    expect(result.errorMessage).toContain('profile_active_dataset');
   });
 });

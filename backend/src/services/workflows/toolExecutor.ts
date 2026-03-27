@@ -6,7 +6,7 @@ import { ToolCallSchema } from '../../types/llm.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
 import { buildToolEvent } from './eventWriter.js';
-import { MAX_SINGLE_TOOL_CALLS, MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
+import { MAX_IDENTICAL_TOOL_CALLS, MAX_SINGLE_TOOL_CALLS, MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
 import { extractConfigurable } from './phases/types.js';
 import type { WorkflowPendingInputKind } from './types.js';
@@ -159,33 +159,71 @@ export async function executeToolsNode(
     }
   }
 
-  // Detect per-tool repetition: if any single tool has been called more than
-  // MAX_SINGLE_TOOL_CALLS times in this turn, the model is looping without
-  // progressing through the workflow lifecycle.
+  // Detect per-tool repetition using two complementary heuristics:
+  //
+  // 1. **Identical-call detection** (MAX_IDENTICAL_TOOL_CALLS):  If the same
+  //    tool is called with the *exact same* serialized arguments N times, the
+  //    model is truly stuck — not iterating toward a fix.
+  //
+  // 2. **Raw-count detection** (MAX_SINGLE_TOOL_CALLS / phase override):
+  //    Even with different arguments, a single tool invoked too many times
+  //    indicates the workflow is not progressing through its lifecycle.
+  //
+  // The per-phase override (`phaseConfig.maxSingleToolCalls`) lets phases
+  // like preprocessing and feature engineering raise the raw-count ceiling
+  // without affecting tighter phases like training.
+
   const allToolCalls = [...state.toolCallHistory, ...state.pendingToolCalls];
+
+  // Per-tool total counts
   const toolCallCounts = new Map<string, number>();
+  // Per-(tool + serialized args) counts for identical-call detection
+  const identicalCallCounts = new Map<string, number>();
+
   for (const call of allToolCalls) {
     toolCallCounts.set(call.tool, (toolCallCounts.get(call.tool) ?? 0) + 1);
+
+    const argsKey = `${call.tool}::${JSON.stringify(call.args ?? {})}`;
+    identicalCallCounts.set(argsKey, (identicalCallCounts.get(argsKey) ?? 0) + 1);
   }
-  let repeatedTool: string | undefined;
-  for (const [tool, count] of toolCallCounts) {
-    if (count > MAX_SINGLE_TOOL_CALLS) {
-      repeatedTool = tool;
+
+  // Check for identical (stuck) loops first — these are always a bug.
+  let stuckTool: string | undefined;
+  let stuckCount = 0;
+  for (const [key, count] of identicalCallCounts) {
+    if (count > MAX_IDENTICAL_TOOL_CALLS) {
+      stuckTool = key.split('::')[0];
+      stuckCount = count;
       break;
+    }
+  }
+
+  // Check raw-count limit (respecting per-phase override).
+  const effectiveLimit = phaseConfig?.maxSingleToolCalls ?? MAX_SINGLE_TOOL_CALLS;
+  let repeatedTool: string | undefined;
+  if (!stuckTool) {
+    for (const [tool, count] of toolCallCounts) {
+      if (count > effectiveLimit) {
+        repeatedTool = tool;
+        break;
+      }
     }
   }
 
   const pauseDetails = getPauseDetails(nextResults);
   const hasExceededIterations = state.iteration + 1 >= MAX_WORKFLOW_ITERATIONS;
+  const hasStuckLoop = stuckTool !== undefined;
   const hasToolRepetition = repeatedTool !== undefined;
 
-  const isFailing = hasExceededIterations || hasToolRepetition;
-  const errorMessage = hasToolRepetition
-    ? `Training could not progress \u2014 the model called "${repeatedTool}" ${toolCallCounts.get(repeatedTool!)!} times without advancing. Try a simpler prompt or fewer experiments.`
-    : hasExceededIterations
-      ? 'Workflow exceeded the maximum number of model/tool iterations for one turn.'
-      : null;
-  const errorCode = hasToolRepetition
+  const isFailing = hasExceededIterations || hasStuckLoop || hasToolRepetition;
+  const errorMessage = hasStuckLoop
+    ? `Workflow stuck \u2014 the model called "${stuckTool}" ${stuckCount} times with identical arguments. Try rephrasing your request.`
+    : hasToolRepetition
+      ? `Tool call limit exceeded \u2014 "${repeatedTool}" was called ${toolCallCounts.get(repeatedTool!)!} times without advancing. Try simplifying your request or retrying.`
+      : hasExceededIterations
+        ? 'Workflow exceeded the maximum number of model/tool iterations for one turn.'
+        : null;
+  const errorCode = (hasStuckLoop || hasToolRepetition)
     ? 'TOOL_CALL_LIMIT_EXCEEDED'
     : hasExceededIterations
       ? 'MAX_ITERATIONS_EXCEEDED'

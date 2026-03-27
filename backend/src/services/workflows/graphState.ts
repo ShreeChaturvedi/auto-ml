@@ -18,7 +18,15 @@ export const MAX_WORKFLOW_ITERATIONS = 24;
 // Cap how many times any single tool can be called in one turn.
 // Prevents the LLM from looping on a stage (e.g. configure_experiment)
 // without progressing through the workflow lifecycle.
-export const MAX_SINGLE_TOOL_CALLS = 5;
+// Default raised from 5 → 10 to support complex multi-step phases like
+// feature engineering (propose_feature×6+) and preprocessing code retries.
+export const MAX_SINGLE_TOOL_CALLS = 10;
+
+// Stricter limit for *identical* calls (same tool + same arguments).
+// When the model passes the exact same arguments repeatedly it is truly stuck,
+// not iterating toward a fix.  This catches stuck loops earlier than the raw
+// count check.
+export const MAX_IDENTICAL_TOOL_CALLS = 3;
 
 export const WORKFLOW_GRAPH_RECURSION_LIMIT = MAX_WORKFLOW_ITERATIONS * 3 + 8;
 

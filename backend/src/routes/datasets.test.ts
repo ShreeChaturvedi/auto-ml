@@ -24,6 +24,10 @@ vi.mock('../services/datasetLoader.js', async (importOriginal) => {
       tableName: 'mock_table',
       rowsLoaded: 100
     }),
+    streamLoadXlsxIntoPostgres: vi.fn().mockResolvedValue({
+      tableName: 'mock_table',
+      rowsLoaded: 100
+    }),
     parseDatasetRows: vi.fn().mockImplementation((buffer: Buffer, fileType: string) => {
       const content = buffer.toString('utf8');
 
@@ -52,6 +56,17 @@ vi.mock('../services/datasetLoader.js', async (importOriginal) => {
         });
         return row;
       });
+    }),
+    parseXlsxSample: vi.fn().mockResolvedValue({
+      headers: ['id', 'name'],
+      sample: [{ id: 1, name: 'Test' }],
+      totalRows: 1
+    }),
+    streamXlsxRows: vi.fn().mockResolvedValue({ totalRows: 0 }),
+    streamXlsxSinglePass: vi.fn().mockResolvedValue({
+      headers: ['id', 'name'],
+      sample: [{ id: 1, name: 'Test' }],
+      totalRows: 1
     }),
     sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
       const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();

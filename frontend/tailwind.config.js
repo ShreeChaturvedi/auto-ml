@@ -84,8 +84,8 @@ export default {
         sticky: '20',
         nav: '30',
         overlay: '50',
-        tooltip: '60',
-        toast: '70',
+        tooltip: '9999',
+        toast: '10000',
       },
       transitionTimingFunction: {
         'expo-out': 'cubic-bezier(0.16, 1, 0.3, 1)',

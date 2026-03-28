@@ -180,7 +180,7 @@ export function QuerySqlEditor({
 
       // Cmd/Ctrl + Enter to execute
       editorInstance.addCommand(
-        (window.navigator.platform.toLowerCase().includes('mac') ? 2048 : 2176) | 3,
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
         () => onExecuteRef.current()
       );
 

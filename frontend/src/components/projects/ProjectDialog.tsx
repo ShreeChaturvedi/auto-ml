@@ -321,7 +321,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
             <DialogTitle>Choose an Icon</DialogTitle>
             <DialogDescription>Select an icon for your project</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-6 gap-2 py-4">
+          <div className="grid grid-cols-6 gap-2 place-items-center py-4">
             {projectIcons.map((iconName) => {
               const Icon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[iconName];
               return (
@@ -330,10 +330,10 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                   type="button"
                   onClick={() => { setValue('icon', iconName); setIsIconPickerOpen(false); }}
                   className={cn(
-                    'flex h-12 w-12 items-center justify-center rounded-md border-2 transition-[transform,border-color,background-color] hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'flex h-12 w-12 items-center justify-center rounded-md border-2 border-transparent transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     selectedIcon === iconName
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50 hover:bg-accent'
+                      ? 'ring-2 ring-primary bg-primary/10'
+                      : 'hover:bg-accent hover:border-primary/50'
                   )}
                   title={iconName}
                 >

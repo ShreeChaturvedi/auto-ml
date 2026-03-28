@@ -101,7 +101,7 @@ export function FeatureEngineeringToolbarRight({
   return (
     <>
       <Select value={selectedDatasetId} onValueChange={onDatasetSelect} disabled={datasetOptions.length === 0}>
-        <SelectTrigger className="h-7 w-[180px] text-xs">
+        <SelectTrigger className="h-7 min-w-0 max-w-[180px] flex-1 text-xs">
           <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
           <SelectValue placeholder="Dataset" />
         </SelectTrigger>
@@ -115,7 +115,7 @@ export function FeatureEngineeringToolbarRight({
       </Select>
 
       <Select value={selectedTargetColumn} onValueChange={onTargetColumnSelect} disabled={targetColumns.length === 0}>
-        <SelectTrigger className="h-7 w-[150px] text-xs">
+        <SelectTrigger className="h-7 min-w-0 max-w-[150px] flex-1 text-xs">
           <SelectValue placeholder="Target column" />
         </SelectTrigger>
         <SelectContent>

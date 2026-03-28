@@ -52,6 +52,7 @@ export function UploadArea() {
   const initializedProjectIdRef = useRef<string | null>(null);
   const persistedMetadataRef = useRef<string>('');
   const syncingFromMetadataRef = useRef(false);
+  const creatingPlanRef = useRef(false);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -94,7 +95,12 @@ export function UploadArea() {
   // Handle ?newPlan=1 — create chat and start processing
   useEffect(() => {
     if (!activeProject) return;
-    if (searchParams.get('newPlan') !== '1') return;
+    if (searchParams.get('newPlan') !== '1') {
+      creatingPlanRef.current = false;
+      return;
+    }
+    if (creatingPlanRef.current) return;
+    creatingPlanRef.current = true;
 
     // Count existing plans and chats for naming
     const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;

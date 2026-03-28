@@ -100,7 +100,7 @@ export function ResetPasswordForm() {
               </div>
             </div>
             <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-white">Invalid reset link</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Invalid reset link</h1>
               <p className="text-sm text-neutral-400">
                 This password reset link is invalid or has expired. Please request a new one.
               </p>
@@ -129,7 +129,7 @@ export function ResetPasswordForm() {
               </div>
             </div>
             <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-white">Password reset successful</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Password reset successful</h1>
               <p className="text-sm text-neutral-400">
                 Your password has been changed. Redirecting to login...
               </p>
@@ -151,7 +151,7 @@ export function ResetPasswordForm() {
                 <KeyRound className="h-7 w-7 text-neutral-300" />
               </div>
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Reset your password</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Reset your password</h1>
             <p className="text-sm text-neutral-400">
               Enter a new password for your account
             </p>

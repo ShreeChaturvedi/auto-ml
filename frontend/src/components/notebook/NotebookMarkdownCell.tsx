@@ -55,7 +55,7 @@ const MARKDOWN_EDITOR_OPTIONS = {
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   fontSize: 13,
-  fontFamily: 'JetBrains Mono, Menlo, Monaco, monospace',
+  fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
   lineNumbers: 'off' as const,
   glyphMargin: false,
   folding: false,

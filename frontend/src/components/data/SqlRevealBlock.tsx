@@ -143,7 +143,7 @@ function SqlRevealBlock({
                   roundedSelection: false,
                   scrollBeyondLastLine: false,
                   fontSize: 13,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
                   wordWrap: 'on',
                   automaticLayout: true,
                   padding: { top: 8, bottom: 8 },
@@ -215,7 +215,7 @@ function SqlRevealBlock({
                 <span
                   key={`sql-gen-dot-${index}`}
                   className={cn(
-                    'h-1.5 w-1.5 rounded-full bg-muted-foreground/30 transition-all duration-300',
+                    'h-1.5 w-1.5 rounded-full bg-muted-foreground/30 transition-colors duration-300',
                     generationStep === index && 'sql-generation-dot-active',
                   )}
                 />

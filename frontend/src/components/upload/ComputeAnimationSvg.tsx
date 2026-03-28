@@ -501,7 +501,7 @@ export function ComputeAnimationSvg({
           y="410"
           textAnchor="middle"
           fontSize="14"
-          fontFamily="system-ui, sans-serif"
+          fontFamily="'Plus Jakarta Sans', system-ui, sans-serif"
           fontWeight="500"
           style={{ fill: 'hsl(var(--muted-foreground))', transition: 'opacity 0.4s ease' }}
         >

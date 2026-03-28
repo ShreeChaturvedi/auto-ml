@@ -103,7 +103,7 @@ export function CorrelationsPanel({
           {/* Scatter reveal (animated expand / collapse) */}
           <div
             className={cn(
-              'overflow-hidden transition-all duration-300',
+              'overflow-hidden transition-[max-height,opacity] duration-300',
               selectedCell ? 'max-h-[500px] opacity-100 mt-4' : 'max-h-0 opacity-0',
             )}
           >

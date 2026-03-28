@@ -219,7 +219,7 @@ export function CodeCell({
               lineDecorationsWidth: 8,
               scrollBeyondLastLine: false,
               fontSize: 12,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
               wordWrap: 'on',
               automaticLayout: true,
               padding: { top: 6, bottom: 6 },

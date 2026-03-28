@@ -341,7 +341,7 @@ export function NotebookCellComponent({
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fontSize: 13,
-            fontFamily: 'JetBrains Mono, Menlo, Monaco, monospace',
+            fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
             lineNumbers: 'on',
             lineNumbersMinChars: 3,
             glyphMargin: false,

@@ -318,7 +318,7 @@ export function QuerySqlEditor({
             scrollbar: { vertical: 'hidden', horizontal: 'hidden', alwaysConsumeMouseWheel: false },
             readOnly: isExecuting,
             fontSize: 13,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
             wordWrap: 'on',
             automaticLayout: true,
             quickSuggestions: true,

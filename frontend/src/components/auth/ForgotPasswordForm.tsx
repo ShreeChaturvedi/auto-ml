@@ -63,7 +63,7 @@ export function ForgotPasswordForm() {
               </div>
             </div>
             <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-white">Check your email</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Check your email</h1>
               <p className="text-sm text-neutral-400">
                 If an account exists with that email address, we've sent instructions
                 to reset your password.
@@ -96,7 +96,7 @@ export function ForgotPasswordForm() {
                 <Mail className="h-7 w-7 text-neutral-300" />
               </div>
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Forgot password?</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Forgot password?</h1>
             <p className="text-sm text-neutral-400">
               Enter your email address and we'll send you instructions to reset your password.
             </p>

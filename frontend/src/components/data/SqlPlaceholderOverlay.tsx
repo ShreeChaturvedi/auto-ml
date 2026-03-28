@@ -74,7 +74,7 @@ export function SqlPlaceholderOverlay({
       style={{
         left: editorLeftOffset,
         paddingTop: 8,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
         fontSize: 13,
         lineHeight: '18px',
       }}

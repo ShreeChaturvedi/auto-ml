@@ -20,7 +20,7 @@ import DOMPurify from 'dompurify';
 const SHADOW_STYLES = `
   :host {
     display: block;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: "Monaspace Neon", "JetBrains Mono", ui-monospace, monospace;
     font-size: 12px;
     line-height: 1.5;
     color: hsl(var(--foreground));

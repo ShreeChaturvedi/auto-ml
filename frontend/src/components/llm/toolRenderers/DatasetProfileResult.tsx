@@ -50,7 +50,7 @@ export function DatasetProfileResult({ data }: { data: DatasetProfileOutput }) {
           </Badge>
         )}
         {data.fileType && (
-          <Badge variant="outline" className="text-[10px] uppercase font-mono">
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-mono">
             {data.fileType}
           </Badge>
         )}

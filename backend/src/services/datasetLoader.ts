@@ -20,11 +20,15 @@ export { parseDatasetRows, parseXlsxFromFile, parseXlsxSample, streamXlsxRows, s
 export type { XlsxSampleResult } from './dataLoading/fileParser.js';
 export { sanitizeTableName } from './dataLoading/schemaInference.js';
 
+export function buildDatasetTableName(filename: string, datasetId: string): string {
+  return sanitizeTableName(filename, datasetId, true);
+}
+
 /** Resolve the Postgres table name for a dataset, preferring stored metadata. */
 export function resolveDatasetTableName(dataset: Pick<DatasetProfile, 'datasetId' | 'filename' | 'metadata'>): string {
   return typeof dataset.metadata?.tableName === 'string'
     ? dataset.metadata.tableName
-    : sanitizeTableName(dataset.filename, dataset.datasetId);
+    : buildDatasetTableName(dataset.filename, dataset.datasetId);
 }
 
 /**
@@ -36,6 +40,7 @@ export async function loadDatasetIntoPostgres(params: {
   fileType: 'csv' | 'json' | 'xlsx';
   buffer: Buffer;
   columns: DatasetProfileColumn[];
+  tableName?: string;
   rows?: Record<string, unknown>[];
   strictMode?: boolean;
   strictColumnNames?: string[];
@@ -46,12 +51,13 @@ export async function loadDatasetIntoPostgres(params: {
     fileType,
     buffer,
     columns,
+    tableName: requestedTableName,
     strictMode = false,
     strictColumnNames
   } = params;
 
   // Sanitize filename to create valid table name
-  const tableName = sanitizeTableName(filename, datasetId);
+  const tableName = requestedTableName ?? sanitizeTableName(filename, datasetId);
 
   // Parse data based on file type
   const rows = params.rows ?? await parseDatasetRows(buffer, fileType, filename);
@@ -107,9 +113,10 @@ export async function streamLoadXlsxIntoPostgres(params: {
   filename: string;
   filePath: string;
   columns: DatasetProfileColumn[];
+  tableName?: string;
 }): Promise<{ tableName: string; rowsLoaded: number }> {
-  const { datasetId, filename, filePath, columns } = params;
-  const tableName = sanitizeTableName(filename, datasetId);
+  const { datasetId, filename, filePath, columns, tableName: requestedTableName } = params;
+  const tableName = requestedTableName ?? sanitizeTableName(filename, datasetId);
 
   const pool = getDbPool();
   const client = await pool.connect();

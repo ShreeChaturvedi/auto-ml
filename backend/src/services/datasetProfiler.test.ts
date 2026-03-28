@@ -30,4 +30,18 @@ describe('datasetProfiler', () => {
     expect(column).toBeDefined();
     expect(column?.dtype).toBe('float');
   });
+
+  it('does not misclassify identifier-like values as dates', () => {
+    const rows = [
+      { ticket_id: 'TK-0000993', customer_id: 'NC-10191', agent_id: 'A-005', created_at: '2023-06-25' },
+      { ticket_id: 'TK-0006288', customer_id: 'NC-10989', agent_id: 'A-016', created_at: '2025-04-27' }
+    ];
+
+    const result = profileDatasetRows(rows);
+
+    expect(result.columns.find((item) => item.name === 'ticket_id')?.dtype).toBe('string');
+    expect(result.columns.find((item) => item.name === 'customer_id')?.dtype).toBe('string');
+    expect(result.columns.find((item) => item.name === 'agent_id')?.dtype).toBe('string');
+    expect(result.columns.find((item) => item.name === 'created_at')?.dtype).toBe('date');
+  });
 });

@@ -11,7 +11,9 @@ import { validateUuidParams } from '../middleware/validateParams.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
-import { loadDatasetIntoPostgres, resolveDatasetTableName } from '../services/datasetLoader.js';
+import { resolveDatasetTableName } from '../services/datasetLoader.js';
+import { ensureProjectDatasetSqlNames, resolveDatasetSqlName } from '../services/datasetSqlNames.js';
+import { getDatasetQueryState, rebuildDatasetTableFromSource } from '../services/datasetTableManager.js';
 import { getWorkflowRepository } from '../services/workflows/repository/index.js';
 import type { AuthRequest } from '../types/auth.js';
 import { getErrorMessage, sendNotFound } from '../utils/errors.js';
@@ -33,12 +35,41 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     asyncHandler(async (req, res) => {
       const projectId = req.query.projectId as string | undefined;
       const datasets = projectId
-        ? await datasetRepository.listByProject(projectId)
+        ? await ensureProjectDatasetSqlNames(projectId, datasetRepository)
         : await datasetRepository.list();
 
-      const withTableNames = datasets.map((dataset) => ({
-        ...dataset,
-        tableName: resolveDatasetTableName(dataset)
+      const hydratedDatasets = projectId
+        ? datasets
+        : await (async () => {
+            const byId = new Map(datasets.map((dataset) => [dataset.datasetId, dataset]));
+            const projectIds = [...new Set(
+              datasets
+                .map((dataset) => dataset.projectId)
+                .filter((value): value is string => Boolean(value))
+            )];
+
+            const projects = await Promise.all(
+              projectIds.map((currentProjectId) => ensureProjectDatasetSqlNames(currentProjectId, datasetRepository))
+            );
+
+            for (const projectDatasets of projects) {
+              for (const dataset of projectDatasets) {
+                byId.set(dataset.datasetId, dataset);
+              }
+            }
+
+            return datasets.map((dataset) => byId.get(dataset.datasetId) ?? dataset);
+          })();
+
+      const withTableNames = await Promise.all(hydratedDatasets.map(async (dataset) => {
+        const queryState = await getDatasetQueryState(dataset);
+        return {
+          ...dataset,
+          tableName: resolveDatasetSqlName(dataset),
+          physicalTableName: queryState.tableName,
+          queryable: queryState.queryable,
+          queryError: queryState.queryError
+        };
       }));
 
       res.json({ datasets: withTableNames });
@@ -232,9 +263,8 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         try {
           const filePath = getDatasetPath(dataset.datasetId, dataset.filename);
 
-          let buffer: Buffer;
           try {
-            buffer = readFileSync(filePath);
+            readFileSync(filePath);
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
               results.skipped.push(dataset.datasetId);
@@ -242,26 +272,17 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
             }
             throw error;
           }
-          const { tableName, rowsLoaded } = await loadDatasetIntoPostgres({
-            datasetId: dataset.datasetId,
-            filename: dataset.filename,
-            fileType: dataset.fileType,
-            buffer,
-            columns: dataset.columns
-          });
+
+          const rebuiltDataset = await rebuildDatasetTableFromSource(dataset, datasetRepository);
+          const tableName =
+            typeof rebuiltDataset.metadata?.tableName === 'string'
+              ? rebuiltDataset.metadata.tableName
+              : dataset.filename;
+          const rowsLoaded = rebuiltDataset.nRows;
 
           appLogger.info(
             `[datasets] Migrated ${dataset.filename} -> "${tableName}" (${rowsLoaded} rows)`
           );
-          await datasetRepository.update(dataset.datasetId, (current) => ({
-            ...current,
-            nRows: rowsLoaded,
-            metadata: {
-              ...(current.metadata ?? {}),
-              tableName,
-              rowsLoaded
-            }
-          }));
           results.migrated.push(dataset.datasetId);
         } catch (error) {
           appLogger.error(

@@ -1,35 +1,11 @@
+import { astVisitor, parseFirst, type Statement } from 'pgsql-ast-parser';
+
+import {
+  BLOCKED_SQL_TABLE_PREFIXES,
+  BLOCKED_SQL_TABLES
+} from './sqlTablePolicy.js';
+
 const READ_ONLY_KEYWORDS = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'grant', 'revoke', 'truncate'];
-
-// Application tables that must never be queried through the SQL endpoint.
-const BLOCKED_TABLES = new Set([
-  'users',
-  'refresh_tokens',
-  'password_reset_tokens',
-  'user_settings',
-  'projects',
-  'datasets',
-  'documents',
-  'chunks',
-  'embeddings',
-  'query_results',
-  'query_cache',
-  'notebooks',
-  'cells',
-  'cell_outputs',
-  'nl_placeholder_suggestions',
-  'tuning_studies',
-  'models',
-  'savepoints',
-  'workflow_runs',
-  'workflow_events',
-  'workflow_artifacts',
-  'workflow_approvals',
-  'workflow_handoffs',
-  'workflow_notebook_bindings'
-]);
-
-// System catalog prefixes that must be blocked.
-const BLOCKED_TABLE_PREFIXES = ['pg_', 'information_schema'];
 
 export interface ValidateSqlOptions {
   defaultLimit: number;
@@ -69,33 +45,55 @@ function stripStringLiterals(sql: string): string {
  * including optional schema-qualified and double-quoted identifiers.
  */
 export function extractTableReferences(sql: string): string[] {
-  const cleaned = stripStringLiterals(sql);
-  const tables: string[] = [];
+  const statement = parseFirst(stripStringLiterals(sql));
+  const tables = new Set<string>();
+  const scopeStack: Set<string>[] = [];
 
-  // Identifier: bare (a.b or a), or double-quoted ("table")
-  const idToken = String.raw`(?:"[^"]+"|\b[a-z_]\w*\b)(?:\.(?:"[^"]+"|\b[a-z_]\w*\b))?`;
+  const normalize = (value: string | undefined) =>
+    value?.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"').toLowerCase() ?? '';
 
-  // Match the first table after FROM/JOIN and any comma-separated continuations
-  const fromPattern = new RegExp(
-    String.raw`\b(?:from|join)\s+(${idToken})` +
-    String.raw`(?:\s*,\s*(${idToken}))*`,
-    'gi'
-  );
+  const isVisibleCte = (name: string) => scopeStack.some((scope) => scope.has(name));
 
-  let match: RegExpExecArray | null;
-  while ((match = fromPattern.exec(cleaned)) !== null) {
-    // Capture group 1 is the first table, group 2 is the last comma-separated table.
-    // Re-extract all comma-separated tables from the full match to get intermediates.
-    const fullFragment = match[0].replace(/^(?:from|join)\s+/i, '');
-    const idPattern = new RegExp(idToken, 'gi');
-    let idMatch: RegExpExecArray | null;
-    while ((idMatch = idPattern.exec(fullFragment)) !== null) {
-      const raw = idMatch[0].replace(/"/g, '').trim();
-      if (raw) tables.push(raw.toLowerCase());
+  const visitor = astVisitor((visit) => ({
+    with: (value) => {
+      const visibleBindings = new Set<string>();
+      for (const binding of value.bind) {
+        scopeStack.push(new Set(visibleBindings));
+        try {
+          visit.statement(binding.statement as unknown as Statement);
+        } finally {
+          scopeStack.pop();
+          visibleBindings.add(normalize(binding.alias.name));
+        }
+      }
+
+      scopeStack.push(new Set(visibleBindings));
+      try {
+        visit.statement(value.in as unknown as Statement);
+      } finally {
+        scopeStack.pop();
+      }
+    },
+    withRecursive: (value) => {
+      scopeStack.push(new Set([normalize(value.alias.name)]));
+      try {
+        visit.super().withRecursive(value);
+      } finally {
+        scopeStack.pop();
+      }
+    },
+    fromTable: (from) => {
+      const tableName = normalize(from.name.name);
+      const schemaName = normalize(from.name.schema);
+      if (tableName && !isVisibleCte(tableName)) {
+        tables.add(schemaName ? `${schemaName}.${tableName}` : tableName);
+      }
+      visit.super().fromTable(from);
     }
-  }
+  }));
 
-  return [...new Set(tables)];
+  visitor.statement(statement);
+  return [...tables];
 }
 
 /**
@@ -109,10 +107,10 @@ function assertNoBlockedTables(sql: string, allowedTables?: Set<string>): void {
     // Strip schema prefix for comparison (e.g. "public.users" -> "users")
     const unqualified = table.includes('.') ? table.split('.').pop()! : table;
     if (allowedTables?.has(unqualified)) continue;
-    if (BLOCKED_TABLES.has(unqualified)) {
+    if (BLOCKED_SQL_TABLES.has(unqualified)) {
       throw new Error(`Access to table "${unqualified}" is not allowed`);
     }
-    for (const prefix of BLOCKED_TABLE_PREFIXES) {
+    for (const prefix of BLOCKED_SQL_TABLE_PREFIXES) {
       if (unqualified.startsWith(prefix) || table.startsWith(prefix)) {
         throw new Error(`Access to system catalog "${table}" is not allowed`);
       }
@@ -156,7 +154,7 @@ export function validateReadOnlySql(sql: string, options: ValidateSqlOptions): V
   // Block access to sensitive application tables and system catalogs
   assertNoBlockedTables(normalizedStatement, options.allowedTables);
 
-  const limitRegex = /\blimit\s+\d+/i;
+  const limitRegex = /\blimit\s*(\(\s*)?\d+/i;
   if (!limitRegex.test(normalizedStatement)) {
     const normalized = `${normalizedStatement} LIMIT ${options.defaultLimit}`;
     return { normalizedSql: normalized, limitAppended: true };

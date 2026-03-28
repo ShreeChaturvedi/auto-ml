@@ -7,7 +7,7 @@ import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { resolveDatasetTableName } from '../services/datasetLoader.js';
+import { ensureProjectDatasetSqlNames, resolveDatasetSqlName } from '../services/datasetSqlNames.js';
 import {
   executePreprocessingTool,
   getPreprocessingRunSnapshot,
@@ -53,12 +53,12 @@ export function createPreprocessingRouter() {
       const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
       let datasets = await datasetRepository.list();
       if (projectId) {
-        datasets = datasets.filter((dataset) => dataset.projectId === projectId);
+        datasets = await ensureProjectDatasetSqlNames(projectId, datasetRepository);
       }
 
       const tables = datasets.map((dataset) => ({
         datasetId: dataset.datasetId,
-        name: resolveDatasetTableName(dataset),
+        name: resolveDatasetSqlName(dataset),
         filename: dataset.filename,
         sizeBytes: dataset.size,
         nRows: dataset.nRows,

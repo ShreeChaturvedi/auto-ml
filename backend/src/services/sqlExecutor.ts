@@ -8,8 +8,10 @@ import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import type { QueryResultPayload } from '../types/query.js';
 
+import { buildProjectSqlRegistry, ensureProjectDatasetSqlNames, rewriteProjectSqlToPhysical } from './datasetSqlNames.js';
+import { ensureProjectDatasetTablesReady } from './datasetTableManager.js';
 import { buildEdaSummary } from './edaSummary.js';
-import { extractTableReferences, validateReadOnlySql } from './sqlValidator.js';
+import { validateReadOnlySql } from './sqlValidator.js';
 
 interface PgTypeCatalogRow {
   oid: number;
@@ -101,32 +103,50 @@ export async function executeReadOnlyQuery({ sql, projectId }: { sql: string; pr
     throw Object.assign(new Error('Database is not configured'), { statusCode: 503 });
   }
 
-  // Build project-scoped allowlist when projectId is provided
-  let allowedTables: Set<string> | undefined;
+  let logicalSql = sql;
+  let executedSql = sql;
+  let referencedTables: string[] = [];
+
   if (projectId) {
     const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
-    const datasets = await datasetRepository.listByProject(projectId);
-    allowedTables = new Set(
-      datasets
-        .map((d) => typeof d.metadata?.tableName === 'string' ? d.metadata.tableName.toLowerCase() : null)
-        .filter((name): name is string => name !== null)
-    );
-  }
+    const datasets = await ensureProjectDatasetSqlNames(projectId, datasetRepository);
+    const registry = buildProjectSqlRegistry(datasets);
+    const logicalAllowedTables = new Set([
+      ...registry.logicalTables,
+      ...registry.physicalTables
+    ]);
 
-  const { normalizedSql } = validateReadOnlySql(sql, {
-    defaultLimit: env.sqlDefaultLimit,
-    maxRows: env.sqlMaxRows,
-    allowedTables
-  });
+    const { normalizedSql } = validateReadOnlySql(sql, {
+      defaultLimit: env.sqlDefaultLimit,
+      maxRows: env.sqlMaxRows,
+      allowedTables: logicalAllowedTables
+    });
+    logicalSql = normalizedSql;
 
-  // Layer 2: project-scoped table allowlist
-  if (projectId && allowedTables) {
-    const referencedTables = extractTableReferences(normalizedSql);
-    for (const table of referencedTables) {
-      if (!allowedTables.has(table)) {
-        throw new Error(`Table '${table}' is not a dataset in this project`);
-      }
-    }
+    const rewritten = rewriteProjectSqlToPhysical(logicalSql, registry);
+    referencedTables = rewritten.referencedTables;
+
+    const physicalAllowedTables = new Set(registry.physicalTables);
+    const validatedExecution = validateReadOnlySql(rewritten.sql, {
+      defaultLimit: env.sqlDefaultLimit,
+      maxRows: env.sqlMaxRows,
+      allowedTables: physicalAllowedTables
+    });
+    executedSql = validatedExecution.normalizedSql;
+
+    await ensureProjectDatasetTablesReady({
+      projectId,
+      referencedTables,
+      datasets,
+      repository: datasetRepository
+    });
+  } else {
+    const { normalizedSql } = validateReadOnlySql(sql, {
+      defaultLimit: env.sqlDefaultLimit,
+      maxRows: env.sqlMaxRows
+    });
+    logicalSql = normalizedSql;
+    executedSql = normalizedSql;
   }
 
   const pool = getDbPool();
@@ -136,7 +156,7 @@ export async function executeReadOnlyQuery({ sql, projectId }: { sql: string; pr
     await client.query('BEGIN');
     await client.query(`SET LOCAL statement_timeout = ${env.sqlStatementTimeoutMs}`);
     const startedAt = Date.now();
-    const result = await client.query(normalizedSql);
+    const result = await client.query(executedSql);
     const executionMs = Date.now() - startedAt;
     const limitedRows = result.rows.slice(0, env.sqlMaxRows);
     const eda = buildEdaSummary(limitedRows, { source: 'query-result', totalRows: result.rows.length });
@@ -153,7 +173,7 @@ export async function executeReadOnlyQuery({ sql, projectId }: { sql: string; pr
 
     const payload: QueryResultPayload = {
       queryId: randomUUID(),
-      sql: normalizedSql,
+      sql: logicalSql,
       columns: (result.fields ?? []).map((field) => ({
         name: field.name,
         dataTypeID: field.dataTypeID,

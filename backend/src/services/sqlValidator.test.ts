@@ -89,6 +89,12 @@ describe('sqlValidator', () => {
         expect(result.normalizedSql).toBe('SELECT * FROM sales_data LIMIT 50');
         expect(result.limitAppended).toBe(false);
       });
+
+      it('does not append LIMIT when already present with parentheses', () => {
+        const result = validateReadOnlySql('SELECT * FROM sales_data LIMIT (50)', defaultOptions);
+        expect(result.normalizedSql).toBe('SELECT * FROM sales_data LIMIT (50)');
+        expect(result.limitAppended).toBe(false);
+      });
     });
 
     describe('comment handling', () => {
@@ -319,6 +325,17 @@ describe('sqlValidator', () => {
     it('ignores table names in string literals', () => {
       const tables = extractTableReferences("SELECT * FROM sales_data WHERE name = 'from users'");
       expect(tables).not.toContain('users');
+    });
+
+    it('ignores CTE aliases and keeps underlying dataset tables', () => {
+      const tables = extractTableReferences(`
+        WITH recent_sales AS (
+          SELECT * FROM sales_data
+        )
+        SELECT * FROM recent_sales
+      `);
+
+      expect(tables).toEqual(['sales_data']);
     });
   });
 });

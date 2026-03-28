@@ -30,8 +30,12 @@ export function withSqlIdentifierHint(
     normalized.includes('does not exist') ||
     normalized.includes('syntax error at or near') ||
     normalized.includes('missing from-clause entry');
+  const likelyDatasetAvailabilityIssue =
+    (normalized.includes('dataset "') && normalized.includes('not queryable'))
+    || normalized.includes('automatic rebuild failed')
+    || (normalized.includes('sql table') && normalized.includes('missing'));
 
-  if (!likelyIdentifierIssue || normalized.includes('double quote')) {
+  if (!likelyIdentifierIssue || normalized.includes('double quote') || likelyDatasetAvailabilityIssue) {
     return message;
   }
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, Suspense } from 'react';
+import { useCallback, useMemo, useRef, useState, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -149,6 +149,7 @@ export function NotebookMarkdownCell({
   });
 
   const sectionLabel = getSectionLabel(localContent);
+  const [editorHeight, setEditorHeight] = useState(60);
 
   const markdownComponents = useMemo(
     () => ({ ...buildHeadingComponents(`notebook-${cell.cellId}-`), ...NOTEBOOK_MARKDOWN_BODY_COMPONENTS }),
@@ -263,11 +264,16 @@ export function NotebookMarkdownCell({
               }
             >
                 <LazyMonacoEditor
-                height={Math.max(60, localContent.split('\n').length * 20 + 20)}
+                height={editorHeight}
                 language="markdown"
                 value={localContent}
                 onChange={handleContentChange}
                 onMount={(editor, monaco) => {
+                  // Auto-height
+                  const updateHeight = () => setEditorHeight(Math.max(60, editor.getContentHeight()));
+                  editor.onDidContentSizeChange(updateHeight);
+                  updateHeight();
+
                   // Escape -> exit edit mode
                   editor.addCommand(monaco.KeyCode.Escape, () => {
                     exitEditModeRef.current();

@@ -92,6 +92,8 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         setFileMetadata(file.id, {
           datasetId: dataset.datasetId,
           tableName: dataset.tableName,
+          queryable: dataset.queryable ?? (!response.warning && Boolean(dataset.tableName)),
+          queryError: dataset.queryError ?? response.warning,
           rowCount: dataset.n_rows,
           columnCount: dataset.n_cols,
           columns: dataset.columns,

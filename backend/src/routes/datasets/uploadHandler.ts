@@ -10,13 +10,14 @@ import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
 import type { DatasetRepository } from '../../repositories/datasetRepository.js';
 import {
+  buildDatasetTableName,
   loadDatasetIntoPostgres,
   parseDatasetRows,
   parseXlsxSample,
-  sanitizeTableName,
   streamLoadXlsxIntoPostgres
 } from '../../services/datasetLoader.js';
 import { profileDatasetRows } from '../../services/datasetProfiler.js';
+import { assignDatasetSqlName } from '../../services/datasetSqlNames.js';
 import { buildEdaSummary } from '../../services/edaSummary.js';
 
 import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
@@ -168,6 +169,12 @@ async function processCsvJsonUpload(
       sample: profiling.sample
     }
   });
+  const sqlName = await assignDatasetSqlName({
+    repository: datasetRepository,
+    projectId: body.projectId,
+    filename: req.file!.originalname,
+    datasetId: dataset.datasetId
+  });
 
   // Persist the file to its permanent location
   const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
@@ -176,7 +183,7 @@ async function processCsvJsonUpload(
   copyFileSync(tempFilePath, permanentPath);
   cleanupTempFile(tempFilePath);
 
-  let tableName = sanitizeTableName(req.file!.originalname, dataset.datasetId);
+  let tableName = buildDatasetTableName(req.file!.originalname, dataset.datasetId);
   let loadWarning: string | undefined;
 
   if (hasDatabaseConfiguration()) {
@@ -187,7 +194,8 @@ async function processCsvJsonUpload(
         fileType,
         buffer,
         columns: profiling.columns,
-        rows
+        rows,
+        tableName
       });
 
       tableName = loadedTableName;
@@ -196,6 +204,7 @@ async function processCsvJsonUpload(
         nRows: rowsLoaded,
         metadata: {
           ...(current.metadata ?? {}),
+          sqlName,
           tableName,
           rowsLoaded,
           eda
@@ -219,6 +228,7 @@ async function processCsvJsonUpload(
         ...current,
         metadata: {
           ...(current.metadata ?? {}),
+          sqlName,
           tableName,
           loadWarning,
           eda
@@ -233,6 +243,7 @@ async function processCsvJsonUpload(
       ...current,
       metadata: {
         ...(current.metadata ?? {}),
+        sqlName,
         tableName,
         eda
       }
@@ -263,9 +274,11 @@ async function processCsvJsonUpload(
       ),
       sample: dataset.sample,
       createdAt: dataset.createdAt,
-      tableName,
+      tableName: sqlName,
+      physicalTableName: tableName,
       eda,
-      warning: loadWarning
+      warning: loadWarning,
+      queryable: hasDatabaseConfiguration() && !loadWarning
     },
     warning: loadWarning
   });
@@ -317,6 +330,12 @@ async function processXlsxUpload(
       sample: profilingWithTotal.sample
     }
   });
+  const sqlName = await assignDatasetSqlName({
+    repository: datasetRepository,
+    projectId: body.projectId,
+    filename: req.file!.originalname,
+    datasetId: dataset.datasetId
+  });
 
   // Persist the file to its permanent location
   const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
@@ -325,13 +344,14 @@ async function processXlsxUpload(
   copyFileSync(tempFilePath, permanentPath);
   cleanupTempFile(tempFilePath);
 
-  const tableName = sanitizeTableName(req.file!.originalname, dataset.datasetId);
+  const tableName = buildDatasetTableName(req.file!.originalname, dataset.datasetId);
 
   // Update metadata with table name + EDA before responding
   const updated = await datasetRepository.update(dataset.datasetId, (current) => ({
     ...current,
     metadata: {
       ...(current.metadata ?? {}),
+      sqlName,
       tableName,
       eda
     }
@@ -356,9 +376,11 @@ async function processXlsxUpload(
       ),
       sample: dataset.sample,
       createdAt: dataset.createdAt,
-      tableName,
+      tableName: sqlName,
+      physicalTableName: tableName,
       eda,
-      warning: undefined
+      warning: undefined,
+      queryable: false
     },
     warning: undefined
   });
@@ -369,7 +391,8 @@ async function processXlsxUpload(
       datasetId: dataset.datasetId,
       filename: req.file!.originalname,
       filePath: permanentPath,
-      columns: profilingWithTotal.columns
+      columns: profilingWithTotal.columns,
+      tableName
     })
       .then(async ({ rowsLoaded }) => {
         await datasetRepository.update(dataset.datasetId, (current) => ({
@@ -377,6 +400,7 @@ async function processXlsxUpload(
           nRows: rowsLoaded,
           metadata: {
             ...(current.metadata ?? {}),
+            sqlName,
             tableName,
             rowsLoaded,
             eda
@@ -396,6 +420,7 @@ async function processXlsxUpload(
           ...current,
           metadata: {
             ...(current.metadata ?? {}),
+            sqlName,
             tableName,
             loadWarning: warning,
             eda

@@ -17,7 +17,8 @@ import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 import type { PythonVersion } from '../types/execution.js';
 
 import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
-import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
+import { buildDatasetTableName, loadDatasetIntoPostgres } from './datasetLoader.js';
+import { assignDatasetSqlName } from './datasetSqlNames.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import { buildFeatureEngineeringScript } from './featureEngineering/scriptBuilder.js';
 import * as kernelManager from './kernelManager.js';
@@ -257,12 +258,18 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
       }
     }
   });
+  const sqlName = await assignDatasetSqlName({
+    repository: datasetRepository,
+    projectId: input.projectId,
+    filename: outputFilename,
+    datasetId: derivedDataset.datasetId
+  });
 
   const datasetDir = join(env.datasetStorageDir, derivedDataset.datasetId);
   await mkdir(datasetDir, { recursive: true });
   await writeFile(join(datasetDir, outputFilename), outputBuffer);
 
-  let tableName = sanitizeTableName(outputFilename, derivedDataset.datasetId);
+  let tableName = buildDatasetTableName(outputFilename, derivedDataset.datasetId);
 
   if (hasDatabaseConfiguration()) {
     const { tableName: loadedName, rowsLoaded } = await loadDatasetIntoPostgres({
@@ -270,7 +277,8 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
       filename: outputFilename,
       fileType: outputFormat,
       buffer: outputBuffer,
-      columns: normalizedColumns
+      columns: normalizedColumns,
+      tableName
     });
     tableName = loadedName;
     const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
@@ -278,6 +286,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
       nRows: rowsLoaded,
       metadata: {
         ...(current.metadata ?? {}),
+        sqlName,
         tableName,
         rowsLoaded
       }
@@ -291,6 +300,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
       ...current,
       metadata: {
         ...(current.metadata ?? {}),
+        sqlName,
         tableName
       }
     }));

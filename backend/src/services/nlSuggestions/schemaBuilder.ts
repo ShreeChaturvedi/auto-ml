@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { DatasetProfile } from '../../types/dataset.js';
-import { fallbackTableName, normalizeTableName } from '../nlToSql/tableResolution.js';
+import { resolveDatasetSqlName } from '../datasetSqlNames.js';
 
 import type { SchemaColumnSummary, SchemaTableSummary } from './types.js';
 
@@ -17,13 +17,8 @@ export function buildSchemaSummary(datasets: DatasetProfile[], projectId: string
   return datasets
     .filter((dataset) => dataset.projectId === projectId)
     .map((dataset) => {
-      const metadata = dataset.metadata && typeof dataset.metadata === 'object'
-        ? dataset.metadata as Record<string, unknown>
-        : {};
-      const metadataTableName = typeof metadata.tableName === 'string' ? metadata.tableName : '';
-
       return {
-        tableName: normalizeTableName(metadataTableName) || fallbackTableName(dataset.filename, dataset.datasetId),
+        tableName: resolveDatasetSqlName(dataset),
         sourceFilename: dataset.filename,
         rowCount: dataset.nRows,
         columns: dataset.columns

@@ -71,9 +71,9 @@ vi.mock('../services/datasetLoader.js', async (importOriginal) => {
     }),
     streamLoadXlsxIntoPostgres: vi.fn().mockResolvedValue({ tableName: 'mock_table', rowsLoaded: 0 }),
     singlePassXlsxLoad: vi.fn().mockResolvedValue({ sampleRows: [], totalRowCount: 0, tableName: 'mock_table', rowsLoaded: 0, columns: [] }),
-    sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
+    sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string, addUniqueSuffix?: boolean) => {
       const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-      return `${baseName}_${datasetId.slice(0, 8)}`;
+      return addUniqueSuffix ? `${baseName}_${datasetId.slice(0, 8)}` : baseName;
     })
   };
 });
@@ -234,7 +234,7 @@ describeRouteSuite('dataset routes', () => {
       repository.addDataset(
         createMockDataset({
           filename: 'data.csv',
-          metadata: { tableName: 'data_123' }
+          metadata: { sqlName: 'data', tableName: 'data_123' }
         })
       );
 
@@ -242,7 +242,8 @@ describeRouteSuite('dataset routes', () => {
       const response = await request(app).get('/api/datasets');
 
       expect(response.status).toBe(200);
-      expect(response.body.datasets[0].tableName).toBe('data_123');
+      expect(response.body.datasets[0].tableName).toBe('data');
+      expect(response.body.datasets[0].physicalTableName).toMatch(/^data_[a-z0-9]{8}$/);
     });
 
     it('filters by projectId when provided', async () => {

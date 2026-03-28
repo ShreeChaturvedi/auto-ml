@@ -21,25 +21,6 @@ export interface HydrationSlice {
   markDeleted: (datasetId: string) => void;
 }
 
-function sanitizeTableName(filename: string, datasetId: string): string {
-  const baseName = filename.replace(/\.[^/.]+$/, '');
-  let safe = baseName
-    .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/^[^a-zA-Z]/, 'table_')
-    .toLowerCase();
-
-  if (!safe) {
-    safe = 'table_data';
-  }
-
-  const suffix = datasetId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-  const separator = suffix ? `_${suffix}` : '';
-  const maxBaseLength = 63 - separator.length;
-  const trimmed = safe.slice(0, maxBaseLength);
-
-  return `${trimmed || 'table_data'}${separator}`;
-}
-
 function buildFileIdentity(file: UploadedFile): string {
   return `${file.name}::${file.size}::${file.type}`;
 }
@@ -116,7 +97,10 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
             rowCount: dataset.nRows,
             columnCount: dataset.nCols,
             columns: dataset.columns.map(c => c.name),
-            tableName: dataset.tableName ?? dataset.metadata?.tableName ?? sanitizeTableName(dataset.filename, dataset.datasetId),
+            tableName: dataset.tableName,
+            queryable: dataset.queryable ?? (dataset.tableName != null && !dataset.queryError),
+            queryError: dataset.queryError
+              ?? (typeof dataset.metadata?.loadWarning === 'string' ? dataset.metadata.loadWarning : undefined),
             derivedFrom: typeof dataset.metadata?.derivedFrom === 'string' ? dataset.metadata.derivedFrom : undefined,
             datasetProfile: {
               nRows: dataset.nRows,

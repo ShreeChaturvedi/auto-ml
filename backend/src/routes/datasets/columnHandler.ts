@@ -12,6 +12,7 @@ import {
   parseDatasetRows,
   resolveDatasetTableName
 } from '../../services/datasetLoader.js';
+import { resolveDatasetSqlName } from '../../services/datasetSqlNames.js';
 import type { DatasetProfile } from '../../types/dataset.js';
 import { getErrorMessage } from '../../utils/errors.js';
 
@@ -33,7 +34,8 @@ function formatDatasetResponse(dataset: DatasetProfile, tableName: string) {
     sample: dataset.sample,
     createdAt: dataset.createdAt,
     updatedAt: dataset.updatedAt,
-    tableName
+    tableName: resolveDatasetSqlName(dataset),
+    physicalTableName: tableName
   };
 }
 
@@ -126,6 +128,7 @@ export async function updateColumnType(
         buffer,
         columns: updatedColumns,
         rows,
+        tableName,
         strictMode: true,
         strictColumnNames: [columnName]
       });

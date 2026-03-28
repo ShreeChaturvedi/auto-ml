@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { resolveDatasetTableName } from '../services/datasetLoader.js';
+import { resolveDatasetSqlName } from '../services/datasetSqlNames.js';
 import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 import { featureRunRepository } from '../services/workflows/phases/featureEngineering.js';
 import { getErrorMessage } from '../utils/errors.js';
@@ -77,7 +78,8 @@ export function createFeatureEngineeringRouter() {
           null_counts: Object.fromEntries(dataset.columns.map((column) => [column.name, column.nullCount])),
           sample: dataset.sample,
           createdAt: dataset.createdAt,
-          tableName
+          tableName: resolveDatasetSqlName(dataset),
+          physicalTableName: tableName
         }
       });
     } catch (error) {

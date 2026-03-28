@@ -102,6 +102,18 @@ export function NotebookCellComponent({
     preloadMonaco: true
   });
 
+  const [editorHeight, setEditorHeight] = useState(60);
+
+  const handleMountWithAutoHeight = useCallback(
+    (editor: Parameters<typeof handleEditorMount>[0], monaco: Parameters<typeof handleEditorMount>[1]) => {
+      handleEditorMount(editor, monaco);
+      const updateHeight = () => setEditorHeight(Math.max(60, editor.getContentHeight()));
+      editor.onDidContentSizeChange(updateHeight);
+      updateHeight();
+    },
+    [handleEditorMount]
+  );
+
   const isRunning = cell.executionStatus === 'running';
 
   const richOutputs = useMemo(() => {
@@ -331,11 +343,11 @@ export function NotebookCellComponent({
       >
               <LazyMonacoEditor
           path={`cell-${cell.cellId}.py`}
-          height={Math.max(60, localContent.split('\n').length * 20 + 20)}
+          height={editorHeight}
           language="python"
           value={localContent}
           onChange={handleContentChange}
-          onMount={handleEditorMount}
+          onMount={handleMountWithAutoHeight}
           options={{
             fixedOverflowWidgets: true,
             minimap: { enabled: false },

@@ -156,6 +156,8 @@ export function useAttachmentUploader({ projectId }: UseAttachmentUploaderProps)
             setFileMetadata(uploadedFileId, {
               datasetId: dataset.datasetId,
               tableName: dataset.tableName,
+              queryable: dataset.queryable,
+              queryError: dataset.queryError ?? response.warning,
               rowCount: dataset.n_rows,
               columnCount: dataset.n_cols,
               columns: dataset.columns,

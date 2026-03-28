@@ -121,7 +121,7 @@ export function SignupForm() {
                 type="text"
                 placeholder="John Doe"
                 autoComplete="name"
-                className="bg-neutral-900/50 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
                 {...register('name')}
               />
               {errors.name && (
@@ -136,7 +136,7 @@ export function SignupForm() {
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="bg-neutral-900/50 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
                 {...register('email')}
               />
               {errors.email && (
@@ -152,14 +152,14 @@ export function SignupForm() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Create a password"
                   autoComplete="new-password"
-                  className="bg-neutral-900/50 border-neutral-700 pr-10 text-white placeholder:text-neutral-500"
+                  className="dark:bg-white/[0.03] border-border hover:border-ring pr-10 text-white placeholder:text-neutral-500 focus-visible:ring-ring"
                   {...register('password')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white"
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -178,14 +178,14 @@ export function SignupForm() {
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="Confirm your password"
                   autoComplete="new-password"
-                  className="bg-neutral-900/50 border-neutral-700 pr-10 text-white placeholder:text-neutral-500"
+                  className="dark:bg-white/[0.03] border-border hover:border-ring pr-10 text-white placeholder:text-neutral-500 focus-visible:ring-ring"
                   {...register('confirmPassword')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword((prev) => !prev)}
                   aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white"
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white"
                 >
                   {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

@@ -94,7 +94,7 @@ export function PasswordSection() {
               id="currentPassword"
               type="password"
               placeholder="••••••••"
-              className="bg-transparent"
+              className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
               {...passwordForm.register('currentPassword')}
             />
             {passwordForm.formState.errors.currentPassword && (
@@ -112,7 +112,7 @@ export function PasswordSection() {
               id="newPassword"
               type="password"
               placeholder="••••••••"
-              className="bg-transparent"
+              className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
               {...passwordForm.register('newPassword')}
             />
             {passwordForm.formState.errors.newPassword && (
@@ -131,7 +131,7 @@ export function PasswordSection() {
               id="confirmPassword"
               type="password"
               placeholder="••••••••"
-              className="bg-transparent"
+              className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
               {...passwordForm.register('confirmPassword')}
             />
             {passwordForm.formState.errors.confirmPassword && (

@@ -99,7 +99,7 @@ export function RuntimeSettingsSection() {
           <div className="grid gap-6 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="queryCacheTtlMs" className="text-sm font-medium">Cache TTL (ms)</Label>
-              <Input id="queryCacheTtlMs" type="number" className="bg-transparent"
+              <Input id="queryCacheTtlMs" type="number" className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                 {...queryForm.register('queryCacheTtlMs', { valueAsNumber: true })} />
               <p className="text-xs text-muted-foreground">0 – 3,600,000</p>
               {queryForm.formState.errors.queryCacheTtlMs && (
@@ -108,7 +108,7 @@ export function RuntimeSettingsSection() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="sqlMaxRows" className="text-sm font-medium">SQL Max Rows</Label>
-              <Input id="sqlMaxRows" type="number" className="bg-transparent"
+              <Input id="sqlMaxRows" type="number" className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                 {...queryForm.register('sqlMaxRows', { valueAsNumber: true })} />
               <p className="text-xs text-muted-foreground">10 – 10,000</p>
               {queryForm.formState.errors.sqlMaxRows && (
@@ -117,7 +117,7 @@ export function RuntimeSettingsSection() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="sqlDefaultLimit" className="text-sm font-medium">SQL Default Limit</Label>
-              <Input id="sqlDefaultLimit" type="number" className="bg-transparent"
+              <Input id="sqlDefaultLimit" type="number" className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                 {...queryForm.register('sqlDefaultLimit', { valueAsNumber: true })} />
               <p className="text-xs text-muted-foreground">10 – 1,000</p>
               {queryForm.formState.errors.sqlDefaultLimit && (
@@ -144,7 +144,7 @@ export function RuntimeSettingsSection() {
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="executionTimeoutMs" className="text-sm font-medium">Execution Timeout (ms)</Label>
-              <Input id="executionTimeoutMs" type="number" className="bg-transparent"
+              <Input id="executionTimeoutMs" type="number" className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                 {...execForm.register('executionTimeoutMs', { valueAsNumber: true })} />
               <p className="text-xs text-muted-foreground">5,000 – 120,000</p>
               {execForm.formState.errors.executionTimeoutMs && (
@@ -153,7 +153,7 @@ export function RuntimeSettingsSection() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="executionMaxMemoryMb" className="text-sm font-medium">Max Memory (MB)</Label>
-              <Input id="executionMaxMemoryMb" type="number" className="bg-transparent"
+              <Input id="executionMaxMemoryMb" type="number" className="bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                 {...execForm.register('executionMaxMemoryMb', { valueAsNumber: true })} />
               <p className="text-xs text-muted-foreground">256 – 4,096</p>
               {execForm.formState.errors.executionMaxMemoryMb && (

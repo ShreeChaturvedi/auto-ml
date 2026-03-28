@@ -76,7 +76,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
         'group flex items-center gap-2 rounded-md px-1.5 py-1.5 cursor-pointer transition-colors',
         isActive
           ? 'bg-accent text-accent-foreground'
-          : 'hover:bg-accent/50 text-foreground'
+          : 'hover:bg-muted/50 text-foreground'
       )}
       onClick={handleProjectClick}
     >
@@ -106,7 +106,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
       {/* More options menu - kept in DOM; collapses to w-0 to prevent layout jump */}
       <div
         className={cn(
-          'shrink-0 overflow-hidden transition-all duration-300',
+          'shrink-0 overflow-hidden transition-[width] duration-300',
           collapsed ? 'w-0 pointer-events-none' : 'w-6'
         )}
       >
@@ -114,7 +114,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent"
+              className="flex h-6 w-6 items-center justify-center rounded-md p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
               <MoreVertical className="h-3 w-3" />

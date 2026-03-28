@@ -69,7 +69,7 @@ export function GoogleAuthButton({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        'w-full h-11 text-sm font-medium transition-all duration-200 gap-3',
+        'w-full h-11 text-sm font-medium transition-[color,background-color,border-color,box-shadow] duration-200 gap-3',
         'border-border/60 hover:border-border',
         'hover:bg-muted/50',
         isHovered && !disabled && 'shadow-md',

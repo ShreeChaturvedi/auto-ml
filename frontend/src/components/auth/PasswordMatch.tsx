@@ -31,7 +31,7 @@ export function PasswordMatch({ password, confirmPassword }: PasswordMatchProps)
   return (
     <div
       className={cn(
-        'flex items-center gap-2 text-xs transition-all duration-300 ease-out',
+        'flex items-center gap-2 text-xs transition-opacity duration-300 ease-out',
         'animate-in fade-in-0 slide-in-from-top-1'
       )}
     >

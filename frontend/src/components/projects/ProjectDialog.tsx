@@ -192,7 +192,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                 type="button"
                 onClick={() => setIsIconPickerOpen(true)}
                 className={cn(
-                  'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-all hover:scale-105 focus:outline-none',
+                  'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-[transform,border-color] hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   selectedColor !== 'custom' && previewColors.bg,
                   selectedColor !== 'custom' && previewColors.text,
                   selectedColor !== 'custom' && previewColors.border
@@ -249,7 +249,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                   key={color}
                   type="button"
                   className={cn(
-                    'h-7 w-7 rounded-full border-2 transition-all',
+                    'h-7 w-7 rounded-full border-2 transition-[transform,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                     selectedColor === color
                       ? 'border-foreground scale-110'
                       : 'border-transparent hover:border-foreground/40 hover:scale-105'
@@ -269,7 +269,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                   <button
                     type="button"
                     className={cn(
-                      'relative h-7 w-7 rounded-full border-2 p-0 transition-all',
+                      'relative h-7 w-7 rounded-full border-2 p-0 transition-[transform,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                       selectedColor === 'custom'
                         ? 'border-black dark:border-white scale-110'
                         : 'border-transparent hover:border-foreground/40 hover:scale-105'
@@ -330,7 +330,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                   type="button"
                   onClick={() => { setValue('icon', iconName); setIsIconPickerOpen(false); }}
                   className={cn(
-                    'flex h-12 w-12 items-center justify-center rounded-md border-2 transition-all hover:scale-105',
+                    'flex h-12 w-12 items-center justify-center rounded-md border-2 transition-[transform,border-color,background-color] hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     selectedIcon === iconName
                       ? 'border-primary bg-primary/10'
                       : 'border-border hover:border-primary/50 hover:bg-accent'

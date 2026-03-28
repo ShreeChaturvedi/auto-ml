@@ -111,7 +111,7 @@ export function ForgotPasswordForm() {
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="bg-neutral-900/50 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
                 {...register('email')}
               />
               {errors.email && (

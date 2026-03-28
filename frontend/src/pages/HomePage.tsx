@@ -68,7 +68,7 @@ export function HomePage() {
           <EmptyMedia variant="icon" className="rounded-lg">
             <FolderOpen />
           </EmptyMedia>
-          <EmptyTitle>
+          <EmptyTitle className="font-display">
             {projects.length === 0 ? 'No Projects Yet' : 'No Project Selected'}
           </EmptyTitle>
           <EmptyDescription>

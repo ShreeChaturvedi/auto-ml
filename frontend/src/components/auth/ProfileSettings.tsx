@@ -47,7 +47,7 @@ export function SaveButton({
       type="submit"
       variant="secondary"
       disabled={state === 'loading'}
-      className="min-w-[120px] h-9 px-4 text-sm transition-all duration-200"
+      className="min-w-[120px] h-9 px-4 text-sm transition-colors duration-200"
     >
       {state === 'loading' && (
         <>
@@ -112,7 +112,7 @@ export function ProfileSettings() {
     if (DEV_BYPASS_AUTH) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-background px-6">
-          <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-sm">
+          <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center shadow-sm dark:shadow-none">
             <h1 className="text-lg font-semibold tracking-tight">Dev Auth Bypass Active</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Profile settings need a signed-in account. Disable `VITE_DEV_BYPASS_AUTH` or sign in to
@@ -169,7 +169,7 @@ export function ProfileSettings() {
             <UserCircle className="h-7 w-7 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Profile Settings</h1>
+            <h1 className="text-2xl font-semibold tracking-tight font-display">Profile Settings</h1>
             <p className="text-sm text-muted-foreground">
               Manage your account information and security
             </p>
@@ -196,7 +196,7 @@ export function ProfileSettings() {
                   <Input
                     id="name"
                     placeholder="John Doe"
-                    className="pl-10 bg-transparent"
+                    className="pl-10 bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                     {...profileForm.register('name')}
                   />
                 </div>
@@ -217,7 +217,7 @@ export function ProfileSettings() {
                     id="email"
                     type="email"
                     placeholder="john@example.com"
-                    className="pl-10 bg-transparent"
+                    className="pl-10 bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
                     {...profileForm.register('email')}
                   />
                 </div>

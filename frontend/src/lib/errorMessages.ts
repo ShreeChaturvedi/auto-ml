@@ -29,7 +29,7 @@ const ERROR_CODE_MAP: Record<string, ErrorDisplay> = {
   },
   TOOL_CALL_LIMIT_EXCEEDED: {
     title: 'Tool call limit exceeded',
-    description: 'The workflow repeated the same tool too many times without making progress. Try simplifying your request or retrying.',
+    description: 'The workflow repeated a tool too many times without progressing. This can happen with complex multi-step requests. Try breaking your request into smaller steps or retrying.',
   },
   MAX_ITERATIONS_EXCEEDED: {
     title: 'Iteration limit reached',

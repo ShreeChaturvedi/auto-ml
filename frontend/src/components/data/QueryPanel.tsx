@@ -20,7 +20,6 @@ import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
-import { projectColorClasses, type ProjectColor } from '@/types/project';
 import { IconModeToggle } from './IconModeToggle';
 import { NlQueryWorkflow } from './NlQueryWorkflow';
 import type { NlQueryWorkflowHandle, NlPhase, ApproveThemeClasses } from './NlQueryWorkflow';
@@ -30,62 +29,11 @@ import { QuerySqlEditor } from './QuerySqlEditor';
 import { AnimatedExecuteIcon, AnimatedBrainIcon } from './AnimatedQueryIcons';
 import { useQueryExecution } from './useQueryExecution';
 
-const APPROVE_THEME_BY_PROJECT_COLOR: Record<ProjectColor, ApproveThemeClasses> = {
-  blue: {
-    hoverText: 'hover:text-blue-700 dark:hover:text-blue-300',
-    hoverBorder: 'hover:border-blue-400 dark:hover:border-blue-400/70',
-    hoverBg: 'hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
-  },
-  green: {
-    hoverText: 'hover:text-green-700 dark:hover:text-green-300',
-    hoverBorder: 'hover:border-green-400 dark:hover:border-green-400/70',
-    hoverBg: 'hover:bg-green-500/15 dark:hover:bg-green-500/20'
-  },
-  purple: {
-    hoverText: 'hover:text-purple-700 dark:hover:text-purple-300',
-    hoverBorder: 'hover:border-purple-400 dark:hover:border-purple-400/70',
-    hoverBg: 'hover:bg-purple-500/15 dark:hover:bg-purple-500/20'
-  },
-  pink: {
-    hoverText: 'hover:text-pink-700 dark:hover:text-pink-300',
-    hoverBorder: 'hover:border-pink-400 dark:hover:border-pink-400/70',
-    hoverBg: 'hover:bg-pink-500/15 dark:hover:bg-pink-500/20'
-  },
-  orange: {
-    hoverText: 'hover:text-orange-700 dark:hover:text-orange-300',
-    hoverBorder: 'hover:border-orange-400 dark:hover:border-orange-400/70',
-    hoverBg: 'hover:bg-orange-500/15 dark:hover:bg-orange-500/20'
-  },
-  red: {
-    hoverText: 'hover:text-red-700 dark:hover:text-red-300',
-    hoverBorder: 'hover:border-red-400 dark:hover:border-red-400/70',
-    hoverBg: 'hover:bg-red-500/15 dark:hover:bg-red-500/20'
-  },
-  yellow: {
-    hoverText: 'hover:text-yellow-700 dark:hover:text-yellow-300',
-    hoverBorder: 'hover:border-yellow-400 dark:hover:border-yellow-400/70',
-    hoverBg: 'hover:bg-yellow-500/15 dark:hover:bg-yellow-500/20'
-  },
-  indigo: {
-    hoverText: 'hover:text-indigo-700 dark:hover:text-indigo-300',
-    hoverBorder: 'hover:border-indigo-400 dark:hover:border-indigo-400/70',
-    hoverBg: 'hover:bg-indigo-500/15 dark:hover:bg-indigo-500/20'
-  },
-  teal: {
-    hoverText: 'hover:text-teal-700 dark:hover:text-teal-300',
-    hoverBorder: 'hover:border-teal-400 dark:hover:border-teal-400/70',
-    hoverBg: 'hover:bg-teal-500/15 dark:hover:bg-teal-500/20'
-  },
-  cyan: {
-    hoverText: 'hover:text-cyan-700 dark:hover:text-cyan-300',
-    hoverBorder: 'hover:border-cyan-400 dark:hover:border-cyan-400/70',
-    hoverBg: 'hover:bg-cyan-500/15 dark:hover:bg-cyan-500/20'
-  },
-  custom: {
-    hoverText: 'hover:text-foreground',
-    hoverBorder: 'hover:border-border',
-    hoverBg: 'hover:bg-muted/60'
-  }
+/** Accent-token-based approve theme — uses CSS-variable-driven accent classes. */
+const ACCENT_APPROVE_THEME: ApproveThemeClasses = {
+  hoverText: 'hover:text-accent-text',
+  hoverBorder: 'hover:border-accent-border',
+  hoverBg: 'hover:bg-accent-bg',
 };
 
 function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
@@ -214,12 +162,8 @@ export function QueryPanel({
     resolvedProjectId ? state.byProject[resolvedProjectId] : undefined
   ));
   const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
-  const executeIconColorClass = activeProject
-    ? (projectColorClasses[activeProject.color]?.text ?? 'text-primary')
-    : 'text-primary';
-  const approveThemeClasses = activeProject
-    ? APPROVE_THEME_BY_PROJECT_COLOR[activeProject.color]
-    : undefined;
+  const executeIconColorClass = activeProject ? 'text-accent-text' : 'text-primary';
+  const approveThemeClasses = activeProject ? ACCENT_APPROVE_THEME : undefined;
   const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
 
   // Resolve system theme preference
@@ -279,7 +223,7 @@ export function QueryPanel({
             size="icon"
             onClick={onClick}
             disabled={disabled}
-            className="group/execute h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+            className="group/execute h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           >
             {isSql ? (
               <AnimatedExecuteIcon isExecuting={isExecuting} colorClassName={executeIconColorClass} />
@@ -342,7 +286,7 @@ export function QueryPanel({
                 variant="ghost"
                 size="icon"
                 onClick={() => onCollapsedChange?.(!collapsed)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
               >
                 <PanelRight className="h-4 w-4" />
               </Button>
@@ -366,7 +310,7 @@ export function QueryPanel({
           }
         }}
         className={cn(
-          'absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50 transition-opacity duration-150',
+          'absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col items-center py-4 cursor-[w-resize] hover:bg-muted/50 transition-opacity duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
           collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
       >

@@ -1,4 +1,4 @@
-export const COMPACT_TOOLBAR_GROUP_CLASS = 'flex items-center gap-1.5';
+export const COMPACT_TOOLBAR_GROUP_CLASS = 'flex items-center gap-2';
 
 export const COMPACT_TOOLBAR_ICON_BUTTON_CLASS = 'h-7 w-7';
 

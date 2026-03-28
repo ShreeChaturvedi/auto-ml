@@ -46,7 +46,7 @@ export function ModelRecommendationCard({
   );
 
   return (
-    <Card className="border-primary/20 bg-primary/[0.02]">
+    <Card className="border border-primary/20 bg-primary/[0.02] dark:shadow-none">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">

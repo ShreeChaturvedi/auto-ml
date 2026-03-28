@@ -130,7 +130,7 @@ export function RuntimeManagerDialog({ projectId, trigger }: RuntimeManagerDialo
                 { value: 'runtime', ariaLabel: 'Runtime', icon: Server, tooltip: 'Runtime' },
                 { value: 'packages', ariaLabel: 'Packages', icon: Package, tooltip: 'Packages' },
               ]}
-              useProjectColor={false}
+              selectedIconClassName="text-foreground"
             />
           </DialogHeader>
 

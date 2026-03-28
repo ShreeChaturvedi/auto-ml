@@ -101,14 +101,14 @@ export function ExecutionCard({
   const hasOutput = !!(stdout || stderr);
 
   return (
-    <div className="rounded-md border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-md border bg-card shadow-sm dark:shadow-none overflow-hidden">
       {/* Header */}
       <button
         type="button"
         onClick={() => hasOutput && setExpanded(!expanded)}
         disabled={!hasOutput}
         className={cn(
-          'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
+          'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
           hasOutput && 'hover:bg-muted/30 cursor-pointer',
           !hasOutput && 'cursor-default',
         )}

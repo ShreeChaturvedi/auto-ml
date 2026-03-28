@@ -50,7 +50,7 @@ export function StepProposalCard({
     <div
       data-step-id={stepId}
       className={cn(
-        'rounded-md border border-l-4 bg-card p-3 shadow-sm transition-colors',
+        'rounded-md border border-l-4 bg-card p-3 shadow-sm dark:shadow-none transition-colors',
         accent,
       )}
     >
@@ -70,7 +70,7 @@ export function StepProposalCard({
           <button
             type="button"
             onClick={() => setRationaleExpanded(!rationaleExpanded)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
           >
             {rationaleExpanded ? (
               <ChevronDown className="h-3 w-3" />

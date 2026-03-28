@@ -145,11 +145,11 @@ export function NotebookCellComponent({
   return (
     <div
       className={cn(
-        'group overflow-hidden rounded-lg border bg-card transition-all duration-150',
+        'group overflow-hidden rounded-lg border border-border bg-card transition-colors duration-150',
         isRunning && 'border-l-2 border-l-primary',
         cell.executionStatus === 'error' && 'border-l-2 border-l-destructive',
         isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20',
-        isHighlighted && 'ring-2 ring-emerald-400/60 transition-shadow duration-200',
+        isHighlighted && 'ring-2 ring-emerald-400/60',
         isSuggested && 'border-dashed border-primary/30',
         isSuggested && isStreaming && 'suggested-cell-shimmer'
       )}
@@ -300,7 +300,7 @@ export function NotebookCellComponent({
             </div>
           ) : (
             /* Delete — hover-reveal, neutral at rest */
-            <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -325,7 +325,7 @@ export function NotebookCellComponent({
         fallback={
           <div
             className="h-[60px]"
-            style={{ backgroundColor: resolvedTheme === 'dark' ? '#000000' : '#ffffff' }}
+            style={{ backgroundColor: resolvedTheme === 'dark' ? '#0a0a0a' : '#ffffff' }}
           />
         }
       >

@@ -379,7 +379,7 @@ export function TrainingPanel() {
                     <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
                     <Link
                       to={`/project/${projectId}/feature-engineering`}
-                      className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200/60 hover:bg-amber-200 dark:bg-amber-800/40 dark:hover:bg-amber-800/60 text-amber-900 dark:text-amber-100 transition-colors"
+                      className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200/60 hover:bg-amber-200 dark:bg-amber-800/40 dark:hover:bg-amber-800/60 text-amber-900 dark:text-amber-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       Open Feature Engineering
                       <ArrowRight className="h-3 w-3" />

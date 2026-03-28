@@ -11,7 +11,7 @@ import { ChatMessageList } from '@/components/llm/ChatMessageList';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { QuestionCards } from './QuestionCards';
-import { projectColorClasses } from '@/types/project';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { buildInitialSuggestions, buildFollowUpSuggestions } from './planningUtils';
 import { usePlanningChat } from './hooks/usePlanningChat';
 import { useAttachmentUploader, CONTEXT_ATTACHMENT_ACCEPT } from './hooks/useAttachmentUploader';
@@ -85,8 +85,8 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const project = useMemo(() => projects.find((entry) => entry.id === projectId), [projectId, projects]);
-  const projectColor = project?.color ?? 'blue';
-  const projectColorClass = projectColorClasses[projectColor];
+  // Ensure accent CSS vars are set on documentElement
+  useProjectThemeColor();
   const projectFiles = useMemo(
     () => files.filter((file) => file.projectId === projectId),
     [files, projectId]
@@ -227,7 +227,8 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
                   approved={!!msg.approved}
                   editingPlanId={editingPlanId}
                   draftValue={planDrafts[msg.id] ?? msg.content}
-                  projectColorClass={projectColorClass}
+
+
                   onSetDraft={(id, value) => setPlanDrafts((prev) => ({ ...prev, [id]: value }))}
                   onStartEdit={handleStartPlanEdit}
                   onCancelEdit={handleCancelPlanEdit}

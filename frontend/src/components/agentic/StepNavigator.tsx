@@ -76,12 +76,12 @@ export function StepNavigator({ steps, currentStepIndex }: StepNavigatorProps) {
               <button
                 type="button"
                 onClick={() => handleStepClick(step.id)}
-                className="group flex flex-col items-center gap-0.5"
+                className="group flex flex-col items-center gap-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
                 title={step.label}
               >
                 <div
                   className={cn(
-                    'h-2.5 w-2.5 rounded-full border-2 transition-all duration-200',
+                    'h-2.5 w-2.5 rounded-full border-2 transition-[transform,border-color,background-color,box-shadow] duration-200',
                     'group-hover:scale-125',
                     STATUS_DOT[step.status],
                   )}

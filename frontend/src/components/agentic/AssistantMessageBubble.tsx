@@ -39,7 +39,7 @@ export function AssistantMessageBubble({
         isDimmed && 'opacity-40'
       )}
     >
-      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm">
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background shadow-sm dark:shadow-none">
         <Wand2 className="h-3 w-3 text-emerald-600" />
       </div>
       <div className="min-w-0 flex-1">

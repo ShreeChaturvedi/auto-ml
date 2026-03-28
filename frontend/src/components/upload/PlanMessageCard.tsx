@@ -15,12 +15,6 @@ export interface PlanMessageCardProps {
   approved: boolean;
   editingPlanId: string | null;
   draftValue: string;
-  projectColorClass: {
-    bg: string;
-    border: string;
-    hover: string;
-    text: string;
-  };
   onSetDraft: (msgId: string, value: string) => void;
   onStartEdit: (msgId: string, content: string) => void;
   onCancelEdit: (msgId: string, content: string) => void;
@@ -35,7 +29,6 @@ export function PlanMessageCard({
   approved,
   editingPlanId,
   draftValue,
-  projectColorClass,
   onSetDraft,
   onStartEdit,
   onCancelEdit,
@@ -48,9 +41,9 @@ export function PlanMessageCard({
   return (
     <div className="space-y-3 animate-in fade-in zoom-in-95 duration-300">
       <div className={cn(
-        "overflow-hidden rounded-lg transition-all",
+        "overflow-hidden rounded-lg transition-colors transition-shadow",
         isEditing
-          ? "border border-primary/50 shadow-sm ring-1 ring-primary/20 bg-background"
+          ? "border border-primary/50 shadow-sm dark:shadow-none ring-1 ring-primary/20 bg-background"
           : "border border-primary/30 bg-primary/5 hover:border-primary/50"
       )}>
         <div className={cn(
@@ -73,7 +66,7 @@ export function PlanMessageCard({
               onSetDraft(msgId, event.target.value);
             }}
             aria-label={`Edit plan ${planPath}`}
-            className="min-h-[350px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed outline-none"
+            className="min-h-[350px] w-full resize-y bg-transparent px-4 py-4 font-mono text-sm leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
             placeholder="Edit the proposed plan here..."
             data-testid={`plan-editor-${msgId}`}
           />
@@ -108,7 +101,7 @@ export function PlanMessageCard({
               <Button
                 size="sm"
                 variant="outline"
-                className={cn('gap-1.5', projectColorClass.bg, projectColorClass.border, projectColorClass.hover, projectColorClass.text)}
+                className={cn('gap-1.5 bg-accent-bg border-accent-border hover:bg-accent-bg-hover text-accent-text')}
                 onClick={() => onApprove(content, planName, msgId)}
               >
                 <Check className="h-3.5 w-3.5" />
@@ -125,9 +118,7 @@ export function PlanMessageCard({
       ) : (
         <div className={cn(
           'flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium',
-          projectColorClass.bg,
-          projectColorClass.border,
-          projectColorClass.text,
+          'bg-accent-bg border-accent-border text-accent-text',
         )}>
           <Check className="h-4 w-4" />
           Plan approved

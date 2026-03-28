@@ -61,7 +61,7 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload, onRename }: Fi
   return (
     <div
       className={cn(
-        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
+        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         isActive
           ? 'bg-muted text-foreground font-medium'
           : 'text-foreground hover:bg-muted'
@@ -78,7 +78,7 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload, onRename }: Fi
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             onClick={(e) => e.stopPropagation()}
           >
             <MoreVertical className="h-3.5 w-3.5" />
@@ -123,23 +123,18 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload, onRename }: Fi
 interface PlanItemProps {
   name: string;
   isActive: boolean;
-  themeColorClass: string;
   onOpen: () => void;
 }
 
-function PlanItem({ name, isActive, themeColorClass, onOpen }: PlanItemProps) {
+function PlanItem({ name, isActive, onOpen }: PlanItemProps) {
   const [hovered, setHovered] = useState(false);
 
-  const iconColor = isActive
-    ? themeColorClass
-    : hovered
-      ? themeColorClass
-      : 'text-muted-foreground';
+  const iconColor = isActive || hovered ? 'text-accent-text' : 'text-muted-foreground';
 
   return (
     <div
       className={cn(
-        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer',
+        'group flex h-9 items-center gap-2 px-3 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         isActive
           ? 'bg-muted text-foreground font-medium'
           : 'text-foreground hover:bg-muted'
@@ -158,7 +153,8 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const location = useLocation();
   const { dataFiles, contextFiles, activeFileTabId, isOnDataViewer, handleOpenFile, handleDeleteFile, handleDownloadFile } = useFileActions(projectId);
   const { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan } = useProjectPlans(projectId);
-  const { themeColorClass } = useProjectThemeColor();
+  // Ensure accent CSS vars are set on documentElement (side-effect)
+  useProjectThemeColor();
 
   const [renamingFile, setRenamingFile] = useState<UploadedFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -229,7 +225,7 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 hover:bg-muted"
+              className="h-6 w-6 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
               onClick={handleCreateNewPlan}
               title="Create new plan"
             >

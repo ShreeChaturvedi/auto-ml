@@ -261,9 +261,9 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           {...getRootProps()}
           onMouseEnter={triggerShimmer}
           className={cn(
-            'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden',
-            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border border-dashed border-border hover:border-muted-foreground/30' : 'flex-1',
-            isDragActive && 'bg-primary/5'
+            'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-muted-foreground/50' : 'flex-1 border-2 border-dashed border-muted-foreground/30',
+            isDragActive && 'border-accent-fill bg-accent-bg'
           )}
         >
           <input {...getInputProps()} />

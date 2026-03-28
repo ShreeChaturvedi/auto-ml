@@ -167,7 +167,7 @@ export function AgenticStepDisplay({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-7 max-w-[200px] shrink-0 truncate text-xs"
                 onClick={() => submitPrompt(suggestion.prompt)}
                 disabled={isGenerating}
               >

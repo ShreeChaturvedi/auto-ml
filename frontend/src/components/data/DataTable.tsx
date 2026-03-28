@@ -227,7 +227,7 @@ export function DataTable({
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="whitespace-nowrap">
+                  <TableHead key={header.id} className="whitespace-nowrap text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -251,6 +251,7 @@ export function DataTable({
                       key={row.id}
                       data-index={virtualRow.index}
                       ref={(node) => rowVirtualizer.measureElement(node)}
+                      className="hover:bg-muted/50 dark:even:bg-white/[0.015]"
                     >
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
@@ -280,7 +281,7 @@ export function DataTable({
         </table>
       </div>
 
-      <div className="border-t bg-muted/30 shrink-0">
+      <div className="border-t bg-muted/30 shrink-0 dark:shadow-none">
         <div className="flex items-center px-4 py-1.5">
           {totalRows > 0 ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">

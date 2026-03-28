@@ -16,7 +16,6 @@ import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses, type ProjectColorEntry } from '@/types/project';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { getToolIcon, getToolLabel, getResultHint } from './ToolDisplayHelpers';
 
@@ -46,7 +45,7 @@ function ToolRow({
     projectColorClass
 }: {
     display: ToolDisplay;
-    projectColorEntry?: ProjectColorEntry;
+    projectColorEntry?: { fill?: string; text?: string; border?: string };
     projectColorClass?: string;
 }) {
     const [expanded, setExpanded] = useState(false);
@@ -63,9 +62,9 @@ function ToolRow({
                 onClick={() => showDropdown && setExpanded(!expanded)}
                 disabled={!showDropdown}
                 className={cn(
-                    'group flex items-center gap-2 text-sm transition-colors duration-200 motion-reduce:transition-none',
+                    'group flex items-center gap-2 text-sm transition-[color,background-color] duration-200 motion-reduce:transition-none',
                     'py-1.5 px-2.5 rounded-md w-full text-left',
-                    showDropdown && 'hover:bg-muted/60 cursor-pointer',
+                    showDropdown && 'hover:bg-muted/60 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-1 focus-visible:outline-none',
                     !showDropdown && 'cursor-default'
                 )}
             >
@@ -129,9 +128,9 @@ export function ToolIndicator({
     const { activeProjectId, projects } = useProjectStore();
     const activeProject = projects.find((project) => project.id === activeProjectId);
     const projectColorEntry = activeProject
-        ? projectColorClasses[activeProject.color]
+        ? { fill: 'bg-accent-fill', text: 'text-accent-text', border: 'border-accent-border' }
         : undefined;
-    const projectColorClass = projectColorEntry?.text;
+    const projectColorClass = activeProject ? 'text-accent-text' : undefined;
 
     const displayItems = useMemo<ToolDisplay[]>(() => {
         return toolCalls.map((call) => {

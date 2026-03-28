@@ -37,14 +37,14 @@ function InsertCellRow({ position, onInsert, disabled, className }: InsertCellRo
     >
       <div
         className={cn(
-          'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-all duration-150',
+          'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors duration-150',
           isHovered ? 'bg-primary/40' : 'bg-transparent'
         )}
       />
 
       <div
         className={cn(
-          'relative z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm transition-all duration-150',
+          'relative z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm dark:shadow-none transition-opacity duration-150',
           isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
         )}
       >

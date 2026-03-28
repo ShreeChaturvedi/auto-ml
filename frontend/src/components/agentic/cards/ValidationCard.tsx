@@ -39,7 +39,7 @@ export function ValidationCard({ passed, metrics, notes }: ValidationCardProps) 
   return (
     <div
       className={cn(
-        'rounded-md border bg-card shadow-sm overflow-hidden',
+        'rounded-md border bg-card shadow-sm dark:shadow-none overflow-hidden',
         passed ? 'border-emerald-200 dark:border-emerald-800/40' : 'border-destructive/30',
       )}
     >

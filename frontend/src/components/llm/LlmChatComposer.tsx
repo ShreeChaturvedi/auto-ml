@@ -156,7 +156,7 @@ export function LlmChatComposer({
         onFocusCapture={onFocusCapture}
         onBlurCapture={onBlurCapture}
       >
-        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:shadow-none">
           {mentionSlot ? (
             <MentionInput
               ref={mentionSlot.inputRef}
@@ -220,7 +220,7 @@ export function LlmChatComposer({
                           onClick={() => attachmentInputRef.current?.click()}
                           disabled={attachment.status === 'uploading'}
                           aria-label="Attach file"
-                          className="h-7 px-2 text-xs shrink-0"
+                          className="h-7 px-2 text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2"
                         >
                           {attachment.status === 'uploading'
                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -249,7 +249,7 @@ export function LlmChatComposer({
                 disabled={isStreaming ? false : !canSend}
                 aria-label={isStreaming ? 'Stop generating' : 'Send message'}
                 variant="ghost"
-                className="h-9 w-9 rounded-full border border-foreground/30 bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-muted/30 disabled:text-muted-foreground shrink-0"
+                className="h-9 w-9 rounded-full p-0 shrink-0 transition-[background-color,color,opacity] bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2 disabled:bg-muted/30 disabled:text-muted-foreground dark:shadow-none"
               >
                 {isStreaming ? <Square className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
               </InputGroupButton>

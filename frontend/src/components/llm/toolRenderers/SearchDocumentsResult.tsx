@@ -65,7 +65,7 @@ export function SearchDocumentsResult({ items, projectFill, projectText, project
             {/* Score bar */}
             <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
               <div
-                className={cn('h-full rounded-full transition-all', scoreColor(hit.score ?? 0, projectFill))}
+                className={cn('h-full rounded-full transition-[width] duration-300', scoreColor(hit.score ?? 0, projectFill))}
                 style={{ width: `${pct}%` }}
               />
             </div>

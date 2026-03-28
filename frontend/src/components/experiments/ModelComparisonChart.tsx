@@ -128,7 +128,7 @@ export function ModelComparisonChart({ models }: { models: ModelRecord[] }) {
   // Empty state
   if (models.length < 2) {
     return (
-      <div className="rounded-lg border border-border bg-card/50 p-4">
+      <div className="rounded-lg border border-border shadow-sm dark:shadow-none bg-card/50 p-4">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">Model Comparison</h3>
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Add at least 2 models to compare
@@ -140,7 +140,7 @@ export function ModelComparisonChart({ models }: { models: ModelRecord[] }) {
   const barHeight = Math.max(200, models.length * 48 + 60);
 
   return (
-    <div className="rounded-lg border border-border bg-card/50 p-4">
+    <div className="rounded-lg border border-border shadow-sm dark:shadow-none bg-card/50 p-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">Model Comparison</h3>

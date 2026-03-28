@@ -12,11 +12,10 @@ interface SubtabItemProps {
   icon: ComponentType<{ className?: string }>;
   label: string;
   isActive: boolean;
-  themeColorClass: string;
   onClick: () => void;
   /** Optional right-side slot (e.g., "..." dropdown for file items) */
   actionSlot?: React.ReactNode;
-  /** Override icon color on hover/active (defaults to themeColorClass) */
+  /** Override icon color on hover/active (defaults to accent text) */
   iconColorClass?: string;
 }
 
@@ -24,14 +23,13 @@ export function SubtabItem({
   icon: Icon,
   label,
   isActive,
-  themeColorClass,
   onClick,
   actionSlot,
   iconColorClass
 }: SubtabItemProps) {
   const [hovered, setHovered] = useState(false);
 
-  const iconColor = isActive || hovered ? (iconColorClass ?? themeColorClass) : 'text-muted-foreground';
+  const iconColor = isActive || hovered ? (iconColorClass ?? 'text-accent-text') : 'text-muted-foreground';
 
   return (
     <div
@@ -47,7 +45,8 @@ export function SubtabItem({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
-        'group w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs truncate transition-colors duration-200 cursor-pointer',
+        'group w-full flex items-center gap-2 px-3 py-1.5 min-h-6 text-left text-[13px] truncate transition-colors duration-200 cursor-pointer',
+        'focus-visible:outline-none focus-visible:bg-accent',
         isActive
           ? 'font-medium'
           : 'text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50'

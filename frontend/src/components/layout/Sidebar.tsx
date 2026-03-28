@@ -21,7 +21,7 @@ import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
 import { UserProfile } from '@/components/projects/UserProfile';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -45,6 +45,9 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const activeProject = activeProjectId
     ? projects.find((p) => p.id === activeProjectId)
     : undefined;
+
+  // Ensure accent CSS vars are set on documentElement
+  useProjectThemeColor();
 
   const handleGoHome = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -93,19 +96,19 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
             title={`Edit ${activeProject.title}`}
             className={cn(
               'group relative flex h-8 w-8 items-center justify-center rounded-md shrink-0 transition-opacity',
-              projectColorClasses[activeProject.color].bg
+              'bg-accent-bg'
             )}
           >
             <ProjectIcon
               className={cn(
                 'h-4 w-4 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0',
-                projectColorClasses[activeProject.color].text
+                'text-accent-text'
               )}
             />
             <Pencil
               className={cn(
                 'absolute h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
-                projectColorClasses[activeProject.color].text
+                'text-accent-text'
               )}
             />
           </button>

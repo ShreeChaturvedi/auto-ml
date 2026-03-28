@@ -27,7 +27,7 @@ export function CodeCellOutput({ richOutputs }: CodeCellOutputProps) {
     <div className="border-t">
       <div className="flex min-h-[32px] items-center justify-between px-2 py-2">
         <button
-          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
           onClick={() => setShowOutput(!showOutput)}
           type="button"
           aria-label={showOutput ? 'Collapse output' : 'Expand output'}

@@ -19,7 +19,7 @@ interface SortHeaderProps<T extends string> {
 
 export function SortHeader<T extends string>({
   field, label, sortField, sortDir, onToggle, icon: Icon, align = 'left', className,
-  headerClassName = 'text-[11px] uppercase tracking-wider',
+  headerClassName = 'text-xs font-medium uppercase tracking-wider text-muted-foreground',
 }: SortHeaderProps<T>) {
   const active = sortField === field;
   const ariaSort = active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
@@ -43,7 +43,7 @@ export function SortHeader<T extends string>({
         {active ? (
           sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
         ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-40" />
+          <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
         )}
       </button>
     </th>

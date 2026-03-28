@@ -450,7 +450,7 @@ export function ComputeAnimationSvg({
                 transition: 'opacity 0.5s ease, transform 0.5s ease',
               }}
             >
-              <div className="flex items-center w-full h-full px-3 bg-card text-card-foreground rounded-lg border border-border shadow-sm overflow-hidden">
+              <div className="flex items-center w-full h-full px-3 bg-card text-card-foreground rounded-lg border border-border shadow-sm dark:shadow-none overflow-hidden">
                 <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border">
                    <FileIcon type={file.type} />
                 </div>
@@ -480,7 +480,7 @@ export function ComputeAnimationSvg({
                 transition: 'opacity 0.6s ease, transform 0.6s ease',
               }}
             >
-              <div className="flex items-center w-full h-full px-3 bg-card text-card-foreground rounded-lg border border-border shadow-sm overflow-hidden">
+              <div className="flex items-center w-full h-full px-3 bg-card text-card-foreground rounded-lg border border-border shadow-sm dark:shadow-none overflow-hidden">
                 <div className="flex-shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center border border-primary/20">
                    <DynamicIcon name={result.icon || result.type} className="w-4 h-4 text-primary" />
                 </div>

@@ -20,7 +20,7 @@ const SEVERITY_STYLES: Record<string, string> = {
 
 function RecommendationCard({ rec, onNavigate }: { rec: CrossPhaseRecommendation; onNavigate: (p: string) => void }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+    <div className="flex items-start gap-3 rounded-lg border border-border shadow-sm dark:shadow-none bg-card p-3">
       <AlertTriangle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2">

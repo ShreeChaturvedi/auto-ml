@@ -12,14 +12,12 @@ interface WorkbookSubtabsProps {
   projectId: string;
   /** Phase key — doubles as both the registry store key and URL path segment. */
   phase: WorkbookPhase;
-  themeColorClass: string;
   activeWorkbookId?: string;
 }
 
 export function WorkbookSubtabs({
   projectId,
   phase,
-  themeColorClass,
   activeWorkbookId
 }: WorkbookSubtabsProps) {
   const navigate = useNavigate();
@@ -48,7 +46,7 @@ export function WorkbookSubtabs({
           icon={Notebook}
           label={wb.name}
           isActive={wb.id === activeWorkbookId}
-          themeColorClass={themeColorClass}
+
           onClick={() => handleClick(wb.id)}
         />
       ))}

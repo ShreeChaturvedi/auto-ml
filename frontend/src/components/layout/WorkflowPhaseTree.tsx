@@ -16,7 +16,7 @@ import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookR
 import { createWorkbookId, nextWorkbookName } from '@/components/preprocessing/preprocessingTabUtils';
 import type { Phase } from '@/types/phase';
 import { phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
-import { projectColorClasses } from '@/types/project';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -53,7 +53,7 @@ const EMPTY_PHASES: Phase[] = [];
  */
 const LINE_STYLE_BASE = { left: '18.5px', top: '22px', bottom: '13px' } as const;
 const LINE_STYLE_ACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'currentColor' };
-const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground))' };
+const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground) / 0.1)' };
 
 /** Phases that show a "+" action button on hover */
 const PLUS_ACTION_PHASES = new Set<Phase>([
@@ -170,13 +170,12 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     }
   };
 
-  const themeColorClass = activeProject
-    ? projectColorClasses[activeProject.color]?.text ?? ''
-    : '';
+  // Ensure accent CSS vars are set on documentElement (side-effect of the hook)
+  useProjectThemeColor();
 
   if (!activeProject) {
     return !collapsed ? (
-      <div className="px-3 py-2 text-workflow text-muted-foreground">
+      <div className="px-3 py-2 text-sm text-muted-foreground">
         Select a project to view phases
       </div>
     ) : null;
@@ -194,9 +193,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           const isWorkbookPhase = WORKBOOK_PHASES.has(phase);
           const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
 
-          const iconColorClass = isActive && activeProject
-            ? projectColorClasses[activeProject.color]?.text
-            : undefined;
+          const iconColorClass = isActive ? 'text-accent-text' : undefined;
 
           const IconComponent = (
             LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>
@@ -207,9 +204,9 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
               className={cn(
                 'group flex items-center gap-1 rounded-lg',
                 !isUnlocked
-                  ? 'text-muted-foreground/50'
+                  ? 'text-muted-foreground'
                   : isActive
-                    ? 'bg-muted font-medium'
+                    ? 'bg-muted font-medium border-l-2 border-accent-fill'
                     : 'text-foreground hover:bg-muted'
               )}
             >
@@ -222,22 +219,22 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                     e.stopPropagation();
                     togglePhaseExpand(phase);
                   }}
-                  className="shrink-0 pl-3 py-2 cursor-pointer"
+                  className="shrink-0 pl-3 py-2 cursor-pointer focus-visible:outline-none focus-visible:bg-accent"
                   aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
                 >
                   <div className="relative h-3.5 w-3.5">
                     {IconComponent && (
                       <IconComponent
                         className={cn(
-                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200 group-hover:opacity-0',
+                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200 group-hover:opacity-0 group-focus-within:opacity-0',
                           iconColorClass
                         )}
                       />
                     )}
                     <ChevronRight
                       className={cn(
-                        'absolute inset-0 h-3.5 w-3.5 transition-all duration-200',
-                        'opacity-0 group-hover:opacity-100',
+                        'absolute inset-0 h-3.5 w-3.5 transition-[opacity,transform] duration-200',
+                        'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
                         isExpanded && 'rotate-90',
                         iconColorClass
                       )}
@@ -257,15 +254,16 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 onClick={(e) => handlePhaseClick(e, phase)}
                 disabled={!isUnlocked}
                 className={cn(
-                  'flex min-w-0 flex-1 items-center py-2 pr-3 text-left rounded-r-lg',
+                  'flex min-w-0 flex-1 items-center py-2 pr-3 text-left rounded-r-lg focus-visible:outline-none focus-visible:bg-accent',
                   !isUnlocked && 'cursor-default',
                   isUnlocked && 'cursor-pointer'
                 )}
               >
                 <span
                   className={cn(
-                    'flex-1 text-workflow truncate transition-opacity duration-300 pl-2',
+                    'flex-1 text-sm truncate transition-opacity duration-300 pl-2',
                     collapsed && 'opacity-0',
+                    isActive && 'font-medium',
                     shimmeringPhases.has(phase) && 'shimmer-text-once'
                   )}
                   onAnimationEnd={shimmeringPhases.has(phase) ? () => {
@@ -289,7 +287,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                     : phase === 'experiments' ? (e) => { e.stopPropagation(); setSeedDialogOpen(true); }
                     : handleNewPlan
                   }
-                  className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-all opacity-0 group-hover:opacity-100"
+                  className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-opacity opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                   title={isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
                 >
                   <Plus className="h-3 w-3 text-muted-foreground" />
@@ -307,7 +305,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                   className={cn(
                     'absolute w-px transition-opacity duration-300',
                     isExpanded ? 'opacity-100' : 'opacity-0',
-                    isActive && themeColorClass
+                    isActive && 'text-accent-text'
                   )}
                   style={isActive ? LINE_STYLE_ACTIVE : LINE_STYLE_INACTIVE}
                 />
@@ -340,21 +338,20 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 >
                   <div className="overflow-hidden">
                     {phase === 'upload' && (
-                      <PlanSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
+                      <PlanSubtabs projectId={activeProjectId} />
                     )}
                     {phase === 'data-viewer' && (
-                      <FileSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
+                      <FileSubtabs projectId={activeProjectId} />
                     )}
                     {isWorkbookPhase && (
                       <WorkbookSubtabs
                         projectId={activeProjectId}
                         phase={phase as WorkbookPhase}
-                        themeColorClass={themeColorClass}
                         activeWorkbookId={isActive ? activeWorkbookId : undefined}
                       />
                     )}
                     {phase === 'experiments' && (
-                      <ModelSubtabs projectId={activeProjectId} themeColorClass={themeColorClass} />
+                      <ModelSubtabs projectId={activeProjectId} />
                     )}
                   </div>
                 </div>

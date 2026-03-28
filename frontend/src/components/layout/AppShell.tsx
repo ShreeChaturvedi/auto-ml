@@ -25,7 +25,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* Sidebar - collapsed = narrow (icons only), expanded = full width */}
       <div
         className={cn(
-          'flex-shrink-0 border-r border-border bg-card transition-all duration-300 ease-in-out',
+          'flex-shrink-0 border-r border-border bg-card transition-[width] duration-300 ease-quart-out',
           sidebarCollapsed ? 'w-16' : 'w-72'
         )}
       >

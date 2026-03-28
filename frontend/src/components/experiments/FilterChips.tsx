@@ -33,7 +33,7 @@ export function FilterChips({ predicates, onRemovePredicate, onClearFilter }: Fi
           </span>
           <button
             type="button"
-            className="absolute inset-y-0 right-0 flex items-center justify-center w-7 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/chip:opacity-100 group-hover/chip:pointer-events-auto text-muted-foreground hover:text-foreground"
+            className="absolute inset-y-0 right-0 flex items-center justify-center w-7 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/chip:opacity-100 group-hover/chip:pointer-events-auto group-focus-within/chip:opacity-100 group-focus-within/chip:pointer-events-auto text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onClick={() => onRemovePredicate(i)}
             aria-label={`Remove filter: ${pred.field} ${formatOperator(pred.operator)} ${pred.value}`}
           >

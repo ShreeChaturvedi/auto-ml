@@ -101,7 +101,7 @@ export function CodeCell({
 
   return (
     <div className={cn(
-      'border rounded-md overflow-hidden transition-all',
+      'border border-border rounded-md overflow-hidden bg-card shadow-sm dark:shadow-none transition-colors duration-150',
       cell.status === 'running' && 'ring-1 ring-blue-500/50',
       cell.status === 'error' && 'border-red-500/50'
     )}>
@@ -199,7 +199,7 @@ export function CodeCell({
         <Suspense fallback={
           <div
             className="h-full animate-pulse"
-            style={{ backgroundColor: resolvedTheme === 'dark' ? '#000000' : '#ffffff' }}
+            style={{ backgroundColor: resolvedTheme === 'dark' ? '#0a0a0a' : '#ffffff' }}
           />
         }>
           <LazyMonacoEditor

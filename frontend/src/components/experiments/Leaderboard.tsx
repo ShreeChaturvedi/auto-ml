@@ -111,7 +111,8 @@ export function Leaderboard() {
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
 
-  const { themeColorClass: trophyColorClass, colorClasses } = useProjectThemeColor();
+  useProjectThemeColor();
+  const trophyColorClass = 'text-accent-text';
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
   const championId = useMemo(() => findChampionId(models), [models]);
@@ -180,7 +181,7 @@ export function Leaderboard() {
       {/* Table */}
       <ScrollArea className="flex-1">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-10 border-b border-border/20">
+          <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-20 border-b border-border/20">
             <tr>
               <th scope="col" className="w-8" />
               <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
@@ -202,10 +203,10 @@ export function Leaderboard() {
                 <tr
                   key={model.modelId}
                   className={cn(
-                    'transition-colors cursor-pointer border-b border-border/10 hover:bg-muted/20 group',
+                    'transition-colors cursor-pointer border-b border-border/10 hover:bg-muted/50 group',
                     isSelected && [
                       'bg-muted/40 border-l-2',
-                      colorClasses?.borderAccent ?? 'border-primary',
+                      'border-accent-fill',
                     ],
                     isChampion && !isSelected && 'bg-muted/10',
                     isCompared && 'ring-1 ring-inset ring-primary/20'
@@ -223,7 +224,7 @@ export function Leaderboard() {
                     <Checkbox
                       checked={isCompared}
                       onCheckedChange={() => toggleComparison(model.modelId)}
-                      className="h-3.5 w-3.5 group-hover:ring-1 group-hover:ring-muted-foreground/20 transition-shadow"
+                      className="h-3.5 w-3.5 group-hover:ring-1 group-hover:ring-muted-foreground/20 group-focus-within:ring-1 group-focus-within:ring-muted-foreground/20 transition-shadow"
                     />
                   </td>
                   <td className="py-2.5 px-3 text-left font-semibold truncate max-w-[180px]">
@@ -272,7 +273,7 @@ export function Leaderboard() {
                     );
                   })}
                   <td className="py-2.5 px-1 text-right">
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 transition-opacity inline-block" />
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 group-focus-within:opacity-60 transition-opacity inline-block" />
                   </td>
                 </tr>
               );

@@ -88,7 +88,7 @@ export function PackageManagerSection({
             <div
               id={suggestionsListId}
               role="listbox"
-              className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border bg-popover p-1 shadow-lg max-h-[280px] overflow-y-auto"
+              className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-border bg-popover p-1 shadow-lg dark:shadow-none max-h-[280px] overflow-y-auto"
             >
               {suggestionsLoading && (
                 <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
@@ -117,7 +117,7 @@ export function PackageManagerSection({
                   onMouseEnter={() => setActiveSuggestionIndex(index)}
                   onClick={() => handleSuggestionSelect(pkg)}
                   className={cn(
-                    'w-full rounded-sm px-2 py-2 text-left text-sm transition-colors',
+                    'w-full rounded-sm px-2 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     index === activeSuggestionIndex
                       ? 'bg-accent text-accent-foreground'
                       : 'hover:bg-muted'
@@ -150,6 +150,7 @@ export function PackageManagerSection({
           onClick={onRefreshPackages}
           disabled={refreshingPackages}
           title="Refresh installed packages"
+          className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <RefreshCcw className={cn('h-4 w-4', refreshingPackages && 'animate-spin')} />
         </Button>
@@ -183,11 +184,11 @@ export function PackageManagerSection({
                   key={`${pkg.name}-${pkg.version ?? 'latest'}`}
                   type="button"
                   onClick={() => onInstalledPackageClick(pkg)}
-                  className="w-full px-3 py-2.5 hover:bg-muted/30 transition-colors text-left group"
+                  className="w-full px-3 py-2.5 hover:bg-muted/30 transition-colors text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 group-hover:bg-emerald-500/15 transition-colors">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 group-hover:bg-emerald-500/15 transition-[background-color] duration-150">
                         <Package className="h-3.5 w-3.5 text-emerald-500" />
                       </div>
                       <div className="min-w-0">

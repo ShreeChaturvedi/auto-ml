@@ -23,7 +23,7 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
 
   return (
     <>
-      <div className="group flex items-center gap-3 py-1.5 px-1 rounded-md hover:bg-accent/30 transition-colors">
+      <div className="group flex items-center gap-3 py-1.5 px-1 rounded-md hover:bg-muted/50 border-b border-border/50 transition-colors">
         {/* Icon / Spinner / Error — crossfade container */}
         <div className={cn('relative flex-shrink-0 h-5 w-5', colorClass)}>
           {/* File icon — visible when uploaded */}
@@ -66,10 +66,10 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
 
         {/* File size / Actions — actions overlay size on hover */}
         <div className="relative flex-shrink-0 flex items-center justify-end">
-          <span className="text-xs text-muted-foreground font-mono group-hover:opacity-0">
+          <span className="text-xs text-muted-foreground font-mono group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity">
             {formatFileSize(file.size)}
           </span>
-          <div className="absolute inset-y-0 right-0 flex items-center gap-1 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100">
+          <div className="absolute inset-y-0 right-0 flex items-center gap-1 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 transition-opacity">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

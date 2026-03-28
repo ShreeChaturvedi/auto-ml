@@ -29,9 +29,9 @@ function CompareNarrativeSection() {
   if (compareNarrative.isLoading && !compareNarrative.text) {
     return (
       <div className="space-y-2">
-        <div className="h-4 w-full animate-pulse rounded bg-muted/60" />
-        <div className="h-4 w-3/4 animate-pulse rounded bg-muted/60" />
-        <div className="h-4 w-5/6 animate-pulse rounded bg-muted/60" />
+        <div className="h-4 w-full skeleton-shimmer rounded bg-muted/60" />
+        <div className="h-4 w-3/4 skeleton-shimmer rounded bg-muted/60" />
+        <div className="h-4 w-5/6 skeleton-shimmer rounded bg-muted/60" />
       </div>
     );
   }

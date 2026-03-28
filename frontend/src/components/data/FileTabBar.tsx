@@ -27,7 +27,6 @@ import {
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { SortableTab } from './SortableTab';
 
@@ -56,9 +55,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
 
   const { projects } = useProjectStore();
   const activeProject = projects.find((project) => project.id === projectId);
-  const themeBorderAccentClass = activeProject
-    ? projectColorClasses[activeProject.color]?.borderAccent
-    : undefined;
+  const themeBorderAccentClass = activeProject ? 'border-accent-fill' : undefined;
 
   // Get files and artifacts for this project
   const files = useMemo(
@@ -178,14 +175,14 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
 
   if (orderedTabs.length === 0) {
     return (
-      <div className="flex h-14 items-center justify-between gap-3 border-b border-border bg-card px-4">
+      <div className="flex h-14 items-center justify-between gap-3 border-b border-border bg-card px-4 dark:shadow-none">
         <span className="text-sm text-muted-foreground">No files or queries to display</span>
       </div>
     );
   }
 
   return (
-    <div className="h-14 border-b border-border bg-card">
+    <div className="h-14 border-b border-border bg-card dark:shadow-none">
       <div className="flex h-full items-center">
         <div className="min-w-0 flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex h-full items-center">

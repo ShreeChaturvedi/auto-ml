@@ -80,8 +80,8 @@ export function TrainingProgressCard({
 
   return (
     <div className={cn(
-      'rounded-lg border bg-card text-card-foreground overflow-hidden',
-      isRunning && 'shadow-sm',
+      'rounded-lg border border-border bg-card text-card-foreground overflow-hidden',
+      isRunning && 'shadow-sm dark:shadow-none',
     )}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/40">

@@ -25,7 +25,7 @@ export function CommitBadge({ title, details }: CommitBadgeProps) {
         onClick={() => hasDetails && setExpanded(!expanded)}
         disabled={!hasDetails}
         className={cn(
-          'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+          'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
           hasDetails && 'hover:bg-muted/50 cursor-pointer',
           !hasDetails && 'cursor-default',
         )}

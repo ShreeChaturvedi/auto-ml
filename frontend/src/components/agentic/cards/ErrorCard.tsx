@@ -42,7 +42,7 @@ export function ErrorCard({ message, severity, traceback, onRetry }: ErrorCardPr
   return (
     <div
       className={cn(
-        'rounded-md border p-3 shadow-sm',
+        'rounded-md border p-3 shadow-sm dark:shadow-none',
         config.border,
         config.bg,
       )}
@@ -60,7 +60,7 @@ export function ErrorCard({ message, severity, traceback, onRetry }: ErrorCardPr
             type="button"
             onClick={() => setTraceExpanded(!traceExpanded)}
             className={cn(
-              'flex items-center gap-1 text-xs transition-colors',
+              'flex items-center gap-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm',
               config.text,
               'opacity-70 hover:opacity-100',
             )}

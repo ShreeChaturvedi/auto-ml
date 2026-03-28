@@ -11,7 +11,7 @@ export function ChartCard({ label, delay, children, className }: ChartCardProps)
   return (
     <div
       className={cn(
-        'card-enter rounded-xl border border-border/20 bg-card/50 p-4 hover:border-border/30 transition-colors',
+        'card-enter rounded-xl border border-border bg-card/50 p-4 shadow-sm dark:shadow-none hover:border-border/80 transition-colors',
         className,
       )}
       style={{ animationDelay: `${delay}ms` }}

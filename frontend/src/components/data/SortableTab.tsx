@@ -72,7 +72,7 @@ export function SortableTab({
       className={cn(
         // `relative` anchors the absolutely-positioned close button.
         // `overflow-hidden + isolate` keep the button clipped/layered within this tab only.
-        'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden',
+        'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
         isActive
           ? cn(themeBorderAccentClass ?? 'border-primary', 'bg-muted text-foreground')
           : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -108,7 +108,7 @@ export function SortableTab({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5"
+          className="h-5 w-5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             onClose();

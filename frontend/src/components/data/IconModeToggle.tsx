@@ -2,8 +2,6 @@ import type { ComponentType } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 
 export interface IconModeToggleOption {
   value: string;
@@ -19,15 +17,10 @@ interface IconModeToggleProps {
   className?: string;
   itemClassName?: string;
   /**
-   * Explicit icon class - if provided, this takes precedence over automatic project color.
+   * Explicit icon class - if provided, this takes precedence over automatic accent color.
    * Useful when you want a specific color regardless of project theme.
    */
   selectedIconClassName?: string;
-  /**
-   * Whether to apply the project theme color to the selected icon.
-   * Defaults to true. Set to false to use default styling.
-   */
-  useProjectColor?: boolean;
 }
 
 export function IconModeToggle({
@@ -37,18 +30,9 @@ export function IconModeToggle({
   className,
   itemClassName,
   selectedIconClassName,
-  useProjectColor = true
 }: IconModeToggleProps) {
-  // Get project theme color automatically
-  const { activeProjectId, projects } = useProjectStore();
-  const activeProject = projects.find((project) => project.id === activeProjectId);
-  
-  const projectColorClass = activeProject && useProjectColor
-    ? projectColorClasses[activeProject.color]?.text
-    : null;
-  
-  // Priority: explicit prop > project color > default
-  const iconColorClass = selectedIconClassName ?? projectColorClass ?? 'text-foreground';
+  // Priority: explicit prop > accent token > default
+  const iconColorClass = selectedIconClassName ?? 'text-accent-text';
 
   return (
     <ToggleGroup

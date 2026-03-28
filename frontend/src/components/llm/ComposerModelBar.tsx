@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 import {
   DEFAULT_ASSISTANT_MODEL,
   getModelOption,
@@ -81,9 +80,7 @@ export function ComposerModelBar({
   const { reasoningEffort, onReasoningEffortChange, reasoningOptions } = reasoningConfig;
 
   const activeProject = useProjectStore((s) => s.getActiveProject());
-  const projectIconColorClass = activeProject
-    ? projectColorClasses[activeProject.color]?.text
-    : undefined;
+  const projectIconColorClass = activeProject ? 'text-accent-text' : undefined;
 
   const currentModelOption = useMemo(
     () => getModelOption(model, modelOptions),
@@ -173,7 +170,7 @@ export function ComposerModelBar({
           sessionUsages={usageConfig.sessionUsages}
           model={usageConfig.model}
           projectColorClass={projectIconColorClass}
-          projectBgColorClass={activeProject ? projectColorClasses[activeProject.color]?.bg : undefined}
+          projectBgColorClass={activeProject ? 'bg-accent-bg' : undefined}
           projectColor={activeProject?.color === 'custom' ? activeProject.customColor : undefined}
         />
       ) : null}

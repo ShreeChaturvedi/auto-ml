@@ -21,7 +21,6 @@ import { SubtabItem } from './SubtabItem';
 
 interface ModelSubtabsProps {
   projectId: string;
-  themeColorClass: string;
 }
 
 function ModelActionMenu({
@@ -77,7 +76,7 @@ function ModelActionMenu({
   );
 }
 
-export function ModelSubtabs({ projectId, themeColorClass }: ModelSubtabsProps) {
+export function ModelSubtabs({ projectId }: ModelSubtabsProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -117,7 +116,7 @@ export function ModelSubtabs({ projectId, themeColorClass }: ModelSubtabsProps) 
             icon={Icon}
             label={model.name}
             isActive={isOnExperiments && model.modelId === selectedModelId}
-            themeColorClass={themeColorClass}
+
             iconColorClass={colorClass}
             onClick={() => {
               navigate(`/project/${projectId}/experiments`);

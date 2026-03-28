@@ -31,7 +31,6 @@ import { SubtabItem } from './SubtabItem';
 
 interface FileSubtabsProps {
   projectId: string;
-  themeColorClass: string;
 }
 
 function FileActionMenu({
@@ -90,7 +89,7 @@ function FileActionMenu({
   );
 }
 
-export function FileSubtabs({ projectId, themeColorClass }: FileSubtabsProps) {
+export function FileSubtabs({ projectId }: FileSubtabsProps) {
   const {
     dataFiles,
     contextFiles,
@@ -133,7 +132,7 @@ export function FileSubtabs({ projectId, themeColorClass }: FileSubtabsProps) {
         icon={Icon}
         label={file.name}
         isActive={isOnDataViewer && file.id === activeFileTabId}
-        themeColorClass={themeColorClass}
+
         iconColorClass={colorClass}
         onClick={() => handleOpenFile(file.id)}
         actionSlot={

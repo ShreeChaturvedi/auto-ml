@@ -54,7 +54,7 @@ export function DataTableHeaderCell({
               className={cn(
                 'h-7 w-7 bg-transparent transition-colors',
                 typeColorClassName ?? 'text-primary',
-                'hover:bg-accent/70 focus-visible:bg-accent/70 data-[state=open]:bg-accent/70 active:bg-accent/70'
+                'hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 data-[state=open]:bg-accent/70 active:bg-accent/70'
               )}
               disabled={isUpdatingType}
               title={`Column type: ${getTypeLabel(currentType)}`}
@@ -114,16 +114,16 @@ export function DataTableHeaderCell({
       <Button
         variant="ghost"
         size="sm"
-        className="h-8 px-2 font-medium"
+        className="h-8 px-2 font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         onClick={() => column.toggleSorting()}
       >
         {header}
         {isSorted === 'asc' ? (
-          <ArrowUp className="ml-2 h-3 w-3" />
+          <ArrowUp className="ml-2 h-3 w-3 text-muted-foreground" />
         ) : isSorted === 'desc' ? (
-          <ArrowDown className="ml-2 h-3 w-3" />
+          <ArrowDown className="ml-2 h-3 w-3 text-muted-foreground" />
         ) : (
-          <ArrowUpDown className="ml-2 h-3 w-3 opacity-50" />
+          <ArrowUpDown className="ml-2 h-3 w-3 text-muted-foreground" />
         )}
       </Button>
     </div>

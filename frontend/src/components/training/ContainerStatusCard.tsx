@@ -45,7 +45,16 @@ export function ContainerStatusCard({
                     : 'bg-muted-foreground/60'
             )}
           />
-          <span className="text-muted-foreground">{runtimeStatus}</span>
+          <span className={cn(
+              'text-sm',
+              runtimeStatus === 'Ready' || runtimeStatus === 'Connected'
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : runtimeStatus === 'Connecting'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : runtimeStatus === 'Unavailable'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+            )}>{runtimeStatus}</span>
           <span className="text-muted-foreground/40">&middot;</span>
           <span className="text-xs text-muted-foreground">Python</span>
           <Select value={pythonVersion} onValueChange={setPythonVersion}>
@@ -64,7 +73,7 @@ export function ContainerStatusCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-7 w-7 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 onClick={onConnect}
                 disabled={!cloudAvailable || cloudInitializing}
               >

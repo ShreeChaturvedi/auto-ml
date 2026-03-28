@@ -11,10 +11,9 @@ import { SubtabItem } from './SubtabItem';
 
 interface PlanSubtabsProps {
   projectId: string;
-  themeColorClass: string;
 }
 
-export function PlanSubtabs({ projectId, themeColorClass }: PlanSubtabsProps) {
+export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { plans, selectedPlanId, handleOpenPlan } = useProjectPlans(projectId);
@@ -32,7 +31,7 @@ export function PlanSubtabs({ projectId, themeColorClass }: PlanSubtabsProps) {
           icon={MessageSquare}
           label={chat.name}
           isActive={isOnUpload && activeChatId === chat.id}
-          themeColorClass={themeColorClass}
+
           onClick={() => navigate(`/project/${projectId}/upload?chatId=${chat.id}`)}
           actionSlot={
             <span className="relative flex h-2 w-2">
@@ -48,7 +47,7 @@ export function PlanSubtabs({ projectId, themeColorClass }: PlanSubtabsProps) {
           icon={ClipboardList}
           label={plan.name}
           isActive={isOnUpload && plan.id === selectedPlanId}
-          themeColorClass={themeColorClass}
+
           onClick={() => handleOpenPlan(plan.id)}
         />
       ))}

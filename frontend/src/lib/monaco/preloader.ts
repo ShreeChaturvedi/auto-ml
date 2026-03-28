@@ -45,14 +45,14 @@ export async function initMonaco(): Promise<Monaco> {
           { token: 'operator', foreground: 'a78bfa' },
         ],
         colors: {
-          'editor.background': '#000000',
+          'editor.background': '#0a0a0a',
           'editor.foreground': '#fafafa',
-          'editor.lineHighlightBackground': '#0a0a0a',
-          'editorLineNumber.foreground': '#3f3f46',
-          'editorLineNumber.activeForeground': '#71717a',
+          'editor.lineHighlightBackground': '#121212',
+          'editorLineNumber.foreground': '#a3a3a3',
+          'editorLineNumber.activeForeground': '#d4d4d4',
           'editorCursor.foreground': '#60a5fa',
           'editor.selectionBackground': '#2563eb44',
-          'editorGutter.background': '#000000',
+          'editorGutter.background': '#121212',
         }
       });
 
@@ -89,13 +89,13 @@ export async function initMonaco(): Promise<Monaco> {
           { token: 'type', foreground: 'fbbf24' },
         ],
         colors: {
-          'editor.background': '#000000',
+          'editor.background': '#0a0a0a',
           'editor.foreground': '#fafafa',
-          'editor.lineHighlightBackground': '#0a0a0a',
+          'editor.lineHighlightBackground': '#121212',
           'editor.selectionBackground': '#2563eb44',
-          'editorLineNumber.foreground': '#404040',
-          'editorLineNumber.activeForeground': '#808080',
-          'editorGutter.background': '#000000',
+          'editorLineNumber.foreground': '#a3a3a3',
+          'editorLineNumber.activeForeground': '#d4d4d4',
+          'editorGutter.background': '#121212',
         }
       });
 

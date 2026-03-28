@@ -139,23 +139,13 @@ export async function ensureProjectDatasetSqlNames(
       continue;
     }
 
-    const updated = await repository.update(dataset.datasetId, (current) => ({
-      ...current,
+    updatedDatasets.push({
+      ...dataset,
       metadata: {
-        ...(current.metadata ?? {}),
+        ...(dataset.metadata ?? {}),
         sqlName: nextSqlName
       }
-    }));
-
-    updatedDatasets.push(
-      updated ?? {
-        ...dataset,
-        metadata: {
-          ...(dataset.metadata ?? {}),
-          sqlName: nextSqlName
-        }
-      }
-    );
+    });
   }
 
   return updatedDatasets;

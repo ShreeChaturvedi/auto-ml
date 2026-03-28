@@ -31,6 +31,7 @@ function buildDataset(overrides: Partial<DatasetProfile> = {}): DatasetProfile {
 function createDatasetRepository(datasets: DatasetProfile[]): DatasetRepository {
   return {
     list: vi.fn(async () => datasets),
+    listByProject: vi.fn(async (projectId: string) => datasets.filter((dataset) => dataset.projectId === projectId)),
     get: vi.fn(),
     getById: vi.fn(),
     create: vi.fn(),

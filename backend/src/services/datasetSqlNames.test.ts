@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
@@ -97,6 +97,28 @@ describe('datasetSqlNames', () => {
 
     expect(datasets[0].metadata?.sqlName).toBe('customers');
     expect(datasets[1].metadata?.sqlName).toBe('customers_2');
+  });
+
+  it('derives missing logical SQL names without mutating the repository', async () => {
+    const datasets = [createDataset({
+      datasetId: '11111111-1111-1111-1111-111111111111',
+      filename: 'customers.csv',
+      projectId: 'project-1',
+      createdAt: '2026-03-01T00:00:00.000Z',
+      metadata: { tableName: 'customers_11111111' }
+    })];
+    const update = vi.fn(async () => undefined);
+    const repository = {
+      listByProject: vi.fn(async () => datasets),
+      update
+    } as unknown as DatasetRepository;
+
+    const projectDatasets = await ensureProjectDatasetSqlNames('project-1', repository);
+
+    expect(projectDatasets).toHaveLength(1);
+    expect(projectDatasets[0].datasetId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(projectDatasets[0].metadata?.sqlName).toBe('customers');
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('rewrites logical SQL names to physical names', () => {

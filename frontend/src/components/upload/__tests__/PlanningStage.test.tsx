@@ -137,8 +137,7 @@ describe('PlanningStage Accessibility', () => {
     });
   });
 
-  it('renders plan editor with accessible label when editing a plan', async () => {
-    // Mock the stream to immediately emit a plan_exit event
+  it('renders the generated plan preview and approval controls', async () => {
     (streamOnboardingPlan as Mock).mockImplementation(async (_request, onEvent) => {
       onEvent({
         type: 'plan_exit',
@@ -163,16 +162,10 @@ describe('PlanningStage Accessibility', () => {
     const sendButton = screen.getByRole('button', { name: 'Send message' });
     fireEvent.click(sendButton);
 
-    // Wait for the plan view button to appear
-    const planView = await screen.findByTestId(/plan-view-/);
-    
-    // Click to edit
-    fireEvent.click(planView);
-
-    // Verify textarea has accessible label
-    const textarea = screen.getByRole('textbox', { name: /Edit plan plans\/test-plan.md/i });
-    expect(textarea).toBeInTheDocument();
-    expect(textarea).toHaveValue('# Test Plan\n\nThis is a test plan.');
+    expect(await screen.findByText('plans/test-plan.md')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Test Plan' })).toBeInTheDocument();
+    expect(screen.getByText('This is a test plan.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve Plan' })).toBeInTheDocument();
   });
 
   it('queues attachment with preview and allows removing before send', async () => {

@@ -195,6 +195,9 @@ export function AgenticShell({
 
   const handleRetryWorkflow = useCallback(() => {
     if (isGenerating || !projectId) return;
+    // Find the last user prompt before stripping errors so we can re-send it
+    const lastUserMessage = [...messages].reverse().find(m => m.type === 'user');
+    const lastUserPrompt = lastUserMessage?.content ?? '';
     // Strip trailing error messages
     setMessages((prev) => {
       const trimmed = [...prev];
@@ -203,9 +206,9 @@ export function AgenticShell({
       }
       return trimmed;
     });
-    // Re-run with empty prompt (won't add a user message) to retry the workflow turn
-    void runLoop('', { model: assistantModel, reasoningEffort });
-  }, [isGenerating, projectId, setMessages, runLoop, assistantModel, reasoningEffort]);
+    // Re-send the last user prompt to retry the workflow turn
+    void runLoop(lastUserPrompt, { model: assistantModel, reasoningEffort });
+  }, [isGenerating, projectId, messages, setMessages, runLoop, assistantModel, reasoningEffort]);
 
   // Fetch turn diffs only after streaming completes (not during token-by-token updates)
   const [turnDiffs, setTurnDiffs] = useState<ReadonlyMap<string, SavepointDiff>>(new Map());

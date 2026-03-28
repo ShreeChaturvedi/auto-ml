@@ -160,14 +160,14 @@ export function AgenticStepDisplay({
       {composerStatusSlot}
       {suggestions.length > 0 && !domainLockReason ? (
         <div className="min-w-0 overflow-x-auto px-4 pt-2 scrollbar-hide">
-          <div className="flex min-w-max flex-nowrap gap-2">
+          <div className="flex flex-wrap gap-2">
             {suggestions.map((suggestion) => (
               <Button
                 key={suggestion.id}
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 shrink-0 text-xs"
+                className="h-7 text-xs"
                 onClick={() => submitPrompt(suggestion.prompt)}
                 disabled={isGenerating}
               >

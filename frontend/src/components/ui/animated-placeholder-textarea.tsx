@@ -65,7 +65,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
         disabled={disabled}
         readOnly={readOnly}
         className={cn(
-          'flex w-full rounded-md border border-input bg-background px-3 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          'flex w-full rounded-md border border-input bg-background px-3 py-3 text-sm leading-5 ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
           className
         )}
         style={{
@@ -105,7 +105,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
 
             {/* Current placeholder – slides up and fades out during animation */}
             <span
-              className="block text-sm text-muted-foreground whitespace-pre-wrap break-words"
+              className="block text-sm leading-5 text-muted-foreground whitespace-pre-wrap break-words"
               style={{
                 transform: isAnimating ? 'translateY(-100%)' : 'translateY(0)',
                 opacity: isAnimating ? 0 : 1,
@@ -121,7 +121,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
                 visibility: each character fades in at its staggered time and
                 briefly blooms to full foreground color before settling to muted. */}
             <span
-              className="absolute inset-x-0 top-0 text-sm whitespace-pre-wrap break-words"
+              className="absolute inset-x-0 top-0 text-sm leading-5 whitespace-pre-wrap break-words"
               style={{
                 transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
                 opacity: isAnimating ? 1 : 0,

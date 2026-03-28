@@ -73,6 +73,7 @@ export function QuerySqlEditor({
   const tabHandlerRef = useRef<{ domNode: HTMLElement; handler: (e: KeyboardEvent) => void } | null>(null);
 
   const [editorLeftOffset, setEditorLeftOffset] = useState(0);
+  const [editorContentWidth, setEditorContentWidth] = useState(0);
   const { isFocused, isIdle, setFocused, onActivity } = useSqlEditorIdle();
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -209,9 +210,13 @@ export function QuerySqlEditor({
 
       // Content left offset for placeholder alignment
       layoutSubRef.current?.dispose();
-      const updateLeftOffset = () => setEditorLeftOffset(editorInstance.getLayoutInfo().contentLeft);
-      updateLeftOffset();
-      layoutSubRef.current = editorInstance.onDidLayoutChange(updateLeftOffset);
+      const updateLayout = () => {
+        const info = editorInstance.getLayoutInfo();
+        setEditorLeftOffset(info.contentLeft);
+        setEditorContentWidth(info.contentWidth);
+      };
+      updateLayout();
+      layoutSubRef.current = editorInstance.onDidLayoutChange(updateLayout);
 
       const model = editorInstance.getModel();
       if (model && model.getLanguageId() !== 'sql') {
@@ -347,6 +352,7 @@ export function QuerySqlEditor({
           incomingTransition={incomingTransition}
           animateChars={isAnimating && !prefersReducedMotion}
           editorLeftOffset={editorLeftOffset}
+          contentWidth={editorContentWidth}
         />
       )}
       {!collapsed && (

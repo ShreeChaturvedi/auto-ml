@@ -276,7 +276,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           disabled={phase === 'submitting'}
           aria-label="Natural language query input"
           className={cn(
-            'h-full resize-none leading-relaxed border-0 rounded-none shadow-none',
+            'h-full resize-none leading-5 border-0 rounded-none shadow-none',
             'focus-visible:ring-0 focus-visible:ring-offset-0',
             'transition-colors duration-200',
             !isIdle && 'cursor-default',

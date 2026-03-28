@@ -15,6 +15,7 @@ interface SqlPlaceholderOverlayProps {
   incomingTransition: string;
   animateChars: boolean;
   editorLeftOffset: number;
+  contentWidth: number;
 }
 
 function TokenizedLine({ sql, animate }: { sql: string; animate: boolean }) {
@@ -28,10 +29,9 @@ function TokenizedLine({ sql, animate }: { sql: string; animate: boolean }) {
     <span className="whitespace-pre-wrap break-words">
       {tokens.map((token, ti) => {
         const color = TOKEN_INLINE_COLORS[token.type as SqlTokenType];
-        const fontWeight = token.type === 'keyword' ? 600 : undefined;
         if (!animate || token.type === 'whitespace') {
           return (
-            <span key={ti} style={{ color, fontWeight }}>
+            <span key={ti} style={{ color }}>
               {token.text}
             </span>
           );
@@ -43,7 +43,6 @@ function TokenizedLine({ sql, animate }: { sql: string; animate: boolean }) {
               key={`${ti}-${ci}`}
               style={{
                 '--sql-token-color': color,
-                fontWeight,
                 display: 'inline',
                 animation: `sql-placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
                 animationDelay: `${delay}ms`,
@@ -66,18 +65,22 @@ export function SqlPlaceholderOverlay({
   incomingTransition,
   animateChars,
   editorLeftOffset,
+  contentWidth,
 }: SqlPlaceholderOverlayProps) {
   if (!currentSql) return null;
 
   return (
     <div
-      className="absolute top-0 bottom-0 right-0 z-[5] pointer-events-none"
+      className="absolute top-0 bottom-0 z-[5] pointer-events-none"
       style={{
         left: editorLeftOffset,
+        width: contentWidth || undefined,
         paddingTop: 8,
         fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
         fontSize: 13,
         lineHeight: '18px',
+        fontFeatureSettings: '"liga" off, "calt" off',
+        fontVariantNumeric: 'normal',
       }}
       aria-hidden="true"
     >

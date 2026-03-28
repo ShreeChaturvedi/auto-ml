@@ -22,7 +22,6 @@ interface DocumentContentProps {
   isBinary: boolean;
   blobUrl: string | null;
   textContent: string;
-  markdownViewMode: 'source' | 'preview';
   fileName: string;
   onDownload: (blobUrl: string | null, fileName: string) => void;
 }
@@ -43,7 +42,6 @@ export function DocumentContent({
   isBinary,
   blobUrl,
   textContent,
-  markdownViewMode,
   fileName,
   onDownload,
 }: DocumentContentProps) {
@@ -74,15 +72,9 @@ export function DocumentContent({
 
       {status === 'ready' && isMarkdown && (
         <ScrollArea className="h-full">
-          {markdownViewMode === 'preview' ? (
-            <Markdown className="markdown-content p-6">
-              {textContent}
-            </Markdown>
-          ) : (
-            <div className="whitespace-pre-wrap p-6 font-mono text-sm leading-relaxed text-foreground">
-              {textContent}
-            </div>
-          )}
+          <Markdown className="markdown-content p-6">
+            {textContent}
+          </Markdown>
         </ScrollArea>
       )}
 

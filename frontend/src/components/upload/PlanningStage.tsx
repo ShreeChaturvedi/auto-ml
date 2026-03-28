@@ -56,9 +56,6 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
     inputValue,
     setInputValue,
     isStreaming,
-    editingPlanId,
-    planDrafts,
-    setPlanDrafts,
     userMessageAttachments,
     activeTextMessageId,
     activeThinkingMessageId,
@@ -67,9 +64,6 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
     handleSuggestionClick,
     handleQuestionAnswer,
     handleApprove,
-    handleStartPlanEdit,
-    handleCancelPlanEdit,
-    handleSavePlanEdit,
     handleKeyDown,
   } = usePlanningChat({
     projectId,
@@ -222,14 +216,6 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
                   content={msg.content}
                   planName={msg.planName}
                   approved={!!msg.approved}
-                  editingPlanId={editingPlanId}
-                  draftValue={planDrafts[msg.id] ?? msg.content}
-
-
-                  onSetDraft={(id, value) => setPlanDrafts((prev) => ({ ...prev, [id]: value }))}
-                  onStartEdit={handleStartPlanEdit}
-                  onCancelEdit={handleCancelPlanEdit}
-                  onSaveEdit={handleSavePlanEdit}
                   onApprove={handleApprove}
                 />
               );

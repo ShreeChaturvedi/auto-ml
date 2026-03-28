@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
 import { Markdown } from '@/components/ui/Markdown';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const LazyPdfViewer = lazy(() => import('@/components/data/PdfViewer'));
 
@@ -135,15 +136,19 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
           const text = await blob.text();
           if (file.type === 'markdown') {
             setPreviewContent(
-              <Markdown className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
-                {text}
-              </Markdown>
+              <ScrollArea className="max-h-[70vh] rounded-lg border">
+                <Markdown className="p-4 markdown-content">
+                  {text}
+                </Markdown>
+              </ScrollArea>
             );
           } else {
             setPreviewContent(
-              <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto max-h-[600px] font-mono">
-                {text}
-              </pre>
+              <ScrollArea className="max-h-[70vh] rounded-lg bg-muted">
+                <pre className="text-xs p-4 font-mono">
+                  {text}
+                </pre>
+              </ScrollArea>
             );
           }
           setIsLoading(false);
@@ -245,9 +250,11 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
           try {
             const json = JSON.parse(text);
             setPreviewContent(
-              <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto max-h-[600px]">
-                {JSON.stringify(json, null, 2)}
-              </pre>
+              <ScrollArea className="max-h-[70vh] rounded-lg bg-muted">
+                <pre className="text-xs p-4">
+                  {JSON.stringify(json, null, 2)}
+                </pre>
+              </ScrollArea>
             );
           } catch {
             setPreviewContent(
@@ -261,9 +268,11 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
       case 'markdown':
         file.file.text().then((text) => {
           setPreviewContent(
-            <Markdown className="p-4 markdown-content rounded-lg border max-h-[600px] overflow-auto">
-              {text}
-            </Markdown>
+            <ScrollArea className="max-h-[70vh] rounded-lg border">
+              <Markdown className="p-4 markdown-content">
+                {text}
+              </Markdown>
+            </ScrollArea>
           );
           setIsLoading(false);
         }).catch(() => {
@@ -277,9 +286,11 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
       case 'text':
         file.file.text().then((text) => {
           setPreviewContent(
-            <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto max-h-[600px] font-mono">
-              {text}
-            </pre>
+            <ScrollArea className="max-h-[70vh] rounded-lg bg-muted">
+              <pre className="text-xs p-4 font-mono">
+                {text}
+              </pre>
+            </ScrollArea>
           );
           setIsLoading(false);
         }).catch(() => {
@@ -342,15 +353,13 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-            </div>
-          ) : (
-            <div className="pr-4">{previewContent}</div>
-          )}
-        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          </div>
+        ) : (
+          previewContent
+        )}
       </DialogContent>
     </Dialog>
   );

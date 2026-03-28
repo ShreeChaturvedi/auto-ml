@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, QuestionAnswer } from '@/types/llmUi';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
 import { useLlmStreamState } from '@/hooks/useLlmStreamState';
-import { usePlanEditor } from './usePlanEditor';
 import { usePlanningStream } from './usePlanningStream';
 import { usePlanningMessages } from './usePlanningMessages';
 import type { UploadedAttachmentPreview } from './useAttachmentUploader';
@@ -23,9 +22,6 @@ interface UsePlanningChatReturn {
   inputValue: string;
   setInputValue: (value: string) => void;
   isStreaming: boolean;
-  editingPlanId: string | null;
-  planDrafts: Record<string, string>;
-  setPlanDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   userMessageAttachments: Record<string, UploadedAttachmentPreview[]>;
   activeTextMessageId: string | null;
   activeThinkingMessageId: string | null;
@@ -34,9 +30,6 @@ interface UsePlanningChatReturn {
   handleSuggestionClick: (prompt: string) => void;
   handleQuestionAnswer: (msgId: string, answers: QuestionAnswer[]) => void;
   handleApprove: (planContent: string, planName: string, planId: string) => void;
-  handleStartPlanEdit: (planId: string, currentContent: string) => void;
-  handleCancelPlanEdit: (planId: string, currentContent: string) => void;
-  handleSavePlanEdit: (planId: string) => void;
   handleKeyDown: (e: React.KeyboardEvent<HTMLElement>) => void;
 }
 
@@ -59,14 +52,6 @@ export function usePlanningChat({
     currentTextIdRef,
   } = stream;
 
-  const planEditor = usePlanEditor();
-  const {
-    editingPlanId, setEditingPlanId,
-    planDrafts, setPlanDrafts,
-    handleStartPlanEdit, handleCancelPlanEdit,
-    handleSavePlanEdit: planEditorSave,
-  } = planEditor;
-
   const [currentRound, setCurrentRound] = useState(0);
   const answerHistoryRef = useRef<QuestionAnswer[]>([]);
 
@@ -78,10 +63,9 @@ export function usePlanningChat({
     if (!chat) return;
     initializedRef.current = true;
     if (chat.messages.length > 0) setMessages(chat.messages);
-    if (Object.keys(chat.planDrafts).length > 0) setPlanDrafts(chat.planDrafts);
     if (chat.answerHistory.length > 0) answerHistoryRef.current = chat.answerHistory;
     if (chat.currentRound > 0) setCurrentRound(chat.currentRound);
-  }, [planChatId, setMessages, setPlanDrafts]);
+  }, [planChatId, setMessages]);
 
   // ── Debounce-persist to store (2s) ───────────────────────────────────
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -92,12 +76,11 @@ export function usePlanningChat({
       const store = usePlanChatStore.getState();
       if (!store.chats[planChatId]) return;
       store.updateMessages(planChatId, messages);
-      store.updateDrafts(planChatId, planDrafts);
       store.updateAnswerHistory(planChatId, answerHistoryRef.current);
       store.updateRound(planChatId, currentRound);
     }, 2000);
     return () => clearTimeout(persistTimerRef.current);
-  }, [planChatId, messages, planDrafts, currentRound]);
+  }, [planChatId, messages, currentRound]);
 
   // ── Stream execution (tool-call loop, domain events) ────────────────
   const { controllerRef, requestStream } = usePlanningStream({
@@ -108,8 +91,6 @@ export function usePlanningChat({
     setCurrentRound,
     setMessages,
     setIsStreaming,
-    setEditingPlanId,
-    setPlanDrafts,
     handleStreamEvent,
     completeThinking,
     closeTextStream,
@@ -123,9 +104,7 @@ export function usePlanningChat({
     currentRound,
     setCurrentRound,
     setMessages,
-    setEditingPlanId,
     requestStream,
-    planEditorSave,
     onPlanApproved,
     uploadPendingAttachments,
     pendingAttachmentsCount,
@@ -137,9 +116,6 @@ export function usePlanningChat({
     inputValue: messaging.inputValue,
     setInputValue: messaging.setInputValue,
     isStreaming,
-    editingPlanId,
-    planDrafts,
-    setPlanDrafts,
     userMessageAttachments: messaging.userMessageAttachments,
     activeTextMessageId,
     activeThinkingMessageId,
@@ -148,9 +124,6 @@ export function usePlanningChat({
     handleSuggestionClick: messaging.handleSuggestionClick,
     handleQuestionAnswer: messaging.handleQuestionAnswer,
     handleApprove: messaging.handleApprove,
-    handleStartPlanEdit,
-    handleCancelPlanEdit,
-    handleSavePlanEdit: messaging.handleSavePlanEdit,
     handleKeyDown: messaging.handleKeyDown,
   };
 }

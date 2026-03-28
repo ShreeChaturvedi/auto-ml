@@ -20,8 +20,6 @@ interface UsePlanningStreamProps {
   setCurrentRound: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>;
-  setEditingPlanId: (id: string | null) => void;
-  setPlanDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   handleStreamEvent: (event: LlmStreamEvent) => boolean;
   completeThinking: () => void;
   closeTextStream: () => void;
@@ -37,8 +35,6 @@ export function usePlanningStream({
   setCurrentRound,
   setMessages,
   setIsStreaming,
-  setEditingPlanId,
-  setPlanDrafts,
   handleStreamEvent,
   completeThinking,
   closeTextStream,
@@ -141,7 +137,6 @@ export function usePlanningStream({
                 completeThinking();
                 closeTextStream();
                 sawPlanExit = true;
-                setEditingPlanId(null);
 
                 const planMarkdown = typeof payload.planMarkdown === 'string'
                   ? payload.planMarkdown
@@ -154,7 +149,6 @@ export function usePlanningStream({
                 );
                 const planMessageId = `plan-${Date.now()}`;
 
-                setPlanDrafts((prev) => ({ ...prev, [planMessageId]: planContent }));
                 setMessages((prev) => {
                   const withoutPlanText = prev.filter((message) =>
                     !(streamingTextId && message.type === 'assistant_text' && message.id === streamingTextId)
@@ -194,13 +188,11 @@ export function usePlanningStream({
               completeThinking();
               closeTextStream();
               sawPlanExit = true;
-              setEditingPlanId(null);
 
               const planContent = event.planMarkdown.trim();
               const planName = normalizePlanFileName(event.planName);
               const planMessageId = `plan-${Date.now()}`;
 
-              setPlanDrafts((prev) => ({ ...prev, [planMessageId]: planContent }));
               setMessages((prev) => {
                 const withoutPlanText = prev.filter((message) =>
                   !(streamingTextId && message.type === 'assistant_text' && message.id === streamingTextId)
@@ -238,7 +230,7 @@ export function usePlanningStream({
         setIsStreaming(false);
       }
     },
-    [projectId, currentRound, selectedModel, reasoningEffort, handleStreamEvent, completeThinking, closeTextStream, setIsStreaming, setMessages, currentTextIdRef, setEditingPlanId, setPlanDrafts, setCurrentRound, getAnswerHistory]
+    [projectId, currentRound, selectedModel, reasoningEffort, handleStreamEvent, completeThinking, closeTextStream, setIsStreaming, setMessages, currentTextIdRef, setCurrentRound, getAnswerHistory]
   );
 
   useEffect(() => {

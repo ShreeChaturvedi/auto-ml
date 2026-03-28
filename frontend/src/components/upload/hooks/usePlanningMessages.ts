@@ -15,9 +15,7 @@ interface UsePlanningMessagesProps {
   currentRound: number;
   setCurrentRound: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  setEditingPlanId: (id: string | null) => void;
   requestStream: (userIntent?: string, round?: number) => void;
-  planEditorSave: (planId: string, setter: React.Dispatch<React.SetStateAction<ChatMessage[]>>) => void;
   onPlanApproved: (plan: string, planName: string) => void;
   uploadPendingAttachments: (targetIds?: string[]) => Promise<{ uploaded: UploadedAttachmentPreview[]; failedCount: number }>;
   pendingAttachmentsCount: number;
@@ -29,9 +27,7 @@ export function usePlanningMessages({
   currentRound,
   setCurrentRound,
   setMessages,
-  setEditingPlanId,
   requestStream,
-  planEditorSave,
   onPlanApproved,
   uploadPendingAttachments,
   pendingAttachmentsCount,
@@ -57,7 +53,6 @@ export function usePlanningMessages({
 
     const userMessageId = `user-${Date.now()}`;
     setInputValue('');
-    setEditingPlanId(null);
     setMessages((prev) => {
       const next = prev.map((message) =>
         message.type === 'plan' && !message.approved ? { ...message, hidden: true } : message
@@ -79,7 +74,7 @@ export function usePlanningMessages({
 
     void requestStream(requestText, currentRound);
     setCurrentRound((prev) => Math.min(prev + 1, 5));
-  }, [isStreaming, pendingAttachmentsCount, uploadPendingAttachments, currentRound, requestStream, setEditingPlanId, setMessages, setCurrentRound]);
+  }, [isStreaming, pendingAttachmentsCount, uploadPendingAttachments, currentRound, requestStream, setMessages, setCurrentRound]);
 
   const handleSend = useCallback(() => {
     void submitUserMessage(inputValue);
@@ -125,10 +120,6 @@ export function usePlanningMessages({
     [onPlanApproved, setMessages]
   );
 
-  const handleSavePlanEdit = useCallback((planId: string) => {
-    planEditorSave(planId, setMessages);
-  }, [planEditorSave, setMessages]);
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -144,7 +135,6 @@ export function usePlanningMessages({
     handleSuggestionClick,
     handleQuestionAnswer,
     handleApprove,
-    handleSavePlanEdit,
     handleKeyDown,
   };
 }

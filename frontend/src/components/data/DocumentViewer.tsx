@@ -3,7 +3,7 @@
  *
  * Features:
  * - PDF rendering via react-pdf with custom toolbar
- * - Markdown rendering with Source/Preview toggle
+ * - Markdown rendering (rendered preview)
  * - Plain text display with monospace font
  */
 
@@ -11,8 +11,8 @@ import { memo, useEffect, useState } from 'react';
 
 import { downloadDocument } from '@/lib/api/documents';
 import type { UploadedFile } from '@/types/file';
-import { DocumentSearch, type MarkdownViewMode } from './DocumentSearch';
 import { DocumentContent } from './DocumentContent';
+import { DocumentDownloadPortal } from './DocumentDownloadPortal';
 
 type ViewerStatus = 'loading' | 'ready' | 'error';
 
@@ -40,7 +40,6 @@ export const DocumentViewer = memo(function DocumentViewer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string>('');
-  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>('preview');
 
   const documentId = file.metadata?.documentId;
   const mimeType = file.metadata?.mimeType ?? '';
@@ -109,16 +108,11 @@ export const DocumentViewer = memo(function DocumentViewer({
 
   return (
     <div className="flex h-full flex-col">
-      {!isPdf && (
-        <DocumentSearch
-          file={file}
+      {!isPdf && controlsPortalTarget && documentId && (
+        <DocumentDownloadPortal
           blobUrl={blobUrl}
-          documentId={documentId}
-          isMarkdown={isMarkdown}
-          status={status}
-          markdownViewMode={markdownViewMode}
-          onMarkdownViewModeChange={setMarkdownViewMode}
-          controlsPortalTarget={controlsPortalTarget}
+          fileName={file.name}
+          portalTarget={controlsPortalTarget}
           onDownload={downloadBlobUrl}
         />
       )}
@@ -132,7 +126,6 @@ export const DocumentViewer = memo(function DocumentViewer({
         isBinary={isBinary}
         blobUrl={blobUrl}
         textContent={textContent}
-        markdownViewMode={markdownViewMode}
         fileName={file.name}
         onDownload={downloadBlobUrl}
       />

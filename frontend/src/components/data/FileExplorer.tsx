@@ -27,7 +27,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useFileActions } from '@/hooks/useFileActions';
 import { useProjectPlans } from '@/hooks/useProjectPlans';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { useDataStore } from '@/stores/dataStore';
 import { renameDataset } from '@/lib/api/datasets';
 import { cn } from '@/lib/utils';
@@ -153,9 +152,6 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const location = useLocation();
   const { dataFiles, contextFiles, activeFileTabId, isOnDataViewer, handleOpenFile, handleDeleteFile, handleDownloadFile } = useFileActions(projectId);
   const { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan } = useProjectPlans(projectId);
-  // Ensure accent CSS vars are set on documentElement (side-effect)
-  useProjectThemeColor();
-
   const [renamingFile, setRenamingFile] = useState<UploadedFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
@@ -239,7 +235,6 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
                   key={plan.id}
                   name={plan.name}
                   isActive={isOnUpload && plan.id === selectedPlanId}
-                  themeColorClass={themeColorClass ?? ''}
                   onOpen={() => handleOpenPlan(plan.id)}
                 />
               ))}

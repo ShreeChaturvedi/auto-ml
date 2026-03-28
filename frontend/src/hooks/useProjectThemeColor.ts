@@ -108,12 +108,23 @@ export function useProjectThemeColor() {
   // Set accent CSS variables on documentElement
   useEffect(() => {
     const root = document.documentElement;
+    if (!project) {
+      for (const shade of ACCENT_SHADES) {
+        root.style.removeProperty(`--${shade.token}`);
+      }
+      return;
+    }
     for (const shade of ACCENT_SHADES) {
       const l = isDark ? shade.darkL : shade.lightL;
       const c = isDark ? shade.darkC : shade.lightC;
       root.style.setProperty(`--${shade.token}`, oklchToHsl(l, c, hue));
     }
-  }, [hue, isDark]);
+    return () => {
+      for (const shade of ACCENT_SHADES) {
+        root.style.removeProperty(`--${shade.token}`);
+      }
+    };
+  }, [hue, isDark, project]);
 
   return { themeColor, themeColorClass, colorClasses };
 }

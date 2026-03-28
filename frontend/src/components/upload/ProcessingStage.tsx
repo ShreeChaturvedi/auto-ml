@@ -18,7 +18,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 import { useDataStore } from '@/stores/dataStore';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { ComputeAnimation } from './ComputeAnimation';
 import { gatherProcessingResults } from './processingUtils';
 import type { ProcessingResult, ProcessingStageProps } from '@/types/processing';
@@ -40,8 +39,6 @@ export function ProcessingStage({ projectId, onComplete }: Omit<ProcessingStageP
     () => allFiles.filter((f) => f.projectId === projectId),
     [allFiles, projectId],
   );
-  // Ensure accent CSS vars are set on documentElement
-  useProjectThemeColor();
   const projectColorClass = 'text-accent-text';
 
   // Simplified file descriptors for the animation (name + type)

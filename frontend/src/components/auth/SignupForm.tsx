@@ -121,7 +121,7 @@ export function SignupForm() {
                 type="text"
                 placeholder="John Doe"
                 autoComplete="name"
-                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('name')}
               />
               {errors.name && (
@@ -136,7 +136,7 @@ export function SignupForm() {
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('email')}
               />
               {errors.email && (
@@ -152,7 +152,7 @@ export function SignupForm() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Create a password"
                   autoComplete="new-password"
-                  className="dark:bg-white/[0.03] border-border hover:border-ring pr-10 text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                  className="border-border pr-10 text-white placeholder:text-neutral-500"
                   {...register('password')}
                 />
                 <button
@@ -178,7 +178,7 @@ export function SignupForm() {
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="Confirm your password"
                   autoComplete="new-password"
-                  className="dark:bg-white/[0.03] border-border hover:border-ring pr-10 text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                  className="border-border pr-10 text-white placeholder:text-neutral-500"
                   {...register('confirmPassword')}
                 />
                 <button

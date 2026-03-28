@@ -196,7 +196,7 @@ export function ProfileSettings() {
                   <Input
                     id="name"
                     placeholder="John Doe"
-                    className="pl-10 bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
+                    className="pl-10 bg-transparent"
                     {...profileForm.register('name')}
                   />
                 </div>
@@ -217,7 +217,7 @@ export function ProfileSettings() {
                     id="email"
                     type="email"
                     placeholder="john@example.com"
-                    className="pl-10 bg-transparent dark:bg-white/[0.03] hover:border-ring focus-visible:ring-ring"
+                    className="pl-10 bg-transparent"
                     {...profileForm.register('email')}
                   />
                 </div>

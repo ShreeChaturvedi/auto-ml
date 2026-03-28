@@ -293,7 +293,7 @@
       hsl(var(--muted)) 75%
     );
     background-size: 200% 100%;
-    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    animation: timeline-skeleton-sweep 1.5s ease-in-out infinite;
   }
 
   @media (prefers-reduced-motion: reduce) {

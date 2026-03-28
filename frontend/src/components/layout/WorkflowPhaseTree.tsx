@@ -170,7 +170,6 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
     }
   };
 
-  // Ensure accent CSS vars are set on documentElement (side-effect of the hook)
   useProjectThemeColor();
 
   if (!activeProject) {

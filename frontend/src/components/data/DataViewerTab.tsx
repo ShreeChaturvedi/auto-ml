@@ -18,7 +18,6 @@ import { useProjectStore } from '@/stores/projectStore';
 import { executeNlQuery, executeSqlQuery, streamNlQuery } from '@/lib/api/query';
 import type { QueryMode } from '@/types/file';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import {
   extractApiErrorMessage,
@@ -54,8 +53,6 @@ export function DataViewerTab() {
   const projects = useProjectStore((state) => state.projects);
   const activeProject = projects.find((p) => p.id === projectId);
 
-  // Ensure accent CSS vars are set (side-effect)
-  useProjectThemeColor();
   const projectTypeColorClassName = 'text-accent-text';
 
   const allPreviews = useDataStore((state) => state.previews);

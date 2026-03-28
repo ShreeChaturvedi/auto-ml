@@ -120,7 +120,7 @@ export function LoginForm() {
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('email')}
               />
               {errors.email && (
@@ -144,7 +144,7 @@ export function LoginForm() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  className="dark:bg-white/[0.03] border-border hover:border-ring pr-10 text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                  className="border-border pr-10 text-white placeholder:text-neutral-500"
                   {...register('password')}
                 />
                 <button

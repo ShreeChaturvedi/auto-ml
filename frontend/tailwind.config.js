@@ -145,10 +145,6 @@ export default {
           '0%': { backgroundPosition: '200% 0' },
           '100%': { backgroundPosition: '-200% 0' },
         },
-        'skeleton-shimmer': {
-          '0%': { backgroundPosition: '200% 0' },
-          '100%': { backgroundPosition: '-200% 0' },
-        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -161,7 +157,7 @@ export default {
         'timeline-step-in': 'timeline-step-in 220ms ease-out both',
         'timeline-pulse': 'timeline-pulse 2s ease-in-out infinite',
         'timeline-skeleton-sweep': 'timeline-skeleton-sweep 1.5s ease-in-out infinite',
-        'skeleton-shimmer': 'skeleton-shimmer 1.5s ease-in-out infinite',
+        'skeleton-shimmer': 'timeline-skeleton-sweep 1.5s ease-in-out infinite',
       },
     },
   },

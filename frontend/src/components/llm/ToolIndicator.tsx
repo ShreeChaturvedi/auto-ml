@@ -35,6 +35,8 @@ interface ToolDisplay {
     hasDropdown: boolean;
 }
 
+const ACCENT_COLOR_ENTRY = { fill: 'bg-accent-fill', text: 'text-accent-text', border: 'border-accent-border' } as const;
+
 const TOOL_TONE_INTERACTION_CLASSES = 'transition-opacity duration-200 motion-reduce:transition-none group-hover:opacity-100 group-focus-visible:opacity-100';
 const TOOL_TONE_FADE_CLASSES = 'opacity-75';
 
@@ -127,9 +129,7 @@ export function ToolIndicator({
     // Get project theme color
     const { activeProjectId, projects } = useProjectStore();
     const activeProject = projects.find((project) => project.id === activeProjectId);
-    const projectColorEntry = activeProject
-        ? { fill: 'bg-accent-fill', text: 'text-accent-text', border: 'border-accent-border' }
-        : undefined;
+    const projectColorEntry = activeProject ? ACCENT_COLOR_ENTRY : undefined;
     const projectColorClass = activeProject ? 'text-accent-text' : undefined;
 
     const displayItems = useMemo<ToolDisplay[]>(() => {

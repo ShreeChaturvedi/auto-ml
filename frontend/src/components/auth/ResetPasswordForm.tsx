@@ -166,7 +166,7 @@ export function ResetPasswordForm() {
                 type="password"
                 placeholder="Create a new password"
                 autoComplete="new-password"
-                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('password')}
               />
               <PasswordStrength password={password} />
@@ -182,7 +182,7 @@ export function ResetPasswordForm() {
                 type="password"
                 placeholder="Confirm your new password"
                 autoComplete="new-password"
-                className="dark:bg-white/[0.03] border-border hover:border-ring text-white placeholder:text-neutral-500 focus-visible:ring-ring"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('confirmPassword')}
               />
               <PasswordMatch password={password} confirmPassword={confirmPassword} />

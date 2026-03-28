@@ -11,7 +11,6 @@ import { ChatMessageList } from '@/components/llm/ChatMessageList';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { QuestionCards } from './QuestionCards';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { buildInitialSuggestions, buildFollowUpSuggestions } from './planningUtils';
 import { usePlanningChat } from './hooks/usePlanningChat';
 import { useAttachmentUploader, CONTEXT_ATTACHMENT_ACCEPT } from './hooks/useAttachmentUploader';
@@ -85,8 +84,6 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const project = useMemo(() => projects.find((entry) => entry.id === projectId), [projectId, projects]);
-  // Ensure accent CSS vars are set on documentElement
-  useProjectThemeColor();
   const projectFiles = useMemo(
     () => files.filter((file) => file.projectId === projectId),
     [files, projectId]

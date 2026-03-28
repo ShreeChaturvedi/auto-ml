@@ -6,7 +6,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn } from '@/lib/utils';
 import { SortHeader } from '@/components/ui/SortHeader';
@@ -111,7 +110,6 @@ export function Leaderboard() {
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
 
-  useProjectThemeColor();
   const trophyColorClass = 'text-accent-text';
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);

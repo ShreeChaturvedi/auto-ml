@@ -21,7 +21,6 @@ import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
 import { UserProfile } from '@/components/projects/UserProfile';
 import { useProjectStore } from '@/stores/projectStore';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -45,9 +44,6 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const activeProject = activeProjectId
     ? projects.find((p) => p.id === activeProjectId)
     : undefined;
-
-  // Ensure accent CSS vars are set on documentElement
-  useProjectThemeColor();
 
   const handleGoHome = (e: React.MouseEvent) => {
     e.stopPropagation();

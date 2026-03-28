@@ -1,4 +1,4 @@
-import { mkdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, mkdirSync, copyFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -108,7 +108,6 @@ export async function processDatasetUpload(
     return;
   }
 
-  // Multer disk storage: file is at req.file.path
   const tempFilePath = req.file.path;
 
   try {
@@ -135,7 +134,6 @@ async function processCsvJsonUpload(
   fileType: 'csv' | 'json',
   tempFilePath: string
 ): Promise<void> {
-  const { readFileSync } = await import('node:fs');
   const buffer = readFileSync(tempFilePath);
 
   const rows = await parseDatasetRows(buffer, fileType, req.file!.originalname);

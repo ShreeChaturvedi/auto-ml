@@ -113,10 +113,6 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         });
 
         setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
-
-        // Reconcile client-side UUID with backend datasetId so preview renders
-        // immediately without a manual page refresh.
-        await hydrateFromBackend(projectId, { force: true });
       } catch (error) {
         console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
         setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
@@ -126,7 +122,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         }));
       }
     },
-    [projectId, setFileMetadata, addPreview, hydrateFromBackend]
+    [projectId, setFileMetadata, addPreview]
   );
 
   const uploadDocumentToBackend = useCallback(
@@ -186,12 +182,14 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
       });
 
       if (datasetUploads.length > 0) {
-        void Promise.allSettled(datasetUploads).then(() => (
-          fetchProjectSuggestions(projectId, { force: true })
-        ));
+        void Promise.allSettled(datasetUploads).then(async () => {
+          // Single hydration after all uploads complete (not per-file)
+          await hydrateFromBackend(projectId, { force: true });
+          fetchProjectSuggestions(projectId, { force: true });
+        });
       }
     },
-    [projectId, addFile, fetchProjectSuggestions, uploadDatasetToBackend, uploadDocumentToBackend]
+    [projectId, addFile, fetchProjectSuggestions, hydrateFromBackend, uploadDatasetToBackend, uploadDocumentToBackend]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

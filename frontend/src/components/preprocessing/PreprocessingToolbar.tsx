@@ -96,7 +96,7 @@ export function PreprocessingToolbarRight({
       onValueChange={onDatasetSelect}
       disabled={isLoadingTables || tables.length === 0}
     >
-      <SelectTrigger className="h-7 min-w-0 max-w-[200px] flex-1 text-xs">
+      <SelectTrigger className={compactToolbarSelectClass('w-[200px]')}>
         <Database className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
         <SelectValue placeholder="Select dataset" />
       </SelectTrigger>

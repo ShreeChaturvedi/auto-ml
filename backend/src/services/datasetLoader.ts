@@ -11,8 +11,7 @@ import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile, DatasetProfileColumn } from '../types/dataset.js';
 
 import { insertRows } from './dataLoading/dataInsertion.js';
-import { parseDatasetRows } from './dataLoading/fileParser.js';
-import { streamXlsxSinglePass } from './dataLoading/fileParser.js';
+import { parseDatasetRows, streamXlsxRows } from './dataLoading/fileParser.js';
 import { generateCreateTableSql, sanitizeTableName } from './dataLoading/schemaInference.js';
 
 // ── Re-exports (preserve existing consumer imports) ─────────────────────────
@@ -121,13 +120,12 @@ export async function streamLoadXlsxIntoPostgres(params: {
 
     let rowsLoaded = 0;
 
-    const { totalRows } = await streamXlsxSinglePass(
+    const { totalRows } = await streamXlsxRows(
       filePath,
       async (batch) => {
         const inserted = await insertRows(client, tableName, columns, batch, false);
         rowsLoaded += inserted;
-      },
-      { sampleSize: 0 } // We don't need the sample here — just insert
+      }
     );
 
     await client.query('COMMIT');

@@ -488,12 +488,13 @@
 }
 
 /* Character reveal for SQL placeholder overlay.
-   Token colors already have alpha-channel dimming, so this only
-   controls visibility (fade-in) without double-dimming. */
+   Uses --sql-token-color (set inline per-span) so the shine blooms from
+   foreground → token color, matching the left-to-right brightness wave
+   of placeholder-char-in but preserving per-token syntax colors. */
 @keyframes sql-placeholder-char-in {
-  0%   { opacity: 0; }
-  18%  { opacity: 1; }
-  100% { opacity: 1; }
+  0%   { opacity: 0; color: hsl(var(--foreground)); }
+  18%  { opacity: 1; color: hsl(var(--foreground)); }
+  100% { opacity: 1; color: var(--sql-token-color); }
 }
 
 /* Per-character progressive reveal animation for streamed LLM text.

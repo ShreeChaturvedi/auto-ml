@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import {
   useAnimatedPlaceholder,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
+  computeCharDelay,
 } from './useAnimatedPlaceholder';
 
 interface AnimatedPlaceholderTextareaProps
@@ -135,7 +135,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
                       style={{
                         display: 'inline',
                         animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                        animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                        animationDelay: `${computeCharDelay(i)}ms`,
                       }}
                       >
                       {char}

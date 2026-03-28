@@ -17,9 +17,9 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
 export const SLIDE_DURATION_MS = 225;
 export const CHAR_ANIM_DURATION_MS = 270;
-export const CHAR_STAGGER_MS = 30;
+export const CHAR_STAGGER_MS = 36;
 
-const RESET_BUFFER_MS = 20;
+const RESET_BUFFER_MS = 150;
 const MIN_RESET_TIMEOUT_MS = SLIDE_DURATION_MS + RESET_BUFFER_MS;
 
 function countCharacters(value: string): number {
@@ -30,11 +30,17 @@ function randomIndex(len: number): number {
   return len > 0 ? Math.floor(Math.random() * len) : 0;
 }
 
-function getResetTimeoutMs(nextPlaceholder: string): number {
-  const charCount = Math.max(1, countCharacters(nextPlaceholder));
+/** Animation delay for character at `charIndex`. Linear stagger at CHAR_STAGGER_MS. */
+export function computeCharDelay(charIndex: number): number {
+  return charIndex * CHAR_STAGGER_MS;
+}
+
+/** Total animation duration for `charCount` characters (last char delay + anim + buffer). */
+export function computeResetTimeout(charCount: number): number {
+  const n = Math.max(1, charCount);
   return Math.max(
     MIN_RESET_TIMEOUT_MS,
-    (charCount - 1) * CHAR_STAGGER_MS + CHAR_ANIM_DURATION_MS + RESET_BUFFER_MS
+    computeCharDelay(n - 1) + CHAR_ANIM_DURATION_MS + RESET_BUFFER_MS,
   );
 }
 
@@ -165,7 +171,7 @@ export function useAnimatedPlaceholder({
             secondRafRef.current = null;
           });
         });
-      }, getResetTimeoutMs(nextPlaceholderText));
+      }, computeResetTimeout(countCharacters(nextPlaceholderText)));
     };
 
     const intervalId = window.setInterval(cycle, interval);

@@ -102,7 +102,7 @@ export const ReportPane = forwardRef<ReportPaneHandle, ReportPaneProps>(
           {isLoading && !text ? (
             <ReportSkeleton />
           ) : text ? (
-            <div className="p-6 prose prose-sm dark:prose-invert max-w-none">
+            <div className="p-6 prose prose-sm dark:prose-invert max-w-none [&>:first-child>:first-child]:mt-0">
               <Markdown components={markdownComponents}>{text}</Markdown>
               {isStreaming && (
                 <span className="inline-block ml-1 h-3 w-1.5 animate-pulse bg-foreground/50 rounded-sm" />

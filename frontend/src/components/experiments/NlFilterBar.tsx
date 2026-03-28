@@ -73,7 +73,7 @@ export function NlFilterBar() {
   );
 
   return (
-    <div className="relative flex-1 min-w-0 rounded-md bg-card border border-input hover:border-ring transition-colors">
+    <div className="relative flex-1 min-w-0">
       <Search className="absolute left-2 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
       <AnimatedPlaceholderInput
         placeholders={FILTER_PLACEHOLDERS}
@@ -83,7 +83,7 @@ export function NlFilterBar() {
         onKeyDown={handleKeyDown}
         disabled={isLoading}
         leftPadding={2}
-        className="pl-8 h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        className="pl-8 h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
       />
       {isLoading && (
         <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">

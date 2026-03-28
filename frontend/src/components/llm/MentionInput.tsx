@@ -13,7 +13,7 @@ import type { FileType } from '@/types/file';
 import {
   useAnimatedPlaceholder,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS
+  computeCharDelay,
 } from '@/components/ui/useAnimatedPlaceholder';
 
 export interface AnimateCharRange { start: number; end: number }
@@ -82,7 +82,7 @@ function AnimatedMentionPlaceholder({ placeholders }: { placeholders: string[] }
                   style={{
                     display: 'inline',
                     animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                    animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                    animationDelay: `${computeCharDelay(i)}ms`,
                   }}
                 >
                   {char}

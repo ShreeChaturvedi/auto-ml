@@ -52,7 +52,7 @@ export async function initMonaco(): Promise<Monaco> {
           'editorLineNumber.activeForeground': '#d4d4d4',
           'editorCursor.foreground': '#60a5fa',
           'editor.selectionBackground': '#2563eb44',
-          'editorGutter.background': '#121212',
+          'editorGutter.background': '#0a0a0a',
         }
       });
 
@@ -72,6 +72,7 @@ export async function initMonaco(): Promise<Monaco> {
           'editor.lineHighlightBackground': '#fafafa',
           'editorLineNumber.foreground': '#d4d4d4',
           'editorLineNumber.activeForeground': '#a3a3a3',
+          'editorGutter.background': '#ffffff',
         }
       });
 
@@ -95,7 +96,7 @@ export async function initMonaco(): Promise<Monaco> {
           'editor.selectionBackground': '#2563eb44',
           'editorLineNumber.foreground': '#a3a3a3',
           'editorLineNumber.activeForeground': '#d4d4d4',
-          'editorGutter.background': '#121212',
+          'editorGutter.background': '#0a0a0a',
         }
       });
 
@@ -114,6 +115,7 @@ export async function initMonaco(): Promise<Monaco> {
           'editor.background': '#ffffff',
           'editorLineNumber.foreground': '#d4d4d4',
           'editorLineNumber.activeForeground': '#a3a3a3',
+          'editorGutter.background': '#ffffff',
         }
       });
 

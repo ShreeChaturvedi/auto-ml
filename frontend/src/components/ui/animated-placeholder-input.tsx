@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   useAnimatedPlaceholder,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
+  computeCharDelay,
 } from './useAnimatedPlaceholder';
 
 interface AnimatedPlaceholderInputProps
@@ -130,7 +130,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
                         style={{
                           display: 'inline-block',
                           animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                          animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                          animationDelay: `${computeCharDelay(i)}ms`,
                         }}
                       >
                         {char === ' ' ? '\u00a0' : char}

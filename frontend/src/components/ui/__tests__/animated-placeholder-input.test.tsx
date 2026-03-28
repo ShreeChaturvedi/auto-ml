@@ -48,15 +48,17 @@ describe('AnimatedPlaceholderInput', () => {
     });
     expect(queryAnimatedChars().length).toBe(16);
 
-    // t=1180ms total (still before the dynamic reset timeout for 16 chars).
+    // t=1180ms total (still before reset timeout ~1460ms for 16 chars).
     act(() => {
       vi.advanceTimersByTime(680);
     });
     expect(queryAnimatedChars().length).toBeGreaterThan(0);
 
-    // t=1300ms total (past reset timeout), char spans should be unmounted.
+    // Advance past reset timeout (500 + 960 = 1460ms).
     act(() => {
-      vi.advanceTimersByTime(120);
+      vi.advanceTimersByTime(300);
+    });
+    act(() => {
       vi.advanceTimersByTime(1);
     });
     expect(queryAnimatedChars().length).toBe(0);

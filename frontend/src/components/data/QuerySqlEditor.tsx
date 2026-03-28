@@ -5,7 +5,7 @@
  * Provides syntax highlighting, context-aware completions, and SQL linting.
  */
 
-import { Suspense, useEffect, useRef, useCallback, useState } from 'react';
+import { Suspense, useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import {
@@ -106,13 +106,14 @@ export function QuerySqlEditor({
   const placeholders = shuffledRef.current;
 
   // Ticker state owned here so Tab handler can read currentIndex directly
+  const placeholderLengths = useMemo(() => placeholders.map(p => p.length), [placeholders]);
   const {
     currentIndex,
     nextIndex,
     isAnimating,
     outgoingTransition,
     incomingTransition,
-  } = useInsightTicker(placeholders.length, 4000);
+  } = useInsightTicker(placeholders.length, 4000, placeholderLengths);
 
   const showPlaceholder = sqlQuery === '' && !isExecuting;
   const showChips = !isFocused || isIdle;

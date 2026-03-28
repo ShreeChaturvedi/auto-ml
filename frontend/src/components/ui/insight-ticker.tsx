@@ -3,16 +3,16 @@
  * with a rise-up animation. Adapted from AnimatedPlaceholderInput.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useInsightTicker } from './useInsightTicker';
 import {
-  useInsightTicker,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
-} from './useInsightTicker';
+  computeCharDelay,
+} from './useAnimatedPlaceholder';
 import type { InsightAction } from '@/components/data/eda/edaInsights';
 import { InsightActionIcons } from '@/components/data/eda/InsightActionIcons';
 
@@ -58,7 +58,7 @@ function TickerRow({
                 style={{
                   display: 'inline-block',
                   animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                  animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                  animationDelay: `${computeCharDelay(i)}ms`,
                 }}
               >
                 {char === ' ' ? '\u00a0' : char}
@@ -78,6 +78,7 @@ export function InsightTicker({
   onAction,
 }: InsightTickerProps) {
   const [open, setOpen] = useState(false);
+  const itemTextLengths = useMemo(() => items.map(item => item.text.length), [items]);
   const {
     currentIndex,
     nextIndex,
@@ -85,7 +86,7 @@ export function InsightTicker({
     outgoingTransition,
     incomingTransition,
     prefersReducedMotion,
-  } = useInsightTicker(items.length, interval);
+  } = useInsightTicker(items.length, interval, itemTextLengths);
 
   if (items.length === 0) return null;
 

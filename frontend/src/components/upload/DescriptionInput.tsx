@@ -61,7 +61,7 @@ export function DescriptionInput({ value, onChange, disabled }: DescriptionInput
       }}
       placeholder="Add a description"
       disabled={disabled}
-      className="h-9 bg-card border border-input px-2 text-sm text-foreground placeholder:text-muted-foreground shadow-none hover:border-ring focus-visible:ring-1 focus-visible:ring-ring transition-colors rounded-md"
+      className="h-9 border-0 bg-transparent dark:bg-transparent rounded-none px-2 text-sm text-foreground placeholder:text-muted-foreground shadow-none hover:border-transparent focus-visible:ring-0"
     />
   );
 }

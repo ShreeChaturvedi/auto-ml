@@ -53,7 +53,7 @@ const EMPTY_PHASES: Phase[] = [];
  */
 const LINE_STYLE_BASE = { left: '18.5px', top: '22px', bottom: '13px' } as const;
 const LINE_STYLE_ACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'currentColor' };
-const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground) / 0.1)' };
+const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground) / 0.25)' };
 
 /** Phases that show a "+" action button on hover */
 const PLUS_ACTION_PHASES = new Set<Phase>([
@@ -205,9 +205,11 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 !isUnlocked
                   ? 'text-muted-foreground'
                   : isActive
-                    ? 'bg-muted font-medium border-l-2 border-accent-fill'
-                    : 'text-foreground hover:bg-muted'
+                    ? 'bg-muted font-medium shadow-[inset_2px_0_0_0_hsl(var(--accent-fill))]'
+                    : 'text-foreground hover:bg-muted',
+                collapsed && isUnlocked && 'cursor-pointer'
               )}
+              onClick={collapsed && isUnlocked ? (e) => handlePhaseClick(e, phase) : undefined}
             >
               {/* Chevron toggle — separate from the navigation button so
                   expand/collapse never triggers navigation. */}
@@ -216,7 +218,8 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    togglePhaseExpand(phase);
+                    if (collapsed) handlePhaseClick(e, phase);
+                    else togglePhaseExpand(phase);
                   }}
                   className="shrink-0 pl-3 py-2 cursor-pointer focus-visible:outline-none focus-visible:bg-accent"
                   aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
@@ -225,7 +228,8 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                     {IconComponent && (
                       <IconComponent
                         className={cn(
-                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200 group-hover:opacity-0 group-focus-within:opacity-0',
+                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
+                          !collapsed && 'group-hover:opacity-0 group-focus-within:opacity-0',
                           iconColorClass
                         )}
                       />
@@ -233,7 +237,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                     <ChevronRight
                       className={cn(
                         'absolute inset-0 h-3.5 w-3.5 transition-[opacity,transform] duration-200',
-                        'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                        collapsed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
                         isExpanded && 'rotate-90',
                         iconColorClass
                       )}

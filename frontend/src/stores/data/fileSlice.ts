@@ -91,6 +91,10 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
     const file = get().files.find((f) => f.id === id);
     if (!file) return;
 
+    // Mark as recently deleted to guard against hydration races
+    if (file.metadata?.datasetId) get().markDeleted(file.metadata.datasetId);
+    if (file.metadata?.documentId) get().markDeleted(file.metadata.documentId);
+
     if (file.metadata?.datasetId) {
       try {
         await deleteDataset(file.metadata.datasetId);
@@ -110,9 +114,15 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
 
     get().removeFile(id);
 
+    const promises: Promise<unknown>[] = [];
     if (file.metadata?.datasetId && file.projectId) {
-      void useNlSuggestionStore.getState().fetchProjectSuggestions(file.projectId, { force: true });
+      promises.push(useNlSuggestionStore.getState().fetchProjectSuggestions(file.projectId, { force: true }));
     }
+    // Re-hydrate to reconcile local state with backend's post-delete state
+    if (file.projectId) {
+      promises.push(get().hydrateFromBackend(file.projectId, { force: true }));
+    }
+    await Promise.all(promises);
   },
 
   getFilesByProject: (projectId: string) => {

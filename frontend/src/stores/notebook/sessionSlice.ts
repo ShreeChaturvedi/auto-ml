@@ -36,7 +36,7 @@ export interface SessionSlice {
   error: string | null;
 
   // Actions
-  initializeNotebook: (projectId: string) => Promise<void>;
+  initializeNotebook: (projectId: string, notebookId?: string) => Promise<void>;
   disconnect: () => void;
   loadNotebooks: (projectId?: string) => Promise<void>;
   setActiveNotebook: (notebookId: string) => Promise<void>;
@@ -67,7 +67,10 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
   // --- actions ---
 
-  initializeNotebook: async (projectId: string) => {
+  initializeNotebook: async (projectId: string, notebookId?: string) => {
+    // Guard: skip if notebookId was explicitly passed but is nullish (disconnect cleanup race)
+    if (notebookId !== undefined && !notebookId) return;
+
     const {
       wsClient: existingClient,
       notebook: existingNotebook,
@@ -80,6 +83,10 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       && existingNotebook
       && existingClient?.isConnected
     ) {
+      // If a specific notebook is requested and it differs from active, switch to it
+      if (notebookId && existingNotebook.notebookId !== notebookId) {
+        await get().setActiveNotebook(notebookId);
+      }
       return;
     }
 
@@ -88,9 +95,8 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     try {
       const notebooks = await notebooksApi.listNotebooks(projectId);
       const preferredNotebookId =
-        currentProjectId === projectId
-          ? activeNotebookId
-          : null;
+        notebookId
+        ?? (currentProjectId === projectId ? activeNotebookId : null);
       const resolvedNotebookId =
         preferredNotebookId && notebooks.some((entry) => entry.notebookId === preferredNotebookId)
           ? preferredNotebookId

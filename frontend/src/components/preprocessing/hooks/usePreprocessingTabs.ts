@@ -36,6 +36,8 @@ export interface UsePreprocessingTabsResult {
   buildScopedTabStorageKey: (tabId: string) => string;
   handleTabSwitch: (value: string) => void;
   handleNewTab: () => string | null;
+  /** Adopt a workbook created externally (e.g. by the sidebar via workbookRegistryStore). */
+  adoptTab: (id: string, name: string) => void;
   handleDeleteTab: () => string | null;
   openRenameTabDialog: () => void;
   handleRenameTab: () => void;
@@ -261,6 +263,30 @@ export function usePreprocessingTabs({
     return newTab.id;
   }, [activeTabIdRef, applyTabSnapshot, ensureNotebookForTab, saveActiveSnapshot, setActiveTabId, setTabs, tabsRef]);
 
+  const adoptTab = useCallback((id: string, name: string) => {
+    // If the tab already exists, just switch to it.
+    if (tabsRef.current.some((tab) => tab.id === id)) {
+      handleTabSwitch(id);
+      return;
+    }
+    const newTab: PreprocessingWorkbook = {
+      id,
+      name,
+      notebookId: null,
+      snapshot: createEmptyTabSnapshot(),
+      storageVersion: 0
+    };
+    saveActiveSnapshot();
+    setTabs((previous) => {
+      const nextTabs = [...previous, newTab];
+      tabsRef.current = nextTabs;
+      return nextTabs;
+    });
+    setActiveTabId(newTab.id);
+    applyTabSnapshot(newTab.snapshot);
+    void ensureNotebookForTab(newTab);
+  }, [applyTabSnapshot, ensureNotebookForTab, handleTabSwitch, saveActiveSnapshot, setActiveTabId, setTabs, tabsRef]);
+
   const handleDeleteTab = useCallback(() => {
     const currentTabs = tabsRef.current;
     const currentActiveTab = currentTabs.find((tab) => tab.id === activeTabIdRef.current);
@@ -413,6 +439,7 @@ export function usePreprocessingTabs({
     buildScopedTabStorageKey,
     handleTabSwitch,
     handleNewTab,
+    adoptTab,
     handleDeleteTab,
     openRenameTabDialog,
     handleRenameTab,

@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync } from 'node:fs';
 
 import { Router } from 'express';
 
@@ -114,6 +114,44 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         }
       }
       await updateColumnType(req, res, datasetRepository);
+    })
+  );
+
+  // ── Rename dataset ───────────────────────────────────────────────────
+  router.patch(
+    '/datasets/:datasetId',
+    validateUuidParams('datasetId'),
+    asyncHandler(async (req: AuthRequest, res) => {
+      const { datasetId } = req.params;
+      const { filename } = req.body as { filename?: string };
+
+      if (!filename || typeof filename !== 'string' || !filename.trim()) {
+        res.status(400).json({ error: 'filename is required' });
+        return;
+      }
+
+      const dataset = await datasetRepository.getById(datasetId);
+      if (!dataset) { sendNotFound(res, 'Dataset'); return; }
+
+      if (req.user && dataset.projectId) {
+        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
+        if (!project) { sendNotFound(res, 'Dataset'); return; }
+      }
+
+      // Rename physical file on disk
+      const oldPath = getDatasetPath(datasetId, dataset.filename);
+      const newPath = getDatasetPath(datasetId, filename.trim());
+      try {
+        renameSync(oldPath, newPath);
+      } catch { /* file may not exist on disk for derived datasets */ }
+
+      const updated = await datasetRepository.update(datasetId, (current) => ({
+        ...current,
+        filename: filename.trim()
+      }));
+
+      if (!updated) { sendNotFound(res, 'Dataset'); return; }
+      res.json({ dataset: updated });
     })
   );
 

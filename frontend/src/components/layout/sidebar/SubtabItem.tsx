@@ -56,7 +56,7 @@ export function SubtabItem({
       <div className="relative z-10 shrink-0 rounded-sm bg-card">
         <Icon className={cn('h-3.5 w-3.5 transition-colors duration-200', iconColor)} />
       </div>
-      <span className={cn('flex-1 truncate', isActive && themeColorClass)}>
+      <span className={cn('flex-1 truncate', isActive && themeColorClass)} title={label}>
         {label}
       </span>
       {actionSlot && (

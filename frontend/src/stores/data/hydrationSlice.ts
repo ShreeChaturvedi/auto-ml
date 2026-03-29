@@ -14,9 +14,11 @@ export interface HydrationSlice {
   hydratedProjects: Set<string>;
   isHydrating: boolean;
   hydrationError: string | null;
+  recentlyDeletedIds: Set<string>;
 
   // Actions
   hydrateFromBackend: (projectId: string, options?: { force?: boolean }) => Promise<void>;
+  markDeleted: (datasetId: string) => void;
 }
 
 function sanitizeTableName(filename: string, datasetId: string): string {
@@ -46,6 +48,23 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
   hydratedProjects: new Set<string>(),
   isHydrating: false,
   hydrationError: null,
+  recentlyDeletedIds: new Set<string>(),
+
+  markDeleted(datasetId: string) {
+    set((state) => {
+      const next = new Set(state.recentlyDeletedIds);
+      next.add(datasetId);
+      return { recentlyDeletedIds: next };
+    });
+    // Auto-clear after 30 seconds — this is only a race-condition guard
+    setTimeout(() => {
+      set((state) => {
+        const next = new Set(state.recentlyDeletedIds);
+        next.delete(datasetId);
+        return { recentlyDeletedIds: next };
+      });
+    }, 30_000);
+  },
 
   async hydrateFromBackend(projectId: string, options) {
     const state = get();
@@ -77,7 +96,12 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
           .map((file) => file.id)
       );
 
+      // Filter out datasets that were recently deleted locally to prevent
+      // race conditions where the backend hasn't processed the DELETE yet.
+      const { recentlyDeletedIds } = get();
+
       for (const dataset of datasets) {
+        if (recentlyDeletedIds.has(dataset.datasetId)) continue;
         const fileId = dataset.datasetId;
 
         const file: UploadedFile = {
@@ -117,6 +141,7 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
       }
 
       for (const document of documents) {
+        if (recentlyDeletedIds.has(document.documentId)) continue;
         hydratedDocuments.push({
           id: document.documentId,
           name: document.filename,

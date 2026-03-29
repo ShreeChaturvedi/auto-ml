@@ -79,18 +79,29 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
     [currentPhase, currentPhaseLabel, isDataViewerUnlocked, openFileTab, navigate, projectId]
   );
 
+  const markDeleted = useDataStore((s) => s.markDeleted);
+
   const handleDeleteFile = useCallback(
     async (file: UploadedFile) => {
       try {
         const { datasetId, documentId } = file.metadata ?? {};
+
+        // Mark as recently deleted BEFORE the API call to guard against
+        // concurrent hydrations re-adding the file.
+        if (datasetId) markDeleted(datasetId);
+        if (documentId) markDeleted(documentId);
+
         if (datasetId) await deleteDataset(datasetId);
         else if (documentId) await deleteDocument(documentId);
         removeFile(file.id);
+
+        // Re-hydrate to reconcile local state with the backend's post-delete state.
+        await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
       } catch (error) {
         console.error('Failed to delete file:', error);
       }
     },
-    [removeFile]
+    [removeFile, markDeleted, projectId]
   );
 
   const handleDownloadFile = useCallback(async (file: UploadedFile) => {

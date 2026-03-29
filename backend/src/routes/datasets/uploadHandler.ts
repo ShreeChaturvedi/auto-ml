@@ -24,14 +24,16 @@ import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './v
 
 const EDA_MAX_ROWS = 5000;
 
+// Use disk storage so large files (100MB+) are never held entirely in RAM.
+const diskStorage = multer.diskStorage({
+  destination: tmpdir(),
+  filename: (_req, file, cb) => {
+    cb(null, `automl-upload-${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.originalname}`);
+  }
+});
+
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: tmpdir(),
-    filename: (_req, file, cb) => {
-      const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      cb(null, `upload-${unique}-${file.originalname}`);
-    }
-  }),
+  storage: diskStorage,
   limits: {
     fileSize: env.datasetUploadMaxMb * 1024 * 1024
   }
@@ -42,6 +44,10 @@ const upload = multer({
  * when the file exceeds the configured maximum size.
  */
 export function handleDatasetUpload(req: Request, res: Response, next: NextFunction): void {
+  // Disable the Node.js request timeout for dataset uploads — large xlsx files
+  // can take several minutes to stream-parse and load into Postgres.
+  req.setTimeout(0);
+
   upload.single('file')(req, res, (error?: unknown) => {
     if (!error) {
       next();

@@ -63,8 +63,12 @@ function extractLatestStepNotebookContext(state: WorkflowGraphState): StepNotebo
     return null;
   }
 
-  for (let index = state.toolResultHistory.length - 1; index >= 0; index -= 1) {
-    const output = asRecord(state.toolResultHistory[index]?.output);
+  // Only search the current turn's results so we don't pick up a previous
+  // turn's step context (which would cause cell overwrites — see #201).
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+
+  for (let index = currentTurnResults.length - 1; index >= 0; index -= 1) {
+    const output = asRecord(currentTurnResults[index]?.output);
     const step = asRecord(output?.step);
     const stepId = typeof output?.stepId === 'string'
       ? output.stepId
@@ -317,10 +321,11 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   if (!step.code) return [];
 
   const activeDatasetId = state.run.activeDatasetId;
-  const latestCellId = extractLatestCellId(state.toolResultHistory);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const latestCellId = extractLatestCellId(currentTurnResults);
 
   // If last tool was write_cell and we have a cell, run it
-  const latestTool = state.toolResultHistory.at(-1)?.tool;
+  const latestTool = currentTurnResults.at(-1)?.tool;
   if (latestTool === 'write_cell' && latestCellId) {
     const parsed = ToolCallSchema.safeParse({
       id: `wf-call-${randomUUID()}`,
@@ -381,8 +386,9 @@ function buildRecordExecutionAction(state: WorkflowGraphState): import('../../..
   const step = extractLatestStepNotebookContext(state);
   if (!step) return [];
 
-  const runCell = extractLatestRunCellContext(state.toolResultHistory);
-  const cellId = extractLatestCellId(state.toolResultHistory);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const runCell = extractLatestRunCellContext(currentTurnResults);
+  const cellId = extractLatestCellId(currentTurnResults);
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,
@@ -404,7 +410,8 @@ function buildValidateAction(state: WorkflowGraphState): import('../../../types/
   const step = extractLatestStepNotebookContext(state);
   if (!step) return [];
 
-  const runCell = extractLatestRunCellContext(state.toolResultHistory);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const runCell = extractLatestRunCellContext(currentTurnResults);
   const notes = runCell?.stderr?.trim()
     ? `Notebook execution stderr: ${runCell.stderr.slice(0, 500)}`
     : undefined;
@@ -434,7 +441,8 @@ async function buildCodeGenerationAction(
   const step = extractLatestStepNotebookContext(state);
   if (!step) return [];
 
-  // Extract dataset summary from tool history
+  // Extract dataset summary from tool history (search full history — dataset
+  // profiles from previous turns are still valid context for code generation)
   let datasetSummary = '';
   for (let i = state.toolResultHistory.length - 1; i >= 0; i--) {
     const result = state.toolResultHistory[i];
@@ -606,7 +614,8 @@ export const preprocessingPhaseConfig: PhaseConfig = {
     const toolName = name as PreprocessingToolName;
     const toolArgs = {
       ...(args as Record<string, unknown>),
-      toolCallId: ctx.toolCallId
+      toolCallId: ctx.toolCallId,
+      ...(ctx.turn.notebookId ? { notebookId: ctx.turn.notebookId } : {})
     };
 
     // Execute the tool

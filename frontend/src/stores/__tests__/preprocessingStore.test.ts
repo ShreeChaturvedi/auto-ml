@@ -113,6 +113,28 @@ describe('preprocessingStore hydration', () => {
     expect(state.controllerSummary).toBeNull();
   });
 
+  it('preserves tab-persisted dataset selection over backend activeDatasetId', () => {
+    // Simulate a derived (processed) dataset being selected before hydration,
+    // e.g. from a tab snapshot restore.  The backend snapshot still references
+    // the original source dataset as activeDatasetId.
+    usePreprocessingStore.setState({ selectedDatasetId: 'derived-dataset-42' });
+
+    const snapshot = buildSnapshot(); // activeDatasetId: 'dataset-1'
+    usePreprocessingStore.getState().hydrateRunSnapshot(snapshot);
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('derived-dataset-42');
+    expect(state.runId).toBe('prep-run-1');
+  });
+
+  it('falls back to backend activeDatasetId when no dataset is selected', () => {
+    // selectedDatasetId starts as null from resetPreprocessingStore
+    const snapshot = buildSnapshot(); // activeDatasetId: 'dataset-1'
+    usePreprocessingStore.getState().hydrateRunSnapshot(snapshot);
+
+    expect(usePreprocessingStore.getState().selectedDatasetId).toBe('dataset-1');
+  });
+
   it('clears stale controller state when hydrating an authoritative run snapshot', () => {
     usePreprocessingStore.setState({
       controllerSummary: {

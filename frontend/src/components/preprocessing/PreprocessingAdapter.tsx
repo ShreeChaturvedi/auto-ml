@@ -22,7 +22,28 @@ export function createPreprocessingAdapter(
 
   const toolHandlers = {
     onCall: (call: ToolCall) => usePreprocessingStore.getState().processToolCall(call),
-    onResult: (call: ToolCall, result: ToolResult) => usePreprocessingStore.getState().processToolResult(call, result)
+    onResult: (call: ToolCall, result: ToolResult) => {
+      usePreprocessingStore.getState().processToolResult(call, result);
+      if (call.tool === 'commit_transformation_step' && projectId) {
+        void useDataStore.getState().hydrateFromBackend(projectId, { force: true });
+
+        // Extract derivedDatasetId from the tool result so we can auto-select
+        // the processed file in the dropdown after the tables reload.
+        const output = result.output as Record<string, unknown> | undefined;
+        const derivedDatasetId = typeof output?.derivedDatasetId === 'string'
+          ? output.derivedDatasetId
+          : undefined;
+
+        void usePreprocessingStore.getState().loadTables(projectId).then(() => {
+          if (derivedDatasetId) {
+            const { tables } = usePreprocessingStore.getState();
+            if (tables.some((t) => t.datasetId === derivedDatasetId)) {
+              usePreprocessingStore.getState().selectDataset(derivedDatasetId);
+            }
+          }
+        });
+      }
+    }
   };
 
   const semanticTools = [

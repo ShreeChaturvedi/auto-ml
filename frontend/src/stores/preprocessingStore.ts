@@ -237,7 +237,11 @@ export const usePreprocessingStore = create<PreprocessingState>()(
         set((state: PreprocessingState) => ({
           runId: snapshot.runId,
           latestCheckpointId: getLatestCheckpointId(snapshot),
-          selectedDatasetId: snapshot.activeDatasetId ?? state.selectedDatasetId,
+          // Prefer the existing tab-persisted selection (e.g. a derived/processed
+          // dataset) over the backend run's activeDatasetId (which often points to
+          // the original source dataset).  Only fall back to the snapshot value when
+          // no dataset is currently selected.
+          selectedDatasetId: state.selectedDatasetId ?? snapshot.activeDatasetId ?? null,
           timeline: buildTimelineFromSnapshot(snapshot),
           stepBindings: buildStepBindingsFromSnapshot(snapshot),
           replayReport: null,

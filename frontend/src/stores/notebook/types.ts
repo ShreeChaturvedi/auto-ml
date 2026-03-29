@@ -53,7 +53,7 @@ export interface NotebookState {
   streamAbortControllers: Map<string, AbortController>;
 
   // Actions - Initialization
-  initializeNotebook: (projectId: string) => Promise<void>;
+  initializeNotebook: (projectId: string, notebookId?: string) => Promise<void>;
   disconnect: () => void;
 
   // Actions - Notebook management

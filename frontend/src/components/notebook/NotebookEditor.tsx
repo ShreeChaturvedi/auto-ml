@@ -80,6 +80,7 @@ export interface NotebookEditorHandle {
 
 interface NotebookEditorProps {
   projectId: string;
+  notebookId?: string;
   className?: string;
 }
 
@@ -105,7 +106,7 @@ function countCodeChildren(cells: NotebookCellModel[], markdownIndex: number): n
 }
 
 export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorProps>(
-  function NotebookEditor({ projectId, className }, ref) {
+  function NotebookEditor({ projectId, notebookId, className }, ref) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { themeColor } = useProjectThemeColor();
 
@@ -114,7 +115,11 @@ export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorPro
   }), []);
 
   const notebook = useNotebookStore((state) => state.notebook);
-  const cells = useNotebookStore((state) => state.cells);
+  const rawCells = useNotebookStore((state) => state.cells);
+  const cells = useMemo(
+    () => notebookId ? rawCells.filter((c) => c.notebookId === notebookId) : rawCells,
+    [rawCells, notebookId]
+  );
   const isLoading = useNotebookStore((state) => state.isLoading);
   const isSaving = useNotebookStore((state) => state.isSaving);
   const createCell = useNotebookStore((state) => state.createCell);

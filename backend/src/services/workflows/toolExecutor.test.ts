@@ -104,6 +104,7 @@ function createState(): WorkflowGraphState {
     }],
     toolCallHistory: [],
     toolResultHistory: [],
+    turnStartToolCallCount: 0,
     askUserPayload: null,
     planExitPayload: null,
     uiPayload: null,
@@ -229,10 +230,9 @@ describe('executeToolsNode', () => {
       configurable: { phaseConfig }
     } as never);
 
-    expect(result.nextStep).toBe('fail');
-    expect(result.errorCode).toBe('TOOL_CALL_LIMIT_EXCEEDED');
-    expect(result.errorMessage).toContain('configure_experiment');
-    expect(result.errorMessage).toContain('without advancing');
+    // Raw-count repetition is now a soft warning — workflow continues
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
   });
 
   it('does not fail when tool calls are within the per-tool limit', async () => {
@@ -391,8 +391,8 @@ describe('executeToolsNode', () => {
       configurable: { phaseConfig }
     } as never);
 
-    expect(result.nextStep).toBe('fail');
-    expect(result.errorCode).toBe('TOOL_CALL_LIMIT_EXCEEDED');
-    expect(result.errorMessage).toContain('profile_active_dataset');
+    // Raw-count repetition is now a soft warning — workflow continues
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
   });
 });

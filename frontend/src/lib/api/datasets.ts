@@ -115,6 +115,13 @@ export async function getDatasetRows(
   }>(`/datasets/${datasetId}/rows?${search.toString()}`, { method: 'GET' });
 }
 
+export async function renameDataset(datasetId: string, filename: string) {
+  return apiRequest<{ dataset: DatasetProfile }>(`/datasets/${datasetId}`, {
+    method: 'PATCH',
+    body: { filename }
+  });
+}
+
 export async function deleteDataset(datasetId: string) {
   return apiRequest<{ success: boolean }>(`/datasets/${datasetId}`, { method: 'DELETE' });
 }

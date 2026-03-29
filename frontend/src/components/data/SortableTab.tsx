@@ -93,6 +93,7 @@ export function SortableTab({
           className="text-sm font-medium max-w-[150px] truncate
             group-hover:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]
             group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]"
+          title={name}
         >
           {name}
         </span>

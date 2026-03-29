@@ -16,6 +16,7 @@ import {
   PreprocessingToolbarRight
 } from './PreprocessingToolbar';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
+import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
@@ -93,6 +94,7 @@ export function PreprocessingPanel() {
     buildTabStorageKey,
     handleTabSwitch,
     handleNewTab,
+    adoptTab,
     handleDeleteTab,
     openRenameTabDialog,
     handleRenameTab,
@@ -165,8 +167,19 @@ export function PreprocessingPanel() {
 
     if (tabs.some((tab) => tab.id === requestedWorkbookId)) {
       handleTabSwitch(requestedWorkbookId);
+    } else {
+      const registry = useWorkbookRegistryStore.getState().preprocessing;
+      const entry = registry.find((w) => w.id === requestedWorkbookId);
+      if (entry) {
+        // Workbook was created externally (e.g. by the sidebar "+" button).
+        adoptTab(requestedWorkbookId, entry.name);
+      } else {
+        // Workbook ID in URL doesn't exist anywhere — stale reference after
+        // deletion. Snap the URL to the current active tab.
+        syncWorkbookParam(activeTab.id, true);
+      }
     }
-  }, [activeTab?.id, handleTabSwitch, searchParams, syncWorkbookParam, tabs, tabsReady]);
+  }, [activeTab?.id, adoptTab, handleTabSwitch, searchParams, syncWorkbookParam, tabs, tabsReady]);
 
   useEffect(() => {
     if (!projectId || !runId) {
@@ -285,6 +298,7 @@ export function PreprocessingPanel() {
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}
         initialPrompt={insightInitialPrompt}
+        notebookId={activeTab?.notebookId}
         toolbarLeft={
           <PreprocessingToolbarLeft
             tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}

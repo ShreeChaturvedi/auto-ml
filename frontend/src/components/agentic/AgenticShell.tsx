@@ -54,6 +54,8 @@ interface AgenticShellProps {
   initialPrompt?: string | null;
   /** Animated workflow placeholders for the chat composer */
   composerPlaceholders?: string[];
+  /** Optional notebook ID to activate when this shell mounts */
+  notebookId?: string | null;
 }
 
 export function AgenticShell({
@@ -71,7 +73,8 @@ export function AgenticShell({
   LeftPaneComponent,
   renderLeftPane,
   initialPrompt,
-  composerPlaceholders
+  composerPlaceholders,
+  notebookId: requestedNotebookId
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
@@ -126,10 +129,21 @@ export function AgenticShell({
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
   const disconnectNotebook = useNotebookStore((s) => s.disconnect);
 
+  // Track the latest truthy notebookId in a ref so that when it transitions
+  // from a value to null/undefined (disconnect cleanup), we don't re-trigger
+  // initialization with a stale/missing id.
+  const stableNotebookIdRef = useRef(requestedNotebookId);
+  if (requestedNotebookId) {
+    stableNotebookIdRef.current = requestedNotebookId;
+  }
+
   useEffect(() => {
-    if (projectId) initializeNotebook(projectId);
+    if (projectId) initializeNotebook(projectId, stableNotebookIdRef.current ?? undefined);
     return () => disconnectNotebook();
-  }, [projectId, initializeNotebook, disconnectNotebook]);
+    // Only re-run when projectId changes or when requestedNotebookId becomes
+    // a NEW truthy value. Transitions to null/undefined are ignored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, requestedNotebookId || '', initializeNotebook, disconnectNotebook]);
 
   const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
 
@@ -437,7 +451,7 @@ export function AgenticShell({
               headings={notebookHeadings}
               onScrollToHeading={(slug) => editorRef.current?.scrollToHeading(slug)}
             />
-            <NotebookEditor ref={editorRef} projectId={projectId} className="min-h-0 flex-1" />
+            <NotebookEditor ref={editorRef} projectId={projectId} notebookId={requestedNotebookId ?? activeNotebookId ?? undefined} className="min-h-0 flex-1" />
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>

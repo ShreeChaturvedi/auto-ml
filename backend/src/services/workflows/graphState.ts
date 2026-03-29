@@ -26,7 +26,7 @@ export const MAX_SINGLE_TOOL_CALLS = 10;
 // When the model passes the exact same arguments repeatedly it is truly stuck,
 // not iterating toward a fix.  This catches stuck loops earlier than the raw
 // count check.
-export const MAX_IDENTICAL_TOOL_CALLS = 3;
+export const MAX_IDENTICAL_TOOL_CALLS = 5;
 
 export const WORKFLOW_GRAPH_RECURSION_LIMIT = MAX_WORKFLOW_ITERATIONS * 3 + 8;
 
@@ -52,6 +52,12 @@ export const InternalWorkflowState = Annotation.Root({
   toolResultHistory: Annotation<ToolResult[]>({
     reducer: (left, right) => [...left, ...right],
     default: () => []
+  }),
+  // Number of tool calls carried over from previous turns — the per-turn
+  // limit checker skips these so only THIS turn's calls are counted.
+  turnStartToolCallCount: Annotation<number>({
+    reducer: (_left, right) => right,
+    default: () => 0
   }),
   askUserPayload: Annotation<z.infer<typeof AskUserPayloadSchema> | null>({
     reducer: (_left, right) => right,

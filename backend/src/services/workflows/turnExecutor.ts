@@ -47,8 +47,13 @@ export async function executeWorkflowTurn(
     request: null,
     latestMessage: '',
     pendingToolCalls: [],
+    // Restore previous history so continuation detection works
+    // (shouldContinuePreprocessingTurn checks hasWorkflowHistory).
+    // The turnStartToolCallCount tells the tool limiter to skip these
+    // when counting — only THIS turn's calls are limited.
     toolCallHistory: history.toolCalls,
     toolResultHistory: history.toolResults,
+    turnStartToolCallCount: history.toolCalls.length,
     askUserPayload: null,
     planExitPayload: null,
     uiPayload: null,

@@ -26,6 +26,7 @@ export function NotebookPage({ projectId }: NotebookPageProps) {
     return () => disconnect();
   }, [projectId, initializeNotebook, disconnect]);
 
+  const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
   const notebookHeadings = useNotebookHeadings();
 
   return (
@@ -35,7 +36,7 @@ export function NotebookPage({ projectId }: NotebookPageProps) {
         headings={notebookHeadings}
         onScrollToHeading={(slug) => editorRef.current?.scrollToHeading(slug)}
       />
-      <NotebookEditor ref={editorRef} projectId={projectId} className="min-h-0 flex-1" />
+      <NotebookEditor ref={editorRef} projectId={projectId} notebookId={activeNotebookId ?? undefined} className="min-h-0 flex-1" />
     </div>
   );
 }

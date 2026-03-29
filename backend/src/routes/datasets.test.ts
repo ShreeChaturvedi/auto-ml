@@ -53,6 +53,12 @@ vi.mock('../services/datasetLoader.js', async (importOriginal) => {
         return row;
       });
     }),
+    parseXlsxFromFile: vi.fn().mockResolvedValue([]),
+    parseXlsxSample: vi.fn().mockResolvedValue({ sampleRows: [], totalRowCount: 0, headers: [] }),
+    streamXlsxRows: vi.fn().mockResolvedValue(0),
+    streamXlsxSinglePass: vi.fn().mockResolvedValue({ totalRowCount: 0, sampleRows: [] }),
+    streamLoadXlsxIntoPostgres: vi.fn().mockResolvedValue({ tableName: 'mock_table', rowsLoaded: 0 }),
+    singlePassXlsxLoad: vi.fn().mockResolvedValue({ sampleRows: [], totalRowCount: 0, tableName: 'mock_table', rowsLoaded: 0, columns: [] }),
     sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
       const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
       return `${baseName}_${datasetId.slice(0, 8)}`;

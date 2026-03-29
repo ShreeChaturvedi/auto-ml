@@ -113,6 +113,12 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         });
 
         setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
+
+        // Re-hydrate from backend to reconcile client-side UUIDs with
+        // backend datasetIds — ensures preview lookups and tab IDs are
+        // consistent without requiring a manual page refresh.
+        await hydrateFromBackend(projectId, { force: true });
+
         console.log(`[DataUploadPanel] ✅ Uploaded ${file.name} to backend`);
       } catch (error) {
         console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
@@ -123,7 +129,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         }));
       }
     },
-    [projectId, setFileMetadata, addPreview]
+    [projectId, setFileMetadata, addPreview, hydrateFromBackend]
   );
 
   const uploadDocumentToBackend = useCallback(

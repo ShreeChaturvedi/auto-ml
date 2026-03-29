@@ -30,8 +30,8 @@ describe('downloadDocument', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(blob, { status: 200 }));
 
     const result = await downloadDocument('doc-123');
+    expect(result).toBeInstanceOf(Blob);
     expect(result.size).toBeGreaterThan(0);
-    expect(typeof result.text).toBe('function');
   });
 
   it('throws with backend error message on failure', async () => {

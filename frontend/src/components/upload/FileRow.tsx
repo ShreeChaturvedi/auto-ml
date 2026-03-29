@@ -55,6 +55,7 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
 
         {/* Filename */}
         <p
+          title={file.name}
           className={cn(
             'flex-1 min-w-0 text-sm font-medium text-foreground truncate',
             isUploading && 'shimmer-text',

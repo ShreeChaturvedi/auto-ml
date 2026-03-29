@@ -56,11 +56,18 @@ export const createCellSlice: NotebookSlice<CellSlice> = (set, get) => ({
 
     try {
       const summaries = await notebooksApi.listCells(activeNotebookId);
+
+      // Abort if the active notebook changed while the API call was in-flight
+      if (get().activeNotebookId !== activeNotebookId) return;
+
       set({ cellSummaries: summaries });
 
       const cells = await Promise.all(
         summaries.map((summary) => notebooksApi.getCell(summary.cellId))
       );
+
+      // Abort if the active notebook changed while fetching individual cells
+      if (get().activeNotebookId !== activeNotebookId) return;
 
       set({ cells: cells.sort((a, b) => a.position - b.position) });
     } catch (error) {

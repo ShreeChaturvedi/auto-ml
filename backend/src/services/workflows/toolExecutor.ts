@@ -173,7 +173,13 @@ export async function executeToolsNode(
   // like preprocessing and feature engineering raise the raw-count ceiling
   // without affecting tighter phases like training.
 
-  const allToolCalls = [...state.toolCallHistory, ...state.pendingToolCalls];
+  // Only count calls from THIS turn — skip calls carried over from previous
+  // turns (stored before turnStartToolCallCount) so multi-turn workflows
+  // don't accumulate toward the limit.
+  const allToolCalls = [
+    ...state.toolCallHistory.slice(state.turnStartToolCallCount),
+    ...state.pendingToolCalls
+  ];
 
   // Per-tool total counts
   const toolCallCounts = new Map<string, number>();
@@ -213,17 +219,25 @@ export async function executeToolsNode(
   const pauseDetails = getPauseDetails(nextResults);
   const hasExceededIterations = state.iteration + 1 >= MAX_WORKFLOW_ITERATIONS;
   const hasStuckLoop = stuckTool !== undefined;
-  const hasToolRepetition = repeatedTool !== undefined;
 
-  const isFailing = hasExceededIterations || hasStuckLoop || hasToolRepetition;
+  // Raw-count repetition is only a warning — the model may legitimately call
+  // the same tool many times with different arguments during complex workflows
+  // (e.g. multi-feature proposals, iterative code fixes).  Only truly stuck
+  // loops (identical args) and the iteration ceiling cause hard failures.
+  if (repeatedTool) {
+    const logger = await import('../../logging/logger.js');
+    logger.appLogger.warn(
+      `[toolExecutor] Tool "${repeatedTool}" called ${toolCallCounts.get(repeatedTool)!} times in this turn (soft limit: ${effectiveLimit}) — allowing workflow to continue`
+    );
+  }
+
+  const isFailing = hasExceededIterations || hasStuckLoop;
   const errorMessage = hasStuckLoop
     ? `Workflow stuck \u2014 the model called "${stuckTool}" ${stuckCount} times with identical arguments. Try rephrasing your request.`
-    : hasToolRepetition
-      ? `Tool call limit exceeded \u2014 "${repeatedTool}" was called ${toolCallCounts.get(repeatedTool!)!} times without advancing. Try simplifying your request or retrying.`
-      : hasExceededIterations
-        ? 'Workflow exceeded the maximum number of model/tool iterations for one turn.'
-        : null;
-  const errorCode = (hasStuckLoop || hasToolRepetition)
+    : hasExceededIterations
+      ? 'Workflow exceeded the maximum number of model/tool iterations for one turn.'
+      : null;
+  const errorCode = hasStuckLoop
     ? 'TOOL_CALL_LIMIT_EXCEEDED'
     : hasExceededIterations
       ? 'MAX_ITERATIONS_EXCEEDED'

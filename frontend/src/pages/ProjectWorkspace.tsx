@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { UploadArea } from '@/components/upload/UploadArea';
 import { DataViewerTab } from '@/components/data/DataViewerTab';
@@ -7,9 +7,49 @@ import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineerin
 import { TrainingPanel } from '@/components/training/TrainingPanel';
 import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
 import { NotebookPage } from '@/components/notebook/NotebookPage';
+import { Button } from '@/components/ui/button';
 import { useProjectStore } from '@/stores/projectStore';
 import { isAuxiliaryPhase } from '@/types/phase';
 import type { Phase } from '@/types/phase';
+
+// ---------------------------------------------------------------------------
+// Phase-level ErrorBoundary — prevents a single phase crash from white-screening
+// ---------------------------------------------------------------------------
+class PhaseErrorBoundary extends React.Component<
+  { children: React.ReactNode; onReset?: () => void },
+  { hasError: boolean; error?: Error }
+> {
+  state = { hasError: false, error: undefined as Error | undefined };
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[PhaseErrorBoundary]', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+          <p className="text-sm text-muted-foreground">Something went wrong in this phase.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              this.setState({ hasError: false, error: undefined });
+              this.props.onReset?.();
+            }}
+          >
+            Try Again
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Redirect to current phase
 export function ProjectRedirect() {
@@ -98,13 +138,25 @@ export function ProjectWorkspace() {
       return <DataViewerTab />;
 
     case 'preprocessing':
-      return <PreprocessingPanel />;
+      return (
+        <PhaseErrorBoundary>
+          <PreprocessingPanel />
+        </PhaseErrorBoundary>
+      );
 
     case 'feature-engineering':
-      return <FeatureEngineeringPanel projectId={projectId!} />;
+      return (
+        <PhaseErrorBoundary>
+          <FeatureEngineeringPanel projectId={projectId!} />
+        </PhaseErrorBoundary>
+      );
 
     case 'training':
-      return <TrainingPanel />;
+      return (
+        <PhaseErrorBoundary>
+          <TrainingPanel />
+        </PhaseErrorBoundary>
+      );
 
     case 'experiments':
       return <ExperimentsDashboard />;

@@ -287,7 +287,7 @@ async function processXlsxUpload(
   tempFilePath: string
 ): Promise<void> {
   // Step 1: streaming sample + row count
-  const { sample, totalRows } = await parseXlsxSample(tempFilePath, EDA_MAX_ROWS);
+  const { sampleRows: sample, totalRowCount: totalRows } = await parseXlsxSample(tempFilePath, req.file!.originalname, EDA_MAX_ROWS);
 
   if (sample.length === 0) {
     cleanupTempFile(tempFilePath);

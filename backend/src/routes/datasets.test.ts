@@ -24,10 +24,6 @@ vi.mock('../services/datasetLoader.js', async (importOriginal) => {
       tableName: 'mock_table',
       rowsLoaded: 100
     }),
-    streamLoadXlsxIntoPostgres: vi.fn().mockResolvedValue({
-      tableName: 'mock_table',
-      rowsLoaded: 100
-    }),
     parseDatasetRows: vi.fn().mockImplementation((buffer: Buffer, fileType: string) => {
       const content = buffer.toString('utf8');
 

@@ -10,7 +10,8 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, PanelLeft, Pencil } from 'lucide-react';
-import * as LucideIcons from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { getLucideIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Logo } from '@/components/ui/logo';
@@ -37,14 +38,20 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const activeProjectId = useProjectStore((state) => state.activeProjectId);
-  const projects = useProjectStore((state) => state.projects);
+  const [editDialogProject, setEditDialogProject] = useState<
+    import('@/types/project').Project | undefined
+  >(undefined);
+  // Narrow selector: only re-render when the active project's id/title/icon change,
+  // not on every mutation to the projects array.
+  const activeProject = useProjectStore(
+    useShallow((s) => {
+      if (!s.activeProjectId) return undefined;
+      const p = s.projects.find((p) => p.id === s.activeProjectId);
+      return p ? { id: p.id, title: p.title, icon: p.icon } : undefined;
+    })
+  );
+  const activeProjectId = activeProject?.id ?? null;
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
-
-  const activeProject = activeProjectId
-    ? projects.find((p) => p.id === activeProjectId)
-    : undefined;
 
   const handleGoHome = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -64,7 +71,11 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   const handleOpenProjectEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsEditDialogOpen(true);
+    // Fetch the full project at click time so the dialog gets every field
+    // without the sidebar subscribing to the entire projects array.
+    const { activeProjectId: id, projects } = useProjectStore.getState();
+    const full = id ? projects.find((p) => p.id === id) : undefined;
+    setEditDialogProject(full);
   };
 
   // Expand when clicking anywhere on sidebar background (not buttons)
@@ -75,11 +86,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   };
 
   // Get project icon component
-  const ProjectIcon = activeProject
-    ? (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    activeProject.icon
-    ]
-    : null;
+  const ProjectIcon = activeProject ? getLucideIcon(activeProject.icon) : null;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -216,11 +223,11 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         <UserProfile collapsed={collapsed} />
       </div>
 
-      {activeProject && (
+      {editDialogProject && (
         <ProjectDialog
-          open={isEditDialogOpen}
-          onOpenChange={setIsEditDialogOpen}
-          project={activeProject}
+          open={!!editDialogProject}
+          onOpenChange={(open) => { if (!open) setEditDialogProject(undefined); }}
+          project={editDialogProject}
         />
       )}
     </div>

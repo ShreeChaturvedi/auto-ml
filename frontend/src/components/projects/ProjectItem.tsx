@@ -38,7 +38,7 @@ import type { Project } from '@/types/project';
 import { resolveProjectColor } from '@/types/project';
 import { ProjectDialog } from './ProjectDialog';
 import { cn } from '@/lib/utils';
-import * as LucideIcons from 'lucide-react';
+import { getLucideIcon } from '@/lib/icons';
 
 interface ProjectItemProps {
   project: Project;
@@ -58,9 +58,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   const colorClasses = resolveProjectColor(project.color, project.customColor);
 
   // Get icon component dynamically
-  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    project.icon
-  ];
+  const IconComponent = getLucideIcon(project.icon);
 
   const handleDelete = async () => {
     if (isDeleting) return;

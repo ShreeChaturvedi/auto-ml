@@ -14,7 +14,6 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import * as LucideIcons from 'lucide-react';
 import { ChevronRight, Plus } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
@@ -25,6 +24,7 @@ import type { Phase } from '@/types/phase';
 import { isAuxiliaryPhase, phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
+import { getLucideIcon } from '@/lib/icons';
 import { getSidebarAccordionPref } from '@/lib/sidebarPrefs';
 import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
@@ -105,9 +105,7 @@ const PhaseItem = memo(function PhaseItem({
   const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
   const activeColorClass = isActive ? 'text-accent-text' : 'text-muted-foreground';
 
-  const IconComponent = (
-    LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>
-  )[config.icon];
+  const IconComponent = getLucideIcon(config.icon);
 
   const phaseButton = (
     <div
@@ -243,7 +241,7 @@ const PhaseItem = memo(function PhaseItem({
                 isActivePhase={isActive}
               />
             )}
-            {phase === 'experiments' && <ModelSubtabs projectId={projectId} />}
+            {phase === 'experiments' && <ModelSubtabs projectId={projectId} isActivePhase={isActive} />}
           </div>
         </div>
       )}

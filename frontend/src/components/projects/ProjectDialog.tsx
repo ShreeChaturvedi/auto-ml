@@ -31,7 +31,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import type { Project, ProjectColor } from '@/types/project';
 import { resolveProjectColor } from '@/types/project';
 import { cn } from '@/lib/utils';
-import * as LucideIcons from 'lucide-react';
+import { getLucideIcon } from '@/lib/icons';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -176,7 +176,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
     onOpenChange(nextOpen);
   };
 
-  const PreviewIcon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[selectedIcon];
+  const PreviewIcon = getLucideIcon(selectedIcon);
   const previewColors = resolveProjectColor(selectedColor, customColor);
 
   return (
@@ -322,7 +322,7 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
           </DialogHeader>
           <div className="grid grid-cols-6 gap-2 place-items-center py-4">
             {projectIcons.map((iconName) => {
-              const Icon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[iconName];
+              const Icon = getLucideIcon(iconName);
               return (
                 <button
                   key={iconName}

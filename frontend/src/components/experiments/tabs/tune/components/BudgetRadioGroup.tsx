@@ -1,4 +1,3 @@
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 
 const BUDGET_OPTIONS = [
@@ -14,8 +13,6 @@ interface BudgetRadioGroupProps {
 }
 
 export function BudgetRadioGroup({ value, onChange }: BudgetRadioGroupProps) {
-  const { colorClasses } = useProjectThemeColor();
-
   return (
     <div className="grid grid-cols-4 gap-2">
       {BUDGET_OPTIONS.map((opt) => {
@@ -28,7 +25,7 @@ export function BudgetRadioGroup({ value, onChange }: BudgetRadioGroupProps) {
             className={cn(
               'rounded-lg border p-3 text-left transition-colors',
               selected
-                ? `${colorClasses?.borderAccent ?? 'border-primary'} ${colorClasses?.bg ?? 'bg-primary/10'}`
+                ? 'border-accent-border bg-accent-bg'
                 : 'border-border/30 hover:border-border/60 hover:bg-muted/30',
             )}
           >

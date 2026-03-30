@@ -10,7 +10,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useModelStore } from '@/stores/modelStore';
 import { cn } from '@/lib/utils';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { ChartCard } from '../shared/ChartCard';
 
 /* ------------------------------------------------------------------ */
@@ -35,8 +34,6 @@ export interface ProvenanceTabProps {
 
 export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
   const model = useModelStore((s) => s.models.find((m) => m.modelId === modelId));
-  const { colorClasses } = useProjectThemeColor();
-
   const hasProvenanceMetadata = useMemo(() => {
     if (!model?.metadata) return false;
     return Object.keys(model.metadata).length > 0;
@@ -57,7 +54,7 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
       {/* -- Pipeline Timeline -- */}
       <ChartCard delay={0} className="p-6">
         <h3 className="text-sm font-semibold text-foreground mb-5">
-          <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-2', colorClasses?.fill ?? 'bg-primary/50')} />
+          <span className="inline-block w-1.5 h-1.5 rounded-full mr-2 bg-accent-fill" />
           Pipeline Timeline
         </h3>
 
@@ -114,8 +111,8 @@ export function ProvenanceTab({ modelId }: ProvenanceTabProps) {
       </ChartCard>
 
       {/* -- Info Banner -- */}
-      <div className={cn('flex gap-3 rounded-xl border p-4', colorClasses?.border ?? 'border-primary/15', colorClasses?.fillMuted ?? 'bg-primary/[0.03]')}>
-        <Info className={cn('h-4 w-4 shrink-0 mt-0.5', colorClasses?.text ?? 'text-primary/60')} />
+      <div className="flex gap-3 rounded-xl border border-accent-border bg-accent-bg p-4">
+        <Info className="h-4 w-4 shrink-0 mt-0.5 text-accent-text" />
         <p className="text-sm text-muted-foreground leading-relaxed">
           Provenance tracking captures how preprocessing decisions affect model
           performance. Models trained after provenance tracking is enabled will

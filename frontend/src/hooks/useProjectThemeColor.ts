@@ -1,7 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@/components/theme-provider';
-import { projectColorClasses } from '@/types/project';
 
 /** Direct color-name → hex mapping, matching Tailwind's palette. */
 const PROJECT_COLOR_HEX: Record<string, { light: string; dark: string }> = {
@@ -80,35 +80,35 @@ const ACCENT_SHADES: AccentShade[] = [
  * dynamic accent color system. These are consumed via Tailwind's accent-* utilities.
  */
 export function useProjectThemeColor() {
-  const project = useProjectStore((s) => {
-    const id = s.activeProjectId;
-    return id ? s.projects.find((p) => p.id === id) : undefined;
-  });
+  const { color, customColor } = useProjectStore(
+    useShallow((s) => {
+      const id = s.activeProjectId;
+      const p = id ? s.projects.find((p) => p.id === id) : undefined;
+      return { color: p?.color, customColor: p?.customColor };
+    }),
+  );
   const { theme } = useTheme();
-  const colorClasses = project ? projectColorClasses[project.color] : undefined;
-  const themeColorClass = colorClasses?.text;
-
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const themeColor = useMemo(() => {
-    if (project?.customColor) return project.customColor;
-    const hex = PROJECT_COLOR_HEX[project?.color ?? ''];
+    if (customColor) return customColor;
+    const hex = PROJECT_COLOR_HEX[color ?? ''];
     if (!hex) return undefined;
     return isDark ? hex.dark : hex.light;
-  }, [project?.customColor, project?.color, isDark]);
+  }, [customColor, color, isDark]);
 
   // Derive the hue for accent computation
   const hue = useMemo(() => {
-    if (project?.color === 'custom' && project.customColor) {
-      return hexToHue(project.customColor);
+    if (color === 'custom' && customColor) {
+      return hexToHue(customColor);
     }
-    return PROJECT_COLOR_HUES[project?.color ?? ''] ?? 220;
-  }, [project?.color, project?.customColor]);
+    return PROJECT_COLOR_HUES[color ?? ''] ?? 220;
+  }, [color, customColor]);
 
   // Set accent CSS variables on documentElement
   useEffect(() => {
     const root = document.documentElement;
-    if (!project) {
+    if (!color) {
       for (const shade of ACCENT_SHADES) {
         root.style.removeProperty(`--${shade.token}`);
       }
@@ -124,7 +124,7 @@ export function useProjectThemeColor() {
         root.style.removeProperty(`--${shade.token}`);
       }
     };
-  }, [hue, isDark, project]);
+  }, [hue, isDark, color]);
 
-  return { themeColor, themeColorClass, colorClasses };
+  return { themeColor };
 }

@@ -1,5 +1,3 @@
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
-
 interface ParamImportanceChartProps {
   data: Record<string, number> | null;
   height?: number;
@@ -30,8 +28,6 @@ export function ParamImportanceChart({ data, height = 160 }: ParamImportanceChar
 }
 
 function ParamBars({ entries }: { entries: [string, number][] }) {
-  const { colorClasses } = useProjectThemeColor();
-
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Parameter Importance</p>
@@ -41,7 +37,7 @@ function ParamBars({ entries }: { entries: [string, number][] }) {
             <span className="w-28 text-xs font-medium truncate" title={name}>{name}</span>
             <div className="flex-1 h-3 rounded-full bg-muted/30 overflow-hidden">
               <div
-                className={`h-full rounded-full transition-[width] duration-500 ${colorClasses?.fill ?? 'bg-primary'}`}
+                className="h-full rounded-full transition-[width] duration-500 bg-accent-fill"
                 style={{ width: `${Math.max(importance * 100, 2)}%` }}
               />
             </div>

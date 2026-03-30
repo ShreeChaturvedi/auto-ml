@@ -7,8 +7,6 @@ import { ShapBarChart } from '../charts/ShapBarChart';
 import { ShapBeeswarmChart } from '../charts/ShapBeeswarmChart';
 import { ShapDependenceChart } from '../charts/ShapDependenceChart';
 import { AlertTriangle } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
 interface InterpretabilityTabProps {
   modelId: string;
@@ -18,8 +16,6 @@ interface InterpretabilityTabProps {
 export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTabProps) {
   const fetchShap = useExperimentsStore((s) => s.fetchShap);
   const shapData = useExperimentsStore((s) => s.shapData[modelId]);
-  const { colorClasses } = useProjectThemeColor();
-
   useEffect(() => {
     fetchShap(modelId);
   }, [modelId, fetchShap]);
@@ -34,7 +30,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
 
   const shapHeading = (
     <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
-      <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-2', colorClasses?.fill ?? 'bg-primary/60')} />
+      <span className="inline-block w-1.5 h-1.5 rounded-full mr-2 bg-accent-fill" />
       SHAP Analysis
     </h3>
   );

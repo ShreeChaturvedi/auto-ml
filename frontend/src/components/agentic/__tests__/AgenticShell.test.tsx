@@ -103,9 +103,7 @@ vi.mock('@/hooks/useModelSelection', () => ({
 }));
 
 vi.mock('@/hooks/useProjectThemeColor', () => ({
-  useProjectThemeColor: () => ({
-    themeColor: { text: '', bg: '', hover: '', border: '', borderAccent: '', fill: '', fillMuted: '' }
-  })
+  useProjectThemeColor: () => ({ themeColor: '#1d4ed8' })
 }));
 
 vi.mock('@/stores/notebookStore', () => ({

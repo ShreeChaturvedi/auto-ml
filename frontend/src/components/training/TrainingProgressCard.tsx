@@ -74,7 +74,7 @@ export function TrainingProgressCard({
   metrics,
   finalMetrics,
 }: TrainingProgressCardProps) {
-  const { themeColor, colorClasses } = useProjectThemeColor();
+  const { themeColor } = useProjectThemeColor();
   const progressPercent = totalEpochs > 0 ? Math.round((currentEpoch / totalEpochs) * 100) : 0;
   const isRunning = status === 'running';
 
@@ -86,7 +86,7 @@ export function TrainingProgressCard({
       {/* Header */}
       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/40">
         {isRunning ? (
-          <Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', colorClasses?.text ?? 'text-primary')} />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : (
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
         )}
@@ -111,8 +111,7 @@ export function TrainingProgressCard({
         <Progress
           value={progressPercent}
           className="h-1.5"
-          indicatorClassName={colorClasses?.fill}
-          indicatorStyle={themeColor && !colorClasses?.fill ? { backgroundColor: themeColor } : undefined}
+          indicatorClassName="bg-accent-fill"
         />
       </div>
 

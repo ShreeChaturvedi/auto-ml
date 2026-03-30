@@ -33,6 +33,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
+import { CellMoveButtons } from './CellMoveButtons';
 import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
 import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
@@ -55,6 +56,10 @@ interface NotebookCellComponentProps {
   onAccept?: () => void;
   onReject?: () => void;
   onCancel?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 function formatExecutionTime(ms: number): string {
@@ -78,7 +83,11 @@ export function NotebookCellComponent({
   streamError,
   onAccept,
   onReject,
-  onCancel
+  onCancel,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown
 }: NotebookCellComponentProps) {
   const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
   const [showOutput, setShowOutput] = useState(true);
@@ -312,8 +321,15 @@ export function NotebookCellComponent({
               )}
             </div>
           ) : (
-            /* Delete — hover-reveal, neutral at rest */
-            <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            /* Actions — hover-reveal */
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <CellMoveButtons
+                onMoveUp={onMoveUp}
+                onMoveDown={onMoveDown}
+                canMoveUp={canMoveUp}
+                canMoveDown={canMoveDown}
+                disabled={isLocked || isRunning}
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

@@ -28,6 +28,7 @@ import 'katex/dist/katex.min.css';
 import { Markdown } from '@/components/ui/Markdown';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildHeadingComponents } from '@/lib/markdown/tocUtils';
+import { CellMoveButtons } from './CellMoveButtons';
 import { MarkdownEmptyState } from './MarkdownEmptyState';
 import { useDebouncedSave } from './hooks/useDebouncedSave';
 import { useMarkdownEditMode } from './hooks/useMarkdownEditMode';
@@ -98,6 +99,10 @@ interface NotebookMarkdownCellProps {
   onToggleCollapsed: () => void;
   onContentChange: (content: string) => void;
   onDelete: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 export function NotebookMarkdownCell({
@@ -109,7 +114,11 @@ export function NotebookMarkdownCell({
   themeColor,
   onToggleCollapsed,
   onContentChange,
-  onDelete
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown
 }: NotebookMarkdownCellProps) {
   const { theme } = useTheme();
   const resolvedTheme = theme === 'system'
@@ -313,8 +322,16 @@ export function NotebookMarkdownCell({
           )}
         </div>
 
-        <div className="flex items-center gap-1 pt-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 pt-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
           <TooltipProvider>
+            <CellMoveButtons
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+              disabled={isLocked}
+            />
+
             {!isCollapsed && !contentIsEmpty && (
               <Tooltip>
                 <TooltipTrigger asChild>

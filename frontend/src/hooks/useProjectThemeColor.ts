@@ -59,6 +59,11 @@ interface AccentShade {
   lightL: number; lightC: number;
 }
 
+// Multiple components mount this hook; only the last unmount should
+// clear the global CSS variables. Module-scope counter survives HMR
+// via Vite's import.meta.hot (see bottom of file).
+let accentMountCount = 0;
+
 const ACCENT_SHADES: AccentShade[] = [
   { token: 'accent-bg',          darkL: 0.20, darkC: 0.04, lightL: 0.95, lightC: 0.03 },
   { token: 'accent-bg-hover',    darkL: 0.25, darkC: 0.05, lightL: 0.91, lightC: 0.05 },
@@ -97,7 +102,6 @@ export function useProjectThemeColor() {
     return isDark ? hex.dark : hex.light;
   }, [customColor, color, isDark]);
 
-  // Derive the hue for accent computation
   const hue = useMemo(() => {
     if (color === 'custom' && customColor) {
       return hexToHue(customColor);
@@ -105,14 +109,15 @@ export function useProjectThemeColor() {
     return PROJECT_COLOR_HUES[color ?? ''] ?? 220;
   }, [color, customColor]);
 
-  // Set accent CSS variables on documentElement
   useEffect(() => {
+    accentMountCount++;
     const root = document.documentElement;
     if (!color) {
-      for (const shade of ACCENT_SHADES) {
-        root.style.removeProperty(`--${shade.token}`);
-      }
-      return;
+      // No active project — clear overrides so :root defaults apply.
+      // Safe even with other instances: they all read the same store,
+      // so if one has !color they all do.
+      clearAccentVars(root);
+      return () => { accentMountCount--; };
     }
     for (const shade of ACCENT_SHADES) {
       const l = isDark ? shade.darkL : shade.lightL;
@@ -120,11 +125,21 @@ export function useProjectThemeColor() {
       root.style.setProperty(`--${shade.token}`, oklchToHsl(l, c, hue));
     }
     return () => {
-      for (const shade of ACCENT_SHADES) {
-        root.style.removeProperty(`--${shade.token}`);
-      }
+      accentMountCount--;
+      if (accentMountCount === 0) clearAccentVars(root);
     };
   }, [hue, isDark, color]);
 
   return { themeColor };
+}
+
+function clearAccentVars(root: HTMLElement) {
+  for (const shade of ACCENT_SHADES) {
+    root.style.removeProperty(`--${shade.token}`);
+  }
+}
+
+// Reset counter on HMR so stale closures don't desync it
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => { accentMountCount = 0; });
 }

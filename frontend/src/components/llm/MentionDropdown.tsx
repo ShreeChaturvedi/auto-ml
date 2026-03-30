@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState, useMemo, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { resolveFileIcon, DATA_FILE_TYPES, isFileType } from '@/lib/fileUtils';
+import { clampFloatingLeft, FLOATING_VIEWPORT_EDGE_PX } from '@/lib/clampFloatingLeft';
 import { cn } from '@/lib/utils';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
+
+const DROPDOWN_MAX_WIDTH_PX = 400;
 
 interface MentionDropdownProps {
   isOpen: boolean;
@@ -39,11 +42,11 @@ export function MentionDropdown({
   onSelect
 }: MentionDropdownProps) {
   const listRef = useRef<HTMLUListElement>(null);
-  const [position, setPosition] = useState<{ bottom: number; left: number; width: number } | null>(null);
+  const [position, setPosition] = useState<{ bottom: number; left: number } | null>(null);
+  const [clampedLeft, setClampedLeft] = useState<number | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [wasOpen, setWasOpen] = useState(false);
 
-  // Track open/close transitions for exit animation
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false);
@@ -60,23 +63,35 @@ export function MentionDropdown({
     }
   };
 
-  // Anchor dropdown directly above the input element, overlaying suggestion pills.
-  // Only recompute when isOpen transitions — the input element doesn't move while typing.
   useEffect(() => {
     const el = anchorRef.current?.element() ?? null;
     if (!isOpen || !el) {
-      if (!isClosing) setPosition(null);
+      if (!isClosing) {
+        setPosition(null);
+        setClampedLeft(null);
+      }
       return;
     }
     const inputRect = el.getBoundingClientRect();
     setPosition({
       bottom: window.innerHeight - inputRect.top + 4,
-      left: inputRect.left,
-      width: Math.min(Math.max(inputRect.width, 240), 400)
+      left: inputRect.left
     });
+    setClampedLeft(null);
   }, [isOpen, anchorRef, isClosing]);
 
-  // Scroll active item into view
+  useLayoutEffect(() => {
+    if (!position) return;
+    const syncLeft = () => {
+      const node = listRef.current;
+      if (!node) return;
+      setClampedLeft(clampFloatingLeft(node, position.left));
+    };
+    syncLeft();
+    window.addEventListener('resize', syncLeft);
+    return () => window.removeEventListener('resize', syncLeft);
+  }, [position, filtered, isOpen, isClosing]);
+
   useEffect(() => {
     if (!listRef.current) return;
     const items = listRef.current.querySelectorAll('[role="option"]');
@@ -85,13 +100,17 @@ export function MentionDropdown({
   }, [activeIndex]);
 
   const groups = useMemo(() => groupCandidates(filtered), [filtered]);
+  const globalIndexMap = useMemo(() => {
+    const m = new Map<string, number>();
+    filtered.forEach((c, i) => m.set(c.id, i));
+    return m;
+  }, [filtered]);
 
   const shouldShow = isOpen || isClosing;
   if (!shouldShow || !position) return null;
 
   const showEmpty = isOpen && filtered.length === 0;
 
-  /** Render a single candidate item. globalIndex is its position in the flat filtered array. */
   const renderItem = (candidate: MentionCandidate, globalIndex: number) => {
     const { Icon, colorClass } = resolveFileIcon(candidate.type);
 
@@ -102,28 +121,25 @@ export function MentionDropdown({
         role="option"
         aria-selected={globalIndex === activeIndex}
         className={cn(
-          'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
+          'flex min-w-0 cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
           globalIndex === activeIndex
             ? 'bg-accent text-accent-foreground'
             : 'text-popover-foreground hover:bg-accent/50'
         )}
         onMouseDown={(e) => {
-          e.preventDefault(); // prevent input blur
+          e.preventDefault();
           onSelect(candidate);
         }}
       >
         <Icon className={cn('h-3.5 w-3.5 shrink-0', colorClass)} />
-        <span className="truncate">{candidate.name}</span>
+        <span className="min-w-0 flex-1 truncate">{candidate.name}</span>
       </li>
     );
   };
 
-  // Build flat index map so grouped rendering can compute globalIndex
-  const globalIndexMap = new Map<string, number>();
-  filtered.forEach((c, i) => globalIndexMap.set(c.id, i));
-
   const hasDataFiles = groups.dataFiles.length > 0;
   const hasContextFiles = groups.contextFiles.length > 0;
+  const maxWidthCss = `min(${DROPDOWN_MAX_WIDTH_PX}px, calc(100vw - ${FLOATING_VIEWPORT_EDGE_PX * 2}px))`;
 
   return createPortal(
     <ul
@@ -131,37 +147,32 @@ export function MentionDropdown({
       role="listbox"
       aria-label="File mentions"
       className={cn(
-        'fixed z-50 max-h-64 overflow-y-auto rounded-md border bg-popover p-1 shadow-md',
+        'fixed z-50 w-max max-h-64 overflow-y-auto rounded-md border bg-popover p-1 shadow-md',
         isClosing ? 'animate-mention-out' : 'animate-mention-in'
       )}
       style={{
         bottom: position.bottom,
-        left: position.left,
-        width: position.width,
-        minWidth: 240
+        left: clampedLeft ?? position.left,
+        maxWidth: maxWidthCss
       }}
       onAnimationEnd={handleAnimationEnd}
     >
-      {/* Header */}
-      <li className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider select-none" aria-hidden>
+      <li
+        className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none"
+        aria-hidden
+      >
         Files
       </li>
 
       {showEmpty ? (
-        <li className="px-2 py-3 text-center text-xs text-muted-foreground">
-          No matching files
-        </li>
+        <li className="px-2 py-3 text-center text-xs text-muted-foreground">No matching files</li>
       ) : (
         <>
-          {hasDataFiles ? (
-            groups.dataFiles.map((c) => renderItem(c, globalIndexMap.get(c.id)!))
-          ) : null}
+          {hasDataFiles ? groups.dataFiles.map((c) => renderItem(c, globalIndexMap.get(c.id)!)) : null}
 
           {hasContextFiles ? (
             <>
-              {hasDataFiles ? (
-                <li className="my-1 border-t border-border/50" aria-hidden />
-              ) : null}
+              {hasDataFiles ? <li className="my-1 border-t border-border/50" aria-hidden /> : null}
               {groups.contextFiles.map((c) => renderItem(c, globalIndexMap.get(c.id)!))}
             </>
           ) : null}

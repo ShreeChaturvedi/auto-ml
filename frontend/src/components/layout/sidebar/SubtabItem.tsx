@@ -47,15 +47,13 @@ export function SubtabItem({
       className={cn(
         'group w-full flex items-center gap-2 px-3 py-1.5 min-h-6 text-left text-[13px] truncate transition-colors duration-200 cursor-pointer',
         'focus-visible:outline-none focus-visible:bg-accent',
-        isActive
-          ? 'font-medium'
-          : 'text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50'
+        !isActive && 'text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50'
       )}
     >
       <div className="shrink-0">
         <Icon className={cn('h-3.5 w-3.5 transition-colors duration-200', iconColor)} />
       </div>
-      <span className={cn('flex-1 truncate', isActive && 'text-accent-text')} title={label}>
+      <span className={cn('flex-1 truncate', isActive && 'text-foreground')} title={label}>
         {label}
       </span>
       {actionSlot && (

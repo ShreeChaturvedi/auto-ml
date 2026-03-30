@@ -280,7 +280,6 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                   className={cn(
                     'flex-1 text-sm truncate transition-opacity duration-300 pl-2',
                     collapsed && 'opacity-0',
-                    isActive && 'font-medium',
                     shimmeringPhases.has(phase) && 'shimmer-text-once'
                   )}
                   onAnimationEnd={shimmeringPhases.has(phase) ? () => {

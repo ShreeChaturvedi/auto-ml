@@ -1,16 +1,16 @@
-import { useMemo, useCallback } from 'react';
-import { CircleStar, ChevronRight, GitCompareArrows } from 'lucide-react';
+import { useMemo, useCallback, useEffect } from 'react';
+import { CircleStar, ChevronRight, Tag, Hash } from 'lucide-react';
+import Papa from 'papaparse';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
-import { cn } from '@/lib/utils';
+import { cn, downloadBlob } from '@/lib/utils';
 import { SortHeader } from '@/components/ui/SortHeader';
 import { LOWER_IS_BETTER } from './modelIcons';
-import { formatMetric, filterByPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
+import { formatMetric, filterByPredicates, filterByGroupedPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
 
 /* ── Metric helpers ─────────────────────────────────────── */
 
@@ -96,7 +96,11 @@ function GhostRows() {
 
 /* ── Leaderboard component ─────────────────────────────── */
 
-export function Leaderboard() {
+interface LeaderboardProps {
+  onExportReady?: (handler: (selectedOnly?: string[]) => void) => void;
+}
+
+export function Leaderboard({ onExportReady }: LeaderboardProps) {
   const models = useModelStore((s) => s.models);
   const isLoadingModels = useModelStore((s) => s.isLoadingModels);
 
@@ -104,21 +108,28 @@ export function Leaderboard() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
   const selectModel = useExperimentsStore((s) => s.selectModel);
   const toggleComparison = useExperimentsStore((s) => s.toggleComparison);
-  const clearComparison = useExperimentsStore((s) => s.clearComparison);
   const activePredicates = useExperimentsStore((s) => s.activePredicates);
   const sortField = useExperimentsStore((s) => s.sortField);
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
+  const manualPredicates = useExperimentsStore((s) => s.manualPredicates);
+  const nameFilter = useExperimentsStore((s) => s.nameFilter);
 
   const trophyColorClass = 'text-accent-text';
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
   const championId = useMemo(() => findChampionId(models), [models]);
 
-  const filteredModels = useMemo(
-    () => filterByPredicates(models, activePredicates),
-    [models, activePredicates]
-  );
+  const filteredModels = useMemo(() => {
+    let result = models;
+    if (activePredicates.length > 0) result = filterByPredicates(result, activePredicates);
+    if (manualPredicates.length > 0) result = filterByGroupedPredicates(result, manualPredicates);
+    if (nameFilter.trim()) {
+      const q = nameFilter.trim().toLowerCase();
+      result = result.filter((m) => m.name.toLowerCase().includes(q));
+    }
+    return result;
+  }, [models, activePredicates, manualPredicates, nameFilter]);
 
   const sortedModels = useMemo(() => {
     const sorted = [...filteredModels];
@@ -150,7 +161,7 @@ export function Leaderboard() {
   const metricExtremes = useMemo(() => {
     const result: Record<string, { best: number; worst: number }> = {};
     for (const [, key] of metricCols) {
-      const values = sortedModels
+      const values = filteredModels
         .map((m) => m.metrics[key])
         .filter((v): v is number => v != null && Number.isFinite(v));
       if (values.length < 2) continue;
@@ -161,7 +172,7 @@ export function Leaderboard() {
       };
     }
     return result;
-  }, [sortedModels, metricCols]);
+  }, [filteredModels, metricCols]);
 
   const handleSort = useCallback(
     (field: string) => {
@@ -174,6 +185,31 @@ export function Leaderboard() {
     [sortField, sortDirection, setSort]
   );
 
+  const handleExport = useCallback(
+    (selectedOnly?: string[]) => {
+      const data = selectedOnly
+        ? sortedModels.filter((m) => selectedOnly.includes(m.modelId))
+        : sortedModels;
+      if (data.length === 0) return;
+      const metricKeys = metricCols.map(([, key]) => key);
+      const rows = data.map((m) => ({
+        name: m.name,
+        algorithm: m.algorithm,
+        taskType: m.taskType,
+        status: m.status,
+        ...Object.fromEntries(metricKeys.map((k) => [k, m.metrics[k] ?? ''])),
+        createdAt: m.createdAt,
+      }));
+      const csv = Papa.unparse(rows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      downloadBlob(blob, `leaderboard-${timestamp}.csv`);
+    },
+    [sortedModels, metricCols],
+  );
+
+  useEffect(() => { onExportReady?.(handleExport); }, [onExportReady, handleExport]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Table */}
@@ -182,10 +218,10 @@ export function Leaderboard() {
           <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-20 border-b border-border/20">
             <tr>
               <th scope="col" className="w-8" />
-              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
-              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
+              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="py-3" icon={Tag} />
+              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="py-3" icon={Tag} />
               {metricCols.map(([label, key]) => (
-                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" />
+                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" className="py-3" icon={Hash} />
               ))}
               <th scope="col" className="w-8" />
             </tr>
@@ -262,8 +298,8 @@ export function Leaderboard() {
                         key={key}
                         className={cn(
                           'py-2.5 px-3 text-right tabular-nums font-medium text-foreground/80',
-                          isBest && 'text-emerald-400 font-semibold',
-                          isWorst && 'text-red-400/50',
+                          isBest && 'text-metric-positive bg-metric-positive/8 dark:bg-metric-positive/12 font-semibold',
+                          isWorst && 'text-metric-negative dark:bg-metric-negative/10',
                         )}
                       >
                         {formatMetric(val)}
@@ -280,23 +316,9 @@ export function Leaderboard() {
         </table>
       </ScrollArea>
 
-      {comparisonModelIds.length > 0 && (
-        <div className="flex h-11 items-center justify-between border-t border-border/20 px-3 shrink-0 bg-card bulk-action-enter">
-          <div className="flex items-center gap-2.5">
-            <GitCompareArrows className="h-3 w-3 text-muted-foreground" />
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-muted/60 rounded-full px-2.5 py-0.5">
-              <span className="tabular-nums">{comparisonModelIds.length}</span> selected
-            </span>
-            {comparisonModelIds.length === 1 && (
-              <span className="text-[11px] text-muted-foreground">— select 1 more to compare</span>
-            )}
-            {comparisonModelIds.length >= 2 && (
-              <span className="text-[11px] text-muted-foreground">— viewing comparison</span>
-            )}
-          </div>
-          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={clearComparison}>
-            Clear
-          </Button>
+      {sortedModels.length === 0 && (activePredicates.length > 0 || manualPredicates.length > 0 || nameFilter.trim()) && (
+        <div className="flex items-center justify-center py-8">
+          <p className="text-[11px] text-muted-foreground">No models match all active filters</p>
         </div>
       )}
     </div>

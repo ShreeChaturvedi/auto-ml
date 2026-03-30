@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file is the canonical project guide for Claude Code (claude.ai/code). `AGENTS.md` is a symlink to this file for Codex, Cursor, and other tools that read that name. Shared skills live in `.claude/skills`; if a tool expects `.agents/skills`, see `.agents/README.md`.
+This file is the canonical project guide for Claude Code (claude.ai/code). `AGENTS.md` is a symlink to this file for Codex, Cursor, and other tools that read that name. Skills live in `.claude/skills/`; `.agents/skills` is a committed symlink pointing there for tools that look under `.agents/`.
 
 ## Project Overview
 

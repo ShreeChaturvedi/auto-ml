@@ -35,9 +35,9 @@ NOTEBOOK_IMPLEMENTATION_HANDOFF.md
 TRAINING_TAB_HANDOFF.md
 
 # GWS CLI skills (installed via `npx skills add`)
-# Track `.agents/README.md` only (symlink setup for tools that read `.agents/skills`).
+# .agents/skills is a committed symlink to .claude/skills for Codex/Cursor/Windsurf compatibility.
 .agents/*
-!.agents/README.md
+!.agents/skills
 .claude/skills/gws-*
 .claude/skills/persona-*
 .claude/skills/recipe-*

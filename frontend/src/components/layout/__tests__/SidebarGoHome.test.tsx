@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Sidebar } from '../Sidebar';
@@ -28,11 +28,11 @@ let storeState: {
 };
 
 vi.mock('@/stores/projectStore', () => ({
-  useProjectStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      ...storeState,
-      setActiveProject: setActiveProjectMock,
-    }),
+  useProjectStore: Object.assign(
+    (selector: (state: unknown) => unknown) =>
+      selector({ ...storeState, setActiveProject: setActiveProjectMock }),
+    { getState: () => ({ ...storeState, setActiveProject: setActiveProjectMock }) }
+  ),
 }));
 
 vi.mock('@/stores/planChatStore', () => ({
@@ -90,10 +90,13 @@ vi.mock('../sidebar/ModelSubtabs', () => ({
 }));
 
 // ── Helpers ──────────────────────────────────────────────────────────
-function renderSidebar() {
+function renderSidebar(initialPath = '/project/p1/upload') {
   return render(
-    <MemoryRouter initialEntries={['/project/p1/upload']}>
-      <Sidebar collapsed={false} onToggleCollapse={vi.fn()} />
+    <MemoryRouter initialEntries={[initialPath]}>
+      <Routes>
+        <Route path="/" element={<Sidebar collapsed={false} onToggleCollapse={vi.fn()} />} />
+        <Route path="/project/:projectId/:phase" element={<Sidebar collapsed={false} onToggleCollapse={vi.fn()} />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -170,5 +173,20 @@ describe('Sidebar → Home navigation', () => {
     // returns null for the mismatched projectId — no phase labels, no fallback text
     expect(screen.queryByText('Data Upload')).not.toBeInTheDocument();
     expect(screen.queryByText('Select a project to view phases')).not.toBeInTheDocument();
+  });
+
+  it('highlights the route phase even when persisted currentPhase is stale', () => {
+    storeState = {
+      activeProjectId: 'p1',
+      projects: [{ ...TEST_PROJECT, currentPhase: 'upload' }],
+    };
+
+    renderSidebar('/project/p1/data-viewer');
+
+    const explorerButton = screen.getByRole('button', { name: 'Explorer' });
+    const uploadButton = screen.getByRole('button', { name: 'Data Upload' });
+
+    expect(explorerButton.parentElement).toHaveClass('bg-muted');
+    expect(uploadButton.parentElement).not.toHaveClass('bg-muted');
   });
 });

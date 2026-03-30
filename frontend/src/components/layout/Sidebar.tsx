@@ -46,7 +46,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const activeProject = useProjectStore(
     useShallow((s) => {
       if (!s.activeProjectId) return undefined;
-      const p = s.projects.find((p) => p.id === s.activeProjectId);
+      const p = s.projects.find((proj) => proj.id === s.activeProjectId);
       return p ? { id: p.id, title: p.title, icon: p.icon } : undefined;
     })
   );

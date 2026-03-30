@@ -24,11 +24,13 @@ import {
   horizontalListSortingStrategy,
   arrayMove
 } from '@dnd-kit/sortable';
-import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
+import { restrictToHorizontalAxis, restrictToFirstScrollableAncestor } from '@dnd-kit/modifiers';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { SortableTab } from './SortableTab';
+
+const DND_MODIFIERS = [restrictToHorizontalAxis, restrictToFirstScrollableAncestor];
 
 // Combined tab type
 type FileTab = {
@@ -190,7 +192,7 @@ export function FileTabBar({ projectId, queryIconColorClassName }: FileTabBarPro
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
-              modifiers={[restrictToHorizontalAxis]}
+              modifiers={DND_MODIFIERS}
             >
               <SortableContext items={orderedTabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
                 {orderedTabs.map((tab) => (

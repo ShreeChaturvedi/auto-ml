@@ -43,7 +43,8 @@ export function SortableTab({
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 2 : undefined
   };
 
   // Get icon based on type

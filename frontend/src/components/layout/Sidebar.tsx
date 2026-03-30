@@ -7,8 +7,7 @@
  * - Only width and opacity change
  */
 
-import { useState } from 'react';
-import { flushSync } from 'react-dom';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, PanelLeft, Pencil } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
@@ -37,6 +36,7 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const navigate = useNavigate();
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const projects = useProjectStore((state) => state.projects);
@@ -48,13 +48,18 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   const handleGoHome = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // flushSync forces both the Zustand store update and React Router navigation
-    // into a single synchronous commit — without it, they produce two separate
-    // render commits and the sidebar visibly flickers between states.
-    flushSync(() => {
-      setActiveProject(null);
-      navigate('/');
-    });
+    const el = sidebarRef.current;
+    // Suppress CSS transitions so the sidebar swap doesn't flash.
+    if (el) el.dataset.instantNav = '';
+    setActiveProject(null);
+    navigate('/');
+    // Double-rAF: first fires before paint, second fires after — ensures
+    // transitions re-enable only once the final DOM state is on screen.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (el) el.removeAttribute('data-instant-nav');
+      })
+    );
   };
 
   const handleOpenProjectEdit = (e: React.MouseEvent) => {
@@ -78,6 +83,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   return (
     <div
+      ref={sidebarRef}
       className={cn(
         'flex h-full w-full flex-col',
         collapsed && 'cursor-e-resize'

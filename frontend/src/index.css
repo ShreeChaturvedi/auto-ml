@@ -307,6 +307,14 @@
   @media (prefers-reduced-motion: reduce) {
     .skeleton-shimmer { animation: none; }
   }
+
+  /* Suppress transitions/animations during instant navigation (e.g. sidebar home).
+     !important overrides component-level transition declarations (e.g. shadcn/ui). */
+  [data-instant-nav],
+  [data-instant-nav] * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
 }
 
 /* MentionInput overlays */

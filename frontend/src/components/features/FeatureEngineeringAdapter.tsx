@@ -22,10 +22,6 @@ export interface FeatureEngineeringAdapterConfig {
   sessionKey: string;
   notebookName?: string;
   notebookMetadata?: NotebookPhaseMetadata;
-  /** Pre-assigned notebook ID for this pipeline version. */
-  versionNotebookId?: string;
-  /** Callback to persist the notebook ID on the pipeline version. */
-  onNotebookCreated?: (notebookId: string) => void;
 }
 
 function buildFeatureTips(
@@ -85,7 +81,7 @@ const FEATURE_LIFECYCLE_SEMANTIC_TOOLS = [
   'checkpoint_feature_pipeline'
 ] as const;
 
-function buildFeatureToolRegistry(config: FeatureEngineeringAdapterConfig): DomainAdapter['toolRegistry'] {
+function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
   const toolHandlers: ToolHandlers = {
     onCall: (call: ToolCall) => {
       const store = useFeatureStore.getState();
@@ -105,7 +101,6 @@ function buildFeatureToolRegistry(config: FeatureEngineeringAdapterConfig): Doma
       if (featureId) {
         const featureName = (output?.featureName ?? call.args?.featureName ?? featureId) as string;
         const method = (output?.method ?? call.args?.method ?? call.tool) as string;
-        const sourceColumns = (output?.sourceColumns ?? call.args?.sourceColumns) as string[] | undefined;
 
         store.setFeatureStep(featureId, {
           stepId: featureId,
@@ -117,20 +112,18 @@ function buildFeatureToolRegistry(config: FeatureEngineeringAdapterConfig): Doma
           metrics: output?.validation as Record<string, unknown> | undefined
         });
 
-        // Bridge lifecycle completion into the FeatureSpec array so the
-        // readiness report and approval/apply buttons become available.
-        // We assemble the spec from accumulated step data (propose → register).
+        // Bridge registered features into the FeatureSpec array for readiness report
         if (call.tool === 'register_feature' && !result.error) {
           const rejected = (output?.status as string) === 'rejected';
           if (!rejected) {
-            // Look up accumulated data from earlier lifecycle steps
+            const sourceColumns = (output?.sourceColumns ?? call.args?.sourceColumns) as string[] | undefined;
             const step = store.featureSteps[featureId];
             store.upsertFeature({
               id: featureId,
-              projectId: config.projectId,
+              projectId: (output?.projectId as string) ?? '',
               sourceColumn: sourceColumns?.[0] ?? step?.name ?? '',
               featureName: step?.name ?? featureName,
-              description: (call.args?.rationale ?? output?.rationale ?? step?.method ?? '') as string,
+              description: (call.args?.rationale ?? output?.rationale ?? '') as string,
               method: (step?.method ?? method ?? 'custom') as FeatureMethod,
               category: 'numeric_transform' as FeatureCategory,
               params: {},
@@ -151,24 +144,20 @@ function buildFeatureToolRegistry(config: FeatureEngineeringAdapterConfig): Doma
 }
 
 function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
-  // Only use the featureRunId field from the artifact payload — artifact.runId
-  // is the workflow run ID, which is different from the feature pipeline run ID.
-  if (!artifact.payload || typeof artifact.payload !== 'object' || Array.isArray(artifact.payload)) {
-    return;
-  }
-  const payload = artifact.payload as Record<string, unknown>;
-  const featureRunId = typeof payload.featureRunId === 'string'
-    ? payload.featureRunId
-    : undefined;
-  if (featureRunId) {
-    useFeatureStore.getState().setFeatureRunId(featureRunId);
+  // Prefer the first-class runId; fall back to runId inside payload for older events.
+  const runId = artifact.runId
+    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
+      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
+      : undefined);
+  if (runId) {
+    useFeatureStore.getState().setFeatureRunId(runId);
   }
 }
 
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
-  const toolRegistry = buildFeatureToolRegistry(config);
+  const toolRegistry = buildFeatureToolRegistry();
 
   return {
     buildRequest: async (rawPrompt, _toolCalls, _toolResults, onEvent, signal, options) => {
@@ -176,14 +165,13 @@ export function createFeatureEngineeringAdapter(
         throw new Error('Select a dataset before generating a feature plan.');
       }
 
-      // Enrich the prompt with enabled feature context so the LLM knows which
-      // features the user selected for implementation.
+      // Enrich the prompt with enabled features so the LLM knows what to implement
       const featureStore = useFeatureStore.getState();
       const enabledFeatures = featureStore.features.filter(
         (f) => f.projectId === config.projectId && f.enabled
       );
       let prompt = rawPrompt;
-      if (enabledFeatures.length > 0 && /\b(implement|apply|build|create|execute|run|make)\b/i.test(rawPrompt)) {
+      if (enabledFeatures.length > 0 && /\b(implement|apply|build|execute|run|make)\b/i.test(rawPrompt)) {
         const featureList = enabledFeatures
           .map((f) => `${f.featureName} (${f.method} on ${f.sourceColumn})`)
           .join(', ');
@@ -192,18 +180,7 @@ export function createFeatureEngineeringAdapter(
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
       const notebookStore = useNotebookStore.getState();
-
-      // Prefer the version-specific notebook ID over the global active notebook.
-      let notebookId = config.versionNotebookId ?? undefined;
-
-      // Verify the version notebook still exists in the store.
-      if (notebookId) {
-        const exists = notebookStore.notebooks.some((entry) => entry.notebookId === notebookId);
-        if (!exists) {
-          // Notebook was deleted or missing — clear so we create a fresh one.
-          notebookId = undefined;
-        }
-      }
+      let notebookId = notebookStore.activeNotebookId ?? undefined;
 
       if (!notebookId) {
         const createdNotebook = await notebookStore.createNotebook(
@@ -211,10 +188,6 @@ export function createFeatureEngineeringAdapter(
           config.notebookMetadata
         );
         notebookId = createdNotebook?.notebookId;
-        if (notebookId) {
-          config.onNotebookCreated?.(notebookId);
-          await notebookStore.setActiveNotebook(notebookId);
-        }
       }
 
       if (!notebookId) {
@@ -242,8 +215,9 @@ export function createFeatureEngineeringAdapter(
     },
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
-      // Do NOT write state.runId (workflow run ID) as feature pipeline runId.
-      // The real feature runId comes from tool results via the toolRegistry onResult handler.
+      if (state.runId) {
+        useFeatureStore.getState().setFeatureRunId(state.runId);
+      }
     },
     onWorkflowArtifactUpdate: (artifact) => {
       syncFeatureRunIdFromArtifact(artifact);

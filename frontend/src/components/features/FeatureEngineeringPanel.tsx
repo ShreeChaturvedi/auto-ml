@@ -17,7 +17,6 @@ import {
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
 import { useFeatureUrlSync } from './hooks/useFeatureUrlSync';
 import { useNotebookStore } from '@/stores/notebookStore';
-import { useFeatureStore } from '@/stores/featureStore';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { DeletePipelineDialog } from './DeletePipelineDialog';
 import { FeatureEngineeringLeftPane } from './FeatureEngineeringLeftPane';
@@ -97,51 +96,26 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     approveVersion
   });
 
-  // --- Version-scoped notebook management ---
+  // Tag notebook with feature-engineering phase metadata
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
   const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
   const notebooks = useNotebookStore((state) => state.notebooks);
   const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
-  const setActiveNotebook = useNotebookStore((state) => state.setActiveNotebook);
-  const setVersionNotebookId = useFeatureStore((state) => state.setVersionNotebookId);
 
-  // The notebook ID owned by this pipeline version (1:1 mapping).
-  const versionNotebookId = currentVersion?.notebookId ?? undefined;
-
-  // Tag the version's notebook with feature-engineering phase metadata.
   useEffect(() => {
-    if (!versionNotebookId || !currentVersion) return;
-    void updateNotebookMetadata(versionNotebookId, {
+    if (!activeNotebookId || !currentVersion) return;
+    void updateNotebookMetadata(activeNotebookId, {
       phase: 'feature-engineering',
       tabId: currentVersion.id,
       tabName: currentVersion.name
     });
-  }, [versionNotebookId, currentVersion?.id, currentVersion?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeNotebookId, currentVersion?.id, currentVersion?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When the current version changes, switch the active notebook to the version's notebook.
-  useEffect(() => {
-    if (!versionNotebookId) return;
-    if (activeNotebookId === versionNotebookId) return;
-    // Only switch if the notebook exists in the store.
-    if (!notebooks.some((entry) => entry.notebookId === versionNotebookId)) return;
-    void setActiveNotebook(versionNotebookId);
-  }, [versionNotebookId, activeNotebookId, notebooks, setActiveNotebook]);
-
-  // Handle initial notebook ID from URL query parameter.
   useEffect(() => {
     if (!initialNotebookId || notebookProjectId !== projectId) return;
     if (!notebooks.some((entry) => entry.notebookId === initialNotebookId)) return;
-    void setActiveNotebook(initialNotebookId);
-  }, [initialNotebookId, notebookProjectId, notebooks, projectId, setActiveNotebook]);
-
-  // Callback to persist a newly created notebook ID on the current version.
-  const handleNotebookCreated = useCallback(
-    (notebookId: string) => {
-      if (!currentVersion) return;
-      setVersionNotebookId(projectId, currentVersion.id, notebookId);
-    },
-    [currentVersion, projectId, setVersionNotebookId]
-  );
+    void useNotebookStore.getState().setActiveNotebook(initialNotebookId);
+  }, [initialNotebookId, notebookProjectId, notebooks, projectId]);
 
   const adapter = useMemo(() => {
     const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
@@ -162,11 +136,9 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           }
         : {
             phase: 'feature-engineering'
-          },
-      versionNotebookId,
-      onNotebookCreated: handleNotebookCreated
+          }
     });
-  }, [currentVersion, datasetFiles, documentFiles, handleNotebookCreated, projectId, selectedDatasetFile, targetColumn, versionNotebookId]);
+  }, [currentVersion, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
 
   const baseRenderLifecycleCard = useLifecycleCards();
 
@@ -179,7 +151,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
         return (
           <div className="space-y-4">
-            {(message.schema.sections ?? []).map((section) => (
+            {message.schema.sections.map((section) => (
               <div key={section.id} className="space-y-3">
                 {section.title ? (
                   <h3 className="text-sm font-semibold">{section.title}</h3>
@@ -225,7 +197,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
         composerPlaceholders={composerPlaceholders}
         storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
         domainAdapter={adapter}
-        notebookId={versionNotebookId}
         domainLockReason={
           isApproved
             ? 'This feature pipeline is approved and locked. Start a new draft to continue editing.'
@@ -265,7 +236,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             onReset={handleReset}
             onDeleteDraft={handleDeleteCurrentDraft}
             canRenameDraft={isCurrentVersionDraft}
-            canDeleteDraft
+            canDeleteDraft={isCurrentVersionDraft}
           />
         }
         toolbarRight={

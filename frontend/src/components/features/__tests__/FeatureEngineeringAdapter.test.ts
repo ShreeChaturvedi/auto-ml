@@ -12,15 +12,12 @@ const mockFeatureStore = vi.hoisted(() => ({
   setCurrentStage: vi.fn(),
   setFeatureStep: vi.fn(),
   setFeatureRunId: vi.fn(),
-  upsertFeature: vi.fn(),
   clearDraft: vi.fn()
 }));
 
 const mockNotebookStore = vi.hoisted(() => ({
   activeNotebookId: 'notebook-1' as string | null,
-  notebooks: [{ notebookId: 'notebook-1' }] as Array<{ notebookId: string }>,
-  createNotebook: vi.fn(),
-  setActiveNotebook: vi.fn(async () => undefined)
+  createNotebook: vi.fn()
 }));
 
 vi.mock('@/stores/featureStore', () => ({
@@ -38,7 +35,7 @@ vi.mock('@/stores/featureStore', () => ({
         setCurrentStage: mockFeatureStore.setCurrentStage,
         setFeatureStep: mockFeatureStore.setFeatureStep,
         setFeatureRunId: mockFeatureStore.setFeatureRunId,
-        upsertFeature: mockFeatureStore.upsertFeature,
+        upsertFeature: vi.fn(),
         clearDraft: mockFeatureStore.clearDraft
       })
     }
@@ -49,9 +46,7 @@ vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: {
     getState: () => ({
       activeNotebookId: mockNotebookStore.activeNotebookId,
-      notebooks: mockNotebookStore.notebooks,
-      createNotebook: mockNotebookStore.createNotebook,
-      setActiveNotebook: mockNotebookStore.setActiveNotebook
+      createNotebook: mockNotebookStore.createNotebook
     })
   }
 }));
@@ -64,9 +59,7 @@ describe('FeatureEngineeringAdapter', () => {
     mockFeatureStore.setFeatureRunId.mockReset();
     mockFeatureStore.clearDraft.mockReset();
     mockNotebookStore.activeNotebookId = 'notebook-1';
-    mockNotebookStore.notebooks = [{ notebookId: 'notebook-1' }];
     mockNotebookStore.createNotebook.mockReset();
-    mockNotebookStore.setActiveNotebook.mockReset();
   });
 
   it('reuses the persisted workflow session when building requests', async () => {
@@ -84,8 +77,7 @@ describe('FeatureEngineeringAdapter', () => {
       targetColumn: 'churn',
       datasetFiles: [],
       documentFiles: [],
-      sessionKey: 'feature-session',
-      versionNotebookId: 'notebook-1'
+      sessionKey: 'feature-session'
     });
 
     await adapter.buildRequest(
@@ -104,8 +96,7 @@ describe('FeatureEngineeringAdapter', () => {
       expect.objectContaining({
         phase: 'feature_engineering',
         runId: 'feature-run-1',
-        threadId: 'feature-thread-1',
-        notebookId: 'notebook-1'
+        threadId: 'feature-thread-1'
       }),
       expect.any(Function),
       expect.any(AbortSignal)
@@ -124,9 +115,9 @@ describe('FeatureEngineeringAdapter', () => {
 
     adapter.onWorkflowArtifactUpdate?.({
       artifactId: 'artifact-1',
-      runId: 'workflow-run-2',
+      runId: 'feature-run-2',
       kind: 'summary',
-      payload: { featureRunId: 'feature-run-2', message: 'Completed run.' }
+      payload: { message: 'Completed run.' }
     });
 
     expect(mockFeatureStore.setFeatureRunId).toHaveBeenCalledWith('feature-run-2');
@@ -134,7 +125,6 @@ describe('FeatureEngineeringAdapter', () => {
 
   it('creates a notebook before starting feature engineering when none is active', async () => {
     mockNotebookStore.activeNotebookId = null;
-    mockNotebookStore.notebooks = [];
     mockNotebookStore.createNotebook.mockResolvedValue({
       notebookId: 'created-notebook-1'
     });
@@ -184,7 +174,6 @@ describe('FeatureEngineeringAdapter', () => {
 
   it('throws a clear error when a notebook cannot be created', async () => {
     mockNotebookStore.activeNotebookId = null;
-    mockNotebookStore.notebooks = [];
     mockNotebookStore.createNotebook.mockResolvedValue(null);
 
     const adapter = createFeatureEngineeringAdapter({

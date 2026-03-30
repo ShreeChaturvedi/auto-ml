@@ -132,7 +132,6 @@ vi.mock('@/stores/featureStore', () => {
       approveVersion: mockState.approveVersionMock,
       setCurrentVersion: mockState.setCurrentVersionMock,
       updateReadinessReport: mockState.updateReadinessReportMock,
-      setVersionNotebookId: vi.fn(),
       featureSteps: {},
       currentStage: null,
       featureRunId: null,
@@ -151,28 +150,20 @@ vi.mock('@/stores/featureStore', () => {
   return { useFeatureStore };
 });
 
-vi.mock('@/stores/notebookStore', () => {
-  const notebookStoreState = () => ({
-    initializeNotebook: mockState.initializeNotebookMock,
-    disconnect: mockState.disconnectNotebookMock,
-    activeNotebookId: mockState.activeNotebookId,
-    currentProjectId: mockState.currentProjectId,
-    notebooks: mockState.notebooks,
-    updateNotebookMetadata: mockState.updateNotebookMetadataMock,
-    setActiveNotebook: vi.fn().mockResolvedValue(undefined),
-    createNotebook: vi.fn().mockResolvedValue({ notebookId: 'nb-new' }),
-    cells: mockState.notebookCells,
-    createCell: mockState.createNotebookCellMock,
-    updateCell: mockState.updateNotebookCellMock
-  });
-  const useNotebookStore = Object.assign(
-    (selector: (state: unknown) => unknown) => selector(notebookStoreState()),
-    {
-      getState: notebookStoreState
-    }
-  );
-  return { useNotebookStore };
-});
+vi.mock('@/stores/notebookStore', () => ({
+  useNotebookStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      initializeNotebook: mockState.initializeNotebookMock,
+      disconnect: mockState.disconnectNotebookMock,
+      activeNotebookId: mockState.activeNotebookId,
+      currentProjectId: mockState.currentProjectId,
+      notebooks: mockState.notebooks,
+      updateNotebookMetadata: mockState.updateNotebookMetadataMock,
+      cells: mockState.notebookCells,
+      createCell: mockState.createNotebookCellMock,
+      updateCell: mockState.updateNotebookCellMock
+    })
+}));
 
 vi.mock('@/stores/nlSuggestionStore', () => ({
   useNlSuggestionStore: (selector: (state: unknown) => unknown) =>
@@ -236,24 +227,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.removeFeatureMock.mockReset();
     mockState.clearProjectFeaturesMock.mockReset();
     mockState.hydrateFeaturesMock.mockReset();
-    mockState.createDraftVersionMock.mockReset().mockReturnValue({
-      id: 'v-new',
-      projectId: 'p1',
-      name: 'New Draft Pipeline',
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      readinessReport: {
-        dataSummary: {
-          addedColumns: [],
-          removedColumns: [],
-          renamedColumns: [],
-          typeChanges: [],
-          nullDeltas: [],
-          warnings: []
-        },
-        steps: []
-      }
-    });
+    mockState.createDraftVersionMock.mockReset();
     mockState.removeVersionMock.mockReset();
     mockState.renameVersionMock.mockReset();
     mockState.approveVersionMock.mockReset();
@@ -279,16 +253,16 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     </MemoryRouter>
   );
 
-  it('renders agentic shell layout and keeps lock gated with no active features', () => {
+  it('renders agentic shell layout and keeps approval gated with no active features', () => {
     renderPanel();
 
-    expect(screen.getByText('Pipeline Status')).toBeInTheDocument();
+    expect(screen.getByText('Approval Gate: Readiness Review')).toBeInTheDocument();
 
-    const lockButton = screen.getByRole('button', { name: /Lock Pipeline/i });
-    expect(lockButton).toBeDisabled();
+    const approveButton = screen.getByRole('button', { name: /Approve Pipeline/i });
+    expect(approveButton).toBeDisabled();
   });
 
-  it('enables lock when readiness evidence exists and calls approve action', async () => {
+  it('enables approval when readiness evidence exists and calls approve action', async () => {
     mockState.features = [
       {
         id: 'f1',
@@ -326,10 +300,10 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
 
     renderPanel();
 
-    const lockButton = screen.getByRole('button', { name: /Lock Pipeline/i });
-    expect(lockButton).toBeEnabled();
+    const approveButton = screen.getByRole('button', { name: /Approve Pipeline/i });
+    expect(approveButton).toBeEnabled();
 
-    fireEvent.click(lockButton);
+    fireEvent.click(approveButton);
 
     await waitFor(() => {
       expect(mockState.approveVersionMock).toHaveBeenCalledWith('p1', 'v1');
@@ -341,7 +315,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
 
     renderPanel();
 
-    expect(screen.getByText('Pipeline Locked')).toBeInTheDocument();
+    expect(screen.getByText('Pipeline Approved')).toBeInTheDocument();
     expect(screen.getByTestId('domain-lock')).toHaveTextContent('locked');
 
     const draftButton = screen.getByRole('button', { name: /Start New Draft/i });

@@ -134,10 +134,7 @@ export function FeatureEngineeringFooter({
 
       <Card className="border-muted/60">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Export Dataset</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Generates a new dataset with the selected features applied.
-          </p>
+          <CardTitle className="text-sm">Apply Feature Pipeline</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end">
@@ -174,7 +171,7 @@ export function FeatureEngineeringFooter({
               ) : (
                 <FileOutput className="mr-2 h-3.5 w-3.5" />
               )}
-              Export Dataset
+              Apply
             </Button>
           </div>
 

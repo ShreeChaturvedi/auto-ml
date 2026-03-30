@@ -1,13 +1,22 @@
 /**
- * planChatStore — Persists in-progress plan chat conversations to localStorage.
+ * planChatStore — API-backed plan chat state.
  *
- * Each chat entry stores the full message list, plan drafts, answer history,
+ * Each chat entry stores the full message list, answer history,
  * and current round so users can navigate away and resume later.
+ * Data is persisted to PostgreSQL via the plan-chats API.
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { ChatMessage, QuestionAnswer } from '@/types/llmUi';
+import {
+  listPlanChats,
+  createPlanChatApi,
+  getPlanChat as getPlanChatApi,
+  updatePlanChatState as updatePlanChatStateApi,
+  completePlanChatApi,
+  deletePlanChatApi,
+  type PlanChat,
+} from '@/lib/api/planChats';
 
 export interface PlanChatEntry {
   id: string;
@@ -15,7 +24,6 @@ export interface PlanChatEntry {
   name: string;
   status: 'in_progress' | 'completed';
   messages: ChatMessage[];
-  planDrafts: Record<string, string>;
   answerHistory: QuestionAnswer[];
   currentRound: number;
   createdAt: number;
@@ -25,18 +33,21 @@ export interface PlanChatEntry {
 
 interface PlanChatStore {
   chats: Record<string, PlanChatEntry>;
-  createChat: (projectId: string, name: string) => PlanChatEntry;
-  completeChat: (chatId: string, completedPlanId: string, newName: string) => void;
-  deleteChat: (chatId: string) => void;
-  updateMessages: (chatId: string, messages: ChatMessage[]) => void;
-  updateDrafts: (chatId: string, drafts: Record<string, string>) => void;
-  updateAnswerHistory: (chatId: string, history: QuestionAnswer[]) => void;
-  updateRound: (chatId: string, round: number) => void;
+  isInitialized: boolean;
+  initializedProjectId: string | null;
+
+  initialize: (projectId: string) => Promise<void>;
+  createChat: (projectId: string, name: string) => Promise<PlanChatEntry>;
+  completeChat: (chatId: string, completedPlanId: string, newName: string) => Promise<void>;
+  deleteChat: (chatId: string) => Promise<void>;
+  persistChatState: (chatId: string, patch: { messages?: ChatMessage[]; answerHistory?: QuestionAnswer[]; currentRound?: number }) => Promise<void>;
+  loadFullChat: (projectId: string, chatId: string) => Promise<PlanChatEntry | null>;
+
   getProjectChats: (projectId: string) => PlanChatEntry[];
   getInProgressChats: (projectId: string) => PlanChatEntry[];
 }
 
-/** Shared selector for reactive use in components (avoids inline duplication). */
+/** Shared selector for reactive use in components. */
 export function selectInProgressChats(
   state: { chats: Record<string, PlanChatEntry> },
   projectId: string | null | undefined
@@ -47,85 +58,140 @@ export function selectInProgressChats(
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-function patchChat(
-  state: { chats: Record<string, PlanChatEntry> },
-  chatId: string,
-  fields: Partial<PlanChatEntry>
-) {
-  const chat = state.chats[chatId];
-  if (!chat) return state;
+/** Map an API PlanChat response to a store PlanChatEntry. */
+function toPlanChatEntry(chat: PlanChat): PlanChatEntry {
   return {
-    chats: {
-      ...state.chats,
-      [chatId]: { ...chat, ...fields, updatedAt: Date.now() },
-    },
+    id: chat.chatId,
+    projectId: chat.projectId,
+    name: chat.name,
+    status: chat.status,
+    messages: chat.messages as ChatMessage[],
+    answerHistory: chat.answerHistory as QuestionAnswer[],
+    currentRound: chat.currentRound,
+    createdAt: new Date(chat.createdAt).getTime(),
+    updatedAt: new Date(chat.updatedAt).getTime(),
+    completedPlanId: chat.completedPlanId ?? undefined,
   };
 }
 
-export const usePlanChatStore = create<PlanChatStore>()(
-  persist(
-    (set, get) => ({
-      chats: {},
+let legacyCleanupDone = false;
 
-      createChat: (projectId, name) => {
-        const id = `plan-chat-${Date.now()}`;
-        const entry: PlanChatEntry = {
-          id,
-          projectId,
-          name,
-          status: 'in_progress',
-          messages: [],
-          planDrafts: {},
-          answerHistory: [],
-          currentRound: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        set((state) => ({ chats: { ...state.chats, [id]: entry } }));
-        return entry;
-      },
+export const usePlanChatStore = create<PlanChatStore>()((set, get) => ({
+  chats: {},
+  isInitialized: false,
+  initializedProjectId: null,
 
-      completeChat: (chatId, completedPlanId, newName) => {
-        set((state) => patchChat(state, chatId, { status: 'completed', completedPlanId, name: newName }));
-      },
+  initialize: async (projectId) => {
+    if (get().initializedProjectId === projectId) return;
 
-      deleteChat: (chatId) => {
-        set((state) => {
-          const rest = { ...state.chats };
-          delete rest[chatId];
-          return { chats: rest };
-        });
-      },
+    // Claim the slot synchronously to prevent concurrent fetches
+    set({ initializedProjectId: projectId, isInitialized: false });
 
-      updateMessages: (chatId, messages) => {
-        set((state) => patchChat(state, chatId, { messages }));
-      },
-
-      updateDrafts: (chatId, drafts) => {
-        set((state) => patchChat(state, chatId, { planDrafts: drafts }));
-      },
-
-      updateAnswerHistory: (chatId, history) => {
-        set((state) => patchChat(state, chatId, { answerHistory: history }));
-      },
-
-      updateRound: (chatId, round) => {
-        set((state) => patchChat(state, chatId, { currentRound: round }));
-      },
-
-      getProjectChats: (projectId) => {
-        return Object.values(get().chats)
-          .filter((c) => c.projectId === projectId)
-          .sort((a, b) => b.createdAt - a.createdAt);
-      },
-
-      getInProgressChats: (projectId) => {
-        return selectInProgressChats(get(), projectId);
-      },
-    }),
-    {
-      name: 'automl-plan-chats-v1',
-      partialize: (state) => ({ chats: state.chats }),
+    if (!legacyCleanupDone) {
+      legacyCleanupDone = true;
+      try { localStorage.removeItem('automl-plan-chats-v1'); } catch { /* noop */ }
     }
-  )
-);
+
+    try {
+      const summaries = await listPlanChats(projectId);
+      const entries: Record<string, PlanChatEntry> = {};
+      for (const s of summaries) {
+        entries[s.chatId] = {
+          id: s.chatId,
+          projectId: s.projectId,
+          name: s.name,
+          status: s.status,
+          messages: [],
+          answerHistory: [],
+          currentRound: s.currentRound,
+          createdAt: new Date(s.createdAt).getTime(),
+          updatedAt: new Date(s.updatedAt).getTime(),
+          completedPlanId: s.completedPlanId ?? undefined,
+        };
+      }
+      set({ chats: entries, isInitialized: true });
+    } catch (err) {
+      console.error('[planChatStore] Failed to initialize', err);
+      set({ chats: {}, isInitialized: true });
+    }
+  },
+
+  createChat: async (projectId, name) => {
+    const entry = toPlanChatEntry(await createPlanChatApi(projectId, name));
+    set((state) => ({ chats: { ...state.chats, [entry.id]: entry } }));
+    return entry;
+  },
+
+  completeChat: async (chatId, completedPlanId, newName) => {
+    const chat = get().chats[chatId];
+    if (!chat) return;
+    await completePlanChatApi(chat.projectId, chatId, { completedPlanId, name: newName });
+    set((state) => {
+      const existing = state.chats[chatId];
+      if (!existing) return state;
+      return {
+        chats: {
+          ...state.chats,
+          [chatId]: { ...existing, status: 'completed', completedPlanId, name: newName, updatedAt: Date.now() },
+        },
+      };
+    });
+  },
+
+  deleteChat: async (chatId) => {
+    const chat = get().chats[chatId];
+    if (!chat) return;
+    await deletePlanChatApi(chat.projectId, chatId);
+    set((state) => {
+      const rest = { ...state.chats };
+      delete rest[chatId];
+      return { chats: rest };
+    });
+  },
+
+  persistChatState: async (chatId, patch) => {
+    const chat = get().chats[chatId];
+    if (!chat) return;
+    try {
+      await updatePlanChatStateApi(chat.projectId, chatId, patch);
+      set((state) => {
+        const existing = state.chats[chatId];
+        if (!existing) return state;
+        return {
+          chats: {
+            ...state.chats,
+            [chatId]: {
+              ...existing,
+              ...(patch.messages !== undefined && { messages: patch.messages }),
+              ...(patch.answerHistory !== undefined && { answerHistory: patch.answerHistory }),
+              ...(patch.currentRound !== undefined && { currentRound: patch.currentRound }),
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
+    } catch (err) {
+      console.error('[planChatStore] Failed to persist state', err);
+    }
+  },
+
+  loadFullChat: async (projectId, chatId) => {
+    try {
+      const entry = toPlanChatEntry(await getPlanChatApi(projectId, chatId));
+      set((state) => ({ chats: { ...state.chats, [entry.id]: entry } }));
+      return entry;
+    } catch {
+      return null;
+    }
+  },
+
+  getProjectChats: (projectId) => {
+    return Object.values(get().chats)
+      .filter((c) => c.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  getInProgressChats: (projectId) => {
+    return selectInProgressChats(get(), projectId);
+  },
+}));

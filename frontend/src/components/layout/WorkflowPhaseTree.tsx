@@ -12,6 +12,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import { ChevronRight, Plus } from 'lucide-react';
 import { useProjectStore } from '@/stores/projectStore';
+import { usePlanChatStore } from '@/stores/planChatStore';
 import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookRegistryStore';
 import { createWorkbookId, nextWorkbookName } from '@/components/preprocessing/preprocessingTabUtils';
 import type { Phase } from '@/types/phase';
@@ -47,9 +48,15 @@ const EMPTY_PHASES: Phase[] = [];
 /**
  * Connector-line layout constants.
  *
- * Phase button: py-2 (8px) padding + icon h-3.5 (14px) → icon bottom at 22px.
- * SubtabItem:   py-1.5 (6px) padding + icon h-3.5 (14px) → icon center at 13px from item bottom.
- * Horizontal:   px-3 (12px) + half of w-3.5 (7px) = 19px center, minus 0.5px to center the 1px line.
+ * The line runs vertically at the parent phase icon's horizontal center,
+ * forming a tree-gutter rail. Subtab content is indented right (pl-4 on
+ * the subtab container) so icons sit beside the line, not on it.
+ *
+ * Vertical: Phase button py-2 (8px) + icon h-3.5 (14px) → top at 22px.
+ *           SubtabItem py-1.5 (6px) + icon center (7px) → bottom at 13px from last item.
+ * Horizontal: Phase icon px-3 (12px) + half w-3.5 (7px) − 0.5px = 18.5px.
+ *             Subtab icons start at 28px (16px container + 12px item padding),
+ *             clearing the line by 9.5px.
  */
 const LINE_STYLE_BASE = { left: '18.5px', top: '22px', bottom: '13px' } as const;
 const LINE_STYLE_ACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'currentColor' };
@@ -86,6 +93,13 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
   const [seedDialogOpen, setSeedDialogOpen] = useState(false);
   const [shimmeringPhases, setShimmeringPhases] = useState<Set<Phase>>(new Set());
   const prevUnlockedRef = useRef<Phase[]>(unlockedPhases);
+
+  // Initialize plan chat store when project changes
+  useEffect(() => {
+    if (activeProjectId) {
+      void usePlanChatStore.getState().initialize(activeProjectId);
+    }
+  }, [activeProjectId]);
 
   // Reset shimmer tracking when switching projects
   useEffect(() => {
@@ -205,7 +219,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 !isUnlocked
                   ? 'text-muted-foreground'
                   : isActive
-                    ? 'bg-muted font-medium shadow-[inset_2px_0_0_0_hsl(var(--accent-fill))]'
+                    ? 'bg-muted'
                     : 'text-foreground hover:bg-muted',
                 collapsed && isUnlocked && 'cursor-pointer'
               )}
@@ -339,7 +353,7 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                       : 'grid-rows-[0fr] opacity-0'
                   )}
                 >
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden pl-4">
                     {phase === 'upload' && (
                       <PlanSubtabs projectId={activeProjectId} />
                     )}

@@ -21,6 +21,7 @@ import { createLlmRouter } from './routes/llm/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import modelRouter from './routes/models.js';
 import notebookRouter from './routes/notebooks.js';
+import { createPlanChatRouter } from './routes/planChats.js';
 import { createPreprocessingRouter } from './routes/preprocessing.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { createQueryRouter } from './routes/query.js';
@@ -75,6 +76,7 @@ export function createApp() {
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
   router.use(createSettingsRouter());
+  router.use(createPlanChatRouter());
   router.use(createRealtimeSessionRouter());
 
   app.use('/api', router);

@@ -25,6 +25,7 @@ interface UsePlanningStreamProps {
   closeTextStream: () => void;
   currentTextIdRef: React.RefObject<string | null>;
   getAnswerHistory: () => { questionId: string; answer: string | string[] }[];
+  onStreamComplete?: () => void;
 }
 
 export function usePlanningStream({
@@ -40,6 +41,7 @@ export function usePlanningStream({
   closeTextStream,
   currentTextIdRef,
   getAnswerHistory,
+  onStreamComplete,
 }: UsePlanningStreamProps) {
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -228,9 +230,10 @@ export function usePlanningStream({
         completeThinking();
         closeTextStream();
         setIsStreaming(false);
+        onStreamComplete?.();
       }
     },
-    [projectId, currentRound, selectedModel, reasoningEffort, handleStreamEvent, completeThinking, closeTextStream, setIsStreaming, setMessages, currentTextIdRef, setCurrentRound, getAnswerHistory]
+    [projectId, currentRound, selectedModel, reasoningEffort, handleStreamEvent, completeThinking, closeTextStream, setIsStreaming, setMessages, currentTextIdRef, setCurrentRound, getAnswerHistory, onStreamComplete]
   );
 
   useEffect(() => {

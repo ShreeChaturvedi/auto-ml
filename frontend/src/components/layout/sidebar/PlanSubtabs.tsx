@@ -17,10 +17,12 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { plans, selectedPlanId, handleOpenPlan } = useProjectPlans(projectId);
+  const isInitialized = usePlanChatStore((s) => s.isInitialized);
   const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, projectId)));
   const isOnUpload = location.pathname.endsWith('/upload');
   const activeChatId = new URLSearchParams(location.search).get('chatId');
 
+  if (!isInitialized) return null;
   if (plans.length === 0 && inProgressChats.length === 0) return null;
 
   return (

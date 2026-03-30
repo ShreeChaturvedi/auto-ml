@@ -52,7 +52,7 @@ export function SubtabItem({
           : 'text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50'
       )}
     >
-      <div className="relative z-10 shrink-0 rounded-sm bg-card">
+      <div className="shrink-0">
         <Icon className={cn('h-3.5 w-3.5 transition-colors duration-200', iconColor)} />
       </div>
       <span className={cn('flex-1 truncate', isActive && 'text-accent-text')} title={label}>

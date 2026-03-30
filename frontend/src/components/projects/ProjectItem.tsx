@@ -19,6 +19,15 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -39,6 +48,7 @@ interface ProjectItemProps {
 export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   const navigate = useNavigate();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const deleteProject = useProjectStore((state) => state.deleteProject);
@@ -134,7 +144,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
-                void handleDelete();
+                setIsDeleteDialogOpen(true);
               }}
               className="text-destructive focus:text-destructive"
             >
@@ -170,6 +180,34 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
         onOpenChange={setIsEditDialogOpen}
         project={project}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              Delete &ldquo;{project.title}&rdquo;? All associated data including datasets,
+              notebooks, and experiments will be permanently removed. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={() => {
+                void handleDelete();
+                setIsDeleteDialogOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

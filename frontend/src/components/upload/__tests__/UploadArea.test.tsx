@@ -37,6 +37,33 @@ vi.mock('@/stores/dataStore', () => ({
     })
 }));
 
+const createChatMock = vi.fn((projectId: string, name: string) =>
+  Promise.resolve({ id: `mock-chat-${Date.now()}`, projectId, name, status: 'in_progress' as const, messages: [], answerHistory: [], currentRound: 0, createdAt: Date.now(), updatedAt: Date.now() })
+);
+const completeChatMock = vi.fn(() => Promise.resolve());
+
+vi.mock('@/stores/planChatStore', () => ({
+  usePlanChatStore: Object.assign(
+    (selector: (state: unknown) => unknown) =>
+      selector({
+        chats: {},
+        isInitialized: true,
+        createChat: createChatMock,
+        completeChat: completeChatMock,
+      }),
+    {
+      getState: () => ({
+        chats: {},
+        isInitialized: true,
+        initialize: vi.fn(() => Promise.resolve()),
+        getInProgressChats: () => [],
+        loadFullChat: vi.fn(() => Promise.resolve(null)),
+      }),
+    }
+  ),
+  selectInProgressChats: () => [],
+}));
+
 vi.mock('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.HTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>{children}</button>
@@ -83,6 +110,8 @@ describe('UploadArea stage machine', () => {
     updateProjectMock.mockClear();
     completePhaseMock.mockClear();
     hydrateFromBackendMock.mockClear();
+    createChatMock.mockClear();
+    completeChatMock.mockClear();
 
     projectState = {
       activeProjectId: 'p1',

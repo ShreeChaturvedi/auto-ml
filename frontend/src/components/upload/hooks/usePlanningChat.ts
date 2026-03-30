@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage, QuestionAnswer } from '@/types/llmUi';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
 import { useLlmStreamState } from '@/hooks/useLlmStreamState';
@@ -55,32 +55,56 @@ export function usePlanningChat({
   const [currentRound, setCurrentRound] = useState(0);
   const answerHistoryRef = useRef<QuestionAnswer[]>([]);
 
+  // Stable refs for async persist callbacks (avoids stale closures)
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  const currentRoundRef = useRef(currentRound);
+  useEffect(() => { currentRoundRef.current = currentRound; }, [currentRound]);
+
+  const isInitialized = usePlanChatStore((s) => s.isInitialized);
+
+  // ── Persist helper — shared by debounce, visibilitychange, and post-stream
+  const persistCurrentState = useCallback(() => {
+    if (!planChatId) return;
+    const store = usePlanChatStore.getState();
+    if (!store.chats[planChatId]) return;
+    void store.persistChatState(planChatId, {
+      messages: messagesRef.current,
+      answerHistory: answerHistoryRef.current,
+      currentRound: currentRoundRef.current,
+    });
+  }, [planChatId]);
+
   // ── Restore from store on mount ──────────────────────────────────────
   const initializedRef = useRef(false);
   useEffect(() => {
-    if (!planChatId || initializedRef.current) return;
+    if (!planChatId || initializedRef.current || !isInitialized) return;
     const chat = usePlanChatStore.getState().chats[planChatId];
     if (!chat) return;
     initializedRef.current = true;
     if (chat.messages.length > 0) setMessages(chat.messages);
     if (chat.answerHistory.length > 0) answerHistoryRef.current = chat.answerHistory;
     if (chat.currentRound > 0) setCurrentRound(chat.currentRound);
-  }, [planChatId, setMessages]);
+  }, [planChatId, setMessages, isInitialized]);
 
-  // ── Debounce-persist to store (2s) ───────────────────────────────────
+  // ── Debounce-persist to API (2s) ────────────────────────────────────
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (!planChatId) return;
     clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(() => {
-      const store = usePlanChatStore.getState();
-      if (!store.chats[planChatId]) return;
-      store.updateMessages(planChatId, messages);
-      store.updateAnswerHistory(planChatId, answerHistoryRef.current);
-      store.updateRound(planChatId, currentRound);
-    }, 2000);
+    persistTimerRef.current = setTimeout(persistCurrentState, 2000);
     return () => clearTimeout(persistTimerRef.current);
-  }, [planChatId, messages, currentRound]);
+  }, [planChatId, messages, currentRound, persistCurrentState]);
+
+  // ── visibilitychange handler — persist on tab hide ──────────────────
+  useEffect(() => {
+    if (!planChatId) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistCurrentState();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [planChatId, persistCurrentState]);
 
   // ── Stream execution (tool-call loop, domain events) ────────────────
   const { controllerRef, requestStream } = usePlanningStream({
@@ -96,6 +120,7 @@ export function usePlanningChat({
     closeTextStream,
     currentTextIdRef,
     getAnswerHistory: () => answerHistoryRef.current,
+    onStreamComplete: persistCurrentState,
   });
 
   // ── Message building / user interaction handlers ────────────────────

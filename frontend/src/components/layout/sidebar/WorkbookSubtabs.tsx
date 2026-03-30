@@ -29,12 +29,12 @@ export function WorkbookSubtabs({
 
   if (workbooks.length === 0) {
     return (
-      <div
-        className="px-3 py-1.5 text-xs text-muted-foreground cursor-pointer hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50"
+      <SubtabItem
+        icon={Notebook}
+        label="New workbook"
+        isActive={false}
         onClick={() => navigate(`/project/${projectId}/${phase}`)}
-      >
-        New workbook
-      </div>
+      />
     );
   }
 

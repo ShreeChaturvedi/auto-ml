@@ -41,9 +41,10 @@ export function PlanSelector({
     effectiveProjectId ?? ''
   );
 
+  const isInitialized = usePlanChatStore((s) => s.isInitialized);
   const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, effectiveProjectId)));
 
-  if (!effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
+  if (!isInitialized || !effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
     return null;
   }
 

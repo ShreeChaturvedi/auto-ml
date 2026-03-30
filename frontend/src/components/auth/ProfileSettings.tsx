@@ -74,32 +74,57 @@ export function SaveButton({
   );
 }
 
-function EditorSettingsSection() {
-  const adaptiveSyntax = useSyncExternalStore(subscribeAdaptivePref, getAdaptiveSyntaxPref);
-
+/** Reusable settings toggle row with section heading, description, and switch. */
+function SettingsToggle({
+  icon: Icon,
+  heading,
+  title,
+  description,
+  checked,
+  onCheckedChange,
+  ariaLabel,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  heading: string;
+  title: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  ariaLabel: string;
+}) {
   return (
     <section className="mb-10">
       <div className="mb-4 flex items-center gap-2">
-        <Palette className="h-4 w-4 text-muted-foreground" />
+        <Icon className="h-4 w-4 text-muted-foreground" />
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Editor
+          {heading}
         </h2>
       </div>
 
       <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 px-4 py-3">
         <div className="space-y-0.5">
-          <p className="text-sm font-medium">Adaptive syntax colors</p>
-          <p className="text-xs text-muted-foreground">
-            Tint code syntax highlighting to match the project accent color
-          </p>
+          <p className="text-sm font-medium">{title}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
         </div>
-        <Switch
-          checked={adaptiveSyntax}
-          onCheckedChange={setAdaptiveSyntaxPref}
-          aria-label="Toggle adaptive syntax highlighting"
-        />
+        <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={ariaLabel} />
       </div>
     </section>
+  );
+}
+
+function EditorSettingsSection() {
+  const adaptiveSyntax = useSyncExternalStore(subscribeAdaptivePref, getAdaptiveSyntaxPref);
+
+  return (
+    <SettingsToggle
+      icon={Palette}
+      heading="Editor"
+      title="Adaptive syntax colors"
+      description="Tint code syntax highlighting to match the project accent color"
+      checked={adaptiveSyntax}
+      onCheckedChange={setAdaptiveSyntaxPref}
+      ariaLabel="Toggle adaptive syntax highlighting"
+    />
   );
 }
 
@@ -107,28 +132,15 @@ function SidebarSettingsSection() {
   const accordion = useSyncExternalStore(subscribeSidebarAccordionPref, getSidebarAccordionPref);
 
   return (
-    <section className="mb-10">
-      <div className="mb-4 flex items-center gap-2">
-        <PanelLeft className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Sidebar
-        </h2>
-      </div>
-
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 px-4 py-3">
-        <div className="space-y-0.5">
-          <p className="text-sm font-medium">Accordion navigation</p>
-          <p className="text-xs text-muted-foreground">
-            Collapse other workflow phases when expanding one
-          </p>
-        </div>
-        <Switch
-          checked={accordion}
-          onCheckedChange={setSidebarAccordionPref}
-          aria-label="Toggle accordion navigation"
-        />
-      </div>
-    </section>
+    <SettingsToggle
+      icon={PanelLeft}
+      heading="Sidebar"
+      title="Accordion navigation"
+      description="Collapse other workflow phases when expanding one"
+      checked={accordion}
+      onCheckedChange={setSidebarAccordionPref}
+      ariaLabel="Toggle accordion navigation"
+    />
   );
 }
 

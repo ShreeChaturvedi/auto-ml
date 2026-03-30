@@ -2,7 +2,6 @@ import { env } from '../../config.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import { createProjectRepository } from '../../repositories/projectRepository.js';
 import {
-  getFeatureEngineeringGateState,
   listProjectDocuments,
   loadRagSnippets
 } from '../../routes/llm/shared.js';
@@ -307,14 +306,8 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     };
   }
 
-  const feGate = getFeatureEngineeringGateState(project?.metadata);
-  if (feGate.requiresApproval && !feGate.hasApprovedVersion) {
-    return {
-      nextStep: 'fail',
-      errorMessage: 'Training is blocked until an approved feature engineering pipeline is available.',
-      errorCode: 'FE_PIPELINE_APPROVAL_REQUIRED'
-    };
-  }
+  // Feature engineering approval is informational — it does not block training.
+  // Users can proceed to training with or without an approved FE pipeline.
 
   const featureSpecs = (
     Array.isArray(project?.metadata?.features)

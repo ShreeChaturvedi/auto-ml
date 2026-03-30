@@ -37,13 +37,13 @@ export function FeatureApprovalGate({
                 <Info className="h-4 w-4 text-muted-foreground" />
               )}
               <p className="text-sm font-semibold">
-                {isApproved ? 'Pipeline Approved' : 'Approval Gate: Readiness Review'}
+                {isApproved ? 'Pipeline Locked' : 'Pipeline Status'}
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
               {isApproved
-                ? 'This feature engineering pipeline is locked and ready for training.'
-                : 'Enable features and review readiness evidence before approval.'}
+                ? 'This pipeline version is locked. Start a new draft to continue editing.'
+                : 'Optionally lock this pipeline version when you are satisfied with the features. Training can proceed either way.'}
             </p>
           </div>
           <div className="shrink-0">
@@ -52,8 +52,8 @@ export function FeatureApprovalGate({
                 Start New Draft
               </Button>
             ) : (
-              <Button size="sm" disabled={!isReadyForApproval} onClick={onApprove}>
-                Approve Pipeline
+              <Button variant="outline" size="sm" disabled={!isReadyForApproval} onClick={onApprove}>
+                Lock Pipeline
               </Button>
             )}
           </div>

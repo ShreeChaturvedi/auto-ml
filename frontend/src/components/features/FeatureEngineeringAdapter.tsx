@@ -22,6 +22,10 @@ export interface FeatureEngineeringAdapterConfig {
   sessionKey: string;
   notebookName?: string;
   notebookMetadata?: NotebookPhaseMetadata;
+  /** Pre-assigned notebook ID for this pipeline version. */
+  versionNotebookId?: string;
+  /** Callback to persist the notebook ID on the pipeline version. */
+  onNotebookCreated?: (notebookId: string) => void;
 }
 
 function buildFeatureTips(
@@ -188,7 +192,18 @@ export function createFeatureEngineeringAdapter(
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
       const notebookStore = useNotebookStore.getState();
-      let notebookId = notebookStore.activeNotebookId ?? undefined;
+
+      // Prefer the version-specific notebook ID over the global active notebook.
+      let notebookId = config.versionNotebookId ?? undefined;
+
+      // Verify the version notebook still exists in the store.
+      if (notebookId) {
+        const exists = notebookStore.notebooks.some((entry) => entry.notebookId === notebookId);
+        if (!exists) {
+          // Notebook was deleted or missing — clear so we create a fresh one.
+          notebookId = undefined;
+        }
+      }
 
       if (!notebookId) {
         const createdNotebook = await notebookStore.createNotebook(
@@ -196,6 +211,10 @@ export function createFeatureEngineeringAdapter(
           config.notebookMetadata
         );
         notebookId = createdNotebook?.notebookId;
+        if (notebookId) {
+          config.onNotebookCreated?.(notebookId);
+          await notebookStore.setActiveNotebook(notebookId);
+        }
       }
 
       if (!notebookId) {

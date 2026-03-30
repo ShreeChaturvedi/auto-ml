@@ -18,7 +18,9 @@ const mockFeatureStore = vi.hoisted(() => ({
 
 const mockNotebookStore = vi.hoisted(() => ({
   activeNotebookId: 'notebook-1' as string | null,
-  createNotebook: vi.fn()
+  notebooks: [{ notebookId: 'notebook-1' }] as Array<{ notebookId: string }>,
+  createNotebook: vi.fn(),
+  setActiveNotebook: vi.fn(async () => undefined)
 }));
 
 vi.mock('@/stores/featureStore', () => ({
@@ -47,7 +49,9 @@ vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: {
     getState: () => ({
       activeNotebookId: mockNotebookStore.activeNotebookId,
-      createNotebook: mockNotebookStore.createNotebook
+      notebooks: mockNotebookStore.notebooks,
+      createNotebook: mockNotebookStore.createNotebook,
+      setActiveNotebook: mockNotebookStore.setActiveNotebook
     })
   }
 }));
@@ -60,7 +64,9 @@ describe('FeatureEngineeringAdapter', () => {
     mockFeatureStore.setFeatureRunId.mockReset();
     mockFeatureStore.clearDraft.mockReset();
     mockNotebookStore.activeNotebookId = 'notebook-1';
+    mockNotebookStore.notebooks = [{ notebookId: 'notebook-1' }];
     mockNotebookStore.createNotebook.mockReset();
+    mockNotebookStore.setActiveNotebook.mockReset();
   });
 
   it('reuses the persisted workflow session when building requests', async () => {
@@ -78,7 +84,8 @@ describe('FeatureEngineeringAdapter', () => {
       targetColumn: 'churn',
       datasetFiles: [],
       documentFiles: [],
-      sessionKey: 'feature-session'
+      sessionKey: 'feature-session',
+      versionNotebookId: 'notebook-1'
     });
 
     await adapter.buildRequest(
@@ -97,7 +104,8 @@ describe('FeatureEngineeringAdapter', () => {
       expect.objectContaining({
         phase: 'feature_engineering',
         runId: 'feature-run-1',
-        threadId: 'feature-thread-1'
+        threadId: 'feature-thread-1',
+        notebookId: 'notebook-1'
       }),
       expect.any(Function),
       expect.any(AbortSignal)
@@ -126,6 +134,7 @@ describe('FeatureEngineeringAdapter', () => {
 
   it('creates a notebook before starting feature engineering when none is active', async () => {
     mockNotebookStore.activeNotebookId = null;
+    mockNotebookStore.notebooks = [];
     mockNotebookStore.createNotebook.mockResolvedValue({
       notebookId: 'created-notebook-1'
     });
@@ -175,6 +184,7 @@ describe('FeatureEngineeringAdapter', () => {
 
   it('throws a clear error when a notebook cannot be created', async () => {
     mockNotebookStore.activeNotebookId = null;
+    mockNotebookStore.notebooks = [];
     mockNotebookStore.createNotebook.mockResolvedValue(null);
 
     const adapter = createFeatureEngineeringAdapter({

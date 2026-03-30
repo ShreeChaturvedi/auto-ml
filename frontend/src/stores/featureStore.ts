@@ -57,6 +57,7 @@ interface FeatureState {
   updateReadinessReport: (projectId: string, versionId: string, report: Partial<ReadinessReport>) => void;
   approveVersion: (projectId: string, versionId: string) => void;
   setCurrentVersion: (projectId: string, versionId: string) => void;
+  setVersionNotebookId: (projectId: string, versionId: string, notebookId: string) => void;
 }
 
 export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
@@ -341,6 +342,21 @@ export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
         [projectId]: versionId
       }
     }));
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  setVersionNotebookId(projectId, versionId, notebookId) {
+    set((state) => {
+      const projectVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: projectVersions.map((version) =>
+            version.id === versionId ? { ...version, notebookId } : version
+          )
+        }
+      };
+    });
     void get().syncFeaturesToProject(projectId);
   },
 

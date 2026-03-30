@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFeatureStore } from '@/stores/featureStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { fetchFeatureRuns } from '@/lib/api/featureEngineering';
@@ -117,14 +118,31 @@ export function useFeatureVersioning({
     [projectId, setCurrentVersion, setPanelError]
   );
 
+  const createNotebook = useNotebookStore((state) => state.createNotebook);
+  const setActiveNotebook = useNotebookStore((state) => state.setActiveNotebook);
+  const setVersionNotebookId = useFeatureStore((state) => state.setVersionNotebookId);
+
   const handleNewDraft = useCallback(() => {
-    createDraftVersion(projectId, 'New Draft Pipeline');
+    const newVersion = createDraftVersion(projectId, 'New Draft Pipeline');
     clearProjectFeatures(projectId);
     setSuggestionDrafts({});
     setPanelError(null);
     setApplyStatus('idle');
     setApplyMessage(null);
-  }, [clearProjectFeatures, createDraftVersion, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+
+    // Create a dedicated notebook for the new draft version.
+    void (async () => {
+      const notebook = await createNotebook(newVersion.name, {
+        phase: 'feature-engineering',
+        tabId: newVersion.id,
+        tabName: newVersion.name
+      });
+      if (notebook?.notebookId) {
+        setVersionNotebookId(projectId, newVersion.id, notebook.notebookId);
+        await setActiveNotebook(notebook.notebookId);
+      }
+    })();
+  }, [clearProjectFeatures, createDraftVersion, createNotebook, projectId, setActiveNotebook, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage, setVersionNotebookId]);
 
   // --- Delete with shadcn AlertDialog ---
   const handleDeleteDraft = useCallback(() => {

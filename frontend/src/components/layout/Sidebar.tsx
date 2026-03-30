@@ -97,29 +97,37 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
       >
         {/* Project icon - always at left, fixed position */}
         {activeProject && ProjectIcon ? (
-          <button
-            type="button"
-            onClick={handleOpenProjectEdit}
-            aria-label={`Edit ${activeProject.title} project`}
-            title={`Edit ${activeProject.title}`}
-            className={cn(
-              'group relative flex h-8 w-8 items-center justify-center rounded-md shrink-0 transition-opacity',
-              'bg-accent-bg'
-            )}
-          >
-            <ProjectIcon
-              className={cn(
-                'h-4 w-4 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0',
-                'text-accent-text'
-              )}
-            />
-            <Pencil
-              className={cn(
-                'absolute h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
-                'text-accent-text'
-              )}
-            />
-          </button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={handleOpenProjectEdit}
+                  aria-label={`Project settings for ${activeProject.title}`}
+                  className={cn(
+                    'group relative flex h-8 w-8 items-center justify-center rounded-md shrink-0 transition-opacity',
+                    'bg-accent-bg'
+                  )}
+                >
+                  <ProjectIcon
+                    className={cn(
+                      'h-4 w-4 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0',
+                      'text-accent-text'
+                    )}
+                  />
+                  <Pencil
+                    className={cn(
+                      'absolute h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
+                      'text-accent-text'
+                    )}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Project settings</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : (
           <div className="flex h-8 w-8 items-center justify-center shrink-0">
             <Logo size="sm" showText={false} className="text-foreground" />

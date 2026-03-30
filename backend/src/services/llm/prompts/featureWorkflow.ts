@@ -78,9 +78,10 @@ function buildContinuationDirective(
     const requestedCount = countMatch ? Math.min(parseInt(countMatch[1], 10), 10) : 0;
     const proposedCount = lifecycleResults.filter((r) => r.tool === 'propose_feature' && !r.error).length;
 
-    // If user asked for N features and we haven't met the count, keep proposing
-    if (requestedCount > 0 && proposedCount < requestedCount) {
-      return `You have proposed ${proposedCount} of ${requestedCount} requested features. Call propose_feature for the remaining ${requestedCount - proposedCount} feature(s).`;
+    // Enforce minimum 3 proposals (or explicit count if higher)
+    const targetCount = Math.max(requestedCount, 3);
+    if (proposedCount < targetCount) {
+      return `You have proposed ${proposedCount} of ${targetCount} features. Call propose_feature for ${targetCount - proposedCount} more diverse candidate(s).`;
     }
 
     const implementIntent = userPrompt
@@ -145,7 +146,7 @@ execute_feature, validate_feature, register_feature, checkpoint_feature_pipeline
 feature engineering process. Do NOT describe features in plain text -- call propose_feature for
 each feature you want to create. The lifecycle tools are the primary mechanism for this phase.
 
-When no prior tool results exist, start by calling propose_feature for the first candidate feature.
+When no prior tool results exist, call propose_feature for each candidate feature. Propose at least 3 diverse features (covering different methods and column types) before presenting results. More is better — aim for 3-5 proposals per turn.
 When prior tool results exist, continue the lifecycle for the feature currently being processed
 by calling the exact next tool in the sequence (propose -> materialize -> execute -> validate ->
 register -> checkpoint). Follow the CONTINUATION directive in the user message.
@@ -186,7 +187,7 @@ OUTPUT ENVELOPE:
       ? `CONTINUATION: ${continuationDirective}`
       : toolResults?.length
         ? 'Continue the feature lifecycle from the current stage.'
-        : 'No prior tool results exist. Begin by calling propose_feature for the first candidate feature.',
+        : 'No prior tool results exist. Begin by calling propose_feature. Propose at least 3 diverse candidate features before stopping.',
     `Supported feature methods: ${featureMethods.join(', ')}.`,
     'Select only relevant UI items. Use code_cell only when runnable code is essential.',
     'Required: advance the lifecycle by calling the next tool in sequence. Only call render_ui or ask_user after reaching the register/checkpoint stage or when the user only requested proposals.'

@@ -236,7 +236,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             onReset={handleReset}
             onDeleteDraft={handleDeleteCurrentDraft}
             canRenameDraft={isCurrentVersionDraft}
-            canDeleteDraft={isCurrentVersionDraft}
+            canDeleteDraft
           />
         }
         toolbarRight={

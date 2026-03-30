@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   buildSuggestionDefaults,
   type FeatureSuggestionItem
@@ -26,7 +26,31 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
   const upsertFeature = useFeatureStore((state) => state.upsertFeature);
   const removeFeature = useFeatureStore((state) => state.removeFeature);
 
-  const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>({});
+  // Hydrate drafts from the feature store so toggles persist across tab switches.
+  const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>(() => {
+    const initial: Record<string, SuggestionDraft> = {};
+    for (const [id, feature] of featureById) {
+      if (feature.enabled) {
+        initial[id] = { enabled: true, params: feature.params ?? {} };
+      }
+    }
+    return initial;
+  });
+
+  // Re-sync when featureById updates asynchronously (e.g. backend hydration)
+  useEffect(() => {
+    setSuggestionDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [id, feature] of featureById) {
+        if (feature.enabled && !prev[id]) {
+          next[id] = { enabled: true, params: feature.params ?? {} };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [featureById]);
 
   const syncSuggestionToFeatureStore = useCallback(
     (item: FeatureSuggestionItem, draft: SuggestionDraft) => {

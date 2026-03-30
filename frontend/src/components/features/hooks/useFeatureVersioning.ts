@@ -128,12 +128,12 @@ export function useFeatureVersioning({
 
   // --- Delete with shadcn AlertDialog ---
   const handleDeleteDraft = useCallback(() => {
-    if (!currentVersion || currentVersion.status !== 'draft') return;
+    if (!currentVersion) return;
     setDeleteDialogOpen(true);
   }, [currentVersion]);
 
   const handleDeleteConfirm = useCallback(() => {
-    if (!currentVersion || currentVersion.status !== 'draft') return;
+    if (!currentVersion) return;
     setDeleteDialogOpen(false);
 
     if (versions.length <= 1) {

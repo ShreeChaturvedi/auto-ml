@@ -1,84 +1,38 @@
-import { useEffect, useRef, useState, useLayoutEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Dialog, DialogPortal, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Download, RefreshCcw, Clock, X } from 'lucide-react';
+import { Download, RefreshCcw, Clock, X, BarChart3, Brain, AlertTriangle, GitBranch, SlidersHorizontal } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
 import { getModelArtifactUrl } from '@/lib/api/models';
 import { cn } from '@/lib/utils';
 import { resolveModelIcon, TASK_TEXT_STYLES, TASK_LABELS, METRIC_ICONS } from './modelIcons';
+import { IconModeToggle, type IconModeToggleOption } from '@/components/data/IconModeToggle';
+import { Pill } from '@/components/ui/pill';
 import { PlotsTab } from './tabs/PlotsTab';
 import { InterpretabilityTab } from './tabs/InterpretabilityTab';
 import { ErrorsTab } from './tabs/ErrorsTab';
 import { ProvenanceTab } from './tabs/ProvenanceTab';
 import { TuneTab } from './tabs/tune/TuneTab';
 import { EvalTabContent } from './EvalTabContent';
-import { formatMetric, formatDuration } from './utils';
+import { formatMetric, formatDurationCompact, formatDurationLong } from './utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
-import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 
-const TABS = [
-  { value: 'plots', label: 'Plots' },
-  { value: 'interpretability', label: 'Interpretability' },
-  { value: 'errors', label: 'Errors' },
-  { value: 'provenance', label: 'Provenance' },
-  { value: 'tune', label: 'Tune' },
+const TAB_OPTIONS: IconModeToggleOption[] = [
+  { value: 'plots', ariaLabel: 'Plots', icon: BarChart3, tooltip: 'Plots' },
+  { value: 'interpretability', ariaLabel: 'Interpretability', icon: Brain, tooltip: 'Interpretability' },
+  { value: 'errors', ariaLabel: 'Errors', icon: AlertTriangle, tooltip: 'Errors' },
+  { value: 'provenance', ariaLabel: 'Provenance', icon: GitBranch, tooltip: 'Provenance' },
+  { value: 'tune', ariaLabel: 'Tune', icon: SlidersHorizontal, tooltip: 'Tune' },
 ];
 
 export interface ModelDetailPanelProps {
   modelId: string | null;
   open: boolean;
   onClose: () => void;
-}
-
-const TAB_INDICATOR_REF_WIDTH = 1;
-
-function TabIndicator({ containerRef, activeValue, themeColor, prefersReducedMotion }: { containerRef: React.RefObject<HTMLDivElement | null>; activeValue: string; themeColor: string | undefined; prefersReducedMotion: boolean }) {
-  const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0 });
-
-  const measure = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const active = container.querySelector<HTMLElement>(`[data-value="${activeValue}"]`);
-    if (!active) { setStyle((s) => ({ ...s, opacity: 0 })); return; }
-    const cRect = container.getBoundingClientRect();
-    const aRect = active.getBoundingClientRect();
-    const offset = aRect.left - cRect.left;
-    const ratio = aRect.width / TAB_INDICATOR_REF_WIDTH;
-    setStyle({
-      width: TAB_INDICATOR_REF_WIDTH,
-      transformOrigin: 'left',
-      transform: `translateX(${offset}px) scaleX(${ratio})`,
-      opacity: 1,
-      transition: prefersReducedMotion
-        ? 'none'
-        : 'transform 200ms cubic-bezier(.4,0,.2,1), opacity 150ms',
-    });
-  }, [containerRef, activeValue, prefersReducedMotion]);
-
-  useLayoutEffect(() => {
-    measure();
-    const id = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(id);
-  }, [measure]);
-
-  useEffect(() => {
-    let rafId = 0;
-    const throttled = () => { cancelAnimationFrame(rafId); rafId = requestAnimationFrame(measure); };
-    window.addEventListener('resize', throttled);
-    return () => { window.removeEventListener('resize', throttled); cancelAnimationFrame(rafId); };
-  }, [measure]);
-
-  return (
-    <span
-      aria-hidden
-      className="tab-indicator absolute bottom-0 h-[2px] rounded-full"
-      style={{ ...style, backgroundColor: themeColor ?? 'hsl(var(--foreground))' }}
-    />
-  );
 }
 
 const iconBtnCls = 'h-7 w-7 rounded-md text-muted-foreground hover:text-foreground';
@@ -91,8 +45,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
   const { themeColor } = useProjectThemeColor();
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const tabBarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
@@ -121,10 +73,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-1/2
             data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-1/2
             duration-200"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-          }}
+          onOpenAutoFocus={(e) => { e.preventDefault(); }}
         >
           <div
             className="h-[1px] w-full shrink-0"
@@ -144,44 +93,24 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {TASK_LABELS[model.taskType]}
             </span>
 
-            {metricEntries.length > 0 && (
+            {(model.trainingMs != null || metricEntries.length > 0) && (
               <div className="h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-border/60 to-transparent" />
             )}
 
-            {metricEntries.length > 0 && (
-              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide min-w-0">
-                {metricEntries.map(([key, value]) => {
-                  const MetricIcon = METRIC_ICONS[key];
-                  return (
-                    <Tooltip key={key}>
-                      <TooltipTrigger asChild>
-                        <span
-                          className="flex flex-col items-center gap-0.5 rounded-md bg-muted/20 px-2.5 py-1 cursor-default"
-                          tabIndex={0}
-                        >
-                          <span className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground leading-none">
-                            {MetricIcon && <MetricIcon className="h-3 w-3" />}
-                            {key}
-                          </span>
-                          <span className="text-sm tabular-nums font-medium text-foreground leading-none">
-                            {formatMetric(value)}
-                          </span>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent><span className="capitalize">{key}</span></TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide min-w-0">
+              {model.trainingMs != null && (
+                <Pill icon={Clock} tooltip={`Training duration: ${formatDurationLong(model.trainingMs)}`} className="tabular-nums shrink-0">
+                  {formatDurationCompact(model.trainingMs)}
+                </Pill>
+              )}
+              {metricEntries.map(([key, value]) => (
+                <Pill key={key} icon={METRIC_ICONS[key]} tooltip={`${key.charAt(0).toUpperCase() + key.slice(1)}: ${formatMetric(value)}`} className="tabular-nums shrink-0">
+                  {formatMetric(value)}
+                </Pill>
+              ))}
+            </div>
 
             <div className="flex items-center gap-1 ml-auto shrink-0">
-              {model.trainingMs != null && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap mr-1">
-                  <Clock className="h-3 w-3" /> {formatDuration(model.trainingMs)}
-                </span>
-              )}
-
               {(model.artifact || isFailed) && (
                 <ToolbarDivider />
               )}
@@ -218,6 +147,14 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
 
               <ToolbarDivider />
 
+              <IconModeToggle
+                value={activeTab}
+                onValueChange={(v) => { if (v) setActiveTab(modelId, v); }}
+                options={TAB_OPTIONS}
+              />
+
+              <ToolbarDivider />
+
               <Button variant="ghost" size="icon" className={iconBtnCls} onClick={onClose}>
                 <X className="h-3.5 w-3.5" />
                 <span className="sr-only">Close</span>
@@ -225,48 +162,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             </div>
           </div>
 
-          <div className="border-b border-border/40 px-5 shrink-0">
-            <div
-              ref={tabBarRef}
-              className="relative flex items-end gap-0"
-              role="tablist"
-              onKeyDown={(e) => {
-                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-                const idx = TABS.findIndex((t) => t.value === activeTab);
-                const next = e.key === 'ArrowRight'
-                  ? (idx + 1) % TABS.length
-                  : (idx - 1 + TABS.length) % TABS.length;
-                setActiveTab(modelId, TABS[next].value);
-                const btn = tabBarRef.current?.querySelector<HTMLElement>(`[data-value="${TABS[next].value}"]`);
-                btn?.focus();
-              }}
-            >
-              {TABS.map((t) => (
-                <button
-                  key={t.value}
-                  id={`tab-${t.value}-${modelId}`}
-                  role="tab"
-                  data-value={t.value}
-                  aria-selected={activeTab === t.value}
-                  aria-controls={`tabpanel-${modelId}`}
-                  tabIndex={activeTab === t.value ? 0 : -1}
-                  onClick={() => setActiveTab(modelId, t.value)}
-                  className={cn(
-                    'relative px-3 py-2.5 text-xs font-medium transition-colors rounded-t-md',
-                    'hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-                    activeTab === t.value
-                      ? 'text-foreground'
-                      : 'text-muted-foreground hover:text-foreground/80',
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-              <TabIndicator containerRef={tabBarRef} activeValue={activeTab} themeColor={themeColor} prefersReducedMotion={prefersReducedMotion} />
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0" role="tabpanel" id={`tabpanel-${modelId}`} aria-labelledby={`tab-${activeTab}-${modelId}`}>
+          <div className="flex-1 min-h-0" role="tabpanel" id={`tabpanel-${modelId}`} aria-label={TAB_OPTIONS.find(t => t.value === activeTab)?.tooltip ?? 'Content'}>
             <ScrollArea key={modelId} className="h-full">
               {activeTab === 'plots' && (
                 <EvalTabContent {...evalProps} failedLabel="Basic metrics shown from training.">

@@ -38,7 +38,8 @@ setCellExecutionBroadcast(broadcastNotebookEvent);
  * Graceful shutdown handler - cleans up containers before exit
  */
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
-  process.exitCode = Math.max(process.exitCode ?? 0, exitCode);
+  const currentExitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+  process.exitCode = Math.max(currentExitCode, exitCode);
 
   if (isShuttingDown) {
     return;

@@ -151,8 +151,11 @@ export function useTabNotebookSync({
       // 3) Delete orphan notebooks (not referenced by any existing processing tab).
       //    Only delete notebooks whose phase is 'preprocessing' or undefined.
       //    Never delete notebooks belonging to other phases (e.g. feature-engineering, training).
+      //    Use nextTabs (our reconciled snapshot) rather than tabsRef.current to avoid
+      //    race conditions where a tab deletion mid-reconciliation causes a mapped
+      //    notebook to look orphaned.
       const finalMappedNotebookIds = new Set(
-        tabsRef.current
+        nextTabs
           .map((tab) => tab.notebookId)
           .filter((value): value is string => Boolean(value))
       );

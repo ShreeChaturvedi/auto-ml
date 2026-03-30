@@ -17,7 +17,9 @@ const mockFeatureStore = vi.hoisted(() => ({
 
 const mockNotebookStore = vi.hoisted(() => ({
   activeNotebookId: 'notebook-1' as string | null,
-  createNotebook: vi.fn()
+  notebooks: [{ notebookId: 'notebook-1', metadata: { phase: 'feature-engineering' } }] as Array<{ notebookId: string; metadata?: Record<string, unknown> }>,
+  createNotebook: vi.fn(),
+  setActiveNotebook: vi.fn(async () => undefined)
 }));
 
 vi.mock('@/stores/featureStore', () => ({
@@ -46,7 +48,9 @@ vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: {
     getState: () => ({
       activeNotebookId: mockNotebookStore.activeNotebookId,
-      createNotebook: mockNotebookStore.createNotebook
+      notebooks: mockNotebookStore.notebooks,
+      createNotebook: mockNotebookStore.createNotebook,
+      setActiveNotebook: mockNotebookStore.setActiveNotebook
     })
   }
 }));
@@ -59,6 +63,8 @@ describe('FeatureEngineeringAdapter', () => {
     mockFeatureStore.setFeatureRunId.mockReset();
     mockFeatureStore.clearDraft.mockReset();
     mockNotebookStore.activeNotebookId = 'notebook-1';
+    mockNotebookStore.notebooks = [{ notebookId: 'notebook-1', metadata: { phase: 'feature-engineering' } }];
+    mockNotebookStore.setActiveNotebook.mockReset();
     mockNotebookStore.createNotebook.mockReset();
   });
 
@@ -125,6 +131,7 @@ describe('FeatureEngineeringAdapter', () => {
 
   it('creates a notebook before starting feature engineering when none is active', async () => {
     mockNotebookStore.activeNotebookId = null;
+    mockNotebookStore.notebooks = [];
     mockNotebookStore.createNotebook.mockResolvedValue({
       notebookId: 'created-notebook-1'
     });
@@ -174,6 +181,7 @@ describe('FeatureEngineeringAdapter', () => {
 
   it('throws a clear error when a notebook cannot be created', async () => {
     mockNotebookStore.activeNotebookId = null;
+    mockNotebookStore.notebooks = [];
     mockNotebookStore.createNotebook.mockResolvedValue(null);
 
     const adapter = createFeatureEngineeringAdapter({

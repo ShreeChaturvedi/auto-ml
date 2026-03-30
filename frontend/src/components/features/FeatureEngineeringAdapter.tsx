@@ -180,14 +180,30 @@ export function createFeatureEngineeringAdapter(
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
       const notebookStore = useNotebookStore.getState();
-      let notebookId = notebookStore.activeNotebookId ?? undefined;
+
+      // Find an existing FE notebook for this project, or create a new one.
+      // NEVER reuse a Processing notebook — FE gets its own fresh notebook.
+      let notebookId: string | undefined;
+      const existingFENotebook = notebookStore.notebooks.find((nb) => {
+        const meta = nb.metadata as Record<string, unknown> | undefined;
+        return meta?.phase === 'feature-engineering';
+      });
+      if (existingFENotebook) {
+        notebookId = existingFENotebook.notebookId;
+        if (notebookStore.activeNotebookId !== notebookId) {
+          await notebookStore.setActiveNotebook(notebookId);
+        }
+      }
 
       if (!notebookId) {
         const createdNotebook = await notebookStore.createNotebook(
           config.notebookName ?? 'Feature Engineering Notebook',
-          config.notebookMetadata
+          config.notebookMetadata ?? { phase: 'feature-engineering' }
         );
         notebookId = createdNotebook?.notebookId;
+        if (notebookId) {
+          await notebookStore.setActiveNotebook(notebookId);
+        }
       }
 
       if (!notebookId) {

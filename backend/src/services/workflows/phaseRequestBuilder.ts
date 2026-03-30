@@ -15,7 +15,7 @@ import {
   buildOnboardingRequest,
   buildTrainingRequest
 } from '../llm/prompts/index.js';
-import { LLM_ALL_TOOLS, LLM_FEATURE_CONTINUE_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
+import { LLM_ALL_TOOLS, LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
 import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
 
 import type { WorkflowGraphState } from './graphState.js';
@@ -222,11 +222,11 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
         'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
     );
+    const implementIntent = turn.prompt
+      ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(turn.prompt)
+      : false;
     const allProposals = currentTurnLifecycleResults.length > 0 && currentTurnLifecycleResults.every((r) => r.tool === 'propose_feature');
     if (allProposals) {
-      const implementIntent = turn.prompt
-        ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(turn.prompt)
-        : false;
       if (!implementIntent) {
         // Build feature_suggestion UI items from the proposal results so the
         // user gets interactive cards with Enable/Disable toggles.  This is
@@ -287,7 +287,12 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         toolCallHistory: featureToolCallHistory,
         toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
-        toolDefinitions: LLM_FEATURE_CONTINUE_TOOLS,
+        // On the first turn (no lifecycle results yet) and non-implementation
+        // prompts, restrict to proposal-only tools so the model can't skip the
+        // proposal review step by calling materialize directly.
+        toolDefinitions: currentTurnLifecycleResults.length === 0 && !implementIntent
+          ? LLM_FEATURE_PROPOSAL_TOOLS
+          : LLM_FEATURE_CONTINUE_TOOLS,
         reasoningEffort: turn.reasoningEffort
       }),
       run: {

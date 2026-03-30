@@ -167,9 +167,23 @@ export function createFeatureEngineeringAdapter(
   const toolRegistry = buildFeatureToolRegistry(config);
 
   return {
-    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
+    buildRequest: async (rawPrompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) {
         throw new Error('Select a dataset before generating a feature plan.');
+      }
+
+      // Enrich the prompt with enabled feature context so the LLM knows which
+      // features the user selected for implementation.
+      const featureStore = useFeatureStore.getState();
+      const enabledFeatures = featureStore.features.filter(
+        (f) => f.projectId === config.projectId && f.enabled
+      );
+      let prompt = rawPrompt;
+      if (enabledFeatures.length > 0 && /\b(implement|apply|build|create|execute|run|make)\b/i.test(rawPrompt)) {
+        const featureList = enabledFeatures
+          .map((f) => `${f.featureName} (${f.method} on ${f.sourceColumn})`)
+          .join(', ');
+        prompt = `${rawPrompt}\n\nEnabled features to implement: ${featureList}`;
       }
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);

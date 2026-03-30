@@ -67,6 +67,20 @@ export const LLM_FEATURE_ENGINEERING_TOOLS: LlmToolDefinition[] = [
 ];
 
 /**
+ * Feature proposal tools — ONLY propose_feature + discovery + notebook +
+ * ask_user + render_ui.  Used on the first turn to prevent the model from
+ * skipping the proposal review step by calling materialize directly.
+ */
+export const LLM_FEATURE_PROPOSAL_TOOLS: LlmToolDefinition[] = [
+  ...FEATURE_TOOL_DEFINITIONS.filter((t) => t.name === 'propose_feature'),
+  ...LLM_TOOL_DEFINITIONS.filter((tool) =>
+    FEATURE_ENGINEERING_DISCOVERY_TOOLS.includes(tool.name) || NOTEBOOK_EXECUTION_TOOLS.includes(tool.name)
+  ),
+  ASK_USER_TOOL,
+  LLM_RENDER_UI_TOOL
+];
+
+/**
  * Feature continue tools — the 6 lifecycle tools merged with notebook and
  * discovery tools, but WITHOUT get_dataset_profile (its data is already
  * injected into the user message; including it causes a re-profiling loop).

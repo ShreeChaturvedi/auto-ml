@@ -12,6 +12,7 @@ const mockFeatureStore = vi.hoisted(() => ({
   setCurrentStage: vi.fn(),
   setFeatureStep: vi.fn(),
   setFeatureRunId: vi.fn(),
+  upsertFeature: vi.fn(),
   clearDraft: vi.fn()
 }));
 
@@ -30,9 +31,12 @@ vi.mock('@/stores/featureStore', () => ({
     }),
     {
       getState: () => ({
+        features: [],
+        featureSteps: {},
         setCurrentStage: mockFeatureStore.setCurrentStage,
         setFeatureStep: mockFeatureStore.setFeatureStep,
         setFeatureRunId: mockFeatureStore.setFeatureRunId,
+        upsertFeature: mockFeatureStore.upsertFeature,
         clearDraft: mockFeatureStore.clearDraft
       })
     }

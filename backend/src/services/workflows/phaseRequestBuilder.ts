@@ -221,7 +221,10 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
         'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
     );
-    const implementIntent = turn.prompt
+    const planIntent = turn.prompt
+      ? /\b(plan|proposal|suggest|recommend|what\s+would|which\s+should|ideas?|brainstorm)\b/i.test(turn.prompt)
+      : false;
+    const implementIntent = !planIntent && turn.prompt
       ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(turn.prompt)
       : false;
     const allProposals = currentTurnLifecycleResults.length > 0 && currentTurnLifecycleResults.every((r) => r.tool === 'propose_feature');

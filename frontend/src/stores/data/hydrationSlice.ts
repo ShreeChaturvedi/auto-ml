@@ -52,7 +52,7 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
     const force = options?.force ?? false;
 
     // Skip if already hydrated for this project or currently hydrating
-    if ((!force && state.hydratedProjects.has(projectId)) || state.isHydrating) {
+    if (!force && (state.hydratedProjects.has(projectId) || state.isHydrating)) {
       return;
     }
 

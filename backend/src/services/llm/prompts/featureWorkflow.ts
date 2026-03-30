@@ -84,7 +84,10 @@ function buildContinuationDirective(
       return `You have proposed ${proposedCount} of ${targetCount} features. Call propose_feature for ${targetCount - proposedCount} more diverse candidate(s).`;
     }
 
-    const implementIntent = userPrompt
+    const planIntent = userPrompt
+      ? /\b(plan|proposal|suggest|recommend|what\s+would|which\s+should|ideas?|brainstorm)\b/i.test(userPrompt)
+      : false;
+    const implementIntent = !planIntent && userPrompt
       ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(userPrompt)
       : false;
     if (!implementIntent) {
@@ -139,6 +142,8 @@ export function buildFeatureEngineeringRequest(params: {
   const systemPrompt = `${basePrompt}
 
 ${FEATURE_ENGINEERING_CONTRACT}
+
+CRITICAL: NEVER write executable code as markdown in chat text. ALL Python code MUST be authored via write_cell into notebook cells.
 
 TOOL USAGE INSTRUCTIONS:
 You MUST use the feature engineering lifecycle tools (propose_feature, materialize_feature_code,

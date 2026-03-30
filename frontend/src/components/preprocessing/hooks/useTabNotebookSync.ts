@@ -149,6 +149,8 @@ export function useTabNotebookSync({
       }
 
       // 3) Delete orphan notebooks (not referenced by any existing processing tab).
+      //    Only delete notebooks whose phase is 'preprocessing' or undefined.
+      //    Never delete notebooks belonging to other phases (e.g. feature-engineering, training).
       const finalMappedNotebookIds = new Set(
         tabsRef.current
           .map((tab) => tab.notebookId)
@@ -156,6 +158,11 @@ export function useTabNotebookSync({
       );
       for (const notebook of notebooks) {
         if (finalMappedNotebookIds.has(notebook.notebookId)) {
+          continue;
+        }
+        const meta = notebook.metadata as Record<string, unknown> | undefined;
+        const phase = meta?.phase as string | undefined;
+        if (phase && phase !== 'preprocessing') {
           continue;
         }
         await deleteNotebook(notebook.notebookId);

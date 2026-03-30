@@ -44,6 +44,9 @@ interface ExperimentsState {
   activePredicates: FilterPredicate[];
   sortField: string;
   sortDirection: 'asc' | 'desc';
+  comparisonRequested: boolean;
+  manualPredicates: FilterPredicate[];
+  nameFilter: string;
 
   // Actions
   selectModel: (modelId: string | null) => void;
@@ -60,6 +63,13 @@ interface ExperimentsState {
   clearFilter: () => void;
   setSort: (field: string, direction: 'asc' | 'desc') => void;
   setActiveDetailTab: (modelId: string, tab: string) => void;
+  startComparison: () => void;
+  stopComparison: () => void;
+  addManualPredicate: (predicate: FilterPredicate) => void;
+  removeManualPredicate: (index: number) => void;
+  setManualPredicates: (predicates: FilterPredicate[]) => void;
+  clearManualPredicates: () => void;
+  setNameFilter: (text: string) => void;
   purgeModelCache: (modelId: string) => void;
 }
 
@@ -93,6 +103,9 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   activePredicates: [],
   sortField: 'createdAt',
   sortDirection: 'desc',
+  comparisonRequested: false,
+  manualPredicates: [],
+  nameFilter: '',
 
   // ── Actions ──
 
@@ -103,7 +116,11 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   toggleComparison: (modelId) => {
     const current = get().comparisonModelIds;
     if (current.includes(modelId)) {
-      set({ comparisonModelIds: current.filter((id) => id !== modelId) });
+      const next = current.filter((id) => id !== modelId);
+      set({
+        comparisonModelIds: next,
+        ...(next.length < 2 ? { comparisonRequested: false } : {}),
+      });
     } else {
       if (current.length >= 5) {
         toast.warning('Maximum 5 models can be compared');
@@ -114,7 +131,39 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   },
 
   clearComparison: () => {
-    set({ comparisonModelIds: [] });
+    set({ comparisonModelIds: [], comparisonRequested: false });
+  },
+
+  startComparison: () => {
+    if (get().comparisonModelIds.length >= 2) {
+      set({ comparisonRequested: true, compareNarrative: null });
+    }
+  },
+
+  stopComparison: () => {
+    set({ comparisonRequested: false });
+  },
+
+  addManualPredicate: (predicate) => {
+    set((state) => ({ manualPredicates: [...state.manualPredicates, predicate] }));
+  },
+
+  removeManualPredicate: (index) => {
+    set((state) => ({
+      manualPredicates: state.manualPredicates.filter((_, i) => i !== index),
+    }));
+  },
+
+  setManualPredicates: (predicates) => {
+    set({ manualPredicates: predicates });
+  },
+
+  clearManualPredicates: () => {
+    set({ manualPredicates: [] });
+  },
+
+  setNameFilter: (text) => {
+    set({ nameFilter: text });
   },
 
   setExperimentView: (view) => {

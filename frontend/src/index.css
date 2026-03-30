@@ -79,6 +79,10 @@
     --eda-fair:        38 70% 55%;
     --eda-poor:        0 65% 55%;
 
+    /* ── Metric semantic colors ── */
+    --metric-positive:    133 50% 32%;
+    --metric-negative:    10 82% 40%;
+
     /* ── Motion tokens ── */
     --motion-micro: 75ms;
     --motion-fast: 150ms;
@@ -163,6 +167,10 @@
     --eda-clean:       170 50% 55%;
     --eda-fair:        38 75% 60%;
     --eda-poor:        0 70% 60%;
+
+    /* ── Metric semantic colors ── */
+    --metric-positive:    131 50% 63%;
+    --metric-negative:    12 100% 75%;
 
     /* ── Accent defaults (overridden by hook) ── */
     --accent-bg: 0 0% 13%;

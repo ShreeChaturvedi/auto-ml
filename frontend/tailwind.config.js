@@ -64,6 +64,10 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        metric: {
+          positive: 'hsl(var(--metric-positive) / <alpha-value>)',
+          negative: 'hsl(var(--metric-negative) / <alpha-value>)',
+        },
       },
       borderRadius: {
         none: '0',

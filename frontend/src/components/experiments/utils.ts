@@ -59,6 +59,42 @@ export function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+/**
+ * Format milliseconds as a compact duration string for pill display.
+ * < 1s → "123ms", < 60s → "42s", < 60m → "3m 12s", >= 60m → "1h 5m"
+ */
+export function formatDurationCompact(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return remainMinutes > 0 ? `${hours}h ${remainMinutes}m` : `${hours}h`;
+}
+
+/**
+ * Format milliseconds as a long human-readable duration string for tooltips.
+ * e.g., "3 minutes 12 seconds", "1 hour 5 minutes"
+ */
+export function formatDurationLong(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} milliseconds`;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds} second${totalSeconds !== 1 ? 's' : ''}`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    const minStr = `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    return seconds > 0 ? `${minStr} ${seconds} second${seconds !== 1 ? 's' : ''}` : minStr;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  const hrStr = `${hours} hour${hours !== 1 ? 's' : ''}`;
+  return remainMinutes > 0 ? `${hrStr} ${remainMinutes} minute${remainMinutes !== 1 ? 's' : ''}` : hrStr;
+}
+
 /* ── NL filter predicate logic ───────────────────────────────────── */
 
 /** Apply a single filter predicate to a model. */
@@ -102,6 +138,26 @@ export function filterByPredicates(
 ): ModelRecord[] {
   if (predicates.length === 0) return models;
   return models.filter((m) => predicates.every((p) => applyPredicate(m, p)));
+}
+
+/** Filter models by grouped predicates: OR within same field, AND across fields. */
+export function filterByGroupedPredicates(
+  models: ModelRecord[],
+  predicates: FilterPredicate[],
+): ModelRecord[] {
+  if (predicates.length === 0) return models;
+  const groups = new Map<string, FilterPredicate[]>();
+  for (const p of predicates) {
+    const existing = groups.get(p.field) ?? [];
+    existing.push(p);
+    groups.set(p.field, existing);
+  }
+  const groupList = Array.from(groups.values());
+  return models.filter((m) =>
+    groupList.every((group) =>
+      group.some((p) => applyPredicate(m, p))
+    )
+  );
 }
 
 /* ── Tuning metric options ─────────────────────────────────────────── */

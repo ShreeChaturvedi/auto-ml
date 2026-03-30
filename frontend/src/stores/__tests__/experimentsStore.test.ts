@@ -43,7 +43,10 @@ function resetStore() {
     nlFilterText: '',
     activePredicates: [],
     sortField: 'createdAt',
-    sortDirection: 'desc'
+    sortDirection: 'desc',
+    comparisonRequested: false,
+    manualPredicates: [],
+    nameFilter: '',
   });
 }
 
@@ -227,5 +230,74 @@ describe('experimentsStore', () => {
     useExperimentsStore.getState().setExperimentView('overview');
     useExperimentsStore.getState().setNlFilter('', []);
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
+  });
+
+  it('startComparison() sets comparisonRequested when >= 2 models selected', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(true);
+    expect(useExperimentsStore.getState().compareNarrative).toBeNull();
+  });
+
+  it('startComparison() does nothing when < 2 models selected', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().startComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+  });
+
+  it('stopComparison() preserves selections', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    useExperimentsStore.getState().stopComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+    expect(useExperimentsStore.getState().comparisonModelIds).toEqual(['model-1', 'model-2']);
+  });
+
+  it('clearComparison() also clears comparisonRequested', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    useExperimentsStore.getState().clearComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+    expect(useExperimentsStore.getState().comparisonModelIds).toEqual([]);
+  });
+
+  it('toggleComparison() auto-clears comparisonRequested when < 2 remain', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    useExperimentsStore.getState().toggleComparison('model-2');
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+  });
+
+  it('manual predicates CRUD works correctly', () => {
+    const pred = { field: 'taskType', operator: 'eq' as const, value: 'classification' };
+    useExperimentsStore.getState().addManualPredicate(pred);
+    expect(useExperimentsStore.getState().manualPredicates).toEqual([pred]);
+
+    useExperimentsStore.getState().removeManualPredicate(0);
+    expect(useExperimentsStore.getState().manualPredicates).toEqual([]);
+  });
+
+  it('setManualPredicates() replaces all predicates', () => {
+    const preds = [
+      { field: 'taskType', operator: 'eq' as const, value: 'classification' },
+      { field: 'accuracy', operator: 'gte' as const, value: 0.9 },
+    ];
+    useExperimentsStore.getState().setManualPredicates(preds);
+    expect(useExperimentsStore.getState().manualPredicates).toEqual(preds);
+  });
+
+  it('clearManualPredicates() empties the array', () => {
+    useExperimentsStore.getState().addManualPredicate({ field: 'taskType', operator: 'eq' as const, value: 'classification' });
+    useExperimentsStore.getState().clearManualPredicates();
+    expect(useExperimentsStore.getState().manualPredicates).toEqual([]);
+  });
+
+  it('setNameFilter() updates nameFilter', () => {
+    useExperimentsStore.getState().setNameFilter('random forest');
+    expect(useExperimentsStore.getState().nameFilter).toBe('random forest');
   });
 });

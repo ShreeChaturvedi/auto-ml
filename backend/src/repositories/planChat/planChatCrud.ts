@@ -25,12 +25,16 @@ export async function createPlanChat(
   return rowToPlanChat(result.rows[0]);
 }
 
-export async function getPlanChat(chatId: string): Promise<PlanChat | null> {
+export async function getPlanChat(
+  chatId: string,
+  projectId: string,
+  userId: string
+): Promise<PlanChat | null> {
   requireDb();
   const pool = getDbPool();
   const result = await pool.query<PlanChatRow>(
-    `SELECT * FROM plan_chats WHERE chat_id = $1`,
-    [chatId]
+    `SELECT * FROM plan_chats WHERE chat_id = $1 AND project_id = $2 AND user_id = $3`,
+    [chatId, projectId, userId]
   );
   if (!result.rowCount || result.rowCount === 0) return null;
   return rowToPlanChat(result.rows[0]);
@@ -67,6 +71,8 @@ export async function listPlanChatsByProject(
 
 export async function updatePlanChatState(
   chatId: string,
+  projectId: string,
+  userId: string,
   patch: {
     messages?: unknown[];
     answerHistory?: unknown[];
@@ -77,8 +83,8 @@ export async function updatePlanChatState(
   const pool = getDbPool();
 
   const setClauses: string[] = [];
-  const values: unknown[] = [chatId];
-  let paramIndex = 2;
+  const values: unknown[] = [chatId, projectId, userId];
+  let paramIndex = 4;
 
   if (patch.messages !== undefined) {
     setClauses.push(`messages = $${paramIndex++}`);
@@ -94,13 +100,13 @@ export async function updatePlanChatState(
   }
 
   if (setClauses.length === 0) {
-    return getPlanChat(chatId);
+    return null;
   }
 
   const result = await pool.query<PlanChatRow>(
     `UPDATE plan_chats
      SET ${setClauses.join(', ')}, updated_at = NOW()
-     WHERE chat_id = $1
+     WHERE chat_id = $1 AND project_id = $2 AND user_id = $3
      RETURNING *`,
     values
   );
@@ -111,6 +117,8 @@ export async function updatePlanChatState(
 
 export async function completePlanChat(
   chatId: string,
+  projectId: string,
+  userId: string,
   completedPlanId: string,
   newName: string
 ): Promise<PlanChat | null> {
@@ -118,17 +126,25 @@ export async function completePlanChat(
   const pool = getDbPool();
   const result = await pool.query<PlanChatRow>(
     `UPDATE plan_chats
-     SET status = 'completed', completed_plan_id = $2, name = $3, updated_at = NOW()
-     WHERE chat_id = $1
+     SET status = 'completed', completed_plan_id = $4, name = $5, updated_at = NOW()
+     WHERE chat_id = $1 AND project_id = $2 AND user_id = $3
      RETURNING *`,
-    [chatId, completedPlanId, newName]
+    [chatId, projectId, userId, completedPlanId, newName]
   );
   if (!result.rowCount || result.rowCount === 0) return null;
   return rowToPlanChat(result.rows[0]);
 }
 
-export async function deletePlanChat(chatId: string): Promise<void> {
+export async function deletePlanChat(
+  chatId: string,
+  projectId: string,
+  userId: string
+): Promise<boolean> {
   requireDb();
   const pool = getDbPool();
-  await pool.query(`DELETE FROM plan_chats WHERE chat_id = $1`, [chatId]);
+  const result = await pool.query(
+    `DELETE FROM plan_chats WHERE chat_id = $1 AND project_id = $2 AND user_id = $3`,
+    [chatId, projectId, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }

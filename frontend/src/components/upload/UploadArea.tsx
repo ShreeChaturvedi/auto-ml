@@ -71,11 +71,11 @@ export function UploadArea() {
     const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     const nextStage = isValidUploadStage(metadata.uploadStage) ? metadata.uploadStage : 'upload';
 
-    const snapshot = JSON.stringify({ uploadStage: nextStage });
+    const snapshot = JSON.stringify({ uploadStage: nextStage, activePlanChatId: metadata.activePlanChatId ?? null });
     const hasProjectChanged = initializedProjectIdRef.current !== activeProject.id;
-    const hasMetadataStageChanged = snapshot !== persistedMetadataRef.current;
+    const hasMetadataChanged = snapshot !== persistedMetadataRef.current;
 
-    if (!hasProjectChanged && !hasMetadataStageChanged) {
+    if (!hasProjectChanged && !hasMetadataChanged) {
       return;
     }
 

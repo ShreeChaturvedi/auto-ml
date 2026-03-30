@@ -43,7 +43,6 @@ interface PlanChatStore {
   persistChatState: (chatId: string, patch: { messages?: ChatMessage[]; answerHistory?: QuestionAnswer[]; currentRound?: number }) => Promise<void>;
   loadFullChat: (projectId: string, chatId: string) => Promise<PlanChatEntry | null>;
 
-  getProjectChats: (projectId: string) => PlanChatEntry[];
   getInProgressChats: (projectId: string) => PlanChatEntry[];
 }
 
@@ -94,6 +93,8 @@ export const usePlanChatStore = create<PlanChatStore>()((set, get) => ({
 
     try {
       const summaries = await listPlanChats(projectId);
+      // Guard against stale fetch from rapid project switching
+      if (get().initializedProjectId !== projectId) return;
       const entries: Record<string, PlanChatEntry> = {};
       for (const s of summaries) {
         entries[s.chatId] = {
@@ -112,7 +113,9 @@ export const usePlanChatStore = create<PlanChatStore>()((set, get) => ({
       set({ chats: entries, isInitialized: true });
     } catch (err) {
       console.error('[planChatStore] Failed to initialize', err);
-      set({ chats: {}, isInitialized: true });
+      if (get().initializedProjectId === projectId) {
+        set({ chats: {}, isInitialized: true });
+      }
     }
   },
 
@@ -183,12 +186,6 @@ export const usePlanChatStore = create<PlanChatStore>()((set, get) => ({
     } catch {
       return null;
     }
-  },
-
-  getProjectChats: (projectId) => {
-    return Object.values(get().chats)
-      .filter((c) => c.projectId === projectId)
-      .sort((a, b) => b.createdAt - a.createdAt);
   },
 
   getInProgressChats: (projectId) => {

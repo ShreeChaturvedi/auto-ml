@@ -100,7 +100,10 @@ export function usePlanningChat({
   useEffect(() => {
     if (!planChatId) return;
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') persistCurrentState();
+      if (document.visibilityState === 'hidden') {
+        clearTimeout(persistTimerRef.current);
+        persistCurrentState();
+      }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);

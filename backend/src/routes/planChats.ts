@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
+import { validateUuidParams } from '../middleware/validateParams.js';
 import {
   createPlanChat,
   getPlanChat,
@@ -14,8 +15,6 @@ import {
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import type { AuthenticatedRequest } from '../types/auth.js';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const createSchema = z.object({
   name: z.string().trim().min(1).max(200),
 });
@@ -24,7 +23,10 @@ const stateSchema = z.object({
   messages: z.array(z.unknown()).max(500).optional(),
   answerHistory: z.array(z.unknown()).max(200).optional(),
   currentRound: z.number().int().min(0).optional(),
-});
+}).refine(
+  (data) => data.messages !== undefined || data.answerHistory !== undefined || data.currentRound !== undefined,
+  { message: 'At least one field (messages, answerHistory, currentRound) is required' }
+);
 
 const completeSchema = z.object({
   completedPlanId: z.string().min(1).max(200),
@@ -83,19 +85,14 @@ export function createPlanChatRouter(): Router {
   // GET /projects/:projectId/plan-chats/:chatId
   router.get(
     '/projects/:projectId/plan-chats/:chatId',
+    validateUuidParams('chatId'),
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const { projectId, chatId } = req.params;
-      if (!UUID_RE.test(chatId)) {
-        res.status(400).json({ error: 'Invalid chat ID' });
-        return;
-      }
-
-      const chat = await getPlanChat(chatId);
-      if (!chat || chat.projectId !== projectId || chat.userId !== req.user.user_id) {
+      const chat = await getPlanChat(chatId, projectId, req.user.user_id);
+      if (!chat) {
         res.status(404).json({ error: 'Not found' });
         return;
       }
-
       res.json(chat);
     })
   );
@@ -103,18 +100,9 @@ export function createPlanChatRouter(): Router {
   // PUT /projects/:projectId/plan-chats/:chatId/state
   router.put(
     '/projects/:projectId/plan-chats/:chatId/state',
+    validateUuidParams('chatId'),
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const { projectId, chatId } = req.params;
-      if (!UUID_RE.test(chatId)) {
-        res.status(400).json({ error: 'Invalid chat ID' });
-        return;
-      }
-
-      const existing = await getPlanChat(chatId);
-      if (!existing || existing.projectId !== projectId || existing.userId !== req.user.user_id) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
 
       const parsed = stateSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -122,7 +110,11 @@ export function createPlanChatRouter(): Router {
         return;
       }
 
-      const updated = await updatePlanChatState(chatId, parsed.data);
+      const updated = await updatePlanChatState(chatId, projectId, req.user.user_id, parsed.data);
+      if (!updated) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
       res.json(updated);
     })
   );
@@ -130,18 +122,9 @@ export function createPlanChatRouter(): Router {
   // POST /projects/:projectId/plan-chats/:chatId/complete
   router.post(
     '/projects/:projectId/plan-chats/:chatId/complete',
+    validateUuidParams('chatId'),
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const { projectId, chatId } = req.params;
-      if (!UUID_RE.test(chatId)) {
-        res.status(400).json({ error: 'Invalid chat ID' });
-        return;
-      }
-
-      const existing = await getPlanChat(chatId);
-      if (!existing || existing.projectId !== projectId || existing.userId !== req.user.user_id) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
 
       const parsed = completeSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -149,7 +132,11 @@ export function createPlanChatRouter(): Router {
         return;
       }
 
-      const completed = await completePlanChat(chatId, parsed.data.completedPlanId, parsed.data.name);
+      const completed = await completePlanChat(chatId, projectId, req.user.user_id, parsed.data.completedPlanId, parsed.data.name);
+      if (!completed) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
       res.json(completed);
     })
   );
@@ -157,20 +144,14 @@ export function createPlanChatRouter(): Router {
   // DELETE /projects/:projectId/plan-chats/:chatId
   router.delete(
     '/projects/:projectId/plan-chats/:chatId',
+    validateUuidParams('chatId'),
     asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
       const { projectId, chatId } = req.params;
-      if (!UUID_RE.test(chatId)) {
-        res.status(400).json({ error: 'Invalid chat ID' });
-        return;
-      }
-
-      const existing = await getPlanChat(chatId);
-      if (!existing || existing.projectId !== projectId || existing.userId !== req.user.user_id) {
+      const deleted = await deletePlanChat(chatId, projectId, req.user.user_id);
+      if (!deleted) {
         res.status(404).json({ error: 'Not found' });
         return;
       }
-
-      await deletePlanChat(chatId);
       res.status(204).end();
     })
   );

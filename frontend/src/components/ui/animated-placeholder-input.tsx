@@ -1,5 +1,5 @@
-import { forwardRef } from 'react';
-import type { InputHTMLAttributes } from 'react';
+import { forwardRef, useCallback } from 'react';
+import type { InputHTMLAttributes, KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import {
   useAnimatedPlaceholder,
@@ -13,6 +13,8 @@ interface AnimatedPlaceholderInputProps
   interval?: number;
   /** Left padding in rem to align with icons */
   leftPadding?: number;
+  /** Called when Tab is pressed on an empty input to accept the visible placeholder. */
+  onTabAccept?: (placeholder: string) => void;
 }
 
 const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholderInputProps>(
@@ -21,11 +23,13 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       placeholders,
       interval = 3000,
       leftPadding,
+      onTabAccept,
       className,
       value,
       style,
       onFocus,
       onBlur,
+      onKeyDown,
       disabled,
       readOnly,
       ...props
@@ -44,6 +48,15 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       handleFocus,
       handleBlur,
     } = useAnimatedPlaceholder({ placeholders, interval, value, disabled, readOnly });
+
+    const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Tab' && !e.shiftKey && !hasValue && currentPlaceholder && onTabAccept) {
+        e.preventDefault();
+        onTabAccept(currentPlaceholder);
+        return;
+      }
+      onKeyDown?.(e);
+    }, [hasValue, currentPlaceholder, onTabAccept, onKeyDown]);
 
     const paddingLeft = leftPadding !== undefined
       ? `${leftPadding}rem`
@@ -77,6 +90,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
             handleBlur();
             onBlur?.(event);
           }}
+          onKeyDown={handleKeyDown}
           {...props}
         />
         {!hasValue && (

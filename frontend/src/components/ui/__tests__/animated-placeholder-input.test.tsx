@@ -88,4 +88,72 @@ describe('AnimatedPlaceholderInput', () => {
     expect(document.querySelector('[data-placeholder-cursor="true"]')).not.toBeInTheDocument();
     expect(input.style.caretColor).toBe('');
   });
+
+  it('calls onTabAccept with current placeholder when Tab is pressed on empty input', () => {
+    const onTabAccept = vi.fn();
+    render(
+      <AnimatedPlaceholderInput
+        placeholders={['Suggested query', 'Another suggestion']}
+        value=""
+        onChange={() => {}}
+        onTabAccept={onTabAccept}
+      />
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Tab' });
+
+    expect(onTabAccept).toHaveBeenCalledWith('Suggested query');
+  });
+
+  it('does not call onTabAccept when input has a value', () => {
+    const onTabAccept = vi.fn();
+    render(
+      <AnimatedPlaceholderInput
+        placeholders={['Suggested query']}
+        value="user text"
+        onChange={() => {}}
+        onTabAccept={onTabAccept}
+      />
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Tab' });
+
+    expect(onTabAccept).not.toHaveBeenCalled();
+  });
+
+  it('does not call onTabAccept on Shift+Tab', () => {
+    const onTabAccept = vi.fn();
+    render(
+      <AnimatedPlaceholderInput
+        placeholders={['Suggested query']}
+        value=""
+        onChange={() => {}}
+        onTabAccept={onTabAccept}
+      />
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+
+    expect(onTabAccept).not.toHaveBeenCalled();
+  });
+
+  it('forwards other key events to onKeyDown when Tab is not applicable', () => {
+    const onKeyDown = vi.fn();
+    render(
+      <AnimatedPlaceholderInput
+        placeholders={['Suggested query']}
+        value=""
+        onChange={() => {}}
+        onKeyDown={onKeyDown}
+      />
+    );
+
+    const input = screen.getByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+  });
 });

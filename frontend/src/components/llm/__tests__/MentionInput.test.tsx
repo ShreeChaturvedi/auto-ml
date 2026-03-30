@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   MentionInput,
   type MentionInputHandle,
 } from '@/components/llm/MentionInput';
 
-function MentionInputHarness({ voiceActive = false }: { voiceActive?: boolean }) {
+function MentionInputHarness({ voiceActive = false, placeholders }: { voiceActive?: boolean; placeholders?: string[] }) {
   const [value, setValue] = useState('');
   const [cursorOffset, setCursorOffset] = useState<number | null>(null);
   const inputRef = useRef<MentionInputHandle>(null);
@@ -21,6 +21,7 @@ function MentionInputHarness({ voiceActive = false }: { voiceActive?: boolean })
         onKeyDown={() => {}}
         mentionNames={new Set()}
         placeholder="Ask something"
+        placeholders={placeholders}
         voiceActive={voiceActive}
       />
       <button
@@ -39,6 +40,14 @@ function MentionInputHarness({ voiceActive = false }: { voiceActive?: boolean })
 }
 
 describe('MentionInput', () => {
+  beforeEach(() => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('restores the placeholder after typing and deleting back to empty', () => {
     render(<MentionInputHarness />);
 
@@ -69,5 +78,16 @@ describe('MentionInput', () => {
     expect(container.querySelector('.mention-input-voice-caret')).toBeInTheDocument();
     expect(screen.getByTestId('cursor-offset')).toHaveTextContent('0');
     expect(screen.getByRole('textbox').innerHTML).toBe('');
+  });
+
+  it('fills the input with the current placeholder when Tab is pressed on empty', () => {
+    render(
+      <MentionInputHarness placeholders={['Try asking about your data', 'Summarize the columns']} />
+    );
+
+    const editor = screen.getByRole('textbox');
+    fireEvent.keyDown(editor, { key: 'Tab' });
+
+    expect(screen.getByTestId('value')).toHaveTextContent('Try asking about your data');
   });
 });

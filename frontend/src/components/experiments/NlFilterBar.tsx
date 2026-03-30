@@ -81,6 +81,7 @@ export function NlFilterBar() {
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
         onKeyDown={handleKeyDown}
+        onTabAccept={setInputText}
         disabled={isLoading}
         leftPadding={2}
         className="pl-8 h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"

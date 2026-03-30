@@ -14,6 +14,7 @@ import {
   useAnimatedPlaceholder,
   CHAR_ANIM_DURATION_MS,
   computeCharDelay,
+  type UseAnimatedPlaceholderResult,
 } from '@/components/ui/useAnimatedPlaceholder';
 
 export interface AnimateCharRange { start: number; end: number }
@@ -46,14 +47,7 @@ interface MentionInputProps {
 const VOICE_CHAR_STAGGER_MS = 14;
 const VOICE_CHAR_ANIM_MS = 180;
 
-function AnimatedMentionPlaceholder({ placeholders }: { placeholders: string[] }) {
-  const anim = useAnimatedPlaceholder({
-    placeholders,
-    interval: 4000,
-    value: '',
-    disabled: false,
-  });
-
+function AnimatedMentionPlaceholder({ anim }: { anim: UseAnimatedPlaceholderResult }) {
   return (
     <div className="pointer-events-none absolute inset-x-3 top-2.5 overflow-hidden" aria-hidden="true">
       <div className="relative overflow-hidden">
@@ -341,6 +335,14 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
     const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cursorRafRef = useRef(0);
 
+    const hasAnimatedPlaceholders = !voiceActive && !!(placeholders && placeholders.length > 1);
+    const animState = useAnimatedPlaceholder({
+      placeholders: hasAnimatedPlaceholders ? placeholders : [''],
+      interval: 4000,
+      value: value || '',
+      disabled: !!disabled,
+    });
+
     const syncRenderedValue = useCallback((nextValue: string, cursorOffset?: number, animateRange?: AnimateCharRange) => {
       const el = divRef.current;
       if (!el) return;
@@ -501,6 +503,17 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
       handleInput();
     }, [handleInput]);
 
+    const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'Tab' && !e.shiftKey && !value && hasAnimatedPlaceholders && animState.currentPlaceholder) {
+        e.preventDefault();
+        const ph = animState.currentPlaceholder;
+        syncRenderedValue(ph, ph.length);
+        onValueChange(ph, ph.length);
+        return;
+      }
+      onKeyDown(e);
+    }, [value, hasAnimatedPlaceholders, animState.currentPlaceholder, syncRenderedValue, onValueChange, onKeyDown]);
+
     return (
       <div
         className={cn(
@@ -511,8 +524,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
       >
         {(() => {
           if (value.length > 0) return null;
-          const useAnimated = !voiceActive && placeholders && placeholders.length > 1;
-          if (useAnimated) return <AnimatedMentionPlaceholder placeholders={placeholders} />;
+          if (hasAnimatedPlaceholders) return <AnimatedMentionPlaceholder anim={animState} />;
           const staticText = placeholders?.[0] ?? placeholder;
           if (!staticText) return null;
           return (
@@ -542,7 +554,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
           aria-label="Message input"
           aria-disabled={disabled}
           onInput={handleInput}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}

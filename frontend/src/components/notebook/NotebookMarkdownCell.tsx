@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState, Suspense } from 'react';
+import { useCallback, useMemo, useRef, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
+import { useMonacoAutoHeight } from '@/hooks/useMonacoAutoHeight';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -149,7 +150,7 @@ export function NotebookMarkdownCell({
   });
 
   const sectionLabel = getSectionLabel(localContent);
-  const [editorHeight, setEditorHeight] = useState(60);
+  const { editorHeight, attachAutoHeight } = useMonacoAutoHeight();
 
   const markdownComponents = useMemo(
     () => ({ ...buildHeadingComponents(`notebook-${cell.cellId}-`), ...NOTEBOOK_MARKDOWN_BODY_COMPONENTS }),
@@ -269,10 +270,7 @@ export function NotebookMarkdownCell({
                 value={localContent}
                 onChange={handleContentChange}
                 onMount={(editor, monaco) => {
-                  // Auto-height
-                  const updateHeight = () => setEditorHeight(Math.max(60, editor.getContentHeight()));
-                  editor.onDidContentSizeChange(updateHeight);
-                  updateHeight();
+                  attachAutoHeight(editor);
 
                   // Escape -> exit edit mode
                   editor.addCommand(monaco.KeyCode.Escape, () => {

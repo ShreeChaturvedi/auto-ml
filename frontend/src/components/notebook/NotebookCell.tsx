@@ -7,6 +7,9 @@
 
 import { useState, useCallback, Suspense, useMemo } from 'react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useMonacoAutoHeight } from '@/hooks/useMonacoAutoHeight';
+import type { Monaco } from '@monaco-editor/react';
+import type { editor as MonacoEditor } from 'monaco-editor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -102,16 +105,14 @@ export function NotebookCellComponent({
     preloadMonaco: true
   });
 
-  const [editorHeight, setEditorHeight] = useState(60);
+  const { editorHeight, attachAutoHeight } = useMonacoAutoHeight();
 
   const handleMountWithAutoHeight = useCallback(
-    (editor: Parameters<typeof handleEditorMount>[0], monaco: Parameters<typeof handleEditorMount>[1]) => {
+    (editor: MonacoEditor.IStandaloneCodeEditor, monaco: Monaco) => {
       handleEditorMount(editor, monaco);
-      const updateHeight = () => setEditorHeight(Math.max(60, editor.getContentHeight()));
-      editor.onDidContentSizeChange(updateHeight);
-      updateHeight();
+      attachAutoHeight(editor);
     },
-    [handleEditorMount]
+    [handleEditorMount, attachAutoHeight]
   );
 
   const isRunning = cell.executionStatus === 'running';

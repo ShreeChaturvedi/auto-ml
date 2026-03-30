@@ -25,8 +25,13 @@ export function ExperimentsDashboard() {
   const experimentView = useExperimentsStore((s) => s.experimentView);
   const setExperimentView = useExperimentsStore((s) => s.setExperimentView);
   const activePredicates = useExperimentsStore((s) => s.activePredicates);
+  const manualPredicates = useExperimentsStore((s) => s.manualPredicates);
+  const removeManualPredicate = useExperimentsStore((s) => s.removeManualPredicate);
+  const clearManualPredicates = useExperimentsStore((s) => s.clearManualPredicates);
   const setNlFilter = useExperimentsStore((s) => s.setNlFilter);
   const clearFilter = useExperimentsStore((s) => s.clearFilter);
+  const comparisonRequested = useExperimentsStore((s) => s.comparisonRequested);
+  const exitComparison = useExperimentsStore((s) => s.stopComparison);
 
   const prevModelCount = useRef(models.length);
   const reportPaneRef = useRef<ReportPaneHandle>(null);
@@ -90,7 +95,7 @@ export function ExperimentsDashboard() {
   );
 
   const isEmpty = models.length === 0 && !isLoadingModels;
-  const isComparing = comparisonModelIds.length >= 2;
+  const isComparing = comparisonRequested && comparisonModelIds.length >= 2;
   const isOverview = !isComparing && experimentView === 'overview';
 
   return (
@@ -102,6 +107,7 @@ export function ExperimentsDashboard() {
       {!isEmpty && isComparing && (
         <ComparisonMode
           comparisonModelCount={comparisonModelIds.length}
+          onExitComparison={exitComparison}
           onClearComparison={clearComparison}
         />
       )}
@@ -111,9 +117,12 @@ export function ExperimentsDashboard() {
         <LeaderboardMode
           experimentView={experimentView}
           activePredicates={activePredicates}
+          manualPredicates={manualPredicates}
           onViewChange={handleViewChange}
-          onRemovePredicate={removePredicate}
-          onClearFilter={clearFilter}
+          onRemoveNlPredicate={removePredicate}
+          onClearNlFilter={clearFilter}
+          onRemoveManualPredicate={removeManualPredicate}
+          onClearManualPredicates={clearManualPredicates}
         />
       )}
 

@@ -5,27 +5,27 @@
  * - Data Upload: plan files
  * - Explorer: data files + context files
  * - Processing/FE/Training: workbooks
+ *
+ * Architecture:
+ * - Each phase is a memoized PhaseItem to isolate re-renders.
+ * - Store selectors are narrow: only currentPhase and unlockedPhases,
+ *   not the full projects array.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import * as LucideIcons from 'lucide-react';
 import { ChevronRight, Plus } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore } from '@/stores/planChatStore';
 import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookRegistryStore';
 import { createWorkbookId, nextWorkbookName } from '@/components/preprocessing/preprocessingTabUtils';
 import type { Phase } from '@/types/phase';
-import { phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
+import { isAuxiliaryPhase, phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger
-} from '@/components/ui/tooltip';
-import { getWorkbookParam } from '@/lib/workbookParam';
+import { getSidebarAccordionPref } from '@/lib/sidebarPrefs';
 import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
@@ -71,26 +71,225 @@ const PLUS_ACTION_PHASES = new Set<Phase>([
   'experiments',
 ]);
 
+// ─── PhaseItem ───────────────────────────────────────────────────────────────
+
+interface PhaseItemProps {
+  phase: Phase;
+  collapsed: boolean;
+  projectId: string;
+  isUnlocked: boolean;
+  isActive: boolean;
+  isExpanded: boolean;
+  isShimmering: boolean;
+  onPhaseClick: (e: React.MouseEvent, phase: Phase) => void;
+  onToggleExpand: (phase: Phase) => void;
+  onNewWorkbook: (e: React.MouseEvent, phase: Phase) => void;
+  onNewPlan: (e: React.MouseEvent) => void;
+  onShimmerEnd: (phase: Phase) => void;
+  onOpenSeedDialog: () => void;
+}
+
+/**
+ * Memoized phase row. Isolates re-renders so that shimmer ending on
+ * phase A doesn't re-render phases B through G.
+ */
+const PhaseItem = memo(function PhaseItem({
+  phase, collapsed, projectId,
+  isUnlocked, isActive, isExpanded, isShimmering,
+  onPhaseClick, onToggleExpand, onNewWorkbook, onNewPlan,
+  onShimmerEnd, onOpenSeedDialog
+}: PhaseItemProps) {
+  const config = phaseConfig[phase];
+  const isExpandable = EXPANDABLE_PHASES.has(phase) && isUnlocked;
+  const isWorkbookPhase = WORKBOOK_PHASES.has(phase);
+  const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
+  const activeColorClass = isActive ? 'text-accent-text' : 'text-muted-foreground';
+
+  const IconComponent = (
+    LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>
+  )[config.icon];
+
+  const phaseButton = (
+    <div
+      data-testid={`workflow-phase-${phase}`}
+      className={cn(
+        'group flex items-center gap-1 rounded-lg',
+        !isUnlocked
+          ? 'text-muted-foreground'
+          : isActive
+            ? 'bg-muted'
+            : 'text-foreground hover:bg-muted',
+        collapsed && isUnlocked && 'cursor-pointer'
+      )}
+      onClick={collapsed && isUnlocked ? (e) => onPhaseClick(e, phase) : undefined}
+    >
+      {isExpandable ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (collapsed) onPhaseClick(e, phase);
+            else onToggleExpand(phase);
+          }}
+          className="shrink-0 pl-3 py-2 cursor-pointer focus-visible:outline-none focus-visible:bg-accent"
+          aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
+          data-testid={`workflow-phase-toggle-${phase}`}
+        >
+          <div className="relative h-3.5 w-3.5" data-testid={`workflow-phase-icon-${phase}`}>
+            {IconComponent ? (
+              <IconComponent
+                className={cn(
+                  'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
+                  !collapsed && 'group-hover:opacity-0 group-focus-within:opacity-0',
+                  activeColorClass
+                )}
+              />
+            ) : null}
+            <ChevronRight
+              data-testid={`workflow-phase-chevron-${phase}`}
+              className={cn(
+                'absolute inset-0 h-3.5 w-3.5 transition-[opacity,transform] duration-200',
+                collapsed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                isExpanded && 'rotate-90',
+                activeColorClass
+              )}
+            />
+          </div>
+        </button>
+      ) : (
+        <div className="shrink-0 pl-3 py-2">
+          {IconComponent && (
+            <IconComponent
+              data-testid={`workflow-phase-icon-${phase}`}
+              className={cn('h-3.5 w-3.5 transition-colors duration-200', activeColorClass)}
+            />
+          )}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={(e) => onPhaseClick(e, phase)}
+        disabled={!isUnlocked}
+        className={cn(
+          'flex min-w-0 flex-1 items-center py-2 pr-3 text-left rounded-r-lg focus-visible:outline-none focus-visible:bg-accent',
+          !isUnlocked && 'cursor-default',
+          isUnlocked && 'cursor-pointer'
+        )}
+        data-testid={`workflow-phase-button-${phase}`}
+      >
+        <span
+          className={cn(
+            'flex-1 text-sm truncate transition-opacity duration-300',
+            (!isExpandable || collapsed) && 'pl-2',
+            collapsed && 'opacity-0',
+            isShimmering && 'shimmer-text-once'
+          )}
+          onAnimationEnd={isShimmering ? () => onShimmerEnd(phase) : undefined}
+        >
+          {config.label}
+        </span>
+      </button>
+
+      {hasPlusAction && !collapsed && (
+        <button
+          type="button"
+          onClick={
+            isWorkbookPhase ? (e) => onNewWorkbook(e, phase)
+            : phase === 'experiments' ? (e) => { e.stopPropagation(); onOpenSeedDialog(); }
+            : onNewPlan
+          }
+          className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-opacity opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+          title={isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
+        >
+          <Plus className="h-3 w-3 text-muted-foreground" />
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="relative">
+      {/* Vertical connector line — spans from phase icon/background through subtabs.
+          Positioned on the phase root so it isn't clipped by the subtabs overflow-hidden. */}
+      {isExpandable && !collapsed && (
+        <div
+          className={cn(
+            'absolute w-px transition-opacity duration-300',
+            isExpanded ? 'opacity-100' : 'opacity-0',
+            isActive && 'text-accent-text'
+          )}
+          style={isActive ? LINE_STYLE_ACTIVE : LINE_STYLE_INACTIVE}
+        />
+      )}
+
+      {phaseButton}
+
+      {isExpandable && !collapsed && (
+        <div
+          data-expanded={isExpanded}
+          className={cn(
+            'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
+            isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+          )}
+        >
+          <div className="min-h-0 overflow-hidden pl-4">
+            {phase === 'upload' && <PlanSubtabs projectId={projectId} />}
+            {phase === 'data-viewer' && <FileSubtabs projectId={projectId} />}
+            {isWorkbookPhase && (
+              <WorkbookSubtabs
+                projectId={projectId}
+                phase={phase as WorkbookPhase}
+                isActivePhase={isActive}
+              />
+            )}
+            {phase === 'experiments' && <ModelSubtabs projectId={projectId} />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─── WorkflowPhaseTree ──────────────────────────────────────────────────────
+
 interface WorkflowPhaseTreeProps {
   collapsed?: boolean;
   projectId: string;
 }
 
-export function WorkflowPhaseTree({ collapsed = false, projectId }: WorkflowPhaseTreeProps) {
+export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
+  collapsed = false,
+  projectId
+}: WorkflowPhaseTreeProps) {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const projects = useProjectStore((state) => state.projects);
+  const { projectId: routeProjectId, phase: routePhaseParam } = useParams<{ projectId?: string; phase?: string }>();
 
-  const activeProject = projects.find((p) => p.id === projectId);
-
-  const unlockedPhases = activeProject?.unlockedPhases ?? EMPTY_PHASES;
-  const currentPhase = activeProject?.currentPhase;
-  const allPhases = WORKFLOW_PHASES;
+  // Narrow selectors — only re-render when these specific values change,
+  // not on every project mutation. useShallow for array comparison.
+  const unlockedPhases = useProjectStore(
+    useShallow((s) => s.projects.find((p) => p.id === projectId)?.unlockedPhases ?? EMPTY_PHASES)
+  );
+  const currentPhase = useProjectStore(
+    (s) => s.projects.find((p) => p.id === projectId)?.currentPhase
+  );
+  const hasActiveProject = useProjectStore(
+    (s) => s.projects.some((p) => p.id === projectId)
+  );
 
   const [expandedPhases, setExpandedPhases] = useState<Set<Phase>>(new Set());
   const [seedDialogOpen, setSeedDialogOpen] = useState(false);
   const [shimmeringPhases, setShimmeringPhases] = useState<Set<Phase>>(new Set());
   const prevUnlockedRef = useRef<Phase[]>(unlockedPhases);
+  const routePhase =
+    routeProjectId === projectId
+    && routePhaseParam
+    && Object.prototype.hasOwnProperty.call(phaseConfig, routePhaseParam)
+      ? routePhaseParam as Phase
+      : null;
+  const activePhase = routePhase && !isAuxiliaryPhase(routePhase)
+    ? routePhase
+    : currentPhase;
 
   // Initialize plan chat store when project changes
   useEffect(() => {
@@ -118,44 +317,47 @@ export function WorkflowPhaseTree({ collapsed = false, projectId }: WorkflowPhas
     });
   }, [unlockedPhases]);
 
-  const activeWorkbookId = getWorkbookParam(searchParams);
+  // Auto-expand the active phase on navigation.
+  // Accordion mode: collapse others. Independent mode: add without collapsing.
+  useEffect(() => {
+    if (activePhase && EXPANDABLE_PHASES.has(activePhase)) {
+      const accordion = getSidebarAccordionPref();
+      setExpandedPhases((prev) => {
+        if (accordion) {
+          if (prev.size === 1 && prev.has(activePhase)) return prev;
+          return new Set([activePhase]);
+        }
+        if (prev.has(activePhase)) return prev;
+        return new Set([...prev, activePhase]);
+      });
+    }
+  }, [activePhase]);
 
-  const expandPhase = useCallback((phase: Phase) => {
+  // ── Stable callbacks for PhaseItem ────────────────────────────────────
+
+  const handlePhaseClick = useCallback((e: React.MouseEvent, phase: Phase) => {
+    e.stopPropagation();
+    // Read latest unlock state at click time (not stale closure).
+    const unlocked = useProjectStore.getState()
+      .projects.find((p) => p.id === projectId)?.unlockedPhases;
+    if (projectId && unlocked?.includes(phase)) {
+      navigate(`/project/${projectId}/${phase}`);
+    }
+  }, [projectId, navigate]);
+
+  const handleToggleExpand = useCallback((phase: Phase) => {
+    const accordion = getSidebarAccordionPref();
     setExpandedPhases((prev) => {
-      if (prev.has(phase)) return prev;
-      const next = new Set(prev);
-      next.add(phase);
-      return next;
+      if (prev.has(phase)) {
+        const next = new Set(prev);
+        next.delete(phase);
+        return next;
+      }
+      return accordion ? new Set([phase]) : new Set([...prev, phase]);
     });
   }, []);
 
-  // Auto-expand the current phase when it's expandable
-  useEffect(() => {
-    if (currentPhase && EXPANDABLE_PHASES.has(currentPhase)) {
-      expandPhase(currentPhase);
-    }
-  }, [currentPhase, expandPhase]);
-
-  const togglePhaseExpand = (phase: Phase) => {
-    setExpandedPhases((prev) => {
-      const next = new Set(prev);
-      if (next.has(phase)) {
-        next.delete(phase);
-      } else {
-        next.add(phase);
-      }
-      return next;
-    });
-  };
-
-  const handlePhaseClick = (e: React.MouseEvent, phase: Phase) => {
-    e.stopPropagation();
-    if (projectId && unlockedPhases.includes(phase)) {
-      navigate(`/project/${projectId}/${phase}`);
-    }
-  };
-
-  const handleNewWorkbook = (e: React.MouseEvent, phase: Phase) => {
+  const handleNewWorkbook = useCallback((e: React.MouseEvent, phase: Phase) => {
     e.stopPropagation();
     if (!projectId || !WORKBOOK_PHASES.has(phase)) return;
 
@@ -165,210 +367,54 @@ export function WorkflowPhaseTree({ collapsed = false, projectId }: WorkflowPhas
     const newId = createWorkbookId();
     const newName = nextWorkbookName(existing);
 
-    // Write to registry (triggers sidebar re-render)
     registry.addWorkbook(registryPhase, { id: newId, name: newName, notebookId: null });
-
-    // Navigate — the phase panel will pick up the new workbook via URL param
-    // and reconcile it with localStorage/Postgres on mount.
     navigate(`/project/${projectId}/${phase}?workbook=${newId}`);
-  };
+  }, [projectId, navigate]);
 
-  const handleNewPlan = (e: React.MouseEvent) => {
+  const handleNewPlan = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (projectId) {
       navigate(`/project/${projectId}/upload?newPlan=1`);
     }
-  };
+  }, [projectId, navigate]);
+
+  const handleShimmerEnd = useCallback((phase: Phase) => {
+    setShimmeringPhases((s) => {
+      const next = new Set(s);
+      next.delete(phase);
+      return next;
+    });
+  }, []);
+
+  const handleOpenSeedDialog = useCallback(() => {
+    setSeedDialogOpen(true);
+  }, []);
 
   useProjectThemeColor();
 
-  if (!activeProject) return null;
+  if (!hasActiveProject) return null;
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <>
       <div className="space-y-0.5">
-        {allPhases.map((phase) => {
-          const config = phaseConfig[phase];
-          const isUnlocked = unlockedPhases.includes(phase);
-          const isActive = phase === currentPhase;
-          const isExpandable = EXPANDABLE_PHASES.has(phase) && isUnlocked;
-          const isExpanded = expandedPhases.has(phase);
-          const isWorkbookPhase = WORKBOOK_PHASES.has(phase);
-          const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
-
-          const iconColorClass = isActive ? 'text-accent-text' : undefined;
-
-          const IconComponent = (
-            LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>
-          )[config.icon];
-
-          const phaseButton = (
-            <div
-              className={cn(
-                'group flex items-center gap-1 rounded-lg',
-                !isUnlocked
-                  ? 'text-muted-foreground'
-                  : isActive
-                    ? 'bg-muted'
-                    : 'text-foreground hover:bg-muted',
-                collapsed && isUnlocked && 'cursor-pointer'
-              )}
-              onClick={collapsed && isUnlocked ? (e) => handlePhaseClick(e, phase) : undefined}
-            >
-              {/* Chevron toggle — separate from the navigation button so
-                  expand/collapse never triggers navigation. */}
-              {isExpandable ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (collapsed) handlePhaseClick(e, phase);
-                    else togglePhaseExpand(phase);
-                  }}
-                  className="shrink-0 pl-3 py-2 cursor-pointer focus-visible:outline-none focus-visible:bg-accent"
-                  aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
-                >
-                  <div className="relative h-3.5 w-3.5">
-                    {IconComponent && (
-                      <IconComponent
-                        className={cn(
-                          'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
-                          !collapsed && 'group-hover:opacity-0 group-focus-within:opacity-0',
-                          iconColorClass
-                        )}
-                      />
-                    )}
-                    <ChevronRight
-                      className={cn(
-                        'absolute inset-0 h-3.5 w-3.5 transition-[opacity,transform] duration-200',
-                        collapsed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
-                        isExpanded && 'rotate-90',
-                        iconColorClass
-                      )}
-                    />
-                  </div>
-                </button>
-              ) : (
-                <div className="shrink-0 pl-3 py-2">
-                  {IconComponent && (
-                    <IconComponent className={cn('h-3.5 w-3.5', iconColorClass)} />
-                  )}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={(e) => handlePhaseClick(e, phase)}
-                disabled={!isUnlocked}
-                className={cn(
-                  'flex min-w-0 flex-1 items-center py-2 pr-3 text-left rounded-r-lg focus-visible:outline-none focus-visible:bg-accent',
-                  !isUnlocked && 'cursor-default',
-                  isUnlocked && 'cursor-pointer'
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex-1 text-sm truncate transition-opacity duration-300 pl-2',
-                    collapsed && 'opacity-0',
-                    shimmeringPhases.has(phase) && 'shimmer-text-once'
-                  )}
-                  onAnimationEnd={shimmeringPhases.has(phase) ? () => {
-                    setShimmeringPhases((s) => {
-                      const next = new Set(s);
-                      next.delete(phase);
-                      return next;
-                    });
-                  } : undefined}
-                >
-                  {config.label}
-                </span>
-              </button>
-
-              {/* "+" button - hover-only, for phases with add actions */}
-              {hasPlusAction && !collapsed && (
-                <button
-                  type="button"
-                  onClick={
-                    isWorkbookPhase ? (e) => handleNewWorkbook(e, phase)
-                    : phase === 'experiments' ? (e) => { e.stopPropagation(); setSeedDialogOpen(true); }
-                    : handleNewPlan
-                  }
-                  className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-opacity opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                  title={isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
-                >
-                  <Plus className="h-3 w-3 text-muted-foreground" />
-                </button>
-              )}
-            </div>
-          );
-
-          const tooltipLabel = collapsed
-            ? config.label
-            : isUnlocked && !isActive
-              ? config.description
-              : null;
-
-          return (
-            <div key={phase} className="relative">
-              {/* Vertical connector line — spans from phase icon/background through subtabs.
-                  Positioned on the phase root so it isn't clipped by the subtabs overflow-hidden. */}
-              {isExpandable && !collapsed && projectId && (
-                <div
-                  className={cn(
-                    'absolute w-px transition-opacity duration-300',
-                    isExpanded ? 'opacity-100' : 'opacity-0',
-                    isActive && 'text-accent-text'
-                  )}
-                  style={isActive ? LINE_STYLE_ACTIVE : LINE_STYLE_INACTIVE}
-                />
-              )}
-
-              {tooltipLabel ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    {phaseButton}
-                  </TooltipTrigger>
-                  <TooltipContent side="right">
-                    <p>{tooltipLabel}</p>
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                phaseButton
-              )}
-
-              {/* Subtabs — always rendered for animation, visibility controlled by grid-rows */}
-              {isExpandable && !collapsed && projectId && (
-                <div
-                  className={cn(
-                    'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
-                    isExpanded
-                      ? 'grid-rows-[1fr] opacity-100'
-                      : 'grid-rows-[0fr] opacity-0'
-                  )}
-                >
-                  <div className="overflow-hidden pl-4">
-                    {phase === 'upload' && (
-                      <PlanSubtabs projectId={projectId} />
-                    )}
-                    {phase === 'data-viewer' && (
-                      <FileSubtabs projectId={projectId} />
-                    )}
-                    {isWorkbookPhase && (
-                      <WorkbookSubtabs
-                        projectId={projectId}
-                        phase={phase as WorkbookPhase}
-                        activeWorkbookId={isActive ? activeWorkbookId : undefined}
-                      />
-                    )}
-                    {phase === 'experiments' && (
-                      <ModelSubtabs projectId={projectId} />
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {WORKFLOW_PHASES.map((phase) => (
+          <PhaseItem
+            key={phase}
+            phase={phase}
+            collapsed={collapsed}
+            projectId={projectId}
+            isUnlocked={unlockedPhases.includes(phase)}
+            isActive={phase === activePhase}
+            isExpanded={expandedPhases.has(phase)}
+            isShimmering={shimmeringPhases.has(phase)}
+            onPhaseClick={handlePhaseClick}
+            onToggleExpand={handleToggleExpand}
+            onNewWorkbook={handleNewWorkbook}
+            onNewPlan={handleNewPlan}
+            onShimmerEnd={handleShimmerEnd}
+            onOpenSeedDialog={handleOpenSeedDialog}
+          />
+        ))}
       </div>
       {projectId && (
         <SeedModelDialog
@@ -377,6 +423,6 @@ export function WorkflowPhaseTree({ collapsed = false, projectId }: WorkflowPhas
           onOpenChange={setSeedDialogOpen}
         />
       )}
-    </TooltipProvider>
+    </>
   );
-}
+});

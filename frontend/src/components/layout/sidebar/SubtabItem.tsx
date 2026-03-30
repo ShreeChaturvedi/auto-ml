@@ -5,7 +5,7 @@
  * can be placed in the actionSlot without nesting <button> violations.
  */
 
-import { useState, type ComponentType } from 'react';
+import { type ComponentType } from 'react';
 import { cn } from '@/lib/utils';
 
 interface SubtabItemProps {
@@ -27,9 +27,7 @@ export function SubtabItem({
   actionSlot,
   iconColorClass
 }: SubtabItemProps) {
-  const [hovered, setHovered] = useState(false);
-
-  const iconColor = isActive || hovered ? (iconColorClass ?? 'text-accent-text') : 'text-muted-foreground';
+  const iconColor = isActive ? (iconColorClass ?? 'text-accent-text') : 'text-muted-foreground';
 
   return (
     <div
@@ -42,8 +40,6 @@ export function SubtabItem({
           onClick();
         }
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       className={cn(
         'group w-full flex items-center gap-2 px-3 py-1.5 min-h-6 text-left text-[13px] truncate transition-colors duration-200 cursor-pointer',
         'focus-visible:outline-none focus-visible:bg-accent',

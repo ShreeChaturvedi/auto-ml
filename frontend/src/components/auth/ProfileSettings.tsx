@@ -13,7 +13,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, Loader2, Check, User, Mail, UserCircle, Palette } from 'lucide-react';
+import { ArrowLeft, Loader2, Check, User, Mail, UserCircle, Palette, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +23,7 @@ import { RuntimeSettingsSection } from './RuntimeSettingsSection';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Switch } from '@/components/ui/switch';
 import { useAuthStore } from '@/stores/authStore';
+import { getSidebarAccordionPref, setSidebarAccordionPref, subscribeSidebarAccordionPref } from '@/lib/sidebarPrefs';
 import { updateProfile } from '@/lib/api/auth';
 import {
   getAdaptiveSyntaxPref,
@@ -96,6 +97,35 @@ function EditorSettingsSection() {
           checked={adaptiveSyntax}
           onCheckedChange={setAdaptiveSyntaxPref}
           aria-label="Toggle adaptive syntax highlighting"
+        />
+      </div>
+    </section>
+  );
+}
+
+function SidebarSettingsSection() {
+  const accordion = useSyncExternalStore(subscribeSidebarAccordionPref, getSidebarAccordionPref);
+
+  return (
+    <section className="mb-10">
+      <div className="mb-4 flex items-center gap-2">
+        <PanelLeft className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          Sidebar
+        </h2>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium">Accordion navigation</p>
+          <p className="text-xs text-muted-foreground">
+            Collapse other workflow phases when expanding one
+          </p>
+        </div>
+        <Switch
+          checked={accordion}
+          onCheckedChange={setSidebarAccordionPref}
+          aria-label="Toggle accordion navigation"
         />
       </div>
     </section>
@@ -292,6 +322,11 @@ export function ProfileSettings() {
 
         {/* Editor Section */}
         <EditorSettingsSection />
+
+        <Separator className="my-8" />
+
+        {/* Sidebar Section */}
+        <SidebarSettingsSection />
       </main>
     </div>
   );

@@ -82,6 +82,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     : null;
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div
       ref={sidebarRef}
       className={cn(
@@ -90,51 +91,46 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
       )}
       onClick={handleSidebarClick}
     >
-      {/* Header - exactly h-14 to align with content ribbons */}
       <div
         className="h-14 shrink-0 flex items-center px-4 gap-2 border-b border-border"
         onClick={collapsed ? (e) => { e.stopPropagation(); onToggleCollapse(); } : undefined}
       >
-        {/* Project icon - always at left, fixed position */}
         {activeProject && ProjectIcon ? (
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={handleOpenProjectEdit}
-                  aria-label={`Project settings for ${activeProject.title}`}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={handleOpenProjectEdit}
+                aria-label={`Project settings for ${activeProject.title}`}
+                className={cn(
+                  'group relative flex h-8 w-8 items-center justify-center rounded-md shrink-0 transition-opacity',
+                  'bg-accent-bg'
+                )}
+              >
+                <ProjectIcon
                   className={cn(
-                    'group relative flex h-8 w-8 items-center justify-center rounded-md shrink-0 transition-opacity',
-                    'bg-accent-bg'
+                    'h-4 w-4 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0',
+                    'text-accent-text'
                   )}
-                >
-                  <ProjectIcon
-                    className={cn(
-                      'h-4 w-4 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0',
-                      'text-accent-text'
-                    )}
-                  />
-                  <Pencil
-                    className={cn(
-                      'absolute h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
-                      'text-accent-text'
-                    )}
-                  />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>Project settings</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+                />
+                <Pencil
+                  className={cn(
+                    'absolute h-4 w-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
+                    'text-accent-text'
+                  )}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>Project settings</p>
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <div className="flex h-8 w-8 items-center justify-center shrink-0">
             <Logo size="sm" showText={false} className="text-foreground" />
           </div>
         )}
 
-        {/* Title - project name or AutoML, fades with opacity */}
         <span
           className={cn(
             'flex-1 text-sm font-semibold text-foreground truncate transition-opacity duration-300',
@@ -144,7 +140,6 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           {activeProject?.title ?? 'AutoML'}
         </span>
 
-        {/* Header actions - fade out when collapsed */}
         <div
           className={cn(
             'flex items-center gap-0.5 shrink-0 transition-opacity duration-300',
@@ -152,53 +147,47 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           )}
         >
           {activeProject && (
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={handleGoHome}
-                    aria-label="Go to projects"
-                  >
-                    <Home className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <p>Go to projects</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <ThemeToggle />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>Toggle theme</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
-                  aria-label="Collapse sidebar"
+                  onClick={handleGoHome}
+                  aria-label="Go to projects"
                 >
-                  <PanelLeft className="h-3.5 w-3.5" />
+                  <Home className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                <p>Collapse sidebar</p>
+                <p>Go to projects</p>
               </TooltipContent>
             </Tooltip>
-          </TooltipProvider>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div onClick={(e) => e.stopPropagation()}>
+                <ThemeToggle />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>Toggle theme</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeft className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>Collapse sidebar</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -235,5 +224,6 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         />
       )}
     </div>
+    </TooltipProvider>
   );
 }

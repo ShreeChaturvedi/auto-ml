@@ -95,7 +95,6 @@ interface NotebookMarkdownCellProps {
   lockOwner: LockOwner | null;
   isCollapsed: boolean;
   hiddenCodeCount: number;
-  themeColor?: string;
   onToggleCollapsed: () => void;
   onContentChange: (content: string) => void;
   onDelete: () => void;
@@ -111,7 +110,6 @@ export function NotebookMarkdownCell({
   lockOwner,
   isCollapsed,
   hiddenCodeCount,
-  themeColor,
   onToggleCollapsed,
   onContentChange,
   onDelete,
@@ -202,7 +200,7 @@ export function NotebookMarkdownCell({
             onDoubleClick={enterEditMode}
             onPointerUp={handlePointerUpEdit}
           >
-            <Pilcrow className="h-5 w-5" style={themeColor ? { color: themeColor } : undefined} />
+            <Pilcrow className="h-5 w-5 text-accent-text" />
           </div>
         ) : (
           <Button

@@ -14,7 +14,6 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
 import { interruptKernel } from '@/lib/api/notebooks';
 import { Loader2, Code, Type } from 'lucide-react';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import { scrollToRadixElement } from '@/lib/scrollUtils';
 import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
@@ -104,8 +103,6 @@ function getSectionRange(cells: NotebookCellModel[], markdownIndex: number): { c
 export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorProps>(
   function NotebookEditor({ projectId, notebookId, className }, ref) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { themeColor } = useProjectThemeColor();
-
   useImperativeHandle(ref, () => ({
     scrollToHeading: (slug: string) => scrollToRadixElement(scrollAreaRef.current, slug),
   }), []);
@@ -358,7 +355,6 @@ export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorPro
                     lockOwner={getCellLockOwner(item.cell.cellId)}
                     isCollapsed={item.isSectionCollapsed}
                     hiddenCodeCount={item.hiddenCodeCount}
-                    themeColor={themeColor}
                     onToggleCollapsed={() => toggleSectionCollapse(item.cell.cellId)}
                     onContentChange={(content) => handleCellContentChange(item.cell.cellId, content)}
                     onDelete={() => handleCellDelete(item.cell.cellId)}

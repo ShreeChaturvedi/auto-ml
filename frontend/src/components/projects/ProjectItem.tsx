@@ -174,15 +174,13 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
         itemContent
       )}
 
-      {/* Edit Project Dialog */}
       <ProjectDialog
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
         project={project}
       />
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => { if (!isDeleting) setIsDeleteDialogOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete project?</DialogTitle>
@@ -192,14 +190,14 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button variant="outline" disabled={isDeleting} onClick={() => setIsDeleteDialogOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
               disabled={isDeleting}
-              onClick={() => {
-                void handleDelete();
+              onClick={async () => {
+                await handleDelete();
                 setIsDeleteDialogOpen(false);
               }}
             >

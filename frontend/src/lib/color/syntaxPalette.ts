@@ -126,22 +126,12 @@ export type SyntaxThemeId = 'adaptive-dark' | 'adaptive-light' | 'static-dark' |
 
 // ── Adaptive preference persistence ───────────────────────────────────────
 
-const PREF_KEY = 'automl-adaptive-syntax';
+import { createLocalBoolPref } from '../localPref';
 
-export function getAdaptiveSyntaxPref(): boolean {
-  return localStorage.getItem(PREF_KEY) !== 'false';
-}
-
-export function setAdaptiveSyntaxPref(v: boolean): void {
-  localStorage.setItem(PREF_KEY, String(v));
-  window.dispatchEvent(new StorageEvent('storage', { key: PREF_KEY, newValue: String(v) }));
-}
-
-export function subscribeAdaptivePref(cb: () => void): () => void {
-  const handler = (e: StorageEvent) => { if (e.key === PREF_KEY) cb(); };
-  window.addEventListener('storage', handler);
-  return () => window.removeEventListener('storage', handler);
-}
+const adaptivePref = createLocalBoolPref('automl-adaptive-syntax', true);
+export const getAdaptiveSyntaxPref = adaptivePref.get;
+export const setAdaptiveSyntaxPref = adaptivePref.set;
+export const subscribeAdaptivePref = adaptivePref.subscribe;
 
 // ── CSS variable helpers ──────────────────────────────────────────────────
 

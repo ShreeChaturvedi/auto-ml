@@ -21,6 +21,8 @@ import { SubtabItem } from './SubtabItem';
 
 interface ModelSubtabsProps {
   projectId: string;
+  /** Whether this phase is the currently active one in the sidebar. */
+  isActivePhase: boolean;
 }
 
 function ModelActionMenu({
@@ -76,7 +78,7 @@ function ModelActionMenu({
   );
 }
 
-export function ModelSubtabs({ projectId }: ModelSubtabsProps) {
+export function ModelSubtabs({ projectId, isActivePhase }: ModelSubtabsProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -91,10 +93,11 @@ export function ModelSubtabs({ projectId }: ModelSubtabsProps) {
 
   const isOnExperiments = location.pathname.endsWith('/experiments');
 
-  // Hydrate models when sidebar section mounts
+  // Hydrate models only when the Experiments phase is active (subtabs are
+  // always-mounted for the grid-rows animation, so skip when collapsed).
   useEffect(() => {
-    if (projectId) void refreshModels(projectId);
-  }, [projectId, refreshModels]);
+    if (projectId && isActivePhase) void refreshModels(projectId);
+  }, [projectId, isActivePhase, refreshModels]);
 
   // Defensive filter: only show models for this project, exclude failed
   const projectModels = useMemo(

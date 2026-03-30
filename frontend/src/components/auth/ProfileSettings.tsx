@@ -8,12 +8,12 @@
  * - Minimal card styling with subtle separators
  */
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, Loader2, Check, User, Mail, UserCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Check, User, Mail, UserCircle, Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,8 +21,14 @@ import { Separator } from '@/components/ui/separator';
 import { PasswordSection } from './PasswordSection';
 import { RuntimeSettingsSection } from './RuntimeSettingsSection';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Switch } from '@/components/ui/switch';
 import { useAuthStore } from '@/stores/authStore';
 import { updateProfile } from '@/lib/api/auth';
+import {
+  getAdaptiveSyntaxPref,
+  setAdaptiveSyntaxPref,
+  subscribeAdaptivePref,
+} from '@/lib/color/syntaxPalette';
 
 const profileInfoSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -64,6 +70,35 @@ export function SaveButton({
       {state === 'idle' && idleText}
       {state === 'error' && idleText}
     </Button>
+  );
+}
+
+function EditorSettingsSection() {
+  const adaptiveSyntax = useSyncExternalStore(subscribeAdaptivePref, getAdaptiveSyntaxPref);
+
+  return (
+    <section className="mb-10">
+      <div className="mb-4 flex items-center gap-2">
+        <Palette className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          Editor
+        </h2>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border border-border bg-card/50 px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium">Adaptive syntax colors</p>
+          <p className="text-xs text-muted-foreground">
+            Tint code syntax highlighting to match the project accent color
+          </p>
+        </div>
+        <Switch
+          checked={adaptiveSyntax}
+          onCheckedChange={setAdaptiveSyntaxPref}
+          aria-label="Toggle adaptive syntax highlighting"
+        />
+      </div>
+    </section>
   );
 }
 
@@ -252,6 +287,11 @@ export function ProfileSettings() {
 
         {/* Runtime Configuration */}
         <RuntimeSettingsSection />
+
+        <Separator className="my-8" />
+
+        {/* Editor Section */}
+        <EditorSettingsSection />
       </main>
     </div>
   );

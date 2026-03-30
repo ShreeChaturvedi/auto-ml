@@ -101,6 +101,7 @@ export function NotebookCellComponent({
   const {
     localContent,
     resolvedTheme,
+    syntaxThemeId,
     handleContentChange,
     handleEditorMount,
     handleBeforeMount
@@ -390,7 +391,7 @@ export function NotebookCellComponent({
             quickSuggestions: true,
             suggestOnTriggerCharacters: true
           }}
-          theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+          theme={syntaxThemeId}
           beforeMount={handleBeforeMount}
         />
       </Suspense>

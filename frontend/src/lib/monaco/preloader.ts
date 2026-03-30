@@ -6,10 +6,65 @@
  */
 
 import type { Monaco } from '@monaco-editor/react';
+import type { SyntaxPalette } from '@/lib/color/syntaxPalette';
+import { STATIC_SYNTAX_PALETTE } from '@/lib/color/syntaxPalette';
 
 let monacoInstance: Monaco | null = null;
 let initPromise: Promise<Monaco> | null = null;
 let themesRegistered = false;
+
+// ── Theme builders ────────────────────────────────────────────────────────
+
+function strip(hex: string) { return hex.replace('#', ''); }
+
+function buildThemeRules(palette: SyntaxPalette) {
+  return [
+    { token: 'keyword', foreground: strip(palette.keyword), fontStyle: 'bold' },
+    { token: 'string', foreground: strip(palette.string) },
+    { token: 'number', foreground: strip(palette.number) },
+    { token: 'comment', foreground: strip(palette.comment), fontStyle: 'italic' },
+    { token: 'function', foreground: strip(palette.function) },
+    { token: 'type', foreground: strip(palette.type) },
+    { token: 'operator', foreground: strip(palette.operator) },
+    { token: 'identifier', foreground: strip(palette.identifier) },
+    { token: 'delimiter', foreground: strip(palette.punctuation) },
+  ];
+}
+
+function buildEditorColors(palette: SyntaxPalette, isDark: boolean): Record<string, string> {
+  return {
+    'editor.background': isDark ? '#0a0a0a' : '#ffffff',
+    'editor.foreground': isDark ? '#fafafa' : '#1f2328',
+    'editor.lineHighlightBackground': palette.lineHighlight,
+    'editorLineNumber.foreground': isDark ? '#a3a3a3' : '#d4d4d4',
+    'editorLineNumber.activeForeground': isDark ? '#d4d4d4' : '#a3a3a3',
+    'editorCursor.foreground': palette.cursor,
+    'editor.selectionBackground': palette.selectionBg,
+    'editorGutter.background': isDark ? '#0a0a0a' : '#ffffff',
+  };
+}
+
+export function registerAdaptiveTheme(monaco: Monaco, palette: SyntaxPalette, isDark: boolean): void {
+  const name = isDark ? 'adaptive-dark' : 'adaptive-light';
+  monaco.editor.defineTheme(name, {
+    base: isDark ? 'vs-dark' : 'vs', inherit: true,
+    rules: buildThemeRules(palette),
+    colors: buildEditorColors(palette, isDark),
+  });
+}
+
+export function registerStaticThemes(monaco: Monaco): void {
+  monaco.editor.defineTheme('static-dark', {
+    base: 'vs-dark', inherit: true,
+    rules: buildThemeRules(STATIC_SYNTAX_PALETTE.dark),
+    colors: buildEditorColors(STATIC_SYNTAX_PALETTE.dark, true),
+  });
+  monaco.editor.defineTheme('static-light', {
+    base: 'vs', inherit: true,
+    rules: buildThemeRules(STATIC_SYNTAX_PALETTE.light),
+    colors: buildEditorColors(STATIC_SYNTAX_PALETTE.light, false),
+  });
+}
 
 /**
  * Pre-initialize Monaco editor and register custom themes
@@ -31,94 +86,7 @@ export async function initMonaco(): Promise<Monaco> {
 
     // Register custom themes once
     if (!themesRegistered) {
-      // Python dark theme matching site aesthetics
-      monaco.editor.defineTheme('python-dark', {
-        base: 'vs-dark',
-        inherit: true,
-        rules: [
-          { token: 'keyword', foreground: '60a5fa', fontStyle: 'bold' },
-          { token: 'string', foreground: '34d399' },
-          { token: 'number', foreground: 'f472b6' },
-          { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-          { token: 'function', foreground: '38bdf8' },
-          { token: 'type', foreground: 'fbbf24' },
-          { token: 'operator', foreground: 'a78bfa' },
-        ],
-        colors: {
-          'editor.background': '#0a0a0a',
-          'editor.foreground': '#fafafa',
-          'editor.lineHighlightBackground': '#121212',
-          'editorLineNumber.foreground': '#a3a3a3',
-          'editorLineNumber.activeForeground': '#d4d4d4',
-          'editorCursor.foreground': '#60a5fa',
-          'editor.selectionBackground': '#2563eb44',
-          'editorGutter.background': '#0a0a0a',
-        }
-      });
-
-      // Python light theme
-      monaco.editor.defineTheme('python-light', {
-        base: 'vs',
-        inherit: true,
-        rules: [
-          { token: 'keyword', foreground: '2563eb', fontStyle: 'bold' },
-          { token: 'string', foreground: '059669' },
-          { token: 'number', foreground: 'db2777' },
-          { token: 'comment', foreground: '9ca3af', fontStyle: 'italic' },
-          { token: 'operator', foreground: '7c3aed' },
-        ],
-        colors: {
-          'editor.background': '#ffffff',
-          'editor.lineHighlightBackground': '#fafafa',
-          'editorLineNumber.foreground': '#d4d4d4',
-          'editorLineNumber.activeForeground': '#a3a3a3',
-          'editorGutter.background': '#ffffff',
-        }
-      });
-
-      // SQL dark theme
-      monaco.editor.defineTheme('sql-dark', {
-        base: 'vs-dark',
-        inherit: true,
-        rules: [
-          { token: 'keyword', foreground: '60a5fa', fontStyle: 'bold' },
-          { token: 'string', foreground: '34d399' },
-          { token: 'number', foreground: 'f472b6' },
-          { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-          { token: 'operator', foreground: 'a78bfa' },
-          { token: 'identifier', foreground: 'fafafa' },
-          { token: 'type', foreground: 'fbbf24' },
-        ],
-        colors: {
-          'editor.background': '#0a0a0a',
-          'editor.foreground': '#fafafa',
-          'editor.lineHighlightBackground': '#121212',
-          'editor.selectionBackground': '#2563eb44',
-          'editorLineNumber.foreground': '#a3a3a3',
-          'editorLineNumber.activeForeground': '#d4d4d4',
-          'editorGutter.background': '#0a0a0a',
-        }
-      });
-
-      // SQL light theme
-      monaco.editor.defineTheme('sql-light', {
-        base: 'vs',
-        inherit: true,
-        rules: [
-          { token: 'keyword', foreground: '2563eb', fontStyle: 'bold' },
-          { token: 'string', foreground: '059669' },
-          { token: 'number', foreground: 'db2777' },
-          { token: 'comment', foreground: '9ca3af', fontStyle: 'italic' },
-          { token: 'operator', foreground: '7c3aed' },
-        ],
-        colors: {
-          'editor.background': '#ffffff',
-          'editorLineNumber.foreground': '#d4d4d4',
-          'editorLineNumber.activeForeground': '#a3a3a3',
-          'editorGutter.background': '#ffffff',
-        }
-      });
-
+      registerStaticThemes(monaco);
       themesRegistered = true;
     }
 

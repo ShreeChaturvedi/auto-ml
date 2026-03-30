@@ -9,6 +9,10 @@ vi.mock('@/components/theme-provider', () => ({
   })
 }));
 
+vi.mock('@/hooks/useProjectThemeColor', () => ({
+  useProjectThemeColor: () => ({ themeColor: undefined, hue: 220, syntaxThemeId: 'static-light' })
+}));
+
 vi.mock('@monaco-editor/react', () => ({
   default: ({
     value,

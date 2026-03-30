@@ -15,7 +15,7 @@ import {
 } from 'react';
 import { cn } from '@/lib/utils';
 import { Check, X, RotateCcw, AlertTriangle } from 'lucide-react';
-import { useTheme } from '@/components/theme-provider';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType } from 'monaco-editor';
@@ -25,7 +25,6 @@ import {
   tokenClassName,
   GENERATION_STATUS_STEPS,
   GENERATION_SKELETON_WIDTHS,
-  useResolvedEditorTheme,
 } from './sqlRevealUtils';
 
 interface SqlRevealBlockProps {
@@ -63,16 +62,12 @@ function SqlRevealBlock({
   const tokens = useMemo(() => tokenizeSql(sql), [sql]);
   const showGeneratingSurface = !sql && !isRevealComplete;
   const [generationStep, setGenerationStep] = useState(0);
-  const { theme: appTheme } = useTheme();
-  const resolvedTheme = useResolvedEditorTheme(appTheme);
-  const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
+  const { syntaxThemeId } = useProjectThemeColor();
 
   useEffect(() => {
-    if (!monacoApiRef.current) {
-      return;
-    }
-    monacoApiRef.current.editor.setTheme(monacoTheme);
-  }, [monacoTheme]);
+    if (!monacoApiRef.current) return;
+    monacoApiRef.current.editor.setTheme(syntaxThemeId);
+  }, [syntaxThemeId]);
 
   useEffect(() => {
     if (isRevealComplete && monacoEditorRef.current) {
@@ -128,9 +123,9 @@ function SqlRevealBlock({
                 onMount={(editorInstance, monaco: Monaco) => {
                   monacoEditorRef.current = editorInstance;
                   monacoApiRef.current = monaco;
-                  monaco.editor.setTheme(monacoTheme);
+                  monaco.editor.setTheme(syntaxThemeId);
                 }}
-                theme={monacoTheme}
+                theme={syntaxThemeId}
                 options={{
                   readOnly: false,
                   domReadOnly: false,

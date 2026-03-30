@@ -89,9 +89,9 @@ describe('QueryPanel theme handling', () => {
     const onExecute = vi.fn();
 
     const firstRender = render(<QueryPanel onExecute={onExecute} />);
-    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
-    expect(mockState.renderedThemes[0]).toBe('sql-light');
-    expect(mockState.renderedThemes).not.toContain('sql-dark');
+    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'adaptive-light');
+    expect(mockState.renderedThemes[0]).toBe('adaptive-light');
+    expect(mockState.renderedThemes).not.toContain('adaptive-dark');
     expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-language', 'sql');
     expect(mockState.renderedQuickSuggestions.at(-1)).toBe(true);
     expect(mockState.renderedTriggerSuggestions.at(-1)).toBe(true);
@@ -100,8 +100,8 @@ describe('QueryPanel theme handling', () => {
     firstRender.unmount();
 
     render(<QueryPanel onExecute={onExecute} />);
-    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
-    expect(mockState.renderedThemes).not.toContain('sql-dark');
+    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'adaptive-light');
+    expect(mockState.renderedThemes).not.toContain('adaptive-dark');
   });
 
   it('expands from collapsed overlay click', () => {

@@ -19,6 +19,8 @@ import {
   Trash2
 } from 'lucide-react';
 import { useTheme } from '@/components/theme-provider';
+import { useResolvedEditorTheme } from '@/hooks/useResolvedEditorTheme';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import type { LockOwner, NotebookCell } from '@/types/notebook';
 import type { Components } from 'react-markdown';
@@ -119,9 +121,8 @@ export function NotebookMarkdownCell({
   canMoveDown
 }: NotebookMarkdownCellProps) {
   const { theme } = useTheme();
-  const resolvedTheme = theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : theme;
+  const resolvedTheme = useResolvedEditorTheme(theme);
+  const { syntaxThemeId } = useProjectThemeColor();
 
   const [copied, copy] = useCopyToClipboard();
   const cellRef = useRef<HTMLDivElement>(null);
@@ -311,7 +312,7 @@ export function NotebookMarkdownCell({
                   }
                 }}
                 options={{ ...MARKDOWN_EDITOR_OPTIONS, readOnly: isLocked }}
-                theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+                theme={syntaxThemeId}
                 beforeMount={async () => {
                   await initMonaco();
                 }}

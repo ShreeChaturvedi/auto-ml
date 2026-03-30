@@ -104,6 +104,17 @@
     --accent-text: 0 0% 45%;
     --accent-text-strong: 0 0% 35%;
     --accent-on-fill: 0 0% 98%;
+
+    /* ── Syntax highlighting tokens (overridden by hook) ── */
+    --syn-keyword: 354 80% 47%;
+    --syn-function: 265 58% 59%;
+    --syn-string: 217 66% 22%;
+    --syn-number: 215 74% 35%;
+    --syn-type: 24 100% 29%;
+    --syn-operator: 354 80% 47%;
+    --syn-comment: 212 9% 46%;
+    --syn-identifier: 213 14% 14%;
+    --syn-punctuation: 212 9% 46%;
   }
 
   .dark {
@@ -183,6 +194,17 @@
     --accent-text: 0 0% 75%;
     --accent-text-strong: 0 0% 85%;
     --accent-on-fill: 0 0% 15%;
+
+    /* ── Syntax highlighting tokens (overridden by hook) ── */
+    --syn-keyword: 2 100% 72%;
+    --syn-function: 267 100% 82%;
+    --syn-string: 212 100% 83%;
+    --syn-number: 212 100% 74%;
+    --syn-type: 28 100% 67%;
+    --syn-operator: 2 100% 72%;
+    --syn-comment: 210 7% 58%;
+    --syn-identifier: 210 33% 93%;
+    --syn-punctuation: 210 7% 58%;
   }
 }
 
@@ -807,29 +829,29 @@
 }
 
 .sql-tk-kw {
-  color: hsl(var(--primary));
+  color: hsl(var(--syn-keyword));
   font-weight: 600;
 }
 
 .sql-tk-fn {
-  color: hsl(var(--chart-2));
+  color: hsl(var(--syn-function));
 }
 
 .sql-tk-str {
-  color: hsl(var(--chart-3));
+  color: hsl(var(--syn-string));
 }
 
 .sql-tk-num {
-  color: hsl(var(--chart-4));
+  color: hsl(var(--syn-number));
 }
 
 .sql-tk-op,
 .sql-tk-punc {
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--syn-operator));
 }
 
 .sql-tk-id {
-  color: hsl(var(--foreground));
+  color: hsl(var(--syn-identifier));
 }
 
 /* ─── NL query typewriter cursor ─────────────────────────────────────────── */

@@ -1,7 +1,16 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@/components/theme-provider';
+import {
+  computeSyntaxPalette,
+  STATIC_SYNTAX_PALETTE,
+  getAdaptiveSyntaxPref,
+  subscribeAdaptivePref,
+  setSynVarsFromPalette,
+  type SyntaxThemeId,
+} from '@/lib/color/syntaxPalette';
+import { registerAdaptiveTheme, initMonaco } from '@/lib/monaco/preloader';
 
 /** Direct color-name → hex mapping, matching Tailwind's palette. */
 const PROJECT_COLOR_HEX: Record<string, { light: string; dark: string }> = {
@@ -109,6 +118,13 @@ export function useProjectThemeColor() {
     return PROJECT_COLOR_HUES[color ?? ''] ?? 220;
   }, [color, customColor]);
 
+  const adaptivePref = useSyncExternalStore(subscribeAdaptivePref, getAdaptiveSyntaxPref);
+
+  const syntaxThemeId: SyntaxThemeId = useMemo(() => {
+    if (!adaptivePref || !color) return isDark ? 'static-dark' : 'static-light';
+    return isDark ? 'adaptive-dark' : 'adaptive-light';
+  }, [adaptivePref, color, isDark]);
+
   useEffect(() => {
     accentMountCount++;
     const root = document.documentElement;
@@ -130,7 +146,24 @@ export function useProjectThemeColor() {
     };
   }, [hue, isDark, color]);
 
-  return { themeColor };
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (!adaptivePref || !color) {
+      const palette = isDark ? STATIC_SYNTAX_PALETTE.dark : STATIC_SYNTAX_PALETTE.light;
+      setSynVarsFromPalette(root, palette);
+      initMonaco().then(m => m?.editor?.setTheme(isDark ? 'static-dark' : 'static-light')).catch(() => {});
+      return;
+    }
+    const palette = computeSyntaxPalette(hue, isDark);
+    setSynVarsFromPalette(root, palette);
+    initMonaco().then(m => {
+      if (!m?.editor) return;
+      registerAdaptiveTheme(m, palette, isDark);
+      m.editor.setTheme(isDark ? 'adaptive-dark' : 'adaptive-light');
+    }).catch(() => {});
+  }, [hue, isDark, color, adaptivePref]);
+
+  return { themeColor, hue, syntaxThemeId };
 }
 
 function clearAccentVars(root: HTMLElement) {

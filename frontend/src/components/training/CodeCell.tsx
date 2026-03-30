@@ -64,6 +64,7 @@ export function CodeCell({
   const {
     localContent,
     resolvedTheme,
+    syntaxThemeId,
     handleContentChange,
     handleEditorMount
   } = usePythonEditor({
@@ -207,7 +208,7 @@ export function CodeCell({
             defaultLanguage="python"
             value={localContent}
             onChange={handleContentChange}
-            theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+            theme={syntaxThemeId}
             onMount={handleEditorMount}
             options={{
               fixedOverflowWidgets: true,

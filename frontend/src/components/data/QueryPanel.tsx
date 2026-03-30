@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useTheme } from '@/components/theme-provider';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 import { IconModeToggle } from './IconModeToggle';
@@ -36,17 +36,6 @@ const ACCENT_APPROVE_THEME: ApproveThemeClasses = {
   hoverBg: 'hover:bg-accent-bg',
 };
 
-function resolveEditorTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
-  if (theme !== 'system') {
-    return theme;
-  }
-
-  if (typeof window === 'undefined') {
-    return 'light';
-  }
-
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
 
 interface QueryPanelProps {
   projectId?: string | null;
@@ -147,11 +136,7 @@ export function QueryPanel({
     }
   }, [onMountPortalTarget, controlsPortalTarget]);
 
-  // Theme detection for Monaco Editor
-  const { theme: appTheme } = useTheme();
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
-    resolveEditorTheme(appTheme)
-  );
+  const { syntaxThemeId } = useProjectThemeColor();
   const { activeProjectId, projects } = useProjectStore();
   const resolvedProjectId = projectId ?? activeProjectId;
   const activeProject = useMemo(
@@ -164,24 +149,6 @@ export function QueryPanel({
   const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
   const executeIconColorClass = activeProject ? 'text-accent-text' : 'text-primary';
   const approveThemeClasses = activeProject ? ACCENT_APPROVE_THEME : undefined;
-  const monacoTheme = resolvedTheme === 'dark' ? 'sql-dark' : 'sql-light';
-
-  // Resolve system theme preference
-  useEffect(() => {
-    setResolvedTheme(resolveEditorTheme(appTheme));
-
-    if (appTheme !== 'system') {
-      return;
-    }
-
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      setResolvedTheme(e.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, [appTheme]);
 
   useEffect(() => {
     if (!resolvedProjectId) {
@@ -336,7 +303,7 @@ export function QueryPanel({
             onQueryChange={handleQueryChange}
             onExecute={handleExecute}
             isExecuting={isExecuting}
-            monacoTheme={monacoTheme}
+            monacoTheme={syntaxThemeId}
             tableNames={tableNames}
             columnsByTable={columnsByTable}
             collapsed={collapsed}

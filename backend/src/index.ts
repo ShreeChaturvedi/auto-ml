@@ -8,26 +8,38 @@ import { initializeContainerManager, destroyAllContainers } from './services/con
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
 import { initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
+import { handleStdinError } from './utils/stdinError.js';
+
+let isShuttingDown = false;
+let server: ReturnType<typeof createServer> | null = null;
+let wsServer: ReturnType<typeof initializeWebSocket> | null = null;
+
+if (process.stdin.isTTY === true) {
+  process.stdin.once('error', (error) => {
+    handleStdinError(error, process.stdin, () => {
+      void shutdown('STDIN_ERROR', 1);
+    });
+  });
+}
 
 const app = createApp();
 
 // Create HTTP server from Express app
-const server = createServer(app);
+server = createServer(app);
 
 // Initialize WebSocket server
-const wsServer = initializeWebSocket(server);
+wsServer = initializeWebSocket(server);
 
 // Wire up WebSocket broadcasts to notebook services
 setWebSocketBroadcast(broadcastNotebookEvent);
 setCellExecutionBroadcast(broadcastNotebookEvent);
 
-// Track if shutdown is in progress to prevent double-handling
-let isShuttingDown = false;
-
 /**
  * Graceful shutdown handler - cleans up containers before exit
  */
-async function shutdown(signal: string): Promise<void> {
+async function shutdown(signal: string, exitCode = 0): Promise<void> {
+  process.exitCode = Math.max(process.exitCode ?? 0, exitCode);
+
   if (isShuttingDown) {
     return;
   }
@@ -36,15 +48,19 @@ async function shutdown(signal: string): Promise<void> {
   appLogger.info(`[server] ${signal} received, shutting down gracefully`);
 
   // Stop accepting new WebSocket connections
-  wsServer.close();
+  wsServer?.close();
 
   // Destroy all active containers
   await destroyAllContainers();
 
+  if (!server?.listening) {
+    process.exit(process.exitCode ?? 0);
+  }
+
   // Close HTTP server
   server.close(() => {
     appLogger.info('[server] HTTP server closed');
-    process.exit(0);
+    process.exit(process.exitCode ?? 0);
   });
 
   // Force exit after 10 seconds if shutdown hangs
@@ -67,7 +83,7 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
     await initializeContainerManager();
 
     // Start listening
-    server.listen(env.port, () => {
+    server!.listen(env.port, () => {
       appLogger.info(`Server listening on http://localhost:${env.port}`);
       appLogger.info(`WebSocket available on ws://localhost:${env.port}/ws/notebook`);
     });

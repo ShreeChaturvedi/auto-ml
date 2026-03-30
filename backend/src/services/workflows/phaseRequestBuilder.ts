@@ -15,7 +15,7 @@ import {
   buildOnboardingRequest,
   buildTrainingRequest
 } from '../llm/prompts/index.js';
-import { LLM_ALL_TOOLS, LLM_FEATURE_ENGINEERING_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
+import { LLM_ALL_TOOLS, LLM_FEATURE_CONTINUE_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
 import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
 
 import type { WorkflowGraphState } from './graphState.js';
@@ -193,6 +193,88 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     const featureRawToolResults = state.toolResultHistory.filter(
       (r) => r.tool !== 'get_dataset_profile'
     );
+
+    // When the lifecycle is complete (checkpoint was the last lifecycle tool
+    // IN THIS TURN), skip the model invocation.  Only check results from the
+    // current turn — a checkpoint from a previous turn must NOT block new work.
+    const LIFECYCLE_TERMINAL_TOOLS = new Set(['checkpoint_feature_pipeline']);
+    const currentTurnResults = featureRawToolResults.slice(state.turnStartToolCallCount);
+    const lastLifecycleToolThisTurn = [...currentTurnResults].reverse().find(
+      (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
+        'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
+    );
+    if (lastLifecycleToolThisTurn && LIFECYCLE_TERMINAL_TOOLS.has(lastLifecycleToolThisTurn.tool) && !lastLifecycleToolThisTurn.error) {
+      return {
+        nextStep: 'complete',
+        request: null,
+        run: {
+          ...state.run,
+          currentNode: 'continue_feature_pipeline',
+          activeDatasetId: turn.datasetId,
+          activeNotebookId: turn.notebookId
+        }
+      };
+    }
+
+    // Pause after proposals unless the user explicitly asked for implementation.
+    // Only check THIS turn's lifecycle results so previous turns don't interfere.
+    const currentTurnLifecycleResults = currentTurnResults.filter(
+      (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
+        'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
+    );
+    const allProposals = currentTurnLifecycleResults.length > 0 && currentTurnLifecycleResults.every((r) => r.tool === 'propose_feature');
+    if (allProposals) {
+      const implementIntent = turn.prompt
+        ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(turn.prompt)
+        : false;
+      if (!implementIntent) {
+        // Build feature_suggestion UI items from the proposal results so the
+        // user gets interactive cards with Enable/Disable toggles.  This is
+        // deterministic — no LLM call needed for the render_ui step.
+        const proposalItems = currentTurnLifecycleResults
+          .filter((r) => r.tool === 'propose_feature' && !r.error && r.output)
+          .map((r) => {
+            const out = r.output as Record<string, unknown>;
+            return {
+              type: 'feature_suggestion' as const,
+              id: (out.featureId as string) ?? `feat-${Date.now()}`,
+              feature: {
+                sourceColumn: Array.isArray(out.sourceColumns) ? (out.sourceColumns[0] as string ?? '') : '',
+                featureName: (out.featureName as string) ?? 'unnamed',
+                method: (out.method as string) ?? 'custom',
+                params: {}
+              },
+              rationale: (out.rationale as string) ?? (out.message as string) ?? '',
+              impact: (['high', 'medium', 'low'].includes(out.impact as string) ? out.impact : 'medium') as 'high' | 'medium' | 'low'
+            };
+          });
+
+        return {
+          nextStep: 'complete',
+          request: null,
+          uiPayload: proposalItems.length > 0
+            ? {
+                version: '1' as const,
+                kind: 'feature_engineering' as const,
+                title: 'Proposed Features',
+                summary: `${proposalItems.length} feature(s) proposed. Enable the ones you want, then ask me to implement them.`,
+                sections: [{
+                  id: 'proposals',
+                  title: 'Feature Proposals',
+                  items: proposalItems
+                }]
+              }
+            : null,
+          run: {
+            ...state.run,
+            currentNode: 'continue_feature_pipeline',
+            activeDatasetId: turn.datasetId,
+            activeNotebookId: turn.notebookId
+          }
+        };
+      }
+    }
+
     return {
       nextStep: 'invoke_model',
       request: buildFeatureEngineeringRequest({
@@ -205,13 +287,13 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         toolCallHistory: featureToolCallHistory,
         toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
-        toolDefinitions: LLM_FEATURE_ENGINEERING_TOOLS,
+        toolDefinitions: LLM_FEATURE_CONTINUE_TOOLS,
         reasoningEffort: turn.reasoningEffort
       }),
       run: {
         ...state.run,
-        // Always use continue_feature_pipeline (text mode → main model). Dataset
-        // columns, types, and sample rows are already in the user message, so the
+        // Always use continue_feature_pipeline (text mode). Dataset columns,
+        // types, and sample rows are already in the user message, so the
         // plan_feature_pipeline deterministic profile step is not needed.
         currentNode: 'continue_feature_pipeline',
         activeDatasetId: turn.datasetId,

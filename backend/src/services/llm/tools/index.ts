@@ -67,6 +67,21 @@ export const LLM_FEATURE_ENGINEERING_TOOLS: LlmToolDefinition[] = [
 ];
 
 /**
+ * Feature continue tools — the 6 lifecycle tools merged with notebook and
+ * discovery tools, but WITHOUT get_dataset_profile (its data is already
+ * injected into the user message; including it causes a re-profiling loop).
+ * Used by the `continue_feature_pipeline` stage in text mode.
+ */
+export const LLM_FEATURE_CONTINUE_TOOLS: LlmToolDefinition[] = [
+  ...FEATURE_TOOL_DEFINITIONS,
+  ...LLM_TOOL_DEFINITIONS.filter((tool) =>
+    FEATURE_ENGINEERING_DISCOVERY_TOOLS.includes(tool.name) || NOTEBOOK_EXECUTION_TOOLS.includes(tool.name)
+  ),
+  ASK_USER_TOOL,
+  LLM_RENDER_UI_TOOL
+];
+
+/**
  * Feature lifecycle tools — the 6 semantic feature tools combined with
  * notebook execution and data discovery tools for the unified workflow.
  */

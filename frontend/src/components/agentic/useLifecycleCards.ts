@@ -141,7 +141,12 @@ export function useLifecycleCards(): (message: ChatMessage) => ReactNode | null 
           title,
           rationale: call.rationale,
           phase: detectPhase(call.tool),
-          status: result ? 'accepted' : 'pending',
+          status: !result
+            ? 'pending'
+            : (result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+                && (result.output as Record<string, unknown>).status === 'proposed')
+              ? 'proposed'
+              : 'accepted',
         });
 
       case 'code': {

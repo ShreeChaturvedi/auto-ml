@@ -98,7 +98,7 @@ export function ExecutionCard({
     );
   }
 
-  const hasOutput = !!(stdout || stderr);
+  const hasOutput = !!(stdout || stderr || (status !== 'running' && duration != null));
 
   return (
     <div className="rounded-md border bg-card shadow-sm dark:shadow-none overflow-hidden">
@@ -168,6 +168,11 @@ export function ExecutionCard({
             <pre className="max-h-[150px] overflow-auto border-t border-destructive/20 bg-destructive/5 p-3 text-[11px] leading-relaxed font-mono text-destructive whitespace-pre-wrap">
               {stderr}
             </pre>
+          )}
+          {!stdout && !stderr && duration != null && (
+            <div className="px-3 py-2 text-[11px] text-muted-foreground">
+              Completed in {formatDuration(duration)} with no console output.
+            </div>
           )}
         </div>
       )}

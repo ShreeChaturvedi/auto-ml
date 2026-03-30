@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
-import { useWorkflowSessionStore, buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
-import { fetchFeatureRun } from '@/lib/api/featureEngineering';
+import { fetchFeatureRun, fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
 import { useFeatureReadiness } from './useFeatureReadiness';
@@ -156,20 +155,36 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
           return;
         }
 
-        const currentVersionId = store.currentVersionId[projectId];
-        const storageKey = `feature-engineering-messages-v3-${currentVersionId ?? 'default'}`;
-        const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
-        const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+        // Resolve the feature pipeline run ID.  Prefer the store value (set by
+        // tool results during this session).  Fall back to the latest run for
+        // the project so we never accidentally use the workflow session runId
+        // (which comes from a different data store and causes 404s).
+        let featureRunId: string | undefined = store.featureRunId ?? undefined;
+        let runData: import('@/lib/api/featureEngineering').FeaturePipelineRunState | undefined;
 
-        if (session?.runId) {
-          const { run } = await fetchFeatureRun(session.runId);
-          if (cancelled) {
-            return;
+        if (featureRunId) {
+          try {
+            const { run } = await fetchFeatureRun(featureRunId);
+            if (cancelled) return;
+            runData = run;
+          } catch {
+            // Stale or conflated ID — clear it and fall through to project-level lookup
+            useFeatureStore.getState().setFeatureRunId(null as unknown as string);
+            featureRunId = undefined;
           }
-          hydrateRunIntoStore(run);
+        }
+
+        if (!featureRunId) {
+          const { runs } = await fetchFeatureRuns(projectId, 1);
+          if (cancelled) return;
+          runData = runs[0];
+        }
+
+        if (runData) {
+          hydrateRunIntoStore(runData);
 
           // Derive currentStage from the last step's status
-          const steps = Object.values(run.features ?? {});
+          const steps = Object.values(runData.features ?? {});
           if (steps.length > 0) {
             const lastStep = steps[steps.length - 1];
             const derivedStage =

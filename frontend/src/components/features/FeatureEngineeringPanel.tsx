@@ -151,7 +151,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
         return (
           <div className="space-y-4">
-            {message.schema.sections.map((section) => (
+            {(message.schema.sections ?? []).map((section) => (
               <div key={section.id} className="space-y-3">
                 {section.title ? (
                   <h3 className="text-sm font-semibold">{section.title}</h3>

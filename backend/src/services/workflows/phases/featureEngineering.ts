@@ -12,7 +12,7 @@ import type { FeatureToolContext } from '../../llm/featureTools/types.js';
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { FEATURE_ENGINEERING_CONTRACT } from '../../llm/prompts/featureContract.js';
 import { FEATURE_TOOL_NAMES } from '../../llm/tools/featureTools.js';
-import { LLM_FEATURE_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
+import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import type {
   LifecycleStageDefinition,
   PhaseConfig,
@@ -94,7 +94,7 @@ function buildStageConfig(
     return {
       name: stageName,
       mode: 'text',
-      allowedTools: [],
+      allowedTools: LLM_FEATURE_CONTINUE_TOOLS as LlmToolDefinition[],
       toolChoice: 'auto',
       requiresApproval: false,
       allowAssistantMessage: true,
@@ -137,12 +137,13 @@ async function executeFeatureToolCall(
   let run;
   try {
     if (explicitRunId) {
-      const existing = await featureRunRepository.getById(explicitRunId);
-      if (!existing) {
-        return { error: `Feature run ${explicitRunId} not found` };
-      }
-      run = existing;
-    } else {
+      // The explicitRunId may be a workflow run ID (from toolExecutor's runId
+      // injection) rather than a feature pipeline run ID.  If the lookup fails,
+      // fall through to getOrCreate instead of hard-erroring — the feature
+      // pipeline run lives in a different data store than workflow runs.
+      run = await featureRunRepository.getById(explicitRunId);
+    }
+    if (!run) {
       run = await featureRunRepository.getOrCreate(projectId);
     }
   } catch (error) {

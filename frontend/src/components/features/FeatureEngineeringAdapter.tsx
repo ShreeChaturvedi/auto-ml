@@ -1,6 +1,7 @@
 import type { DomainAdapter, ToolHandlers } from '@/types/agentic';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { useFeatureStore } from '@/stores/featureStore';
+import type { FeatureCategory, FeatureMethod } from '@/types/feature';
 import type { UploadedFile } from '@/types/file';
 import type { ColumnDataType } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
@@ -80,7 +81,7 @@ const FEATURE_LIFECYCLE_SEMANTIC_TOOLS = [
   'checkpoint_feature_pipeline'
 ] as const;
 
-function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
+function buildFeatureToolRegistry(config: FeatureEngineeringAdapterConfig): DomainAdapter['toolRegistry'] {
   const toolHandlers: ToolHandlers = {
     onCall: (call: ToolCall) => {
       const store = useFeatureStore.getState();
@@ -98,15 +99,42 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
       }
 
       if (featureId) {
+        const featureName = (output?.featureName ?? call.args?.featureName ?? featureId) as string;
+        const method = (output?.method ?? call.args?.method ?? call.tool) as string;
+        const sourceColumns = (output?.sourceColumns ?? call.args?.sourceColumns) as string[] | undefined;
+
         store.setFeatureStep(featureId, {
           stepId: featureId,
-          name: (output?.featureName ?? call.args?.featureName ?? featureId) as string,
-          method: (output?.method ?? call.args?.method ?? call.tool) as string,
+          name: featureName,
+          method,
           status: result.error ? 'error' : (output?.status ?? 'ok') as string,
           error: result.error,
           code: call.args?.code as string | undefined,
           metrics: output?.validation as Record<string, unknown> | undefined
         });
+
+        // Bridge lifecycle completion into the FeatureSpec array so the
+        // readiness report and approval/apply buttons become available.
+        // We assemble the spec from accumulated step data (propose → register).
+        if (call.tool === 'register_feature' && !result.error) {
+          const rejected = (output?.status as string) === 'rejected';
+          if (!rejected) {
+            // Look up accumulated data from earlier lifecycle steps
+            const step = store.featureSteps[featureId];
+            store.upsertFeature({
+              id: featureId,
+              projectId: config.projectId,
+              sourceColumn: sourceColumns?.[0] ?? step?.name ?? '',
+              featureName: step?.name ?? featureName,
+              description: (call.args?.rationale ?? output?.rationale ?? step?.method ?? '') as string,
+              method: (step?.method ?? method ?? 'custom') as FeatureMethod,
+              category: 'numeric_transform' as FeatureCategory,
+              params: {},
+              enabled: true,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
       }
     }
   };
@@ -119,20 +147,24 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
 }
 
 function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
-  // Prefer the first-class runId; fall back to runId inside payload for older events.
-  const runId = artifact.runId
-    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
-      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
-      : undefined);
-  if (runId) {
-    useFeatureStore.getState().setFeatureRunId(runId);
+  // Only use the featureRunId field from the artifact payload — artifact.runId
+  // is the workflow run ID, which is different from the feature pipeline run ID.
+  if (!artifact.payload || typeof artifact.payload !== 'object' || Array.isArray(artifact.payload)) {
+    return;
+  }
+  const payload = artifact.payload as Record<string, unknown>;
+  const featureRunId = typeof payload.featureRunId === 'string'
+    ? payload.featureRunId
+    : undefined;
+  if (featureRunId) {
+    useFeatureStore.getState().setFeatureRunId(featureRunId);
   }
 }
 
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
-  const toolRegistry = buildFeatureToolRegistry();
+  const toolRegistry = buildFeatureToolRegistry(config);
 
   return {
     buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
@@ -177,9 +209,8 @@ export function createFeatureEngineeringAdapter(
     },
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
-      if (state.runId) {
-        useFeatureStore.getState().setFeatureRunId(state.runId);
-      }
+      // Do NOT write state.runId (workflow run ID) as feature pipeline runId.
+      // The real feature runId comes from tool results via the toolRegistry onResult handler.
     },
     onWorkflowArtifactUpdate: (artifact) => {
       syncFeatureRunIdFromArtifact(artifact);

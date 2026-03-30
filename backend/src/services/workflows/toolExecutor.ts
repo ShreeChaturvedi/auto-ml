@@ -15,6 +15,7 @@ import type { WorkflowPendingInputKind } from './types.js';
 const MAX_TOOL_RESULT_CHARS = 50_000;
 
 function truncateToolResult(result: ToolResult): ToolResult {
+  if (result.output === undefined || result.output === null) return result;
   const json = JSON.stringify(result.output);
   if (json.length <= MAX_TOOL_RESULT_CHARS) return result;
   return {

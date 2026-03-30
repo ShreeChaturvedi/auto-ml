@@ -140,9 +140,15 @@ async function streamWorkflowText(
       }
 
       if (call.name === LLM_RENDER_UI_TOOL.name) {
-        uiPayload = parseUiPayload((call.args ?? {}) as Record<string, unknown>, phase);
-        if (!uiPayload) {
+        const parsed = parseUiPayload((call.args ?? {}) as Record<string, unknown>, phase);
+        if (!parsed) {
           errorMessage = 'render_ui payload failed validation.';
+        } else if (!parsed.sections.some((s) => s.items.length > 0)) {
+          // Empty UI — don't set uiPayload so the turn falls through to the
+          // empty-output guard, which will properly fail with a user-visible message.
+          appLogger.warn('[modelTurnCollector] render_ui produced zero items; treating as empty output');
+        } else {
+          uiPayload = parsed;
         }
         return;
       }
@@ -187,6 +193,13 @@ async function streamWorkflowText(
   } else if (!latestMessage.trim() && !uiPayload) {
     nextStep = 'fail';
     errorMessage = 'Model returned no actionable workflow output.';
+    appLogger.warn(
+      '[modelTurnCollector] Empty output — phase=%s, node=%s, iteration=%d, toolHistory=%d',
+      phase,
+      state.run.currentNode,
+      state.iteration,
+      state.toolCallHistory.length
+    );
   }
 
   return {

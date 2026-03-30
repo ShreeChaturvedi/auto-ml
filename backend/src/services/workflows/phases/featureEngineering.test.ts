@@ -51,6 +51,39 @@ describe('featureEngineeringPhaseConfig', () => {
     });
   });
 
+  describe('getStageConfig', () => {
+    it('continue_feature_pipeline returns text mode with lifecycle tools', () => {
+      const config = featureEngineeringPhaseConfig.getStageConfig('continue_feature_pipeline');
+
+      expect(config.mode).toBe('text');
+      expect(config.allowedTools.length).toBeGreaterThan(0);
+
+      const toolNames = config.allowedTools.map((t) => t.name);
+      expect(toolNames).toContain('propose_feature');
+      expect(toolNames).toContain('execute_feature');
+      expect(toolNames).toContain('validate_feature');
+      expect(toolNames).toContain('register_feature');
+      expect(toolNames).toContain('checkpoint_feature_pipeline');
+    });
+
+    it('continue_feature_pipeline does NOT include get_dataset_profile', () => {
+      const config = featureEngineeringPhaseConfig.getStageConfig('continue_feature_pipeline');
+      const toolNames = config.allowedTools.map((t) => t.name);
+
+      expect(toolNames).not.toContain('get_dataset_profile');
+    });
+
+    it('continue_feature_pipeline includes propose_feature, write_cell, render_ui, ask_user', () => {
+      const config = featureEngineeringPhaseConfig.getStageConfig('continue_feature_pipeline');
+      const toolNames = config.allowedTools.map((t) => t.name);
+
+      expect(toolNames).toContain('propose_feature');
+      expect(toolNames).toContain('write_cell');
+      expect(toolNames).toContain('render_ui');
+      expect(toolNames).toContain('ask_user');
+    });
+  });
+
   it('returns an explicit error when getOrCreate throws', async () => {
     vi.spyOn(featureRunRepository, 'getOrCreate').mockRejectedValueOnce(new Error('disk offline'));
 

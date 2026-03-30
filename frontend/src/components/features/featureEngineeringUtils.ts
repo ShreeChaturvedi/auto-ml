@@ -20,8 +20,9 @@ export function stripAssistantArtifacts(text: string): string {
   return sanitizeAssistantText(text);
 }
 
-export function hasUiItems(ui: UiSchema | null): boolean {
-  return Boolean(ui?.sections.some((section) => section.items.length > 0));
+export function hasUiItems(ui: UiSchema | null | undefined): boolean {
+  if (!ui || !Array.isArray(ui.sections)) return false;
+  return ui.sections.some((section) => Array.isArray(section.items) && section.items.length > 0);
 }
 
 export function buildReadinessReport(features: FeatureSpec[], sourceColumns: string[]): ReadinessReport {

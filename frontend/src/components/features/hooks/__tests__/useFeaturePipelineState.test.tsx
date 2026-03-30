@@ -177,7 +177,7 @@ describe('useFeaturePipelineState', () => {
     mockState.workflowSession = undefined;
   });
 
-  it('starts a new draft with empty lifecycle state when no session run exists', async () => {
+  it('starts a new draft with empty lifecycle state when no feature run exists', async () => {
     const callOrder: string[] = [];
     mockState.hydrateFromBackendMock.mockImplementation(async () => {
       callOrder.push('data');
@@ -194,38 +194,46 @@ describe('useFeaturePipelineState', () => {
     });
 
     expect(callOrder).toEqual(['data', 'features']);
+    // With no featureRunId in store, hydration falls back to fetchFeatureRuns
+    // which returns empty runs — so no run is hydrated
     expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
-    expect(mockState.fetchFeatureRunsMock).not.toHaveBeenCalled();
+    expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
     expect(mockState.setFeatureRunIdMock).not.toHaveBeenCalled();
     expect(mockState.setFeatureStepMock).not.toHaveBeenCalled();
   });
 
-  it('rehydrates a draft when a session runId exists', async () => {
-    mockState.workflowSession = { runId: 'feature-run-1' };
+  it('rehydrates a draft when fetchFeatureRuns returns a run', async () => {
+    // No featureRunId in store — hydration falls back to fetchFeatureRuns
+    mockState.fetchFeatureRunsMock.mockResolvedValueOnce({
+      runs: [{ runId: 'feature-run-1', projectId: 'p1', features: {}, createdAt: '2026-02-24T00:00:00.000Z', updatedAt: '2026-02-24T00:00:00.000Z' }],
+      count: 1
+    });
 
     renderHook(() => useFeaturePipelineState('p1'));
 
     await waitFor(() => {
-      expect(mockState.fetchFeatureRunMock).toHaveBeenCalledWith('feature-run-1');
+      expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
+      expect(mockState.setFeatureRunIdMock).toHaveBeenCalledWith('feature-run-1');
     });
   });
 
   it('ignores stale cached runs that are missing a features map', async () => {
-    mockState.workflowSession = { runId: 'feature-run-1' };
-    mockState.fetchFeatureRunMock.mockResolvedValueOnce({
-      run: {
+    // fetchFeatureRuns returns a run with undefined features
+    mockState.fetchFeatureRunsMock.mockResolvedValueOnce({
+      runs: [{
         runId: 'feature-run-1',
         projectId: 'p1',
         features: undefined,
         createdAt: new Date('2026-02-24T00:00:00.000Z').toISOString(),
         updatedAt: new Date('2026-02-24T00:00:00.000Z').toISOString()
-      }
+      }],
+      count: 1
     });
 
     renderHook(() => useFeaturePipelineState('p1'));
 
     await waitFor(() => {
-      expect(mockState.fetchFeatureRunMock).toHaveBeenCalledWith('feature-run-1');
+      expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
     });
 
     expect(mockState.setFeatureRunIdMock).toHaveBeenCalledWith('feature-run-1');

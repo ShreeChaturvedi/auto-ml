@@ -28,8 +28,8 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
   const timestamp = nowIso();
 
   const output = {
-    status: 'ok',
-    message: 'Feature proposed',
+    status: 'proposed',
+    message: 'Feature proposed — awaiting user review',
     featureId,
     featureName: args.featureName,
     method: args.method,

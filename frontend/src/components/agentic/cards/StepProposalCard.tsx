@@ -18,6 +18,7 @@ const PHASE_ACCENT: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
+  proposed: { label: 'Proposed', variant: 'secondary' },
   accepted: { label: 'Accepted', variant: 'default' },
   rejected: { label: 'Rejected', variant: 'destructive' },
   modified: { label: 'Modified', variant: 'secondary' },
@@ -28,7 +29,7 @@ export interface StepProposalCardProps {
   title: string;
   rationale?: string;
   phase: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'modified';
+  status: 'pending' | 'proposed' | 'accepted' | 'rejected' | 'modified';
   onAccept?: () => void;
   onReject?: () => void;
 }

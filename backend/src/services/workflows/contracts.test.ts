@@ -78,12 +78,23 @@ describe('resolveWorkflowNodeContract', () => {
     expect(contract.allowedTools.map((tool) => tool.name)).toEqual(['get_dataset_profile']);
   });
 
-  it('allows summarize/render_ui behavior after the initial dataset profile step', () => {
+  it('provides lifecycle tools in continue_feature_pipeline stage', () => {
     const state = createFeatureEngineeringState();
     state.run.currentNode = 'continue_feature_pipeline';
     state.controllerSummary = {
       currentNode: 'continue_feature_pipeline'
     };
+    // Add lifecycle tools to request.tools so the contract resolver can map them
+    state.request.tools = [
+      ...state.request.tools,
+      { name: 'propose_feature', description: 'Propose a feature.', parameters: { type: 'object', properties: {} } },
+      { name: 'materialize_feature_code', description: 'Generate code.', parameters: { type: 'object', properties: {} } },
+      { name: 'execute_feature', description: 'Execute feature.', parameters: { type: 'object', properties: {} } },
+      { name: 'validate_feature', description: 'Validate feature.', parameters: { type: 'object', properties: {} } },
+      { name: 'register_feature', description: 'Register feature.', parameters: { type: 'object', properties: {} } },
+      { name: 'checkpoint_feature_pipeline', description: 'Checkpoint.', parameters: { type: 'object', properties: {} } },
+      { name: 'write_cell', description: 'Write notebook cell.', parameters: { type: 'object', properties: {} } }
+    ];
 
     const contract = resolveWorkflowNodeContract(state);
 
@@ -94,6 +105,14 @@ describe('resolveWorkflowNodeContract', () => {
       allowAskUser: true,
       allowRenderUi: true
     });
-    expect(contract.allowedTools).toEqual([]);
+
+    const toolNames = contract.allowedTools.map((t) => t.name);
+    expect(toolNames).toContain('propose_feature');
+    expect(toolNames).toContain('execute_feature');
+    expect(toolNames).toContain('validate_feature');
+    expect(toolNames).toContain('register_feature');
+    expect(toolNames).toContain('checkpoint_feature_pipeline');
+    expect(toolNames).toContain('write_cell');
+    expect(toolNames).not.toContain('get_dataset_profile');
   });
 });

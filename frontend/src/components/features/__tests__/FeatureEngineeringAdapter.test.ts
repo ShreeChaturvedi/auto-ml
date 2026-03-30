@@ -112,9 +112,9 @@ describe('FeatureEngineeringAdapter', () => {
 
     adapter.onWorkflowArtifactUpdate?.({
       artifactId: 'artifact-1',
-      runId: 'feature-run-2',
+      runId: 'workflow-run-2',
       kind: 'summary',
-      payload: { message: 'Completed run.' }
+      payload: { featureRunId: 'feature-run-2', message: 'Completed run.' }
     });
 
     expect(mockFeatureStore.setFeatureRunId).toHaveBeenCalledWith('feature-run-2');

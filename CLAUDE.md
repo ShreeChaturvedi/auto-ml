@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the canonical project guide for Claude Code (claude.ai/code). `AGENTS.md` is a symlink to this file for Codex, Cursor, and other tools that read that name. Shared skills live in `.claude/skills`; if a tool expects `.agents/skills`, see `.agents/README.md`.
 
 ## Project Overview
 

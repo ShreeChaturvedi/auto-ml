@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Home, PanelLeft, Pencil } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
@@ -47,8 +48,13 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   const handleGoHome = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setActiveProject(null);
-    navigate('/');
+    // flushSync forces both the Zustand store update and React Router navigation
+    // into a single synchronous commit — without it, they produce two separate
+    // render commits and the sidebar visibly flickers between states.
+    flushSync(() => {
+      setActiveProject(null);
+      navigate('/');
+    });
   };
 
   const handleOpenProjectEdit = (e: React.MouseEvent) => {
@@ -139,6 +145,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     variant="ghost"
                     size="icon-sm"
                     onClick={handleGoHome}
+                    aria-label="Go to projects"
                   >
                     <Home className="h-3.5 w-3.5" />
                   </Button>
@@ -168,6 +175,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                   variant="ghost"
                   size="icon-sm"
                   onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
+                  aria-label="Collapse sidebar"
                 >
                   <PanelLeft className="h-3.5 w-3.5" />
                 </Button>
@@ -188,9 +196,8 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         <div className="h-full overflow-y-auto">
           <div className="p-3">
             {activeProject ? (
-              <WorkflowPhaseTree collapsed={collapsed} />
+              <WorkflowPhaseTree collapsed={collapsed} projectId={activeProjectId!} />
             ) : (
-              /* Show project list when no project is active - handles both collapsed states */
               <ProjectList collapsed={collapsed} onToggleCollapse={onToggleCollapse} />
             )}
           </div>

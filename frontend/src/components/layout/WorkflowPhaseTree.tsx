@@ -73,17 +73,15 @@ const PLUS_ACTION_PHASES = new Set<Phase>([
 
 interface WorkflowPhaseTreeProps {
   collapsed?: boolean;
+  projectId: string;
 }
 
-export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps) {
+export function WorkflowPhaseTree({ collapsed = false, projectId }: WorkflowPhaseTreeProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const projects = useProjectStore((state) => state.projects);
 
-  const activeProject = activeProjectId
-    ? projects.find((p) => p.id === activeProjectId)
-    : undefined;
+  const activeProject = projects.find((p) => p.id === projectId);
 
   const unlockedPhases = activeProject?.unlockedPhases ?? EMPTY_PHASES;
   const currentPhase = activeProject?.currentPhase;
@@ -96,16 +94,14 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
 
   // Initialize plan chat store when project changes
   useEffect(() => {
-    if (activeProjectId) {
-      void usePlanChatStore.getState().initialize(activeProjectId);
-    }
-  }, [activeProjectId]);
+    void usePlanChatStore.getState().initialize(projectId);
+  }, [projectId]);
 
   // Reset shimmer tracking when switching projects
   useEffect(() => {
     prevUnlockedRef.current = unlockedPhases;
     setShimmeringPhases(new Set());
-  }, [activeProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detect newly-unlocked phases and trigger shimmer via animationend
   useEffect(() => {
@@ -154,14 +150,14 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
 
   const handlePhaseClick = (e: React.MouseEvent, phase: Phase) => {
     e.stopPropagation();
-    if (activeProjectId && unlockedPhases.includes(phase)) {
-      navigate(`/project/${activeProjectId}/${phase}`);
+    if (projectId && unlockedPhases.includes(phase)) {
+      navigate(`/project/${projectId}/${phase}`);
     }
   };
 
   const handleNewWorkbook = (e: React.MouseEvent, phase: Phase) => {
     e.stopPropagation();
-    if (!activeProjectId || !WORKBOOK_PHASES.has(phase)) return;
+    if (!projectId || !WORKBOOK_PHASES.has(phase)) return;
 
     const registryPhase = phase as WorkbookPhase;
     const registry = useWorkbookRegistryStore.getState();
@@ -174,25 +170,19 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
 
     // Navigate — the phase panel will pick up the new workbook via URL param
     // and reconcile it with localStorage/Postgres on mount.
-    navigate(`/project/${activeProjectId}/${phase}?workbook=${newId}`);
+    navigate(`/project/${projectId}/${phase}?workbook=${newId}`);
   };
 
   const handleNewPlan = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (activeProjectId) {
-      navigate(`/project/${activeProjectId}/upload?newPlan=1`);
+    if (projectId) {
+      navigate(`/project/${projectId}/upload?newPlan=1`);
     }
   };
 
   useProjectThemeColor();
 
-  if (!activeProject) {
-    return !collapsed ? (
-      <div className="px-3 py-2 text-sm text-muted-foreground">
-        Select a project to view phases
-      </div>
-    ) : null;
-  }
+  if (!activeProject) return null;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -312,11 +302,17 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
             </div>
           );
 
+          const tooltipLabel = collapsed
+            ? config.label
+            : isUnlocked && !isActive
+              ? config.description
+              : null;
+
           return (
             <div key={phase} className="relative">
               {/* Vertical connector line — spans from phase icon/background through subtabs.
                   Positioned on the phase root so it isn't clipped by the subtabs overflow-hidden. */}
-              {isExpandable && !collapsed && activeProjectId && (
+              {isExpandable && !collapsed && projectId && (
                 <div
                   className={cn(
                     'absolute w-px transition-opacity duration-300',
@@ -327,23 +323,21 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 />
               )}
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  {phaseButton}
-                </TooltipTrigger>
-                {collapsed ? (
+              {tooltipLabel ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {phaseButton}
+                  </TooltipTrigger>
                   <TooltipContent side="right">
-                    <p>{config.label}</p>
+                    <p>{tooltipLabel}</p>
                   </TooltipContent>
-                ) : isUnlocked && !isActive ? (
-                  <TooltipContent side="right">
-                    <p>{config.description}</p>
-                  </TooltipContent>
-                ) : null}
-              </Tooltip>
+                </Tooltip>
+              ) : (
+                phaseButton
+              )}
 
               {/* Subtabs — always rendered for animation, visibility controlled by grid-rows */}
-              {isExpandable && !collapsed && activeProjectId && (
+              {isExpandable && !collapsed && projectId && (
                 <div
                   className={cn(
                     'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
@@ -354,20 +348,20 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
                 >
                   <div className="overflow-hidden pl-4">
                     {phase === 'upload' && (
-                      <PlanSubtabs projectId={activeProjectId} />
+                      <PlanSubtabs projectId={projectId} />
                     )}
                     {phase === 'data-viewer' && (
-                      <FileSubtabs projectId={activeProjectId} />
+                      <FileSubtabs projectId={projectId} />
                     )}
                     {isWorkbookPhase && (
                       <WorkbookSubtabs
-                        projectId={activeProjectId}
+                        projectId={projectId}
                         phase={phase as WorkbookPhase}
                         activeWorkbookId={isActive ? activeWorkbookId : undefined}
                       />
                     )}
                     {phase === 'experiments' && (
-                      <ModelSubtabs projectId={activeProjectId} />
+                      <ModelSubtabs projectId={projectId} />
                     )}
                   </div>
                 </div>
@@ -376,9 +370,9 @@ export function WorkflowPhaseTree({ collapsed = false }: WorkflowPhaseTreeProps)
           );
         })}
       </div>
-      {activeProjectId && (
+      {projectId && (
         <SeedModelDialog
-          projectId={activeProjectId}
+          projectId={projectId}
           open={seedDialogOpen}
           onOpenChange={setSeedDialogOpen}
         />

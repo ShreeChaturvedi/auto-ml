@@ -32,7 +32,6 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
   const files = useDataStore((s) => s.files);
   const activeFileTabId = useDataStore((s) => s.activeFileTabId);
   const openFileTab = useDataStore((s) => s.openFileTab);
-  const hydrateFromBackend = useDataStore((s) => s.hydrateFromBackend);
   const removeFile = useDataStore((s) => s.removeFile);
 
   const isDataViewerUnlocked = useProjectStore((s) =>
@@ -45,8 +44,8 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
     : 'the current step';
 
   useEffect(() => {
-    if (projectId) void hydrateFromBackend(projectId);
-  }, [projectId, hydrateFromBackend]);
+    if (projectId) void useDataStore.getState().hydrateFromBackend(projectId);
+  }, [projectId]);
 
   const projectFiles = useMemo(
     () => files.filter((f) => f.projectId === projectId),

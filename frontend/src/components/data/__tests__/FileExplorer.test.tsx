@@ -40,16 +40,21 @@ vi.mock('sonner', () => ({
   }
 }));
 
-vi.mock('@/stores/dataStore', () => ({
-  useDataStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      files: mockState.files,
-      activeFileTabId: null,
-      hydrateFromBackend: mockState.hydrateFromBackendMock,
-      openFileTab: mockState.openFileTabMock,
-      removeFile: mockState.removeFileMock
-    })
-}));
+vi.mock('@/stores/dataStore', () => {
+  const storeState = () => ({
+    files: mockState.files,
+    activeFileTabId: null,
+    hydrateFromBackend: mockState.hydrateFromBackendMock,
+    openFileTab: mockState.openFileTabMock,
+    removeFile: mockState.removeFileMock
+  });
+  return {
+    useDataStore: Object.assign(
+      (selector: (state: unknown) => unknown) => selector(storeState()),
+      { getState: storeState }
+    )
+  };
+});
 
 vi.mock('@/stores/projectStore', () => ({
   useProjectStore: (selector: (state: unknown) => unknown) =>

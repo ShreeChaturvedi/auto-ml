@@ -29,6 +29,12 @@ function isValidUploadStage(value: unknown): value is UploadFlowStage {
   return typeof value === 'string' && STAGE_ORDER.includes(value as UploadFlowStage);
 }
 
+function getPersistedPlanChatId(metadata: UploadFlowMetadata): string | null {
+  return typeof metadata.activePlanChatId === 'string' && metadata.activePlanChatId.length > 0
+    ? metadata.activePlanChatId
+    : null;
+}
+
 export function UploadArea() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -37,7 +43,6 @@ export function UploadArea() {
   const projects = useProjectStore((state) => state.projects);
   const updateProject = useProjectStore((state) => state.updateProject);
   const completePhase = useProjectStore((state) => state.completePhase);
-  const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
 
   const createChat = usePlanChatStore((s) => s.createChat);
   const completeStoreChat = usePlanChatStore((s) => s.completeChat);
@@ -51,14 +56,14 @@ export function UploadArea() {
   const [stage, setStage] = useState<UploadFlowStage>('upload');
   const [activePlanChatId, setActivePlanChatId] = useState<string | null>(null);
   const initializedProjectIdRef = useRef<string | null>(null);
-  const persistedMetadataRef = useRef<string>('');
+  const persistedStageRef = useRef<UploadFlowStage>('upload');
   const syncingFromMetadataRef = useRef(false);
   const creatingPlanRef = useRef(false);
 
   useEffect(() => {
     if (!activeProjectId) return;
-    void hydrateFromBackend(activeProjectId);
-  }, [activeProjectId, hydrateFromBackend]);
+    void useDataStore.getState().hydrateFromBackend(activeProjectId);
+  }, [activeProjectId]);
 
   // Reset chat when project changes
   useEffect(() => {
@@ -70,25 +75,22 @@ export function UploadArea() {
 
     const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     const nextStage = isValidUploadStage(metadata.uploadStage) ? metadata.uploadStage : 'upload';
-
-    const snapshot = JSON.stringify({ uploadStage: nextStage, activePlanChatId: metadata.activePlanChatId ?? null });
+    const persistedPlanChatId = getPersistedPlanChatId(metadata);
     const hasProjectChanged = initializedProjectIdRef.current !== activeProject.id;
-    const hasMetadataChanged = snapshot !== persistedMetadataRef.current;
+    const hasStageChanged = persistedStageRef.current !== nextStage;
 
-    if (!hasProjectChanged && !hasMetadataChanged) {
-      return;
+    if (hasProjectChanged || hasStageChanged) {
+      syncingFromMetadataRef.current = true;
+      setStage(nextStage);
+      persistedStageRef.current = nextStage;
+      initializedProjectIdRef.current = activeProject.id;
     }
 
-    syncingFromMetadataRef.current = true;
-    setStage(nextStage);
-    persistedMetadataRef.current = snapshot;
-    initializedProjectIdRef.current = activeProject.id;
-
     // Restore persisted active chat ID (guarded by store init)
-    if (metadata.activePlanChatId && isInitialized) {
-      const chat = usePlanChatStore.getState().chats[metadata.activePlanChatId];
+    if (persistedPlanChatId && isInitialized) {
+      const chat = usePlanChatStore.getState().chats[persistedPlanChatId];
       if (chat?.status === 'in_progress') {
-        setActivePlanChatId(metadata.activePlanChatId);
+        setActivePlanChatId(persistedPlanChatId);
       } else {
         // Clear dangling reference
         const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
@@ -118,6 +120,7 @@ export function UploadArea() {
       setActivePlanChatId(chat.id);
 
       setStage('processing');
+      persistedStageRef.current = 'processing';
 
       const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
       void updateProject(activeProject.id, {
@@ -150,6 +153,7 @@ export function UploadArea() {
       if (chat && chat.projectId === activeProject.id && chat.status === 'in_progress') {
         setActivePlanChatId(chatId);
         setStage('chat');
+        persistedStageRef.current = 'chat';
 
         const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
         void updateProject(activeProject.id, {
@@ -186,13 +190,15 @@ export function UploadArea() {
       return;
     }
 
-    const snapshot = JSON.stringify({ uploadStage: stage });
-    if (snapshot === persistedMetadataRef.current) return;
-    persistedMetadataRef.current = snapshot;
+    if (stage === persistedStageRef.current) return;
+    persistedStageRef.current = stage;
 
     const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     void updateProject(activeProject.id, {
-      metadata: { ...existingMetadata, uploadStage: stage },
+      metadata: {
+        ...existingMetadata,
+        uploadStage: stage,
+      },
     }).catch((error) => {
       console.error('Failed to persist upload stage metadata', error);
     });
@@ -279,6 +285,7 @@ export function UploadArea() {
                   uploadStage: 'upload',
                 },
               });
+              persistedStageRef.current = 'upload';
 
               void Promise.all([completeChatPromise, updateProjectPromise])
                 .then(() => {

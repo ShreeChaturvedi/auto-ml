@@ -30,11 +30,19 @@ vi.mock('@/stores/projectStore', () => ({
 }));
 
 vi.mock('@/stores/dataStore', () => ({
-  useDataStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      hydrateFromBackend: hydrateFromBackendMock,
-      files: []
-    })
+  useDataStore: Object.assign(
+    (selector: (state: unknown) => unknown) =>
+      selector({
+        hydrateFromBackend: hydrateFromBackendMock,
+        files: []
+      }),
+    {
+      getState: () => ({
+        hydrateFromBackend: hydrateFromBackendMock,
+        files: []
+      })
+    }
+  )
 }));
 
 // ── Plan chat store mock with controllable state ──────────────────────
@@ -152,6 +160,14 @@ describe('UploadArea stage machine', () => {
     });
   });
 
+  it('does not persist upload metadata on mount when store metadata already matches', async () => {
+    renderUploadArea();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(updateProjectMock).not.toHaveBeenCalled();
+  });
+
   it('restores saved chat stage and navigates to data-viewer on approve', async () => {
     projectState.projects[0].metadata = { uploadStage: 'chat' };
 
@@ -211,6 +227,27 @@ describe('UploadArea stage machine', () => {
     expect(loadFullChatMock).not.toHaveBeenCalled();
   });
 
+  it('does not rewrite identical chat metadata on mount', async () => {
+    planChatStoreState.chats = {
+      'active-chat': {
+        id: 'active-chat', projectId: 'p1', name: 'Plan 1',
+        status: 'in_progress', messages: [], answerHistory: [],
+        currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
+      },
+    };
+    projectState.projects[0].metadata = {
+      uploadStage: 'chat',
+      activePlanChatId: 'active-chat',
+    };
+
+    renderUploadArea();
+    expect(screen.getByTestId('plan-approve')).toBeInTheDocument();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(updateProjectMock).not.toHaveBeenCalled();
+  });
+
   it('creates chat asynchronously on ?newPlan=1', async () => {
     createChatMock.mockResolvedValueOnce({
       id: 'server-uuid-1', projectId: 'p1', name: 'Plan 1',
@@ -233,6 +270,7 @@ describe('UploadArea stage machine', () => {
         })
       }));
     });
+    expect(updateProjectMock).toHaveBeenCalledTimes(1);
   });
 
   it('loads full chat on ?chatId=xxx and transitions to chat stage', async () => {
@@ -262,6 +300,58 @@ describe('UploadArea stage machine', () => {
         })
       }));
     });
+  });
+
+  it('does not re-persist chat stage on unrelated rerenders after restoring an in-progress chat', async () => {
+    const restoredChat = {
+      id: 'restored-chat',
+      projectId: 'p1',
+      name: 'Plan 1',
+      status: 'in_progress' as const,
+      messages: [],
+      answerHistory: [],
+      currentRound: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    planChatStoreState.chats = {
+      [restoredChat.id]: restoredChat,
+    };
+    getInProgressChatsMock.mockReturnValue([restoredChat]);
+    projectState.projects[0].metadata = {
+      uploadStage: 'chat',
+    };
+
+    const view = renderUploadArea();
+
+    await waitFor(() => {
+      expect(getInProgressChatsMock).toHaveBeenCalledWith('p1');
+    });
+
+    updateProjectMock.mockClear();
+
+    projectState = {
+      ...projectState,
+      projects: [{
+        ...projectState.projects[0],
+        description: 'updated description',
+        metadata: { uploadStage: 'chat' }
+      }]
+    };
+
+    view.rerender(
+      <MemoryRouter initialEntries={['/project/p1/upload']}>
+        <Routes>
+          <Route path="/project/:projectId/upload" element={<UploadArea />} />
+          <Route path="/project/:projectId/data-viewer" element={<div data-testid="data-viewer-route" />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updateProjectMock).not.toHaveBeenCalled();
   });
 
   it('does not create duplicate chats when ?newPlan=1 re-renders', async () => {

@@ -22,6 +22,7 @@ import {
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
 
+import { resolveModelTestSize } from './modelTestSize.js';
 import { getModelTemplate } from './modelTemplates.js';
 import {
   buildOutputDirSetup,
@@ -118,7 +119,8 @@ function suggestLine(param: ModelTemplateParam): string {
     (param.step === undefined || Number.isInteger(param.step));
 
   if (isInt) {
-    return `    ${JSON.stringify(key)}: trial.suggest_int(${JSON.stringify(key)}, ${min}, ${max})`;
+    const stepArg = Number.isInteger(param.step) ? `, step=${param.step}` : '';
+    return `    ${JSON.stringify(key)}: trial.suggest_int(${JSON.stringify(key)}, ${min}, ${max}${stepArg})`;
   }
 
   // Float — use log scale when the ratio is large (> 100)
@@ -126,7 +128,8 @@ function suggestLine(param: ModelTemplateParam): string {
   if (useLog) {
     return `    ${JSON.stringify(key)}: trial.suggest_float(${JSON.stringify(key)}, ${min}, ${max}, log=True)`;
   }
-  return `    ${JSON.stringify(key)}: trial.suggest_float(${JSON.stringify(key)}, ${min}, ${max})`;
+  const stepArg = typeof param.step === 'number' ? `, step=${param.step}` : '';
+  return `    ${JSON.stringify(key)}: trial.suggest_float(${JSON.stringify(key)}, ${min}, ${max}${stepArg})`;
 }
 
 /**
@@ -332,7 +335,7 @@ export async function runTuningStudy(
   metric: string,
   timeoutSeconds: number,
   res: Response,
-  options?: { sampler?: 'tpe' | 'random'; paramOverrides?: Record<string, { min?: number; max?: number; step?: number }> },
+  options?: { sampler?: 'tpe' | 'random' },
 ): Promise<void> {
   try {
     // 1. Read source model + template
@@ -379,6 +382,7 @@ export async function runTuningStudy(
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
     const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
+    const testSize = resolveModelTestSize(model);
 
     // 5. Orchestrate container execution with streaming callback
     const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
@@ -390,7 +394,7 @@ export async function runTuningStudy(
           template,
           datasetPath: containerDatasetPath,
           targetColumn: model.targetColumn ?? '',
-          testSize: 0.2,
+          testSize,
           nTrials,
           metric,
           timeoutSeconds,

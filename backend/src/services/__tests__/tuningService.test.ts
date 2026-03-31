@@ -272,15 +272,15 @@ describe('isNegatedScorer', () => {
 describe('buildTuningScript', () => {
   it('maps type=number integer param to trial.suggest_int()', () => {
     const script = callBuild(makeTemplate());
-    expect(script).toContain('trial.suggest_int("n_estimators", 10, 1000)');
+    expect(script).toContain('trial.suggest_int("n_estimators", 10, 1000, step=10)');
     expect(script).toContain('trial.suggest_int("max_depth", 2, 50)');
     expect(script).toContain('trial.suggest_int("min_samples_split", 2, 20)');
   });
 
   it('maps type=number float param to trial.suggest_float()', () => {
     const script = callBuild(makeTemplate(LOGISTIC_OVERRIDES));
-    expect(script).toContain('trial.suggest_float("C"');
-    expect(script).toContain('trial.suggest_int("max_iter", 100, 1000)');
+    expect(script).toContain('trial.suggest_float("C", 0.01, 10, step=0.1)');
+    expect(script).toContain('trial.suggest_int("max_iter", 100, 1000, step=50)');
   });
 
   it('maps type=select param to trial.suggest_categorical()', () => {
@@ -528,6 +528,23 @@ describe('runTuningStudy', () => {
     expect(doneEvent).toBeDefined();
     expect(doneEvent.resultModelId).toBe('new-tuned-model-id');
     expect(res.end).toHaveBeenCalled();
+  });
+
+  it('reuses the stored model test size when building the tuning script', async () => {
+    const { container } = setupRunMocks(makeModelRecord({ metadata: { testSize: 0.35 } }));
+    const res = makeMockRes();
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { scriptBuilder: () => string };
+      const script = cfg.scriptBuilder();
+      expect(script).toContain('test_size = 0.35');
+      return {
+        container,
+        executionResult: { status: 'error', stderr: 'boom', error: 'boom', executionMs: 100 },
+      };
+    });
+
+    await runTuningStudy('test-project', 'test-model-id', 1, 'accuracy', 600, res as never);
   });
 
   it('writes error when model not found', async () => {

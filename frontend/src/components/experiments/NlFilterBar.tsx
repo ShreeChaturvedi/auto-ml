@@ -46,15 +46,15 @@ export function NlFilterBar() {
       if (controller.signal.aborted) return;
 
       if (predicates.length > 0) {
-        setNlFilter(query, predicates);
+        setNlFilter(predicates);
       } else {
         toast.warning('No filters could be extracted from that query');
-        setNlFilter('', []);
+        setNlFilter([]);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       toast.error('Could not parse filter');
-      setNlFilter('', []);
+      setNlFilter([]);
     } finally {
       if (!controller.signal.aborted) {
         setIsLoading(false);

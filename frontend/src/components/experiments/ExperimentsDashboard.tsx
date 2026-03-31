@@ -62,7 +62,7 @@ export function ExperimentsDashboard() {
     (index: number) => {
       const next = activePredicates.filter((_, i) => i !== index);
       if (next.length === 0) clearFilter();
-      else setNlFilter('', next);
+      else setNlFilter(next);
     },
     [activePredicates, clearFilter, setNlFilter]
   );

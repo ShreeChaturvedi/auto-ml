@@ -208,7 +208,7 @@ describe('experimentsStore', () => {
 
   it('setNlFilter() auto-switches to leaderboard when predicates are non-empty', () => {
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
-    useExperimentsStore.getState().setNlFilter('accuracy > 0.9', [
+    useExperimentsStore.getState().setNlFilter([
       { field: 'accuracy', operator: 'gt', value: '0.9' }
     ]);
     expect(useExperimentsStore.getState().experimentView).toBe('leaderboard');
@@ -217,7 +217,7 @@ describe('experimentsStore', () => {
 
   it('setNlFilter() does not switch view when predicates are empty', () => {
     useExperimentsStore.getState().setExperimentView('overview');
-    useExperimentsStore.getState().setNlFilter('', []);
+    useExperimentsStore.getState().setNlFilter([]);
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
   });
 

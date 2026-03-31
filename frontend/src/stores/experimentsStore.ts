@@ -44,7 +44,7 @@ interface ExperimentsState {
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
   fetchReport: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchCompareNarrative: (projectId: string, modelIds: string[], models: ModelRecord[]) => Promise<void>;
-  setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
+  setNlFilter: (predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
   setSort: (field: ExperimentSortField, direction: ExperimentSortDirection) => void;
   setActiveDetailTab: (modelId: string, tab: ExperimentDetailTab) => void;
@@ -298,7 +298,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     }
   },
 
-  setNlFilter: (_text, predicates) => {
+  setNlFilter: (predicates) => {
     const update: Partial<ExperimentsState> = { activePredicates: predicates };
     if (predicates.length > 0) {
       update.experimentView = 'leaderboard';

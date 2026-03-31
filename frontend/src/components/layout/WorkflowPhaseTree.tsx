@@ -102,7 +102,7 @@ const PhaseItem = memo(function PhaseItem({
   const config = phaseConfig[phase];
   const isExpandable = EXPANDABLE_PHASES.has(phase) && isUnlocked;
   const isWorkbookPhase = WORKBOOK_PHASES.has(phase);
-  const hasPlusAction = PLUS_ACTION_PHASES.has(phase) && (isExpandable || phase === 'experiments');
+  const hasPlusAction = isExpandable && PLUS_ACTION_PHASES.has(phase);
   const activeColorClass = isActive ? 'text-accent-text' : 'text-muted-foreground';
 
   const IconComponent = getLucideIcon(config.icon);

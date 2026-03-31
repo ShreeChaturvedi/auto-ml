@@ -30,7 +30,6 @@ import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { useProjectStore } from '@/stores/projectStore';
@@ -158,16 +157,14 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   return (
     <>
       {collapsed ? (
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {itemContent}
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>{project.title}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {itemContent}
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>{project.title}</p>
+          </TooltipContent>
+        </Tooltip>
       ) : (
         itemContent
       )}

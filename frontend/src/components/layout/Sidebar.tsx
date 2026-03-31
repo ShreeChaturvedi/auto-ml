@@ -78,14 +78,16 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     setEditDialogProject(full);
   };
 
-  // Expand when clicking anywhere on sidebar background (not buttons)
   const handleSidebarClick = (e: React.MouseEvent) => {
     if (collapsed && e.target === e.currentTarget) {
       onToggleCollapse();
     }
   };
 
-  // Get project icon component
+  const handleExpandClick = collapsed
+    ? (e: React.MouseEvent) => { e.stopPropagation(); onToggleCollapse(); }
+    : undefined;
+
   const ProjectIcon = activeProject ? getLucideIcon(activeProject.icon) : null;
 
   return (
@@ -100,7 +102,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     >
       <div
         className="h-14 shrink-0 flex items-center px-4 gap-2 border-b border-border"
-        onClick={collapsed ? (e) => { e.stopPropagation(); onToggleCollapse(); } : undefined}
+        onClick={handleExpandClick}
       >
         {activeProject && ProjectIcon ? (
           <Tooltip>
@@ -201,7 +203,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
       {/* Main Content Section */}
       <div
         className="flex-1 overflow-hidden"
-        onClick={collapsed ? (e) => { e.stopPropagation(); onToggleCollapse(); } : undefined}
+        onClick={handleExpandClick}
       >
         <div className="h-full overflow-y-auto">
           <div className="p-3">
@@ -218,7 +220,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
       {/* User Profile - no extra padding, UserProfile handles its own styling */}
       <div
-        onClick={collapsed ? (e) => { e.stopPropagation(); onToggleCollapse(); } : undefined}
+        onClick={handleExpandClick}
       >
         <UserProfile collapsed={collapsed} />
       </div>

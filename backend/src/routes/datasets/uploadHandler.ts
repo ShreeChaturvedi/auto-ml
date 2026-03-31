@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { copyFile, mkdir, readFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,6 +21,7 @@ import { assignDatasetSqlName } from '../../services/datasetSqlNames.js';
 import { buildEdaSummary } from '../../services/edaSummary.js';
 
 import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
+import { buildDatasetResponse } from './response.js';
 import { datasetUploadSchema, detectFileType, legacySpreadsheetError } from './validation.js';
 
 const EDA_MAX_ROWS = 5000;
@@ -67,12 +68,21 @@ export function handleDatasetUpload(req: Request, res: Response, next: NextFunct
 }
 
 /** Safely remove a temp file, logging but never throwing on failure. */
-function cleanupTempFile(filePath: string): void {
+async function cleanupTempFile(filePath: string): Promise<void> {
   try {
-    unlinkSync(filePath);
+    await unlink(filePath);
   } catch {
     appLogger.warn(`[datasets] Failed to clean up temp file: ${filePath}`);
   }
+}
+
+async function persistUploadedFile(tempFilePath: string, datasetId: string, filename: string): Promise<string> {
+  const datasetDir = join(env.datasetStorageDir, datasetId);
+  await mkdir(datasetDir, { recursive: true });
+  const permanentPath = join(datasetDir, filename);
+  await copyFile(tempFilePath, permanentPath);
+  await cleanupTempFile(tempFilePath);
+  return permanentPath;
 }
 
 /**
@@ -124,7 +134,7 @@ export async function processDatasetUpload(
       await processCsvJsonUpload(req, res, datasetRepository, parseResult.data, fileType, tempFilePath);
     }
   } catch (error) {
-    cleanupTempFile(tempFilePath);
+    await cleanupTempFile(tempFilePath);
     throw error;
   }
 }
@@ -141,11 +151,11 @@ async function processCsvJsonUpload(
   fileType: 'csv' | 'json',
   tempFilePath: string
 ): Promise<void> {
-  const buffer = readFileSync(tempFilePath);
+  const buffer = await readFile(tempFilePath);
 
   const rows = await parseDatasetRows(buffer, fileType, req.file!.originalname);
   if (rows.length === 0) {
-    cleanupTempFile(tempFilePath);
+    await cleanupTempFile(tempFilePath);
     res.status(400).json({ error: 'Dataset has no rows to process' });
     return;
   }
@@ -177,11 +187,7 @@ async function processCsvJsonUpload(
   });
 
   // Persist the file to its permanent location
-  const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
-  mkdirSync(datasetDir, { recursive: true });
-  const permanentPath = join(datasetDir, req.file!.originalname);
-  copyFileSync(tempFilePath, permanentPath);
-  cleanupTempFile(tempFilePath);
+  await persistUploadedFile(tempFilePath, dataset.datasetId, req.file!.originalname);
 
   let tableName = buildDatasetTableName(req.file!.originalname, dataset.datasetId);
   let loadWarning: string | undefined;
@@ -260,26 +266,12 @@ async function processCsvJsonUpload(
   await regenerateProjectNlSuggestionsSilently(body.projectId, 'upload');
 
   res.status(201).json({
-    dataset: {
-      datasetId: dataset.datasetId,
-      filename: dataset.filename,
-      fileType: dataset.fileType,
-      size: dataset.size,
-      n_rows: dataset.nRows,
-      n_cols: dataset.nCols,
-      columns: dataset.columns.map((column) => column.name),
-      dtypes: Object.fromEntries(dataset.columns.map((column) => [column.name, column.dtype])),
-      null_counts: Object.fromEntries(
-        dataset.columns.map((column) => [column.name, column.nullCount])
-      ),
-      sample: dataset.sample,
-      createdAt: dataset.createdAt,
-      tableName: sqlName,
-      physicalTableName: tableName,
+    dataset: buildDatasetResponse(dataset, {
       eda,
-      warning: loadWarning,
-      queryable: hasDatabaseConfiguration() && !loadWarning
-    },
+      physicalTableName: tableName,
+      queryable: hasDatabaseConfiguration() && !loadWarning,
+      warning: loadWarning
+    }),
     warning: loadWarning
   });
 }
@@ -303,7 +295,7 @@ async function processXlsxUpload(
   const { sampleRows: sample, totalRowCount: totalRows } = await parseXlsxSample(tempFilePath, req.file!.originalname, EDA_MAX_ROWS);
 
   if (sample.length === 0) {
-    cleanupTempFile(tempFilePath);
+    await cleanupTempFile(tempFilePath);
     res.status(400).json({ error: 'Dataset has no rows to process' });
     return;
   }
@@ -338,11 +330,7 @@ async function processXlsxUpload(
   });
 
   // Persist the file to its permanent location
-  const datasetDir = join(env.datasetStorageDir, dataset.datasetId);
-  mkdirSync(datasetDir, { recursive: true });
-  const permanentPath = join(datasetDir, req.file!.originalname);
-  copyFileSync(tempFilePath, permanentPath);
-  cleanupTempFile(tempFilePath);
+  const permanentPath = await persistUploadedFile(tempFilePath, dataset.datasetId, req.file!.originalname);
 
   const tableName = buildDatasetTableName(req.file!.originalname, dataset.datasetId);
 
@@ -362,26 +350,11 @@ async function processXlsxUpload(
 
   // Step 3: respond immediately so the browser doesn't timeout
   res.status(201).json({
-    dataset: {
-      datasetId: dataset.datasetId,
-      filename: dataset.filename,
-      fileType: dataset.fileType,
-      size: dataset.size,
-      n_rows: dataset.nRows,
-      n_cols: dataset.nCols,
-      columns: dataset.columns.map((column) => column.name),
-      dtypes: Object.fromEntries(dataset.columns.map((column) => [column.name, column.dtype])),
-      null_counts: Object.fromEntries(
-        dataset.columns.map((column) => [column.name, column.nullCount])
-      ),
-      sample: dataset.sample,
-      createdAt: dataset.createdAt,
-      tableName: sqlName,
-      physicalTableName: tableName,
+    dataset: buildDatasetResponse(dataset, {
       eda,
-      warning: undefined,
+      physicalTableName: tableName,
       queryable: false
-    },
+    }),
     warning: undefined
   });
 

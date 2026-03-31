@@ -1,12 +1,11 @@
-import { readFileSync, renameSync, rmSync } from 'node:fs';
+import { access } from 'node:fs/promises';
 
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 
 import { env } from '../config.js';
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { validateUuidParams } from '../middleware/validateParams.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
@@ -22,44 +21,57 @@ import { getDatasetPath } from '../utils/pathUtils.js';
 import { updateColumnType } from './datasets/columnHandler.js';
 import { regenerateProjectNlSuggestionsSilently } from './datasets/nlSuggestions.js';
 import { getDatasetRows } from './datasets/rowHandler.js';
+import {
+  loadOwnedDataset,
+  removeDatasetDirectory,
+  renameDatasetFile,
+  streamDatasetDownload,
+} from './datasets/shared.js';
 import { handleDatasetUpload, processDatasetUpload } from './datasets/uploadHandler.js';
+
+async function hydrateDatasetsWithProjectSqlNames(datasetRepository: DatasetRepository) {
+  const datasets = await datasetRepository.list();
+  const projectIds = [...new Set(
+    datasets
+      .map((dataset) => dataset.projectId)
+      .filter((value): value is string => Boolean(value))
+  )];
+
+  if (projectIds.length === 0) {
+    return datasets;
+  }
+
+  const hydratedById = new Map(datasets.map((dataset) => [dataset.datasetId, dataset]));
+  const projectDatasets = await Promise.all(
+    projectIds.map((projectId) => ensureProjectDatasetSqlNames(projectId, datasetRepository))
+  );
+
+  for (const items of projectDatasets) {
+    for (const dataset of items) {
+      hydratedById.set(dataset.datasetId, dataset);
+    }
+  }
+
+  return datasets.map((dataset) => hydratedById.get(dataset.datasetId) ?? dataset);
+}
 
 export function createDatasetUploadRouter(repository?: DatasetRepository) {
   const router = Router();
   const datasetRepository = repository ?? createDatasetRepository(env.datasetMetadataPath);
   const projectRepository = getProjectRepository();
 
+  async function requireDataset(req: AuthRequest, res: Response, datasetId: string) {
+    return loadOwnedDataset(req, res, datasetRepository, projectRepository, datasetId);
+  }
+
   // ── List datasets ──────────────────────────────────────────────────
   router.get(
     '/datasets',
     asyncHandler(async (req, res) => {
       const projectId = req.query.projectId as string | undefined;
-      const datasets = projectId
-        ? await ensureProjectDatasetSqlNames(projectId, datasetRepository)
-        : await datasetRepository.list();
-
       const hydratedDatasets = projectId
-        ? datasets
-        : await (async () => {
-            const byId = new Map(datasets.map((dataset) => [dataset.datasetId, dataset]));
-            const projectIds = [...new Set(
-              datasets
-                .map((dataset) => dataset.projectId)
-                .filter((value): value is string => Boolean(value))
-            )];
-
-            const projects = await Promise.all(
-              projectIds.map((currentProjectId) => ensureProjectDatasetSqlNames(currentProjectId, datasetRepository))
-            );
-
-            for (const projectDatasets of projects) {
-              for (const dataset of projectDatasets) {
-                byId.set(dataset.datasetId, dataset);
-              }
-            }
-
-            return datasets.map((dataset) => byId.get(dataset.datasetId) ?? dataset);
-          })();
+        ? await ensureProjectDatasetSqlNames(projectId, datasetRepository)
+        : await hydrateDatasetsWithProjectSqlNames(datasetRepository);
 
       const withTableNames = await Promise.all(hydratedDatasets.map(async (dataset) => {
         const queryState = await getDatasetQueryState(dataset);
@@ -81,20 +93,8 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     '/datasets/:datasetId/sample',
     validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
-      const { datasetId } = req.params;
-      const dataset = await datasetRepository.getById(datasetId);
-      if (!dataset) {
-        sendNotFound(res, 'Dataset');
-        return;
-      }
-
-      if (req.user && dataset.projectId) {
-        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
-        if (!project) {
-          sendNotFound(res, 'Dataset');
-          return;
-        }
-      }
+      const dataset = await requireDataset(req, res, req.params.datasetId);
+      if (!dataset) return;
 
       res.json({
         sample: dataset.sample,
@@ -109,19 +109,8 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     '/datasets/:datasetId/rows',
     validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
-      const { datasetId } = req.params;
-      const dataset = await datasetRepository.getById(datasetId);
-      if (!dataset) {
-        sendNotFound(res, 'Dataset');
-        return;
-      }
-      if (req.user && dataset.projectId) {
-        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
-        if (!project) {
-          sendNotFound(res, 'Dataset');
-          return;
-        }
-      }
+      const dataset = await requireDataset(req, res, req.params.datasetId);
+      if (!dataset) return;
       await getDatasetRows(req, res, datasetRepository);
     })
   );
@@ -131,19 +120,8 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     '/datasets/:datasetId/columns/:columnName',
     validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
-      const { datasetId } = req.params;
-      const dataset = await datasetRepository.getById(datasetId);
-      if (!dataset) {
-        sendNotFound(res, 'Dataset');
-        return;
-      }
-      if (req.user && dataset.projectId) {
-        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
-        if (!project) {
-          sendNotFound(res, 'Dataset');
-          return;
-        }
-      }
+      const dataset = await requireDataset(req, res, req.params.datasetId);
+      if (!dataset) return;
       await updateColumnType(req, res, datasetRepository);
     })
   );
@@ -161,20 +139,10 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
         return;
       }
 
-      const dataset = await datasetRepository.getById(datasetId);
-      if (!dataset) { sendNotFound(res, 'Dataset'); return; }
+      const dataset = await requireDataset(req, res, datasetId);
+      if (!dataset) return;
 
-      if (req.user && dataset.projectId) {
-        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
-        if (!project) { sendNotFound(res, 'Dataset'); return; }
-      }
-
-      // Rename physical file on disk
-      const oldPath = getDatasetPath(datasetId, dataset.filename);
-      const newPath = getDatasetPath(datasetId, filename.trim());
-      try {
-        renameSync(oldPath, newPath);
-      } catch { /* file may not exist on disk for derived datasets */ }
+      await renameDatasetFile(datasetId, dataset.filename, filename.trim());
 
       const updated = await datasetRepository.update(datasetId, (current) => ({
         ...current,
@@ -192,43 +160,9 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
-      const dataset = await datasetRepository.getById(datasetId);
-      if (!dataset) {
-        sendNotFound(res, 'Dataset');
-        return;
-      }
-
-      if (req.user && dataset.projectId) {
-        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
-        if (!project) {
-          sendNotFound(res, 'Dataset');
-          return;
-        }
-      }
-
-      const filePath = getDatasetPath(datasetId, dataset.filename);
-
-      let buffer: Buffer;
-      try {
-        buffer = readFileSync(filePath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          res.status(404).json({ error: 'Dataset file not found on disk' });
-          return;
-        }
-        throw error;
-      }
-
-      const contentTypes: Record<string, string> = {
-        csv: 'text/csv',
-        json: 'application/json',
-        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      };
-
-      res.setHeader('Content-Type', contentTypes[dataset.fileType] || 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${dataset.filename}"`);
-      res.setHeader('Content-Length', buffer.length);
-      res.send(buffer);
+      const dataset = await requireDataset(req, res, datasetId);
+      if (!dataset) return;
+      streamDatasetDownload(res, dataset);
     })
   );
 
@@ -264,7 +198,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
           const filePath = getDatasetPath(dataset.datasetId, dataset.filename);
 
           try {
-            readFileSync(filePath);
+            await access(filePath);
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
               results.skipped.push(dataset.datasetId);
@@ -310,19 +244,8 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
     validateUuidParams('datasetId'),
     asyncHandler(async (req: AuthRequest, res) => {
       const { datasetId } = req.params;
-      const dataset = await datasetRepository.getById(datasetId);
-      if (!dataset) {
-        sendNotFound(res, 'Dataset');
-        return;
-      }
-
-      if (req.user && dataset.projectId) {
-        const project = await verifyProjectOwnership(dataset.projectId, req.user.user_id, projectRepository);
-        if (!project) {
-          sendNotFound(res, 'Dataset');
-          return;
-        }
-      }
+      const dataset = await requireDataset(req, res, datasetId);
+      if (!dataset) return;
 
       // Pre-deletion guard: reject if active workflows reference this dataset
       const workflowRepo = getWorkflowRepository();
@@ -346,14 +269,7 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       }
 
       // Delete physical files
-      const datasetDir = getDatasetPath(datasetId);
-      try {
-        rmSync(datasetDir, { recursive: true, force: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw error;
-        }
-      }
+      await removeDatasetDirectory(datasetId);
 
       // Drop Postgres table if it exists
       if (hasDatabaseConfiguration()) {

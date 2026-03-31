@@ -415,7 +415,7 @@ export function NotebookCellComponent({
                     size="icon-xs"
                     className="h-6 w-6 [&_svg]:scale-[0.92]"
                     onClick={handleCopyOutput}
-                    aria-label={outputCopied ? 'Copied!' : 'Copy'}
+                    aria-label={outputCopied ? 'Copied output!' : 'Copy output'}
                     type="button"
                   >
                     {outputCopied ? (
@@ -425,7 +425,7 @@ export function NotebookCellComponent({
                     )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">{outputCopied ? 'Copied!' : 'Copy'}</TooltipContent>
+                <TooltipContent side="bottom">{outputCopied ? 'Copied output!' : 'Copy output'}</TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -435,13 +435,13 @@ export function NotebookCellComponent({
                     size="icon-xs"
                     className="h-6 w-6"
                     onClick={() => setShowOutput((previous) => !previous)}
-                    aria-label={showOutput ? 'Collapse' : 'Expand'}
+                    aria-label={showOutput ? 'Collapse output' : 'Expand output'}
                     type="button"
                   >
                     {showOutput ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">{showOutput ? 'Collapse' : 'Expand'}</TooltipContent>
+                <TooltipContent side="bottom">{showOutput ? 'Collapse output' : 'Expand output'}</TooltipContent>
               </Tooltip>
             </div>
           </div>

@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useProjectPlans } from '@/hooks/useProjectPlans';
-import type { UploadedFile } from '@/types/file';
 
 import { DataUploadPanel } from './DataUploadPanel';
 import { DescriptionInput } from './DescriptionInput';
 import { PlanViewerPane } from './PlanViewerPane';
+import { isProjectFileReady } from './projectFileIngestion';
 
 interface UploadStageProps {
   projectId: string;
@@ -29,19 +29,7 @@ export function UploadStage({ projectId }: UploadStageProps) {
 
   const { plans, selectedPlanId, handleCreateNewPlan } = useProjectPlans(projectId);
 
-  const isFileReady = (file: UploadedFile): boolean => {
-    if (file.type === 'csv' || file.type === 'json' || file.type === 'excel') {
-      return Boolean(file.metadata?.datasetId);
-    }
-
-    if (file.type === 'pdf' || file.type === 'markdown' || file.type === 'word' || file.type === 'text') {
-      return Boolean(file.metadata?.documentId);
-    }
-
-    return true;
-  };
-
-  const allFilesReady = hasFiles && projectFiles.every(isFileReady);
+  const allFilesReady = hasFiles && projectFiles.every(isProjectFileReady);
   const currentPlan = selectedPlanId ? plans.find((p) => p.id === selectedPlanId) : plans[0];
   const hasPlans = plans.length > 0 && currentPlan;
 

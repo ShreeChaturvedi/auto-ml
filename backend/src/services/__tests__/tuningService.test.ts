@@ -279,7 +279,7 @@ describe('buildTuningScript', () => {
 
   it('maps type=number float param to trial.suggest_float()', () => {
     const script = callBuild(makeTemplate(LOGISTIC_OVERRIDES));
-    expect(script).toContain('trial.suggest_float("C", 0.01, 10, step=0.1)');
+    expect(script).toContain('trial.suggest_float("C", 0.01, 10, log=True)');
     expect(script).toContain('trial.suggest_int("max_iter", 100, 1000, step=50)');
   });
 

@@ -69,6 +69,75 @@ function toApiMetadata(project: Project): ApiProjectMetadata {
   return metadata;
 }
 
+function mergeProjectUpdate(
+  existing: Project,
+  data: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt'>>
+): Project {
+  return {
+    ...existing,
+    ...data,
+    metadata: data.metadata
+      ? { ...(existing.metadata ?? {}), ...data.metadata }
+      : existing.metadata
+  };
+}
+
+function touchesPhaseState(
+  data: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt'>>
+): boolean {
+  if (
+    data.currentPhase !== undefined
+    || data.unlockedPhases !== undefined
+    || data.completedPhases !== undefined
+  ) {
+    return true;
+  }
+
+  if (!data.metadata || typeof data.metadata !== 'object') {
+    return false;
+  }
+
+  return (
+    Object.prototype.hasOwnProperty.call(data.metadata, 'currentPhase')
+    || Object.prototype.hasOwnProperty.call(data.metadata, 'unlockedPhases')
+    || Object.prototype.hasOwnProperty.call(data.metadata, 'completedPhases')
+  );
+}
+
+function preservePhaseState(project: Project, phaseSource: Project): Project {
+  return {
+    ...project,
+    currentPhase: phaseSource.currentPhase,
+    unlockedPhases: [...phaseSource.unlockedPhases],
+    completedPhases: [...phaseSource.completedPhases],
+    metadata: {
+      ...(project.metadata ?? {}),
+      currentPhase: phaseSource.currentPhase,
+      unlockedPhases: [...phaseSource.unlockedPhases],
+      completedPhases: [...phaseSource.completedPhases]
+    }
+  };
+}
+
+function stripPhaseMetadata(metadata?: ApiProjectMetadata): ApiProjectMetadata | undefined {
+  if (!metadata) return undefined;
+
+  const next = { ...metadata };
+  delete next.currentPhase;
+  delete next.unlockedPhases;
+  delete next.completedPhases;
+  return next;
+}
+
+function toPhaseMetadata(project: Project): ApiProjectMetadata {
+  return {
+    ...(stripPhaseMetadata(project.metadata as ApiProjectMetadata | undefined) ?? {}),
+    unlockedPhases: [...project.unlockedPhases],
+    completedPhases: [...project.completedPhases],
+    currentPhase: project.currentPhase
+  };
+}
+
 function toCreatePayload(form: ProjectFormData): ApiProjectPayload {
   return {
     name: form.title,
@@ -85,17 +154,33 @@ function toCreatePayload(form: ProjectFormData): ApiProjectPayload {
 export const useProjectStore = createPersistedStore<ProjectState>(
   'projects',
   (set, get) => {
+    const updateRequestVersions = new Map<string, number>();
+    const lastSyncedProjectMetadata = new Map<string, string>();
+
     const syncProjectMetadata = async (projectId: string) => {
       const project = get().projects.find((item) => item.id === projectId);
       if (!project) return;
 
+      const serializedMetadata = JSON.stringify(toPhaseMetadata(project));
+      if (lastSyncedProjectMetadata.get(projectId) === serializedMetadata) {
+        return;
+      }
+      const requestVersion = (updateRequestVersions.get(projectId) ?? 0) + 1;
+      updateRequestVersions.set(projectId, requestVersion);
+
       try {
         await apiUpdateProject(projectId, {
-          metadata: toApiMetadata(project)
+          metadata: JSON.parse(serializedMetadata) as ApiProjectMetadata
         });
+        if ((updateRequestVersions.get(projectId) ?? 0) !== requestVersion) {
+          return;
+        }
+        lastSyncedProjectMetadata.set(projectId, serializedMetadata);
       } catch (error) {
         console.error('Failed to sync project metadata', error);
-        set({ error: 'Failed to sync project metadata' });
+        if ((updateRequestVersions.get(projectId) ?? 0) === requestVersion) {
+          set({ error: 'Failed to sync project metadata' });
+        }
       }
     };
 
@@ -121,6 +206,9 @@ export const useProjectStore = createPersistedStore<ProjectState>(
         try {
           const { projects } = await apiListProjects();
           const normalized = projects.map(normalizeProject);
+          normalized.forEach((project) => {
+            lastSyncedProjectMetadata.set(project.id, JSON.stringify(toPhaseMetadata(project)));
+          });
           const currentActive = get().activeProjectId;
           set({
             projects: normalized,
@@ -160,6 +248,7 @@ export const useProjectStore = createPersistedStore<ProjectState>(
         try {
           const response = await apiCreateProject(toCreatePayload(data));
           const project = normalizeProject(response.project);
+          lastSyncedProjectMetadata.set(project.id, JSON.stringify(toPhaseMetadata(project)));
 
           set((state) => ({
             projects: [...state.projects, project],
@@ -207,37 +296,65 @@ export const useProjectStore = createPersistedStore<ProjectState>(
 
         set({ error: undefined });
 
+        const phaseStateTouched = touchesPhaseState(data);
         const mergedColor = (data.color ?? existing.color) as ProjectColor;
-        const mergedProject = { ...existing, ...data };
-        const apiMeta = toApiMetadata(mergedProject);
+        const mergedProject = mergeProjectUpdate(existing, data);
+        const optimisticProject: Project = {
+          ...mergedProject,
+          updatedAt: new Date()
+        };
+        const apiMeta = phaseStateTouched
+          ? toApiMetadata(mergedProject)
+          : { ...(stripPhaseMetadata(data.metadata as ApiProjectMetadata | undefined) ?? {}) };
+        const requestVersion = (updateRequestVersions.get(id) ?? 0) + 1;
+        updateRequestVersions.set(id, requestVersion);
+
+        set((state) => ({
+          projects: state.projects.map((item) => (item.id === id ? optimisticProject : item))
+        }));
 
         // Persist or clear customColor in metadata
         if (mergedColor === 'custom' && (data as Partial<Project>).customColor) {
           apiMeta.customColor = (data as Partial<Project>).customColor;
         } else if (mergedColor !== 'custom') {
-          delete apiMeta.customColor;
+          apiMeta.customColor = undefined;
         }
 
         const payload: Partial<ApiProjectPayload> = {
           name: data.title ?? existing.title,
           description: data.description ?? existing.description,
           icon: data.icon ?? existing.icon,
-          color: mergedColor,
-          metadata: apiMeta
+          color: mergedColor
         };
+
+        if (Object.keys(apiMeta).length > 0) {
+          payload.metadata = apiMeta;
+        }
 
         try {
           const response = await apiUpdateProject(id, payload);
+          if ((updateRequestVersions.get(id) ?? 0) !== requestVersion) {
+            return get().projects.find((item) => item.id === id);
+          }
           const project = normalizeProject(response.project);
+          lastSyncedProjectMetadata.set(
+            project.id,
+            JSON.stringify(toPhaseMetadata(phaseStateTouched ? project : (get().projects.find((item) => item.id === id) ?? project)))
+          );
 
           set((state) => ({
-            projects: state.projects.map((item) => (item.id === id ? project : item))
+            projects: state.projects.map((item) => {
+              if (item.id !== id) return item;
+              return phaseStateTouched ? project : preservePhaseState(project, item);
+            })
           }));
 
-          return project;
+          return get().projects.find((item) => item.id === id);
         } catch (error) {
           console.error('Failed to update project', error);
-          set({ error: 'Unable to update project' });
+          if ((updateRequestVersions.get(id) ?? 0) === requestVersion) {
+            set({ error: 'Unable to update project' });
+          }
           throw error;
         }
       },
@@ -276,14 +393,20 @@ export const useProjectStore = createPersistedStore<ProjectState>(
       },
 
       setCurrentPhase(projectId, phase) {
+        const existing = get().projects.find((project) => project.id === projectId);
+        if (!existing) {
+          return;
+        }
+
+        const nextPhase = getNextPhase(phase);
+        const needsUnlock = !!nextPhase && !existing.unlockedPhases.includes(nextPhase);
+        if (existing.currentPhase === phase && !needsUnlock) {
+          return;
+        }
+
         set((state) => ({
           projects: state.projects.map((project) => {
             if (project.id !== projectId) return project;
-
-            const nextPhase = getNextPhase(phase);
-            const needsUnlock = !!nextPhase && !project.unlockedPhases.includes(nextPhase);
-
-            if (project.currentPhase === phase && !needsUnlock) return project;
 
             const unlockedPhases = needsUnlock
               ? [...project.unlockedPhases, nextPhase]
@@ -297,10 +420,14 @@ export const useProjectStore = createPersistedStore<ProjectState>(
       },
 
       unlockPhase(projectId, phase) {
+        const existing = get().projects.find((project) => project.id === projectId);
+        if (!existing || existing.unlockedPhases.includes(phase)) {
+          return;
+        }
+
         set((state) => ({
           projects: state.projects.map((project) => {
             if (project.id !== projectId) return project;
-            if (project.unlockedPhases.includes(phase)) return project;
 
             return {
               ...project,
@@ -314,6 +441,11 @@ export const useProjectStore = createPersistedStore<ProjectState>(
       },
 
       completePhase(projectId, phase) {
+        const existing = get().projects.find((project) => project.id === projectId);
+        if (!existing || existing.completedPhases.includes(phase)) {
+          return;
+        }
+
         set((state) => ({
           projects: state.projects.map((project) => {
             if (project.id !== projectId) return project;

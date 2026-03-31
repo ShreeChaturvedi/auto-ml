@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useModelStore } from '@/stores/modelStore';
@@ -10,6 +10,7 @@ import { LeaderboardMode } from './views/LeaderboardMode';
 import { OverviewMode } from './views/OverviewMode';
 import { formatMetric, PRIMARY_METRIC } from './utils';
 import type { ReportPaneHandle } from './ReportPane';
+import type { ExperimentView } from '@/types/experiments';
 import './experiments.css';
 
 export function ExperimentsDashboard() {
@@ -21,7 +22,6 @@ export function ExperimentsDashboard() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
   const selectModel = useExperimentsStore((s) => s.selectModel);
   const clearComparison = useExperimentsStore((s) => s.clearComparison);
-  const fetchProjectInsight = useExperimentsStore((s) => s.fetchProjectInsight);
   const experimentView = useExperimentsStore((s) => s.experimentView);
   const setExperimentView = useExperimentsStore((s) => s.setExperimentView);
   const activePredicates = useExperimentsStore((s) => s.activePredicates);
@@ -35,12 +35,6 @@ export function ExperimentsDashboard() {
 
   const prevModelCount = useRef(models.length);
   const reportPaneRef = useRef<ReportPaneHandle>(null);
-
-  // Stable model-membership key for triggering insight refresh
-  const modelIdKey = useMemo(
-    () => models.map((m) => m.modelId).sort().join(','),
-    [models]
-  );
 
   // Fetch models on mount
   useEffect(() => {
@@ -64,16 +58,6 @@ export function ExperimentsDashboard() {
     prevModelCount.current = models.length;
   }, [models.length, models, selectModel]);
 
-  // Trigger project insight when model membership changes (debounced to prevent
-  // rapid LLM calls during seeding, deletion, or hyperparameter tuning)
-  useEffect(() => {
-    if (!modelIdKey || !projectId) return;
-    const timer = setTimeout(() => {
-      void fetchProjectInsight(projectId, models);
-    }, 5_000);
-    return () => clearTimeout(timer);
-  }, [modelIdKey, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const removePredicate = useCallback(
     (index: number) => {
       const next = activePredicates.filter((_, i) => i !== index);
@@ -88,8 +72,8 @@ export function ExperimentsDashboard() {
   }, []);
 
   const handleViewChange = useCallback(
-    (val: string) => {
-      if (val === 'overview' || val === 'leaderboard') setExperimentView(val);
+    (view: ExperimentView) => {
+      setExperimentView(view);
     },
     [setExperimentView]
   );

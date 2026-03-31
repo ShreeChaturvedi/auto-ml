@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { LayoutDashboard, Table2, Download } from 'lucide-react';
-import type { FilterPredicate } from '@/types/experiments';
+import type { ExperimentView, FilterPredicate } from '@/types/experiments';
 import { Leaderboard } from '../Leaderboard';
 import { NlFilterBar } from '../NlFilterBar';
 import { IconModeToggle } from '@/components/data/IconModeToggle';
@@ -18,10 +18,10 @@ const VIEW_OPTIONS = [
 ] as const;
 
 interface LeaderboardModeProps {
-  experimentView: string;
+  experimentView: ExperimentView;
   activePredicates: FilterPredicate[];
   manualPredicates: FilterPredicate[];
-  onViewChange: (val: string) => void;
+  onViewChange: (val: ExperimentView) => void;
   onRemoveNlPredicate: (index: number) => void;
   onClearNlFilter: () => void;
   onRemoveManualPredicate: (index: number) => void;

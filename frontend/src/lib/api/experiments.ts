@@ -3,8 +3,8 @@ import type {
   EvaluationResult,
   ShapResult,
   ErrorAnalysisResult,
-  ComparisonResult,
   FilterPredicate,
+  ExperimentInsightType,
 } from '@/types/experiments';
 
 export async function fetchEvaluation(modelId: string): Promise<EvaluationResult> {
@@ -28,7 +28,6 @@ export async function startTuning(
     metric: string;
     timeoutSeconds?: number;
     sampler?: 'tpe' | 'random';
-    paramOverrides?: Record<string, { min?: number; max?: number; step?: number }>;
   },
   signal?: AbortSignal
 ): Promise<Response> {
@@ -39,16 +38,6 @@ export async function startTuning(
   });
   if (!response.ok) throw new Error(`Tuning request failed: ${response.status}`);
   return response;
-}
-
-export async function compareModels(
-  projectId: string,
-  modelIds: string[]
-): Promise<ComparisonResult> {
-  return apiRequest<ComparisonResult>(`/experiments/${projectId}/compare`, {
-    method: 'POST',
-    body: { modelIds }
-  });
 }
 
 export async function parseNlFilter(
@@ -65,7 +54,7 @@ export async function parseNlFilter(
 /** Returns raw Response for NDJSON streaming. */
 export async function fetchInsights(
   projectId: string,
-  body: { type: string; context: Record<string, unknown> }
+  body: { type: ExperimentInsightType; context: Record<string, unknown> }
 ): Promise<Response> {
   const response = await apiFetch(`/experiments/${projectId}/insights`, {
     method: 'POST',

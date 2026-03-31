@@ -118,6 +118,13 @@ export interface FilterPredicate {
   value: string | number;
 }
 
+export type ExperimentView = 'overview' | 'leaderboard';
+export type ExperimentDetailTab = 'plots' | 'interpretability' | 'errors' | 'provenance' | 'tune';
+
+export type ExperimentSortDirection = 'asc' | 'desc';
+export type ExperimentSortField = 'name' | 'algorithm' | 'createdAt' | (string & {});
+export type ExperimentInsightType = 'compare' | 'report';
+
 // ── Comparison ──
 export interface ComparisonResult {
   models: Array<{ modelId: string; name: string; metrics: Record<string, number> }>;

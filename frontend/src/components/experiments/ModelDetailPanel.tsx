@@ -42,6 +42,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const model = useModelStore((s) => modelId ? s.models.find((m) => m.modelId === modelId) : undefined);
   const evaluation = useExperimentsStore((s) => modelId ? s.evaluations[modelId] : undefined);
   const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
+  const retryEvaluation = useExperimentsStore((s) => s.retryEvaluation);
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
   const { themeColor } = useProjectThemeColor();
@@ -130,14 +131,12 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {isFailed && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => {
-                      useExperimentsStore.setState((s) => {
-                        const next = { ...s.evaluations };
-                        delete next[modelId];
-                        return { evaluations: next };
-                      });
-                      fetchEvaluation(modelId);
-                    }}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={iconBtnCls}
+                      onClick={() => { void retryEvaluation(modelId); }}
+                    >
                       <RefreshCcw className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>

@@ -10,7 +10,15 @@ import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn, downloadBlob } from '@/lib/utils';
 import { SortHeader } from '@/components/ui/SortHeader';
 import { LOWER_IS_BETTER } from './modelIcons';
-import { formatMetric, filterByPredicates, filterByGroupedPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
+import {
+  filterModels,
+  formatMetric,
+  PRIMARY_METRIC,
+  detectTaskTypes,
+  findChampionModelId,
+  sortModels,
+} from './utils';
+import type { ExperimentSortField } from '@/types/experiments';
 
 /* ── Metric helpers ─────────────────────────────────────── */
 
@@ -57,25 +65,6 @@ function buildSmartColumns(taskTypes: ModelTaskType[], models: ModelRecord[]): [
   return cols;
 }
 
-/** Champion is the model with the best primary metric among completed models. */
-function findChampionId(models: ModelRecord[]): string | null {
-  let best: ModelRecord | null = null;
-  let bestVal = NaN;
-  for (const m of models) {
-    if (m.status !== 'completed') continue;
-    const primary = PRIMARY_METRIC[m.taskType];
-    const val = m.metrics[primary];
-    if (val == null || !Number.isFinite(val)) continue;
-    const lower = LOWER_IS_BETTER.has(primary);
-    if (Number.isNaN(bestVal) || (lower ? val < bestVal : val > bestVal)) {
-      bestVal = val;
-      best = m;
-    }
-  }
-  return best?.modelId ?? null;
-}
-
-
 /* ── Skeleton ghost rows ───────────────────────────────── */
 
 function GhostRows() {
@@ -118,45 +107,17 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
   const trophyColorClass = 'text-accent-text';
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
-  const championId = useMemo(() => findChampionId(models), [models]);
+  const championId = useMemo(() => findChampionModelId(models), [models]);
 
-  const filteredModels = useMemo(() => {
-    let result = models;
-    if (activePredicates.length > 0) result = filterByPredicates(result, activePredicates);
-    if (manualPredicates.length > 0) result = filterByGroupedPredicates(result, manualPredicates);
-    if (nameFilter.trim()) {
-      const q = nameFilter.trim().toLowerCase();
-      result = result.filter((m) => m.name.toLowerCase().includes(q));
-    }
-    return result;
-  }, [models, activePredicates, manualPredicates, nameFilter]);
+  const filteredModels = useMemo(
+    () => filterModels(models, activePredicates, manualPredicates, nameFilter),
+    [models, activePredicates, manualPredicates, nameFilter]
+  );
 
-  const sortedModels = useMemo(() => {
-    const sorted = [...filteredModels];
-    sorted.sort((a, b) => {
-      let aVal: number | string;
-      let bVal: number | string;
-
-      if (sortField === 'name') {
-        aVal = a.name.toLowerCase();
-        bVal = b.name.toLowerCase();
-      } else if (sortField === 'algorithm') {
-        aVal = a.algorithm.toLowerCase();
-        bVal = b.algorithm.toLowerCase();
-      } else if (sortField === 'createdAt') {
-        aVal = a.createdAt;
-        bVal = b.createdAt;
-      } else {
-        aVal = a.metrics[sortField] ?? -Infinity;
-        bVal = b.metrics[sortField] ?? -Infinity;
-      }
-
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [filteredModels, sortField, sortDirection]);
+  const sortedModels = useMemo(
+    () => sortModels(filteredModels, sortField, sortDirection),
+    [filteredModels, sortField, sortDirection]
+  );
 
   const metricExtremes = useMemo(() => {
     const result: Record<string, { best: number; worst: number }> = {};
@@ -175,7 +136,7 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
   }, [filteredModels, metricCols]);
 
   const handleSort = useCallback(
-    (field: string) => {
+    (field: ExperimentSortField) => {
       if (sortField === field) {
         setSort(field, sortDirection === 'asc' ? 'desc' : 'asc');
       } else {

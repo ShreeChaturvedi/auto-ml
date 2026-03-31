@@ -60,7 +60,6 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   const addFile = useDataStore((state) => state.addFile);
   const addPreview = useDataStore((state) => state.addPreview);
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
-  const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const allFiles = useDataStore((state) => state.files);
   const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
 
@@ -75,9 +74,9 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   // Hydrate files from backend on mount
   useEffect(() => {
     if (projectId) {
-      void hydrateFromBackend(projectId);
+      void useDataStore.getState().hydrateFromBackend(projectId);
     }
-  }, [projectId, hydrateFromBackend]);
+  }, [projectId]);
 
   // Upload dataset files to backend
   const uploadDatasetToBackend = useCallback(
@@ -119,7 +118,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         // Re-hydrate from backend to reconcile client-side UUIDs with
         // backend datasetIds — ensures preview lookups and tab IDs are
         // consistent without requiring a manual page refresh.
-        await hydrateFromBackend(projectId, { force: true });
+        await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
       } catch (error) {
         console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
         setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
@@ -129,7 +128,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         }));
       }
     },
-    [projectId, setFileMetadata, addPreview, hydrateFromBackend]
+    [projectId, setFileMetadata, addPreview]
   );
 
   const uploadDocumentToBackend = useCallback(
@@ -191,12 +190,12 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
       if (datasetUploads.length > 0) {
         void Promise.allSettled(datasetUploads).then(async () => {
           // Single hydration after all uploads complete (not per-file)
-          await hydrateFromBackend(projectId, { force: true });
+          await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
           fetchProjectSuggestions(projectId, { force: true });
         });
       }
     },
-    [projectId, addFile, fetchProjectSuggestions, hydrateFromBackend, uploadDatasetToBackend, uploadDocumentToBackend]
+    [projectId, addFile, fetchProjectSuggestions, uploadDatasetToBackend, uploadDocumentToBackend]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

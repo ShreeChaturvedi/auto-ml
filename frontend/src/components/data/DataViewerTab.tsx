@@ -64,7 +64,6 @@ export function DataViewerTab() {
   const openFileTabs = useDataStore((state) => state.openFileTabs);
   const setActiveFileTab = useDataStore((state) => state.setActiveFileTab);
   const openFileTab = useDataStore((state) => state.openFileTab);
-  const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
   const updateColumnType = useDataStore((state) => state.updateColumnType);
 
   const files = useMemo(
@@ -93,9 +92,9 @@ export function DataViewerTab() {
   // Hydrate data from backend on mount
   useEffect(() => {
     if (projectId) {
-      void hydrateFromBackend(projectId);
+      void useDataStore.getState().hydrateFromBackend(projectId);
     }
-  }, [projectId, hydrateFromBackend]);
+  }, [projectId]);
 
   // Auto-select a tab when none is active or the active tab doesn't belong to this project
   const openFileTabsForProject = useMemo(

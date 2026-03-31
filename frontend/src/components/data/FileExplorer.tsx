@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -49,13 +49,7 @@ interface FileItemProps {
 
 function FileItem({ file, isActive, onOpen, onDelete, onDownload, onRename }: FileItemProps) {
   const { Icon, colorClass } = resolveFileIcon(file.type);
-  const [hovered, setHovered] = useState(false);
-
-  const iconColor = isActive
-    ? colorClass
-    : hovered
-      ? colorClass
-      : 'text-muted-foreground';
+  const iconColor = isActive ? colorClass : 'text-muted-foreground';
 
   return (
     <div
@@ -66,8 +60,6 @@ function FileItem({ file, isActive, onOpen, onDelete, onDownload, onRename }: Fi
           : 'text-foreground hover:bg-muted'
       )}
       onClick={onOpen}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <Icon className={cn('h-3.5 w-3.5 shrink-0 transition-colors duration-200', iconColor)} />
       <span className="text-workflow truncate flex-1" title={file.name}>{file.name}</span>
@@ -126,9 +118,7 @@ interface PlanItemProps {
 }
 
 function PlanItem({ name, isActive, onOpen }: PlanItemProps) {
-  const [hovered, setHovered] = useState(false);
-
-  const iconColor = isActive || hovered ? 'text-accent-text' : 'text-muted-foreground';
+  const iconColor = isActive ? 'text-accent-text' : 'text-muted-foreground';
 
   return (
     <div
@@ -139,8 +129,6 @@ function PlanItem({ name, isActive, onOpen }: PlanItemProps) {
           : 'text-foreground hover:bg-muted'
       )}
       onClick={onOpen}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <ClipboardList className={cn('h-3.5 w-3.5 shrink-0 transition-colors duration-200', iconColor)} />
       <span className="text-workflow truncate flex-1">{name}</span>
@@ -154,6 +142,10 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
   const { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan } = useProjectPlans(projectId);
   const [renamingFile, setRenamingFile] = useState<UploadedFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
+
+  useEffect(() => {
+    if (projectId) void useDataStore.getState().hydrateFromBackend(projectId);
+  }, [projectId]);
 
   const openRenameDialog = (file: UploadedFile) => {
     setRenamingFile(file);

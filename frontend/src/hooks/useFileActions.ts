@@ -3,7 +3,7 @@
  * and data/context file partitioning. Used by both FileSubtabs (sidebar) and FileExplorer (panel).
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useDataStore } from '@/stores/dataStore';
@@ -37,15 +37,12 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
   const isDataViewerUnlocked = useProjectStore((s) =>
     s.isPhaseUnlocked(projectId, 'data-viewer')
   );
-  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
-  const currentPhase = project?.currentPhase;
+  const currentPhase = useProjectStore(
+    (s) => s.projects.find((p) => p.id === projectId)?.currentPhase
+  );
   const currentPhaseLabel = currentPhase
     ? (phaseConfig[currentPhase]?.label ?? 'the current step')
     : 'the current step';
-
-  useEffect(() => {
-    if (projectId) void useDataStore.getState().hydrateFromBackend(projectId);
-  }, [projectId]);
 
   const projectFiles = useMemo(
     () => files.filter((f) => f.projectId === projectId),

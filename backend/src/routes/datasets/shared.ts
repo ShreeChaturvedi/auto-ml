@@ -11,7 +11,7 @@ import type { DatasetFileType, DatasetProfile } from '../../types/dataset.js';
 import { sendNotFound } from '../../utils/errors.js';
 import { getDatasetPath } from '../../utils/pathUtils.js';
 
-export const DATASET_CONTENT_TYPES: Record<DatasetFileType, string> = {
+const DATASET_CONTENT_TYPES: Record<DatasetFileType, string> = {
   csv: 'text/csv',
   json: 'application/json',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

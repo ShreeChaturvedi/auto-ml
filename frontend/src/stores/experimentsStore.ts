@@ -298,8 +298,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     }
   },
 
-  setNlFilter: (text, predicates) => {
-    void text;
+  setNlFilter: (_text, predicates) => {
     const update: Partial<ExperimentsState> = { activePredicates: predicates };
     if (predicates.length > 0) {
       update.experimentView = 'leaderboard';

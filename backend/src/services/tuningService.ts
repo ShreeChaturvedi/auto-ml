@@ -22,8 +22,8 @@ import {
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
 
-import { resolveModelTestSize } from './modelTestSize.js';
 import { getModelTemplate } from './modelTemplates.js';
+import { resolveModelTestSize } from './modelTestSize.js';
 import {
   buildOutputDirSetup,
   buildPreprocessingLines,

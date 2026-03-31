@@ -13,8 +13,8 @@ import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
 import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
-import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
+import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
 import { deleteTuningStudiesByModelId } from './tuningService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);

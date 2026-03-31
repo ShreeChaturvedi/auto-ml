@@ -6,12 +6,14 @@ interface CreateProjectResponse {
   };
 }
 
+const API_BASE_URL = process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000';
+
 export async function resetBackendData(request: APIRequestContext) {
-  await request.delete('http://localhost:4000/api/projects/reset');
+  await request.delete(`${API_BASE_URL}/api/projects/reset`);
 }
 
 export async function apiCreateProject(request: APIRequestContext, payload: Record<string, unknown>) {
-  const response = await request.post('http://localhost:4000/api/projects', {
+  const response = await request.post(`${API_BASE_URL}/api/projects`, {
     data: payload
   });
 

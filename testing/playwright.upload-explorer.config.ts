@@ -11,50 +11,50 @@ const datasetFilesPath = path.join(tempRoot, 'datasets', 'files');
 process.env.AUTOML_STORAGE_PATH = storagePath;
 process.env.AUTOML_DATASET_METADATA_PATH = datasetMetadataPath;
 process.env.AUTOML_DATASET_FILES_PATH = datasetFilesPath;
+process.env.AUTOML_API_BASE_URL = 'http://127.0.0.1:4100';
 
 export default defineConfig({
   testDir: './tests',
   timeout: 120_000,
   expect: {
-    timeout: 10_000
+    timeout: 10_000,
   },
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: 'http://127.0.0.1:4273',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
-    screenshot: 'only-on-failure'
+    screenshot: 'only-on-failure',
   },
-  globalSetup: './playwright.global-setup.ts',
   webServer: [
     {
       command: 'npm --prefix ../backend run serve:benchmark',
-      port: 4000,
+      port: 4100,
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
-        PORT: '4000',
+        PORT: '4100',
         STORAGE_PATH: storagePath,
         DATASET_METADATA_PATH: datasetMetadataPath,
-      DATASET_STORAGE_DIR: datasetFilesPath,
-      ALLOWED_ORIGINS: 'http://127.0.0.1:4173,http://localhost:4173',
-      NODE_ENV: 'test',
-      VITEST: 'true'
-    }
-  },
+        DATASET_STORAGE_DIR: datasetFilesPath,
+        ALLOWED_ORIGINS: 'http://127.0.0.1:4273,http://localhost:4273',
+        NODE_ENV: 'test',
+        DEV_BYPASS_EMAIL_VERIFICATION: 'true',
+      },
+    },
     {
-      command: 'npm --prefix ../frontend run preview -- --host --port 4173',
-      port: 4173,
+      command: 'npm --prefix ../frontend run preview -- --host 127.0.0.1 --port 4273',
+      port: 4273,
       reuseExistingServer: false,
-      timeout: 120_000
-    }
+      timeout: 120_000,
+    },
   ],
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] }
-    }
-  ]
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 });

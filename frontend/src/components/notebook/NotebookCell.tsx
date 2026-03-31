@@ -349,7 +349,6 @@ export function NotebookCellComponent({
             </div>
           )}
         </div>
-      </TooltipProvider>
 
       <Suspense
         fallback={
@@ -408,34 +407,42 @@ export function NotebookCellComponent({
           <div className="flex min-h-[32px] items-center justify-between border-b px-3 py-1.5">
             <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground">OUTPUT</span>
 
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-6 w-6"
-                onClick={handleCopyOutput}
-                title={outputCopied ? 'Copied!' : 'Copy output'}
-                aria-label={outputCopied ? 'Copied!' : 'Copy output'}
-                type="button"
-              >
-                {outputCopied ? (
-                  <Check className="h-3 w-3 text-green-500" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-              </Button>
+            <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="h-6 w-6 [&_svg]:scale-[0.92]"
+                    onClick={handleCopyOutput}
+                    aria-label={outputCopied ? 'Copied!' : 'Copy'}
+                    type="button"
+                  >
+                    {outputCopied ? (
+                      <Check className="text-green-500" />
+                    ) : (
+                      <Copy />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{outputCopied ? 'Copied!' : 'Copy'}</TooltipContent>
+              </Tooltip>
 
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-6 w-6"
-                onClick={() => setShowOutput((previous) => !previous)}
-                title={showOutput ? 'Collapse output' : 'Expand output'}
-                aria-label={showOutput ? 'Collapse output' : 'Expand output'}
-                type="button"
-              >
-                {showOutput ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="h-6 w-6"
+                    onClick={() => setShowOutput((previous) => !previous)}
+                    aria-label={showOutput ? 'Collapse' : 'Expand'}
+                    type="button"
+                  >
+                    {showOutput ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{showOutput ? 'Collapse' : 'Expand'}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
 
@@ -446,6 +453,7 @@ export function NotebookCellComponent({
           )}
         </div>
       )}
+      </TooltipProvider>
     </div>
   );
 }

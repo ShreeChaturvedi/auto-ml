@@ -10,6 +10,7 @@ import {
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
 
+import { resolveModelTestSize } from './modelTestSize.js';
 import {
   buildDatasetLoadLines,
   buildOutputDirSetup,
@@ -386,6 +387,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
     // 5. Pre-compute workspace paths (same pattern as containerOrchestrator)
     const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
     const workspaceModelPath = join(workspacePath, 'models', modelId, 'model.joblib');
+    const testSize = resolveModelTestSize(model);
 
     // 6. Orchestrate container execution
     const { container, executionResult } = await orchestrateContainerExecution({
@@ -398,7 +400,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
           outputDir: `/workspace/eval/${modelId}`,
           taskType: model.taskType as 'classification' | 'regression',
           targetColumn: model.targetColumn!,
-          testSize: 0.2,
+          testSize,
         }),
       filesToCopy: [
         {

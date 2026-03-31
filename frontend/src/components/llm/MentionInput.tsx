@@ -183,20 +183,16 @@ function createMentionSpan(name: string, mentionTypes?: Map<string, string>): HT
   const span = document.createElement('span');
   span.setAttribute('contenteditable', 'false');
   span.setAttribute('data-mention', name);
-  span.style.cssText = 'display:inline-flex;align-items:center;gap:3px;border-radius:4px;padding:1px 6px 1px 4px;font-size:12px;font-weight:500;vertical-align:middle;user-select:none;line-height:1.4;';
-
-  // Use CSS custom properties for theme-aware colors
   span.classList.add('mention-chip');
 
-  // Colored dot indicator
-  const dot = document.createElement('span');
-  const fileType = mentionTypes?.get(name.toLowerCase());
-  const dotColor = getChipDotColor(fileType);
-  dot.style.cssText = `display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${dotColor};`;
-  span.appendChild(dot);
-
-  // Filename text
+  // Text first in DOM so it provides the inline-flex baseline
   span.appendChild(document.createTextNode(name));
+
+  const dot = document.createElement('span');
+  dot.classList.add('mention-chip-dot');
+  const fileType = mentionTypes?.get(name.toLowerCase());
+  dot.style.background = getChipDotColor(fileType);
+  span.appendChild(dot);
 
   return span;
 }

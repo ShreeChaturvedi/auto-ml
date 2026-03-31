@@ -356,8 +356,32 @@
 
 /* Mention chip inside contentEditable */
 .mention-chip {
-  background: hsl(var(--accent-bg));
-  color: hsl(var(--accent-text));
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 4px;
+  padding: 6px;
+  font-size: 0.85em;
+  font-weight: 500;
+  vertical-align: 0.2em;
+  user-select: none;
+  line-height: 1;
+  background: hsl(var(--muted) / 0.3);
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border) / 0.6);
+  margin: 0 2px;
+}
+.dark .mention-chip {
+  background: hsl(var(--border));
+  border-color: hsl(var(--border) / 0.8);
+}
+.mention-chip-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  order: -1;
 }
 
 /* Dialog focus states */

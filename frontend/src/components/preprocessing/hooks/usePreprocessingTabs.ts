@@ -10,6 +10,11 @@ import {
 } from '../preprocessingTabUtils';
 import type { PreprocessingWorkbook, PreprocessingTabSnapshot } from '../preprocessingTabUtils';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
+import {
+  activatePreprocessingTab,
+  switchPreprocessingTab
+} from './preprocessingTabActivation';
+import { resolveRequestedWorkbookAction } from './preprocessingWorkbookUrlSync';
 import { useTabPersistence } from './useTabPersistence';
 import { useTabNotebookSync } from './useTabNotebookSync';
 
@@ -220,21 +225,23 @@ export function usePreprocessingTabs({
   });
 
   const activateTab = useCallback((tab: PreprocessingWorkbook) => {
-    setActiveTabId(tab.id);
-    syncWorkbookSelection(tab.id, true);
-    applyTabSnapshot(tab.snapshot);
-    void ensureNotebookForTab(tab);
+    activatePreprocessingTab(tab, {
+      setActiveTabId,
+      syncWorkbookSelection,
+      applyTabSnapshot,
+      ensureNotebookForTab
+    });
   }, [applyTabSnapshot, ensureNotebookForTab, setActiveTabId, syncWorkbookSelection]);
 
   // ---- Tab CRUD ------------------------------------------------------------
 
   const handleTabSwitch = useCallback((value: string) => {
-    const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
-    if (!currentActiveTab) return;
-    const targetTab = tabsRef.current.find((tab) => tab.id === value);
-    if (!targetTab || targetTab.id === currentActiveTab.id) return;
-    saveActiveSnapshot();
-    activateTab(targetTab);
+    switchPreprocessingTab(value, {
+      tabs: tabsRef.current,
+      activeTabId: activeTabIdRef.current,
+      saveActiveSnapshot,
+      activateTab
+    });
   }, [activeTabIdRef, activateTab, saveActiveSnapshot, tabsRef]);
 
   // ---- Apply initial tab/notebook from URL search params ------------------
@@ -301,40 +308,33 @@ export function usePreprocessingTabs({
   }, [activateTab, handleTabSwitch, saveActiveSnapshot, setTabs, tabsRef]);
 
   useEffect(() => {
-    if (!tabsReady || !activeTab?.id) {
+    const action = resolveRequestedWorkbookAction({
+      tabsReady,
+      activeTabId: activeTab?.id,
+      requestedTabId,
+      syncedWorkbookId: syncedWorkbookIdRef.current,
+      tabs,
+      registry: useWorkbookRegistryStore.getState().preprocessing
+    });
+
+    if (action.type === 'clear-synced') {
+      syncedWorkbookIdRef.current = null;
       return;
     }
 
-    if (!requestedTabId) {
-      syncWorkbookSelection(activeTab.id, true);
+    if (action.type === 'sync-active') {
+      syncWorkbookSelection(action.tabId, true);
       return;
     }
 
-    if (requestedTabId === activeTab.id) {
-      if (syncedWorkbookIdRef.current === requestedTabId) {
-        syncedWorkbookIdRef.current = null;
-      }
+    if (action.type === 'switch') {
+      handleTabSwitch(action.tabId);
       return;
     }
 
-    if (syncedWorkbookIdRef.current === activeTab.id) {
-      syncWorkbookSelection(activeTab.id, true);
-      return;
+    if (action.type === 'adopt') {
+      adoptTab(action.tabId, action.name);
     }
-
-    if (tabs.some((tab) => tab.id === requestedTabId)) {
-      handleTabSwitch(requestedTabId);
-      return;
-    }
-
-    const registry = useWorkbookRegistryStore.getState().preprocessing;
-    const entry = registry.find((workbook) => workbook.id === requestedTabId);
-    if (entry) {
-      adoptTab(requestedTabId, entry.name);
-      return;
-    }
-
-    syncWorkbookSelection(activeTab.id, true);
   }, [activeTab?.id, adoptTab, handleTabSwitch, requestedTabId, syncWorkbookSelection, tabs, tabsReady]);
 
   const handleDeleteTab = useCallback(() => {

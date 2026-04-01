@@ -33,6 +33,7 @@ import type {
   ToolContext
 } from '../phaseConfig.js';
 import { registerPhaseConfig } from '../phaseConfig.js';
+import { getToolResultPauseReason } from '../turnState.js';
 
 // ---------------------------------------------------------------------------
 // Context extractors (inlined from preprocessingPlannerContext.ts)
@@ -244,16 +245,7 @@ function buildStageConfig(stage: string, runtimeContext?: RuntimeContext): Stage
 // -- Turn classification (ported from controller.ts classify_turn) ----------
 
 function inferPendingApproval(toolResults: ToolResult[]): boolean {
-  const latest = toolResults.at(-1);
-  if (!latest?.output || typeof latest.output !== 'object') return false;
-  const output = latest.output as Record<string, unknown>;
-  const step = output.step && typeof output.step === 'object' ? output.step as Record<string, unknown> : null;
-  const status = typeof output.status === 'string' ? output.status
-    : typeof step?.status === 'string' ? step.status : undefined;
-  const reasonCode = typeof output.reasonCode === 'string' ? output.reasonCode : undefined;
-  return status === 'awaiting_approval'
-    || reasonCode === 'STEP_APPROVAL_REQUIRED'
-    || reasonCode === 'STEP_APPROVAL_USER_REQUIRED';
+  return getToolResultPauseReason(toolResults.at(-1)) === 'awaiting_approval';
 }
 
 function getLatestToolOutcome(toolResults: ToolResult[]): {

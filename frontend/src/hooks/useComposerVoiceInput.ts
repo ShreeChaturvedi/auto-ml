@@ -26,12 +26,15 @@ export function useComposerVoiceInput({
 }: UseComposerVoiceInputOptions) {
   const valueRef = useRef(value);
   valueRef.current = value;
+  const getComposerRef = useRef(getComposer);
+  getComposerRef.current = getComposer;
 
   const getValue = useCallback(() => valueRef.current, []);
+  const resolveComposer = useCallback(() => getComposerRef.current(), []);
 
   const getCursorOffset = useCallback(() => {
-    return getVoiceComposerSelectionOffset(getComposer, valueRef.current);
-  }, [getComposer]);
+    return getVoiceComposerSelectionOffset(resolveComposer, valueRef.current);
+  }, [resolveComposer]);
 
   const applyValue = useCallback((
     nextValue: string,
@@ -39,13 +42,13 @@ export function useComposerVoiceInput({
     animateRange?: VoiceComposerAnimateRange
   ) => {
     syncVoiceComposerValue({
-      getComposer,
+      getComposer: resolveComposer,
       value: nextValue,
       cursorOffset,
       onValueChange,
       animateRange,
     });
-  }, [getComposer, onValueChange]);
+  }, [onValueChange, resolveComposer]);
 
   const {
     handleTranscriptEvent,
@@ -71,8 +74,8 @@ export function useComposerVoiceInput({
   });
 
   const focusInput = useCallback(() => {
-    focusVoiceComposer(getComposer);
-  }, [getComposer]);
+    focusVoiceComposer(resolveComposer);
+  }, [resolveComposer]);
 
   const handleToggleRecording = useCallback(() => {
     if (state === 'idle' || state === 'error') {
@@ -82,20 +85,26 @@ export function useComposerVoiceInput({
     toggleRecording();
   }, [focusInput, state, toggleRecording]);
 
+  const getInputSnapshot = useCallback(() => ({
+    value: valueRef.current,
+    cursor: getCursorOffset(),
+  }), [getCursorOffset]);
+
+  const restoreInput = useCallback((snapshot: { value: string; cursor: number }) => {
+    applyValue(snapshot.value, snapshot.cursor);
+  }, [applyValue]);
+
+  const startPushToTalkRecording = useCallback(() => {
+    focusInput();
+    startRecording();
+  }, [focusInput, startRecording]);
+
   const pushToTalk = usePushToTalk({
     disabled,
     voiceState: state,
-    getInputSnapshot: () => ({
-      value: valueRef.current,
-      cursor: getCursorOffset(),
-    }),
-    restoreInput: (snapshot) => {
-      applyValue(snapshot.value, snapshot.cursor);
-    },
-    startRecording: () => {
-      focusInput();
-      startRecording();
-    },
+    getInputSnapshot,
+    restoreInput,
+    startRecording: startPushToTalkRecording,
     stopRecording,
   });
 

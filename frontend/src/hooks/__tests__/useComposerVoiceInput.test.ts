@@ -186,4 +186,103 @@ describe('useComposerVoiceInput', () => {
     expect(onValueChange).toHaveBeenCalledWith('snapshot', 3);
     expect(composer.focus.mock.invocationCallOrder.at(-1)).toBeLessThan(startRecording.mock.invocationCallOrder[0]);
   });
+
+  it('keeps internal bridge callbacks stable when the caller recreates getComposer', () => {
+    const composer = {
+      focus: vi.fn(),
+      getSelectionOffset: vi.fn(() => 2),
+      syncValue: vi.fn(),
+    };
+
+    useVoiceTranscriptMock.mockReturnValue({
+      handleTranscriptEvent: vi.fn(),
+      startSession: vi.fn(),
+      stopSession: vi.fn(),
+    });
+
+    useVoiceInputMock.mockReturnValue({
+      state: 'idle',
+      analyserRef: { current: null },
+      startRecording: vi.fn(),
+      stopRecording: vi.fn(),
+      toggleRecording: vi.fn(),
+    });
+
+    usePushToTalkMock.mockReturnValue({
+      handleKeyDown: vi.fn(),
+      handleKeyUp: vi.fn(),
+    });
+
+    const onValueChange = vi.fn();
+    const { rerender } = renderHook(
+      ({ value }) => useComposerVoiceInput({
+        value,
+        getComposer: () => composer,
+        onValueChange,
+      }),
+      { initialProps: { value: 'draft' } }
+    );
+
+    const firstTranscriptOptions = useVoiceTranscriptMock.mock.calls[0][0];
+    const firstPushToTalkOptions = usePushToTalkMock.mock.calls[0][0];
+
+    rerender({ value: 'draft plus' });
+
+    const secondTranscriptOptions = useVoiceTranscriptMock.mock.calls[1][0];
+    const secondPushToTalkOptions = usePushToTalkMock.mock.calls[1][0];
+
+    expect(secondTranscriptOptions.getValue).toBe(firstTranscriptOptions.getValue);
+    expect(secondTranscriptOptions.getCursorOffset).toBe(firstTranscriptOptions.getCursorOffset);
+    expect(secondTranscriptOptions.applyValue).toBe(firstTranscriptOptions.applyValue);
+    expect(secondPushToTalkOptions.getInputSnapshot).toBe(firstPushToTalkOptions.getInputSnapshot);
+    expect(secondPushToTalkOptions.restoreInput).toBe(firstPushToTalkOptions.restoreInput);
+    expect(secondPushToTalkOptions.startRecording).toBe(firstPushToTalkOptions.startRecording);
+  });
+
+  it('falls back to the current value when no composer surface is available', () => {
+    const onValueChange = vi.fn();
+
+    let transcriptOptions:
+      | {
+          getCursorOffset: () => number;
+          applyValue: (value: string, cursorOffset: number, animateRange?: { start: number; end: number }) => void;
+        }
+      | undefined;
+
+    useVoiceTranscriptMock.mockImplementation((options) => {
+      transcriptOptions = options;
+      return {
+        handleTranscriptEvent: vi.fn(),
+        startSession: vi.fn(),
+        stopSession: vi.fn(),
+      };
+    });
+
+    useVoiceInputMock.mockReturnValue({
+      state: 'idle',
+      analyserRef: { current: null },
+      startRecording: vi.fn(),
+      stopRecording: vi.fn(),
+      toggleRecording: vi.fn(),
+    });
+
+    usePushToTalkMock.mockReturnValue({
+      handleKeyDown: vi.fn(),
+      handleKeyUp: vi.fn(),
+    });
+
+    renderHook(() => useComposerVoiceInput({
+      value: 'draft',
+      getComposer: () => null,
+      onValueChange,
+    }));
+
+    expect(transcriptOptions?.getCursorOffset()).toBe(5);
+
+    act(() => {
+      transcriptOptions?.applyValue('updated', 7);
+    });
+
+    expect(onValueChange).toHaveBeenCalledWith('updated', 7);
+  });
 });

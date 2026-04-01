@@ -252,6 +252,8 @@ export function AgenticShell({
     return () => { cancelled = true; };
   }, [activeNotebookId, isGenerating, messages, savepointsGetDiff]);
 
+  const getComposer = useCallback(() => mentionInputRef.current, []);
+
   const {
     state: voiceState,
     analyserRef: voiceAnalyserRef,
@@ -260,7 +262,7 @@ export function AgenticShell({
     handlePushToTalkKeyUp,
   } = useComposerVoiceInput({
     value: chatInput,
-    getComposer: () => mentionInputRef.current,
+    getComposer,
     onValueChange: mention.handleValueChange,
     disabled: isGenerating,
   });

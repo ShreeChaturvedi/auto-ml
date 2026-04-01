@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,7 @@ const originalEnv = {
   executionWorkspaceDir: process.env.EXECUTION_WORKSPACE_DIR,
   databaseUrl: process.env.DATABASE_URL
 };
+/** Static id for filesystem layout tests (no DB). */
 const PROJECT_ID = '11111111-1111-1111-1111-111111111111';
 
 async function loadPersistenceModule() {
@@ -22,6 +24,15 @@ async function loadPersistenceModule() {
     return {
       ...actual,
       hasDatabaseConfiguration: () => false
+    };
+  });
+  vi.doMock('../../../repositories/datasetRepository.js', async () => {
+    const actual = await vi.importActual<typeof import('../../../repositories/datasetRepository.js')>(
+      '../../../repositories/datasetRepository.js'
+    );
+    return {
+      ...actual,
+      createDatasetRepository: (metadataPath: string) => new actual.FileDatasetRepository(metadataPath)
     };
   });
   return import('./processedDatasetPersistence.js');
@@ -48,6 +59,7 @@ describe('resolveWorkspaceFilePath', () => {
     process.env.EXECUTION_WORKSPACE_DIR = originalEnv.executionWorkspaceDir;
     process.env.DATABASE_URL = originalEnv.databaseUrl;
     vi.doUnmock('../../../db.js');
+    vi.doUnmock('../../../repositories/datasetRepository.js');
     vi.resetModules();
 
     await Promise.all(createdDirs.splice(0).map(async (dir) => {
@@ -93,12 +105,13 @@ describe('resolveWorkspaceFilePath', () => {
     const rootDir = mkdtempSync(join(tmpdir(), 'issue-249-persist-'));
     createdDirs.push(rootDir);
     setPersistenceEnv(rootDir);
+    const projectId = randomUUID();
 
     const metadataPath = process.env.DATASET_METADATA_PATH;
     expect(metadataPath).toBeTruthy();
     const repo = new FileDatasetRepository(metadataPath ?? join(rootDir, 'datasets', 'metadata.json'));
     const sourceDataset = await repo.create({
-      projectId: PROJECT_ID,
+      projectId,
       filename: 'train_processed.csv',
       fileType: 'csv',
       size: 32,
@@ -115,7 +128,7 @@ describe('resolveWorkspaceFilePath', () => {
       }
     });
     const existingDerived = await repo.create({
-      projectId: PROJECT_ID,
+      projectId,
       filename: 'train_processed.csv',
       fileType: 'csv',
       size: 32,
@@ -135,7 +148,7 @@ describe('resolveWorkspaceFilePath', () => {
 
     const workspaceFile = join(
       process.env.EXECUTION_WORKSPACE_DIR ?? join(rootDir, 'workspaces'),
-      PROJECT_ID,
+      projectId,
       'datasets',
       sourceDataset.datasetId,
       sourceDataset.filename
@@ -146,7 +159,7 @@ describe('resolveWorkspaceFilePath', () => {
     const { persistProcessedDataset } = await loadPersistenceModule();
     const run = {
       runId: 'prep-run-1',
-      projectId: PROJECT_ID,
+      projectId,
       derivedDatasetIds: [],
       steps: {},
       checkpoints: [],

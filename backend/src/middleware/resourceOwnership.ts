@@ -4,7 +4,7 @@ import type { ProjectRepository } from '../repositories/project/types.js';
 import type { AuthRequest } from '../types/auth.js';
 import type { Project } from '../types/project.js';
 
-type ProjectOwnershipRepository = Pick<ProjectRepository, 'getById' | 'getByIdAndUser'>;
+export type ProjectOwnershipRepository = Pick<ProjectRepository, 'getById' | 'getByIdAndUser'>;
 
 export interface ProjectAuthRequest extends AuthRequest {
   project?: Project;

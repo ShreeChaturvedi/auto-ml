@@ -3,9 +3,8 @@ import { rename, rm } from 'node:fs/promises';
 
 import type { Response } from 'express';
 
-import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
+import { verifyProjectOwnership, type ProjectOwnershipRepository } from '../../middleware/resourceOwnership.js';
 import type { DatasetRepository } from '../../repositories/datasetRepository.js';
-import type { ProjectRepository } from '../../repositories/project/types.js';
 import type { AuthRequest } from '../../types/auth.js';
 import type { DatasetFileType, DatasetProfile } from '../../types/dataset.js';
 import { sendNotFound } from '../../utils/errors.js';
@@ -21,7 +20,7 @@ export async function loadOwnedDataset(
   req: AuthRequest,
   res: Response,
   datasetRepository: Pick<DatasetRepository, 'getById'>,
-  projectRepository: Pick<ProjectRepository, 'getById' | 'getByIdAndUser'>,
+  projectRepository: ProjectOwnershipRepository,
   datasetId: string,
 ): Promise<DatasetProfile | null> {
   const dataset = await datasetRepository.getById(datasetId);

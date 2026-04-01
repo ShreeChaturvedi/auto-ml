@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDataViewerQueryHandlers } from '../hooks/useDataViewerQueryHandlers';
 import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
+import type { Project } from '@/types/project';
 
 const mockState = vi.hoisted(() => ({
   toastErrorMock: vi.fn(),
@@ -22,7 +23,7 @@ vi.mock('@/lib/api/query', () => ({
   streamNlQuery: vi.fn(),
 }));
 
-const project = {
+const project: Project = {
   id: 'project-1',
   title: 'Project 1',
   description: '',
@@ -31,8 +32,8 @@ const project = {
   createdAt: new Date('2026-03-01T00:00:00.000Z'),
   updatedAt: new Date('2026-03-01T00:00:00.000Z'),
   currentPhase: 'upload' as const,
-  unlockedPhases: ['upload'] as const,
-  completedPhases: [] as const,
+  unlockedPhases: ['upload'],
+  completedPhases: [],
   metadata: {},
 };
 
@@ -75,6 +76,7 @@ describe('useDataViewerQueryHandlers', () => {
         rationale: 'Inspect the employee table.',
         explanation,
         queryId: 'nl-1',
+        query: null,
         provider: { id: 'provider-1', label: 'Provider 1', model: 'model-1' },
         cached: false,
         queryExecutionError: 'relation "employees" not ready',

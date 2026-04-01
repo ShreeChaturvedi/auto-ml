@@ -4,6 +4,8 @@ import type { ProjectRepository } from '../repositories/project/types.js';
 import type { AuthRequest } from '../types/auth.js';
 import type { Project } from '../types/project.js';
 
+type ProjectOwnershipRepository = Pick<ProjectRepository, 'getById' | 'getByIdAndUser'>;
+
 export interface ProjectAuthRequest extends AuthRequest {
   project?: Project;
 }
@@ -16,7 +18,7 @@ export interface ProjectAuthRequest extends AuthRequest {
 export async function verifyProjectOwnership(
   projectId: string,
   userId: string | undefined,
-  projectRepository: ProjectRepository
+  projectRepository: ProjectOwnershipRepository
 ): Promise<Project | null> {
   if (!userId) {
     // No user context — allow access if project exists (no-DB mode)

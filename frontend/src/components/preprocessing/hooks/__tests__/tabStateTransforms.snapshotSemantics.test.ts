@@ -39,8 +39,10 @@ describe('tabStateTransforms snapshot semantics', () => {
       'tab-1'
     );
 
-    expect((result.invalidatedTab?.snapshot as Record<string, unknown>).futureField).toBe('reset-default');
-    expect(result.invalidatedTab?.snapshot.selectedDatasetId).toBe('dataset-1');
-    expect(result.invalidatedTab?.snapshot.runId).toBeNull();
+    expect(result.invalidatedTab?.snapshot).toMatchObject({
+      futureField: 'reset-default',
+      selectedDatasetId: 'dataset-1',
+      runId: null
+    });
   });
 });

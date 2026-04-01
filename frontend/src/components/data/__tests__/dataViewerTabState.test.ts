@@ -71,10 +71,13 @@ describe('dataViewerTabState', () => {
         {
           metadata: {
             datasetProfile: {
+              nRows: 1,
+              nCols: 2,
               dtypes: {
                 age: 'integer',
                 city: 'string',
               },
+              nullCounts: {},
             },
           },
         },

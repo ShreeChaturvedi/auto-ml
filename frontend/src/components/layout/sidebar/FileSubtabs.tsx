@@ -5,13 +5,8 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { MoreVertical, Download, Trash2, Pencil } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
+import { Download, Trash2, Pencil } from 'lucide-react';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -28,65 +23,10 @@ import { renameDataset } from '@/lib/api/datasets';
 import { resolveFileIcon } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
 import { SubtabItem } from './SubtabItem';
+import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 
 interface FileSubtabsProps {
   projectId: string;
-}
-
-function FileActionMenu({
-  onRename,
-  onDownload,
-  onDelete
-}: {
-  onRename: () => void;
-  onDownload: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5 -my-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MoreVertical className="h-3 w-3" />
-          <span className="sr-only">File options</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onRename();
-          }}
-        >
-          <Pencil className="h-4 w-4 mr-2" />
-          Rename
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onDownload();
-          }}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Download
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="text-destructive focus:text-destructive"
-        >
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 export function FileSubtabs({ projectId }: FileSubtabsProps) {
@@ -136,11 +76,23 @@ export function FileSubtabs({ projectId }: FileSubtabsProps) {
         iconColorClass={colorClass}
         onClick={() => handleOpenFile(file.id)}
         actionSlot={
-          <FileActionMenu
-            onRename={() => openRenameDialog(file)}
-            onDownload={() => handleDownloadFile(file)}
-            onDelete={() => handleDeleteFile(file)}
-          />
+          <SidebarSubtabActionMenu ariaLabel="File options">
+            <DropdownMenuItem onClick={() => openRenameDialog(file)}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleDownloadFile(file)}>
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => handleDeleteFile(file)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </SidebarSubtabActionMenu>
         }
       />
     );

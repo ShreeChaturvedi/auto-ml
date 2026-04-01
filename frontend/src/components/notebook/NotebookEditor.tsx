@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { NotebookCellComponent } from './NotebookCell';
 import { NotebookMarkdownCell } from './NotebookMarkdownCell';
+import { NotebookInsertCellRow } from './NotebookInsertCellRow';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
 import { interruptKernel } from '@/lib/api/notebooks';
@@ -17,61 +18,7 @@ import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { scrollToRadixElement } from '@/lib/scrollUtils';
 import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
-
-interface InsertCellRowProps {
-  position: number;
-  onInsert: (position: number, cellType: NotebookCellType) => void;
-  disabled?: boolean;
-  className?: string;
-}
-
-function InsertCellRow({ position, onInsert, disabled, className }: InsertCellRowProps) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <div
-      className={cn('group relative flex h-6 items-center justify-center', className)}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <div
-        className={cn(
-          'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors duration-150',
-          isHovered ? 'bg-primary/40' : 'bg-transparent'
-        )}
-      />
-
-      <div
-        className={cn(
-          'relative z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm dark:shadow-none transition-opacity duration-150',
-          isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
-        )}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 gap-1 px-1.5 text-[10px] hover:bg-primary/10"
-          onClick={() => onInsert(position, 'code')}
-          disabled={disabled}
-        >
-          <Code className="h-3 w-3" />
-          Code
-        </Button>
-        <div className="h-3 w-px bg-border" />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 gap-1 px-1.5 text-[10px] hover:bg-primary/10"
-          onClick={() => onInsert(position, 'markdown')}
-          disabled={disabled}
-        >
-          <Type className="h-3 w-3" />
-          Text
-        </Button>
-      </div>
-    </div>
-  );
-}
+import { buildRenderItems, getSectionRange } from './notebookEditorUtils';
 
 export interface NotebookEditorHandle {
   scrollToHeading: (slug: string) => void;
@@ -81,23 +28,6 @@ interface NotebookEditorProps {
   projectId: string;
   notebookId?: string;
   className?: string;
-}
-
-interface RenderItem {
-  cell: NotebookCellModel;
-  kind: 'code' | 'markdown';
-  nestedUnderMarkdown: boolean;
-  isSectionCollapsed: boolean;
-  hiddenCodeCount: number;
-}
-
-function getSectionRange(cells: NotebookCellModel[], markdownIndex: number): { count: number; end: number } {
-  let end = markdownIndex;
-  for (let i = markdownIndex + 1; i < cells.length; i++) {
-    if (cells[i].cellType === 'markdown') break;
-    end = i;
-  }
-  return { count: end - markdownIndex, end };
 }
 
 export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorProps>(
@@ -207,43 +137,10 @@ export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorPro
     });
   }, [cells]);
 
-  const renderItems = useMemo<RenderItem[]>(() => {
-    const items: RenderItem[] = [];
-    let activeMarkdownId: string | null = null;
-    let activeSectionCollapsed = false;
-
-    for (let index = 0; index < cells.length; index += 1) {
-      const cell = cells[index];
-      if (cell.cellType === 'markdown') {
-        const collapsed = Boolean(collapsedSections[cell.cellId]);
-        const hiddenCodeCount = collapsed ? getSectionRange(cells, index).count : 0;
-        activeMarkdownId = cell.cellId;
-        activeSectionCollapsed = collapsed;
-        items.push({
-          cell,
-          kind: 'markdown',
-          nestedUnderMarkdown: false,
-          isSectionCollapsed: collapsed,
-          hiddenCodeCount
-        });
-        continue;
-      }
-
-      if (activeSectionCollapsed) {
-        continue;
-      }
-
-      items.push({
-        cell,
-        kind: 'code',
-        nestedUnderMarkdown: activeMarkdownId !== null,
-        isSectionCollapsed: false,
-        hiddenCodeCount: 0
-      });
-    }
-
-    return items;
-  }, [cells, collapsedSections]);
+  const renderItems = useMemo(
+    () => buildRenderItems(cells, collapsedSections),
+    [cells, collapsedSections]
+  );
 
   const toggleSectionCollapse = useCallback((cellId: string) => {
     setCollapsedSections((prev) => ({
@@ -387,7 +284,7 @@ export const NotebookEditor = forwardRef<NotebookEditorHandle, NotebookEditorPro
                     />
                   </div>
                 )}
-                <InsertCellRow
+                <NotebookInsertCellRow
                   position={item.cell.position + 1}
                   onInsert={handleInsertCell}
                   disabled={isSaving || !notebook}

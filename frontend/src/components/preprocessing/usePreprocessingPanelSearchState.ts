@@ -18,9 +18,8 @@ function buildInsightPrompt(column: string, issueType: string): string {
 
 export function usePreprocessingPanelSearchState() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTabIdRef = useRef(getWorkbookParam(searchParams));
-  const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
-
+  const initialTabId = useRef(getWorkbookParam(searchParams)).current;
+  const initialNotebookId = useRef(searchParams.get('notebook') ?? undefined).current;
   const [insightInitialPrompt] = useState<string | null>(() => {
     const column = searchParams.get('insightColumn');
     const issueType = searchParams.get('insightIssue');
@@ -29,10 +28,9 @@ export function usePreprocessingPanelSearchState() {
     }
     return buildInsightPrompt(column, issueType);
   });
-  const hadInsightParams = insightInitialPrompt !== null;
 
   useEffect(() => {
-    if (!hadInsightParams) {
+    if (!insightInitialPrompt) {
       return;
     }
 
@@ -40,8 +38,7 @@ export function usePreprocessingPanelSearchState() {
     next.delete('insightColumn');
     next.delete('insightIssue');
     setSearchParams(next, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run once on mount
-  }, []);
+  }, [insightInitialPrompt, searchParams, setSearchParams]);
 
   const syncWorkbookParam = useCallback((workbookId: string, replace = true) => {
     if (getWorkbookParam(searchParams) === workbookId) {
@@ -56,8 +53,8 @@ export function usePreprocessingPanelSearchState() {
 
   return {
     searchParams,
-    initialTabId: initialTabIdRef.current,
-    initialNotebookId: initialNotebookIdRef.current,
+    initialTabId,
+    initialNotebookId,
     insightInitialPrompt,
     syncWorkbookParam
   };

@@ -113,4 +113,28 @@ describe('usePreprocessingTabs', () => {
     });
     expect(onNeedsDatasetSelection).toHaveBeenCalledWith('dataset-1');
   });
+
+  it('syncs the workbook URL param whenever the active workbook changes', async () => {
+    const syncWorkbookParam = vi.fn();
+
+    const { result } = renderHook(() =>
+      usePreprocessingTabs({
+        projectId: 'proj-1',
+        onNeedsDatasetSelection: vi.fn(),
+        requestedTabId: undefined,
+        syncWorkbookParam
+      })
+    );
+
+    await waitFor(() => expect(result.current.tabsReady).toBe(true));
+    expect(syncWorkbookParam).toHaveBeenCalledWith(result.current.activeTabId, true);
+
+    act(() => {
+      result.current.handleNewTab();
+    });
+
+    await waitFor(() => {
+      expect(syncWorkbookParam).toHaveBeenLastCalledWith(result.current.activeTabId, true);
+    });
+  });
 });

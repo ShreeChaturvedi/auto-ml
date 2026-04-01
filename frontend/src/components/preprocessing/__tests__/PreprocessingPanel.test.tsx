@@ -45,9 +45,8 @@ vi.mock('../DatasetSelector', () => ({
 
 vi.mock('../useDatasetSelectorTrigger', () => ({
   useDatasetSelectorTrigger: () => ({
-    selectorOpen: false,
-    setSelectorOpen: vi.fn(),
-    triggerSelector: vi.fn()
+    forceOpen: false,
+    openSelector: vi.fn()
   })
 }));
 

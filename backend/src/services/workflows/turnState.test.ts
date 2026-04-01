@@ -71,7 +71,7 @@ describe('workflow pause detection', () => {
     ).toBe('awaiting_approval');
   });
 
-  it('builds approval pause details from matching tool results', () => {
+  it('builds approval pause details from any matching tool result', () => {
     expect(getApprovalPauseDetails([
       { output: { status: 'completed' } },
       { output: { step: { status: 'awaiting_approval' } } }
@@ -81,7 +81,7 @@ describe('workflow pause detection', () => {
     });
   });
 
-  it('resolves pause state from tool results when explicit fields are absent', () => {
+  it('resolves approval pause state from tool results when explicit pause fields are absent', () => {
     const result = {
       pauseReason: null,
       pendingInputKind: null,

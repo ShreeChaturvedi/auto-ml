@@ -137,4 +137,24 @@ describe('usePreprocessingTabs', () => {
       expect(syncWorkbookParam).toHaveBeenLastCalledWith(result.current.activeTabId, true);
     });
   });
+
+  it('does not update tabs when saving a snapshot for a stale active tab ref', async () => {
+    const { result } = renderHook(() =>
+      usePreprocessingTabs({
+        projectId: 'proj-1',
+        onNeedsDatasetSelection: vi.fn()
+      })
+    );
+
+    await waitFor(() => expect(result.current.tabsReady).toBe(true));
+
+    const initialTabs = result.current.tabs;
+
+    act(() => {
+      result.current.activeTabIdRef.current = 'missing-tab';
+      result.current.saveActiveSnapshot();
+    });
+
+    expect(result.current.tabs).toBe(initialTabs);
+  });
 });

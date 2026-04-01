@@ -128,11 +128,8 @@ export function invalidateActiveTabSessionState(
   }
 
   const nextSnapshot: PreprocessingTabSnapshot = {
-    ...currentTab.snapshot,
-    runId: null,
-    timeline: [],
-    stepBindings: {},
-    replayReport: null
+    ...createEmptyTabSnapshot(),
+    selectedDatasetId: currentTab.snapshot.selectedDatasetId
   };
   const invalidatedTab: PreprocessingWorkbook = {
     ...currentTab,

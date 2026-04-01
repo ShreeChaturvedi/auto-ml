@@ -111,7 +111,7 @@ const PhaseItem = memo(function PhaseItem({
     <div
       data-testid={`workflow-phase-${phase}`}
       className={cn(
-        'group flex items-center gap-1 rounded-lg',
+        'group flex items-center gap-2 rounded-lg',
         !isUnlocked
           ? 'text-muted-foreground'
           : isActive
@@ -138,7 +138,7 @@ const PhaseItem = memo(function PhaseItem({
               <IconComponent
                 className={cn(
                   'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
-                  !collapsed && 'group-hover:opacity-0 group-focus-within:opacity-0',
+                  !collapsed && 'group-hover:opacity-0',
                   activeColorClass
                 )}
               />
@@ -147,7 +147,7 @@ const PhaseItem = memo(function PhaseItem({
               data-testid={`workflow-phase-chevron-${phase}`}
               className={cn(
                 'absolute inset-0 h-3.5 w-3.5 transition-[opacity,transform] duration-200',
-                collapsed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                collapsed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100',
                 isExpanded && 'rotate-90',
                 activeColorClass
               )}

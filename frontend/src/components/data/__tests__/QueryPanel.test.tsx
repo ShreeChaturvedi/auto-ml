@@ -129,6 +129,7 @@ describe('QueryPanel theme handling', () => {
   });
 
   it('uses the route project suggestion entry when english mode opens', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useNlSuggestionStore.setState({
       byProject: {
         'route-project': {
@@ -166,9 +167,11 @@ describe('QueryPanel theme handling', () => {
 
     expect(await screen.findAllByText(/compare weekly revenue and average order value/i)).not.toHaveLength(0);
     expect(screen.queryByText(/this stale project suggestion should never appear/i)).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('keeps english placeholders visible across sql mode toggles', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useNlSuggestionStore.setState({
       byProject: {
         'route-project': {
@@ -200,5 +203,6 @@ describe('QueryPanel theme handling', () => {
     expect(container.textContent).toContain(
       'Compare weekly revenue and average order value over the last 8 weeks.'
     );
+    vi.useRealTimers();
   });
 });

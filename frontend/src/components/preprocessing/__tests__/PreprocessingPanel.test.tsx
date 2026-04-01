@@ -26,7 +26,7 @@ vi.mock('../PreprocessingAdapter', () => ({
     buildRequest: vi.fn(async () => undefined),
     toolRegistry: {},
     toolUiRegistry: {},
-    suggestionProvider: () => [],
+    tipsProvider: () => [],
     preserveToolHistoryBetweenPrompts: true
   })
 }));

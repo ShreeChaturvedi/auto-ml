@@ -24,7 +24,7 @@ function createDomainAdapter(
       }
     },
     toolUiRegistry: {},
-    suggestionProvider: () => [],
+    tipsProvider: () => [],
     preserveToolHistoryBetweenPrompts: true,
     ...overrides
   };

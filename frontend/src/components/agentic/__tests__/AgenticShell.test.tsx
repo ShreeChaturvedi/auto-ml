@@ -128,7 +128,7 @@ describe('AgenticShell smoke test', () => {
       buildRequest: vi.fn(async () => undefined),
       toolRegistry: {},
       toolUiRegistry: {},
-      suggestionProvider: () => [],
+      tipsProvider: () => [],
       preserveToolHistoryBetweenPrompts: true
     };
 

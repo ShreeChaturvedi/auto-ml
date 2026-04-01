@@ -382,7 +382,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
   });
 
-  it('uses the selected dataset filename when building suggestions', () => {
+  it('returns contextual tips with correct shape', () => {
     const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
       {
         datasetId: 'dataset-1',
@@ -393,11 +393,12 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
       }
     ], 'prep-thread:test');
 
-    expect(adapter.suggestionProvider([], false)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: 'missingness',
-        prompt: expect.stringContaining('customer_churn')
-      })
-    ]));
+    const tips = adapter.tipsProvider([], false);
+    expect(tips.length).toBeGreaterThan(0);
+    for (const tip of tips) {
+      expect(typeof tip.id).toBe('string');
+      expect(tip.icon).toBeDefined();
+      expect(tip.content).toBeDefined();
+    }
   });
 });

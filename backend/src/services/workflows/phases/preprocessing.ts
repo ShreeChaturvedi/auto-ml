@@ -7,9 +7,9 @@ import {
 } from '../../../repositories/preprocessingRunRepository.js';
 import { ToolCallSchema } from '../../../types/llm.js';
 import type { ToolResult } from '../../../types/llm.js';
-import { asRecord, asString } from '../../../utils/typeCoercion.js';
+import { asString } from '../../../utils/typeCoercion.js';
 import { createPreprocessingLangGraphRuntime } from '../../llm/langgraph/preprocessingRuntime.js';
-import type { LlmClient, LlmToolDefinition } from '../../llm/llmClient.js';
+import type { LlmClient } from '../../llm/llmClient.js';
 import { createPreprocessingCellInspector, createPreprocessingCellMetadataStore } from '../../llm/preprocessing/cellBinding.js';
 import {
   createPreprocessingLangGraphSynchronizer,
@@ -18,14 +18,9 @@ import {
 } from '../../llm/preprocessing/stateSync.js';
 import { fail } from '../../llm/preprocessingTools/helpers.js';
 import { TOOL_HANDLERS } from '../../llm/preprocessingTools/index.js';
-import {
-  CELL_TOOL_DEFINITIONS,
-  PREPROCESSING_ORCHESTRATION_TOOLS
-} from '../../llm/toolRegistry.js';
 import { buildPreprocessingCellContent } from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
-  LifecycleStageDefinition,
   PhaseConfig,
   PhaseContext,
   RuntimeContext,
@@ -33,117 +28,21 @@ import type {
   ToolContext
 } from '../phaseConfig.js';
 import { registerPhaseConfig } from '../phaseConfig.js';
-import { getToolResultPauseReason } from '../turnState.js';
 
-// ---------------------------------------------------------------------------
-// Context extractors (inlined from preprocessingPlannerContext.ts)
-// ---------------------------------------------------------------------------
-
-interface StepNotebookContext {
-  runId: string;
-  stepId: string;
-  title?: string;
-  code?: string;
-  toolCallId?: string;
-  version?: number;
-  codeHash?: string;
-  requiresApproval?: boolean;
-  cellIds: string[];
-}
-
-interface LatestRunCellContext {
-  cellId?: string;
-  status?: string;
-  stdout?: string;
-  stderr?: string;
-}
-
-function extractLatestStepNotebookContext(state: WorkflowGraphState): StepNotebookContext | null {
-  const runId = state.controllerSummary?.runId;
-  if (!runId) {
-    return null;
-  }
-
-  // Only search the current turn's results so we don't pick up a previous
-  // turn's step context (which would cause cell overwrites — see #201).
-  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-
-  for (let index = currentTurnResults.length - 1; index >= 0; index -= 1) {
-    const output = asRecord(currentTurnResults[index]?.output);
-    const step = asRecord(output?.step);
-    const stepId = typeof output?.stepId === 'string'
-      ? output.stepId
-      : typeof step?.stepId === 'string'
-        ? step.stepId
-        : null;
-    if (!stepId) {
-      continue;
-    }
-
-    const cellIds = Array.isArray(step?.cellIds)
-      ? step.cellIds.filter((value: unknown): value is string => typeof value === 'string')
-      : [];
-
-    return {
-      runId: runId as string,
-      stepId,
-      title: typeof step?.title === 'string' ? step.title : undefined,
-      code: typeof step?.code === 'string' ? step.code : undefined,
-      toolCallId: typeof step?.toolCallId === 'string' ? step.toolCallId : undefined,
-      version: typeof step?.version === 'number' ? step.version : undefined,
-      codeHash: typeof step?.codeHash === 'string' ? step.codeHash : undefined,
-      requiresApproval: typeof step?.requiresApproval === 'boolean' ? step.requiresApproval : undefined,
-      cellIds
-    };
-  }
-
-  return null;
-}
-
-function extractLatestCellId(toolResults: ToolResult[]): string | null {
-  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
-    const result = toolResults[index];
-    if (!['write_cell', 'edit_cell', 'run_cell'].includes(result.tool)) {
-      continue;
-    }
-    const output = asRecord(result.output);
-    if (typeof output?.cellId === 'string') {
-      return output.cellId;
-    }
-    const cell = asRecord(output?.cell);
-    if (typeof cell?.cellId === 'string') {
-      return cell.cellId;
-    }
-    if (typeof cell?.id === 'string') {
-      return cell.id;
-    }
-  }
-
-  return null;
-}
-
-function extractLatestRunCellContext(toolResults: ToolResult[]): LatestRunCellContext | null {
-  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
-    const result = toolResults[index];
-    if (result.tool !== 'run_cell') {
-      continue;
-    }
-    const output = asRecord(result.output);
-    return {
-      cellId: extractLatestCellId([result]) ?? undefined,
-      status: typeof output?.status === 'string' ? output.status : undefined,
-      stdout: typeof output?.stdout === 'string' ? output.stdout : undefined,
-      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined
-    };
-  }
-
-  return null;
-}
-
+import {
+  extractLatestCellId,
+  extractLatestRunCellContext,
+  extractLatestStepNotebookContext
+} from './preprocessing/context.js';
+import {
+  PREPROCESSING_LIFECYCLE,
+  buildPreprocessingStageConfig
+} from './preprocessing/stageConfig.js';
+import { resolvePreprocessingNextStage } from './preprocessing/transition.js';
 // ---------------------------------------------------------------------------
 // Preprocessing PhaseConfig — replaces Systems A (preprocessingRuntime) and
-// B (controller). All classification, stage routing, and tool allowlists
-// are encoded here.
+// B (controller). The coordinator lives here, while stage configuration,
+// routing, and notebook-context helpers live in focused modules.
 // ---------------------------------------------------------------------------
 
 // -- Module-level singletons (same as preprocessingGraph.ts) ----------------
@@ -157,153 +56,6 @@ const syncLangGraphState = createPreprocessingLangGraphSynchronizer({
   runRepository,
   runtime: createPreprocessingLangGraphRuntime()
 });
-
-// -- Lifecycle stages -------------------------------------------------------
-
-const PREPROCESSING_LIFECYCLE: LifecycleStageDefinition[] = [
-  { name: 'answer', label: 'Answering', order: 0 },
-  { name: 'plan_step', label: 'Planning step', order: 1 },
-  { name: 'generate_code', label: 'Generating code', order: 2 },
-  { name: 'write_code', label: 'Writing to notebook', order: 3 },
-  { name: 'record_execution', label: 'Recording execution', order: 4 },
-  { name: 'validate', label: 'Validating', order: 5 },
-  { name: 'await_approval', label: 'Awaiting approval', order: 6 },
-  { name: 'commit', label: 'Committing', order: 7 },
-  { name: 'summarize', label: 'Summarizing', order: 8 }
-];
-
-// -- Tool allowlists per stage (ported from controller.ts stageNode) --------
-
-const ORCHESTRATION_TOOL_MAP = new Map<string, LlmToolDefinition>(
-  [...PREPROCESSING_ORCHESTRATION_TOOLS, ...CELL_TOOL_DEFINITIONS]
-    .map((tool) => [tool.name, tool])
-);
-
-function toolsByNames(names: string[]): LlmToolDefinition[] {
-  return names
-    .map((name) => ORCHESTRATION_TOOL_MAP.get(name))
-    .filter((tool): tool is LlmToolDefinition => Boolean(tool));
-}
-
-const STAGE_TOOLS: Record<string, string[]> = {
-  answer: [],
-  plan_step: [
-    'list_project_datasets', 'set_active_dataset', 'profile_active_dataset',
-    'list_cells', 'read_cell', 'propose_transformation_step'
-  ],
-  generate_code: ['materialize_step_code'],
-  write_code: ['write_cell', 'edit_cell', 'run_cell', 'list_cells', 'read_cell'],
-  record_execution: ['execute_transformation_step', 'list_cells', 'read_cell'],
-  validate: ['validate_step_result', 'profile_active_dataset', 'read_cell'],
-  await_approval: [],
-  commit: ['commit_transformation_step', 'checkpoint_dataset'],
-  summarize: []
-};
-
-// -- Stage configs ----------------------------------------------------------
-
-function buildStageConfig(stage: string, runtimeContext?: RuntimeContext): StageConfig {
-  const toolNames = STAGE_TOOLS[stage] ?? [];
-  const isTextStage = stage === 'answer' || stage === 'await_approval' || stage === 'summarize';
-  const isDeterministic = stage === 'write_code' || stage === 'record_execution' || stage === 'validate';
-  const isDelegated = stage === 'generate_code';
-
-  // For preprocessing, the controller's classification may override defaults
-  const allowTextResponse = runtimeContext?.allowTextResponse === true || isTextStage;
-  const requireToolCall = runtimeContext?.requireToolCall === true || (!isTextStage && !allowTextResponse);
-
-  const config: StageConfig = {
-    name: stage,
-    mode: isDeterministic ? 'deterministic'
-      : isDelegated ? 'llm_delegated'
-      : isTextStage ? 'text'
-      : 'action',
-    allowedTools: toolsByNames(toolNames),
-    toolChoice: requireToolCall ? 'required' : 'auto',
-    requiresApproval: stage === 'await_approval',
-    allowAssistantMessage: allowTextResponse,
-    allowAskUser: false,
-    allowRenderUi: false,
-    allowPlanExit: false,
-    requireToolCall
-  };
-
-  // Attach deterministic/delegated actions per stage
-  if (stage === 'generate_code') {
-    config.delegatedAction = buildCodeGenerationAction;
-  } else if (stage === 'write_code') {
-    config.deterministicAction = buildWriteCodeAction;
-  } else if (stage === 'record_execution') {
-    config.deterministicAction = buildRecordExecutionAction;
-  } else if (stage === 'validate') {
-    config.deterministicAction = buildValidateAction;
-  }
-
-  return config;
-}
-
-// -- Turn classification (ported from controller.ts classify_turn) ----------
-
-function inferPendingApproval(toolResults: ToolResult[]): boolean {
-  return getToolResultPauseReason(toolResults.at(-1)) === 'awaiting_approval';
-}
-
-function getLatestToolOutcome(toolResults: ToolResult[]): {
-  latestToolName?: string;
-  latestToolSucceeded: boolean;
-} {
-  const latest = toolResults.at(-1);
-  if (!latest) return { latestToolSucceeded: false };
-  const succeeded = !latest.error;
-  return { latestToolName: latest.tool, latestToolSucceeded: succeeded };
-}
-
-// -- Action node inference (ported from controller.ts inferActionNode) ------
-
-function inferActionNode(
-  toolResults: ToolResult[],
-  pendingApproval: boolean
-): string {
-  if (pendingApproval) return 'await_approval';
-
-  const { latestToolName, latestToolSucceeded } = getLatestToolOutcome(toolResults);
-  if (!latestToolName) return 'plan_step';
-
-  if (!latestToolSucceeded) {
-    // When validation fails, pause at await_approval for user review
-    if (latestToolName === 'validate_step_result') {
-      return 'await_approval';
-    }
-    // On failure of other tools, stay in plan_step for replanning
-    return 'plan_step';
-  }
-
-  switch (latestToolName) {
-    case 'propose_transformation_step': return 'generate_code';
-    case 'materialize_step_code': return 'write_code';
-    case 'write_cell':
-    case 'edit_cell': return 'write_code';
-    case 'run_cell': return 'record_execution';
-    case 'execute_transformation_step': return 'validate';
-    case 'validate_step_result': {
-      // Check if approval is required from the tool result
-      const latest = toolResults.at(-1);
-      const output = latest?.output as Record<string, unknown> | undefined;
-      const step = output?.step as Record<string, unknown> | undefined;
-      const requiresApproval = step?.requiresApproval === true || output?.requiresApproval === true;
-      return requiresApproval ? 'await_approval' : 'commit';
-    }
-    case 'commit_transformation_step': return 'summarize';
-    case 'set_active_dataset':
-    case 'profile_active_dataset':
-    case 'list_project_datasets':
-    case 'checkpoint_dataset':
-    case 'list_cells':
-    case 'read_cell':
-      return 'plan_step';
-    default: return 'plan_step';
-  }
-}
 
 // -- Deterministic actions (ported from plannerNotebook, plannerExecution, plannerValidation)
 
@@ -574,7 +326,12 @@ export const preprocessingPhaseConfig: PhaseConfig = {
   },
 
   getStageConfig(stage: string, runtimeContext?: RuntimeContext): StageConfig {
-    return buildStageConfig(stage, runtimeContext);
+    return buildPreprocessingStageConfig(stage, {
+      buildCodeGenerationAction,
+      buildWriteCodeAction,
+      buildRecordExecutionAction,
+      buildValidateAction
+    }, runtimeContext);
   },
 
   buildSystemPrompt(): string {
@@ -589,9 +346,7 @@ export const preprocessingPhaseConfig: PhaseConfig = {
     current: string,
     toolResults: ToolResult[]
   ): string | null {
-    const pendingApproval = inferPendingApproval(toolResults);
-    const nextNode = inferActionNode(toolResults, pendingApproval);
-    return nextNode !== current ? nextNode : null;
+    return resolvePreprocessingNextStage(current, toolResults);
   },
 
   isPhaseSpecificTool(toolName: string): boolean {

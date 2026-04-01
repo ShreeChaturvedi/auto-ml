@@ -52,19 +52,81 @@ describe('tab controller helpers', () => {
     const saveActiveSnapshot = vi.fn();
     const activateTab = vi.fn();
 
-    const changed = switchPreprocessingTab('tab-2', {
+    switchPreprocessingTab('tab-2', {
       tabs: [firstTab, secondTab],
       activeTabId: 'tab-1',
       saveActiveSnapshot,
       activateTab
     });
 
-    expect(changed).toBe(true);
     expect(saveActiveSnapshot).toHaveBeenCalledTimes(1);
     expect(activateTab).toHaveBeenCalledWith(secondTab);
     expect(saveActiveSnapshot.mock.invocationCallOrder[0]).toBeLessThan(
       activateTab.mock.invocationCallOrder[0]
     );
+  });
+
+  it('skips work when the requested tab is already active', () => {
+    const activeTab = makeTab({ id: 'tab-1' });
+    const saveActiveSnapshot = vi.fn();
+    const activateTab = vi.fn();
+
+    switchPreprocessingTab('tab-1', {
+      tabs: [activeTab],
+      activeTabId: 'tab-1',
+      saveActiveSnapshot,
+      activateTab
+    });
+
+    expect(saveActiveSnapshot).not.toHaveBeenCalled();
+    expect(activateTab).not.toHaveBeenCalled();
+  });
+
+  it('syncs the active workbook when the URL has no workbook selection', () => {
+    expect(
+      resolveRequestedWorkbookAction({
+        tabsReady: true,
+        activeTabId: 'tab-1',
+        requestedTabId: undefined,
+        syncedWorkbookId: null,
+        tabs: [makeTab({ id: 'tab-1' })],
+        registry: []
+      })
+    ).toEqual({
+      type: 'sync-active',
+      tabId: 'tab-1'
+    });
+  });
+
+  it('clears the synced marker when the URL already matches the active workbook', () => {
+    expect(
+      resolveRequestedWorkbookAction({
+        tabsReady: true,
+        activeTabId: 'tab-1',
+        requestedTabId: 'tab-1',
+        syncedWorkbookId: 'tab-1',
+        tabs: [makeTab({ id: 'tab-1' })],
+        registry: []
+      })
+    ).toEqual({
+      type: 'clear-synced'
+    });
+  });
+
+  it('switches to an existing workbook when the URL points at a local tab', () => {
+    expect(
+      resolveRequestedWorkbookAction({
+        tabsReady: true,
+        activeTabId: 'tab-1',
+        requestedTabId: 'tab-2',
+        syncedWorkbookId: null,
+        tabs: [makeTab({ id: 'tab-1' }), makeTab({ id: 'tab-2' })],
+        registry: []
+      })
+    ).toEqual({
+      type: 'switch',
+      tabId: 'tab-2'
+    });
   });
 
   it('requests adoption when the URL points at a registry workbook not yet in local tabs', () => {
@@ -86,6 +148,22 @@ describe('tab controller helpers', () => {
       type: 'adopt',
       tabId: 'tab-2',
       name: 'Workbook 2'
+    });
+  });
+
+  it('falls back to syncing the active workbook when the URL points at an unknown workbook', () => {
+    expect(
+      resolveRequestedWorkbookAction({
+        tabsReady: true,
+        activeTabId: 'tab-1',
+        requestedTabId: 'missing-tab',
+        syncedWorkbookId: null,
+        tabs: [makeTab({ id: 'tab-1' })],
+        registry: []
+      })
+    ).toEqual({
+      type: 'sync-active',
+      tabId: 'tab-1'
     });
   });
 });

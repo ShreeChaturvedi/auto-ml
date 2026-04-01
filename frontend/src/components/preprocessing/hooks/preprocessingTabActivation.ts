@@ -40,18 +40,21 @@ export function switchPreprocessingTab(
     saveActiveSnapshot,
     activateTab
   }: SwitchPreprocessingTabOptions
-): boolean {
+) : void {
+  if (nextTabId === activeTabId) {
+    return;
+  }
+
   const currentActiveTab = tabs.find((tab) => tab.id === activeTabId);
   if (!currentActiveTab) {
-    return false;
+    return;
   }
 
   const targetTab = tabs.find((tab) => tab.id === nextTabId);
-  if (!targetTab || targetTab.id === currentActiveTab.id) {
-    return false;
+  if (!targetTab) {
+    return;
   }
 
   saveActiveSnapshot();
   activateTab(targetTab);
-  return true;
 }

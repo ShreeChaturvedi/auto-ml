@@ -265,6 +265,7 @@ interface RenameTabDialogProps {
   onSave: () => void;
   title?: string;
   description?: string;
+  placeholder?: string;
 }
 
 export function RenameTabDialog({
@@ -274,7 +275,8 @@ export function RenameTabDialog({
   onValueChange,
   onSave,
   title = 'Rename processing tab',
-  description = 'Update the name of the current processing tab.'
+  description = 'Update the name of the current processing tab.',
+  placeholder = 'Tab name'
 }: RenameTabDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -291,7 +293,7 @@ export function RenameTabDialog({
           onKeyDown={(event) => {
             if (event.key === 'Enter') onSave();
           }}
-          placeholder="Tab name"
+          placeholder={placeholder}
           autoFocus
         />
         <DialogFooter>

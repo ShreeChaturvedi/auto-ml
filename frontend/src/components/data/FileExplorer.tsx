@@ -15,16 +15,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { useFileActions } from '@/hooks/useFileActions';
 import { useProjectPlans } from '@/hooks/useProjectPlans';
 import { useDataStore } from '@/stores/dataStore';
@@ -239,24 +231,16 @@ export function FileExplorer({ projectId }: FileExplorerProps) {
         </section>
       </div>
 
-      <Dialog open={!!renamingFile} onOpenChange={(open) => { if (!open) setRenamingFile(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename file</DialogTitle>
-            <DialogDescription>Enter a new name for this file.</DialogDescription>
-          </DialogHeader>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void handleRenameConfirm(); }}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenamingFile(null)}>Cancel</Button>
-            <Button onClick={() => void handleRenameConfirm()} disabled={!renameValue.trim()}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameTabDialog
+        open={!!renamingFile}
+        onOpenChange={(open) => { if (!open) setRenamingFile(null); }}
+        value={renameValue}
+        onValueChange={setRenameValue}
+        onSave={() => void handleRenameConfirm()}
+        title="Rename file"
+        description="Enter a new name for this file."
+        placeholder="File name"
+      />
     </>
   );
 }

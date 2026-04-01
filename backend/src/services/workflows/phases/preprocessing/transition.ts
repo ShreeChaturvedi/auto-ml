@@ -1,28 +1,21 @@
 import type { ToolResult } from '../../../../types/llm.js';
 import { asRecord } from '../../../../utils/typeCoercion.js';
-import { getApprovalPauseDetails } from '../../turnState.js';
+import { getToolResultPauseReason } from '../../turnState.js';
 
 interface LatestToolOutcome {
   latestToolName?: string;
   latestToolSucceeded: boolean;
-  latestOutputStatus?: string;
   requiresApproval: boolean;
-}
-
-function getLatestOutputStatus(result: ToolResult | undefined): string | undefined {
-  const output = asRecord(result?.output);
-  const step = asRecord(output?.step);
-  return typeof output?.status === 'string'
-    ? output.status
-    : typeof step?.status === 'string'
-      ? step.status
-      : undefined;
 }
 
 function inferRequiresApproval(result: ToolResult | undefined): boolean {
   const output = asRecord(result?.output);
   const step = asRecord(output?.step);
   return output?.requiresApproval === true || step?.requiresApproval === true;
+}
+
+function inferPendingApproval(toolResults: ToolResult[]): boolean {
+  return getToolResultPauseReason(toolResults.at(-1)) === 'awaiting_approval';
 }
 
 function getLatestToolOutcome(toolResults: ToolResult[]): LatestToolOutcome {
@@ -34,20 +27,15 @@ function getLatestToolOutcome(toolResults: ToolResult[]): LatestToolOutcome {
     };
   }
 
-  const latestOutputStatus = getLatestOutputStatus(latest);
-  const executionFailed = latest.tool === 'execute_transformation_step' && latestOutputStatus === 'failed';
-  const validationFailed = latest.tool === 'validate_step_result' && latestOutputStatus === 'failed';
-
   return {
     latestToolName: latest.tool,
-    latestToolSucceeded: !latest.error && !executionFailed && !validationFailed,
-    latestOutputStatus,
+    latestToolSucceeded: !latest.error,
     requiresApproval: inferRequiresApproval(latest)
   };
 }
 
 export function inferPreprocessingActionNode(toolResults: ToolResult[]): string {
-  const pendingApproval = getApprovalPauseDetails(toolResults) !== null;
+  const pendingApproval = inferPendingApproval(toolResults);
   if (pendingApproval) {
     return 'await_approval';
   }
@@ -55,7 +43,6 @@ export function inferPreprocessingActionNode(toolResults: ToolResult[]): string 
   const {
     latestToolName,
     latestToolSucceeded,
-    latestOutputStatus,
     requiresApproval
   } = getLatestToolOutcome(toolResults);
   if (!latestToolName) {
@@ -73,12 +60,9 @@ export function inferPreprocessingActionNode(toolResults: ToolResult[]): string 
     case 'run_cell':
       return latestToolSucceeded ? 'record_execution' : 'write_code';
     case 'execute_transformation_step':
-      return latestToolSucceeded ? 'validate' : 'write_code';
+      return 'validate';
     case 'validate_step_result':
-      if (latestOutputStatus === 'awaiting_approval' || requiresApproval) {
-        return 'await_approval';
-      }
-      return latestToolSucceeded ? 'commit' : 'validate';
+      return requiresApproval ? 'await_approval' : 'commit';
     case 'commit_transformation_step':
       return latestToolSucceeded ? 'summarize' : 'commit';
     case 'set_active_dataset':

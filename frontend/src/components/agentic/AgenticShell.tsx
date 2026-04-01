@@ -260,7 +260,7 @@ export function AgenticShell({
     handlePushToTalkKeyUp,
   } = useComposerVoiceInput({
     value: chatInput,
-    inputRef: mentionInputRef,
+    getComposer: () => mentionInputRef.current,
     onValueChange: mention.handleValueChange,
     disabled: isGenerating,
   });

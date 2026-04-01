@@ -74,7 +74,6 @@ const ControllerAnnotation = Annotation.Root({
   userPrompt: Annotation<string>(),
   turnMode: Annotation<PreprocessingTurnMode>(),
   classificationRationale: Annotation<string | undefined>(),
-  approvalDecisionIntent: Annotation<'approve' | 'reject' | undefined>(),
   currentNode: Annotation<PreprocessingControllerNode>(),
   allowedTools: Annotation<string[]>({
     reducer: (_left, right) => right,
@@ -101,8 +100,7 @@ async function classifyTurnNode(
   deps: { client: LlmClient; dataset: DatasetProfile; projectPlan?: string }
 ): Promise<Partial<ControllerState>> {
   return classifyPreprocessingTurn({
-    userPrompt: state.userPrompt,
-    pendingApproval: state.pendingApproval
+    userPrompt: state.userPrompt
   }, deps);
 }
 
@@ -211,7 +209,6 @@ export async function resolvePreprocessingControllerTurn(
       : params.prompt?.trim() || 'Continue preprocessing.',
     turnMode: 'action_required',
     classificationRationale: undefined,
-    approvalDecisionIntent: undefined,
     currentNode: 'plan_step',
     allowedTools: [],
     allowTextResponse: false,

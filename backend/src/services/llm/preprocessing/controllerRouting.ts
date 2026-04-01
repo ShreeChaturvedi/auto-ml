@@ -21,8 +21,6 @@ export interface LatestToolOutcome {
 
 export interface ControllerRouteState {
   turnMode: PreprocessingTurnMode;
-  pendingApproval: boolean;
-  approvalDecisionIntent?: 'approve' | 'reject';
   latestToolName?: string;
   latestToolSucceeded: boolean;
   latestOutputStatus?: string;
@@ -110,11 +108,15 @@ export function inferApprovalDecision(prompt?: string): 'approve' | 'reject' | n
     return null;
   }
 
-  if (/\b(reject|decline|deny|do not apply|don't apply|skip it|cancel it)\b/.test(normalized)) {
+  if (normalized.includes('?')) {
+    return null;
+  }
+
+  if (/\b(reject|decline|deny|do not apply|don't apply|skip it|cancel it|do not commit|don't commit|do not proceed|don't proceed|stop)\b/.test(normalized)) {
     return 'reject';
   }
 
-  if (/\b(approve|approved|accept|apply it|apply this|go ahead|proceed)\b/.test(normalized)) {
+  if (/\b(approve|approved|accept|apply|commit|go ahead|proceed|yes|looks good|ship it)\b/.test(normalized)) {
     return 'approve';
   }
 
@@ -213,14 +215,6 @@ export function getControllerStageDefinition(node: PreprocessingControllerNode):
 }
 
 export function inferActionNode(state: ControllerRouteState): PreprocessingControllerNode {
-  if (state.pendingApproval && state.approvalDecisionIntent) {
-    return 'commit';
-  }
-
-  if (state.pendingApproval) {
-    return 'await_approval';
-  }
-
   switch (state.latestToolName) {
     case 'propose_transformation_step':
       return state.latestToolSucceeded ? 'generate_code' : 'plan_step';
@@ -234,9 +228,6 @@ export function inferActionNode(state: ControllerRouteState): PreprocessingContr
     case 'execute_transformation_step':
       return state.latestToolSucceeded ? 'validate' : 'write_code';
     case 'validate_step_result':
-      if (state.pendingApproval || state.latestOutputStatus === 'awaiting_approval') {
-        return 'await_approval';
-      }
       return state.latestToolSucceeded ? 'commit' : 'validate';
     case 'commit_transformation_step':
       return state.latestToolSucceeded ? 'summarize' : 'commit';

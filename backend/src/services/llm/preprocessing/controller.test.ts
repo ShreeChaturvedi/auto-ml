@@ -221,6 +221,38 @@ describe('resolvePreprocessingControllerTurn', () => {
     expect(decision.summary.requireToolCall).toBe(true);
   });
 
+  it('treats plain yes as an approval decision while pending approval', async () => {
+    const client = createClient({
+      turnMode: 'answer_only',
+      rationale: 'unused'
+    });
+    const completeSpy = vi.spyOn(client, 'complete');
+    const toolResults: ToolResult[] = [
+      {
+        id: 'result-1',
+        tool: 'validate_step_result',
+        output: {
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          status: 'awaiting_approval'
+        }
+      }
+    ];
+
+    const decision = await resolvePreprocessingControllerTurn({
+      client,
+      dataset,
+      prompt: 'yes',
+      toolResults,
+      threadId: 'prep-thread:test:approval-yes'
+    });
+
+    expect(completeSpy).not.toHaveBeenCalled();
+    expect(decision.summary.currentNode).toBe('commit');
+    expect(decision.summary.allowedTools).toContain('commit_transformation_step');
+    expect(decision.summary.requireToolCall).toBe(true);
+  });
+
   it('still allows answer-only routing for a new user question after prior tool history', async () => {
     const client = createClient({
       turnMode: 'answer_only',

@@ -1,5 +1,6 @@
 import { fileIconColorByType, tailwindColorToHex } from '@/lib/fileUtils';
 import type { FileType } from '@/types/file';
+import { findKnownMentionMatches } from '@/components/llm/mentionTokens';
 
 export interface AnimateCharRange { start: number; end: number }
 
@@ -158,34 +159,25 @@ export function buildMentionInputDOM(
   animateRange?: AnimateCharRange
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  const mentionRegex = /@([\w.-]+)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
   let globalOffset = 0;
   const animCharIndexRef = { current: 0 };
 
   const lines = value.split('\n');
   lines.forEach((line, lineIndex) => {
-    lastIndex = 0;
-    mentionRegex.lastIndex = 0;
+    let lastIndex = 0;
+    const matches = findKnownMentionMatches(line, mentionNames);
 
-    while ((match = mentionRegex.exec(line)) !== null) {
-      const name = match[1];
-
-      if (match.index > lastIndex) {
-        const segment = line.slice(lastIndex, match.index);
+    for (const match of matches) {
+      if (match.start > lastIndex) {
+        const segment = line.slice(lastIndex, match.start);
         appendTextSegment(fragment, segment, globalOffset, animateRange, animCharIndexRef);
         globalOffset += segment.length;
       }
 
-      if (mentionNames.has(name.toLowerCase())) {
-        fragment.appendChild(createMentionSpan(name, mentionTypes));
-      } else {
-        appendTextSegment(fragment, match[0], globalOffset, animateRange, animCharIndexRef);
-      }
-      globalOffset += match[0].length;
+      fragment.appendChild(createMentionSpan(match.name, mentionTypes));
+      globalOffset += match.raw.length;
 
-      lastIndex = match.index + match[0].length;
+      lastIndex = match.end;
     }
 
     if (lastIndex < line.length) {

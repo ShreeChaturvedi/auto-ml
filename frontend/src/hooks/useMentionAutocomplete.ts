@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, type RefObject, type KeyboardEvent } from 'react';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
+import { findKnownMentionMatches } from '@/components/llm/mentionTokens';
 
 export interface MentionCandidate {
   id: string;
@@ -41,8 +42,10 @@ interface MentionAutocompleteReturn {
  * Detect an active @-mention query by scanning backwards from the cursor.
  * Returns the query substring (after @) or null if no trigger is active.
  *
- * Only triggers when typing contiguous filename-like chars (no spaces)
- * immediately after `@`.
+ * Active query detection intentionally stops at whitespace so a completed
+ * mention like `@Quarterly Report.csv ` closes the dropdown after insertion.
+ * Once committed into the input value, known mention parsing can still resolve
+ * names containing spaces via `findKnownMentionMatches`.
  */
 function detectMentionQuery(value: string, cursorPos: number): string | null {
   // Walk backwards from cursor to find the @ trigger
@@ -176,17 +179,14 @@ export function useMentionAutocomplete({
   /** Parse the current value for all @name tokens that match known candidates. */
   const resolvedMentions = useMemo<ResolvedMention[]>(() => {
     if (!value) return [];
-    // Match @word sequences (filenames can contain dots, dashes, underscores)
-    const mentionRegex = /@([\w.-]+(?:\s[\w.-]+)*)/g;
     const found: ResolvedMention[] = [];
     const seen = new Set<string>();
+    const candidatesByName = new Map(
+      candidates.map((candidate) => [candidate.name.toLowerCase(), candidate])
+    );
 
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(value)) !== null) {
-      const name = match[1];
-      const candidate = candidates.find(
-        (c) => c.name.toLowerCase() === name.toLowerCase()
-      );
+    for (const match of findKnownMentionMatches(value, candidatesByName.keys())) {
+      const candidate = candidatesByName.get(match.normalizedName);
       if (candidate && !seen.has(candidate.id)) {
         seen.add(candidate.id);
         found.push({

@@ -7,7 +7,6 @@ export type PreprocessingTurnMode = 'answer_only' | 'action_required';
 
 export interface PreprocessingTurnClassificationState {
   userPrompt: string;
-  pendingApproval: boolean;
 }
 
 export interface PreprocessingTurnClassificationDeps {
@@ -18,7 +17,6 @@ export interface PreprocessingTurnClassificationDeps {
 
 export interface PreprocessingTurnClassificationResult {
   turnMode: PreprocessingTurnMode;
-  approvalDecisionIntent: 'approve' | 'reject' | undefined;
   classificationRationale: string;
   updatedAt: string;
 }
@@ -30,46 +28,6 @@ const TurnClassificationSchema = z.object({
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-export function detectApprovalDecisionIntent(prompt: string): 'approve' | 'reject' | undefined {
-  const normalizedPrompt = prompt.trim().toLowerCase();
-  if (!normalizedPrompt || normalizedPrompt.includes('?')) {
-    return undefined;
-  }
-
-  const rejectPatterns = [
-    /\breject\b/,
-    /\bdecline\b/,
-    /\bcancel\b/,
-    /\bskip\b/,
-    /\bdon't apply\b/,
-    /\bdo not apply\b/,
-    /\bdon't commit\b/,
-    /\bdo not commit\b/,
-    /\bdon't proceed\b/,
-    /\bdo not proceed\b/,
-    /\bstop\b/
-  ];
-  if (rejectPatterns.some((pattern) => pattern.test(normalizedPrompt))) {
-    return 'reject';
-  }
-
-  const approvePatterns = [
-    /\bapprove\b/,
-    /\bapply\b/,
-    /\bcommit\b/,
-    /\bproceed\b/,
-    /\bgo ahead\b/,
-    /\byes\b/,
-    /\blooks good\b/,
-    /\bship it\b/
-  ];
-  if (approvePatterns.some((pattern) => pattern.test(normalizedPrompt))) {
-    return 'approve';
-  }
-
-  return undefined;
 }
 
 function buildClassificationRequest(
@@ -107,30 +65,9 @@ export async function classifyPreprocessingTurn(
   state: PreprocessingTurnClassificationState,
   deps: PreprocessingTurnClassificationDeps
 ): Promise<PreprocessingTurnClassificationResult> {
-  const approvalDecisionIntent = detectApprovalDecisionIntent(state.userPrompt);
-
-  if (state.pendingApproval) {
-    if (approvalDecisionIntent) {
-      return {
-        turnMode: 'action_required',
-        approvalDecisionIntent,
-        classificationRationale: 'The user provided an explicit approval decision for a pending preprocessing step.',
-        updatedAt: nowIso()
-      };
-    }
-
-    return {
-      turnMode: 'action_required',
-      approvalDecisionIntent: undefined,
-      classificationRationale: 'A preprocessing step is awaiting explicit approval.',
-      updatedAt: nowIso()
-    };
-  }
-
   if (state.userPrompt === '__tool_continuation__') {
     return {
       turnMode: 'action_required',
-      approvalDecisionIntent: undefined,
       classificationRationale: 'This turn continues an active preprocessing workflow.',
       updatedAt: nowIso()
     };
@@ -142,7 +79,6 @@ export async function classifyPreprocessingTurn(
     if (parsed.success) {
       return {
         turnMode: parsed.data.turnMode,
-        approvalDecisionIntent: undefined,
         classificationRationale: parsed.data.rationale ?? '',
         updatedAt: nowIso()
       };
@@ -153,7 +89,6 @@ export async function classifyPreprocessingTurn(
 
   return {
     turnMode: 'action_required',
-    approvalDecisionIntent: undefined,
     classificationRationale: 'Classification fallback defaulted to action_required for safety.',
     updatedAt: nowIso()
   };

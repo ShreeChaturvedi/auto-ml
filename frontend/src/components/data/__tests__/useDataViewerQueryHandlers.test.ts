@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDataViewerQueryHandlers } from '../hooks/useDataViewerQueryHandlers';
 import { executeNlQuery, executeSqlQuery } from '@/lib/api/query';
+import type { NlQueryResponsePayload } from '@/lib/api/query';
 import type { Project } from '@/types/project';
 
 const mockState = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ vi.mock('@/lib/api/query', () => ({
   streamNlQuery: vi.fn(),
 }));
 
-const project: Project = {
+const project = {
   id: 'project-1',
   title: 'Project 1',
   description: '',
@@ -35,7 +36,7 @@ const project: Project = {
   unlockedPhases: ['upload'],
   completedPhases: [],
   metadata: {},
-};
+} satisfies Project;
 
 const explanation = {
   intentSummary: 'Summarize employee rows',
@@ -70,18 +71,17 @@ describe('useDataViewerQueryHandlers', () => {
   });
 
   it('normalizes missing NL query payloads to null', async () => {
-    vi.mocked(executeNlQuery).mockResolvedValue({
-      nl: {
-        sql: 'SELECT * FROM employees',
-        rationale: 'Inspect the employee table.',
-        explanation,
-        queryId: 'nl-1',
-        query: null,
-        provider: { id: 'provider-1', label: 'Provider 1', model: 'model-1' },
-        cached: false,
-        queryExecutionError: 'relation "employees" not ready',
-      } as Awaited<ReturnType<typeof executeNlQuery>>['nl'],
-    });
+    const nlPayload: NlQueryResponsePayload = {
+      sql: 'SELECT * FROM employees',
+      rationale: 'Inspect the employee table.',
+      explanation,
+      queryId: 'nl-1',
+      query: null,
+      provider: { id: 'provider-1', label: 'Provider 1', model: 'model-1' },
+      cached: false,
+      queryExecutionError: 'relation "employees" not ready',
+    };
+    vi.mocked(executeNlQuery).mockResolvedValue({ nl: nlPayload });
 
     const { result } = renderHook(() =>
       useDataViewerQueryHandlers({

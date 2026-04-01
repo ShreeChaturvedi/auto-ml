@@ -11,6 +11,7 @@ import { getModelArtifactUrl } from '@/lib/api/models';
 import { cn } from '@/lib/utils';
 import { resolveModelIcon, TASK_TEXT_STYLES, TASK_LABELS, METRIC_ICONS } from './modelIcons';
 import { IconModeToggle, type IconModeToggleOption } from '@/components/data/IconModeToggle';
+import type { ExperimentDetailTab } from '@/types/experiments';
 import { Pill } from '@/components/ui/pill';
 import { PlotsTab } from './tabs/PlotsTab';
 import { InterpretabilityTab } from './tabs/InterpretabilityTab';
@@ -21,13 +22,13 @@ import { EvalTabContent } from './EvalTabContent';
 import { formatMetric, formatDurationCompact, formatDurationLong } from './utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
-const TAB_OPTIONS: IconModeToggleOption[] = [
+const TAB_OPTIONS = [
   { value: 'plots', ariaLabel: 'Plots', icon: BarChart3, tooltip: 'Plots' },
   { value: 'interpretability', ariaLabel: 'Interpretability', icon: Brain, tooltip: 'Interpretability' },
   { value: 'errors', ariaLabel: 'Errors', icon: AlertTriangle, tooltip: 'Errors' },
   { value: 'provenance', ariaLabel: 'Provenance', icon: GitBranch, tooltip: 'Provenance' },
   { value: 'tune', ariaLabel: 'Tune', icon: SlidersHorizontal, tooltip: 'Tune' },
-];
+] as const satisfies readonly IconModeToggleOption<ExperimentDetailTab>[];
 
 export interface ModelDetailPanelProps {
   modelId: string | null;
@@ -146,9 +147,9 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
 
               <ToolbarDivider />
 
-              <IconModeToggle
+              <IconModeToggle<ExperimentDetailTab>
                 value={activeTab}
-                onValueChange={(v) => { if (v) setActiveTab(modelId, v); }}
+                onValueChange={(tab) => { setActiveTab(modelId, tab); }}
                 options={TAB_OPTIONS}
               />
 

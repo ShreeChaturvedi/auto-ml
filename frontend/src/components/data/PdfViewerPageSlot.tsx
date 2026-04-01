@@ -1,8 +1,7 @@
 import { memo, useCallback } from 'react';
 import { Page } from 'react-pdf';
 
-import { PDF_PAGE_GAP } from './pdfViewerState';
-import type { PageDimension } from './pdfViewerState';
+import { PDF_PAGE_GAP, type PageDimension } from './pdfViewerState';
 
 interface PdfViewerPageSlotProps {
   pageNum: number;

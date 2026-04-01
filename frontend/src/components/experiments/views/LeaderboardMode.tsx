@@ -71,7 +71,11 @@ export function LeaderboardMode({
             </TooltipTrigger>
             <TooltipContent>Export CSV</TooltipContent>
           </Tooltip>
-          <IconModeToggle value={experimentView} onValueChange={onViewChange} options={VIEW_OPTIONS} />
+          <IconModeToggle<ExperimentView>
+            value={experimentView}
+            onValueChange={onViewChange}
+            options={VIEW_OPTIONS}
+          />
         </div>
 
         {/* Bulk action toolbar */}

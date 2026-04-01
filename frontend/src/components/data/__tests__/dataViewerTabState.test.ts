@@ -77,7 +77,7 @@ describe('dataViewerTabState', () => {
                 age: 'integer',
                 city: 'string',
               },
-              nullCounts: {},
+              nullCounts: { age: 0, city: 0 },
             },
           },
         },

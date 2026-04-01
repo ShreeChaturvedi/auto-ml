@@ -123,7 +123,13 @@ export type ExperimentDetailTab = 'plots' | 'interpretability' | 'errors' | 'pro
 
 export type ExperimentSortDirection = 'asc' | 'desc';
 export type ExperimentSortField = 'name' | 'algorithm' | 'createdAt' | (string & {});
-export type ExperimentInsightType = 'compare' | 'report';
+/** Matches backend `VALID_INSIGHT_TYPES` (INSIGHT_SYSTEM_PROMPTS keys + `report`). */
+export type ExperimentInsightType =
+  | 'banner'
+  | 'explain'
+  | 'compare'
+  | 'error_narrative'
+  | 'report';
 
 // ── Comparison ──
 export interface ComparisonResult {

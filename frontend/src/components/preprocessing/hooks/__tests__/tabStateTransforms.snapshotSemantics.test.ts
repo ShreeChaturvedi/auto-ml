@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PreprocessingTabSnapshot } from '../../preprocessingTabUtils';
+
 describe('tabStateTransforms snapshot semantics', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -32,8 +34,8 @@ describe('tabStateTransforms snapshot semantics', () => {
             timeline: [],
             stepBindings: {},
             replayReport: null,
-            futureField: 'stale-value'
-          } as never
+            futureField: 'stale-value',
+          } as unknown as PreprocessingTabSnapshot,
         }
       ],
       'tab-1'

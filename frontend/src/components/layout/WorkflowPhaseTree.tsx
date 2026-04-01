@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 import { getLucideIcon } from '@/lib/icons';
 import { getSidebarAccordionPref } from '@/lib/sidebarPrefs';
 import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
@@ -193,24 +193,26 @@ const PhaseItem = memo(function PhaseItem({
       </button>
 
       {hasPlusAction && !collapsed && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={
-                isWorkbookPhase ? (e) => onNewWorkbook(e, phase)
-                : phase === 'experiments' ? (e) => { e.stopPropagation(); onOpenSeedDialog(); }
-                : onNewPlan
-              }
-              className="shrink-0 mr-2 transition-opacity opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-            >
-              <Plus className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors duration-200" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
-          </TooltipContent>
-        </Tooltip>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={
+                  isWorkbookPhase ? (e) => onNewWorkbook(e, phase)
+                  : phase === 'experiments' ? (e) => { e.stopPropagation(); onOpenSeedDialog(); }
+                  : onNewPlan
+                }
+                className="shrink-0 mr-2 transition-opacity opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+              >
+                <Plus className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors duration-200" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
     </div>
   );

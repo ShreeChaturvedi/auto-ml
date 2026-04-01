@@ -8,12 +8,7 @@ import type {
   WorkflowPauseEvent,
   WorkflowState
 } from './workflow';
-
-export interface SuggestionPill {
-  id: string;
-  label: string;
-  prompt: string;
-}
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
 
 export interface BuildRequestOptions {
   model: string;
@@ -55,7 +50,7 @@ export interface DomainAdapter {
   toolRegistry: Record<string, ToolHandlers>;
   toolUiRegistry: Record<string, ComponentType<{ call: ToolCall; result?: ToolResult }>>;
 
-  suggestionProvider: (messages: ChatMessage[], isGenerating: boolean) => SuggestionPill[];
+  tipsProvider: (messages: ChatMessage[], isGenerating: boolean) => ContextualTip[];
 }
 
 /** Props passed to the left-pane render callback in AgenticShell. */

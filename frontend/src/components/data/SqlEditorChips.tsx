@@ -15,13 +15,7 @@ interface SqlEditorChipsProps {
   modKey: string;
 }
 
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded border border-border/60 bg-background/80 text-[10px] font-mono font-medium text-muted-foreground leading-none">
-      {children}
-    </kbd>
-  );
-}
+import { Kbd } from '@/components/ui/contextual-tip-bar';
 
 function ChipRow({ chip }: { chip: SqlChip }) {
   const Icon = chip.icon;

@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { getLucideIcon } from '@/lib/icons';
 import { getSidebarAccordionPref } from '@/lib/sidebarPrefs';
 import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
@@ -111,7 +112,7 @@ const PhaseItem = memo(function PhaseItem({
     <div
       data-testid={`workflow-phase-${phase}`}
       className={cn(
-        'group flex items-center gap-1 rounded-lg',
+        'group flex items-center gap-2 rounded-lg',
         !isUnlocked
           ? 'text-muted-foreground'
           : isActive
@@ -129,7 +130,7 @@ const PhaseItem = memo(function PhaseItem({
             if (collapsed) onPhaseClick(e, phase);
             else onToggleExpand(phase);
           }}
-          className="shrink-0 pl-3 py-2 cursor-pointer focus-visible:outline-none focus-visible:bg-accent"
+          className="group/expand shrink-0 pl-3 py-2 cursor-pointer focus-visible:outline-none focus-visible:bg-accent"
           aria-label={isExpanded ? `Collapse ${config.label}` : `Expand ${config.label}`}
           data-testid={`workflow-phase-toggle-${phase}`}
         >
@@ -138,7 +139,7 @@ const PhaseItem = memo(function PhaseItem({
               <IconComponent
                 className={cn(
                   'absolute inset-0 h-3.5 w-3.5 transition-opacity duration-200',
-                  !collapsed && 'group-hover:opacity-0 group-focus-within:opacity-0',
+                  !collapsed && 'group-hover:opacity-0 group-focus-visible/expand:opacity-0',
                   activeColorClass
                 )}
               />
@@ -147,7 +148,9 @@ const PhaseItem = memo(function PhaseItem({
               data-testid={`workflow-phase-chevron-${phase}`}
               className={cn(
                 'absolute inset-0 h-3.5 w-3.5 transition-[opacity,transform] duration-200',
-                collapsed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                collapsed
+                  ? 'opacity-0'
+                  : 'opacity-0 group-hover:opacity-100 group-focus-visible/expand:opacity-100',
                 isExpanded && 'rotate-90',
                 activeColorClass
               )}
@@ -190,18 +193,26 @@ const PhaseItem = memo(function PhaseItem({
       </button>
 
       {hasPlusAction && !collapsed && (
-        <button
-          type="button"
-          onClick={
-            isWorkbookPhase ? (e) => onNewWorkbook(e, phase)
-            : phase === 'experiments' ? (e) => { e.stopPropagation(); onOpenSeedDialog(); }
-            : onNewPlan
-          }
-          className="shrink-0 p-0.5 mr-1 rounded hover:bg-muted-foreground/10 transition-opacity opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-          title={isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
-        >
-          <Plus className="h-3 w-3 text-muted-foreground" />
-        </button>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={
+                  isWorkbookPhase ? (e) => onNewWorkbook(e, phase)
+                  : phase === 'experiments' ? (e) => { e.stopPropagation(); onOpenSeedDialog(); }
+                  : onNewPlan
+                }
+                className="shrink-0 mr-2 transition-opacity opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+              >
+                <Plus className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors duration-200" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {isWorkbookPhase ? 'New workbook' : phase === 'experiments' ? 'Seed test model' : 'New plan'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
     </div>
   );

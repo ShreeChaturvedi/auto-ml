@@ -1,0 +1,184 @@
+/* SQL reveal highlighting + token entry animation */
+
+/**
+ * Token entrance animation. The colour is intentionally not set here
+ * so that the per-token syntax classes (.sql-tk-kw, .sql-tk-fn ...) remain
+ * visible from frame one. Instead we use a text-shadow glow that flashes
+ * brightly and fades, mirroring the placeholder-char-in shine effect.
+ */
+@keyframes sql-word-in {
+  0% {
+    opacity: 0;
+    text-shadow: 0 0 8px currentColor;
+    filter: brightness(1.35);
+  }
+
+  40% {
+    opacity: 1;
+    text-shadow: 0 0 4px currentColor;
+    filter: brightness(1.15);
+  }
+
+  100% {
+    opacity: 1;
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.sql-word-enter {
+  animation: sql-word-in 320ms ease-out both;
+}
+
+@keyframes sql-generation-scan {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+@keyframes sql-generation-bar {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sql-generation-dot {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.sql-generation-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.sql-generation-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    transparent 42%,
+    hsl(var(--foreground) / 0.04) 50%,
+    transparent 58%,
+    transparent 100%
+  );
+  animation: sql-generation-scan 1.9s ease-in-out infinite;
+}
+
+.sql-generation-line-active {
+  background: hsl(var(--foreground) / 0.3);
+  animation: sql-generation-bar 1.1s ease-in-out infinite;
+}
+
+.sql-generation-dot-active {
+  background: hsl(var(--primary));
+  animation: sql-generation-dot 1s ease-in-out infinite;
+}
+
+@keyframes nl-lane-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nl-lane-enter {
+  animation: nl-lane-in 220ms ease-out both;
+}
+
+.sql-tk-kw {
+  color: hsl(var(--syn-keyword));
+  font-weight: 600;
+}
+
+.sql-tk-fn {
+  color: hsl(var(--syn-function));
+}
+
+.sql-tk-str {
+  color: hsl(var(--syn-string));
+}
+
+.sql-tk-num {
+  color: hsl(var(--syn-number));
+}
+
+.sql-tk-op,
+.sql-tk-punc {
+  color: hsl(var(--syn-operator));
+}
+
+.sql-tk-id {
+  color: hsl(var(--syn-identifier));
+}
+
+/* NL query typewriter cursor */
+@keyframes nl-cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+/**
+ * Appended as a ::after pseudo-element on the last character span of the
+ * typewriter pre block. A hollow-circle glyph (U+25CB) is used instead of a
+ * traditional pipe so it doesn't shift surrounding text and stays lightweight.
+ */
+.nl-typewriter-cursor::after {
+  content: '\25CB';
+  font-size: 0.9em;
+  margin-left: 1px;
+  color: hsl(var(--foreground));
+  animation: nl-cursor-blink 700ms step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sql-word-enter,
+  .nl-lane-enter,
+  .sql-generation-surface::after,
+  .sql-generation-line-active,
+  .sql-generation-dot-active {
+    animation: none;
+  }
+
+  .nl-typewriter-cursor::after {
+    animation: none;
+    opacity: 0.7;
+  }
+}

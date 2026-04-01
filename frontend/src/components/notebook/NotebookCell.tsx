@@ -5,8 +5,7 @@
  * behavior is rendered by NotebookMarkdownCell + NotebookEditor section logic.
  */
 
-import { useState, useCallback, Suspense, useMemo } from 'react';
-import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useCallback, Suspense, useMemo } from 'react';
 import { useMonacoAutoHeight } from '@/hooks/useMonacoAutoHeight';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
@@ -23,18 +22,14 @@ import {
   Square,
   Trash2,
   Loader2,
-  Copy,
-  ChevronDown,
-  ChevronUp,
   Bot,
   Lock,
   Check,
   X,
   AlertCircle
 } from 'lucide-react';
-import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
 import { CellMoveButtons } from './CellMoveButtons';
-import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
+import { NotebookCellOutput } from './NotebookCellOutput';
 import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
@@ -90,8 +85,6 @@ export function NotebookCellComponent({
   canMoveDown
 }: NotebookCellComponentProps) {
   const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
-  const [showOutput, setShowOutput] = useState(true);
-  const [outputCopied, copyOutput] = useCopyToClipboard();
 
   const completionOptions = useMemo(
     () => ({ projectId, cellId: cell.cellId }),
@@ -159,11 +152,6 @@ export function NotebookCellComponent({
 
     return [...baseOutputs, ...legacyImageRefs];
   }, [cell.output, cell.outputRefs]);
-
-  const handleCopyOutput = useCallback(async () => {
-    const text = buildOutputCopyText(richOutputs);
-    if (text) await copyOutput(text);
-  }, [richOutputs, copyOutput]);
 
   return (
     <div
@@ -349,7 +337,6 @@ export function NotebookCellComponent({
             </div>
           )}
         </div>
-      </TooltipProvider>
 
       <Suspense
         fallback={
@@ -403,49 +390,8 @@ export function NotebookCellComponent({
         </div>
       )}
 
-      {richOutputs.length > 0 && (
-        <div className="border-t bg-muted/30">
-          <div className="flex min-h-[32px] items-center justify-between border-b px-3 py-1.5">
-            <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground">OUTPUT</span>
-
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-6 w-6"
-                onClick={handleCopyOutput}
-                title={outputCopied ? 'Copied!' : 'Copy output'}
-                aria-label={outputCopied ? 'Copied!' : 'Copy output'}
-                type="button"
-              >
-                {outputCopied ? (
-                  <Check className="h-3 w-3 text-green-500" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-6 w-6"
-                onClick={() => setShowOutput((previous) => !previous)}
-                title={showOutput ? 'Collapse output' : 'Expand output'}
-                aria-label={showOutput ? 'Collapse output' : 'Expand output'}
-                type="button"
-              >
-                {showOutput ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-          </div>
-
-          {showOutput && (
-            <div className="p-3">
-              <CellOutputRenderer outputs={richOutputs} />
-            </div>
-          )}
-        </div>
-      )}
+      <NotebookCellOutput outputs={richOutputs} />
+      </TooltipProvider>
     </div>
   );
 }

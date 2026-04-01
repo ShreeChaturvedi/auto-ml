@@ -6,13 +6,12 @@ import {
   fetchErrorAnalysis as apiFetchErrorAnalysis,
 } from '../../lib/api/experiments';
 import type { EvaluationResult } from '../../types/experiments';
-import { useExperimentsStore } from '../experimentsStore';
+import { createInitialExperimentsState, useExperimentsStore } from '../experimentsStore';
 
 vi.mock('../../lib/api/experiments', () => ({
   fetchEvaluation: vi.fn(),
   fetchShap: vi.fn(),
   fetchErrorAnalysis: vi.fn(),
-  compareModels: vi.fn(),
   fetchInsights: vi.fn(),
   parseNlFilter: vi.fn(),
 }));
@@ -25,29 +24,7 @@ const fetchShapMock = vi.mocked(apiFetchShap);
 const fetchErrorAnalysisMock = vi.mocked(apiFetchErrorAnalysis);
 
 function resetStore() {
-  useExperimentsStore.setState({
-    selectedModelId: null,
-    comparisonModelIds: [],
-    evaluations: {},
-    shapData: {},
-    errorAnalysis: {},
-    projectInsight: null,
-    insightModelHash: null,
-    insightFetchedAt: 0,
-    compareNarrative: null,
-    reportContent: null,
-    reportModelHash: null,
-    reportFetchedAt: 0,
-    experimentView: 'overview',
-    activeDetailTab: {},
-    nlFilterText: '',
-    activePredicates: [],
-    sortField: 'createdAt',
-    sortDirection: 'desc',
-    comparisonRequested: false,
-    manualPredicates: [],
-    nameFilter: '',
-  });
+  useExperimentsStore.setState(createInitialExperimentsState());
 }
 
 const MOCK_EVALUATION: EvaluationResult = {
@@ -211,6 +188,18 @@ describe('experimentsStore', () => {
     expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
   });
 
+  it('retryEvaluation() purges cached failures before re-fetching', async () => {
+    fetchEvaluationMock.mockRejectedValueOnce(new Error('404'));
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
+
+    fetchEvaluationMock.mockResolvedValueOnce(MOCK_EVALUATION);
+    await useExperimentsStore.getState().retryEvaluation('model-1');
+
+    expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
+    expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+  });
+
   it('setExperimentView() updates experimentView', () => {
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
     useExperimentsStore.getState().setExperimentView('leaderboard');
@@ -219,7 +208,7 @@ describe('experimentsStore', () => {
 
   it('setNlFilter() auto-switches to leaderboard when predicates are non-empty', () => {
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
-    useExperimentsStore.getState().setNlFilter('accuracy > 0.9', [
+    useExperimentsStore.getState().setNlFilter([
       { field: 'accuracy', operator: 'gt', value: '0.9' }
     ]);
     expect(useExperimentsStore.getState().experimentView).toBe('leaderboard');
@@ -228,7 +217,7 @@ describe('experimentsStore', () => {
 
   it('setNlFilter() does not switch view when predicates are empty', () => {
     useExperimentsStore.getState().setExperimentView('overview');
-    useExperimentsStore.getState().setNlFilter('', []);
+    useExperimentsStore.getState().setNlFilter([]);
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
   });
 
@@ -299,5 +288,20 @@ describe('experimentsStore', () => {
   it('setNameFilter() updates nameFilter', () => {
     useExperimentsStore.getState().setNameFilter('random forest');
     expect(useExperimentsStore.getState().nameFilter).toBe('random forest');
+  });
+
+  it('invalidateReport() clears cached report state', () => {
+    useExperimentsStore.setState({
+      reportContent: { text: 'cached', isLoading: false },
+      reportModelHash: 'model-a',
+      reportFetchedAt: 123,
+    });
+
+    useExperimentsStore.getState().invalidateReport();
+
+    const state = useExperimentsStore.getState();
+    expect(state.reportContent).toBeNull();
+    expect(state.reportModelHash).toBeNull();
+    expect(state.reportFetchedAt).toBe(0);
   });
 });

@@ -15,12 +15,14 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
-import { getFileType, DATA_FILE_TYPES } from '@/lib/fileUtils';
-import { FileRow } from './FileRow';
-import { uploadDatasetFile } from '@/lib/api/datasets';
-import { uploadDocument } from '@/lib/api/documents';
-import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { DATA_FILE_TYPES } from '@/lib/fileUtils';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
+import { FileRow } from './FileRow';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import {
+  createUploadedProjectFile,
+  ingestProjectFile,
+} from './projectFileIngestion';
 
 /** Static style for the shimmer band at rest (hoisted to avoid allocation per render). */
 const SHIMMER_RESTING_STYLE: React.CSSProperties = {
@@ -57,11 +59,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'uploading' | 'uploaded' | 'error'>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
 
-  const addFile = useDataStore((state) => state.addFile);
-  const addPreview = useDataStore((state) => state.addPreview);
-  const setFileMetadata = useDataStore((state) => state.setFileMetadata);
   const allFiles = useDataStore((state) => state.files);
-  const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
 
   // Filter files for this project using useMemo to avoid infinite loops
   const projectFiles = useMemo(
@@ -78,124 +76,53 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
     }
   }, [projectId]);
 
-  // Upload dataset files to backend
-  const uploadDatasetToBackend = useCallback(
-    async (file: UploadedFile) => {
-      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
+  const ingestFile = useCallback(async (file: UploadedFile) => {
+    setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
 
-      try {
-        const response = await uploadDatasetFile(file.file!, projectId);
-        const dataset = response.dataset;
-
-        // Update file metadata with backend info
-        setFileMetadata(file.id, {
-          datasetId: dataset.datasetId,
-          tableName: dataset.tableName,
-          queryable: dataset.queryable ?? (!response.warning && Boolean(dataset.tableName)),
-          queryError: dataset.queryError ?? response.warning,
-          rowCount: dataset.n_rows,
-          columnCount: dataset.n_cols,
-          columns: dataset.columns,
-          datasetProfile: {
-            nRows: dataset.n_rows,
-            nCols: dataset.n_cols,
-            dtypes: dataset.dtypes,
-            nullCounts: dataset.null_counts
-          }
-        });
-
-        addPreview({
-          fileId: file.id,
-          headers: dataset.columns,
-          rows: dataset.sample,
-          totalRows: dataset.n_rows,
-          previewRows: dataset.sample.length,
-          eda: dataset.eda
-        });
-
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
-
-        // Re-hydrate from backend to reconcile client-side UUIDs with
-        // backend datasetIds — ensures preview lookups and tab IDs are
-        // consistent without requiring a manual page refresh.
-        await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
-      } catch (error) {
-        console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
-        setUploadErrors((prev) => ({
-          ...prev,
-          [file.id]: error instanceof Error ? error.message : 'Upload failed'
-        }));
-      }
-    },
-    [projectId, setFileMetadata, addPreview]
-  );
-
-  const uploadDocumentToBackend = useCallback(
-    async (file: UploadedFile) => {
-      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
-
-      try {
-        const response = await uploadDocument(projectId, file.file!);
-        const document = response.document;
-
-        setFileMetadata(file.id, {
-          documentId: document.documentId,
-          chunkCount: document.chunkCount,
-          embeddingDimension: document.embeddingDimension,
-          mimeType: document.mimeType,
-          parseWarning: document.parseWarning
-        });
-
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
-        console.log(`[DataUploadPanel] ✅ Ingested ${file.name} for RAG`);
-      } catch (error) {
-        console.error(`[DataUploadPanel] Failed to ingest ${file.name}:`, error);
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
-        setUploadErrors((prev) => ({
-          ...prev,
-          [file.id]: error instanceof Error ? error.message : 'Upload failed'
-        }));
-      }
-    },
-    [projectId, setFileMetadata]
-  );
+    try {
+      await ingestProjectFile({
+        projectId,
+        file: file.file!,
+        fileId: file.id,
+        addFileWhen: 'after-upload',
+        syncProjectState: false,
+        addFile: () => undefined,
+        addPreview: useDataStore.getState().addPreview,
+        setFileMetadata: useDataStore.getState().setFileMetadata,
+        hydrateFromBackend: useDataStore.getState().hydrateFromBackend,
+        refreshProjectSuggestions: useNlSuggestionStore.getState().fetchProjectSuggestions,
+      });
+      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
+    } catch (error) {
+      console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
+      setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
+      setUploadErrors((prev) => ({
+        ...prev,
+        [file.id]: error instanceof Error ? error.message : 'Upload failed',
+      }));
+    }
+  }, [projectId]);
 
   // Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      const newFiles: UploadedFile[] = acceptedFiles.map((file) => ({
-        id: crypto.randomUUID(),
-        name: file.name,
-        type: getFileType(file),
-        size: file.size,
-        uploadedAt: new Date(),
-        projectId: projectId,
-        file
-      }));
+      const addFile = useDataStore.getState().addFile;
+      const newFiles: UploadedFile[] = acceptedFiles.map((file) => createUploadedProjectFile(projectId, file));
 
-      const datasetUploads: Promise<unknown>[] = [];
-
-      // Add to store
+      const uploads: Promise<unknown>[] = [];
       newFiles.forEach((file) => {
         addFile(file);
-        // Auto-upload dataset files
-        if (DATA_FILE_TYPES.has(file.type)) {
-          datasetUploads.push(uploadDatasetToBackend(file));
-        } else {
-          void uploadDocumentToBackend(file);
-        }
+        uploads.push(ingestFile(file));
       });
 
-      if (datasetUploads.length > 0) {
-        void Promise.allSettled(datasetUploads).then(async () => {
-          // Single hydration after all uploads complete (not per-file)
-          await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
-          fetchProjectSuggestions(projectId, { force: true });
-        });
-      }
+      void Promise.allSettled(uploads).then(async () => {
+        await Promise.all([
+          useDataStore.getState().hydrateFromBackend(projectId, { force: true }),
+          useNlSuggestionStore.getState().fetchProjectSuggestions(projectId, { force: true }),
+        ]);
+      });
     },
-    [projectId, addFile, fetchProjectSuggestions, uploadDatasetToBackend, uploadDocumentToBackend]
+    [projectId, ingestFile]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

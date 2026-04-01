@@ -14,12 +14,11 @@ import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
+import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
 import { deleteTuningStudiesByModelId } from './tuningService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
-
-const DEFAULT_TEST_SIZE = 0.2;
 
 function pyLiteral(value: unknown): string {
   if (value === null || value === undefined) return 'None';
@@ -231,7 +230,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
   }
 
   const modelId = randomUUID();
-  const testSize = Math.max(0.1, Math.min(input.testSize ?? DEFAULT_TEST_SIZE, 0.4));
+  const testSize = normalizeModelTestSize(input.testSize ?? DEFAULT_MODEL_TEST_SIZE);
   const mergedParams = Object.fromEntries(
     Object.entries({
       ...template.defaultParams,
@@ -335,9 +334,10 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
       path: storedModelPath,
       size: artifactStat.size
     },
-    metadata: metricsPayload.clusterSizes
-      ? { clusterSizes: metricsPayload.clusterSizes }
-      : undefined,
+    metadata: {
+      ...(metricsPayload.clusterSizes ? { clusterSizes: metricsPayload.clusterSizes } : {}),
+      testSize,
+    },
     evaluationStatus: 'pending'
   });
 

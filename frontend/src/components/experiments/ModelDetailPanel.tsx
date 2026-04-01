@@ -11,6 +11,7 @@ import { getModelArtifactUrl } from '@/lib/api/models';
 import { cn } from '@/lib/utils';
 import { resolveModelIcon, TASK_TEXT_STYLES, TASK_LABELS, METRIC_ICONS } from './modelIcons';
 import { IconModeToggle, type IconModeToggleOption } from '@/components/data/IconModeToggle';
+import type { ExperimentDetailTab } from '@/types/experiments';
 import { Pill } from '@/components/ui/pill';
 import { PlotsTab } from './tabs/PlotsTab';
 import { InterpretabilityTab } from './tabs/InterpretabilityTab';
@@ -21,13 +22,13 @@ import { EvalTabContent } from './EvalTabContent';
 import { formatMetric, formatDurationCompact, formatDurationLong } from './utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
-const TAB_OPTIONS: IconModeToggleOption[] = [
+const TAB_OPTIONS = [
   { value: 'plots', ariaLabel: 'Plots', icon: BarChart3, tooltip: 'Plots' },
   { value: 'interpretability', ariaLabel: 'Interpretability', icon: Brain, tooltip: 'Interpretability' },
   { value: 'errors', ariaLabel: 'Errors', icon: AlertTriangle, tooltip: 'Errors' },
   { value: 'provenance', ariaLabel: 'Provenance', icon: GitBranch, tooltip: 'Provenance' },
   { value: 'tune', ariaLabel: 'Tune', icon: SlidersHorizontal, tooltip: 'Tune' },
-];
+] as const satisfies readonly IconModeToggleOption<ExperimentDetailTab>[];
 
 export interface ModelDetailPanelProps {
   modelId: string | null;
@@ -42,6 +43,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const model = useModelStore((s) => modelId ? s.models.find((m) => m.modelId === modelId) : undefined);
   const evaluation = useExperimentsStore((s) => modelId ? s.evaluations[modelId] : undefined);
   const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
+  const retryEvaluation = useExperimentsStore((s) => s.retryEvaluation);
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
   const { themeColor } = useProjectThemeColor();
@@ -130,14 +132,12 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {isFailed && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => {
-                      useExperimentsStore.setState((s) => {
-                        const next = { ...s.evaluations };
-                        delete next[modelId];
-                        return { evaluations: next };
-                      });
-                      fetchEvaluation(modelId);
-                    }}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={iconBtnCls}
+                      onClick={() => { void retryEvaluation(modelId); }}
+                    >
                       <RefreshCcw className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
@@ -147,9 +147,9 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
 
               <ToolbarDivider />
 
-              <IconModeToggle
+              <IconModeToggle<ExperimentDetailTab>
                 value={activeTab}
-                onValueChange={(v) => { if (v) setActiveTab(modelId, v); }}
+                onValueChange={(tab) => { setActiveTab(modelId, tab); }}
                 options={TAB_OPTIONS}
               />
 

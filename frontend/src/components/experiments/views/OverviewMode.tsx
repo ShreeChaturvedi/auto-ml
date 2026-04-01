@@ -1,12 +1,13 @@
 import { forwardRef } from 'react';
+import type { ExperimentView } from '@/types/experiments';
 import { ReportPane, type ReportPaneHandle } from '../ReportPane';
 import { OverviewDashboard } from '../OverviewDashboard';
 import { NlFilterBar } from '../NlFilterBar';
 
 interface OverviewModeProps {
   onCardClick: (sectionSlug: string) => void;
-  experimentView: 'overview' | 'leaderboard';
-  onViewChange: (val: string) => void;
+  experimentView: ExperimentView;
+  onViewChange: (view: ExperimentView) => void;
 }
 
 export const OverviewMode = forwardRef<ReportPaneHandle, OverviewModeProps>(

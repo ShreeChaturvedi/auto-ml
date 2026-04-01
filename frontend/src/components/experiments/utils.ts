@@ -1,5 +1,12 @@
-import type { FilterPredicate, EvaluationResult, CrossPhaseRecommendation } from '@/types/experiments';
+import type {
+  CrossPhaseRecommendation,
+  EvaluationResult,
+  ExperimentSortDirection,
+  ExperimentSortField,
+  FilterPredicate,
+} from '@/types/experiments';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
+import { LOWER_IS_BETTER } from './modelIcons';
 
 /* ── Filter predicate formatting ────────────────────────────────── */
 
@@ -33,6 +40,87 @@ export const PRIMARY_METRIC_LABEL: Record<ModelTaskType, string> = {
 /** Detect whether models span more than one task type. */
 export function detectTaskTypes(models: ModelRecord[]): ModelTaskType[] {
   return Array.from(new Set(models.map((m) => m.taskType)));
+}
+
+export function findChampionModelId(models: ModelRecord[]): string | null {
+  let champion: ModelRecord | null = null;
+  let championValue = NaN;
+
+  for (const model of models) {
+    if (model.status !== 'completed') {
+      continue;
+    }
+
+    const metricKey = PRIMARY_METRIC[model.taskType];
+    const metricValue = model.metrics[metricKey];
+    if (!Number.isFinite(metricValue)) {
+      continue;
+    }
+
+    const lowerIsBetter = LOWER_IS_BETTER.has(metricKey);
+    if (
+      Number.isNaN(championValue) ||
+      (lowerIsBetter ? metricValue < championValue : metricValue > championValue)
+    ) {
+      champion = model;
+      championValue = metricValue;
+    }
+  }
+
+  return champion?.modelId ?? null;
+}
+
+export function sortModels(
+  models: ModelRecord[],
+  sortField: ExperimentSortField,
+  sortDirection: ExperimentSortDirection,
+): ModelRecord[] {
+  return [...models].sort((left, right) => {
+    let leftValue: number | string;
+    let rightValue: number | string;
+
+    if (sortField === 'name') {
+      leftValue = left.name.toLowerCase();
+      rightValue = right.name.toLowerCase();
+    } else if (sortField === 'algorithm') {
+      leftValue = left.algorithm.toLowerCase();
+      rightValue = right.algorithm.toLowerCase();
+    } else if (sortField === 'createdAt') {
+      leftValue = left.createdAt;
+      rightValue = right.createdAt;
+    } else {
+      leftValue = left.metrics[sortField] ?? -Infinity;
+      rightValue = right.metrics[sortField] ?? -Infinity;
+    }
+
+    if (leftValue < rightValue) {
+      return sortDirection === 'asc' ? -1 : 1;
+    }
+    if (leftValue > rightValue) {
+      return sortDirection === 'asc' ? 1 : -1;
+    }
+    return 0;
+  });
+}
+
+export function filterModels(
+  models: ModelRecord[],
+  activePredicates: FilterPredicate[],
+  manualPredicates: FilterPredicate[],
+  nameFilter: string,
+): ModelRecord[] {
+  let result = models;
+  if (activePredicates.length > 0) {
+    result = filterByPredicates(result, activePredicates);
+  }
+  if (manualPredicates.length > 0) {
+    result = filterByGroupedPredicates(result, manualPredicates);
+  }
+  if (nameFilter.trim()) {
+    const query = nameFilter.trim().toLowerCase();
+    result = result.filter((model) => model.name.toLowerCase().includes(query));
+  }
+  return result;
 }
 
 /* ── Metric formatting ───────────────────────────────────────────── */

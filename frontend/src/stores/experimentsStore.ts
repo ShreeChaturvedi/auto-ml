@@ -2,67 +2,52 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 
 import type {
-  EvaluationResult,
-  ShapResult,
   ErrorAnalysisResult,
-  FilterPredicate
+  EvaluationResult,
+  ExperimentDetailTab,
+  ExperimentSortDirection,
+  ExperimentSortField,
+  ExperimentView,
+  FilterPredicate,
+  ShapResult,
 } from '@/types/experiments';
 import type { ModelRecord } from '@/types/model';
 import * as experimentsApi from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 
-/** Minimum time (ms) between insight banner LLM calls */
 const INSIGHT_STALE_TIME = 30_000;
 
 interface ExperimentsState {
-  // Selection
   selectedModelId: string | null;
   comparisonModelIds: string[];
-
-  // Data caches (keyed by modelId; null means fetched but unavailable)
   evaluations: Record<string, EvaluationResult | null>;
   shapData: Record<string, ShapResult | null>;
   errorAnalysis: Record<string, ErrorAnalysisResult | null>;
-
-  // LLM content
-  projectInsight: { text: string; isLoading: boolean } | null;
-  insightModelHash: string | null;
-  insightFetchedAt: number;
   compareNarrative: { text: string; isLoading: boolean } | null;
   reportContent: { text: string; isLoading: boolean } | null;
   reportModelHash: string | null;
   reportFetchedAt: number;
-
-  // View switching
-  experimentView: 'overview' | 'leaderboard';
-
-  // Detail dialog tab persistence (keyed by modelId)
-  activeDetailTab: Record<string, string>;
-
-  // Filters
-  nlFilterText: string;
+  experimentView: ExperimentView;
+  activeDetailTab: Record<string, ExperimentDetailTab>;
   activePredicates: FilterPredicate[];
-  sortField: string;
-  sortDirection: 'asc' | 'desc';
+  sortField: ExperimentSortField;
+  sortDirection: ExperimentSortDirection;
   comparisonRequested: boolean;
   manualPredicates: FilterPredicate[];
   nameFilter: string;
-
-  // Actions
   selectModel: (modelId: string | null) => void;
   toggleComparison: (modelId: string) => void;
   clearComparison: () => void;
-  setExperimentView: (view: 'overview' | 'leaderboard') => void;
+  setExperimentView: (view: ExperimentView) => void;
   fetchEvaluation: (modelId: string) => Promise<void>;
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
-  fetchProjectInsight: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchReport: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchCompareNarrative: (projectId: string, modelIds: string[], models: ModelRecord[]) => Promise<void>;
-  setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
+  setNlFilter: (predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
-  setSort: (field: string, direction: 'asc' | 'desc') => void;
-  setActiveDetailTab: (modelId: string, tab: string) => void;
+  setSort: (field: ExperimentSortField, direction: ExperimentSortDirection) => void;
+  setActiveDetailTab: (modelId: string, tab: ExperimentDetailTab) => void;
   startComparison: () => void;
   stopComparison: () => void;
   addManualPredicate: (predicate: FilterPredicate) => void;
@@ -71,43 +56,64 @@ interface ExperimentsState {
   clearManualPredicates: () => void;
   setNameFilter: (text: string) => void;
   purgeModelCache: (modelId: string) => void;
+  retryEvaluation: (modelId: string) => Promise<void>;
+  invalidateReport: () => void;
+}
+
+type ExperimentsStateData = Pick<
+  ExperimentsState,
+  | 'selectedModelId'
+  | 'comparisonModelIds'
+  | 'evaluations'
+  | 'shapData'
+  | 'errorAnalysis'
+  | 'compareNarrative'
+  | 'reportContent'
+  | 'reportModelHash'
+  | 'reportFetchedAt'
+  | 'experimentView'
+  | 'activeDetailTab'
+  | 'activePredicates'
+  | 'sortField'
+  | 'sortDirection'
+  | 'comparisonRequested'
+  | 'manualPredicates'
+  | 'nameFilter'
+>;
+
+export function createInitialExperimentsState(): ExperimentsStateData {
+  return {
+    selectedModelId: null,
+    comparisonModelIds: [],
+    evaluations: {},
+    shapData: {},
+    errorAnalysis: {},
+    compareNarrative: null,
+    reportContent: null,
+    reportModelHash: null,
+    reportFetchedAt: 0,
+    experimentView: 'overview',
+    activeDetailTab: {},
+    activePredicates: [],
+    sortField: 'createdAt',
+    sortDirection: 'desc',
+    comparisonRequested: false,
+    manualPredicates: [],
+    nameFilter: '',
+  };
+}
+
+function clearModelCacheEntry<T>(cache: Record<string, T>, modelId: string): Record<string, T> {
+  if (!(modelId in cache)) {
+    return cache;
+  }
+  const next = { ...cache };
+  delete next[modelId];
+  return next;
 }
 
 export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
-  // Selection
-  selectedModelId: null,
-  comparisonModelIds: [],
-
-  // Data caches
-  evaluations: {},
-  shapData: {},
-  errorAnalysis: {},
-
-  // LLM content
-  projectInsight: null,
-  insightModelHash: null,
-  insightFetchedAt: 0,
-  compareNarrative: null,
-  reportContent: null,
-  reportModelHash: null,
-  reportFetchedAt: 0,
-
-  // View switching
-  experimentView: 'overview',
-
-  // Detail dialog tab persistence
-  activeDetailTab: {},
-
-  // Filters
-  nlFilterText: '',
-  activePredicates: [],
-  sortField: 'createdAt',
-  sortDirection: 'desc',
-  comparisonRequested: false,
-  manualPredicates: [],
-  nameFilter: '',
-
-  // ── Actions ──
+  ...createInitialExperimentsState(),
 
   selectModel: (modelId) => {
     set({ selectedModelId: modelId });
@@ -121,13 +127,15 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
         comparisonModelIds: next,
         ...(next.length < 2 ? { comparisonRequested: false } : {}),
       });
-    } else {
-      if (current.length >= 5) {
-        toast.warning('Maximum 5 models can be compared');
-        return;
-      }
-      set({ comparisonModelIds: [...current, modelId] });
+      return;
     }
+
+    if (current.length >= 5) {
+      toast.warning('Maximum 5 models can be compared');
+      return;
+    }
+
+    set({ comparisonModelIds: [...current, modelId] });
   },
 
   clearComparison: () => {
@@ -150,7 +158,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   removeManualPredicate: (index) => {
     set((state) => ({
-      manualPredicates: state.manualPredicates.filter((_, i) => i !== index),
+      manualPredicates: state.manualPredicates.filter((_, currentIndex) => currentIndex !== index),
     }));
   },
 
@@ -175,12 +183,12 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
       set((state) => ({
-        evaluations: { ...state.evaluations, [modelId]: result }
+        evaluations: { ...state.evaluations, [modelId]: result },
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchEvaluation failed:', error);
       set((state) => ({
-        evaluations: { ...state.evaluations, [modelId]: null }
+        evaluations: { ...state.evaluations, [modelId]: null },
       }));
     }
   },
@@ -190,11 +198,11 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     try {
       const result = await experimentsApi.fetchShap(modelId);
       set((state) => ({
-        shapData: { ...state.shapData, [modelId]: result }
+        shapData: { ...state.shapData, [modelId]: result },
       }));
     } catch {
       set((state) => ({
-        shapData: { ...state.shapData, [modelId]: null }
+        shapData: { ...state.shapData, [modelId]: null },
       }));
     }
   },
@@ -203,71 +211,36 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     if (modelId in get().errorAnalysis) return;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
-      // Backend returns { available: false } when error analysis isn't possible
       const resolved = result?.available === false ? null : result;
       set((state) => ({
-        errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved }
+        errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved },
       }));
     } catch {
       set((state) => ({
-        errorAnalysis: { ...state.errorAnalysis, [modelId]: null }
+        errorAnalysis: { ...state.errorAnalysis, [modelId]: null },
       }));
-    }
-  },
-
-  fetchProjectInsight: async (projectId, models) => {
-    const hash = models.map((m) => m.modelId).sort().join(',');
-    const current = get();
-    if (hash === current.insightModelHash && current.projectInsight?.text) return;
-    if (current.projectInsight?.isLoading) return;
-    if (current.insightFetchedAt && Date.now() - current.insightFetchedAt < INSIGHT_STALE_TIME) return;
-
-    set({ projectInsight: { text: '', isLoading: true }, insightModelHash: hash, insightFetchedAt: Date.now() });
-    try {
-      const response = await experimentsApi.fetchInsights(projectId, {
-        type: 'banner',
-        context: {
-          models: models.map((m) => ({
-            modelId: m.modelId,
-            name: m.name,
-            algorithm: m.algorithm,
-            taskType: m.taskType,
-            metrics: m.metrics,
-            status: m.status
-          }))
-        }
-      });
-      await accumulateTokenStream(response, (accumulated) => {
-        set((state) => ({
-          projectInsight: state.projectInsight
-            ? { ...state.projectInsight, text: accumulated }
-            : null
-        }));
-      });
-      set((state) => ({
-        projectInsight: state.projectInsight
-          ? { ...state.projectInsight, isLoading: false }
-          : null
-      }));
-    } catch {
-      set({ projectInsight: null });
     }
   },
 
   fetchReport: async (projectId, models) => {
-    const hash = models.map((m) => m.modelId).sort().join(',');
+    const hash = models.map((model) => model.modelId).sort().join(',');
     const current = get();
     if (hash === current.reportModelHash && current.reportContent?.text) return;
     if (current.reportContent?.isLoading) return;
     if (current.reportFetchedAt && Date.now() - current.reportFetchedAt < INSIGHT_STALE_TIME) return;
 
-    set({ reportContent: { text: '', isLoading: true }, reportModelHash: hash, reportFetchedAt: Date.now() });
+    set({
+      reportContent: { text: '', isLoading: true },
+      reportModelHash: hash,
+      reportFetchedAt: Date.now(),
+    });
+
     let rafId = 0;
     let latestText = '';
     try {
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'report',
-        context: { models: models.map((m) => ({ modelId: m.modelId })) }
+        context: { models: models.map((model) => ({ modelId: model.modelId })) },
       });
       await accumulateTokenStream(response, (accumulated) => {
         latestText = accumulated;
@@ -277,17 +250,14 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
             set((state) => ({
               reportContent: state.reportContent
                 ? { ...state.reportContent, text: latestText }
-                : null
+                : null,
             }));
           });
         }
       });
-      // Cancel any trailing rAF before the final flush to avoid a no-op re-render
       if (rafId) cancelAnimationFrame(rafId);
       set((state) => ({
-        reportContent: state.reportContent
-          ? { text: latestText, isLoading: false }
-          : null
+        reportContent: state.reportContent ? { text: latestText, isLoading: false } : null,
       }));
     } catch {
       if (rafId) cancelAnimationFrame(rafId);
@@ -299,43 +269,45 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     set({ compareNarrative: { text: '', isLoading: true } });
     try {
       const modelsContext = models
-        .filter((m) => modelIds.includes(m.modelId))
-        .map((m) => ({
-          modelId: m.modelId,
-          name: m.name,
-          algorithm: m.algorithm,
-          taskType: m.taskType,
-          metrics: m.metrics,
+        .filter((model) => modelIds.includes(model.modelId))
+        .map((model) => ({
+          modelId: model.modelId,
+          name: model.name,
+          algorithm: model.algorithm,
+          taskType: model.taskType,
+          metrics: model.metrics,
         }));
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'compare',
-        context: { modelIds, models: modelsContext }
+        context: { modelIds, models: modelsContext },
       });
       await accumulateTokenStream(response, (accumulated) => {
         set((state) => ({
           compareNarrative: state.compareNarrative
             ? { ...state.compareNarrative, text: accumulated }
-            : null
+            : null,
         }));
       });
       set((state) => ({
         compareNarrative: state.compareNarrative
           ? { ...state.compareNarrative, isLoading: false }
-          : null
+          : null,
       }));
     } catch {
       set({ compareNarrative: null });
     }
   },
 
-  setNlFilter: (text, predicates) => {
-    const update: Partial<ExperimentsState> = { nlFilterText: text, activePredicates: predicates };
-    if (predicates.length > 0) update.experimentView = 'leaderboard';
+  setNlFilter: (predicates) => {
+    const update: Partial<ExperimentsState> = { activePredicates: predicates };
+    if (predicates.length > 0) {
+      update.experimentView = 'leaderboard';
+    }
     set(update);
   },
 
   clearFilter: () => {
-    set({ nlFilterText: '', activePredicates: [] });
+    set({ activePredicates: [] });
   },
 
   setSort: (field, direction) => {
@@ -345,21 +317,25 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   setActiveDetailTab: (modelId, tab) => {
     if (get().activeDetailTab[modelId] === tab) return;
     set((state) => ({
-      activeDetailTab: { ...state.activeDetailTab, [modelId]: tab }
+      activeDetailTab: { ...state.activeDetailTab, [modelId]: tab },
     }));
   },
 
   purgeModelCache: (modelId) => {
-    set((state) => {
-      const evaluations = { ...state.evaluations };
-      const shapData = { ...state.shapData };
-      const errorAnalysis = { ...state.errorAnalysis };
-      const activeDetailTab = { ...state.activeDetailTab };
-      delete evaluations[modelId];
-      delete shapData[modelId];
-      delete errorAnalysis[modelId];
-      delete activeDetailTab[modelId];
-      return { evaluations, shapData, errorAnalysis, activeDetailTab };
-    });
-  }
+    set((state) => ({
+      evaluations: clearModelCacheEntry(state.evaluations, modelId),
+      shapData: clearModelCacheEntry(state.shapData, modelId),
+      errorAnalysis: clearModelCacheEntry(state.errorAnalysis, modelId),
+      activeDetailTab: clearModelCacheEntry(state.activeDetailTab, modelId),
+    }));
+  },
+
+  retryEvaluation: async (modelId) => {
+    get().purgeModelCache(modelId);
+    await get().fetchEvaluation(modelId);
+  },
+
+  invalidateReport: () => {
+    set({ reportContent: null, reportModelHash: null, reportFetchedAt: 0 });
+  },
 }));

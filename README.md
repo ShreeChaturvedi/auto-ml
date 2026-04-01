@@ -123,6 +123,7 @@ docs/                 Branding assets, API contracts, design system
 
 | Command | Description |
 |---------|-------------|
+| `npm run audit` | Audit root, backend, frontend, and testing dependencies |
 | `npm run dev` | Start development environment (Postgres + migrations + servers) |
 | `npm run build` | Build backend (tsc) + frontend (Vite) |
 | `npm run test` | Run all tests (Vitest) |

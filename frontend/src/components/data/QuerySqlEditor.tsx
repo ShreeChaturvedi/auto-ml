@@ -83,7 +83,11 @@ export function QuerySqlEditor({
   // Shuffle once per data change using ref to avoid impure useMemo
   const placeholderKeyRef = useRef('');
   const shuffledRef = useRef<string[]>([]);
-  const placeholderKey = JSON.stringify([llmPlaceholders, tableNames[0]]);
+  const placeholderKey = JSON.stringify([
+    llmPlaceholders,
+    tableNames[0],
+    columnsByTable[tableNames[0] ?? ''] ?? [],
+  ]);
   if (placeholderKey !== placeholderKeyRef.current) {
     placeholderKeyRef.current = placeholderKey;
     let items: string[];
@@ -124,6 +128,10 @@ export function QuerySqlEditor({
   onExecuteRef.current = onExecute;
   const onQueryChangeRef = useRef(onQueryChange);
   onQueryChangeRef.current = onQueryChange;
+  const tableNamesRef = useRef(tableNames);
+  tableNamesRef.current = tableNames;
+  const columnsByTableRef = useRef(columnsByTable);
+  columnsByTableRef.current = columnsByTable;
   const showPlaceholderRef = useRef(showPlaceholder);
   showPlaceholderRef.current = showPlaceholder;
   const placeholdersRef = useRef(placeholders);
@@ -236,10 +244,15 @@ export function QuerySqlEditor({
             startColumn: word.startColumn,
             endColumn: word.endColumn
           };
-          const safeTableNames = tableNames
+          const safeTableNames = tableNamesRef.current
             .map((tableName) => sanitizeSuggestionToken(tableName))
             .filter((tableName): tableName is string => Boolean(tableName));
-          const collector = createSqlSuggestionCollector({ monaco, range, safeTableNames, columnsByTable });
+          const collector = createSqlSuggestionCollector({
+            monaco,
+            range,
+            safeTableNames,
+            columnsByTable: columnsByTableRef.current,
+          });
 
           try {
             const textUntilPosition = completionModel.getValueInRange({
@@ -282,9 +295,7 @@ export function QuerySqlEditor({
       validateSql();
       validationSubscriptionRef.current = model.onDidChangeContent(() => validateSql());
     },
-    // tableNames/columnsByTable captured at mount; the completion closure reads them.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [monacoTheme]
+    [monacoTheme, setFocused]
   );
 
   const currentSql = placeholders[currentIndex] ?? '';

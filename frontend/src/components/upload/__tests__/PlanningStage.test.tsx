@@ -14,6 +14,8 @@ const { mockUseLlmModelCatalog } = vi.hoisted(() => ({
 const addFileMock = vi.fn();
 const addPreviewMock = vi.fn();
 const setFileMetadataMock = vi.fn();
+const hydrateFromBackendMock = vi.fn();
+const fetchProjectSuggestionsMock = vi.fn();
 
 vi.mock('@/stores/dataStore', () => ({
   useDataStore: (selector: (state: unknown) => unknown) =>
@@ -22,6 +24,14 @@ vi.mock('@/stores/dataStore', () => ({
       addFile: addFileMock,
       addPreview: addPreviewMock,
       setFileMetadata: setFileMetadataMock,
+      hydrateFromBackend: hydrateFromBackendMock,
+    }),
+}));
+
+vi.mock('@/stores/nlSuggestionStore', () => ({
+  useNlSuggestionStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      fetchProjectSuggestions: fetchProjectSuggestionsMock,
     }),
 }));
 

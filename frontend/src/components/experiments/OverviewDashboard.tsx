@@ -8,7 +8,7 @@ import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { CrossPhaseRecommendation } from '@/types/experiments';
 import { cn } from '@/lib/utils';
-import { generateRecommendations } from './utils';
+import { findChampionModelId, generateRecommendations } from './utils';
 import { InsightGrid } from './InsightGrid';
 import { ModelComparisonChart } from './ModelComparisonChart';
 
@@ -51,21 +51,7 @@ export function OverviewDashboard({ onCardClick }: OverviewDashboardProps) {
   const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
 
   // Pre-fetch evaluation for the best model (for Overfit Risk card)
-  const bestModelId = useMemo(() => {
-    if (models.length === 0) return null;
-    let bestId: string | null = null;
-    let bestMax = -Infinity;
-    for (const m of models) {
-      const vals = Object.values(m.metrics);
-      if (vals.length === 0) continue;
-      let mx = -Infinity;
-      for (const v of vals) {
-        if (Number.isFinite(v) && v > mx) mx = v;
-      }
-      if (mx > bestMax) { bestMax = mx; bestId = m.modelId; }
-    }
-    return bestId;
-  }, [models]);
+  const bestModelId = useMemo(() => findChampionModelId(models), [models]);
 
   useEffect(() => {
     if (bestModelId) void fetchEvaluation(bestModelId);

@@ -322,6 +322,27 @@ describe('runEvaluation', () => {
     expect(artifactWorkspaces).toContain('eval/test-model-id/shap.json');
   });
 
+  it('reuses the stored model test size when building the evaluation script', async () => {
+    const model = makeModelRecord({ metadata: { testSize: 0.3 } });
+    const container = makeContainer();
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { scriptBuilder: () => string };
+      const script = cfg.scriptBuilder();
+      expect(script).toContain('test_size = 0.3');
+      return {
+        container,
+        executionResult: { status: 'success', stderr: '', executionMs: 5000 },
+      };
+    });
+
+    await runEvaluation('test-model-id');
+  });
+
   it('does not throw when model is not found', async () => {
     mockGetById.mockResolvedValue(undefined);
 

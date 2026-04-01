@@ -3,17 +3,17 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-export interface IconModeToggleOption {
-  value: string;
+export interface IconModeToggleOption<T extends string = string> {
+  value: T;
   ariaLabel: string;
   icon: ComponentType<{ className?: string }>;
   tooltip?: string;
 }
 
-interface IconModeToggleProps {
-  value: string;
-  onValueChange: (value: string) => void;
-  options: readonly IconModeToggleOption[];
+interface IconModeToggleProps<T extends string = string> {
+  value: T;
+  onValueChange: (value: T) => void;
+  options: readonly IconModeToggleOption<T>[];
   className?: string;
   itemClassName?: string;
   /**
@@ -23,14 +23,14 @@ interface IconModeToggleProps {
   selectedIconClassName?: string;
 }
 
-export function IconModeToggle({
+export function IconModeToggle<T extends string = string>({
   value,
   onValueChange,
   options,
   className,
   itemClassName,
   selectedIconClassName,
-}: IconModeToggleProps) {
+}: IconModeToggleProps<T>) {
   // Priority: explicit prop > accent token > default
   const iconColorClass = selectedIconClassName ?? 'text-accent-text';
 
@@ -38,7 +38,11 @@ export function IconModeToggle({
     <ToggleGroup
       type="single"
       value={value}
-      onValueChange={onValueChange}
+      onValueChange={(nextValue) => {
+        if (!nextValue) return;
+        const match = options.find((o) => o.value === nextValue);
+        if (match) onValueChange(match.value);
+      }}
       className={cn('bg-muted/50 p-0.5 rounded-md h-7', className)}
     >
       {options.map((option) => {

@@ -342,6 +342,23 @@ describeRouteSuite('dataset routes', () => {
     });
   });
 
+  describe('GET /api/datasets/:datasetId/download', () => {
+    it('streams the dataset file when it exists on disk', async () => {
+      const dataset = createMockDataset({ filename: 'download.csv' });
+      repository.addDataset(dataset);
+      storeDatasetFile(dataset, 'id,name\n1,Ada\n');
+
+      const app = createTestApp(repository);
+      const response = await request(app).get(`/api/datasets/${dataset.datasetId}/download`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.headers['content-disposition']).toContain('download.csv');
+      expect(response.text).toContain('id,name');
+      expect(response.text).toContain('Ada');
+    });
+  });
+
   describe('POST /api/upload/dataset', () => {
     it('rejects legacy XLS uploads with a clear migration message', async () => {
       const app = createTestApp(repository);

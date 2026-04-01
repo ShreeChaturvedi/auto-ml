@@ -49,14 +49,25 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
     })),
 
   removeWorkbook: (phase, workbookId) =>
-    set((state) => ({
-      [phase]: state[phase].filter((w) => w.id !== workbookId)
-    })),
+    set((state) => {
+      const prev = state[phase];
+      const next = prev.filter((w) => w.id !== workbookId);
+      if (next.length === prev.length) return state;
+      return { [phase]: next };
+    }),
 
   updateWorkbook: (phase, workbookId, updates) =>
-    set((state) => ({
-      [phase]: state[phase].map((w) =>
-        w.id === workbookId ? { ...w, ...updates } : w
-      )
-    }))
+    set((state) => {
+      const prev = state[phase];
+      let changed = false;
+      const next = prev.map((w) => {
+        if (w.id !== workbookId) return w;
+        const merged = { ...w, ...updates };
+        if (w.name === merged.name && w.notebookId === merged.notebookId) return w;
+        changed = true;
+        return merged;
+      });
+      if (!changed) return state;
+      return { [phase]: next };
+    })
 }));

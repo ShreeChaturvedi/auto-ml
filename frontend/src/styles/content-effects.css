@@ -1,0 +1,8 @@
+@import './content-effects/markdown-content.css';
+@import './content-effects/shimmer-effects.css';
+@import './content-effects/placeholder-effects.css';
+@import './content-effects/llm-effects.css';
+@import './content-effects/execute-effects.css';
+@import './content-effects/sql-effects.css';
+@import './content-effects/voice-effects.css';
+

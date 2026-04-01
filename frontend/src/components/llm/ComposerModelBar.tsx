@@ -90,7 +90,7 @@ export function ComposerModelBar({
   return (
     <div className="hidden lg:flex shrink-0 flex-nowrap items-center gap-2">
       <Select value={currentModelOption.value} onValueChange={onModelChange}>
-        <SelectTrigger className="flex h-7 w-fit min-w-[8.25rem] max-w-none shrink-0 flex-nowrap gap-2 px-2.5 text-xs [&>div]:flex [&>div]:flex-nowrap [&>div]:min-w-0 [&>div]:overflow-hidden">
+        <SelectTrigger className="flex h-7 w-fit min-w-[8.25rem] max-w-none shrink-0 flex-nowrap px-2.5 text-xs [&>div]:flex [&>div]:flex-nowrap [&>div]:min-w-0 [&>div]:overflow-hidden">
           <div className="flex min-w-0 shrink flex-nowrap items-center gap-2 whitespace-nowrap">
             <span className="shrink-0">{renderModelIcon(currentModelOption, projectIconColorClass)}</span>
             <span className="min-w-0 truncate">{currentModelOption.label}</span>
@@ -132,7 +132,7 @@ export function ComposerModelBar({
 
       {reasoningOptions.length > 0 ? (
         <Select value={reasoningEffort} onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort)}>
-          <SelectTrigger className="h-7 w-fit min-w-[7.5rem] gap-2 px-2.5 text-xs">
+          <SelectTrigger className="h-7 w-fit min-w-[7.5rem] px-2.5 text-xs">
             <SelectValue placeholder="Reasoning">
               {(() => {
                 const opt = reasoningOptions.find((o) => o.value === reasoningEffort);

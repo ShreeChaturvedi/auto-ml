@@ -18,14 +18,15 @@ import { extractTocHeadings, slugifyHeading } from '@/lib/markdown/tocUtils';
 import { scrollToRadixElement } from '@/lib/scrollUtils';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
+import type { ExperimentView } from '@/types/experiments';
 
 export interface ReportPaneHandle {
   scrollToSection: (slug: string) => void;
 }
 
 interface ReportPaneProps {
-  experimentView: 'overview' | 'leaderboard';
-  onViewChange: (view: 'overview' | 'leaderboard') => void;
+  experimentView: ExperimentView;
+  onViewChange: (view: ExperimentView) => void;
 }
 
 const REPORT_PREFIX = 'report-';
@@ -36,6 +37,7 @@ export const ReportPane = forwardRef<ReportPaneHandle, ReportPaneProps>(
     const models = useModelStore((s) => s.models);
     const reportContent = useExperimentsStore((s) => s.reportContent);
     const fetchReport = useExperimentsStore((s) => s.fetchReport);
+    const invalidateReport = useExperimentsStore((s) => s.invalidateReport);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [searchExpanded, setSearchExpanded] = useState(false);
@@ -78,10 +80,9 @@ export const ReportPane = forwardRef<ReportPaneHandle, ReportPaneProps>(
 
     const handleRegenerate = useCallback(() => {
       if (!projectId || models.length === 0) return;
-      // Clear cached state to force re-fetch
-      useExperimentsStore.setState({ reportContent: null, reportModelHash: null });
+      invalidateReport();
       void fetchReport(projectId, models);
-    }, [projectId, models, fetchReport]);
+    }, [fetchReport, invalidateReport, models, projectId]);
 
     return (
       <div className="flex h-full flex-col">

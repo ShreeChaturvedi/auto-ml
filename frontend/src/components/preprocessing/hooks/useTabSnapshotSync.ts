@@ -41,8 +41,24 @@ export function useTabSnapshotSync({
 }: UseTabSnapshotSyncOptions): UseTabSnapshotSyncResult {
   const previousActiveTabIdRef = useRef(activeTabId);
 
+  const buildCurrentSnapshot = useCallback((): PreprocessingTabSnapshot => ({
+    selectedDatasetId,
+    runId,
+    timeline,
+    stepBindings,
+    replayReport
+  }), [replayReport, runId, selectedDatasetId, stepBindings, timeline]);
+
   const persistSnapshotForTab = useCallback((tabId: string, snapshot: PreprocessingTabSnapshot) => {
+    if (!tabsRef.current.some((tab) => tab.id === tabId)) {
+      return;
+    }
+
     setTabs((previous) => {
+      if (!previous.some((tab) => tab.id === tabId)) {
+        return previous;
+      }
+
       const nextTabs = updateTabSnapshot(previous, tabId, snapshot);
       tabsRef.current = nextTabs;
       return nextTabs;
@@ -62,24 +78,12 @@ export function useTabSnapshotSync({
       return;
     }
 
-    persistSnapshotForTab(activeTabId, {
-      selectedDatasetId,
-      runId,
-      timeline,
-      stepBindings,
-      replayReport
-    });
-  }, [activeTabId, persistSnapshotForTab, replayReport, runId, selectedDatasetId, stepBindings, timeline]);
+    persistSnapshotForTab(activeTabId, buildCurrentSnapshot());
+  }, [activeTabId, buildCurrentSnapshot, persistSnapshotForTab]);
 
   const saveActiveSnapshot = useCallback(() => {
-    persistSnapshotForTab(activeTabIdRef.current, {
-      selectedDatasetId,
-      runId,
-      timeline,
-      stepBindings,
-      replayReport
-    });
-  }, [activeTabIdRef, persistSnapshotForTab, replayReport, runId, selectedDatasetId, stepBindings, timeline]);
+    persistSnapshotForTab(activeTabIdRef.current, buildCurrentSnapshot());
+  }, [activeTabIdRef, buildCurrentSnapshot, persistSnapshotForTab]);
 
   return {
     applyTabSnapshot,

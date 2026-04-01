@@ -1,0 +1,41 @@
+/* Shimmer text base: metallic sweep gradient */
+.shimmer-text,
+.shimmer-text-once {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 35%,
+    rgba(180, 180, 190, 0.85) 50%,
+    currentColor 65%,
+    currentColor 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shimmer-text {
+  animation: shimmer-sweep 2s ease-in-out infinite;
+}
+
+.shimmer-text-once {
+  animation: shimmer-sweep 1.5s ease-in-out 1 forwards;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text,
+  .shimmer-text-once {
+    animation: none;
+  }
+}

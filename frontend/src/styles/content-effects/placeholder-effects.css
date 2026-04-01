@@ -1,0 +1,49 @@
+/* Per-character stagger animation for AnimatedPlaceholderInput.
+   No per-character transform - the parent container slide provides all motion.
+   Each character quickly fades in at full foreground color (the "shine"), then
+   slowly settles to muted-foreground, creating a left-to-right brightness wave. */
+@keyframes placeholder-char-in {
+  0% {
+    opacity: 0;
+    color: hsl(var(--foreground));
+  }
+
+  18% {
+    opacity: 1;
+    color: hsl(var(--foreground));
+  }
+
+  100% {
+    opacity: 1;
+    color: hsl(var(--muted-foreground));
+  }
+}
+
+/* Character reveal for SQL placeholder overlay.
+   Uses --sql-token-color (set inline per-span) so the shine blooms from
+   foreground -> token color, matching the left-to-right brightness wave
+   of placeholder-char-in but preserving per-token syntax colors. */
+@keyframes sql-placeholder-char-in {
+  0% {
+    opacity: 0;
+    color: hsl(var(--foreground));
+  }
+
+  18% {
+    opacity: 1;
+    color: hsl(var(--foreground));
+  }
+
+  100% {
+    opacity: 1;
+    color: var(--sql-token-color);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*='placeholder-char-in'],
+  [class*='sql-placeholder-char-in'] {
+    animation: none;
+    opacity: 1;
+  }
+}

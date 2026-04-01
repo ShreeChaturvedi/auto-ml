@@ -1,0 +1,112 @@
+/* Markdown rendered content styling */
+.markdown-content {
+  @apply text-sm leading-relaxed text-foreground;
+}
+
+.markdown-content h1 {
+  @apply text-2xl font-bold mt-6 mb-4 pb-2 border-b border-border;
+}
+
+.markdown-content h2 {
+  @apply text-xl font-semibold mt-5 mb-3 pb-1.5 border-b border-border;
+}
+
+.markdown-content h3 {
+  @apply text-lg font-semibold mt-4 mb-2;
+}
+
+.markdown-content h4 {
+  @apply text-base font-semibold mt-3 mb-2;
+}
+
+.markdown-content h5,
+.markdown-content h6 {
+  @apply text-sm font-semibold mt-3 mb-1;
+}
+
+.markdown-content p {
+  @apply my-3;
+}
+
+.markdown-content a {
+  @apply text-primary underline underline-offset-2 hover:text-primary/80;
+}
+
+.markdown-content strong {
+  @apply font-semibold;
+}
+
+.markdown-content em {
+  @apply italic;
+}
+
+.markdown-content ul {
+  @apply my-3 ml-6 list-disc;
+}
+
+.markdown-content ol {
+  @apply my-3 ml-6 list-decimal;
+}
+
+.markdown-content li {
+  @apply my-1;
+}
+
+.markdown-content li > ul,
+.markdown-content li > ol {
+  @apply my-1;
+}
+
+.markdown-content blockquote {
+  @apply my-4 pl-4 border-l-4 border-muted-foreground/30 text-muted-foreground italic;
+}
+
+.markdown-content pre {
+  @apply my-4 p-4 rounded-lg bg-muted overflow-x-auto;
+}
+
+.markdown-content code {
+  @apply font-mono text-[0.85em];
+}
+
+.markdown-content :not(pre) > code {
+  @apply px-1.5 py-0.5 rounded bg-muted text-foreground;
+}
+
+.markdown-content pre code {
+  @apply bg-transparent p-0;
+}
+
+.markdown-content hr {
+  @apply my-6 border-border;
+}
+
+.markdown-content table {
+  @apply my-4 w-full border-collapse;
+}
+
+.markdown-content th {
+  @apply px-3 py-2 text-left font-semibold border border-border bg-muted;
+}
+
+.markdown-content td {
+  @apply px-3 py-2 border border-border;
+}
+
+.markdown-content img {
+  @apply my-4 max-w-full rounded-lg;
+}
+
+.markdown-content input[type='checkbox'] {
+  @apply mr-2;
+}
+
+/* First child should not have top margin */
+.markdown-content > *:first-child {
+  @apply mt-0;
+}
+
+/* Last child should not have bottom margin */
+.markdown-content > *:last-child {
+  @apply mb-0;
+}

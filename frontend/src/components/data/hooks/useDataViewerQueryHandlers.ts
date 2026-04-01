@@ -6,27 +6,13 @@ import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import type { QueryMode } from '@/types/file';
 import type { Project } from '@/types/project';
 
+import { toNlGenerationResult } from '../queryUtils';
 import { withSqlIdentifierHint } from '../sqlIdentifiers';
 import {
   buildDataPreviewFromQuery,
   buildQueryArtifactMeta,
   extractApiErrorMessage,
 } from './useColumnOperations';
-
-function toNlGenerationResult(
-  nl: Awaited<ReturnType<typeof executeNlQuery>>['nl'],
-): NlGenerationResult {
-  return {
-    sql: nl.sql,
-    rationale: nl.rationale,
-    explanation: nl.explanation,
-    queryId: nl.queryId,
-    provider: nl.provider,
-    cached: nl.cached,
-    queryExecutionError: nl.queryExecutionError ?? null,
-    queryResult: nl.query,
-  };
-}
 
 interface UseDataViewerQueryHandlersOptions {
   activeProject?: Project;

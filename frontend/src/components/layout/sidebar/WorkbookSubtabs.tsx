@@ -41,8 +41,10 @@ export function WorkbookSubtabs({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
-  const handleClick = (workbookId: string) => {
-    navigate(`/project/${projectId}/${phase}?workbook=${workbookId}`);
+  const navigateToPhase = (workbookId?: string) => {
+    navigate(workbookId
+      ? `/project/${projectId}/${phase}?workbook=${workbookId}`
+      : `/project/${projectId}/${phase}`);
   };
 
   const openRename = (id: string, currentName: string) => {
@@ -59,7 +61,7 @@ export function WorkbookSubtabs({
   const handleDelete = (workbookId: string) => {
     removeWorkbook(phase, workbookId);
     if (activeWorkbookId === workbookId) {
-      navigate(`/project/${projectId}/${phase}`);
+      navigateToPhase();
     }
   };
 
@@ -69,7 +71,7 @@ export function WorkbookSubtabs({
         icon={Notebook}
         label="New workbook"
         isActive={false}
-        onClick={() => navigate(`/project/${projectId}/${phase}`)}
+        onClick={() => navigateToPhase()}
       />
     );
   }
@@ -83,7 +85,7 @@ export function WorkbookSubtabs({
             icon={Notebook}
             label={wb.name}
             isActive={wb.id === activeWorkbookId}
-            onClick={() => handleClick(wb.id)}
+            onClick={() => navigateToPhase(wb.id)}
             actionSlot={
               <SidebarSubtabActionMenu ariaLabel="Workbook options">
                 <DropdownMenuItem onClick={() => openRename(wb.id, wb.name)}>

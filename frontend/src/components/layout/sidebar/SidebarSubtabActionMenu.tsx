@@ -30,7 +30,6 @@ export function SidebarSubtabActionMenu({
           variant="ghost"
           size="icon"
           className={triggerClassName}
-          onClick={(e) => e.stopPropagation()}
         >
           <MoreVertical className="h-3 w-3" />
           <span className="sr-only">{ariaLabel}</span>

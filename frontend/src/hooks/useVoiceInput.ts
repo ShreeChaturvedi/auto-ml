@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createRealtimeSession } from '@/lib/api/realtimeSession';
+import {
+  cleanupPendingVoiceStart,
+  closeAudioContext,
+  closeRealtimeSocket,
+  parseRealtimeTranscriptMessage,
+  SAMPLE_RATE,
+  STOP_FLUSH_TIMEOUT_MS,
+  stopMediaStream,
+  TURN_DETECTION,
+  uint8ToBase64,
+} from '@/hooks/voiceInputHelpers';
 
 export type VoiceState = 'idle' | 'connecting' | 'listening' | 'error';
 
@@ -22,26 +33,6 @@ interface UseVoiceInputReturn {
   startRecording: () => void;
   stopRecording: () => void;
   toggleRecording: () => void;
-}
-
-const SAMPLE_RATE = 24000;
-const STOP_FLUSH_TIMEOUT_MS = 1500;
-const TURN_DETECTION = {
-  type: 'server_vad' as const,
-  threshold: 0.5,
-  prefix_padding_ms: 300,
-  silence_duration_ms: 1000,
-};
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  const chunkSize = 8192;
-  const parts: string[] = [];
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
-  }
-
-  return btoa(parts.join(''));
 }
 
 export function useVoiceInput({
@@ -94,50 +85,13 @@ export function useVoiceInput({
   }, []);
 
   const stopAudioCapture = useCallback(() => {
-    if (audioContextRef.current) {
-      void audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
+    closeAudioContext(audioContextRef.current);
+    audioContextRef.current = null;
 
-    if (streamRef.current) {
-      for (const track of streamRef.current.getTracks()) {
-        track.stop();
-      }
-      streamRef.current = null;
-    }
+    stopMediaStream(streamRef.current);
+    streamRef.current = null;
 
     analyserRef.current = null;
-  }, []);
-
-  const cleanupPendingStart = useCallback((
-    resources: {
-      stream?: MediaStream | null;
-      audioContext?: AudioContext | null;
-      ws?: WebSocket | null;
-    },
-  ) => {
-    const { stream, audioContext, ws } = resources;
-
-    if (ws) {
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onerror = null;
-      ws.onclose = null;
-
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
-      }
-    }
-
-    if (audioContext) {
-      void audioContext.close().catch(() => {});
-    }
-
-    if (stream) {
-      for (const track of stream.getTracks()) {
-        track.stop();
-      }
-    }
   }, []);
 
   const cleanup = useCallback(() => {
@@ -146,14 +100,7 @@ export function useVoiceInput({
     if (wsRef.current) {
       const ws = wsRef.current;
       wsRef.current = null;
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onerror = null;
-      ws.onclose = null;
-
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
-      }
+      closeRealtimeSocket(ws);
     }
 
     stopAudioCapture();
@@ -221,7 +168,7 @@ export function useVoiceInput({
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (attemptId !== startAttemptRef.current) {
-        cleanupPendingStart({ stream });
+        cleanupPendingVoiceStart({ stream });
         return;
       }
 
@@ -235,7 +182,7 @@ export function useVoiceInput({
         new URL('../lib/audio/pcmWorklet.js', import.meta.url).href
       );
       if (attemptId !== startAttemptRef.current) {
-        cleanupPendingStart({ stream, audioContext });
+        cleanupPendingVoiceStart({ stream, audioContext });
         return;
       }
 
@@ -300,45 +247,38 @@ export function useVoiceInput({
           return;
         }
 
-        try {
-          const data = JSON.parse(event.data as string) as {
-            type: string;
-            item_id?: string;
-            previous_item_id?: string | null;
-            delta?: string;
-            transcript?: string;
-          };
+        const data = parseRealtimeTranscriptMessage(event.data as string);
+        if (!data) {
+          return;
+        }
 
-          if (data.type === 'input_audio_buffer.committed' && data.item_id) {
-            pendingItemIdsRef.current.add(data.item_id);
-            onTranscriptEventRef.current({
-              type: 'committed',
-              itemId: data.item_id,
-              previousItemId: data.previous_item_id ?? null,
-            });
-            return;
-          }
+        if (data.type === 'input_audio_buffer.committed' && data.item_id) {
+          pendingItemIdsRef.current.add(data.item_id);
+          onTranscriptEventRef.current({
+            type: 'committed',
+            itemId: data.item_id,
+            previousItemId: data.previous_item_id ?? null,
+          });
+          return;
+        }
 
-          if (data.type === 'conversation.item.input_audio_transcription.delta' && data.item_id && data.delta) {
-            onTranscriptEventRef.current({
-              type: 'delta',
-              itemId: data.item_id,
-              delta: data.delta,
-            });
-            return;
-          }
+        if (data.type === 'conversation.item.input_audio_transcription.delta' && data.item_id && data.delta) {
+          onTranscriptEventRef.current({
+            type: 'delta',
+            itemId: data.item_id,
+            delta: data.delta,
+          });
+          return;
+        }
 
-          if (data.type === 'conversation.item.input_audio_transcription.completed' && data.item_id) {
-            pendingItemIdsRef.current.delete(data.item_id);
-            onTranscriptEventRef.current({
-              type: 'completed',
-              itemId: data.item_id,
-              transcript: data.transcript ?? '',
-            });
-            maybeFinishStop();
-          }
-        } catch {
-          // Ignore malformed messages from the realtime stream.
+        if (data.type === 'conversation.item.input_audio_transcription.completed' && data.item_id) {
+          pendingItemIdsRef.current.delete(data.item_id);
+          onTranscriptEventRef.current({
+            type: 'completed',
+            itemId: data.item_id,
+            transcript: data.transcript ?? '',
+          });
+          maybeFinishStop();
         }
       };
 
@@ -368,7 +308,6 @@ export function useVoiceInput({
       setErrorWithRecovery();
     }
   }, [
-    cleanupPendingStart,
     clearSessionTracking,
     disabled,
     finishSession,

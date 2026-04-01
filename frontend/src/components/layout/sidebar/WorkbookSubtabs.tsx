@@ -14,6 +14,7 @@ import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookR
 import { getWorkbookParam } from '@/lib/workbookParam';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
+import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
 interface WorkbookSubtabsProps {
   projectId: string;
@@ -34,6 +35,8 @@ export function WorkbookSubtabs({
   const updateWorkbook = useWorkbookRegistryStore((s) => s.updateWorkbook);
   const removeWorkbook = useWorkbookRegistryStore((s) => s.removeWorkbook);
   const activeWorkbookId = isActivePhase ? getWorkbookParam(searchParams) : undefined;
+
+  const { requestDelete, confirmDialog } = useSidebarDeleteConfirm();
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -88,7 +91,13 @@ export function WorkbookSubtabs({
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => handleDelete(wb.id)}
+                  onClick={() =>
+                    requestDelete({
+                      title: 'Delete workbook?',
+                      description: `Permanently remove "${wb.name}". This cannot be undone.`,
+                      onConfirm: () => handleDelete(wb.id)
+                    })
+                  }
                   className="text-destructive focus:text-destructive"
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
@@ -99,6 +108,8 @@ export function WorkbookSubtabs({
           />
         ))}
       </div>
+
+      {confirmDialog}
 
       <RenameTabDialog
         open={!!renamingId}

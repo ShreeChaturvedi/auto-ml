@@ -13,6 +13,7 @@ import { getModelArtifactUrl } from '@/lib/api/models';
 import { resolveModelIcon } from '@/components/experiments/modelIcons';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
+import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
 interface ModelSubtabsProps {
   projectId: string;
@@ -23,6 +24,8 @@ interface ModelSubtabsProps {
 export function ModelSubtabs({ projectId, isActivePhase }: ModelSubtabsProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { requestDelete, confirmDialog } = useSidebarDeleteConfirm();
+
   const models = useModelStore((s) => s.models);
   const refreshModels = useModelStore((s) => s.refreshModels);
   const deleteModel = useModelStore((s) => s.deleteModel);
@@ -82,7 +85,13 @@ export function ModelSubtabs({ projectId, isActivePhase }: ModelSubtabsProps) {
                     {isCompared ? 'Remove from comparison' : 'Compare'}
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => deleteModel(model.modelId)}
+                    onClick={() =>
+                      requestDelete({
+                        title: 'Delete model?',
+                        description: `Permanently remove "${model.name}" and its artifacts. This cannot be undone.`,
+                        onConfirm: () => deleteModel(model.modelId)
+                      })
+                    }
                     className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
@@ -94,6 +103,7 @@ export function ModelSubtabs({ projectId, isActivePhase }: ModelSubtabsProps) {
           );
         })}
       </div>
+      {confirmDialog}
     </>
   );
 }

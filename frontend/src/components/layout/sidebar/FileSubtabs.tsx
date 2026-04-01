@@ -24,6 +24,7 @@ import { resolveFileIcon } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
+import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
 interface FileSubtabsProps {
   projectId: string;
@@ -39,6 +40,8 @@ export function FileSubtabs({ projectId }: FileSubtabsProps) {
     handleDeleteFile,
     handleDownloadFile
   } = useFileActions(projectId);
+
+  const { requestDelete, confirmDialog } = useSidebarDeleteConfirm();
 
   const [renamingFile, setRenamingFile] = useState<UploadedFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -86,7 +89,13 @@ export function FileSubtabs({ projectId }: FileSubtabsProps) {
               Download
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => handleDeleteFile(file)}
+              onClick={() =>
+                requestDelete({
+                  title: 'Delete file?',
+                  description: `Permanently remove "${file.name}" from this project. This cannot be undone.`,
+                  onConfirm: () => handleDeleteFile(file)
+                })
+              }
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="h-4 w-4 mr-2" />
@@ -109,6 +118,8 @@ export function FileSubtabs({ projectId }: FileSubtabsProps) {
 
         {contextFiles.map(renderFile)}
       </div>
+
+      {confirmDialog}
 
       <Dialog open={!!renamingFile} onOpenChange={(open) => { if (!open) setRenamingFile(null); }}>
         <DialogContent>

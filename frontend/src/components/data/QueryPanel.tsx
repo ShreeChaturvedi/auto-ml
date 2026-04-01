@@ -14,7 +14,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, MessageSquare, Code2, PanelRight } from 'lucide-react';
+import { Loader2, MessageSquare, Code2, PanelRight, CornerDownRight, Play, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
@@ -28,6 +28,7 @@ import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import { QuerySqlEditor } from './QuerySqlEditor';
 import { AnimatedExecuteIcon, AnimatedBrainIcon } from './AnimatedQueryIcons';
 import { useQueryExecution } from './useQueryExecution';
+import { ContextualTipBar, Kbd, type ContextualTip } from '@/components/ui/contextual-tip-bar';
 
 /** Accent-token-based approve theme — uses CSS-variable-driven accent classes. */
 const ACCENT_APPROVE_THEME: ApproveThemeClasses = {
@@ -168,6 +169,12 @@ export function QueryPanel({
   }, [onCollapsedChange]);
 
   const isNlGenerating = nlPhase === 'submitting' || nlPhase === 'revealing';
+
+  const nlTips: ContextualTip[] = useMemo(() => [
+    { id: 'nl-tab', icon: CornerDownRight, content: <><Kbd>Tab</Kbd> to accept the suggested query</> },
+    { id: 'nl-run', icon: Play, content: <><Kbd>{modKey}</Kbd>+<Kbd>Enter</Kbd> to generate SQL</> },
+    { id: 'nl-edit', icon: Pencil, content: 'You can edit the generated SQL before running' },
+  ], [modKey]);
 
   const renderExecuteButton = () => {
     // During NL reviewing phase, approve/reject controls are inline — hide ribbon button
@@ -312,18 +319,21 @@ export function QueryPanel({
             projectId={resolvedProjectId}
           />
         ) : (
-          <NlQueryWorkflow
-            suggestions={projectSuggestionEntry?.suggestions ?? []}
-            englishQuery={englishQuery}
-            onQueryChange={handleQueryChange}
-            onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
-            onApprove={onNlApprove ?? (() => {})}
-            isExpanding={isExpanding}
-            onPhaseChange={setNlPhase}
-            approveThemeClasses={approveThemeClasses}
-            connectorColorClassName={executeIconColorClass}
-            ref={nlWorkflowRef}
-          />
+          <>
+            <NlQueryWorkflow
+              suggestions={projectSuggestionEntry?.suggestions ?? []}
+              englishQuery={englishQuery}
+              onQueryChange={handleQueryChange}
+              onGenerate={onNlGenerate ?? (() => Promise.reject(new Error('onNlGenerate not provided')))}
+              onApprove={onNlApprove ?? (() => {})}
+              isExpanding={isExpanding}
+              onPhaseChange={setNlPhase}
+              approveThemeClasses={approveThemeClasses}
+              connectorColorClassName={executeIconColorClass}
+              ref={nlWorkflowRef}
+            />
+            {nlPhase === 'idle' && <ContextualTipBar tips={nlTips} />}
+          </>
         )}
       </div>
     </div>

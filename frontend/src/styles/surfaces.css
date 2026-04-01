@@ -1,0 +1,148 @@
+/* ─── Metallic shine border for chat composer ────────────────────────────── */
+
+/*
+ * Technique: two absolutely-positioned pseudo-elements masked to only the 1 px
+ * border region (padding-box XOR content-box).  ::before renders the
+ * proximity-following radial shine; ::after renders the solid focus border.
+ * The base border comes from the inner InputGroup.
+ */
+.metallic-border {
+  --shine-x: 0px;
+  --shine-y: 0px;
+  --shine-opacity: 0;
+  position: relative;
+}
+
+/* Shared mask that isolates the 1 px border strip */
+.metallic-border::before,
+.metallic-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* ── Proximity shine (cursor-following) ────────────────────────────────── */
+.metallic-border::before {
+  z-index: 10;
+  background: radial-gradient(
+    circle 68px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 0.93)) 0%,
+    hsl(0 0% 80% / calc(var(--shine-opacity) * 0.50)) 35%,
+    transparent 100%
+  );
+}
+
+.dark .metallic-border::before {
+  background: radial-gradient(
+    circle 68px at var(--shine-x) var(--shine-y),
+    hsl(0 0% 100% / calc(var(--shine-opacity) * 1.0)) 0%,
+    hsl(0 0% 85% / calc(var(--shine-opacity) * 0.61)) 35%,
+    transparent 100%
+  );
+}
+
+/* ── Focus layer (smooth fade-in highlight) ────────────────────────────── */
+.metallic-border::after {
+  z-index: 11;
+  background: hsl(var(--ring));
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.metallic-border[data-focused="true"]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metallic-border::before {
+    display: none;
+  }
+  .metallic-border[data-focused="true"]::after {
+    transition: none;
+  }
+}
+
+/* Timeline step enter animation */
+.timeline-step-enter {
+  animation: timeline-step-in 220ms ease-out both;
+}
+@keyframes timeline-step-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Pulsing status dot for running/awaiting steps */
+.timeline-dot-pulse {
+  animation: timeline-pulse 2s ease-in-out infinite;
+}
+@keyframes timeline-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 0 4px transparent; opacity: 0.7; }
+}
+
+/* Skeleton shimmer for empty streaming state */
+.timeline-skeleton {
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: timeline-skeleton-sweep 1.5s ease-in-out infinite;
+}
+@keyframes timeline-skeleton-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-step-enter { animation: none; }
+  .timeline-dot-pulse { animation: none; }
+  .timeline-skeleton { animation: none; }
+}
+
+/* Suggested cell — metallic shimmer during streaming */
+@keyframes suggested-cell-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.suggested-cell-shimmer {
+  position: relative;
+}
+
+.suggested-cell-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--muted-foreground) / 0.04) 30%,
+    hsl(var(--muted-foreground) / 0.1) 50%,
+    hsl(var(--muted-foreground) / 0.04) 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: suggested-cell-shimmer 2.5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggested-cell-shimmer::after { animation: none; background: hsl(var(--muted-foreground) / 0.03); }
+}
+
+/* PDF viewer page styling */
+.pdf-viewer-page canvas {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
+}

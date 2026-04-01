@@ -9,6 +9,7 @@ import { buildToolEvent } from './eventWriter.js';
 import { MAX_IDENTICAL_TOOL_CALLS, MAX_SINGLE_TOOL_CALLS, MAX_WORKFLOW_ITERATIONS, type WorkflowGraphState } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
 import { extractConfigurable } from './phases/types.js';
+import { getApprovalPauseDetails } from './turnState.js';
 import type { WorkflowPendingInputKind } from './types.js';
 
 const MAX_TOOL_RESULT_CHARS = 50_000;
@@ -27,38 +28,11 @@ function truncateToolResult(result: ToolResult): ToolResult {
   };
 }
 
-function toolResultRequiresPause(result: ToolResult): boolean {
-  const output = result.output;
-  if (!output || typeof output !== 'object' || Array.isArray(output)) {
-    return false;
-  }
-  const record = output as Record<string, unknown>;
-  const step = record.step && typeof record.step === 'object' && !Array.isArray(record.step)
-    ? record.step as Record<string, unknown>
-    : null;
-  const status = typeof record.status === 'string'
-    ? record.status
-    : typeof step?.status === 'string'
-      ? step.status
-      : undefined;
-  const reasonCode = typeof record.reasonCode === 'string' ? record.reasonCode : undefined;
-  return status === 'awaiting_approval'
-    || reasonCode === 'STEP_APPROVAL_REQUIRED'
-    || reasonCode === 'STEP_APPROVAL_USER_REQUIRED';
-}
-
 function getPauseDetails(results: ToolResult[]): {
   pendingInputKind: WorkflowPendingInputKind;
   pauseReason: string;
 } | null {
-  if (!results.some(toolResultRequiresPause)) {
-    return null;
-  }
-
-  return {
-    pendingInputKind: 'approval',
-    pauseReason: 'awaiting_approval'
-  };
+  return getApprovalPauseDetails(results);
 }
 
 async function executeWorkflowToolCall(

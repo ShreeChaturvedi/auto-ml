@@ -23,6 +23,10 @@ interface UsePreprocessingTabsOptions {
   initialTabId?: string;
   /** Notebook to activate after tab switch (e.g., from URL search params). */
   initialNotebookId?: string;
+  /** Current workbook requested by the URL, if any. */
+  requestedTabId?: string;
+  /** Keep the workbook URL param aligned with the active tab. */
+  syncWorkbookParam?: (tabId: string, replace?: boolean) => void;
 }
 
 export interface UsePreprocessingTabsResult {
@@ -58,7 +62,9 @@ export function usePreprocessingTabs({
   projectId,
   onNeedsDatasetSelection,
   initialTabId,
-  initialNotebookId
+  initialNotebookId,
+  requestedTabId,
+  syncWorkbookParam
 }: UsePreprocessingTabsOptions): UsePreprocessingTabsResult {
   const notebookCells = useNotebookStore((state) => state.cells);
   const deleteNotebook = useNotebookStore((state) => state.deleteNotebook);
@@ -91,6 +97,7 @@ export function usePreprocessingTabs({
   } = useTabPersistence({ projectId });
 
   const initialAppliedRef = useRef(false);
+  const syncedWorkbookIdRef = useRef<string | null>(null);
 
   // ---- Rename dialog state -------------------------------------------------
 
@@ -153,6 +160,11 @@ export function usePreprocessingTabs({
     [activeTabId, tabs]
   );
 
+  const syncWorkbookSelection = useCallback((tabId: string, replace = true) => {
+    syncedWorkbookIdRef.current = tabId;
+    syncWorkbookParam?.(tabId, replace);
+  }, [syncWorkbookParam]);
+
   // ---- Snapshot helpers ----------------------------------------------------
 
   const applyTabSnapshot = useCallback((snapshot: PreprocessingTabSnapshot) => {
@@ -207,6 +219,13 @@ export function usePreprocessingTabs({
     setTabNotebookId
   });
 
+  const activateTab = useCallback((tab: PreprocessingWorkbook) => {
+    setActiveTabId(tab.id);
+    syncWorkbookSelection(tab.id, true);
+    applyTabSnapshot(tab.snapshot);
+    void ensureNotebookForTab(tab);
+  }, [applyTabSnapshot, ensureNotebookForTab, setActiveTabId, syncWorkbookSelection]);
+
   // ---- Tab CRUD ------------------------------------------------------------
 
   const handleTabSwitch = useCallback((value: string) => {
@@ -215,10 +234,8 @@ export function usePreprocessingTabs({
     const targetTab = tabsRef.current.find((tab) => tab.id === value);
     if (!targetTab || targetTab.id === currentActiveTab.id) return;
     saveActiveSnapshot();
-    setActiveTabId(targetTab.id);
-    applyTabSnapshot(targetTab.snapshot);
-    void ensureNotebookForTab(targetTab);
-  }, [activeTabIdRef, applyTabSnapshot, ensureNotebookForTab, saveActiveSnapshot, setActiveTabId, tabsRef]);
+    activateTab(targetTab);
+  }, [activeTabIdRef, activateTab, saveActiveSnapshot, tabsRef]);
 
   // ---- Apply initial tab/notebook from URL search params ------------------
 
@@ -241,6 +258,43 @@ export function usePreprocessingTabs({
     initialAppliedRef.current = true;
   }, [activeTabId, handleTabSwitch, initialNotebookId, initialTabId, notebookProjectId, notebooks, projectId, tabs, tabsReady]);
 
+  useEffect(() => {
+    if (!tabsReady || !activeTab?.id) {
+      return;
+    }
+
+    if (!requestedTabId) {
+      syncWorkbookSelection(activeTab.id, true);
+      return;
+    }
+
+    if (requestedTabId === activeTab.id) {
+      if (syncedWorkbookIdRef.current === requestedTabId) {
+        syncedWorkbookIdRef.current = null;
+      }
+      return;
+    }
+
+    if (syncedWorkbookIdRef.current === activeTab.id) {
+      syncWorkbookSelection(activeTab.id, true);
+      return;
+    }
+
+    if (tabs.some((tab) => tab.id === requestedTabId)) {
+      handleTabSwitch(requestedTabId);
+      return;
+    }
+
+    const registry = useWorkbookRegistryStore.getState().preprocessing;
+    const entry = registry.find((workbook) => workbook.id === requestedTabId);
+    if (entry) {
+      adoptTab(requestedTabId, entry.name);
+      return;
+    }
+
+    syncWorkbookSelection(activeTab.id, true);
+  }, [activeTab?.id, adoptTab, handleTabSwitch, requestedTabId, syncWorkbookSelection, tabs, tabsReady]);
+
   const handleNewTab = useCallback(() => {
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
     if (!currentActiveTab) return null;
@@ -257,11 +311,9 @@ export function usePreprocessingTabs({
       tabsRef.current = nextTabs;
       return nextTabs;
     });
-    setActiveTabId(newTab.id);
-    applyTabSnapshot(newTab.snapshot);
-    void ensureNotebookForTab(newTab);
+    activateTab(newTab);
     return newTab.id;
-  }, [activeTabIdRef, applyTabSnapshot, ensureNotebookForTab, saveActiveSnapshot, setActiveTabId, setTabs, tabsRef]);
+  }, [activeTabIdRef, activateTab, saveActiveSnapshot, setTabs, tabsRef]);
 
   const adoptTab = useCallback((id: string, name: string) => {
     // If the tab already exists, just switch to it.
@@ -282,10 +334,8 @@ export function usePreprocessingTabs({
       tabsRef.current = nextTabs;
       return nextTabs;
     });
-    setActiveTabId(newTab.id);
-    applyTabSnapshot(newTab.snapshot);
-    void ensureNotebookForTab(newTab);
-  }, [applyTabSnapshot, ensureNotebookForTab, handleTabSwitch, saveActiveSnapshot, setActiveTabId, setTabs, tabsRef]);
+    activateTab(newTab);
+  }, [activateTab, handleTabSwitch, saveActiveSnapshot, setTabs, tabsRef]);
 
   const handleDeleteTab = useCallback(() => {
     const currentTabs = tabsRef.current;
@@ -303,8 +353,7 @@ export function usePreprocessingTabs({
       tabsRef.current = nextTabs;
       return nextTabs;
     });
-    setActiveTabId(fallbackTab.id);
-    applyTabSnapshot(fallbackTab.snapshot);
+    activateTab(fallbackTab);
     void (async () => {
       const fallbackNotebookId = await ensureNotebookForTab(fallbackTab);
       if (
@@ -315,7 +364,7 @@ export function usePreprocessingTabs({
       }
     })();
     return fallbackTab.id;
-  }, [activeTabIdRef, applyTabSnapshot, buildScopedTabStorageKey, deleteNotebook, ensureNotebookForTab, projectId, setActiveTabId, setTabs, tabsRef]);
+  }, [activeTabIdRef, activateTab, buildScopedTabStorageKey, deleteNotebook, ensureNotebookForTab, projectId, setTabs, tabsRef]);
 
   // ---- Rename tab ----------------------------------------------------------
 

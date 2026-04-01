@@ -17,7 +17,7 @@ import { interruptKernel } from '@/lib/api/notebooks';
 import { Loader2, Code, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { scrollToRadixElement } from '@/lib/scrollUtils';
-import type { NotebookCell as NotebookCellModel, NotebookCellType } from '@/types/notebook';
+import type { NotebookCellType } from '@/types/notebook';
 import { buildRenderItems, getSectionRange } from './notebookEditorUtils';
 
 export interface NotebookEditorHandle {

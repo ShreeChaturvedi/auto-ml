@@ -267,8 +267,8 @@ export function AgenticShell({
     disabled: isGenerating,
   });
 
-  const suggestions = useMemo(
-    () => domainAdapter.suggestionProvider(messages, isGenerating),
+  const tips = useMemo(
+    () => domainAdapter.tipsProvider(messages, isGenerating),
     [domainAdapter, messages, isGenerating]
   );
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
@@ -412,7 +412,7 @@ export function AgenticShell({
               setDismissedModelPromptFor={setDismissedModelPromptFor}
               isGenerating={isGenerating}
               composerStatusSlot={composerStatusSlot}
-              suggestions={suggestions}
+              tips={tips}
               domainLockReason={domainLockReason}
               submitPrompt={submitPrompt}
               chatInput={chatInput}

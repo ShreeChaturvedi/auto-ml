@@ -11,7 +11,8 @@ import { VoiceInputButton } from '@/components/llm/VoiceInputButton';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import type { VoiceState } from '@/hooks/useVoiceInput';
-import type { SuggestionPill } from '@/types/agentic';
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
+import { ContextualTipBar } from '@/components/ui/contextual-tip-bar';
 import type { LlmUsage } from '@/types/llmUi';
 import type {
   AssistantModelOption,
@@ -33,8 +34,8 @@ export interface AgenticStepDisplayProps {
   /* Composer status */
   composerStatusSlot?: React.ReactNode;
 
-  /* Suggestions */
-  suggestions: SuggestionPill[];
+  /* Tips */
+  tips: ContextualTip[];
   domainLockReason?: string;
   submitPrompt: (prompt: string) => void;
 
@@ -84,7 +85,7 @@ export function AgenticStepDisplay({
   setDismissedModelPromptFor,
   isGenerating,
   composerStatusSlot,
-  suggestions,
+  tips,
   domainLockReason,
   submitPrompt,
   chatInput,
@@ -158,25 +159,7 @@ export function AgenticStepDisplay({
         </div>
       ) : null}
       {composerStatusSlot}
-      {suggestions.length > 0 && !domainLockReason ? (
-        <div className="min-w-0 overflow-x-auto px-4 pt-2 scrollbar-hide">
-          <div className="flex flex-wrap gap-2">
-            {suggestions.map((suggestion) => (
-              <Button
-                key={suggestion.id}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 max-w-[200px] shrink-0 truncate text-xs"
-                onClick={() => submitPrompt(suggestion.prompt)}
-                disabled={isGenerating}
-              >
-                {suggestion.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      {!domainLockReason && tips.length > 0 && <ContextualTipBar tips={tips} />}
 
       <div
         className="px-4 pb-4 pt-2"

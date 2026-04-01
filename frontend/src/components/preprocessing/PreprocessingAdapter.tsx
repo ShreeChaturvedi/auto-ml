@@ -1,4 +1,7 @@
-import type { DomainAdapter, SuggestionPill } from '@/types/agentic';
+import type { DomainAdapter } from '@/types/agentic';
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
+import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
+import { AlertTriangle, Tags, BarChart2, Calendar, Bug } from 'lucide-react';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
@@ -151,16 +154,13 @@ export function createPreprocessingAdapter(
 
     toolUiRegistry: {},
 
-    suggestionProvider: () => {
-      const selectedTable = tables.find((table) => table.datasetId === selectedDatasetId);
-      const sourceName = selectedTable?.filename.replace(/\.[^/.]+$/, '') ?? 'this dataset';
-
+    tipsProvider: (messages) => {
       const file = useDataStore.getState().files.find(
         (f) => f.projectId === projectId && f.metadata?.datasetId === selectedDatasetId
       );
       const profile = file?.metadata?.datasetProfile;
 
-      const pills: SuggestionPill[] = [];
+      const tips: ContextualTip[] = [];
 
       if (profile) {
         const highNullCols = Object.entries(profile.nullCounts)
@@ -169,64 +169,35 @@ export function createPreprocessingAdapter(
 
         if (highNullCols.length > 0) {
           const topCols = highNullCols.slice(0, 3).map(([name]) => name).join(', ');
-          pills.push({
-            id: 'impute-nulls',
-            label: `Handle nulls in ${topCols}`,
-            prompt: `Columns ${topCols} have missing values in ${sourceName}. Propose a safe imputation strategy with validation checks.`
-          });
+          tips.push({ id: 'tip-nulls', icon: AlertTriangle, content: `${topCols} have missing values` });
         }
 
         const stringCols = Object.entries(profile.dtypes)
           .filter(([, dtype]) => dtype === 'string')
           .map(([name]) => name);
         if (stringCols.length > 0) {
-          const topStr = stringCols.slice(0, 3).join(', ');
-          pills.push({
-            id: 'encode-strings',
-            label: `Encode ${topStr}`,
-            prompt: `Columns ${topStr} are categorical strings in ${sourceName}. Add an encoding step and handle unknown categories.`
-          });
+          tips.push({ id: 'tip-categoricals', icon: Tags, content: `${stringCols.length} categorical columns may need encoding` });
         }
 
         const numericCols = Object.entries(profile.dtypes)
-          .filter(([, dtype]) => dtype === 'integer' || dtype === 'float')
-          .map(([name]) => name);
+          .filter(([, dtype]) => dtype === 'integer' || dtype === 'float');
         if (numericCols.length > 0) {
-          pills.push({
-            id: 'scale-numerics',
-            label: `Scale ${numericCols.length} numeric columns`,
-            prompt: `Scale the ${numericCols.length} numeric columns in ${sourceName} with rationale and validation before commit.`
-          });
+          tips.push({ id: 'tip-numerics', icon: BarChart2, content: `${numericCols.length} numeric columns available for scaling` });
+        }
+
+        const dateCols = Object.entries(profile.dtypes).filter(([, dtype]) => dtype === 'date');
+        if (dateCols.length > 0) {
+          tips.push({ id: 'tip-dates', icon: Calendar, content: 'Date columns detected — temporal features may help' });
         }
       }
 
-      if (pills.length === 0) {
-        pills.push(
-          {
-            id: 'missingness',
-            label: 'Handle missing values',
-            prompt: `Profile missing values in ${sourceName} and propose a safe imputation step with validation checks.`
-          },
-          {
-            id: 'categorical',
-            label: 'Encode categoricals',
-            prompt: `Add a categorical encoding step for ${sourceName} and make sure unknown categories are handled.`
-          },
-          {
-            id: 'scaling',
-            label: 'Scale numerics',
-            prompt: `Create a numeric scaling transformation with rationale and validation before commit.`
-          }
-        );
+      if (messages.findLast((m) => m.type === 'error')) {
+        tips.push({ id: 'tip-error', icon: Bug, content: "Try 'diagnose the error' for step-by-step help" });
       }
 
-      pills.push({
-        id: 'lineage',
-        label: 'Checkpoint dataset',
-        prompt: 'Add a checkpoint after committed steps and summarize replay compatibility risks.'
-      });
+      tips.push(...COMMON_CHAT_TIPS);
 
-      return pills;
+      return tips;
     }
   };
 }

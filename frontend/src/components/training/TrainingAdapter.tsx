@@ -1,10 +1,13 @@
-import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agentic';
+import type { DomainAdapter, ToolHandlers } from '@/types/agentic';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import type { UploadedFile } from '@/types/file';
-import type { ChatMessage } from '@/types/llmUi';
 import { useModelStore } from '@/stores/modelStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
+import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
+import { Target, TrendingUp, Layers, AlertTriangle, FileText, Bug, GitCompare } from 'lucide-react';
+import type { ChatMessage } from '@/types/llmUi';
 
 export interface TrainingAdapterConfig {
   projectId: string;
@@ -16,154 +19,52 @@ export interface TrainingAdapterConfig {
   sessionKey: string;
 }
 
-function dedupeTrainingSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
-  const seen = new Set<string>();
-  return suggestions.filter((suggestion) => {
-    const key = suggestion.prompt.toLowerCase().trim();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function buildTrainingSuggestions(
+function buildTrainingTips(
   config: TrainingAdapterConfig,
   messages: ChatMessage[],
-  isGenerating: boolean
-): SuggestionPill[] {
+): ContextualTip[] {
   const { datasetFiles, documentFiles } = config;
-  
-  if (isGenerating) {
-    return [];
+  const tips: ContextualTip[] = [];
+
+  const datasetFile = datasetFiles.find((f) => f.metadata?.datasetId === config.datasetId);
+  const profile = datasetFile?.metadata?.datasetProfile;
+  const targetDtype = config.targetColumn && profile
+    ? profile.dtypes[config.targetColumn]
+    : undefined;
+  const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+  const isRegression = targetDtype === 'integer' || targetDtype === 'float';
+
+  if (config.targetColumn && isClassification) {
+    tips.push({ id: 'tip-target-class', icon: Target, content: `Classification on '${config.targetColumn}' — consider F1 alongside accuracy` });
+  } else if (config.targetColumn && isRegression) {
+    tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: `Regression on '${config.targetColumn}' — consider MAE and R²` });
   }
 
-  const hasUserMessages = messages.some((message) => message.type === 'user');
-  const latestUserMessage = [...messages].reverse().find((message) => message.type === 'user');
-  const latestError = [...messages].reverse().find((message) => message.type === 'error');
-  const latestAssistantText = [...messages].reverse().find((message) => message.type === 'assistant_text');
-
-  const suggestions: SuggestionPill[] = [];
-
-  if (!hasUserMessages) {
-    if (datasetFiles.length > 0) {
-      // Infer task type from target column dtype
-      const datasetFile = datasetFiles.find((f) => f.metadata?.datasetId === config.datasetId);
-      const profile = datasetFile?.metadata?.datasetProfile;
-      const targetDtype = config.targetColumn && profile
-        ? profile.dtypes[config.targetColumn]
-        : undefined;
-      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
-      const isRegression = targetDtype === 'integer' || targetDtype === 'float';
-
-      if (isClassification) {
-        suggestions.push({
-          id: 'train-initial-baseline',
-          label: 'Classification baseline',
-          prompt: `Train a classification baseline on target "${config.targetColumn}" with cross-validation and appropriate metrics.`
-        });
-      } else if (isRegression) {
-        suggestions.push({
-          id: 'train-initial-baseline',
-          label: 'Regression baseline',
-          prompt: `Train a regression baseline on target "${config.targetColumn}" with cross-validation and error metrics.`
-        });
-      } else {
-        suggestions.push({
-          id: 'train-initial-baseline',
-          label: 'Baseline model',
-          prompt: 'Suggest a strong baseline training plan for this dataset with sensible defaults.'
-        });
-      }
-
-      suggestions.push(
-        {
-          id: 'train-initial-recommend',
-          label: 'Recommend a model',
-          prompt: 'Analyze the dataset and recommend the best model template with tuned parameters.'
-        },
-        {
-          id: 'train-initial-target',
-          label: 'Pick target + metric',
-          prompt: 'Help me choose the right target column and evaluation metrics for this project.'
-        }
-      );
-    }
-
-    if (documentFiles.length > 0) {
-      suggestions.push({
-        id: 'train-initial-docs',
-        label: 'Use docs in training',
-        prompt: 'Use the uploaded documents to suggest useful feature hypotheses and validation checks.'
-      });
-    }
-
-    suggestions.push({
-      id: 'train-initial-sanity',
-      label: 'Data sanity checks',
-      prompt: 'Before modeling, propose a concise data sanity-check checklist for this training workflow.'
-    });
-
-    return dedupeTrainingSuggestions(suggestions).slice(0, 6);
+  if (config.featureSummary) {
+    const featureCount = (config.featureSummary.match(/\n/g) ?? []).length + 1;
+    tips.push({ id: 'tip-features', icon: Layers, content: `${featureCount} engineered features in your pipeline` });
+  } else {
+    tips.push({ id: 'tip-no-features', icon: AlertTriangle, content: 'No feature pipeline — model trains on raw columns' });
   }
 
-  if (latestError?.type === 'error') {
-    suggestions.push(
-      {
-        id: 'train-error-debug',
-        label: 'Debug latest error',
-        prompt: 'Debug the latest training error step by step and suggest the minimum safe fix.'
-      },
-      {
-        id: 'train-error-robust',
-        label: 'Harden pipeline',
-        prompt: 'Refactor this training flow to be more robust to schema and data edge cases.'
-      }
-    );
+  if (profile && profile.nRows < 1000) {
+    tips.push({ id: 'tip-small-data', icon: AlertTriangle, content: 'Small dataset — cross-validation is critical' });
   }
 
-  if (latestUserMessage?.type === 'user') {
-    const text = latestUserMessage.content.toLowerCase();
-    if (text.includes('overfit') || text.includes('generaliz')) {
-      suggestions.push({
-        id: 'train-overfit',
-        label: 'Reduce overfitting',
-        prompt: 'Propose targeted changes to reduce overfitting while keeping accuracy strong.'
-      });
-    }
-    if (text.includes('speed') || text.includes('slow')) {
-      suggestions.push({
-        id: 'train-speed',
-        label: 'Faster training',
-        prompt: 'Optimize this training workflow for speed and explain the performance trade-offs.'
-      });
-    }
+  if (documentFiles.length > 0) {
+    tips.push({ id: 'tip-docs', icon: FileText, content: `${documentFiles.length} context documents available` });
   }
 
-  if (latestAssistantText?.type === 'assistant_text') {
-    suggestions.push({
-      id: 'train-summary',
-      label: 'Summarize next steps',
-      prompt: 'Summarize the next 5 concrete training steps from our current context.'
-    });
+  if (messages.findLast((m) => m.type === 'error')) {
+    tips.push({ id: 'tip-error', icon: Bug, content: "Try 'debug the error' for step-by-step help" });
   }
 
-  if (datasetFiles.length > 0) {
-    suggestions.push({
-      id: 'train-validation',
-      label: 'Validation strategy',
-      prompt: 'Refine the validation strategy with leakage checks, folds, and metric thresholds.'
-    });
-  }
+  tips.push(
+    ...COMMON_CHAT_TIPS,
+    { id: 'tip-compare', icon: GitCompare, content: "Say 'compare models' after training alternatives" },
+  );
 
-  suggestions.push({
-    id: 'train-compare',
-    label: 'Compare models',
-    prompt: 'Recommend two additional model families to compare and explain why they are good fits.'
-  });
-
-  return dedupeTrainingSuggestions(suggestions).slice(0, 7);
+  return tips;
 }
 
 function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
@@ -287,6 +188,6 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
     },
     toolRegistry: buildTrainingToolRegistry(),
     toolUiRegistry: {},
-    suggestionProvider: (messages, isGenerating) => buildTrainingSuggestions(config, messages, isGenerating)
+    tipsProvider: (messages) => buildTrainingTips(config, messages)
   };
 }

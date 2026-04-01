@@ -1,4 +1,4 @@
-import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agentic';
+import type { DomainAdapter, ToolHandlers } from '@/types/agentic';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { useFeatureStore } from '@/stores/featureStore';
 import type { UploadedFile } from '@/types/file';
@@ -8,6 +8,9 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { WorkflowArtifact } from '@/types/workflow';
 import type { NotebookPhaseMetadata } from '@/types/notebook';
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
+import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
+import { Target, TrendingUp, Calendar, FileText, Bug, GitPullRequest } from 'lucide-react';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
@@ -20,140 +23,51 @@ export interface FeatureEngineeringAdapterConfig {
   notebookMetadata?: NotebookPhaseMetadata;
 }
 
-function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
-  const seen = new Set<string>();
-  return suggestions.filter((suggestion) => {
-    const key = suggestion.prompt.toLowerCase().trim();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function buildFeatureSuggestions(
+function buildFeatureTips(
   config: FeatureEngineeringAdapterConfig,
   messages: ChatMessage[],
-  isGenerating: boolean
-): SuggestionPill[] {
-  if (isGenerating) {
-    return [];
+): ContextualTip[] {
+  const tips: ContextualTip[] = [];
+
+  const datasetFile = config.datasetFiles.find(
+    (file) => file.metadata?.datasetId === config.datasetId
+  );
+  const profile = datasetFile?.metadata?.datasetProfile;
+
+  if (config.targetColumn && profile) {
+    const targetDtype: ColumnDataType | undefined = profile.dtypes[config.targetColumn];
+    const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+
+    if (isClassification) {
+      tips.push({ id: 'tip-target-class', icon: Target, content: `Classification target: ${config.targetColumn} — class balance matters` });
+    } else {
+      tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: `Regression target: ${config.targetColumn} — check for skewness` });
+    }
+  } else if (!config.targetColumn) {
+    tips.push({ id: 'tip-no-target', icon: Target, content: 'Set a target column in Training for task-aware tips' });
   }
 
-  const hasUserMessages = messages.some((message) => message.type === 'user');
-  const latestError = [...messages].reverse().find((message) => message.type === 'error');
-  const latestUserMessage = [...messages].reverse().find((message) => message.type === 'user');
-
-  const datasetName = config.datasetFiles.find((file) => file.metadata?.datasetId === config.datasetId)?.name;
-  const sourceName = (datasetName ?? 'the selected dataset').replace(/\.[^/.]+$/, '');
-
-  const suggestions: SuggestionPill[] = [];
-
-  if (!hasUserMessages) {
-    suggestions.push(
-      {
-        id: 'fe-initial-candidates',
-        label: 'Suggest candidate features',
-        prompt: `Propose high-impact feature candidates for ${sourceName} and explain why each helps.`
-      },
-      {
-        id: 'fe-initial-leakage',
-        label: 'Leakage-safe plan',
-        prompt: `Create a leakage-safe feature engineering plan for ${sourceName} with validation checks.`
-      }
-    );
-
-    // Dataset-aware suggestions from profile
-    const datasetFile = config.datasetFiles.find(
-      (file) => file.metadata?.datasetId === config.datasetId
-    );
-    const profile = datasetFile?.metadata?.datasetProfile;
-
-    if (config.targetColumn && profile) {
-      const targetDtype: ColumnDataType | undefined = profile.dtypes[config.targetColumn];
-      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
-
-      suggestions.push({
-        id: 'fe-initial-target-aware',
-        label: isClassification ? 'Classification features' : 'Regression features',
-        prompt: isClassification
-          ? `Recommend feature transformations for ${sourceName} optimized for classification on target "${config.targetColumn}".`
-          : `Recommend feature transformations for ${sourceName} optimized for regression on target "${config.targetColumn}".`
-      });
-    } else if (config.targetColumn) {
-      suggestions.push({
-        id: 'fe-initial-target-aware',
-        label: 'Target-aware features',
-        prompt: `Recommend feature transformations for ${sourceName} given target column "${config.targetColumn}".`
-      });
-    }
-
-    if (profile) {
-      const dateCols = Object.entries(profile.dtypes)
-        .filter(([, dtype]) => dtype === 'date')
-        .map(([name]) => name);
-      if (dateCols.length > 0) {
-        const topDates = dateCols.slice(0, 2).join(', ');
-        suggestions.push({
-          id: 'fe-initial-temporal',
-          label: `Temporal features from ${topDates}`,
-          prompt: `Extract temporal features (day of week, month, year, time deltas) from date columns ${topDates} in ${sourceName}.`
-        });
-      }
-    }
-
-    if (config.documentFiles.length > 0) {
-      suggestions.push({
-        id: 'fe-initial-rag',
-        label: 'Use context docs',
-        prompt: 'Use uploaded context documents to prioritize domain-relevant features.'
-      });
-    }
-
-    return dedupeSuggestions(suggestions).slice(0, 6);
-  }
-
-  if (latestError?.type === 'error') {
-    suggestions.push({
-      id: 'fe-error-recover',
-      label: 'Recover from error',
-      prompt: 'Diagnose the latest feature engineering error and propose the minimal safe fix.'
-    });
-  }
-
-  if (latestUserMessage?.type === 'user') {
-    const text = latestUserMessage.content.toLowerCase();
-    if (text.includes('overfit') || text.includes('leak')) {
-      suggestions.push({
-        id: 'fe-overfit-guard',
-        label: 'Reduce leakage risk',
-        prompt: 'Rework the feature plan to reduce target leakage and overfitting risk.'
-      });
-    }
-    if (text.includes('interpret') || text.includes('explain')) {
-      suggestions.push({
-        id: 'fe-interpretability',
-        label: 'Interpretable features',
-        prompt: 'Suggest simpler, interpretable feature alternatives and expected trade-offs.'
-      });
+  if (profile) {
+    const dateCols = Object.entries(profile.dtypes).filter(([, dtype]) => dtype === 'date');
+    if (dateCols.length > 0) {
+      tips.push({ id: 'tip-dates', icon: Calendar, content: 'Date columns available for temporal features' });
     }
   }
 
-  suggestions.push(
-    {
-      id: 'fe-validate',
-      label: 'Add validation checks',
-      prompt: 'Add post-transform validation checks for row-count drift, null drift, and schema changes.'
-    },
-    {
-      id: 'fe-ready',
-      label: 'Prepare for training',
-      prompt: 'Finalize a training-ready feature set and summarize readiness risks.'
-    }
+  if (config.documentFiles.length > 0) {
+    tips.push({ id: 'tip-docs', icon: FileText, content: `${config.documentFiles.length} context documents available for domain guidance` });
+  }
+
+  if (messages.findLast((m) => m.type === 'error')) {
+    tips.push({ id: 'tip-error', icon: Bug, content: "Try 'diagnose the error' for recovery" });
+  }
+
+  tips.push(
+    ...COMMON_CHAT_TIPS,
+    { id: 'tip-lifecycle', icon: GitPullRequest, content: 'Features go through propose → validate → register' },
   );
 
-  return dedupeSuggestions(suggestions).slice(0, 7);
+  return tips;
 }
 
 /** Semantic feature lifecycle tools whose calls/results update the feature store. */
@@ -276,6 +190,6 @@ export function createFeatureEngineeringAdapter(
     },
     toolRegistry,
     toolUiRegistry: {},
-    suggestionProvider: (messages, isGenerating) => buildFeatureSuggestions(config, messages, isGenerating)
+    tipsProvider: (messages) => buildFeatureTips(config, messages)
   };
 }

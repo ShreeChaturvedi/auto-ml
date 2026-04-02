@@ -110,6 +110,7 @@ export function SortableTab({
           variant="ghost"
           size="icon"
           className="h-5 w-5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             onClose();

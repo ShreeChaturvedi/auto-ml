@@ -223,7 +223,7 @@ export function DatasetChooserDialog({
           <Button
             variant="outline"
             size="icon"
-            className="rounded-full transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="rounded-full transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onClick={() => onOpenChange(false)}
           >
             <X className="h-4 w-4" />
@@ -234,7 +234,7 @@ export function DatasetChooserDialog({
             variant="outline"
             size="icon"
             className={cn(
-              'group rounded-full border-white bg-white text-black transition-[transform,box-shadow] duration-200 hover:scale-110 hover:shadow-lg active:scale-[0.98] disabled:hover:scale-100 disabled:hover:shadow-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              'group rounded-full border-white bg-white text-black transition-[transform,box-shadow] duration-200 hover:scale-110 hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
               'hover:bg-accent-bg-hover hover:border-accent-border'
             )}
             disabled={!candidateDatasetId}

@@ -37,8 +37,8 @@ export function ModelSubtabs({ projectId, isActivePhase }: ModelSubtabsProps) {
 
   const isOnExperiments = location.pathname.endsWith('/experiments');
 
-  // Hydrate models only when the Experiments phase is active (subtabs are
-  // always-mounted for the grid-rows animation, so skip when collapsed).
+  // Hydrate models only when the Experiments phase is active.
+  // Subtabs mount lazily on first expand, so this fires at mount if already active.
   useEffect(() => {
     if (projectId && isActivePhase) void refreshModels(projectId);
   }, [projectId, isActivePhase, refreshModels]);

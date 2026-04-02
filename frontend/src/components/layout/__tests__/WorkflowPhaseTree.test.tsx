@@ -80,7 +80,7 @@ function renderTree(initialPath = '/project/p1/upload') {
   );
 }
 
-/** Subtabs are always mounted (grid-rows animation); check expansion via data attribute. */
+/** Subtabs are lazily mounted on first expand; check expansion via data attribute. */
 function isSubtabExpanded(testId: string): boolean {
   const el = screen.queryByTestId(testId);
   if (!el) return false;
@@ -95,11 +95,9 @@ describe('WorkflowPhaseTree', () => {
 
   it('expands the active phase subtabs on render', () => {
     renderTree();
-    // Upload subtabs should be expanded (opacity-100)
     expect(isSubtabExpanded('plan-subtabs')).toBe(true);
-    // File subtabs exist but are collapsed (opacity-0)
-    expect(screen.getByTestId('file-subtabs')).toBeInTheDocument();
-    expect(isSubtabExpanded('file-subtabs')).toBe(false);
+    // data-viewer subtabs not mounted until that phase is first expanded
+    expect(screen.queryByTestId('file-subtabs')).not.toBeInTheDocument();
   });
 
   it('collapses previously active subtabs when navigation switches phases (accordion mode)', async () => {

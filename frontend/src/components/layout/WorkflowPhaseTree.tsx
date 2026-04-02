@@ -81,6 +81,7 @@ interface PhaseItemProps {
   isUnlocked: boolean;
   isActive: boolean;
   isExpanded: boolean;
+  hasBeenExpanded: boolean;
   isShimmering: boolean;
   onPhaseClick: (e: React.MouseEvent, phase: Phase) => void;
   onToggleExpand: (phase: Phase) => void;
@@ -96,7 +97,7 @@ interface PhaseItemProps {
  */
 const PhaseItem = memo(function PhaseItem({
   phase, collapsed, projectId,
-  isUnlocked, isActive, isExpanded, isShimmering,
+  isUnlocked, isActive, isExpanded, hasBeenExpanded, isShimmering,
   onPhaseClick, onToggleExpand, onNewWorkbook, onNewPlan,
   onShimmerEnd, onOpenSeedDialog
 }: PhaseItemProps) {
@@ -182,7 +183,7 @@ const PhaseItem = memo(function PhaseItem({
         <span
           className={cn(
             'flex-1 text-sm truncate transition-opacity duration-300',
-            (!isExpandable || collapsed) && 'pl-2',
+            !isExpandable && 'pl-2',
             collapsed && 'opacity-0',
             isShimmering && 'shimmer-text-once'
           )}
@@ -238,21 +239,26 @@ const PhaseItem = memo(function PhaseItem({
         <div
           data-expanded={isExpanded}
           className={cn(
-            'grid transition-[grid-template-rows,opacity] duration-300 ease-in-out',
-            isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+            'grid transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none',
+            isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
           )}
         >
-          <div className="min-h-0 overflow-hidden pl-4">
-            {phase === 'upload' && <PlanSubtabs projectId={projectId} />}
-            {phase === 'data-viewer' && <FileSubtabs projectId={projectId} />}
-            {isWorkbookPhase && (
+          <div className={cn(
+            'min-h-0 overflow-hidden pl-4 transition-opacity motion-reduce:transition-none',
+            isExpanded
+              ? 'opacity-100 duration-200 delay-75 ease-in'
+              : 'opacity-0 duration-150 ease-out'
+          )}>
+            {hasBeenExpanded && phase === 'upload' && <PlanSubtabs projectId={projectId} />}
+            {hasBeenExpanded && phase === 'data-viewer' && <FileSubtabs projectId={projectId} />}
+            {hasBeenExpanded && isWorkbookPhase && (
               <WorkbookSubtabs
                 projectId={projectId}
                 phase={phase as WorkbookPhase}
                 isActivePhase={isActive}
               />
             )}
-            {phase === 'experiments' && <ModelSubtabs projectId={projectId} isActivePhase={isActive} />}
+            {hasBeenExpanded && phase === 'experiments' && <ModelSubtabs projectId={projectId} isActivePhase={isActive} />}
           </div>
         </div>
       )}
@@ -290,6 +296,7 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
   const [seedDialogOpen, setSeedDialogOpen] = useState(false);
   const [shimmeringPhases, setShimmeringPhases] = useState<Set<Phase>>(new Set());
   const prevUnlockedRef = useRef<Phase[]>(unlockedPhases);
+  const everExpandedRef = useRef<Set<Phase>>(new Set());
   const routePhase =
     routeProjectId === projectId
     && routePhaseParam
@@ -309,6 +316,9 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
   useEffect(() => {
     prevUnlockedRef.current = unlockedPhases;
     setShimmeringPhases(new Set());
+    const initial = new Set<Phase>();
+    if (activePhase && EXPANDABLE_PHASES.has(activePhase)) initial.add(activePhase);
+    everExpandedRef.current = initial;
   }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detect newly-unlocked phases and trigger shimmer via animationend
@@ -331,6 +341,7 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
   useEffect(() => {
     if (activePhase && EXPANDABLE_PHASES.has(activePhase)) {
       const accordion = getSidebarAccordionPref();
+      everExpandedRef.current.add(activePhase);
       setExpandedPhases((prev) => {
         if (accordion) {
           if (prev.size === 1 && prev.has(activePhase)) return prev;
@@ -356,6 +367,7 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
 
   const handleToggleExpand = useCallback((phase: Phase) => {
     const accordion = getSidebarAccordionPref();
+    everExpandedRef.current.add(phase);
     setExpandedPhases((prev) => {
       if (prev.has(phase)) {
         const next = new Set(prev);
@@ -415,6 +427,7 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
             isUnlocked={unlockedPhases.includes(phase)}
             isActive={phase === activePhase}
             isExpanded={expandedPhases.has(phase)}
+            hasBeenExpanded={everExpandedRef.current.has(phase)}
             isShimmering={shimmeringPhases.has(phase)}
             onPhaseClick={handlePhaseClick}
             onToggleExpand={handleToggleExpand}

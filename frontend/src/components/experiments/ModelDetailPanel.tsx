@@ -19,8 +19,7 @@ import { ErrorsTab } from './tabs/ErrorsTab';
 import { ProvenanceTab } from './tabs/ProvenanceTab';
 import { TuneTab } from './tabs/tune/TuneTab';
 import { EvalTabContent } from './EvalTabContent';
-import { formatMetric, formatDurationCompact, formatDurationLong } from './utils';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { formatMetric, formatDurationCompact, formatMetricDisplayName } from './utils';
 
 const TAB_OPTIONS = [
   { value: 'plots', ariaLabel: 'Plots', icon: BarChart3, tooltip: 'Plots' },
@@ -46,7 +45,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const retryEvaluation = useExperimentsStore((s) => s.retryEvaluation);
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
-  const { themeColor } = useProjectThemeColor();
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
@@ -77,15 +75,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             duration-200"
           onOpenAutoFocus={(e) => { e.preventDefault(); }}
         >
-          <div
-            className="h-[1px] w-full shrink-0"
-            style={{
-              background: themeColor
-                ? `linear-gradient(90deg, transparent 0%, ${themeColor}60 30%, ${themeColor} 50%, ${themeColor}60 70%, transparent 100%)`
-                : 'linear-gradient(90deg, transparent 0%, hsl(var(--muted-foreground) / 0.3) 50%, transparent 100%)',
-            }}
-          />
-
           <div className="flex h-14 items-center gap-3 border-b border-border/40 px-5 shrink-0">
             <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
             <DialogTitle className="text-sm font-semibold truncate min-w-0">
@@ -101,12 +90,12 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
 
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide min-w-0">
               {model.trainingMs != null && (
-                <Pill icon={Clock} tooltip={`Training duration: ${formatDurationLong(model.trainingMs)}`} className="tabular-nums shrink-0">
+                <Pill icon={Clock} tooltip="Training duration" className="tabular-nums shrink-0">
                   {formatDurationCompact(model.trainingMs)}
                 </Pill>
               )}
               {metricEntries.map(([key, value]) => (
-                <Pill key={key} icon={METRIC_ICONS[key]} tooltip={`${key.charAt(0).toUpperCase() + key.slice(1)}: ${formatMetric(value)}`} className="tabular-nums shrink-0">
+                <Pill key={key} icon={METRIC_ICONS[key]} tooltip={formatMetricDisplayName(key)} className="tabular-nums shrink-0">
                   {formatMetric(value)}
                 </Pill>
               ))}

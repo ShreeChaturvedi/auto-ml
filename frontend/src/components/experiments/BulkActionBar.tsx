@@ -88,7 +88,7 @@ export function BulkActionBar({ onExportSelected }: BulkActionBarProps) {
       <div className="flex items-center gap-1.5">
         <Button
           size="sm"
-          className="h-7 gap-1.5 text-xs bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover"
+          className="h-7 gap-1.5 text-xs bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover active:bg-accent-fill-active"
           disabled={!canCompare}
           onClick={startComparison}
         >

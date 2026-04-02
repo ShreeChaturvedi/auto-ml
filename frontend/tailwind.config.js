@@ -52,6 +52,7 @@ export default {
           ring: 'hsl(var(--accent-ring) / <alpha-value>)',
           fill: 'hsl(var(--accent-fill) / <alpha-value>)',
           'fill-hover': 'hsl(var(--accent-fill-hover) / <alpha-value>)',
+          'fill-active': 'hsl(var(--accent-fill-active) / <alpha-value>)',
           text: 'hsl(var(--accent-text) / <alpha-value>)',
           'text-strong': 'hsl(var(--accent-text-strong) / <alpha-value>)',
           'on-fill': 'hsl(var(--accent-on-fill) / <alpha-value>)',

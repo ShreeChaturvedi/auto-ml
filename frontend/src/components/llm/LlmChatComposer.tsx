@@ -249,7 +249,7 @@ export function LlmChatComposer({
                 disabled={isStreaming ? false : !canSend}
                 aria-label={isStreaming ? 'Stop generating' : 'Send message'}
                 variant="ghost"
-                className="h-9 w-9 rounded-full p-0 shrink-0 transition-[background-color,color,opacity] bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2 disabled:bg-muted/30 disabled:text-muted-foreground dark:shadow-none"
+                className="h-9 w-9 rounded-full p-0 shrink-0 transition-[background-color,color,opacity] bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover active:bg-accent-fill-active focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2 disabled:bg-muted/30 disabled:text-muted-foreground dark:shadow-none"
               >
                 {isStreaming ? <Square className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
               </InputGroupButton>

@@ -101,6 +101,7 @@
     --accent-ring: 0 0% 55%;
     --accent-fill: 0 0% 55%;
     --accent-fill-hover: 0 0% 48%;
+    --accent-fill-active: 0 0% 42%;
     --accent-text: 0 0% 45%;
     --accent-text-strong: 0 0% 35%;
     --accent-on-fill: 0 0% 98%;
@@ -190,7 +191,8 @@
     --accent-border: 0 0% 25%;
     --accent-ring: 0 0% 55%;
     --accent-fill: 0 0% 70%;
-    --accent-fill-hover: 0 0% 76%;
+    --accent-fill-hover: 0 0% 64%;
+    --accent-fill-active: 0 0% 58%;
     --accent-text: 0 0% 75%;
     --accent-text-strong: 0 0% 85%;
     --accent-on-fill: 0 0% 15%;

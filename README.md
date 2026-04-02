@@ -94,10 +94,11 @@ Compare trained models on a leaderboard with automatic champion detection and a 
 
 ```bash
 npm run install:all    # Install backend + frontend + testing dependencies
-npm run dev            # Boot Postgres, run migrations, start dev servers
+npm run dev            # Boot managed Postgres, run migrations, start dev servers
 ```
 
 The dev server starts the backend at `localhost:4000` and frontend at `localhost:5173`.
+If `npm run dev` creates or starts the managed `automl-postgres-<port>` container, it will stop that container on shutdown. Compatible containers that were already running are left running.
 
 ## Development
 
@@ -124,7 +125,7 @@ docs/                 Branding assets, API contracts, design system
 | Command | Description |
 |---------|-------------|
 | `npm run audit` | Audit root, backend, frontend, and testing dependencies |
-| `npm run dev` | Start development environment (Postgres + migrations + servers) |
+| `npm run dev` | Start development environment (managed Postgres + migrations + servers) |
 | `npm run build` | Build backend (tsc) + frontend (Vite) |
 | `npm run test` | Run all tests (Vitest) |
 | `npm run lint` | Lint across workspaces |

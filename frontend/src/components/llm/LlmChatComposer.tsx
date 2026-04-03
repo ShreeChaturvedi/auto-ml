@@ -88,6 +88,8 @@ export interface ComposerSlots {
   leftSlot?: ReactNode;
   metaSlot?: ReactNode;
   voiceSlot?: ReactNode;
+  /** Rotating contextual tips shown in the toolbar's right group. */
+  tipsSlot?: ReactNode;
   attachment?: AttachmentConfig;
   mentionSlot?: MentionSlotConfig;
   maxWidthClassName?: string;
@@ -130,6 +132,7 @@ export function LlmChatComposer({
     leftSlot,
     metaSlot,
     voiceSlot,
+    tipsSlot,
     attachment,
     mentionSlot,
     maxWidthClassName = 'max-w-5xl',
@@ -186,7 +189,7 @@ export function LlmChatComposer({
           )}
         <InputGroupAddon align="block-end">
           <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex min-w-0 shrink-0 items-center gap-2">
               {leftSlot}
               <ComposerModelBar
                 modelConfig={modelConfig}
@@ -195,16 +198,21 @@ export function LlmChatComposer({
               />
             </div>
 
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
-              <span className="hidden sm:flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
-                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
-                  <ArrowUp className="h-3 w-3" />
-                </kbd>
-                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
-                  <CornerDownLeft className="h-3 w-3" />
-                </kbd>
-                <span>for newline</span>
-              </span>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="hidden min-w-0 flex-1 items-center sm:flex">
+                {tipsSlot ?? (
+                  <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                      <ArrowUp className="h-3 w-3" />
+                    </kbd>
+                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                      <CornerDownLeft className="h-3 w-3" />
+                    </kbd>
+                    <span>for newline</span>
+                  </span>
+                )}
+              </div>
+
               <div className="min-w-0 max-w-full overflow-hidden">
                 {metaSlot}
               </div>

@@ -35,9 +35,9 @@ function buildTrainingTips(
   const isRegression = targetDtype === 'integer' || targetDtype === 'float';
 
   if (config.targetColumn && isClassification) {
-    tips.push({ id: 'tip-target-class', icon: Target, content: `Classification on '${config.targetColumn}' — consider F1 alongside accuracy` });
+    tips.push({ id: 'tip-target-class', icon: Target, content: 'Classification target — consider F1 alongside accuracy' });
   } else if (config.targetColumn && isRegression) {
-    tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: `Regression on '${config.targetColumn}' — consider MAE and R²` });
+    tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: 'Regression target — consider MAE and R²' });
   }
 
   if (config.featureSummary) {

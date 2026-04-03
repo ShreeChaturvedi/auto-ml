@@ -12,7 +12,7 @@ import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import type { VoiceState } from '@/hooks/useVoiceInput';
 import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
-import { ContextualTipBar } from '@/components/ui/contextual-tip-bar';
+import { TipTicker } from '@/components/ui/contextual-tip-bar';
 import type { LlmUsage } from '@/types/llmUi';
 import type {
   AssistantModelOption,
@@ -159,7 +159,6 @@ export function AgenticStepDisplay({
         </div>
       ) : null}
       {composerStatusSlot}
-      {!domainLockReason && tips.length > 0 && <ContextualTipBar tips={tips} />}
 
       <div
         className="px-4 pb-4 pt-2"
@@ -209,6 +208,9 @@ export function AgenticStepDisplay({
           } satisfies UsageConfig}
           slots={{
             metaSlot: chatMetaSlot,
+            tipsSlot: !domainLockReason && tips.length > 0
+              ? <TipTicker tips={tips} className="h-5 min-w-0 flex-1" rowClassName="truncate" />
+              : undefined,
             maxWidthClassName: "max-w-5xl",
             voiceSlot: voiceConfig ? (
               <div className="group/voice">

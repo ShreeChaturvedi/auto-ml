@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 
 import { createApp } from './app.js';
 import { env } from './config.js';
-import { verifyDatabaseConnection } from './db.js';
+import { hasDatabaseConfiguration, verifyDatabaseConnection } from './db.js';
 import { appLogger } from './logging/logger.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
@@ -20,6 +20,12 @@ const wsServer = initializeWebSocket(server);
 // Wire up WebSocket broadcasts to notebook services
 setWebSocketBroadcast(broadcastNotebookEvent);
 setCellExecutionBroadcast(broadcastNotebookEvent);
+
+// Deployment services (requires Postgres)
+if (hasDatabaseConfiguration()) {
+  appLogger.info('[server] Deployment services enabled (DATABASE_URL configured)');
+  // DeploymentManager and DeploymentWSServer will be initialized here in Phase C
+}
 
 // Track if shutdown is in progress to prevent double-handling
 let isShuttingDown = false;
@@ -40,6 +46,7 @@ async function shutdown(signal: string): Promise<void> {
 
   // Destroy all active containers
   await destroyAllContainers();
+  // Deployment container cleanup will be added here
 
   // Close HTTP server
   server.close(() => {

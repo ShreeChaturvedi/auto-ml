@@ -1,0 +1,2 @@
+ALTER TABLE models ADD COLUMN IF NOT EXISTS feature_types JSONB;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS sample_request JSONB;

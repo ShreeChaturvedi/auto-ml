@@ -74,6 +74,7 @@ export function createApp() {
   router.use(createMcpRouter());
   router.use('/models', modelRouter);
   router.use('/experiments', createExperimentsRouter());
+  // Deployment routes are conditionally registered in index.ts (requires DB + deployment manager)
   router.use('/execute', executionRouter);
   router.use(notebookRouter);
   router.use(createSettingsRouter());

@@ -254,15 +254,37 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(
     }, [handleInput]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Tab' && !e.shiftKey && !value && hasAnimatedPlaceholders && animState.currentPlaceholder) {
+      const visiblePlaceholder = hasAnimatedPlaceholders
+        ? (animState.isAnimating ? animState.nextPlaceholder : animState.currentPlaceholder)
+        : (placeholders?.[0] ?? placeholder ?? '');
+
+      if (
+        e.key === 'Tab'
+        && !e.shiftKey
+        && !disabled
+        && !value
+        && visiblePlaceholder.trim().length > 0
+      ) {
         e.preventDefault();
-        const ph = animState.currentPlaceholder;
+        const ph = visiblePlaceholder;
         syncRenderedValue(ph, ph.length);
         onValueChange(ph, ph.length);
         return;
       }
       onKeyDown(e);
-    }, [value, hasAnimatedPlaceholders, animState.currentPlaceholder, syncRenderedValue, onValueChange, onKeyDown]);
+    }, [
+      value,
+      disabled,
+      hasAnimatedPlaceholders,
+      animState.currentPlaceholder,
+      animState.isAnimating,
+      animState.nextPlaceholder,
+      placeholders,
+      placeholder,
+      syncRenderedValue,
+      onValueChange,
+      onKeyDown
+    ]);
 
     return (
       <div

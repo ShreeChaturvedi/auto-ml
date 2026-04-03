@@ -19,6 +19,7 @@ import {
 } from '../../llm/preprocessing/stateSync.js';
 import { fail } from '../../llm/preprocessingTools/helpers.js';
 import { TOOL_HANDLERS } from '../../llm/preprocessingTools/index.js';
+import * as notebookService from '../../notebook/notebookService.js';
 import { buildPreprocessingCellContent } from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
@@ -151,6 +152,56 @@ function aggregateRunOutputs(runCells: RunCellResultContext[]): { stdout: string
     stdout: runCells.map((entry) => entry.stdout?.trim()).filter(Boolean).join('\n\n'),
     stderr: runCells.map((entry) => entry.stderr?.trim()).filter(Boolean).join('\n\n')
   };
+}
+
+function summarizeNotebookCellOutputs(outputs: Array<{ type: string; content: string }>): { stdout: string; stderr: string } {
+  const stdout = outputs
+    .filter((output) => output.type !== 'error')
+    .map((output) => output.content?.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  const stderr = outputs
+    .filter((output) => output.type === 'error')
+    .map((output) => output.content?.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  return { stdout, stderr };
+}
+
+async function resolveNotebookExecutionOutcome(cellIds: string[]): Promise<RunCellResultContext | null> {
+  for (let index = cellIds.length - 1; index >= 0; index -= 1) {
+    const cellId = cellIds[index];
+    try {
+      const cell = await notebookService.readCell(cellId);
+      const status = cell.executionStatus === 'success'
+        ? 'success'
+        : cell.executionStatus === 'error'
+          ? 'error'
+          : undefined;
+      const { stdout, stderr } = summarizeNotebookCellOutputs(
+        (cell.output ?? [])
+          .filter((output): output is { type: string; content: string } =>
+            Boolean(output) && typeof output.type === 'string' && typeof output.content === 'string')
+      );
+
+      if (!status && !stdout && !stderr) {
+        continue;
+      }
+
+      return {
+        tool: 'run_cell',
+        cellId,
+        status,
+        stdout,
+        stderr
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 async function resolveLatestStepNotebookContext(
@@ -351,9 +402,22 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
   const runCells = extractRunCellResults(currentTurnResults);
-  const latestRunCell = runCells.at(-1) ?? null;
   const writtenCellIds = extractWrittenCellIds(currentTurnResults);
-  const { stdout, stderr } = aggregateRunOutputs(runCells);
+  let latestRunCell = runCells.at(-1) ?? null;
+  let { stdout, stderr } = aggregateRunOutputs(runCells);
+
+  if (writtenCellIds.length > 0 && (latestRunCell == null || latestRunCell.status !== 'success')) {
+    const notebookOutcome = await resolveNotebookExecutionOutcome(writtenCellIds);
+    if (notebookOutcome) {
+      latestRunCell = notebookOutcome;
+      if (!stdout) {
+        stdout = notebookOutcome.stdout ?? '';
+      }
+      if (!stderr) {
+        stderr = notebookOutcome.stderr ?? '';
+      }
+    }
+  }
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,

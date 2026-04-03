@@ -380,47 +380,14 @@ export function AgenticShell({
     : LeftPaneComponent
       ? <LeftPaneComponent {...leftPaneRenderProps} />
       : null;
-  const panelGroupRef = useRef<HTMLDivElement | null>(null);
-  const [panelGroupWidth, setPanelGroupWidth] = useState<number | null>(null);
-
-  useEffect(() => {
-    const element = panelGroupRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') {
-      return;
-    }
-
-    const updateWidth = (nextWidth: number) => {
-      setPanelGroupWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth));
-    };
-
-    updateWidth(Math.round(element.getBoundingClientRect().width));
-
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      updateWidth(Math.round(entry.contentRect.width));
-    });
-
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  const leftPanelMinSize = useMemo(() => {
-    if (!panelGroupWidth || panelGroupWidth <= 0) {
-      return 35;
-    }
-
-    const minSizeFromWidth = (AGENTIC_LEFT_PANEL_MIN_WIDTH_PX / panelGroupWidth) * 100;
-    return Math.min(70, Math.max(35, Number(minSizeFromWidth.toFixed(2))));
-  }, [panelGroupWidth]);
-
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div ref={panelGroupRef} className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
         {/* ── Left panel: domain ribbon + content + chat ── */}
-        <ResizablePanel defaultSize={48} minSize={leftPanelMinSize}>
-          <div className="flex h-full min-h-0 min-w-[400px] flex-col">
+        {/* number = pixels in react-resizable-panels v4; string "X%" = percentage */}
+        <ResizablePanel defaultSize="48%" minSize={AGENTIC_LEFT_PANEL_MIN_WIDTH_PX}>
+          <div className="flex h-full min-h-0 flex-col">
             {/* Left ribbon */}
             <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
               <div className="flex min-w-0 items-center gap-3">
@@ -483,7 +450,7 @@ export function AgenticShell({
         <ResizableHandle withHandle />
 
         {/* ── Right panel: notebook ribbon + cells ── */}
-        <ResizablePanel defaultSize={52} minSize={30}>
+        <ResizablePanel defaultSize="52%" minSize={300}>
           <div className="flex h-full flex-col">
             <NotebookToolbar
               projectId={projectId}

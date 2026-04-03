@@ -33,7 +33,8 @@ import { registerPhaseConfig } from '../phaseConfig.js';
 import {
   extractLatestCellId,
   extractLatestRunCellContext,
-  extractLatestStepNotebookContext
+  extractLatestStepNotebookContext,
+  type StepNotebookContext
 } from './preprocessing/context.js';
 import {
   PREPROCESSING_LIFECYCLE,
@@ -152,6 +153,40 @@ function aggregateRunOutputs(runCells: RunCellResultContext[]): { stdout: string
   };
 }
 
+async function resolveLatestStepNotebookContext(
+  state: WorkflowGraphState
+): Promise<StepNotebookContext | null> {
+  const direct = extractLatestStepNotebookContext(state);
+  if (direct) {
+    return direct;
+  }
+
+  const controllerSummary = asRecord(state.controllerSummary);
+  const runId = asString(controllerSummary?.runId);
+  const stepId = asString(controllerSummary?.activeStepId) ?? asString(controllerSummary?.currentStepId);
+  if (!runId || !stepId) {
+    return null;
+  }
+
+  const run = await runRepository.getById(runId);
+  const step = run?.steps?.[stepId];
+  if (!step) {
+    return null;
+  }
+
+  return {
+    runId,
+    stepId: step.stepId,
+    title: step.title,
+    code: step.code,
+    toolCallId: step.toolCallId,
+    version: step.version,
+    codeHash: step.codeHash,
+    requiresApproval: step.requiresApproval,
+    cellIds: [...step.cellIds]
+  };
+}
+
 
 
 export function buildSegmentedPreprocessingCellContent(params: {
@@ -228,7 +263,7 @@ function isWorkflowThreadReference(value: string | null | undefined): boolean {
 // -- Deterministic actions (ported from plannerNotebook, plannerExecution, plannerValidation)
 
 async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
-  const step = extractLatestStepNotebookContext(state);
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
   if (!step.code) return [];
   const codeSegments = splitMaterializedStepCode(step.code);
@@ -310,8 +345,8 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   return parsed.success ? [parsed.data] : [];
 }
 
-function buildRecordExecutionAction(state: WorkflowGraphState): import('../../../types/llm.js').ToolCall[] {
-  const step = extractLatestStepNotebookContext(state);
+async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
@@ -337,8 +372,8 @@ function buildRecordExecutionAction(state: WorkflowGraphState): import('../../..
   return parsed.success ? [parsed.data] : [];
 }
 
-function buildValidateAction(state: WorkflowGraphState): import('../../../types/llm.js').ToolCall[] {
-  const step = extractLatestStepNotebookContext(state);
+async function buildValidateAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
@@ -369,7 +404,7 @@ async function buildCodeGenerationAction(
   client: LlmClient,
   state: WorkflowGraphState
 ): Promise<import('../../../types/llm.js').ToolCall[]> {
-  const step = extractLatestStepNotebookContext(state);
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
 
   // Extract dataset summary from tool history (search full history — dataset

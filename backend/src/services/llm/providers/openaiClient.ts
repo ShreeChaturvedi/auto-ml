@@ -62,7 +62,8 @@ export class OpenAiClient implements LlmClient {
       streamedToolItemIds.add(event.item_id);
       handlers.onToolCall({
         name: event.name,
-        args: parseToolArguments(event.arguments)
+        args: parseToolArguments(event.arguments),
+        rawArgsText: event.arguments
       });
     });
 
@@ -224,7 +225,8 @@ function emitToolCalls(
 
     const toolCall: LlmToolCall = {
       name: item.name,
-      args: parseToolArguments(item.arguments)
+      args: parseToolArguments(item.arguments),
+      rawArgsText: item.arguments
     };
     handlers.onToolCall(toolCall);
   }

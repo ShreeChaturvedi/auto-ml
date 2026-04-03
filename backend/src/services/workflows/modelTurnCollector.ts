@@ -29,38 +29,147 @@ function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
 
 const PLAN_MARKDOWN_MAX = 50_000;
 
-function normalizePlanExitArgs(args: Record<string, unknown> | string | undefined): Record<string, unknown> {
-  if (typeof args === 'string') return { planMarkdown: args };
-  if (!args || typeof args !== 'object') return {};
-  const raw = args as Record<string, unknown>;
+const PLAN_MARKDOWN_KEYS = [
+  'planMarkdown',
+  'plan_markdown',
+  'markdown',
+  'content',
+  'text',
+  'body',
+  'plan_text',
+  'plan_content'
+] as const;
 
-  // Resolve planMarkdown from common model variants
-  let markdown = raw.planMarkdown;
-  if (typeof markdown !== 'string') {
-    for (const key of [
-      'plan_markdown', 'markdown', 'content', 'plan',
-      'text', 'body', 'plan_text', 'plan_content', 'output'
-    ] as const) {
-      if (typeof raw[key] === 'string') { markdown = raw[key]; break; }
+const PLAN_NAME_KEYS = ['planName', 'plan_name', 'name', 'filename', 'fileName'] as const;
+
+function tryParseLooseJson(rawText: string | undefined): unknown {
+  if (typeof rawText !== 'string' || !rawText.trim()) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(rawText) as unknown;
+  } catch {
+    return rawText;
+  }
+}
+
+function extractPlanMarkdownCandidate(value: unknown, depth = 0): string | undefined {
+  if (depth > 5 || value == null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = extractPlanMarkdownCandidate(item, depth + 1);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  if (typeof value !== 'object') {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+
+  for (const key of PLAN_MARKDOWN_KEYS) {
+    const direct = extractPlanMarkdownCandidate(raw[key], depth + 1);
+    if (direct) return direct;
+  }
+
+  for (const key of ['payload', 'plan', 'data', 'result', 'output'] as const) {
+    const nested = extractPlanMarkdownCandidate(raw[key], depth + 1);
+    if (nested) return nested;
+  }
+
+  let fallbackLongString: string | undefined;
+  for (const nestedValue of Object.values(raw)) {
+    if (typeof nestedValue === 'string') {
+      const trimmed = nestedValue.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (trimmed.startsWith('#') || /^```(?:markdown|md)?/i.test(trimmed)) {
+        return trimmed;
+      }
+      if (!fallbackLongString && trimmed.length > 50) {
+        fallbackLongString = trimmed;
+      }
+      continue;
+    }
+
+    const nested = extractPlanMarkdownCandidate(nestedValue, depth + 1);
+    if (nested) return nested;
+  }
+
+  return fallbackLongString;
+}
+
+function extractPlanNameCandidate(value: unknown, depth = 0): string | undefined {
+  if (depth > 5 || value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  for (const key of PLAN_NAME_KEYS) {
+    const candidate = raw[key];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
     }
   }
 
-  // Last-resort: use the first string value longer than 50 chars
-  if (typeof markdown !== 'string') {
-    const firstLongString = Object.values(raw).find(
-      (v) => typeof v === 'string' && v.length > 50
-    );
-    if (typeof firstLongString === 'string') markdown = firstLongString;
+  for (const key of ['payload', 'plan', 'data', 'result', 'output'] as const) {
+    const nested = extractPlanNameCandidate(raw[key], depth + 1);
+    if (nested) return nested;
   }
 
-  // Truncate if too long rather than failing validation
+  return undefined;
+}
+
+function normalizePlanExitArgs(
+  args: Record<string, unknown> | string | undefined,
+  rawArgsText?: string
+): Record<string, unknown> {
+  const candidates: unknown[] = [];
+  if (typeof args === 'string') {
+    candidates.push(args);
+  } else if (args && typeof args === 'object') {
+    candidates.push(args);
+  }
+
+  const parsedRaw = tryParseLooseJson(rawArgsText);
+  if (parsedRaw !== undefined) {
+    candidates.push(parsedRaw);
+  }
+
+  let markdown: string | undefined;
+  let planName: string | undefined;
+
+  for (const candidate of candidates) {
+    if (!markdown) {
+      markdown = extractPlanMarkdownCandidate(candidate);
+    }
+    if (!planName) {
+      planName = extractPlanNameCandidate(candidate);
+    }
+    if (markdown && planName) {
+      break;
+    }
+  }
+
   if (typeof markdown === 'string' && markdown.length > PLAN_MARKDOWN_MAX) {
     markdown = markdown.slice(0, PLAN_MARKDOWN_MAX);
   }
 
   return {
     planMarkdown: markdown,
-    planName: raw.planName ?? raw.plan_name ?? raw.name
+    planName
   };
 }
 
@@ -124,7 +233,7 @@ async function streamWorkflowText(
       }
 
       if (call.name === 'plan_exit') {
-        const normalizedArgs = normalizePlanExitArgs(call.args);
+        const normalizedArgs = normalizePlanExitArgs(call.args, call.rawArgsText);
         const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
         if (parsed.success) {
           planExitPayload = normalizePlanExitPayload(parsed.data);

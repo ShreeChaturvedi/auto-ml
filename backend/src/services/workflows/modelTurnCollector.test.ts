@@ -88,6 +88,31 @@ function createBaseState(): WorkflowGraphState {
 }
 
 describe('invokeModelNode', () => {
+  const validPlanMarkdown = [
+    '# Project Plan',
+    '',
+    '## Objective',
+    'Forecast runtime prediction safely.',
+    '',
+    '## Data Summary',
+    'Use the uploaded dataset profile and sample.',
+    '',
+    '## Approach',
+    'Diagnose data quality risks before modeling.',
+    '',
+    '## Feature Engineering',
+    'Only add features with validated signal.',
+    '',
+    '## Evaluation',
+    'Measure accuracy and runtime tradeoffs.',
+    '',
+    '## Risks & Assumptions',
+    'Unknown labels may need follow-up.',
+    '',
+    '## Next Steps',
+    'Review the plan and proceed to analysis.'
+  ].join('\n');
+
   beforeEach(() => {
     vi.clearAllMocks();
     createLlmClientMock.mockReturnValue({
@@ -196,4 +221,108 @@ describe('invokeModelNode', () => {
     });
   });
 
+  it('recovers plan_exit markdown from raw tool argument text when parsed args are empty', async () => {
+    const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+      handlers.onToolCall?.({
+        name: 'plan_exit',
+        args: {},
+        rawArgsText: JSON.stringify({
+          planMarkdown: validPlanMarkdown,
+          planName: 'runtime-plan'
+        })
+      });
+      return '';
+    });
+    createLlmClientMock.mockReturnValue({
+      complete: llmCompleteMock,
+      stream: streamMock
+    });
+
+    const state = createBaseState();
+    state.turn.phase = 'onboarding';
+    state.request = {
+      messages: [
+        { role: 'system', content: 'Create a project plan.' },
+        { role: 'user', content: 'Diagnose data quality risks and then propose the plan.' }
+      ],
+      tools: [
+        {
+          name: 'plan_exit',
+          description: 'Finalize the plan.',
+          parameters: {
+            type: 'object',
+            properties: {
+              planName: { type: 'string' },
+              planMarkdown: { type: 'string' }
+            }
+          }
+        }
+      ]
+    };
+    state.controllerSummary = undefined;
+
+    const result = await invokeModelNode(state);
+
+    expect(result).toMatchObject({
+      nextStep: 'pause',
+      planExitPayload: {
+        planName: 'runtime-plan.md',
+        planMarkdown: validPlanMarkdown
+      }
+    });
+  });
+
+  it('recovers plan_exit markdown from nested wrapper payloads', async () => {
+    const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+      handlers.onToolCall?.({
+        name: 'plan_exit',
+        args: {
+          payload: {
+            plan: {
+              markdown: validPlanMarkdown
+            },
+            name: 'nested-runtime-plan'
+          }
+        }
+      });
+      return '';
+    });
+    createLlmClientMock.mockReturnValue({
+      complete: llmCompleteMock,
+      stream: streamMock
+    });
+
+    const state = createBaseState();
+    state.turn.phase = 'onboarding';
+    state.request = {
+      messages: [
+        { role: 'system', content: 'Create a project plan.' },
+        { role: 'user', content: 'Diagnose data quality risks and then propose the plan.' }
+      ],
+      tools: [
+        {
+          name: 'plan_exit',
+          description: 'Finalize the plan.',
+          parameters: {
+            type: 'object',
+            properties: {
+              planName: { type: 'string' },
+              planMarkdown: { type: 'string' }
+            }
+          }
+        }
+      ]
+    };
+    state.controllerSummary = undefined;
+
+    const result = await invokeModelNode(state);
+
+    expect(result).toMatchObject({
+      nextStep: 'pause',
+      planExitPayload: {
+        planName: 'nested-runtime-plan.md',
+        planMarkdown: validPlanMarkdown
+      }
+    });
+  });
 });

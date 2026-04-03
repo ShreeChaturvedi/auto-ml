@@ -21,6 +21,7 @@ export type LlmToolChoice = 'auto' | 'any' | 'none';
 export interface LlmToolCall {
   name: string;
   args: Record<string, unknown>;
+  rawArgsText?: string;
   thoughtSignature?: string;
 }
 

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useDeploymentStore } from '@/stores/deploymentStore';
+import { useModelStore } from '@/stores/modelStore';
 import { getDeploymentWSClient } from '@/lib/websocket/deploymentClient';
 import { DeploymentDetail } from './DeploymentDetail';
 import { DeploymentList } from './DeploymentList';
@@ -10,11 +11,15 @@ export function DeploymentDashboard() {
   const { projectId } = useParams<{ projectId: string }>();
   const { deployments, selectedDeploymentId, isLoading, refreshDeployments, updateDeploymentStatus } =
     useDeploymentStore();
+  const refreshModels = useModelStore(s => s.refreshModels);
 
   // Refresh on mount
   useEffect(() => {
-    if (projectId) refreshDeployments(projectId);
-  }, [projectId, refreshDeployments]);
+    if (projectId) {
+      refreshDeployments(projectId);
+      refreshModels(projectId);
+    }
+  }, [projectId, refreshDeployments, refreshModels]);
 
   // WebSocket connection
   useEffect(() => {

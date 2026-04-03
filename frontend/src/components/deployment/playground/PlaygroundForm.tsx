@@ -133,7 +133,7 @@ function CategoricalField({
   // <=4 values: radio group
   if (options.length <= RADIO_THRESHOLD) {
     return (
-      <RadioGroup value={strValue} onValueChange={(v) => onChange(feature, v)}>
+      <RadioGroup value={strValue} onValueChange={(v: string) => onChange(feature, v)}>
         <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {options.map((opt) => (
             <div key={opt} className="flex items-center gap-1.5">
@@ -206,7 +206,7 @@ function ComboboxField({
                 <CommandItem
                   key={opt}
                   value={opt}
-                  onSelect={(v) => {
+                  onSelect={(v: string) => {
                     onChange(feature, v);
                     setOpen(false);
                   }}

@@ -272,7 +272,7 @@ describe('isNegatedScorer', () => {
 describe('buildTuningScript', () => {
   it('maps type=number integer param to trial.suggest_int()', () => {
     const script = callBuild(makeTemplate());
-    expect(script).toContain('trial.suggest_int("n_estimators", 10, 1000, step=10)');
+    expect(script).toContain('trial.suggest_int("n_estimators", 10, 1000)');
     expect(script).toContain('trial.suggest_int("max_depth", 2, 50)');
     expect(script).toContain('trial.suggest_int("min_samples_split", 2, 20)');
   });
@@ -280,7 +280,7 @@ describe('buildTuningScript', () => {
   it('maps type=number float param to trial.suggest_float()', () => {
     const script = callBuild(makeTemplate(LOGISTIC_OVERRIDES));
     expect(script).toContain('trial.suggest_float("C", 0.01, 10, log=True)');
-    expect(script).toContain('trial.suggest_int("max_iter", 100, 1000, step=50)');
+    expect(script).toContain('trial.suggest_int("max_iter", 100, 1000)');
   });
 
   it('maps type=select param to trial.suggest_categorical()', () => {

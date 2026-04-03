@@ -12,10 +12,18 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const FEATURES = ['age', 'income', 'credit_score', 'years_employed', 'debt_ratio'];
 const FALLBACK_DATASET_ID = '00000000-0000-0000-0000-000000000001';
 
-/** Resolve the project's actual dataset ID so seeded models can be tuned. */
-async function resolveDatasetId(projectId: string): Promise<string> {
+/** Resolve the project's actual dataset so seeded models reference real data. */
+async function resolveDataset(projectId: string) {
   const datasets = await datasetRepository.listByProject(projectId);
-  return datasets.length > 0 ? datasets[0].datasetId : FALLBACK_DATASET_ID;
+  return datasets.length > 0 ? datasets[0] : undefined;
+}
+
+/** Infer target column: explicit "target" column, else last column (standard ML convention). */
+export function inferTargetColumn(columns: { name: string }[]): string {
+  if (columns.length === 0) return 'target';
+  const explicit = columns.find((c) => c.name.toLowerCase() === 'target');
+  if (explicit) return explicit.name;
+  return columns[columns.length - 1].name;
 }
 
 type TaskType = 'classification' | 'regression' | 'clustering';
@@ -203,9 +211,14 @@ export async function seedOneModel(projectId: string, options: {
   algorithm: string;
 }): Promise<ModelRecord> {
   const metrics = randomMetrics(options.taskType);
+  const dataset = await resolveDataset(projectId);
+  const datasetId = dataset?.datasetId ?? FALLBACK_DATASET_ID;
+  const targetColumn = options.taskType === 'clustering'
+    ? undefined
+    : inferTargetColumn(dataset?.columns ?? []);
   const record = await modelRepository.create({
     projectId,
-    datasetId: await resolveDatasetId(projectId),
+    datasetId,
     name: options.name,
     templateId: ALGORITHM_TO_TEMPLATE[options.algorithm] ?? `seed-${options.algorithm.toLowerCase().replace(/\s+/g, '_')}`,
     taskType: options.taskType,
@@ -215,7 +228,7 @@ export async function seedOneModel(projectId: string, options: {
     metrics,
     status: 'completed',
     trainingMs: 1000 + Math.floor(Math.random() * 4000),
-    targetColumn: options.taskType === 'clustering' ? undefined : 'target',
+    targetColumn,
     featureColumns: FEATURES,
     sampleCount: 1000,
     evaluationStatus: 'ready',
@@ -242,11 +255,14 @@ export async function seedOneModel(projectId: string, options: {
 
 export async function seedModels(projectId: string): Promise<ModelRecord[]> {
   const created: ModelRecord[] = [];
+  const dataset = await resolveDataset(projectId);
+  const datasetId = dataset?.datasetId ?? FALLBACK_DATASET_ID;
+  const targetColumn = inferTargetColumn(dataset?.columns ?? []);
 
   for (const spec of SEED_SPECS) {
     const record = await modelRepository.create({
       projectId,
-      datasetId: await resolveDatasetId(projectId),
+      datasetId,
       name: spec.name,
       templateId: spec.templateId,
       taskType: spec.taskType,
@@ -256,7 +272,7 @@ export async function seedModels(projectId: string): Promise<ModelRecord[]> {
       metrics: spec.metrics,
       status: 'completed',
       trainingMs: 1000 + Math.floor(Math.random() * 4000),
-      targetColumn: 'target',
+      targetColumn,
       featureColumns: FEATURES,
       sampleCount: 1000,
       evaluationStatus: 'ready',

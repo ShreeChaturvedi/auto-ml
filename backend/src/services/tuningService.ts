@@ -21,6 +21,7 @@ import {
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
 
+import { inferTargetColumn } from './modelSeedService.js';
 import { getModelTemplate } from './modelTemplates.js';
 import { resolveModelTestSize } from './modelTestSize.js';
 export {
@@ -85,7 +86,20 @@ export async function runTuningStudy(
       return;
     }
 
-    // 3. Check for tunable parameters
+    // 3. Resolve target column — prefer model metadata if it exists in the dataset, else infer
+    const datasetColumnNames = dataset.columns.map((c) => c.name);
+    const modelTarget = model.targetColumn && datasetColumnNames.includes(model.targetColumn)
+      ? model.targetColumn
+      : undefined;
+    const targetColumn = modelTarget
+      ?? (dataset.columns.length > 0 ? inferTargetColumn(dataset.columns) : undefined);
+    if (!targetColumn) {
+      writeJsonLine(res, { type: 'error', message: 'Cannot determine target column for tuning.' });
+      res.end();
+      return;
+    }
+
+    // 4. Check for tunable parameters
     const tunableParams = template.parameters.filter(
       (p) => p.min !== undefined || p.options !== undefined || p.type === 'boolean'
     );
@@ -95,14 +109,14 @@ export async function runTuningStudy(
       return;
     }
 
-    // 4. Pre-compute workspace paths
+    // 5. Pre-compute workspace paths
     const workspacePath = join(env.executionWorkspaceDir, projectId, 'model-runtime');
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
-    const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
+    const tuningTimeoutMs = Math.max(timeoutSeconds * 4, timeoutSeconds + 300) * 1000;
     const testSize = resolveModelTestSize(model);
 
-    // 5. Orchestrate container execution with streaming callback
+    // 6. Orchestrate container execution with streaming callback
     const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
     const { container, executionResult: result } = await orchestrateContainerExecution({
       projectId,
@@ -111,7 +125,7 @@ export async function runTuningStudy(
         buildTuningScript({
           template,
           datasetPath: containerDatasetPath,
-          targetColumn: model.targetColumn ?? '',
+          targetColumn,
           testSize,
           nTrials,
           metric,
@@ -179,7 +193,7 @@ export async function runTuningStudy(
         metrics: { [metric]: summary.best_value },
         status: 'completed',
         trainingMs: result.executionMs,
-        targetColumn: model.targetColumn,
+        targetColumn,
         featureColumns: model.featureColumns,
         sampleCount: model.sampleCount,
         artifact: {

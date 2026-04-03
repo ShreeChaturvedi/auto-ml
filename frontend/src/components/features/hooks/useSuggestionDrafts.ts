@@ -72,7 +72,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
       setPanelError(null);
 
       if (!draft.enabled) {
-        removeFeature(item.id, { persist: false });
+        removeFeature(item.id);
         return;
       }
 
@@ -90,7 +90,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
         createdAt: featureById.get(item.id)?.createdAt ?? new Date().toISOString()
       };
 
-      upsertFeature(feature, { persist: false });
+      upsertFeature(feature);
     },
     [featureById, projectId, removeFeature, upsertFeature, setPanelError]
   );

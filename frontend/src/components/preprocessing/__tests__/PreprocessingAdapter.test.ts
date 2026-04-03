@@ -563,7 +563,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
       }
     ], 'prep-thread:test');
 
-    const tips = adapter.tipsProvider([], false);
+    const tips = adapter.tipsProvider?.([], false) ?? [];
     expect(tips.length).toBeGreaterThan(0);
     for (const tip of tips) {
       expect(typeof tip.id).toBe('string');

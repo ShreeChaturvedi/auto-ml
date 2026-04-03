@@ -65,6 +65,7 @@ export interface LeftPaneRenderProps {
   messages: ChatMessage[];
   isGenerating: boolean;
   error: string | null;
+  submitPrompt?: (prompt: string) => void;
   activeTextMessageId: string | null;
   activeThinkingMessageId: string | null;
   hydratedMessageIds: Set<string>;

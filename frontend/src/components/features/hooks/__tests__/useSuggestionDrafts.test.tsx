@@ -55,6 +55,6 @@ describe('useSuggestionDrafts', () => {
       method: 'binary_encode',
       category: 'encoding',
       enabled: true
-    }), { persist: false });
+    }));
   });
 });

@@ -255,7 +255,9 @@ export function TuneTab({ modelId }: TuneTabProps) {
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
             <div className="space-y-1">
               <p className="text-sm font-medium text-destructive">Tuning Failed</p>
-              <p className="text-sm text-muted-foreground">{errorMessage ?? 'An unknown error occurred.'}</p>
+              <pre className="mt-1 max-h-[200px] overflow-auto rounded border border-muted/50 bg-muted/30 p-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                {errorMessage ?? 'An unknown error occurred.'}
+              </pre>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">

@@ -135,11 +135,34 @@ export function TuneTab({ modelId }: TuneTabProps) {
           case 'convergence_update':
             setConvergenceStatus(event.status);
             break;
-          case 'done':
+          case 'done': {
+            // The done event carries the authoritative optimization_history
+            // from tuning_summary.json.  Stream-relayed trial_result events
+            // may be incomplete when trials finish faster than the Jupyter
+            // IOPub channel delivers stdout, so rebuild the full trial list.
+            if (event.optimization_history) {
+              const { trial_numbers, values, best_values } = event.optimization_history;
+              const fullTrials: TuningTrialEvent[] = trial_numbers.map((num, i) => ({
+                type: 'trial_result' as const,
+                trial_number: num,
+                state: 'COMPLETE' as const,
+                value: values[i],
+                params: {},
+                best_value: best_values[i],
+                best_params: event.best_params ?? {},
+                n_complete: i + 1,
+                n_total: trial_numbers.length,
+              }));
+              setTrials(fullTrials);
+              bestValueRef.current = event.best_value ?? best_values[best_values.length - 1];
+              setBestValue(bestValueRef.current);
+              setBestParams(event.best_params ?? null);
+            }
             setResultModelId(event.resultModelId ?? null);
             transitionTo('insight');
             if (projectId) await refreshModels(projectId);
             return;
+          }
           case 'error':
             setErrorMessage(event.message);
             transitionTo('error');

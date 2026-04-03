@@ -213,7 +213,13 @@ export async function runTuningStudy(
         },
       });
 
-      writeJsonLine(res, { type: 'done', resultModelId: newRecord.modelId });
+      writeJsonLine(res, {
+        type: 'done',
+        resultModelId: newRecord.modelId,
+        optimization_history: summary.optimization_history,
+        best_value: summary.best_value,
+        best_params: summary.best_params,
+      });
 
       // Cleanup workspace tuning dir
       await rm(workspaceOutputDir, { recursive: true, force: true }).catch(() => undefined);

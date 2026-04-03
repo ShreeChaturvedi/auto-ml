@@ -12,6 +12,22 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const FEATURES = ['age', 'income', 'credit_score', 'years_employed', 'debt_ratio'];
 const FALLBACK_DATASET_ID = '00000000-0000-0000-0000-000000000001';
 
+const FEATURE_TYPES: Record<string, 'float' | 'int' | 'str'> = {
+  age: 'int',
+  income: 'float',
+  credit_score: 'int',
+  years_employed: 'int',
+  debt_ratio: 'float',
+};
+
+const SAMPLE_REQUEST: Record<string, unknown> = {
+  age: 35,
+  income: 55000.0,
+  credit_score: 720,
+  years_employed: 8,
+  debt_ratio: 0.32,
+};
+
 /** Resolve the project's actual dataset ID so seeded models can be tuned. */
 async function resolveDatasetId(projectId: string): Promise<string> {
   const datasets = await datasetRepository.listByProject(projectId);
@@ -146,6 +162,22 @@ function clusteringEvaluation(metrics: Record<string, number>) {
   };
 }
 
+// -- baseline.json builder --
+
+function buildBaselineJson() {
+  return {
+    numeric: {
+      age: { mean: 38.5, std: 12.3, min: 18, max: 75, q25: 28, q50: 37, q75: 49, histogram: { bins: [18, 23.85, 29.7, 35.55, 41.4, 47.25, 53.1, 58.95, 64.8, 70.65, 75], counts: [45, 78, 120, 135, 110, 95, 72, 48, 32, 15] } },
+      income: { mean: 52000, std: 22000, min: 15000, max: 150000, q25: 35000, q50: 48000, q75: 65000, histogram: { bins: [15000, 28500, 42000, 55500, 69000, 82500, 96000, 109500, 123000, 136500, 150000], counts: [40, 95, 150, 180, 130, 85, 55, 30, 18, 7] } },
+      credit_score: { mean: 690, std: 85, min: 350, max: 850, q25: 630, q50: 700, q75: 760, histogram: { bins: [350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850], counts: [8, 15, 30, 55, 90, 140, 180, 200, 150, 82] } },
+      years_employed: { mean: 7.2, std: 5.8, min: 0, max: 35, q25: 2, q50: 6, q75: 11, histogram: { bins: [0, 3.5, 7, 10.5, 14, 17.5, 21, 24.5, 28, 31.5, 35], counts: [120, 180, 150, 130, 100, 70, 45, 25, 12, 5] } },
+      debt_ratio: { mean: 0.35, std: 0.18, min: 0, max: 0.95, q25: 0.2, q50: 0.33, q75: 0.48, histogram: { bins: [0, 0.095, 0.19, 0.285, 0.38, 0.475, 0.57, 0.665, 0.76, 0.855, 0.95], counts: [35, 70, 120, 160, 140, 110, 80, 50, 25, 10] } },
+    },
+    categorical: {},
+    prediction_distribution: { '0': 420, '1': 580 },
+  };
+}
+
 // -- shap.json builder --
 
 function buildShap(taskType: TaskType) {
@@ -219,6 +251,8 @@ export async function seedOneModel(projectId: string, options: {
     featureColumns: FEATURES,
     sampleCount: 1000,
     evaluationStatus: 'ready',
+    featureTypes: FEATURE_TYPES,
+    sampleRequest: SAMPLE_REQUEST,
   });
 
   const artifactDir = join(env.modelStorageDir, record.modelId);
@@ -235,6 +269,7 @@ export async function seedOneModel(projectId: string, options: {
   await Promise.all([
     writeFile(join(artifactDir, 'evaluation.json'), JSON.stringify(evaluation, null, 2), 'utf8'),
     writeFile(join(artifactDir, 'shap.json'), JSON.stringify(shap, null, 2), 'utf8'),
+    writeFile(join(artifactDir, 'baseline.json'), JSON.stringify(buildBaselineJson(), null, 2), 'utf8'),
   ]);
 
   return record;
@@ -260,6 +295,8 @@ export async function seedModels(projectId: string): Promise<ModelRecord[]> {
       featureColumns: FEATURES,
       sampleCount: 1000,
       evaluationStatus: 'ready',
+      featureTypes: FEATURE_TYPES,
+      sampleRequest: SAMPLE_REQUEST,
     });
 
     const artifactDir = join(env.modelStorageDir, record.modelId);
@@ -274,6 +311,7 @@ export async function seedModels(projectId: string): Promise<ModelRecord[]> {
     await Promise.all([
       writeFile(join(artifactDir, 'evaluation.json'), JSON.stringify(evaluation, null, 2), 'utf8'),
       writeFile(join(artifactDir, 'shap.json'), JSON.stringify(shap, null, 2), 'utf8'),
+      writeFile(join(artifactDir, 'baseline.json'), JSON.stringify(buildBaselineJson(), null, 2), 'utf8'),
     ]);
 
     created.push(record);

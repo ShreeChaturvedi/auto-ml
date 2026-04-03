@@ -25,7 +25,6 @@ import {
 import { getModelTemplate } from './modelTemplates.js';
 import {
   buildOutputDirSetup,
-  buildPreprocessingLines,
   buildResultSaving,
   buildStandardImports,
   buildTrainTestSplitLines,
@@ -167,11 +166,39 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('df = pd.read_csv(dataset_path)');
   lines.push('');
 
-  // ── Preprocessing (same as training) ──
-  lines.push(...buildPreprocessingLines({
-    targetColumn,
-    validateColumnExists: true,
-  }));
+  // ── Extract target + build preprocessor (Pipeline-based) ──
+  lines.push(`target_col = ${JSON.stringify(targetColumn)}`);
+  lines.push('if target_col not in df.columns:');
+  lines.push('    raise ValueError(f"Target column {target_col} not found in dataset.")');
+  lines.push('df = df.dropna(subset=[target_col])');
+  lines.push('y = df[target_col]');
+  lines.push('X = df.drop(columns=[target_col])');
+  lines.push('');
+  lines.push('# Identify column types');
+  lines.push('numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()');
+  lines.push('categorical_cols = [col for col in X.columns if col not in numeric_cols]');
+  lines.push('feature_columns = numeric_cols + categorical_cols  # pre-encoding names');
+  lines.push('');
+  lines.push('# Build preprocessor ONCE (reused across trials)');
+  lines.push('from sklearn.pipeline import Pipeline as SkPipeline');
+  lines.push('from sklearn.compose import ColumnTransformer');
+  lines.push('from sklearn.preprocessing import StandardScaler, OneHotEncoder');
+  lines.push('from sklearn.impute import SimpleImputer');
+  lines.push('');
+  lines.push("numeric_pipeline = SkPipeline([");
+  lines.push("    ('imputer', SimpleImputer(strategy='median')),");
+  lines.push("    ('scaler', StandardScaler())");
+  lines.push("])");
+  lines.push("categorical_pipeline = SkPipeline([");
+  lines.push("    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),");
+  lines.push("    ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))");
+  lines.push("])");
+  lines.push('transformers = []');
+  lines.push('if numeric_cols:');
+  lines.push("    transformers.append(('num', numeric_pipeline, numeric_cols))");
+  lines.push('if categorical_cols:');
+  lines.push("    transformers.append(('cat', categorical_pipeline, categorical_cols))");
+  lines.push("preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')");
   lines.push('');
 
   // ── Train/test split ──
@@ -202,8 +229,9 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   }
 
   const randomStateSuffix = 'random_state' in template.defaultParams ? ', random_state=42' : '';
-  lines.push(`    model = ${template.modelClass}(**params${randomStateSuffix})`);
-  lines.push(`    scores = cross_val_score(model, X_train, y_train, cv=5, scoring=${JSON.stringify(sklearnScoring)})`);
+  lines.push(`    estimator = ${template.modelClass}(**params${randomStateSuffix})`);
+  lines.push("    trial_pipeline = SkPipeline([('preprocessor', preprocessor), ('model', estimator)])");
+  lines.push(`    scores = cross_val_score(trial_pipeline, X_train, y_train, cv=5, scoring=${JSON.stringify(sklearnScoring)})`);
   lines.push('    return scores.mean()');
   lines.push('');
 
@@ -258,13 +286,14 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   // ── Refit best model on full train set ──
   lines.push('best_params = study.best_params');
-  lines.push(`best_model = ${template.modelClass}(**best_params${randomStateSuffix})`);
-  lines.push('best_model.fit(X_train, y_train)');
+  lines.push(`best_estimator = ${template.modelClass}(**best_params${randomStateSuffix})`);
+  lines.push("best_pipeline = SkPipeline([('preprocessor', preprocessor), ('model', best_estimator)])");
+  lines.push('best_pipeline.fit(X_train, y_train)');
   lines.push('');
 
   // ── Save artifacts ──
   lines.push(...buildOutputDirSetup(outputDir));
-  lines.push('joblib.dump(best_model, os.path.join(output_dir, "model.joblib"))');
+  lines.push('joblib.dump(best_pipeline, os.path.join(output_dir, "model.joblib"))');
   lines.push('');
 
   // ── Param importances (best-effort) ──
@@ -300,7 +329,8 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push(`    "best_value": ${negated ? 'abs(study.best_value)' : 'study.best_value'},`);
   lines.push('    "best_trial_number": study.best_trial.number,');
   lines.push('    "optimization_history": optimization_history,');
-  lines.push('    "param_importances": param_importances');
+  lines.push('    "param_importances": param_importances,');
+  lines.push('    "feature_columns": feature_columns');
   lines.push('}');
   lines.push(
     ...buildResultSaving('output_dir', {
@@ -431,6 +461,7 @@ export async function runTuningStudy(
         best_trial_number: number;
         optimization_history: { trial_numbers: number[]; values: number[]; best_values: number[] };
         param_importances: { params?: string[]; importances?: number[] };
+        feature_columns?: string[];
       };
 
       // Create new model ID and copy artifacts to permanent storage
@@ -458,7 +489,9 @@ export async function runTuningStudy(
         status: 'completed',
         trainingMs: result.executionMs,
         targetColumn: model.targetColumn,
-        featureColumns: model.featureColumns,
+        featureColumns: summary.feature_columns ?? model.featureColumns,
+        featureTypes: model.featureTypes,
+        sampleRequest: model.sampleRequest,
         sampleCount: model.sampleCount,
         artifact: {
           filename: 'model.joblib',

@@ -127,8 +127,7 @@ export function useFeatureVersioning({
   const handleNewDraft = useCallback(() => {
     createDraftVersion(projectId, 'New Draft Pipeline');
     clearProjectFeatures(projectId);
-    clearEphemeralState();
-  }, [clearProjectFeatures, createDraftVersion, projectId, clearEphemeralState]);
+  }, [clearProjectFeatures, createDraftVersion, projectId]);
 
   // --- Core delete logic (shared by toolbar dialog + sidebar handler) ---
   const deleteDraftById = useCallback((versionId: string): string | undefined => {
@@ -172,7 +171,6 @@ export function useFeatureVersioning({
     if (!currentVersion || currentVersion.status !== 'draft') return;
     setDeleteDialogOpen(false);
     deleteDraftById(currentVersion.id);
-    // Ephemeral state cleared by the prevVersionIdRef effect when currentVersionId changes
   }, [currentVersion, deleteDraftById]);
 
   // --- Rename with shadcn Dialog ---

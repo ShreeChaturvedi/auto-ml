@@ -80,9 +80,9 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
   setDeleteHandler: (phase, handler) =>
     set((state) => {
       if (handler === null) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [phase]: _removed, ...rest } = state.deleteHandlers;
-        return { deleteHandlers: rest };
+        const next = { ...state.deleteHandlers };
+        delete next[phase];
+        return { deleteHandlers: next };
       }
       return { deleteHandlers: { ...state.deleteHandlers, [phase]: handler } };
     })

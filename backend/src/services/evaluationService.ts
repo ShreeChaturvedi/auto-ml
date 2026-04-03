@@ -9,6 +9,7 @@ import {
   copyArtifactsToPermanentStorage,
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
+import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import { resolveModelTestSize } from './modelTestSize.js';
 import {
@@ -376,9 +377,6 @@ export async function runEvaluation(modelId: string): Promise<void> {
     if (!model.artifact?.path) {
       throw new Error('Model has no artifact path');
     }
-    if (!model.targetColumn) {
-      throw new Error('Model has no target column (clustering models are not evaluated)');
-    }
     if (model.taskType === 'clustering') {
       throw new Error('Clustering models do not support evaluation');
     }
@@ -389,12 +387,15 @@ export async function runEvaluation(modelId: string): Promise<void> {
       throw new Error('Dataset not found');
     }
 
-    // 5. Pre-compute workspace paths (same pattern as containerOrchestrator)
+    // 5. Resolve target column (heals stale metadata)
+    const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
+
+    // 6. Pre-compute workspace paths (same pattern as containerOrchestrator)
     const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
     const workspaceModelPath = join(workspacePath, 'models', modelId, 'model.joblib');
     const testSize = resolveModelTestSize(model);
 
-    // 6. Orchestrate container execution
+    // 7. Orchestrate container execution
     const { container, executionResult } = await orchestrateContainerExecution({
       projectId: model.projectId,
       pythonVersion: '3.11',
@@ -404,7 +405,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
           datasetPath: `/workspace/datasets/${dataset.filename}`,
           outputDir: `/workspace/eval/${modelId}`,
           taskType: model.taskType as 'classification' | 'regression',
-          targetColumn: model.targetColumn!,
+          targetColumn,
           testSize,
         }),
       filesToCopy: [
@@ -417,12 +418,12 @@ export async function runEvaluation(modelId: string): Promise<void> {
       containerOutputDir: `/workspace/eval/${modelId}`,
     });
 
-    // 7. Check execution result
+    // 8. Check execution result
     if (executionResult.status !== 'success') {
       throw new Error(executionResult.stderr || executionResult.error || 'Evaluation execution failed');
     }
 
-    // 8. Copy artifacts to permanent storage
+    // 9. Copy artifacts to permanent storage
     await copyArtifactsToPermanentStorage(modelId, container, [
       {
         workspace: `eval/${modelId}/evaluation.json`,
@@ -440,7 +441,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
       },
     ]);
 
-    // 9. Set evaluationStatus = 'ready'
+    // 10. Set evaluationStatus = 'ready'
     await modelRepository.update(modelId, (current) => ({
       ...current,
       evaluationStatus: 'ready' as const,

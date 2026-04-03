@@ -5,15 +5,18 @@ import { Router, type Response } from 'express';
 import { env } from '../config.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireDeploymentOwnership, type DeploymentAuthRequest } from '../middleware/requireDeploymentOwnership.js';
+import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createDeploymentRepository } from '../repositories/deploymentRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import * as deploymentManager from '../services/deploymentManager.js';
 import type { AuthRequest } from '../types/auth.js';
 import { loadModelFile } from '../utils/modelFileLoader.js';
+import { resolveTargetColumn } from '../utils/modelUtils.js';
 
 export function createDeploymentsRouter(): Router {
   const router = Router();
   const deploymentRepo = createDeploymentRepository();
+  const datasetRepo = createDatasetRepository(env.datasetMetadataPath);
   const modelRepo = createModelRepository(env.modelMetadataPath);
 
   // POST / — Create deployment
@@ -68,6 +71,12 @@ export function createDeploymentsRouter(): Router {
     const model = await modelRepo.getById(deployment.modelId);
     if (!model) { res.status(404).json({ error: 'Model not found' }); return; }
 
+    // Resolve target column against dataset schema
+    const dataset = await datasetRepo.getById(model.datasetId);
+    const targetColumn = dataset
+      ? resolveTargetColumn(model, dataset.columns)
+      : model.targetColumn ?? '';
+
     // Load evaluation.json and baseline.json from model artifacts
     const modelDir = join(env.modelStorageDir, model.modelId);
     const [evalRaw, baselineRaw] = await Promise.all([
@@ -113,7 +122,7 @@ export function createDeploymentsRouter(): Router {
       featureTypes: model.featureTypes ?? {},
       sampleRequest: model.sampleRequest ?? {},
       taskType: model.taskType,
-      targetColumn: model.targetColumn ?? '',
+      targetColumn,
       featureImportance: buildFeatureImportanceArray(fi),
       classLabels,
       metrics: model.metrics,

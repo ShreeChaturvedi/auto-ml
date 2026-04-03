@@ -29,6 +29,7 @@ vi.mock('../../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
     getById: hoisted.mockModelGetById,
     create: hoisted.mockModelCreate,
+    update: vi.fn(),
   }),
 }));
 
@@ -477,7 +478,12 @@ describe('buildTuningScript', () => {
 // -- runTuningStudy -----------------------------------------------------------
 
 describe('runTuningStudy', () => {
-  const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
+  const dataset = {
+    datasetId: 'test-dataset',
+    filename: 'data.csv',
+    projectId: 'test-project',
+    columns: [{ name: 'feat1' }, { name: 'feat2' }, { name: 'target' }],
+  };
 
   function setupRunMocks(model = makeModelRecord()) {
     const template = makeTemplate();

@@ -21,6 +21,7 @@ import {
   copyArtifactsToPermanentStorage,
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
+import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import { getModelTemplate } from './modelTemplates.js';
 import {
@@ -394,7 +395,10 @@ export async function runTuningStudy(
       return;
     }
 
-    // 3. Check for tunable parameters
+    // 3. Resolve target column (heals stale metadata)
+    const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
+
+    // 4. Check for tunable parameters
     const tunableParams = template.parameters.filter(
       (p) => p.min !== undefined || p.options !== undefined || p.type === 'boolean'
     );
@@ -404,13 +408,13 @@ export async function runTuningStudy(
       return;
     }
 
-    // 4. Pre-compute workspace paths
+    // 5. Pre-compute workspace paths
     const workspacePath = join(env.executionWorkspaceDir, projectId, 'model-runtime');
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
     const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
 
-    // 5. Orchestrate container execution with streaming callback
+    // 6. Orchestrate container execution with streaming callback
     const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
     const { container, executionResult: result } = await orchestrateContainerExecution({
       projectId,
@@ -419,7 +423,7 @@ export async function runTuningStudy(
         buildTuningScript({
           template,
           datasetPath: containerDatasetPath,
-          targetColumn: model.targetColumn ?? '',
+          targetColumn,
           testSize: 0.2,
           nTrials,
           metric,
@@ -449,7 +453,7 @@ export async function runTuningStudy(
       },
     });
 
-    // 6. On success — register the best model as a new ModelRecord
+    // 7. On success — register the best model as a new ModelRecord
     const workspaceOutputDir = join(workspacePath, 'tuning', modelId);
     const summaryPath = join(workspaceOutputDir, 'tuning_summary.json');
 
@@ -488,7 +492,7 @@ export async function runTuningStudy(
         metrics: { [metric]: summary.best_value },
         status: 'completed',
         trainingMs: result.executionMs,
-        targetColumn: model.targetColumn,
+        targetColumn,
         featureColumns: summary.feature_columns ?? model.featureColumns,
         featureTypes: model.featureTypes,
         sampleRequest: model.sampleRequest,

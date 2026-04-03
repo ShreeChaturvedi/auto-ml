@@ -5,6 +5,7 @@ import { env } from '../config.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord } from '../types/model.js';
+import { inferTargetColumn } from '../utils/modelUtils.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
@@ -34,13 +35,7 @@ async function resolveDataset(projectId: string) {
   return datasets.length > 0 ? datasets[0] : undefined;
 }
 
-/** Infer target column: explicit "target" column, else last column (standard ML convention). */
-export function inferTargetColumn(columns: { name: string }[]): string {
-  if (columns.length === 0) return 'target';
-  const explicit = columns.find((c) => c.name.toLowerCase() === 'target');
-  if (explicit) return explicit.name;
-  return columns[columns.length - 1].name;
-}
+export { inferTargetColumn } from '../utils/modelUtils.js';
 
 type TaskType = 'classification' | 'regression' | 'clustering';
 

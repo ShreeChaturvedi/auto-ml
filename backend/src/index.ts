@@ -5,8 +5,10 @@ import { env } from './config.js';
 import { hasDatabaseConfiguration, verifyDatabaseConnection } from './db.js';
 import { appLogger } from './logging/logger.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
+import { setDeploymentWSBroadcast, recoverDeployments, startHealthCheckLoop, destroyAllDeploymentContainers } from './services/deploymentManager.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
+import { initializeDeploymentWebSocket, broadcastDeploymentEvent, getDeploymentWSServer } from './services/websocket/deploymentWsServer.js';
 import { initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
 
 const app = createApp();
@@ -23,8 +25,16 @@ setCellExecutionBroadcast(broadcastNotebookEvent);
 
 // Deployment services (requires Postgres)
 if (hasDatabaseConfiguration()) {
-  appLogger.info('[server] Deployment services enabled (DATABASE_URL configured)');
-  // DeploymentManager and DeploymentWSServer will be initialized here in Phase C
+  initializeDeploymentWebSocket(server);
+  setDeploymentWSBroadcast(broadcastDeploymentEvent);
+
+  // Recover deployment state from DB and start health check loop
+  recoverDeployments().then(() => {
+    startHealthCheckLoop();
+    appLogger.info('[server] Deployment services started');
+  }).catch(err => {
+    appLogger.error('[server] Failed to recover deployments', err);
+  });
 }
 
 // Track if shutdown is in progress to prevent double-handling
@@ -43,10 +53,13 @@ async function shutdown(signal: string): Promise<void> {
 
   // Stop accepting new WebSocket connections
   wsServer.close();
+  if (hasDatabaseConfiguration()) {
+    getDeploymentWSServer()?.close();
+  }
 
   // Destroy all active containers
   await destroyAllContainers();
-  // Deployment container cleanup will be added here
+  await destroyAllDeploymentContainers();
 
   // Close HTTP server
   server.close(() => {

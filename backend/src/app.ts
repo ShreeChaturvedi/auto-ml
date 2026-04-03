@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Socket } from 'node:net';
 
 import cors from 'cors';
 import express, { type NextFunction, Request, Response, Router } from 'express';
@@ -118,7 +119,8 @@ export function createApp() {
               }
             });
           },
-          error: (_err: Error, _req: IncomingMessage, res: ServerResponse) => {
+          error: (_err: Error, _req: IncomingMessage, res: ServerResponse | Socket) => {
+            if (!('writeHead' in res)) return;
             if (!res.headersSent) {
               res.writeHead(502, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: 'Deployment unavailable' }));

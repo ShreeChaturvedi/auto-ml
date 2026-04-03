@@ -6,7 +6,6 @@
  * proxy, with crash-safe DB persistence and periodic health checking.
  */
 
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -162,11 +161,7 @@ async function updateDeploymentStatus(
 ): Promise<void> {
   try {
     const repo = await getDeploymentRepo();
-    await repo.update(deploymentId, (current: DeploymentRecord) => ({
-      ...current,
-      status,
-      ...extra,
-    }));
+    await repo.update(deploymentId, { status, ...extra });
   } catch (err) {
     appLogger.error(`${LOG_TAG} Failed to update deployment status in DB`, { deploymentId, status, err });
   }
@@ -201,7 +196,7 @@ async function deployModelInternal(
 ): Promise<DeploymentRecord> {
   // 1. Check deployment limit
   const repo = await getDeploymentRepo();
-  const projectDeployments: DeploymentRecord[] = await repo.list(projectId);
+  const projectDeployments: DeploymentRecord[] = await repo.listByProject(projectId);
   const activeCount = projectDeployments.filter(
     (d: DeploymentRecord) => d.status !== 'stopped' && d.status !== 'failed',
   ).length;
@@ -220,27 +215,21 @@ async function deployModelInternal(
     throw new Error('Model has no artifact — train the model before deploying');
   }
 
-  // 3. Generate serve.py
-  const servePy = buildInferenceServerScript(model);
-
-  // 4. Write serve.py to deployment storage
-  const deploymentId = randomUUID();
-  const deploymentDir = join(env.deploymentStorageDir, deploymentId);
-  await mkdir(deploymentDir, { recursive: true });
-  await writeFile(join(deploymentDir, 'serve.py'), servePy, 'utf8');
-
-  // 5. Write 'creating' row to DB BEFORE docker run (crash safety)
-  const now = new Date().toISOString();
+  // 3. Write 'creating' row to DB BEFORE anything else (crash safety)
   let record: DeploymentRecord = await repo.create({
-    deploymentId,
     modelId,
     projectId,
     name,
     status: 'creating' as DeploymentStatus,
     config: {},
-    createdAt: now,
-    updatedAt: now,
   });
+  const deploymentId = record.deploymentId;
+
+  // 4. Generate serve.py and write to deployment storage
+  const servePy = buildInferenceServerScript(model);
+  const deploymentDir = join(env.deploymentStorageDir, deploymentId);
+  await mkdir(deploymentDir, { recursive: true });
+  await writeFile(join(deploymentDir, 'serve.py'), servePy, 'utf8');
 
   try {
     // 6. Ensure runtime image
@@ -503,7 +492,7 @@ export async function recoverDeployments(): Promise<void> {
     return;
   }
 
-  const all: DeploymentRecord[] = await repo.listAll();
+  const all: DeploymentRecord[] = await repo.listNonStopped();
   const active = all.filter(
     (d: DeploymentRecord) => d.status !== 'stopped' && d.status !== 'failed',
   );

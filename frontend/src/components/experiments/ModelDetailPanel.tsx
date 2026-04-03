@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, useLayoutEffect, useCallback } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Dialog, DialogPortal, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogPortal, DialogOverlay, DialogTitle, DialogContent, DialogHeader, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Download, RefreshCcw, Clock, X } from 'lucide-react';
+import { Download, RefreshCcw, Clock, Rocket, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { useDeploymentStore } from '@/stores/deploymentStore';
 import { getModelArtifactUrl } from '@/lib/api/models';
 import { cn } from '@/lib/utils';
 import { resolveModelIcon, TASK_TEXT_STYLES, TASK_LABELS, METRIC_ICONS } from './modelIcons';
@@ -93,6 +98,33 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const { themeColor } = useProjectThemeColor();
   const prefersReducedMotion = usePrefersReducedMotion();
   const tabBarRef = useRef<HTMLDivElement | null>(null);
+
+  const [deployOpen, setDeployOpen] = useState(false);
+  const [deployName, setDeployName] = useState('');
+  const [deploying, setDeploying] = useState(false);
+  const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
+  const completePhase = useProjectStore((s) => s.completePhase);
+  const deploy = useDeploymentStore((s) => s.deploy);
+
+  useEffect(() => {
+    if (deployOpen && model) setDeployName(`${model.name} endpoint`);
+  }, [deployOpen, model]);
+
+  async function handleDeploy() {
+    if (!model || !projectId) return;
+    setDeploying(true);
+    try {
+      await deploy(model.modelId, projectId, deployName);
+      completePhase(projectId, 'experiments');
+      setDeployOpen(false);
+      navigate(`/project/${projectId}/deployment`);
+    } catch {
+      // Error stored in deploymentStore
+    } finally {
+      setDeploying(false);
+    }
+  }
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
@@ -216,6 +248,17 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
                 </Tooltip>
               )}
 
+              {model.taskType !== 'clustering' && model.evaluationStatus === 'ready' && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => setDeployOpen(true)}>
+                      <Rocket className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Deploy model</TooltipContent>
+                </Tooltip>
+              )}
+
               <ToolbarDivider />
 
               <Button variant="ghost" size="icon" className={iconBtnCls} onClick={onClose}>
@@ -289,6 +332,41 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
           </div>
         </DialogPrimitive.Content>
       </DialogPortal>
+
+      <Dialog open={deployOpen} onOpenChange={setDeployOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-4 w-4" />
+              Deploy model
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="deploy-model-name">Model</Label>
+              <Input id="deploy-model-name" value={model.name} readOnly className="bg-muted/30 text-muted-foreground" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="deploy-endpoint-name">Deployment name</Label>
+              <Input
+                id="deploy-endpoint-name"
+                value={deployName}
+                onChange={(e) => setDeployName(e.target.value)}
+                placeholder="e.g. my-model-endpoint"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm" disabled={deploying}>Cancel</Button>
+            </DialogClose>
+            <Button size="sm" disabled={!deployName.trim() || deploying} onClick={handleDeploy}>
+              {deploying ? 'Deploying…' : 'Deploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

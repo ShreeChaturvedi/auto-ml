@@ -184,6 +184,11 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   lines.push(`study = optuna.create_study(direction=${JSON.stringify(direction)}, sampler=sampler)`);
   lines.push(`study.optimize(objective, n_trials=${nTrials}, timeout=${timeoutSeconds}, callbacks=[stream_callback])`);
+  lines.push('try:');
+  lines.push('    _final_imp = optuna.importance.get_param_importances(study)');
+  lines.push("    print(json.dumps({'type': 'importance_update', 'importances': dict(_final_imp), 'n_trials_used': len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}), flush=True)");
+  lines.push('except Exception:');
+  lines.push('    pass');
   lines.push('');
 
   lines.push('best_params = study.best_params');

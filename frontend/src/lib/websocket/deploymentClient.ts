@@ -10,10 +10,12 @@ export class DeploymentWSClient {
   private listeners: Set<EventCallback> = new Set();
   private _isConnecting = false;
   private _isConnected = false;
+  private _intentionalClose = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private pingInterval: NodeJS.Timeout | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(baseUrl?: string) {
     const apiBase = baseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
@@ -28,6 +30,7 @@ export class DeploymentWSClient {
     return new Promise((resolve, reject) => {
       if (this.ws?.readyState === WebSocket.OPEN) { resolve(); return; }
       if (this._isConnecting) { resolve(); return; }
+      this._intentionalClose = false;
       this._isConnecting = true;
 
       const token = useAuthStore.getState().accessToken;
@@ -56,7 +59,9 @@ export class DeploymentWSClient {
         this._isConnecting = false;
         this._isConnected = false;
         this.stopPing();
-        this.maybeReconnect();
+        if (!this._intentionalClose) {
+          this.maybeReconnect();
+        }
       };
 
       this.ws.onerror = () => {
@@ -84,9 +89,14 @@ export class DeploymentWSClient {
   }
 
   disconnect() {
+    this._intentionalClose = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.subscribedDeployment = null;
     this.stopPing();
-    this.reconnectAttempts = this.maxReconnectAttempts; // prevent reconnect
+    this.reconnectAttempts = this.maxReconnectAttempts;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -118,7 +128,10 @@ export class DeploymentWSClient {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    setTimeout(() => { this.connect().catch(() => {}); }, delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch(() => {});
+    }, delay);
   }
 }
 

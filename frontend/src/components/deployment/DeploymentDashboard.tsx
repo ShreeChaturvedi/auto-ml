@@ -9,7 +9,7 @@ import { DeploymentEmptyState } from './DeploymentEmptyState';
 
 export function DeploymentDashboard() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { deployments, selectedDeploymentId, isLoading, refreshDeployments, updateDeploymentStatus } =
+  const { deployments, selectedDeploymentId, isLoading, refreshDeployments } =
     useDeploymentStore();
   const refreshModels = useModelStore(s => s.refreshModels);
 
@@ -21,29 +21,33 @@ export function DeploymentDashboard() {
     }
   }, [projectId, refreshDeployments, refreshModels]);
 
-  // WebSocket connection
+  // WebSocket connection — lifecycle only, runs once
   useEffect(() => {
     const wsClient = getDeploymentWSClient();
     wsClient.connect().catch(() => {});
 
     const unsubscribe = wsClient.onEvent((event) => {
       if (event.type === 'status_change') {
-        updateDeploymentStatus(event.deploymentId, event.status, event.errorMessage);
+        useDeploymentStore.getState().updateDeploymentStatus(event.deploymentId, event.status, event.errorMessage);
       }
       if (event.type === 'health_update' && event.healthy) {
-        updateDeploymentStatus(event.deploymentId, 'healthy');
+        useDeploymentStore.getState().updateDeploymentStatus(event.deploymentId, 'healthy');
       }
     });
-
-    if (selectedDeploymentId) {
-      wsClient.subscribe(selectedDeploymentId);
-    }
 
     return () => {
       unsubscribe();
       wsClient.disconnect();
     };
-  }, [selectedDeploymentId, updateDeploymentStatus]);
+  }, []);
+
+  // WebSocket subscription — reacts to selection changes without tearing down the connection
+  useEffect(() => {
+    if (!selectedDeploymentId) return;
+    const wsClient = getDeploymentWSClient();
+    wsClient.subscribe(selectedDeploymentId);
+    return () => { wsClient.unsubscribe(selectedDeploymentId); };
+  }, [selectedDeploymentId]);
 
   // Reconnect on visibility change
   useEffect(() => {

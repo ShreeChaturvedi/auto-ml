@@ -60,7 +60,12 @@ export interface PreprocessingCellMetadataStore {
 }
 
 export interface PreprocessingCellInspector {
-  read(cellId: string): Promise<{ cellId: string; content: string; metadata: Record<string, unknown> } | undefined>;
+  read(cellId: string): Promise<{
+    cellId: string;
+    notebookId?: string;
+    content: string;
+    metadata: Record<string, unknown>;
+  } | undefined>;
 }
 
 export interface ToolContext {

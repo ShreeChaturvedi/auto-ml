@@ -11,6 +11,17 @@ import { resolveDatasetSyncMode, type DatasetSyncMode } from './datasetSyncMode.
 import { getDatasetPaths, copyDatasetsToWorkspace } from './datasetWorkspace.js';
 import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
 
+function shouldRetryMissingPreprocessingHelper(cellContent: string, errorMessage: string): boolean {
+  if (!cellContent.includes('load_preprocessing_dataset(') && !cellContent.includes('save_preprocessing_dataset(')) {
+    return false;
+  }
+
+  return /NameError: name 'load_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /NameError: name 'save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /load_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /save_preprocessing_dataset' is not defined/i.test(errorMessage);
+}
+
 export async function getOrEnsureContainer(projectId: string): Promise<Container> {
   const datasetPaths = await getDatasetPaths(projectId);
   return getOrCreateContainer({
@@ -83,9 +94,32 @@ export async function executeCell(
 
     // Cell content is executed as-is — preprocessing cells already include
     // visible load/save helper calls in their content, so no wrapping needed.
-    const result = await kernelManager.execute(container, cell.content, env.executionTimeoutMs, (output) => {
-      broadcast(cell.notebookId, 'cell:output', { cellId, output });
-    });
+    const runKernelExecution = () => kernelManager.execute(
+      container,
+      cell.content,
+      env.executionTimeoutMs,
+      (output) => {
+        broadcast(cell.notebookId, 'cell:output', { cellId, output });
+      }
+    );
+
+    let result: ExecutionResult;
+    try {
+      result = await runKernelExecution();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!shouldRetryMissingPreprocessingHelper(cell.content, errorMessage)) {
+        throw error;
+      }
+
+      await kernelManager.restartKernel(container);
+      result = await runKernelExecution();
+    }
+
+    if (result.status === 'error' && shouldRetryMissingPreprocessingHelper(cell.content, result.error ?? result.stderr ?? '')) {
+      await kernelManager.restartKernel(container);
+      result = await runKernelExecution();
+    }
 
     // Calculate execution time
     const executionMs = Date.now() - startTime;

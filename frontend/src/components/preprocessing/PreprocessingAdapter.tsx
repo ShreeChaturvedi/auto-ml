@@ -71,7 +71,9 @@ export function createPreprocessingAdapter(
           if (derivedDatasetId) {
             const { tables } = usePreprocessingStore.getState();
             if (tables.some((t) => t.datasetId === derivedDatasetId)) {
-              usePreprocessingStore.getState().selectDataset(derivedDatasetId);
+              usePreprocessingStore.getState().selectDataset(derivedDatasetId, {
+                preserveRunState: true
+              });
             }
           }
         });

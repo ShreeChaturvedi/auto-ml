@@ -10,7 +10,7 @@ export interface DatasetConfigState {
   isLoadingTables: boolean;
   error: string | null;
   loadTables: (projectId: string) => Promise<void>;
-  selectDataset: (datasetId: string) => void;
+  selectDataset: (datasetId: string, options?: { preserveRunState?: boolean }) => void;
 }
 
 export const createDatasetConfigSlice: StateCreator<
@@ -85,12 +85,19 @@ export const createDatasetConfigSlice: StateCreator<
     }
   },
 
-  selectDataset: (datasetId: string) => {
+  selectDataset: (datasetId: string, options?: { preserveRunState?: boolean }) => {
     set((state: PreprocessingState) => {
       const exists = state.tables.some((table: AvailableTable) => table.datasetId === datasetId);
       if (!exists) {
         return {
           error: 'Selected dataset is unavailable in this project. Please choose another dataset.'
+        };
+      }
+
+      if (options?.preserveRunState) {
+        return {
+          selectedDatasetId: datasetId,
+          error: null
         };
       }
 

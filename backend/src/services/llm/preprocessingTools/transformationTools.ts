@@ -20,9 +20,71 @@ import {
 } from './helpers.js';
 import type { ToolContext, ToolHandler } from './types.js';
 
+async function recoverStrandedBlockingStep(
+  ctx: ToolContext,
+  blockingStep: import('./types.js').StepState
+): Promise<boolean> {
+  if (blockingStep.status !== 'pending' || blockingStep.cellIds.length === 0) {
+    return false;
+  }
+
+  const currentNotebookId = asString(ctx.args.notebookId);
+  const inspectedCells = await Promise.all(
+    blockingStep.cellIds.map(async (cellId) => ({
+      cellId,
+      cell: await ctx.cellInspector.read(cellId)
+    }))
+  );
+  const liveCellIds = inspectedCells
+    .filter((entry) => entry.cell)
+    .filter((entry) => !currentNotebookId || entry.cell?.notebookId === currentNotebookId)
+    .map((entry) => entry.cellId);
+
+  const timestamp = nowIso();
+  if (liveCellIds.length === 0) {
+    blockingStep.status = 'failed';
+    blockingStep.lastExecuteSucceeded = false;
+    blockingStep.lastValidateSucceeded = false;
+    blockingStep.decisionReason = currentNotebookId
+      ? 'Recovered stale pending preprocessing step whose bound notebook cells no longer belong to the active workbook.'
+      : 'Recovered stale pending preprocessing step with no live notebook cells.';
+    if (blockingStep.approvalDecision === 'pending') {
+      blockingStep.approvalDecision = 'rejected';
+    }
+    blockingStep.updatedAt = timestamp;
+    appendEvent(ctx.run, {
+      eventId: randomUUID(),
+      runId: ctx.run.runId,
+      type: 'run_interrupted',
+      stepId: blockingStep.stepId,
+      payload: {
+        toolCallId: ctx.toolCallId,
+        source: 'stale_incomplete_step_recovered',
+        interruptedStepIds: [blockingStep.stepId],
+        notebookId: currentNotebookId
+      }
+    });
+    await ctx.runRepository.save(ctx.run);
+    return true;
+  }
+
+  if (liveCellIds.length !== blockingStep.cellIds.length) {
+    blockingStep.cellIds = liveCellIds;
+    blockingStep.updatedAt = timestamp;
+    await ctx.runRepository.save(ctx.run);
+  }
+
+  return false;
+}
+
 export const proposeTransformationStep: ToolHandler = async (ctx: ToolContext) => {
   const { run, args, toolCallId, runRepository } = ctx;
   const requestedStepId = asString(args.stepId);
+  const initialBlockingStep = findIncompleteBlockingStep(run, requestedStepId);
+  if (initialBlockingStep) {
+    await recoverStrandedBlockingStep(ctx, initialBlockingStep);
+  }
+
   const blockingStep = findIncompleteBlockingStep(run, requestedStepId);
   if (blockingStep) {
     return fail(
@@ -133,7 +195,10 @@ export const executeTransformationStep: ToolHandler = async (ctx: ToolContext) =
   }
 
   const singleCellId = asString(args.cellId);
-  const providedCells = mergeUniqueStrings(step.cellIds, toStringArray(args.cellIds), singleCellId ? [singleCellId] : []);
+  const explicitCellIds = mergeUniqueStrings(toStringArray(args.cellIds), singleCellId ? [singleCellId] : []);
+  const providedCells = explicitCellIds.length > 0
+    ? explicitCellIds
+    : mergeUniqueStrings(step.cellIds, singleCellId ? [singleCellId] : []);
   const succeeded = asBoolean(args.succeeded) ?? true;
   step.cellIds = providedCells;
   step.toolCallId = toolCallId ?? step.toolCallId;

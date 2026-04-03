@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { env } from '../../../config.js';
 import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
@@ -53,6 +54,14 @@ interface RunCellResultContext {
   status?: string;
   stdout?: string;
   stderr?: string;
+  error?: string;
+}
+
+interface NotebookExecutionSnapshot {
+  status?: string;
+  stdout: string;
+  stderr: string;
+  cellId?: string;
 }
 
 const PREPROCESSING_CELL_MARKER_RE = /^\s*#\s*(?:cell\b.*|%%.*)$/i;
@@ -141,7 +150,8 @@ function extractRunCellResults(toolResults: ToolResult[]): RunCellResultContext[
       cellId: extractLatestCellId([result]) ?? undefined,
       status: typeof output?.status === 'string' ? output.status : undefined,
       stdout: typeof output?.stdout === 'string' ? output.stdout : undefined,
-      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined
+      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined,
+      error: typeof output?.error === 'string' ? output.error : result.error
     });
   }
   return results;
@@ -169,39 +179,113 @@ function summarizeNotebookCellOutputs(outputs: Array<{ type: string; content: st
   return { stdout, stderr };
 }
 
-async function resolveNotebookExecutionOutcome(cellIds: string[]): Promise<RunCellResultContext | null> {
-  for (let index = cellIds.length - 1; index >= 0; index -= 1) {
-    const cellId = cellIds[index];
+async function resolveNotebookExecutionSnapshot(cellIds: string[]): Promise<NotebookExecutionSnapshot | null> {
+  const statuses: string[] = [];
+  const stdoutParts: string[] = [];
+  const stderrParts: string[] = [];
+  let latestCellId: string | undefined;
+
+  for (const cellId of cellIds) {
     try {
       const cell = await notebookService.readCell(cellId);
-      const status = cell.executionStatus === 'success'
-        ? 'success'
-        : cell.executionStatus === 'error'
-          ? 'error'
-          : undefined;
+      latestCellId = cellId;
+      const hasErrorOutput = (cell.output ?? []).some((output) => output?.type === 'error');
+      const hasVisibleOutput = (cell.output ?? []).length > 0 || (cell.outputRefs ?? []).length > 0;
+      const hasObservedExecution = Boolean(
+        cell.executedAt
+        || cell.executionOrder != null
+        || cell.executionCount != null
+        || hasVisibleOutput
+      );
+      if (cell.executionStatus) {
+        statuses.push(cell.executionStatus);
+      } else if (hasErrorOutput) {
+        statuses.push('error');
+      } else if (hasObservedExecution) {
+        statuses.push('success');
+      }
       const { stdout, stderr } = summarizeNotebookCellOutputs(
         (cell.output ?? [])
           .filter((output): output is { type: string; content: string } =>
             Boolean(output) && typeof output.type === 'string' && typeof output.content === 'string')
       );
-
-      if (!status && !stdout && !stderr) {
-        continue;
+      if (stdout) {
+        stdoutParts.push(stdout);
       }
-
-      return {
-        tool: 'run_cell',
-        cellId,
-        status,
-        stdout,
-        stderr
-      };
+      if (stderr) {
+        stderrParts.push(stderr);
+      }
     } catch {
       continue;
     }
   }
 
-  return null;
+  if (!latestCellId && stdoutParts.length === 0 && stderrParts.length === 0) {
+    return null;
+  }
+
+  const hasError = statuses.includes('error');
+  const allSucceeded = statuses.length >= cellIds.length && statuses.every((status) => status === 'success');
+  const hasPending = statuses.some((status) => status === 'running' || status === 'idle');
+
+  return {
+    cellId: latestCellId,
+    status: hasError ? 'error' : allSucceeded ? 'success' : hasPending ? 'running' : undefined,
+    stdout: stdoutParts.join('\n\n'),
+    stderr: stderrParts.join('\n\n')
+  };
+}
+
+async function resolveNotebookExecutionOutcome(cellIds: string[]): Promise<RunCellResultContext | null> {
+  const attempts = 20;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const snapshot = await resolveNotebookExecutionSnapshot(cellIds);
+    if (!snapshot) {
+      if (attempt < attempts - 1) {
+        await delay(250);
+      }
+      continue;
+    }
+
+    if (snapshot.status === 'success' || snapshot.status === 'error') {
+      return {
+        tool: 'run_cell',
+        cellId: snapshot.cellId,
+        status: snapshot.status,
+        stdout: snapshot.stdout,
+        stderr: snapshot.stderr
+      };
+    }
+
+    if (attempt < attempts - 1) {
+      await delay(250);
+    }
+  }
+
+  const finalSnapshot = await resolveNotebookExecutionSnapshot(cellIds);
+  if (!finalSnapshot) {
+    return null;
+  }
+
+  return {
+    tool: 'run_cell',
+    cellId: finalSnapshot.cellId,
+    status: finalSnapshot.status,
+    stdout: finalSnapshot.stdout,
+    stderr: finalSnapshot.stderr
+  };
+}
+
+async function resolveReusableStepCellIds(cellIds: string[]): Promise<Array<string | undefined>> {
+  return Promise.all(cellIds.map(async (cellId) => {
+    try {
+      await notebookService.readCell(cellId);
+      return cellId;
+    } catch {
+      return undefined;
+    }
+  }));
 }
 
 async function resolveLatestStepNotebookContext(
@@ -326,6 +410,7 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
   const writtenCellIds = extractWrittenCellIds(currentTurnResults);
   const runCells = extractRunCellResults(currentTurnResults);
+  const reusableStepCellIds = await resolveReusableStepCellIds(step.cellIds);
 
   if (writtenCellIds.length > runCells.length) {
     const nextCellId = writtenCellIds[runCells.length];
@@ -383,7 +468,7 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
     id: `wf-call-${randomUUID()}`,
     tool: 'write_cell',
     args: {
-      ...(step.cellIds[nextSegmentIndex] ? { cellId: step.cellIds[nextSegmentIndex] } : {}),
+      ...(reusableStepCellIds[nextSegmentIndex] ? { cellId: reusableStepCellIds[nextSegmentIndex] } : {}),
       title: codeSegments.length > 1
         ? `${step.title ?? `Step ${step.stepId}`} (${nextSegmentIndex + 1}/${codeSegments.length})`
         : step.title ?? `Step ${step.stepId}`,
@@ -419,6 +504,14 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
     }
   }
 
+  const succeeded = latestRunCell?.status === 'success'
+    || (
+      latestRunCell != null
+      && latestRunCell.status == null
+      && !latestRunCell.error
+      && !stderr.trim()
+    );
+
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,
     tool: 'execute_transformation_step',
@@ -427,7 +520,7 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
       stepId: step.stepId,
       cellId: latestRunCell?.cellId ?? undefined,
       cellIds: writtenCellIds.length > 0 ? writtenCellIds : undefined,
-      succeeded: latestRunCell?.status === 'success',
+      succeeded,
       stdout,
       stderr
     },
@@ -458,6 +551,29 @@ async function buildValidateAction(state: WorkflowGraphState): Promise<import('.
       ...(notes ? { notes } : {})
     },
     rationale: 'Validate the latest preprocessing step outcome.'
+  });
+  return parsed.success ? [parsed.data] : [];
+}
+
+async function buildCommitAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
+  const step = await resolveLatestStepNotebookContext(state);
+  if (!step) return [];
+
+  const datasetId = state.run.activeDatasetId ?? state.turn.datasetId;
+  if (!datasetId) {
+    return [];
+  }
+
+  const parsed = ToolCallSchema.safeParse({
+    id: `wf-call-${randomUUID()}`,
+    tool: 'commit_transformation_step',
+    args: {
+      runId: step.runId,
+      stepId: step.stepId,
+      datasetId,
+      ...(state.turn.notebookId ? { notebookId: state.turn.notebookId } : {})
+    },
+    rationale: 'Commit the validated preprocessing step and persist the current workbook dataset.'
   });
   return parsed.success ? [parsed.data] : [];
 }
@@ -601,11 +717,12 @@ export const preprocessingPhaseConfig: PhaseConfig = {
 
   getStageConfig(stage: string, runtimeContext?: RuntimeContext): StageConfig {
     return buildPreprocessingStageConfig(stage, {
-      buildCodeGenerationAction,
-      buildWriteCodeAction,
-      buildRecordExecutionAction,
-      buildValidateAction
-    }, runtimeContext);
+    buildCodeGenerationAction,
+    buildWriteCodeAction,
+    buildRecordExecutionAction,
+    buildValidateAction,
+    buildCommitAction
+  }, runtimeContext);
   },
 
   buildSystemPrompt(): string {

@@ -7,6 +7,7 @@ import { PreprocessingPanel } from '../PreprocessingPanel';
 
 const mocks = vi.hoisted(() => ({
   agenticShell: vi.fn(),
+  buildDatasetContinuityPrompt: vi.fn(),
   loadTables: vi.fn(),
   selectDataset: vi.fn(),
   setNextRunCellMode: vi.fn(),
@@ -47,7 +48,7 @@ vi.mock('../PreprocessingAdapter', () => ({
 }));
 
 vi.mock('../continuityPrompt', () => ({
-  buildDatasetContinuityPrompt: () => null
+  buildDatasetContinuityPrompt: (...args: unknown[]) => mocks.buildDatasetContinuityPrompt(...args)
 }));
 
 vi.mock('../PreprocessingDialogs', () => ({
@@ -198,5 +199,39 @@ describe('PreprocessingPanel smoke test', () => {
         </MemoryRouter>
       );
     }).not.toThrow();
+  });
+
+  it('always prepares prompts to continue in the current workbook dataset', async () => {
+    mocks.agenticShell.mockReset();
+    mocks.buildDatasetContinuityPrompt.mockReset();
+    mocks.buildDatasetContinuityPrompt.mockReturnValue('prepared prompt');
+    mocks.setNextRunCellMode.mockReset();
+
+    render(
+      <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
+        <Routes>
+          <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(mocks.agenticShell).toHaveBeenCalled();
+    });
+
+    const latestProps = mocks.agenticShell.mock.calls.at(-1)?.[0] as {
+      beforeSubmit: (prompt: string) => Promise<string | null>;
+    };
+
+    await expect(latestProps.beforeSubmit('Normalize missing values')).resolves.toBe('prepared prompt');
+    expect(mocks.setNextRunCellMode).toHaveBeenCalledWith('continue');
+    expect(mocks.buildDatasetContinuityPrompt).toHaveBeenCalledWith(
+      'Normalize missing values',
+      'continue',
+      {
+        datasetId: 'ds-1',
+        datasetLabel: 'test.csv'
+      }
+    );
   });
 });

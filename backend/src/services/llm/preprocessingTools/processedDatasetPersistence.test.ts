@@ -168,7 +168,7 @@ describe('resolveWorkspaceFilePath', () => {
       updatedAt: '2026-03-01T00:00:00.000Z'
     };
 
-    const derivedDatasetId = await persistProcessedDataset(run, sourceDataset);
+    const derivedDatasetId = await persistProcessedDataset(run, sourceDataset, undefined, repo);
 
     expect(derivedDatasetId).toBe(existingDerived.datasetId);
     expect(run.derivedDatasetIds).toEqual([]);

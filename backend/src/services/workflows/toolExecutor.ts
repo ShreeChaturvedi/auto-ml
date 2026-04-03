@@ -22,6 +22,28 @@ function truncateToolResult(result: ToolResult): ToolResult {
   if (result.output === undefined || result.output === null) return result;
   const json = JSON.stringify(result.output);
   if (json.length <= MAX_TOOL_RESULT_CHARS) return result;
+  if (result.tool === 'run_cell' && result.output && typeof result.output === 'object' && !Array.isArray(result.output)) {
+    const output = result.output as Record<string, unknown>;
+    const stdout = typeof output.stdout === 'string'
+      ? output.stdout.slice(0, MAX_TOOL_RESULT_CHARS)
+      : output.stdout;
+    const stderr = typeof output.stderr === 'string'
+      ? output.stderr.slice(0, MAX_TOOL_RESULT_CHARS)
+      : output.stderr;
+    return {
+      ...result,
+      output: {
+        _truncated: true,
+        _originalSize: json.length,
+        status: typeof output.status === 'string' ? output.status : undefined,
+        error: typeof output.error === 'string' ? output.error : undefined,
+        executionMs: typeof output.executionMs === 'number' ? output.executionMs : undefined,
+        cellId: typeof output.cellId === 'string' ? output.cellId : undefined,
+        stdout,
+        stderr
+      }
+    };
+  }
   return {
     ...result,
     output: {
@@ -49,6 +71,7 @@ async function executeWorkflowToolCall(
   const enrichedArgs: Record<string, unknown> = {
     ...(call.args ?? {}),
     ...(state.turn.datasetId && call.tool !== 'set_active_dataset' ? { datasetId: state.turn.datasetId } : {}),
+    ...(state.turn.notebookId ? { notebookId: state.turn.notebookId } : {}),
     toolCallId: call.id,
     approvalSource
   };

@@ -4,13 +4,11 @@ import { basename, extname, join } from 'node:path';
 import { env } from '../../../config.js';
 import { hasDatabaseConfiguration } from '../../../db.js';
 import { appLogger } from '../../../logging/logger.js';
-import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
+import type { DatasetRepository } from '../../../repositories/datasetRepository.js';
 import { getNotebook } from '../../../repositories/notebook/index.js';
 import type { PreprocessingRunState } from '../../../repositories/preprocessingRunRepository.js';
 import { loadDatasetIntoPostgres, parseDatasetRows } from '../../datasetLoader.js';
 import { profileDatasetRows } from '../../datasetProfiler.js';
-
-const persistDatasetRepo = createDatasetRepository(env.datasetMetadataPath);
 
 export interface ResolveWorkspaceFilePathParams {
   executionWorkspaceDir: string;
@@ -112,8 +110,12 @@ async function resolveWorkbookName(notebookId: string | undefined): Promise<stri
 export async function persistProcessedDataset(
   run: PreprocessingRunState,
   sourceDataset: { datasetId: string; filename: string; fileType?: string; projectId?: string },
-  notebookId?: string
+  notebookId?: string,
+  datasetRepository?: DatasetRepository
 ): Promise<string | undefined> {
+  if (!datasetRepository) {
+    throw new Error('persistProcessedDataset requires a dataset repository instance.');
+  }
   const workspacePath = resolveWorkspaceFilePath({
     executionWorkspaceDir: env.executionWorkspaceDir,
     projectId: run.projectId,
@@ -143,7 +145,7 @@ export async function persistProcessedDataset(
   const processedFilename = deriveProcessedFilename(sourceDataset.filename, workbookName);
   const fileSize = statSync(workspacePath).size;
 
-  const allDatasets = await persistDatasetRepo.listByProject(run.projectId);
+  const allDatasets = await datasetRepository.listByProject(run.projectId);
   const sourceMeta = allDatasets.find((dataset) => dataset.datasetId === sourceDataset.datasetId);
   const originalSourceId = typeof sourceMeta?.metadata?.derivedFrom === 'string'
     ? sourceMeta.metadata.derivedFrom
@@ -161,7 +163,7 @@ export async function persistProcessedDataset(
     mkdirSync(storageDir, { recursive: true });
     copyFileSync(workspacePath, join(storageDir, processedFilename));
 
-    await persistDatasetRepo.update(derivedDatasetId, (current) => ({
+    await datasetRepository.update(derivedDatasetId, (current) => ({
       ...current,
       filename: processedFilename,
       size: fileSize,
@@ -176,7 +178,7 @@ export async function persistProcessedDataset(
       }
     }));
   } else {
-    const created = await persistDatasetRepo.create({
+    const created = await datasetRepository.create({
       projectId: run.projectId,
       filename: processedFilename,
       fileType,
@@ -210,7 +212,7 @@ export async function persistProcessedDataset(
         rows
       });
 
-      await persistDatasetRepo.update(derivedDatasetId, (current) => ({
+      await datasetRepository.update(derivedDatasetId, (current) => ({
         ...current,
         nRows: rowsLoaded,
         metadata: {

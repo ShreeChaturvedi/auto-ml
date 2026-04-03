@@ -509,6 +509,70 @@ describe('executeToolsNode', () => {
     ]);
   });
 
+  it('preserves run_cell success metadata when truncating oversized outputs', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => false);
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.turn.notebookId = 'notebook-1';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-run-cell-big',
+      tool: 'run_cell',
+      args: {
+        cellId: 'cell-1'
+      }
+    }];
+    state.toolResultHistory = [
+      {
+        id: 'wf-call-materialize',
+        tool: 'materialize_feature_code',
+        output: {
+          featureId: 'feat-signup-month'
+        }
+      },
+      {
+        id: 'wf-call-write-cell',
+        tool: 'write_cell',
+        output: {
+          cellId: 'cell-1'
+        }
+      }
+    ];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        status: 'success',
+        stdout: 'x'.repeat(60_000),
+        stderr: '',
+        executionMs: 42,
+        cellId: 'cell-1'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('execute_tools');
+    expect(result.pendingToolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_feature',
+        args: expect.objectContaining({
+          featureId: 'feat-signup-month',
+          cellId: 'cell-1',
+          succeeded: true,
+          stderr: '',
+          executionMs: 42,
+          stdout: expect.any(String)
+        })
+      })
+    ]);
+    const followUp = result.pendingToolCalls?.[0];
+    expect(typeof followUp?.args?.stdout).toBe('string');
+    expect((followUp?.args?.stdout as string).length).toBeGreaterThan(0);
+  });
+
   it('still fails when per-phase override is exceeded', async () => {
     const phaseConfig = createPhaseConfig();
     phaseConfig.isPhaseSpecificTool = vi.fn(() => true);

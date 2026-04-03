@@ -61,7 +61,7 @@ export const validateStepResult: ToolHandler = async (ctx: ToolContext) => {
   step.decisionReason = undefined;
   step.toolCallId = toolCallId ?? step.toolCallId;
   step.lastValidateSucceeded = true;
-  step.status = requiresApproval ? 'awaiting_approval' : 'applied';
+  step.status = requiresApproval ? 'awaiting_approval' : 'running';
   step.updatedAt = nowIso();
   const cellBindings = toCellBindings(run.runId, step, step.updatedAt, toolCallId);
 

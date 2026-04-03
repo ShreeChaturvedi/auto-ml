@@ -94,6 +94,13 @@ export async function streamWorkflowTurn(
   return streamLlm('/workflows/turns/stream', request, onEvent, signal);
 }
 
+export async function interruptWorkflowRun(runId: string, reason?: string) {
+  return apiRequest<{ run: WorkflowState }>(`/workflows/${runId}/interrupt`, {
+    method: 'POST',
+    body: reason ? { reason } : {}
+  });
+}
+
 export async function streamFeaturePlan(
   request: LlmPlanRequest,
   onEvent: (event: LlmStreamEvent) => void,

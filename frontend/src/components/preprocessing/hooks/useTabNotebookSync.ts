@@ -12,6 +12,16 @@ function buildPreprocessingMetadata(tab: PreprocessingWorkbook): NotebookPhaseMe
   return { phase: 'preprocessing', tabId: tab.id, tabName: tab.name };
 }
 
+function matchesPreprocessingTabNotebook(
+  notebook: { metadata?: unknown },
+  tabId: string
+): boolean {
+  const metadata = notebook.metadata && typeof notebook.metadata === 'object' && !Array.isArray(notebook.metadata)
+    ? notebook.metadata as Record<string, unknown>
+    : null;
+  return metadata?.phase === 'preprocessing' && metadata?.tabId === tabId;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -59,6 +69,17 @@ export function useTabNotebookSync({
   const notebookEnsureLocksRef = useRef(new Map<string, Promise<string | null>>());
   const notebookReconcileLockRef = useRef<Promise<void> | null>(null);
 
+  const activateNotebookIfTabIsActive = useCallback(async (
+    tabId: string,
+    notebookId: string
+  ): Promise<boolean> => {
+    if (activeTabIdRef.current !== tabId) {
+      return false;
+    }
+    await setActiveNotebook(notebookId);
+    return useNotebookStore.getState().activeNotebookId === notebookId;
+  }, [activeTabIdRef, setActiveNotebook]);
+
   // ---- reconcileTabNotebookMappings ----------------------------------------
 
   const reconcileTabNotebookMappings = useCallback(async (): Promise<void> => {
@@ -76,6 +97,11 @@ export function useTabNotebookSync({
     }
 
     const reconcilePromise = (async () => {
+      const pendingEnsureLocks = Array.from(notebookEnsureLocksRef.current.values());
+      if (pendingEnsureLocks.length > 0) {
+        await Promise.allSettled(pendingEnsureLocks);
+      }
+
       await loadNotebooksInStore();
       let notebooks = useNotebookStore.getState().notebooks;
       let notebookIds = new Set(notebooks.map((entry) => entry.notebookId));
@@ -105,7 +131,12 @@ export function useTabNotebookSync({
         }
 
         let assignedNotebookId: string | null = null;
-        const adopted = unassignedNotebooks.shift();
+        const exactMatchIndex = unassignedNotebooks.findIndex((entry) =>
+          matchesPreprocessingTabNotebook(entry, tab.id)
+        );
+        const adopted = exactMatchIndex >= 0
+          ? unassignedNotebooks.splice(exactMatchIndex, 1)[0]
+          : unassignedNotebooks.shift();
         if (adopted) {
           assignedNotebookId = adopted.notebookId;
           if (adopted.name !== tab.name) {
@@ -213,6 +244,11 @@ export function useTabNotebookSync({
     }
 
     const ensurePromise = (async () => {
+      const reconcileLock = notebookReconcileLockRef.current;
+      if (reconcileLock) {
+        await reconcileLock;
+      }
+
       const tabState = tabsRef.current.find((entry) => entry.id === currentTab.id) ?? currentTab;
 
       if (!forceCreate && tabState.notebookId) {
@@ -223,8 +259,8 @@ export function useTabNotebookSync({
           hasNotebook = useNotebookStore.getState().notebooks.some((entry) => entry.notebookId === existingNotebookId);
         }
         if (hasNotebook) {
-          await setActiveNotebook(existingNotebookId);
-          if (useNotebookStore.getState().activeNotebookId === existingNotebookId) {
+          const activated = await activateNotebookIfTabIsActive(tabState.id, existingNotebookId);
+          if (activated || activeTabIdRef.current !== tabState.id) {
             return existingNotebookId;
           }
         }
@@ -246,6 +282,19 @@ export function useTabNotebookSync({
           const unassignedNotebooks = availableNotebooks.filter(
             (entry) => !mappedNotebookIds.has(entry.notebookId)
           );
+          const exactMatch = unassignedNotebooks.find((entry) =>
+            matchesPreprocessingTabNotebook(entry, latestTabState.id)
+          );
+
+          if (exactMatch) {
+            setTabNotebookId(latestTabState.id, exactMatch.notebookId);
+            await activateNotebookIfTabIsActive(latestTabState.id, exactMatch.notebookId);
+            if (exactMatch.name !== latestTabState.name) {
+              await renameNotebook(exactMatch.notebookId, latestTabState.name);
+            }
+            await updateNotebookMetadata(exactMatch.notebookId, buildPreprocessingMetadata(latestTabState));
+            return exactMatch.notebookId;
+          }
 
           if (
             tabsWithoutNotebook.length === 1
@@ -254,7 +303,7 @@ export function useTabNotebookSync({
           ) {
             const adopted = unassignedNotebooks[0];
             setTabNotebookId(latestTabState.id, adopted.notebookId);
-            await setActiveNotebook(adopted.notebookId);
+            await activateNotebookIfTabIsActive(latestTabState.id, adopted.notebookId);
             if (adopted.name !== latestTabState.name) {
               await renameNotebook(adopted.notebookId, latestTabState.name);
             }
@@ -269,6 +318,12 @@ export function useTabNotebookSync({
       const createdNotebookId = created?.notebookId ?? null;
       if (createdNotebookId) {
         setTabNotebookId(currentTab.id, createdNotebookId);
+        if (activeTabIdRef.current !== currentTab.id) {
+          const visibleTab = tabsRef.current.find((entry) => entry.id === activeTabIdRef.current);
+          if (visibleTab?.notebookId && visibleTab.notebookId !== createdNotebookId) {
+            await setActiveNotebook(visibleTab.notebookId);
+          }
+        }
       }
       return createdNotebookId;
     })();
@@ -283,8 +338,10 @@ export function useTabNotebookSync({
     createNotebook,
     loadNotebooksInStore,
     renameNotebook,
+    activateNotebookIfTabIsActive,
     setActiveNotebook,
     setTabNotebookId,
+    activeTabIdRef,
     tabsRef,
     updateNotebookMetadata
   ]);

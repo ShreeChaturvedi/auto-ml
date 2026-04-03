@@ -1,8 +1,11 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { z } from 'zod';
 
+import { env } from '../../config.js';
+import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import type { ToolResult } from '../../types/llm.js';
 import { ToolCallSchema } from '../../types/llm.js';
+import { buildFeatureCodeCellTitle, buildFeatureLoadCell } from '../featureEngineering/notebookCells.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
 import { buildToolEvent } from './eventWriter.js';
@@ -13,6 +16,7 @@ import { getApprovalPauseDetails } from './turnState.js';
 import type { WorkflowPendingInputKind } from './types.js';
 
 const MAX_TOOL_RESULT_CHARS = 50_000;
+const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
 function truncateToolResult(result: ToolResult): ToolResult {
   if (result.output === undefined || result.output === null) return result;
@@ -103,6 +107,265 @@ function resolveApprovalSource(
     : 'agent';
 }
 
+function extractLatestCellId(results: ToolResult[]): string | undefined {
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const output = results[index]?.output;
+    if (!output || typeof output !== 'object' || Array.isArray(output)) {
+      continue;
+    }
+    const record = output as Record<string, unknown>;
+    if (typeof record.cellId === 'string') {
+      return record.cellId;
+    }
+    const cell = record.cell;
+    if (cell && typeof cell === 'object' && !Array.isArray(cell) && typeof (cell as Record<string, unknown>).cellId === 'string') {
+      return (cell as Record<string, unknown>).cellId as string;
+    }
+  }
+  return undefined;
+}
+
+function extractLatestRunCellContext(results: ToolResult[]): {
+  status?: string;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  executionMs?: number;
+} | null {
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index];
+    if (result.tool !== 'run_cell') {
+      continue;
+    }
+    const output = result.output;
+    if (!output || typeof output !== 'object' || Array.isArray(output)) {
+      continue;
+    }
+    const record = output as Record<string, unknown>;
+    return {
+      status: typeof record.status === 'string' ? record.status : undefined,
+      stdout: typeof record.stdout === 'string' ? record.stdout : undefined,
+      stderr: typeof record.stderr === 'string' ? record.stderr : undefined,
+      error: typeof record.error === 'string' ? record.error : result.error,
+      executionMs: typeof record.executionMs === 'number' ? record.executionMs : undefined
+    };
+  }
+  return null;
+}
+
+function extractLatestMaterializedFeatureId(results: ToolResult[]): string | undefined {
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index];
+    if (result.tool !== 'materialize_feature_code') {
+      continue;
+    }
+    const output = result.output;
+    if (!output || typeof output !== 'object' || Array.isArray(output)) {
+      continue;
+    }
+    const record = output as Record<string, unknown>;
+    if (typeof record.featureId === 'string') {
+      return record.featureId;
+    }
+  }
+  return undefined;
+}
+
+async function buildFeatureNotebookFollowUp(
+  state: WorkflowGraphState,
+  executedCalls: z.infer<typeof ToolCallSchema>[],
+  executedResults: ToolResult[]
+): Promise<z.infer<typeof ToolCallSchema>[] | null> {
+  if (state.turn.phase !== 'feature_engineering') {
+    return null;
+  }
+
+  const currentTurnResults = [
+    ...state.toolResultHistory.slice(state.turnStartToolCallCount),
+    ...executedResults
+  ];
+  const latestFeatureId = extractLatestMaterializedFeatureId(currentTurnResults);
+  if (!latestFeatureId) {
+    return null;
+  }
+
+  const lastMaterializeIndex = (() => {
+    for (let index = executedCalls.length - 1; index >= 0; index -= 1) {
+      if (executedCalls[index]?.tool === 'materialize_feature_code') {
+        return index;
+      }
+    }
+    return -1;
+  })();
+
+  if (lastMaterializeIndex >= 0) {
+    const materializeCall = executedCalls[lastMaterializeIndex];
+    const materializeResult = executedResults[lastMaterializeIndex];
+    const hasSuccessfulCodeWriteAfterMaterialize = executedCalls
+      .slice(lastMaterializeIndex + 1)
+      .some((call, offset) =>
+        call.tool === 'write_cell'
+        && call.args?.cellType === 'code'
+        && executedResults[lastMaterializeIndex + 1 + offset]?.error == null
+      );
+
+    if (!hasSuccessfulCodeWriteAfterMaterialize && materializeResult?.error == null) {
+      const code = typeof materializeCall.args?.code === 'string'
+        ? materializeCall.args.code.trim()
+        : '';
+      const featureId = typeof materializeCall.args?.featureId === 'string'
+        ? materializeCall.args.featureId
+        : latestFeatureId;
+
+      if (code && featureId) {
+        let dataset;
+        try {
+          dataset = state.turn.datasetId
+            ? await datasetRepository.getById(state.turn.datasetId)
+            : undefined;
+        } catch {
+          dataset = undefined;
+        }
+        if (dataset) {
+          const loadParsed = ToolCallSchema.safeParse({
+            id: `wf-call-auto-load-feature-dataset-${featureId}`,
+            tool: 'write_cell',
+            args: {
+              title: `Load ${dataset.filename}`,
+              cellType: 'code',
+              content: buildFeatureLoadCell(dataset),
+              metadata: {
+                phase: 'feature-engineering',
+                role: 'feature-lifecycle-load',
+                datasetId: dataset.datasetId,
+                featureId
+              }
+            },
+            rationale: `Load dataset ${dataset.filename} before executing feature ${featureId}.`
+          });
+          return loadParsed.success ? [loadParsed.data] : null;
+        }
+
+        const parsed = ToolCallSchema.safeParse({
+          id: `wf-call-auto-write-feature-${featureId}`,
+          tool: 'write_cell',
+          args: {
+            title: buildFeatureCodeCellTitle(featureId),
+            cellType: 'code',
+            content: code,
+            metadata: {
+              phase: 'feature-engineering',
+              featureId,
+              source: 'feature-lifecycle'
+            }
+          },
+          rationale: `Write notebook code for feature ${featureId}.`
+        });
+        return parsed.success ? [parsed.data] : null;
+      }
+    }
+  }
+
+  const latestCall = executedCalls.at(-1);
+  const latestResult = executedResults.at(-1);
+  if (!latestCall || !latestResult) {
+    return null;
+  }
+
+  if (
+    latestCall.tool === 'write_cell'
+    && latestCall.args?.cellType === 'code'
+    && latestResult.error == null
+  ) {
+    const cellId = extractLatestCellId([latestResult]);
+    if (!cellId) {
+      return null;
+    }
+
+    const latestCallMetadata = latestCall.args?.metadata;
+    const metadataRecord = latestCallMetadata && typeof latestCallMetadata === 'object' && !Array.isArray(latestCallMetadata)
+      ? latestCallMetadata as Record<string, unknown>
+      : null;
+
+    const parsed = ToolCallSchema.safeParse({
+      id: `wf-call-auto-run-${cellId}`,
+      tool: 'run_cell',
+      args: {
+        cellId,
+        ...(metadataRecord ? { metadata: metadataRecord } : {})
+      },
+      rationale: metadataRecord?.role === 'feature-lifecycle-load'
+        ? `Execute dataset load cell before feature ${latestFeatureId}.`
+        : `Execute notebook cell for feature ${latestFeatureId}.`
+    });
+    return parsed.success ? [parsed.data] : null;
+  }
+
+  if (latestCall.tool === 'run_cell') {
+    const latestCallMetadata = latestCall.args?.metadata;
+    const metadataRecord = latestCallMetadata && typeof latestCallMetadata === 'object' && !Array.isArray(latestCallMetadata)
+      ? latestCallMetadata as Record<string, unknown>
+      : null;
+    const metadataRole = typeof metadataRecord?.role === 'string' ? metadataRecord.role : undefined;
+    const featureId = typeof metadataRecord?.featureId === 'string' ? metadataRecord.featureId : latestFeatureId;
+    const runCell = extractLatestRunCellContext([latestResult]);
+    const cellId = extractLatestCellId([latestResult]) ?? extractLatestCellId(currentTurnResults);
+
+    if (metadataRole === 'feature-lifecycle-load' && featureId) {
+      const materializeCall = [...executedCalls]
+        .reverse()
+        .find((call) => call.tool === 'materialize_feature_code' && call.args?.featureId === featureId)
+        ?? [...state.toolCallHistory.slice(state.turnStartToolCallCount)]
+          .reverse()
+          .find((call) => call.tool === 'materialize_feature_code' && call.args?.featureId === featureId);
+      const code = typeof materializeCall?.args?.code === 'string'
+        ? materializeCall.args.code.trim()
+        : '';
+      if (!code) {
+        return null;
+      }
+      const parsed = ToolCallSchema.safeParse({
+        id: `wf-call-auto-write-feature-${featureId}`,
+        tool: 'write_cell',
+        args: {
+          title: buildFeatureCodeCellTitle(featureId),
+          cellType: 'code',
+          content: code,
+          metadata: {
+            phase: 'feature-engineering',
+            featureId,
+            source: 'feature-lifecycle'
+          }
+        },
+        rationale: `Write notebook code for feature ${featureId}.`
+      });
+      return parsed.success ? [parsed.data] : null;
+    }
+
+    if (!featureId) {
+      return null;
+    }
+
+    const parsed = ToolCallSchema.safeParse({
+      id: `wf-call-auto-execute-feature-${featureId}`,
+      tool: 'execute_feature',
+      args: {
+        featureId,
+        ...(cellId ? { cellId } : {}),
+        succeeded: runCell?.status === 'success',
+        stdout: runCell?.stdout ?? '',
+        stderr: runCell?.stderr ?? runCell?.error ?? '',
+        executionMs: runCell?.executionMs,
+        executionSource: 'notebook'
+      },
+      rationale: `Record notebook execution results for feature ${featureId}.`
+    });
+    return parsed.success ? [parsed.data] : null;
+  }
+
+  return null;
+}
+
 export async function executeToolsNode(
   state: WorkflowGraphState,
   config?: RunnableConfig
@@ -132,6 +395,29 @@ export async function executeToolsNode(
     if (sink) {
       sink.emit(toolEvent);
     }
+  }
+
+  const featureFollowUpCalls = await buildFeatureNotebookFollowUp(
+    state,
+    state.pendingToolCalls,
+    nextResults
+  );
+  if (featureFollowUpCalls && featureFollowUpCalls.length > 0) {
+    return {
+      toolCallHistory: state.pendingToolCalls,
+      toolResultHistory: nextResults,
+      pendingToolCalls: featureFollowUpCalls,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      latestMessage: '',
+      iteration: state.iteration + 1,
+      pendingInputKind: null,
+      pauseReason: null,
+      nextStep: 'execute_tools',
+      errorMessage: null,
+      errorCode: null
+    };
   }
 
   // Detect per-tool repetition using two complementary heuristics:

@@ -6,13 +6,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { FeatureSuggestionItem } from './featureEngineeringUtils';
-import { buildSuggestionDefaults } from './featureEngineeringUtils';
+import {
+  buildSuggestionDefaults,
+  captureFeatureLeftPaneScrollTop
+} from './featureEngineeringUtils';
 import type { SuggestionDraft } from './hooks/useFeaturePipelineState';
 
 interface FeatureSuggestionCardProps {
   item: FeatureSuggestionItem;
   draft: SuggestionDraft | undefined;
-  isApproved: boolean;
   datasetColumns: string[];
   onToggle: (item: FeatureSuggestionItem, enabled: boolean) => void;
   onControlChange: (item: FeatureSuggestionItem, key: string, value: unknown) => void;
@@ -21,7 +23,6 @@ interface FeatureSuggestionCardProps {
 export function FeatureSuggestionCard({
   item,
   draft: draftProp,
-  isApproved,
   datasetColumns,
   onToggle,
   onControlChange
@@ -29,6 +30,45 @@ export function FeatureSuggestionCard({
   const draft: SuggestionDraft = draftProp ?? {
     enabled: false,
     params: buildSuggestionDefaults(item)
+  };
+
+  const getScrollContainerState = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return;
+    const scrollContainer = target.closest('[data-fe-left-pane-scroll="true"]');
+    if (scrollContainer instanceof HTMLElement) {
+      captureFeatureLeftPaneScrollTop(scrollContainer.scrollTop);
+      return {
+        scrollContainer,
+        scrollTop: scrollContainer.scrollTop
+      };
+    }
+    return undefined;
+  };
+
+  const scheduleScrollRestore = (
+    scrollContainer: HTMLElement | undefined,
+    scrollTop: number | undefined
+  ) => {
+    if (!scrollContainer || typeof scrollTop !== 'number') {
+      return;
+    }
+
+    const restore = () => {
+      if (!scrollContainer.isConnected) {
+        return;
+      }
+      scrollContainer.scrollTop = scrollTop;
+    };
+
+    restore();
+    requestAnimationFrame(restore);
+    window.setTimeout(restore, 0);
+    window.setTimeout(restore, 120);
+    window.setTimeout(restore, 300);
+    const intervalId = window.setInterval(restore, 50);
+    window.setTimeout(() => {
+      window.clearInterval(intervalId);
+    }, 1000);
   };
 
   return (
@@ -40,6 +80,7 @@ export function FeatureSuggestionCard({
             <p className="text-xs text-muted-foreground">{item.rationale}</p>
           </div>
           <Button
+            type="button"
             variant="outline"
             size="sm"
             className={cn(
@@ -48,8 +89,15 @@ export function FeatureSuggestionCard({
                 ? 'border-foreground/50 bg-foreground/10 text-foreground'
                 : 'border-border/60 text-muted-foreground hover:text-foreground'
             )}
-            onClick={() => onToggle(item, !draft.enabled)}
-            disabled={isApproved}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              getScrollContainerState(event.currentTarget);
+            }}
+            onClick={(event) => {
+              const scrollState = getScrollContainerState(event.currentTarget);
+              onToggle(item, !draft.enabled);
+              scheduleScrollRestore(scrollState?.scrollContainer, scrollState?.scrollTop);
+            }}
           >
             {draft.enabled ? 'Enabled' : 'Enable'}
           </Button>
@@ -71,15 +119,21 @@ export function FeatureSuggestionCard({
                   {control.type === 'boolean' ? (
                     <Switch
                       checked={Boolean(controlValue)}
-                      onCheckedChange={(checked) => onControlChange(item, control.key, checked)}
-                      disabled={isApproved}
+                      onCheckedChange={(checked) => {
+                        const scrollState = getScrollContainerState(document.activeElement);
+                        onControlChange(item, control.key, checked);
+                        scheduleScrollRestore(scrollState?.scrollContainer, scrollState?.scrollTop);
+                      }}
                     />
                   ) : (control.type === 'select' || control.type === 'column') &&
                     (control.options || datasetColumns.length > 0) ? (
                     <Select
                       value={String(controlValue ?? '')}
-                      onValueChange={(value) => onControlChange(item, control.key, value)}
-                      disabled={isApproved}
+                      onValueChange={(value) => {
+                        const scrollState = getScrollContainerState(document.activeElement);
+                        onControlChange(item, control.key, value);
+                        scheduleScrollRestore(scrollState?.scrollContainer, scrollState?.scrollTop);
+                      }}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue placeholder="Select" />
@@ -100,6 +154,7 @@ export function FeatureSuggestionCard({
                       type={control.type === 'number' ? 'number' : 'text'}
                       value={String(controlValue ?? '')}
                       onChange={(event) => {
+                        const scrollState = getScrollContainerState(event.currentTarget);
                         const nextValue =
                           control.type === 'number'
                             ? event.currentTarget.valueAsNumber
@@ -109,12 +164,12 @@ export function FeatureSuggestionCard({
                           control.key,
                           Number.isNaN(nextValue as number) ? control.value : nextValue
                         );
+                        scheduleScrollRestore(scrollState?.scrollContainer, scrollState?.scrollTop);
                       }}
                       min={control.min}
                       max={control.max}
                       step={control.step}
                       className="h-8 text-xs"
-                      disabled={isApproved}
                     />
                   )}
                 </div>

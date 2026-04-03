@@ -9,6 +9,14 @@ vi.mock('@/lib/api/llm', () => ({
 }));
 
 const mockFeatureStore = vi.hoisted(() => ({
+  features: [] as Array<{
+    id: string;
+    projectId: string;
+    featureName: string;
+    method: string;
+    sourceColumn: string;
+    enabled: boolean;
+  }>,
   setCurrentStage: vi.fn(),
   setFeatureStep: vi.fn(),
   setFeatureRunId: vi.fn(),
@@ -19,7 +27,7 @@ const mockNotebookStore = vi.hoisted(() => ({
   activeNotebookId: 'notebook-1' as string | null,
   notebooks: [{ notebookId: 'notebook-1', metadata: { phase: 'feature-engineering' } }] as Array<{ notebookId: string; metadata?: Record<string, unknown> }>,
   createNotebook: vi.fn(),
-  setActiveNotebook: vi.fn(async () => undefined)
+  setActiveNotebook: vi.fn() as ReturnType<typeof vi.fn>
 }));
 
 vi.mock('@/stores/featureStore', () => ({
@@ -32,7 +40,7 @@ vi.mock('@/stores/featureStore', () => ({
     }),
     {
       getState: () => ({
-        features: [],
+        features: mockFeatureStore.features,
         featureSteps: {},
         setCurrentStage: mockFeatureStore.setCurrentStage,
         setFeatureStep: mockFeatureStore.setFeatureStep,
@@ -62,9 +70,13 @@ describe('FeatureEngineeringAdapter', () => {
     mockFeatureStore.setFeatureStep.mockReset();
     mockFeatureStore.setFeatureRunId.mockReset();
     mockFeatureStore.clearDraft.mockReset();
+    mockFeatureStore.features = [];
     mockNotebookStore.activeNotebookId = 'notebook-1';
     mockNotebookStore.notebooks = [{ notebookId: 'notebook-1', metadata: { phase: 'feature-engineering' } }];
     mockNotebookStore.setActiveNotebook.mockReset();
+    mockNotebookStore.setActiveNotebook.mockImplementation(async (notebookId: string) => {
+      mockNotebookStore.activeNotebookId = notebookId;
+    });
     mockNotebookStore.createNotebook.mockReset();
   });
 
@@ -121,12 +133,40 @@ describe('FeatureEngineeringAdapter', () => {
 
     adapter.onWorkflowArtifactUpdate?.({
       artifactId: 'artifact-1',
-      runId: 'feature-run-2',
+      runId: 'workflow-run-2',
       kind: 'summary',
-      payload: { message: 'Completed run.' }
+      payload: {
+        message: 'Completed run.',
+        featureRunId: 'feature-run-2'
+      }
     });
 
     expect(mockFeatureStore.setFeatureRunId).toHaveBeenCalledWith('feature-run-2');
+  });
+
+  it('does not write the workflow runId into the feature store on workflow state updates', () => {
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    adapter.onWorkflowStateUpdate?.({
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1',
+      phase: 'feature_engineering',
+      currentNode: 'continue_feature_pipeline',
+      status: 'running'
+    });
+
+    expect(mockFeatureStore.setFeatureRunId).not.toHaveBeenCalled();
+    expect(useWorkflowSessionStore.getState().getSession('feature-session')).toMatchObject({
+      runId: 'workflow-run-1',
+      threadId: 'workflow-thread-1'
+    });
   });
 
   it('creates a notebook before starting feature engineering when none is active', async () => {
@@ -173,6 +213,142 @@ describe('FeatureEngineeringAdapter', () => {
     expect(streamWorkflowTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         notebookId: 'created-notebook-1'
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('includes enabled feature ids in implementation prompts', async () => {
+    mockFeatureStore.features = [
+      {
+        id: 'feat-signup-month',
+        projectId: 'project-1',
+        featureName: 'signup_month',
+        method: 'extract_month',
+        sourceColumn: 'signup_date',
+        enabled: true
+      },
+      {
+        id: 'feat-city-frequency',
+        projectId: 'project-1',
+        featureName: 'city_frequency',
+        method: 'frequency_encode',
+        sourceColumn: 'city',
+        enabled: true
+      }
+    ];
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    await adapter.buildRequest(
+      'Implement the enabled features in the notebook.',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high'
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          'Selected feature IDs to implement: feat-signup-month, feat-city-frequency\nEnabled features to implement: signup_month (extract_month on signup_date); city_frequency (frequency_encode on city)'
+        )
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('uses the version-scoped notebook id instead of reusing the active preprocessing notebook', async () => {
+    mockNotebookStore.activeNotebookId = 'preprocessing-notebook';
+    mockNotebookStore.notebooks = [
+      { notebookId: 'preprocessing-notebook', metadata: { phase: 'preprocessing', tabId: 'workbook-1' } },
+      { notebookId: 'feature-notebook-1', metadata: { phase: 'feature-engineering', tabId: 'draft-1' } }
+    ];
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session',
+      notebookId: 'feature-notebook-1',
+      notebookMetadata: {
+        phase: 'feature-engineering',
+        tabId: 'draft-1',
+        tabName: 'Draft Pipeline v1'
+      }
+    });
+
+    await adapter.buildRequest(
+      'Create new features.',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high'
+      }
+    );
+
+    expect(mockNotebookStore.setActiveNotebook).toHaveBeenCalledWith('feature-notebook-1');
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notebookId: 'feature-notebook-1'
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('uses the draft-scoped notebook id instead of reusing an unrelated active notebook', async () => {
+    mockNotebookStore.activeNotebookId = 'preprocessing-notebook-1';
+    mockNotebookStore.notebooks = [
+      { notebookId: 'preprocessing-notebook-1', metadata: { phase: 'preprocessing' } },
+      { notebookId: 'feature-notebook-2', metadata: { phase: 'feature-engineering', tabId: 'draft-2' } }
+    ];
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session',
+      notebookId: 'feature-notebook-2'
+    });
+
+    await adapter.buildRequest(
+      'Create new features.',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high'
+      }
+    );
+
+    expect(mockNotebookStore.setActiveNotebook).toHaveBeenCalledWith('feature-notebook-2');
+    expect(mockNotebookStore.createNotebook).not.toHaveBeenCalled();
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notebookId: 'feature-notebook-2'
       }),
       expect.any(Function),
       expect.any(AbortSignal)

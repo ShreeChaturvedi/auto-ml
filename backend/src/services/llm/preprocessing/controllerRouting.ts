@@ -2,6 +2,13 @@ import type { ToolResult } from '../../../types/llm.js';
 
 import type { PreprocessingTurnMode } from './turnClassification.js';
 
+function isWorkflowThreadReference(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
+}
+
 export type PreprocessingControllerNode =
   | 'answer'
   | 'plan_step'
@@ -24,6 +31,7 @@ export interface ControllerRouteState {
   latestToolName?: string;
   latestToolSucceeded: boolean;
   latestOutputStatus?: string;
+  hasPendingNotebookCells?: boolean;
 }
 
 export interface ControllerStageDefinition {
@@ -149,7 +157,7 @@ export function getLatestRunId(toolResults?: ToolResult[]): string | undefined {
       continue;
     }
     const runId = (output as Record<string, unknown>).runId;
-    if (typeof runId === 'string' && runId.trim()) {
+    if (typeof runId === 'string' && runId.trim() && !isWorkflowThreadReference(runId)) {
       return runId.trim();
     }
   }
@@ -224,7 +232,10 @@ export function inferActionNode(state: ControllerRouteState): PreprocessingContr
     case 'edit_cell':
       return state.latestToolSucceeded ? 'write_code' : 'generate_code';
     case 'run_cell':
-      return state.latestToolSucceeded ? 'record_execution' : 'write_code';
+      if (!state.latestToolSucceeded) {
+        return 'write_code';
+      }
+      return state.hasPendingNotebookCells ? 'write_code' : 'record_execution';
     case 'execute_transformation_step':
       return state.latestToolSucceeded ? 'validate' : 'write_code';
     case 'validate_step_result':

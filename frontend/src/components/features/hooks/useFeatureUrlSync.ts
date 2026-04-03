@@ -9,14 +9,12 @@ interface UseFeatureUrlSyncOptions {
   handleVersionSwitch: (versionId: string) => void;
   handleNewDraft: () => void;
   handleDeleteDraft: () => void;
-  approveVersion: (projectId: string, versionId: string) => void;
 }
 
 interface UseFeatureUrlSyncReturn {
   workbookParam: string | null;
   handleVersionSelect: (versionId: string) => void;
   handleCreateDraft: () => void;
-  handleApproveCurrentVersion: () => void;
   handleDeleteCurrentDraft: () => void;
 }
 
@@ -25,8 +23,7 @@ export function useFeatureUrlSync({
   currentVersion,
   handleVersionSwitch,
   handleNewDraft,
-  handleDeleteDraft,
-  approveVersion
+  handleDeleteDraft
 }: UseFeatureUrlSyncOptions): UseFeatureUrlSyncReturn {
   const [searchParams, setSearchParams] = useSearchParams();
   const workbookParam = useMemo(() => searchParams.get('workbook'), [searchParams]);
@@ -76,14 +73,6 @@ export function useFeatureUrlSync({
     }
   }, [handleNewDraft, projectId, updateWorkbookParam]);
 
-  const handleApproveCurrentVersion = useCallback(() => {
-    if (!currentVersion) {
-      return;
-    }
-    approveVersion(projectId, currentVersion.id);
-    updateWorkbookParam(currentVersion.id);
-  }, [approveVersion, currentVersion, projectId, updateWorkbookParam]);
-
   const handleDeleteCurrentDraft = useCallback(() => {
     const previousVersionId = currentVersion?.id;
     handleDeleteDraft();
@@ -109,7 +98,6 @@ export function useFeatureUrlSync({
     workbookParam,
     handleVersionSelect,
     handleCreateDraft,
-    handleApproveCurrentVersion,
     handleDeleteCurrentDraft
   };
 }

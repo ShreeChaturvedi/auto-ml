@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFeatureStore } from '@/stores/featureStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { fetchFeatureRuns } from '@/lib/api/featureEngineering';
+import { interruptWorkflowRun } from '@/lib/api/llm';
+import * as notebooksApi from '@/lib/api/notebooks';
 import type { PipelineVersion } from '@/types/feature';
 import type { SuggestionDraft } from './useFeaturePipelineState';
 
@@ -20,6 +23,7 @@ interface UseFeatureVersioningReturn {
   versions: PipelineVersion[];
   currentVersionId: string | undefined;
   currentVersion: PipelineVersion | undefined;
+  chatSessionVersion: number;
   isApproved: boolean;
   isCurrentVersionDraft: boolean;
   approveVersion: (projectId: string, versionId: string) => void;
@@ -63,11 +67,40 @@ export function useFeatureVersioning({
   const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
   const clearProjectFeatures = useFeatureStore((state) => state.clearProjectFeatures);
   const clearDraft = useFeatureStore((state) => state.clearDraft);
+  const setVersionNotebookId = useFeatureStore((state) => state.setVersionNotebookId);
 
   // --- Dialog state ---
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameDialogValue, setRenameDialogValue] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [chatSessionVersion, setChatSessionVersion] = useState(0);
+
+  const interruptDraftWorkflow = useCallback(async (
+    versionId: string | undefined,
+    reason: string
+  ) => {
+    if (!versionId) return;
+    const storageKey = `feature-engineering-messages-v3-${versionId}`;
+    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+    const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+    if (!session?.runId || !session.state) {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+      return;
+    }
+
+    if (session.state.status !== 'running' && session.state.status !== 'paused') {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+      return;
+    }
+
+    try {
+      await interruptWorkflowRun(session.runId, reason);
+    } catch (error) {
+      console.warn('[feature-engineering] Failed to interrupt workflow run', error);
+    } finally {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+    }
+  }, [projectId]);
 
   // --- Version bootstrap effect ---
   useEffect(() => {
@@ -132,9 +165,11 @@ export function useFeatureVersioning({
     setDeleteDialogOpen(true);
   }, [currentVersion]);
 
-  const handleDeleteConfirm = useCallback(() => {
+  const handleDeleteConfirm = useCallback(async () => {
     if (!currentVersion) return;
     setDeleteDialogOpen(false);
+
+    await interruptDraftWorkflow(currentVersion.id, 'Draft deleted by user.');
 
     if (versions.length <= 1) {
       const deletedVersionId = currentVersion.id;
@@ -149,7 +184,7 @@ export function useFeatureVersioning({
     setApplyStatus('idle');
     setApplyMessage(null);
     setPanelError(null);
-  }, [clearDraft, clearProjectFeatures, createDraftVersion, currentVersion, projectId, removeVersion, versions.length, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+  }, [clearDraft, clearProjectFeatures, createDraftVersion, currentVersion, interruptDraftWorkflow, projectId, removeVersion, versions.length, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
 
   // --- Rename with shadcn Dialog ---
   const handleRenameDraft = useCallback(() => {
@@ -196,21 +231,67 @@ export function useFeatureVersioning({
   }, [projectId, setPanelError]);
 
   // --- Reset handler ---
-  const handleReset = useCallback(() => {
+  const handleReset = useCallback(async () => {
+    const versionId = currentVersion?.id;
+    const versionName = currentVersion?.name;
+    const oldNotebookId = currentVersion?.notebookId ?? null;
     const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
+    const messageStorageScope = `${storageKey}-${projectId}`;
+
+    await interruptDraftWorkflow(currentVersion?.id, 'Draft reset by user.');
+
+    if (versionId && versionName) {
+      try {
+        const nextNotebook = await notebooksApi.createNotebook(projectId, {
+          name: versionName,
+          metadata: {
+            phase: 'feature-engineering',
+            tabId: versionId,
+            tabName: versionName
+          }
+        });
+
+        setVersionNotebookId(projectId, versionId, nextNotebook.notebookId);
+        await useNotebookStore.getState().initializeNotebook(projectId, nextNotebook.notebookId);
+
+        if (oldNotebookId && oldNotebookId !== nextNotebook.notebookId) {
+          await notebooksApi.deleteNotebook(projectId, oldNotebookId);
+          await useNotebookStore.getState().loadNotebooks(projectId);
+        }
+      } catch (error) {
+        console.warn('[feature-engineering] Failed to rotate draft notebook during reset', error);
+      }
+    }
+
     useWorkflowSessionStore.getState().clearSession(buildWorkflowSessionKey(projectId, storageKey));
+    globalThis.localStorage?.removeItem(messageStorageScope);
     clearDraft();
     clearProjectFeatures(projectId);
     setSuggestionDrafts({});
     setPanelError(null);
     setApplyStatus('idle');
     setApplyMessage(null);
-  }, [clearDraft, clearProjectFeatures, currentVersion?.id, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+    setChatSessionVersion((value) => value + 1);
+  }, [
+    clearDraft,
+    clearProjectFeatures,
+    currentVersion?.id,
+    currentVersion?.name,
+    currentVersion?.notebookId,
+    interruptDraftWorkflow,
+    projectId,
+    setSuggestionDrafts,
+    setPanelError,
+    setApplyStatus,
+    setApplyMessage,
+    setVersionNotebookId
+  ]);
 
   return {
     versions,
     currentVersionId,
     currentVersion,
+    chatSessionVersion,
     isApproved,
     isCurrentVersionDraft,
     approveVersion,

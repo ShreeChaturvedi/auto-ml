@@ -54,8 +54,12 @@ const mockState = vi.hoisted(() => ({
   renameVersionMock: vi.fn(),
   approveVersionMock: vi.fn(),
   setCurrentVersionMock: vi.fn(),
+  setVersionNotebookIdMock: vi.fn(),
   updateReadinessReportMock: vi.fn(),
   initializeNotebookMock: vi.fn(),
+  loadNotebooksMock: vi.fn(),
+  createNotebookMock: vi.fn(),
+  setActiveNotebookMock: vi.fn(),
   disconnectNotebookMock: vi.fn(),
   activeNotebookId: null as string | null,
   currentProjectId: 'p1',
@@ -76,7 +80,12 @@ const mockState = vi.hoisted(() => ({
   }>,
   createNotebookCellMock: vi.fn(),
   updateNotebookCellMock: vi.fn(),
-  applyFeatureEngineeringMock: vi.fn()
+  applyFeatureEngineeringMock: vi.fn(),
+  createNotebookApiMock: vi.fn(),
+  updateNotebookApiMock: vi.fn(),
+  submitPromptMock: vi.fn(),
+  featureSteps: {} as Record<string, { status: string }>,
+  currentStage: null as string | null
 }));
 
 vi.mock('@/components/agentic/AgenticShell', () => ({
@@ -86,24 +95,27 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
     toolbarLeft,
     toolbarRight,
     chatMetaSlot,
-    domainLockReason
+    domainLockReason,
+    notebookId
   }: {
-    LeftPaneComponent?: React.ComponentType<{ messages: unknown[]; isGenerating: boolean; error: string | null }>;
-    renderLeftPane?: (props: { messages: unknown[]; isGenerating: boolean; error: string | null }) => React.ReactNode;
+    LeftPaneComponent?: React.ComponentType<{ messages: unknown[]; isGenerating: boolean; error: string | null; submitPrompt?: (prompt: string) => void }>;
+    renderLeftPane?: (props: { messages: unknown[]; isGenerating: boolean; error: string | null; submitPrompt?: (prompt: string) => void }) => React.ReactNode;
     toolbarLeft?: React.ReactNode;
     toolbarRight?: React.ReactNode;
     chatMetaSlot?: React.ReactNode;
     domainLockReason?: string;
+    notebookId?: string | null;
   }) => (
     <div>
       <div data-testid="toolbar-left">{toolbarLeft}</div>
       <div data-testid="toolbar-right">{toolbarRight}</div>
       <div data-testid="chat-meta">{chatMetaSlot}</div>
+      <div data-testid="notebook-id">{notebookId ?? ''}</div>
       {domainLockReason ? <div data-testid="domain-lock">{domainLockReason}</div> : null}
       {renderLeftPane
-        ? renderLeftPane({ messages: [], isGenerating: false, error: null })
+        ? renderLeftPane({ messages: [], isGenerating: false, error: null, submitPrompt: mockState.submitPromptMock })
         : LeftPaneComponent
-          ? <LeftPaneComponent messages={[]} isGenerating={false} error={null} />
+          ? <LeftPaneComponent messages={[]} isGenerating={false} error={null} submitPrompt={mockState.submitPromptMock} />
           : null}
     </div>
   )
@@ -131,9 +143,10 @@ vi.mock('@/stores/featureStore', () => {
       renameVersion: mockState.renameVersionMock,
       approveVersion: mockState.approveVersionMock,
       setCurrentVersion: mockState.setCurrentVersionMock,
+      setVersionNotebookId: mockState.setVersionNotebookIdMock,
       updateReadinessReport: mockState.updateReadinessReportMock,
-      featureSteps: {},
-      currentStage: null,
+      featureSteps: mockState.featureSteps,
+      currentStage: mockState.currentStage,
       featureRunId: null,
       setFeatureStep: vi.fn(),
       setCurrentStage: vi.fn(),
@@ -154,6 +167,9 @@ vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: (selector: (state: unknown) => unknown) =>
     selector({
       initializeNotebook: mockState.initializeNotebookMock,
+      loadNotebooks: mockState.loadNotebooksMock,
+      createNotebook: mockState.createNotebookMock,
+      setActiveNotebook: mockState.setActiveNotebookMock,
       disconnect: mockState.disconnectNotebookMock,
       activeNotebookId: mockState.activeNotebookId,
       currentProjectId: mockState.currentProjectId,
@@ -163,6 +179,11 @@ vi.mock('@/stores/notebookStore', () => ({
       createCell: mockState.createNotebookCellMock,
       updateCell: mockState.updateNotebookCellMock
     })
+}));
+
+vi.mock('@/lib/api/notebooks', () => ({
+  createNotebook: (...args: unknown[]) => mockState.createNotebookApiMock(...args),
+  updateNotebook: (...args: unknown[]) => mockState.updateNotebookApiMock(...args)
 }));
 
 vi.mock('@/stores/nlSuggestionStore', () => ({
@@ -178,6 +199,13 @@ vi.mock('@/lib/api/featureEngineering', () => ({
   applyFeatureEngineering: (...args: unknown[]) => mockState.applyFeatureEngineeringMock(...args),
   fetchFeatureRuns: vi.fn().mockResolvedValue({ runs: [], count: 0, projectId: '' }),
   fetchFeatureRun: vi.fn().mockResolvedValue({ run: { runId: '', projectId: '', features: {}, createdAt: '', updatedAt: '' } })
+}));
+
+vi.mock('../hooks/useFeatureNotebookSync', () => ({
+  useFeatureNotebookSync: () => ({
+    notebookId: 'fe-notebook-1',
+    isReady: true
+  })
 }));
 
 describe('FeatureEngineeringPanel (Issue #44)', () => {
@@ -232,17 +260,51 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.renameVersionMock.mockReset();
     mockState.approveVersionMock.mockReset();
     mockState.setCurrentVersionMock.mockReset();
+    mockState.setVersionNotebookIdMock.mockReset();
     mockState.updateReadinessReportMock.mockReset();
     mockState.initializeNotebookMock.mockReset();
+    mockState.loadNotebooksMock.mockReset();
+    mockState.createNotebookMock.mockReset();
+    mockState.setActiveNotebookMock.mockReset();
     mockState.disconnectNotebookMock.mockReset();
     mockState.activeNotebookId = null;
     mockState.currentProjectId = 'p1';
     mockState.notebooks = [];
+    mockState.createNotebookMock.mockResolvedValue({ notebookId: 'fe-notebook-1' });
     mockState.updateNotebookMetadataMock.mockReset();
     mockState.notebookCells = [];
     mockState.createNotebookCellMock.mockReset();
     mockState.updateNotebookCellMock.mockReset();
     mockState.applyFeatureEngineeringMock.mockReset();
+    mockState.createNotebookApiMock.mockReset();
+    mockState.updateNotebookApiMock.mockReset();
+    mockState.submitPromptMock.mockReset();
+    mockState.featureSteps = {};
+    mockState.currentStage = null;
+    mockState.createNotebookApiMock.mockResolvedValue({
+      notebookId: 'fe-notebook-1',
+      projectId: 'p1',
+      name: 'Draft Pipeline v1',
+      metadata: {
+        phase: 'feature-engineering',
+        tabId: 'v1',
+        tabName: 'Draft Pipeline v1'
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    mockState.updateNotebookApiMock.mockResolvedValue({
+      notebookId: 'fe-notebook-1',
+      projectId: 'p1',
+      name: 'Draft Pipeline v1',
+      metadata: {
+        phase: 'feature-engineering',
+        tabId: 'v1',
+        tabName: 'Draft Pipeline v1'
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
   });
 
   const renderPanel = (initialEntries = ['/']) => render(
@@ -253,16 +315,22 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     </MemoryRouter>
   );
 
-  it('renders agentic shell layout and keeps approval gated with no active features', () => {
+  it('renders the FE build card and keeps notebook generation disabled with no active features', () => {
     renderPanel();
 
-    expect(screen.getByText('Approval Gate: Readiness Review')).toBeInTheDocument();
-
-    const approveButton = screen.getByRole('button', { name: /Approve Pipeline/i });
-    expect(approveButton).toBeDisabled();
+    expect(screen.getByText('Choose Features To Build')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Notebook Steps/i })).toBeDisabled();
   });
 
-  it('enables approval when readiness evidence exists and calls approve action', async () => {
+  it('passes the draft-scoped notebook id into the agent shell', async () => {
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook-id')).toHaveTextContent('fe-notebook-1');
+    });
+  });
+
+  it('submits an implementation prompt from the FE status card when features are enabled', async () => {
     mockState.features = [
       {
         id: 'f1',
@@ -277,53 +345,39 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
       }
     ];
 
-    mockState.versions.p1[0].readinessReport = {
-      dataSummary: {
-        addedColumns: ['Salary_Scaled'],
-        removedColumns: [],
-        renamedColumns: [],
-        typeChanges: [],
-        nullDeltas: [],
-        warnings: []
-      },
-      steps: [
-        {
-          id: 'f1',
-          name: 'Salary_Scaled',
-          rationale: 'Apply standardize to Salary',
-          method: 'standardize',
-          columns: ['Salary'],
-          codeReference: 'pipeline.step.1:f1'
-        }
-      ]
-    };
-
     renderPanel();
 
-    const approveButton = screen.getByRole('button', { name: /Approve Pipeline/i });
-    expect(approveButton).toBeEnabled();
-
-    fireEvent.click(approveButton);
+    const implementButton = screen.getByRole('button', { name: /Generate Notebook Steps/i });
+    expect(implementButton).toBeEnabled();
+    fireEvent.click(implementButton);
 
     await waitFor(() => {
-      expect(mockState.approveVersionMock).toHaveBeenCalledWith('p1', 'v1');
+      expect(mockState.submitPromptMock).toHaveBeenCalledWith(
+        'Implement the enabled feature in the notebook for this draft, run the cells, validate the result, and register it.'
+      );
     });
   });
 
-  it('locks editing for approved versions and provides start-new-draft action', async () => {
+  it('does not lock the FE shell for approved versions', async () => {
     mockState.versions.p1[0].status = 'approved';
+    mockState.features = [
+      {
+        id: 'f1',
+        projectId: 'p1',
+        sourceColumn: 'Salary',
+        featureName: 'Salary_Scaled',
+        method: 'standardize',
+        category: 'scaling',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        params: {}
+      }
+    ];
 
     renderPanel();
 
-    expect(screen.getByText('Pipeline Approved')).toBeInTheDocument();
-    expect(screen.getByTestId('domain-lock')).toHaveTextContent('locked');
-
-    const draftButton = screen.getByRole('button', { name: /Start New Draft/i });
-    fireEvent.click(draftButton);
-
-    await waitFor(() => {
-      expect(mockState.createDraftVersionMock).toHaveBeenCalledWith('p1', 'New Draft Pipeline');
-    });
+    expect(screen.queryByTestId('domain-lock')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Notebook Steps/i })).toBeEnabled();
   });
 
   it('defaults output format to xlsx for excel datasets', async () => {

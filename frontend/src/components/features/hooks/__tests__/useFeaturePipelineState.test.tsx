@@ -24,6 +24,7 @@ const mockState = vi.hoisted(() => ({
   setFeatureStepMock: vi.fn(),
   fetchFeatureRunMock: vi.fn(),
   fetchFeatureRunsMock: vi.fn(),
+  featureRunIdInStore: null as string | null,
   workflowSession: undefined as { runId?: string } | undefined,
   hydrationError: null as string | null
 }));
@@ -53,7 +54,7 @@ vi.mock('@/stores/featureStore', () => {
     currentVersionId: { p1: 'v1' },
     featureSteps: {},
     currentStage: null,
-    featureRunId: null,
+    featureRunId: mockState.featureRunIdInStore,
     hydrateFromProject: mockState.hydrateFeaturesMock,
     setFeatureRunId: mockState.setFeatureRunIdMock,
     setFeatureStep: mockState.setFeatureStepMock
@@ -163,6 +164,7 @@ describe('useFeaturePipelineState', () => {
     mockState.setFeatureStepMock.mockReset();
     mockState.fetchFeatureRunMock.mockReset();
     mockState.fetchFeatureRunsMock.mockReset();
+    mockState.featureRunIdInStore = null;
     mockState.hydrationError = null;
     mockState.fetchFeatureRunMock.mockResolvedValue({
       run: {
@@ -263,5 +265,30 @@ describe('useFeaturePipelineState', () => {
 
     expect(mockState.hydrateFeaturesMock).not.toHaveBeenCalled();
     expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale workflow run ids and falls back to project-level feature runs', async () => {
+    mockState.featureRunIdInStore = 'workflow-run-1';
+    mockState.fetchFeatureRunsMock.mockResolvedValueOnce({
+      runs: [{
+        runId: 'feat-123',
+        projectId: 'p1',
+        features: {},
+        createdAt: new Date('2026-02-24T00:00:00.000Z').toISOString(),
+        updatedAt: new Date('2026-02-24T00:00:00.000Z').toISOString()
+      }],
+      count: 1,
+      projectId: 'p1'
+    });
+
+    renderHook(() => useFeaturePipelineState('p1'));
+
+    await waitFor(() => {
+      expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
+      expect(mockState.setFeatureRunIdMock).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
+    expect(mockState.setFeatureRunIdMock).toHaveBeenLastCalledWith('feat-123');
   });
 });

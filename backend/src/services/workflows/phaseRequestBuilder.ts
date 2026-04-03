@@ -23,10 +23,22 @@ import { getPhaseConfig } from './phaseConfig.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
+const FEATURE_LIFECYCLE_TOOLS = new Set([
+  'propose_feature',
+  'materialize_feature_code',
+  'execute_feature',
+  'validate_feature',
+  'register_feature',
+  'checkpoint_feature_pipeline'
+]);
 
-function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
+export function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
   if (state.iteration > 0) {
     return true;
+  }
+
+  if (state.turn.prompt?.trim()) {
+    return false;
   }
 
   const startingStatus = typeof state.run.metadata?.workflowTurnStartStatus === 'string'
@@ -41,6 +53,22 @@ function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
   }
 
   return false;
+}
+
+export function shouldRestrictFeatureToolsToProposalMode(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  prompt: string | undefined
+): boolean {
+  const implementIntent = prompt
+    ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(prompt)
+    : false;
+
+  if (implementIntent) {
+    return false;
+  }
+
+  const hasLifecycleHistory = toolResults.some((result) => FEATURE_LIFECYCLE_TOOLS.has(result.tool));
+  return !hasLifecycleHistory;
 }
 
 export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Partial<WorkflowGraphState>> {
@@ -292,7 +320,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         // On the first turn (no lifecycle results yet) and non-implementation
         // prompts, restrict to proposal-only tools so the model can't skip the
         // proposal review step by calling materialize directly.
-        toolDefinitions: currentTurnLifecycleResults.length === 0 && !implementIntent
+        toolDefinitions: shouldRestrictFeatureToolsToProposalMode(featureRawToolResults, turn.prompt)
           ? LLM_FEATURE_PROPOSAL_TOOLS
           : LLM_FEATURE_CONTINUE_TOOLS,
         reasoningEffort: turn.reasoningEffort

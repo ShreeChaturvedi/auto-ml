@@ -12,7 +12,6 @@ import type { SuggestionDraft } from './hooks/useFeaturePipelineState';
 
 interface FeatureUiItemRendererProps {
   item: UiItem;
-  isApproved: boolean;
   datasetColumns: string[];
   suggestionDrafts: Record<string, SuggestionDraft>;
   featureById: Map<string, { enabled?: boolean; params?: Record<string, unknown> }>;
@@ -22,7 +21,6 @@ interface FeatureUiItemRendererProps {
 
 export function FeatureUiItemRenderer({
   item,
-  isApproved,
   datasetColumns,
   suggestionDrafts,
   onToggleSuggestion,
@@ -80,7 +78,6 @@ export function FeatureUiItemRenderer({
           key={item.id}
           item={item}
           draft={suggestionDrafts[item.id]}
-          isApproved={isApproved}
           datasetColumns={datasetColumns}
           onToggle={onToggleSuggestion}
           onControlChange={onUpdateSuggestionControl}

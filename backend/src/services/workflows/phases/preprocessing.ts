@@ -5,9 +5,10 @@ import { createDatasetRepository } from '../../../repositories/datasetRepository
 import {
   createFilePreprocessingRunRepository
 } from '../../../repositories/preprocessingRunRepository.js';
+import type { DatasetFileType } from '../../../types/dataset.js';
 import { ToolCallSchema } from '../../../types/llm.js';
 import type { ToolResult } from '../../../types/llm.js';
-import { asString } from '../../../utils/typeCoercion.js';
+import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import { createPreprocessingLangGraphRuntime } from '../../llm/langgraph/preprocessingRuntime.js';
 import type { LlmClient } from '../../llm/llmClient.js';
 import { createPreprocessingCellInspector, createPreprocessingCellMetadataStore } from '../../llm/preprocessing/cellBinding.js';
@@ -39,6 +40,165 @@ import {
   buildPreprocessingStageConfig
 } from './preprocessing/stageConfig.js';
 import { resolvePreprocessingNextStage } from './preprocessing/transition.js';
+
+// ---------------------------------------------------------------------------
+// Multi-cell decomposition helpers (our additions for #271)
+// ---------------------------------------------------------------------------
+
+interface RunCellResultContext {
+  tool: string;
+  cellId?: string;
+  status?: string;
+  stdout?: string;
+  stderr?: string;
+}
+
+const PREPROCESSING_CELL_MARKER_RE = /^\s*#\s*(?:cell\b.*|%%.*)$/i;
+
+export function splitMaterializedStepCode(code: string): string[] {
+  const trimmed = code.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const lines = trimmed.split(/\r?\n/);
+  const segments: string[] = [];
+  let currentSegment: string[] = [];
+  let sawMarker = false;
+
+  const pushSegment = () => {
+    const joined = currentSegment.join('\n').trim();
+    if (joined) {
+      segments.push(joined);
+    }
+    currentSegment = [];
+  };
+
+  for (const line of lines) {
+    if (PREPROCESSING_CELL_MARKER_RE.test(line)) {
+      sawMarker = true;
+      pushSegment();
+      continue;
+    }
+    currentSegment.push(line);
+  }
+
+  pushSegment();
+
+  if (!sawMarker || segments.length === 0) {
+    return [trimmed];
+  }
+
+  return segments;
+}
+
+export function buildPreprocessingCodeGenerationSystemPrompt(): string {
+  return `You are a Python data preprocessing expert. Author executable Python code for the requested transformation.
+
+RULES:
+- Work on a DataFrame variable named \`df\` (already loaded in scope).
+- Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
+- Use pandas/numpy idioms. Keep the code minimal and focused.
+- If the step has more than one logical notebook phase, you MUST separate it with explicit comment markers like \`# Cell 1\`, \`# Cell 2\`.
+- Treat audit/profile, transform, and post-transform validation as separate notebook phases whenever they are distinct.
+- Do NOT collapse audit + transform + validation into one monolithic cell.
+- Do NOT use asserts. Summarize validation as print() statements.
+- Return ONLY raw Python code — no markdown fences, no explanation.
+
+PANDAS COMPATIBILITY (avoid FutureWarnings):
+- Before assigning float results (e.g. scaled/normalized values) to columns with integer dtype, cast first: \`df[cols] = df[cols].astype("float64")\`.
+- Never use \`inplace=True\`. Write \`df[col] = df[col].fillna(...)\` instead of \`df[col].fillna(..., inplace=True)\`.
+- Use \`isinstance(dtype, pd.CategoricalDtype)\` instead of \`pd.api.types.is_categorical_dtype()\`.
+- When assigning transformed arrays back to DataFrame columns, ensure dtype compatibility explicitly.`;
+}
+
+
+function extractWrittenCellIds(toolResults: ToolResult[]): string[] {
+  const cellIds: string[] = [];
+  for (const result of toolResults) {
+    if (!['write_cell', 'edit_cell'].includes(result.tool)) {
+      continue;
+    }
+    const cellId = extractLatestCellId([result]);
+    if (cellId) {
+      cellIds.push(cellId);
+    }
+  }
+  return cellIds;
+}
+
+function extractRunCellResults(toolResults: ToolResult[]): RunCellResultContext[] {
+  const results: RunCellResultContext[] = [];
+  for (const result of toolResults) {
+    if (result.tool !== 'run_cell') {
+      continue;
+    }
+    const output = asRecord(result.output);
+    results.push({
+      tool: result.tool,
+      cellId: extractLatestCellId([result]) ?? undefined,
+      status: typeof output?.status === 'string' ? output.status : undefined,
+      stdout: typeof output?.stdout === 'string' ? output.stdout : undefined,
+      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined
+    });
+  }
+  return results;
+}
+
+function aggregateRunOutputs(runCells: RunCellResultContext[]): { stdout: string; stderr: string } {
+  return {
+    stdout: runCells.map((entry) => entry.stdout?.trim()).filter(Boolean).join('\n\n'),
+    stderr: runCells.map((entry) => entry.stderr?.trim()).filter(Boolean).join('\n\n')
+  };
+}
+
+
+
+export function buildSegmentedPreprocessingCellContent(params: {
+  segment: string;
+  segmentIndex: number;
+  segmentCount: number;
+  dataset?: {
+    filename: string;
+    datasetId: string;
+    fileType: DatasetFileType;
+  };
+}): string {
+  const trimmedSegment = params.segment.trim();
+  const dataset = params.dataset;
+  if (!dataset) {
+    return trimmedSegment;
+  }
+
+  if (params.segmentCount <= 1) {
+    return buildPreprocessingCellContent({
+      filename: dataset.filename,
+      datasetId: dataset.datasetId,
+      fileType: dataset.fileType,
+      dataframeName: 'df',
+      userCode: trimmedSegment
+    });
+  }
+
+  if (params.segmentIndex === 0) {
+    return [
+      `df = load_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`,
+      '',
+      trimmedSegment
+    ].join('\n');
+  }
+
+  if (params.segmentIndex === params.segmentCount - 1) {
+    return [
+      trimmedSegment,
+      '',
+      `save_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`
+    ].join('\n');
+  }
+
+  return trimmedSegment;
+}
+
 // ---------------------------------------------------------------------------
 // Preprocessing PhaseConfig — replaces Systems A (preprocessingRuntime) and
 // B (controller). The coordinator lives here, while stage configuration,
@@ -57,25 +217,37 @@ const syncLangGraphState = createPreprocessingLangGraphSynchronizer({
   runtime: createPreprocessingLangGraphRuntime()
 });
 
+function isWorkflowThreadReference(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
+}
+
+
 // -- Deterministic actions (ported from plannerNotebook, plannerExecution, plannerValidation)
 
 async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
   const step = extractLatestStepNotebookContext(state);
   if (!step) return [];
   if (!step.code) return [];
+  const codeSegments = splitMaterializedStepCode(step.code);
+  if (codeSegments.length === 0) {
+    return [];
+  }
 
   const activeDatasetId = state.run.activeDatasetId;
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const latestCellId = extractLatestCellId(currentTurnResults);
+  const writtenCellIds = extractWrittenCellIds(currentTurnResults);
+  const runCells = extractRunCellResults(currentTurnResults);
 
-  // If last tool was write_cell and we have a cell, run it
-  const latestTool = currentTurnResults.at(-1)?.tool;
-  if (latestTool === 'write_cell' && latestCellId) {
+  if (writtenCellIds.length > runCells.length) {
+    const nextCellId = writtenCellIds[runCells.length];
     const parsed = ToolCallSchema.safeParse({
       id: `wf-call-${randomUUID()}`,
       tool: 'run_cell',
       args: {
-        cellId: latestCellId,
+        cellId: nextCellId,
         ...(activeDatasetId ? { datasetId: activeDatasetId } : {})
       },
       rationale: `Execute notebook cell for preprocessing step ${step.stepId}.`
@@ -83,18 +255,28 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
     return parsed.success ? [parsed.data] : [];
   }
 
+  if (writtenCellIds.length >= codeSegments.length) {
+    return [];
+  }
+
+  const nextSegmentIndex = writtenCellIds.length;
+  const nextSegment = codeSegments[nextSegmentIndex];
+
   // Build visible cell content with explicit load/save calls so the user
   // sees exactly what runs in the kernel (no invisible wrapping at execution).
-  let cellContent = step.code;
+  let cellContent = nextSegment;
   if (activeDatasetId) {
     const dataset = await datasetRepository.getById(activeDatasetId);
     if (dataset && dataset.projectId === state.run.projectId) {
-      cellContent = buildPreprocessingCellContent({
-        filename: dataset.filename,
-        datasetId: dataset.datasetId,
-        fileType: dataset.fileType,
-        dataframeName: 'df',
-        userCode: step.code
+      cellContent = buildSegmentedPreprocessingCellContent({
+        segment: nextSegment,
+        segmentIndex: nextSegmentIndex,
+        segmentCount: codeSegments.length,
+        dataset: {
+          filename: dataset.filename,
+          datasetId: dataset.datasetId,
+          fileType: dataset.fileType
+        }
       });
     }
   }
@@ -115,8 +297,10 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
     id: `wf-call-${randomUUID()}`,
     tool: 'write_cell',
     args: {
-      ...(latestCellId ? { cellId: latestCellId } : {}),
-      title: step.title ?? `Step ${step.stepId}`,
+      ...(step.cellIds[nextSegmentIndex] ? { cellId: step.cellIds[nextSegmentIndex] } : {}),
+      title: codeSegments.length > 1
+        ? `${step.title ?? `Step ${step.stepId}`} (${nextSegmentIndex + 1}/${codeSegments.length})`
+        : step.title ?? `Step ${step.stepId}`,
       content: cellContent,
       cellType: 'code',
       metadata
@@ -131,8 +315,10 @@ function buildRecordExecutionAction(state: WorkflowGraphState): import('../../..
   if (!step) return [];
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const runCell = extractLatestRunCellContext(currentTurnResults);
-  const cellId = extractLatestCellId(currentTurnResults);
+  const runCells = extractRunCellResults(currentTurnResults);
+  const latestRunCell = runCells.at(-1) ?? null;
+  const writtenCellIds = extractWrittenCellIds(currentTurnResults);
+  const { stdout, stderr } = aggregateRunOutputs(runCells);
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,
@@ -140,10 +326,11 @@ function buildRecordExecutionAction(state: WorkflowGraphState): import('../../..
     args: {
       runId: step.runId,
       stepId: step.stepId,
-      cellId: cellId ?? undefined,
-      succeeded: runCell?.status === 'success',
-      stdout: runCell?.stdout ?? '',
-      stderr: runCell?.stderr ?? ''
+      cellId: latestRunCell?.cellId ?? undefined,
+      cellIds: writtenCellIds.length > 0 ? writtenCellIds : undefined,
+      succeeded: latestRunCell?.status === 'success',
+      stdout,
+      stderr
     },
     rationale: 'Record the latest preprocessing notebook execution outcome.'
   });
@@ -205,21 +392,6 @@ async function buildCodeGenerationAction(
     }
   }
 
-  const systemPrompt = `You are a Python data preprocessing expert. Author executable Python code for the requested transformation.
-
-RULES:
-- Work on a DataFrame variable named \`df\` (already loaded in scope).
-- Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
-- Use pandas/numpy idioms. Keep the code minimal and focused.
-- Do NOT use asserts. Summarize validation as print() statements.
-- Return ONLY raw Python code — no markdown fences, no explanation.
-
-PANDAS COMPATIBILITY (avoid FutureWarnings):
-- Before assigning float results (e.g. scaled/normalized values) to columns with integer dtype, cast first: \`df[cols] = df[cols].astype("float64")\`.
-- Never use \`inplace=True\`. Write \`df[col] = df[col].fillna(...)\` instead of \`df[col].fillna(..., inplace=True)\`.
-- Use \`isinstance(dtype, pd.CategoricalDtype)\` instead of \`pd.api.types.is_categorical_dtype()\`.
-- When assigning transformed arrays back to DataFrame columns, ensure dtype compatibility explicitly.`;
-
   const userContent = [
     state.turn.prompt ? `User request: ${state.turn.prompt}` : '',
     `Run ID: ${step.runId}`,
@@ -231,7 +403,7 @@ PANDAS COMPATIBILITY (avoid FutureWarnings):
 
   const rawCode = await client.complete({
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: buildPreprocessingCodeGenerationSystemPrompt() },
       { role: 'user', content: userContent }
     ],
     temperature: 0.2,
@@ -268,14 +440,17 @@ async function executePreprocessingToolCall(
   args: Record<string, unknown>
 ): Promise<{ output?: unknown; error?: string }> {
   const explicitRunId = asString(args.runId);
+  const sanitizedRunId = explicitRunId && !isWorkflowThreadReference(explicitRunId)
+    ? explicitRunId
+    : undefined;
   const toolCallId = asString(args.toolCallId);
 
   // Resolve run
   let run;
-  if (explicitRunId) {
-    const existing = await runRepository.getById(explicitRunId);
+  if (sanitizedRunId) {
+    const existing = await runRepository.getById(sanitizedRunId);
     if (!existing) {
-      return fail(explicitRunId, 'RUN_NOT_FOUND', `Run ${explicitRunId} not found.`);
+      return fail(sanitizedRunId, 'RUN_NOT_FOUND', `Run ${sanitizedRunId} not found.`);
     }
     run = existing;
   } else {

@@ -4,14 +4,20 @@ import { useFeatureStore } from '@/stores/featureStore';
 import { fetchFeatureRun, fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
+import type { FeatureLifecycleStep } from '@/stores/featureStore';
 import { useFeatureReadiness } from './useFeatureReadiness';
-import { useFeatureCodeGen } from './useFeatureCodeGen';
 import { useFeatureVersioning } from './useFeatureVersioning';
 import { useFeatureApply } from './useFeatureApply';
 import { useSuggestionDrafts } from './useSuggestionDrafts';
 import type { FeatureSuggestionItem } from '../featureEngineeringUtils';
 
 export type { SuggestionDraft } from './useSuggestionDrafts';
+
+const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
+
+function isFeaturePipelineRunId(runId: string): boolean {
+  return runId.startsWith('feat-') || runId.startsWith('feature-run-');
+}
 
 interface UseFeaturePipelineStateReturn {
   // Dataset state
@@ -28,6 +34,7 @@ interface UseFeaturePipelineStateReturn {
   versions: PipelineVersion[];
   currentVersionId: string | undefined;
   currentVersion: PipelineVersion | undefined;
+  chatSessionVersion: number;
   isApproved: boolean;
   isCurrentVersionDraft: boolean;
 
@@ -35,6 +42,8 @@ interface UseFeaturePipelineStateReturn {
   projectFeatures: FeatureSpec[];
   activeFeatures: FeatureSpec[];
   featureById: Map<string, FeatureSpec>;
+  featureSteps: Record<string, FeatureLifecycleStep>;
+  currentStage: string | null;
 
   // Readiness
   readinessReport: ReadinessReport;
@@ -101,7 +110,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
 
   // --- Feature store selectors ---
   const features = useFeatureStore((state) => state.features);
+  const versionEntries = useFeatureStore((state) => state.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS);
+  const selectedVersionId = useFeatureStore((state) => state.currentVersionId[projectId]);
   const hydrateFeatures = useFeatureStore((state) => state.hydrateFromProject);
+  const featureSteps = useFeatureStore((state) => state.featureSteps);
+  const currentStage = useFeatureStore((state) => state.currentStage);
 
   // --- Local state ---
   const [selectedDataset, setSelectedDataset] = useState<string | null>(null);
@@ -162,6 +175,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
         let featureRunId: string | undefined = store.featureRunId ?? undefined;
         let runData: import('@/lib/api/featureEngineering').FeaturePipelineRunState | undefined;
 
+        if (featureRunId && !isFeaturePipelineRunId(featureRunId)) {
+          useFeatureStore.getState().setFeatureRunId(null);
+          featureRunId = undefined;
+        }
+
         if (featureRunId) {
           try {
             const { run } = await fetchFeatureRun(featureRunId);
@@ -169,7 +187,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
             runData = run;
           } catch {
             // Stale or conflated ID — clear it and fall through to project-level lookup
-            useFeatureStore.getState().setFeatureRunId(null as unknown as string);
+            useFeatureStore.getState().setFeatureRunId(null);
             featureRunId = undefined;
           }
         }
@@ -258,23 +276,13 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     [projectFeatures]
   );
 
-  // --- Apply (extracted hook) ---
-  const {
-    outputName,
-    setOutputName,
-    outputFormat,
-    setOutputFormat,
-    applyStatus,
-    setApplyStatus,
-    applyMessage,
-    setApplyMessage,
-    handleApplyFeatures,
-  } = useFeatureApply({
-    projectId,
-    projectFeatures,
-    selectedDatasetFile,
-    setSelectedDataset,
-  });
+  const currentVersionNotebookId = useMemo(() => {
+    const fallbackVersion = versionEntries[0];
+    const resolvedVersion = selectedVersionId
+      ? versionEntries.find((version) => version.id === selectedVersionId) ?? fallbackVersion
+      : fallbackVersion;
+    return resolvedVersion?.notebookId;
+  }, [selectedVersionId, versionEntries]);
 
   // --- Suggestion drafts (extracted hook) ---
   const {
@@ -288,11 +296,31 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     setPanelError,
   });
 
+  // --- Apply (extracted hook) ---
+  const {
+    outputName,
+    setOutputName,
+    outputFormat,
+    setOutputFormat,
+    applyStatus,
+    setApplyStatus,
+    applyMessage,
+    setApplyMessage,
+    handleApplyFeatures,
+  } = useFeatureApply({
+    projectId,
+    notebookId: currentVersionNotebookId,
+    projectFeatures,
+    selectedDatasetFile,
+    setSelectedDataset,
+  });
+
   // --- Versioning (extracted hook) ---
   const {
     versions,
     currentVersionId,
     currentVersion,
+    chatSessionVersion,
     isApproved,
     isCurrentVersionDraft,
     approveVersion,
@@ -326,9 +354,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     isReadinessExpanded,
     setIsReadinessExpanded
   } = useFeatureReadiness(projectId, activeFeatures, datasetColumns, currentVersion);
-
-  // --- Code preview sync (extracted hook) ---
-  useFeatureCodeGen(activeFeatures, selectedDatasetFile);
 
   // --- Default dataset selection effect (prefer previous phase's dataset) ---
   useEffect(() => {
@@ -369,11 +394,14 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     versions,
     currentVersionId,
     currentVersion,
+    chatSessionVersion,
     isApproved,
     isCurrentVersionDraft,
     projectFeatures,
     activeFeatures,
     featureById,
+    featureSteps,
+    currentStage,
     readinessReport,
     isReadyForApproval,
     readinessReportUnlocked,

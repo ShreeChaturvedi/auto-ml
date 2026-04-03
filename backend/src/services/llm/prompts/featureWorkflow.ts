@@ -36,6 +36,22 @@ const LIFECYCLE_SEQUENCE: readonly string[] = [
 
 const LIFECYCLE_SET = new Set(LIFECYCLE_SEQUENCE);
 
+function extractSelectedFeatureIds(userPrompt: string | undefined): string[] {
+  if (!userPrompt) {
+    return [];
+  }
+
+  const match = userPrompt.match(/^Selected feature IDs to implement:\s*(.+)$/im);
+  if (!match) {
+    return [];
+  }
+
+  return match[1]
+    .split(/\s*,\s*/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 /**
  * Walk backwards through tool results, find the most recent lifecycle tool,
  * extract the featureId from its output, and return a one-line directive
@@ -45,11 +61,23 @@ function buildContinuationDirective(
   toolResults: ToolResult[] | undefined,
   userPrompt: string | undefined
 ): string | undefined {
-  if (!toolResults?.length) return undefined;
+  const selectedFeatureIds = extractSelectedFeatureIds(userPrompt);
+
+  if (!toolResults?.length) {
+    if (selectedFeatureIds.length > 0) {
+      return `The user already selected feature "${selectedFeatureIds[0]}" for implementation. Call materialize_feature_code for "${selectedFeatureIds[0]}" first using the enabled feature definition from the user message. Do NOT propose more features.`;
+    }
+    return undefined;
+  }
 
   // Filter to lifecycle-only results (ignore notebook/data tools)
   const lifecycleResults = toolResults.filter((r) => LIFECYCLE_SET.has(r.tool));
-  if (!lifecycleResults.length) return undefined;
+  if (!lifecycleResults.length) {
+    if (selectedFeatureIds.length > 0) {
+      return `The user already selected feature "${selectedFeatureIds[0]}" for implementation. Call materialize_feature_code for "${selectedFeatureIds[0]}" first using the enabled feature definition from the user message. Do NOT propose more features.`;
+    }
+    return undefined;
+  }
 
   const last = lifecycleResults[lifecycleResults.length - 1];
   const output = last.output && typeof last.output === 'object' && !Array.isArray(last.output)
@@ -72,18 +100,6 @@ function buildContinuationDirective(
   // Pause after proposals unless the user explicitly asked for implementation.
   const allProposals = lifecycleResults.every((r) => r.tool === 'propose_feature');
   if (allProposals) {
-    // Check if user requested a specific number of features
-    const countMatch = userPrompt?.match(/\b(\d+)\s*(?:features?|columns?|transforms?|transformations?)\b/i)
-      ?? userPrompt?.match(/\b(?:features?|columns?|transforms?|transformations?)\s*.*?(\d+)\b/i);
-    const requestedCount = countMatch ? Math.min(parseInt(countMatch[1], 10), 10) : 0;
-    const proposedCount = lifecycleResults.filter((r) => r.tool === 'propose_feature' && !r.error).length;
-
-    // Enforce minimum 3 proposals (or explicit count if higher)
-    const targetCount = Math.max(requestedCount, 3);
-    if (proposedCount < targetCount) {
-      return `You have proposed ${proposedCount} of ${targetCount} features. Call propose_feature for ${targetCount - proposedCount} more diverse candidate(s).`;
-    }
-
     const planIntent = userPrompt
       ? /\b(plan|proposal|suggest|recommend|what\s+would|which\s+should|ideas?|brainstorm)\b/i.test(userPrompt)
       : false;
@@ -91,9 +107,75 @@ function buildContinuationDirective(
       ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(userPrompt)
       : false;
     if (!implementIntent) {
+      // Proposal-only turns should broaden the option set before rendering UI.
+      // Implementation turns must continue the lifecycle instead of forcing
+      // additional proposals.
+      const countMatch = userPrompt?.match(/\b(\d+)\s*(?:features?|columns?|transforms?|transformations?)\b/i)
+        ?? userPrompt?.match(/\b(?:features?|columns?|transforms?|transformations?)\s*.*?(\d+)\b/i);
+      const requestedCount = countMatch ? Math.min(parseInt(countMatch[1], 10), 10) : 0;
+      const proposedCount = lifecycleResults.filter((r) => r.tool === 'propose_feature' && !r.error).length;
+
+      // Enforce minimum 3 proposals (or explicit count if higher)
+      const targetCount = Math.max(requestedCount, 3);
+      if (proposedCount < targetCount) {
+        return `You have proposed ${proposedCount} of ${targetCount} features. Call propose_feature for ${targetCount - proposedCount} more diverse candidate(s).`;
+      }
+
       return 'All features have been proposed. Present proposals via render_ui with feature_suggestion items. Do NOT materialize code — wait for the user to select which features to implement.';
     }
-    // User explicitly asked for implementation — continue to materialize
+
+    if (selectedFeatureIds.length > 0) {
+      const selectedSet = new Set(selectedFeatureIds);
+      const selectedProposals = lifecycleResults
+        .filter((result) => result.tool === 'propose_feature' && !result.error)
+        .map((result) => {
+          const proposalOutput = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+            ? (result.output as Record<string, unknown>)
+            : undefined;
+          if (!proposalOutput || typeof proposalOutput.featureId !== 'string' || !selectedSet.has(proposalOutput.featureId)) {
+            return undefined;
+          }
+
+          return {
+            featureId: proposalOutput.featureId,
+            featureName: typeof proposalOutput.featureName === 'string' ? proposalOutput.featureName : proposalOutput.featureId,
+            method: typeof proposalOutput.method === 'string' ? proposalOutput.method : 'custom',
+            sourceColumns: Array.isArray(proposalOutput.sourceColumns)
+              ? proposalOutput.sourceColumns.filter((value): value is string => typeof value === 'string')
+              : []
+          };
+        })
+        .filter((proposal): proposal is {
+          featureId: string;
+          featureName: string;
+          method: string;
+          sourceColumns: string[];
+        } => Boolean(proposal));
+
+      if (selectedProposals.length > 0) {
+        const [firstSelectedProposal] = selectedProposals;
+        const proposalSummary = selectedProposals
+          .map((proposal) => `"${proposal.featureId}" (${proposal.featureName}: ${proposal.method} on ${proposal.sourceColumns.join(', ') || 'unspecified columns'})`)
+          .join(', ');
+        return selectedProposals.length === 1
+          ? `The user enabled feature ${proposalSummary}. Call materialize_feature_code for "${firstSelectedProposal.featureId}" first, using the proposed feature definition exactly as reviewed. Do NOT materialize or execute unselected proposals.`
+          : `The user enabled ${selectedProposals.length} proposed features: ${proposalSummary}. Start with "${firstSelectedProposal.featureId}" by calling materialize_feature_code using the reviewed proposal details for that feature. Do NOT materialize or execute unselected proposals.`;
+      }
+    }
+
+    // The user asked to implement and we already have at least one proposal in
+    // history. Continue the lifecycle from the earliest unresolved proposal
+    // instead of forcing more proposals first.
+    const firstProposal = lifecycleResults.find((result) => result.tool === 'propose_feature' && !result.error);
+    const firstProposalOutput = firstProposal?.output && typeof firstProposal.output === 'object' && !Array.isArray(firstProposal.output)
+      ? (firstProposal.output as Record<string, unknown>)
+      : undefined;
+    const firstProposalFeatureId = typeof firstProposalOutput?.featureId === 'string'
+      ? firstProposalOutput.featureId
+      : undefined;
+    if (firstProposalFeatureId) {
+      return `Next: call materialize_feature_code for feature "${firstProposalFeatureId}".`;
+    }
   }
 
   // Determine the next lifecycle tool

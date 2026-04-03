@@ -33,9 +33,15 @@ export const executeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
   let stderr: string | undefined;
   let executionMs: number | undefined;
 
-  const dockerReady = await isDockerAvailable();
+  const useNotebookExecutionResult = typeof args.cellId === 'string' || args.executionSource === 'notebook';
+  const dockerReady = useNotebookExecutionResult ? false : await isDockerAvailable();
 
-  if (dockerReady) {
+  if (useNotebookExecutionResult) {
+    succeeded = (args.succeeded as boolean) ?? false;
+    stdout = args.stdout as string | undefined;
+    stderr = args.stderr as string | undefined;
+    executionMs = args.executionMs as number | undefined;
+  } else if (dockerReady) {
     const startMs = Date.now();
     try {
       const container = await getOrCreateContainer({
@@ -72,6 +78,7 @@ export const executeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
     stderr,
     executionMs,
     dockerExecution: dockerReady,
+    executionSource: useNotebookExecutionResult ? 'notebook' : 'docker',
     runId: ctx.run?.runId
   };
 

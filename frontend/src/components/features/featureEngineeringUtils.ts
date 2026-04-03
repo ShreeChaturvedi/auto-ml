@@ -16,8 +16,22 @@ export const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
   'This operation was aborted'
 ]);
 
+let pendingFeatureLeftPaneScrollTop: number | null = null;
+
 export function stripAssistantArtifacts(text: string): string {
   return sanitizeAssistantText(text);
+}
+
+export function captureFeatureLeftPaneScrollTop(scrollTop: number) {
+  pendingFeatureLeftPaneScrollTop = scrollTop;
+}
+
+export function peekFeatureLeftPaneScrollTop(): number | null {
+  return pendingFeatureLeftPaneScrollTop;
+}
+
+export function clearFeatureLeftPaneScrollTop() {
+  pendingFeatureLeftPaneScrollTop = null;
 }
 
 export function hasUiItems(ui: UiSchema | null | undefined): boolean {

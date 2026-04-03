@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
 import { useDataStore } from '@/stores/dataStore';
+import { useFeatureStore } from '@/stores/featureStore';
 import type { FeatureSpec } from '@/types/feature';
 
 interface UseFeatureApplyOptions {
   projectId: string;
+  notebookId?: string;
   projectFeatures: FeatureSpec[];
   selectedDatasetFile: { id: string; metadata?: { datasetId?: string; columns?: string[] } } | undefined;
   setSelectedDataset: (id: string | null) => void;
@@ -24,11 +26,13 @@ interface UseFeatureApplyReturn {
 
 export function useFeatureApply({
   projectId,
+  notebookId,
   projectFeatures,
   selectedDatasetFile,
   setSelectedDataset,
 }: UseFeatureApplyOptions): UseFeatureApplyReturn {
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
+  const featureRunId = useFeatureStore((state) => state.featureRunId);
 
   const [outputName, setOutputName] = useState('');
   const [outputFormat, setOutputFormat] = useState<'csv' | 'json' | 'xlsx'>('csv');
@@ -74,6 +78,12 @@ export function useFeatureApply({
       return;
     }
 
+    if (!notebookId) {
+      setApplyStatus('error');
+      setApplyMessage('Feature notebook is still initializing. Try again in a moment.');
+      return;
+    }
+
     const missingSecondary = enabledFeatures.find(
       (feature) =>
         ['ratio', 'difference', 'product'].includes(feature.method) && !feature.secondaryColumn
@@ -103,6 +113,8 @@ export function useFeatureApply({
       const response = await applyFeatureEngineering({
         projectId,
         datasetId: selectedDatasetFile.metadata.datasetId,
+        runId: featureRunId ?? undefined,
+        notebookId,
         outputName: outputName.trim() || undefined,
         outputFormat,
         features: enabledFeatures
@@ -117,7 +129,7 @@ export function useFeatureApply({
       setApplyStatus('error');
       setApplyMessage(error instanceof Error ? error.message : 'Failed to apply features.');
     }
-  }, [hydrateFromBackend, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
+  }, [featureRunId, hydrateFromBackend, notebookId, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
 
   return {
     outputName,

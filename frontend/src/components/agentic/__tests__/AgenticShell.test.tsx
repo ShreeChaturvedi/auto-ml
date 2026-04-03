@@ -142,4 +142,24 @@ describe('AgenticShell smoke test', () => {
       );
     }).not.toThrow();
   });
+
+  it('mounts with legacy tips-only adapters', () => {
+    const domainAdapter: DomainAdapter = {
+      buildRequest: vi.fn(async () => undefined),
+      toolRegistry: {},
+      toolUiRegistry: {},
+      tipsProvider: () => [],
+      preserveToolHistoryBetweenPrompts: true
+    };
+
+    expect(() => {
+      render(
+        <AgenticShell
+          projectId="test-project"
+          domainAdapter={domainAdapter}
+          storageKey="legacy-tips-adapter"
+        />
+      );
+    }).not.toThrow();
+  });
 });

@@ -20,8 +20,10 @@ export interface FeatureEngineeringAdapterConfig {
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
   sessionKey: string;
+  notebookId?: string;
   notebookName?: string;
   notebookMetadata?: NotebookPhaseMetadata;
+  onNotebookCreated?: (notebookId: string) => void;
 }
 
 function buildFeatureTips(
@@ -144,11 +146,9 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
 }
 
 function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
-  // Prefer the first-class runId; fall back to runId inside payload for older events.
-  const runId = artifact.runId
-    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
-      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
-      : undefined);
+  const runId = artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
+    ? (artifact.payload as Record<string, unknown>).featureRunId as string | undefined
+    : undefined;
   if (runId) {
     useFeatureStore.getState().setFeatureRunId(runId);
   }
@@ -172,26 +172,41 @@ export function createFeatureEngineeringAdapter(
       );
       let prompt = rawPrompt;
       if (enabledFeatures.length > 0 && /\b(implement|apply|build|execute|run|make)\b/i.test(rawPrompt)) {
+        const featureIds = enabledFeatures.map((f) => f.id).join(', ');
         const featureList = enabledFeatures
           .map((f) => `${f.featureName} (${f.method} on ${f.sourceColumn})`)
-          .join(', ');
-        prompt = `${rawPrompt}\n\nEnabled features to implement: ${featureList}`;
+          .join('; ');
+        prompt = `${rawPrompt}\n\nSelected feature IDs to implement: ${featureIds}\nEnabled features to implement: ${featureList}`;
       }
 
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
       const notebookStore = useNotebookStore.getState();
 
-      // Find an existing FE notebook for this project, or create a new one.
-      // NEVER reuse a Processing notebook — FE gets its own fresh notebook.
-      let notebookId: string | undefined;
-      const existingFENotebook = notebookStore.notebooks.find((nb) => {
-        const meta = nb.metadata as Record<string, unknown> | undefined;
-        return meta?.phase === 'feature-engineering';
-      });
-      if (existingFENotebook) {
-        notebookId = existingFENotebook.notebookId;
-        if (notebookStore.activeNotebookId !== notebookId) {
-          await notebookStore.setActiveNotebook(notebookId);
+      // Feature engineering uses a notebook scoped to the active draft
+      // pipeline. Never adopt a preprocessing notebook or an arbitrary FE
+      // notebook from another draft.
+      let notebookId = config.notebookId?.trim() || undefined;
+      if (notebookId && notebookStore.activeNotebookId !== notebookId) {
+        await notebookStore.setActiveNotebook(notebookId);
+        if (useNotebookStore.getState().activeNotebookId !== notebookId) {
+          notebookId = undefined;
+        }
+      }
+
+      if (!notebookId) {
+        const activeNotebook = notebookStore.notebooks.find(
+          (entry) => entry.notebookId === notebookStore.activeNotebookId
+        );
+        const activeMetadata = activeNotebook?.metadata as Record<string, unknown> | undefined;
+        const expectedTabId = config.notebookMetadata && typeof config.notebookMetadata === 'object'
+          ? (config.notebookMetadata as Record<string, unknown>).tabId
+          : undefined;
+        if (
+          activeNotebook
+          && activeMetadata?.phase === 'feature-engineering'
+          && (!expectedTabId || activeMetadata?.tabId === expectedTabId)
+        ) {
+          notebookId = activeNotebook.notebookId;
         }
       }
 
@@ -202,6 +217,7 @@ export function createFeatureEngineeringAdapter(
         );
         notebookId = createdNotebook?.notebookId;
         if (notebookId) {
+          config.onNotebookCreated?.(notebookId);
           await notebookStore.setActiveNotebook(notebookId);
         }
       }
@@ -231,9 +247,6 @@ export function createFeatureEngineeringAdapter(
     },
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
-      if (state.runId) {
-        useFeatureStore.getState().setFeatureRunId(state.runId);
-      }
     },
     onWorkflowArtifactUpdate: (artifact) => {
       syncFeatureRunIdFromArtifact(artifact);

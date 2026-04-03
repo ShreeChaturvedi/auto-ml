@@ -8,6 +8,7 @@ import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { createPreprocessingAdapter } from './PreprocessingAdapter';
 import { buildDatasetContinuityPrompt } from './continuityPrompt';
+import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { RenameTabDialog } from './PreprocessingDialogs';
 import { DatasetSelector } from './DatasetSelector';
 import { useDatasetSelectorTrigger } from './useDatasetSelectorTrigger';
@@ -17,7 +18,6 @@ import {
 } from './PreprocessingToolbar';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
-import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
 import { DEFAULT_WORKBOOK_ID } from './preprocessingTabUtils';
 import { usePreprocessingPanelSearchState } from './usePreprocessingPanelSearchState';
@@ -185,7 +185,6 @@ export function PreprocessingPanel() {
   const {
     isSubmitChoiceOpen,
     setSubmitChoiceOpen,
-    requestDatasetContinuityChoice,
     handleUseCurrentDataset,
     handleUseOriginalDataset,
     handleCancelChoice
@@ -198,6 +197,25 @@ export function PreprocessingPanel() {
   );
 
   usePreprocessingRunHydration(projectId, runId, hydrateRunById, invalidateActiveTabSession);
+
+  const preparePreprocessingPrompt = useCallback(async (prompt: string): Promise<string | null> => {
+    if (!selectedDatasetId) {
+      openDatasetSelector();
+      toast.info('Select a dataset to get started', {
+        description: 'Choose a dataset from the selector, then re-send your prompt.'
+      });
+      return null;
+    }
+    setNextRunCellMode('continue');
+    return buildDatasetContinuityPrompt(
+      prompt,
+      'continue',
+      {
+        datasetId: selectedDatasetId,
+        datasetLabel: selectedTable?.filename
+      }
+    );
+  }, [openDatasetSelector, selectedDatasetId, selectedTable?.filename, setNextRunCellMode]);
 
   const handleReplayCheck = () => {
     if (!projectId) {
@@ -223,9 +241,10 @@ export function PreprocessingPanel() {
       projectId ?? '',
       selectedDatasetId,
       tables,
-      projectId ? buildWorkflowSessionKey(projectId, storageKey) : storageKey
+      projectId ? buildWorkflowSessionKey(projectId, storageKey) : storageKey,
+      activeTab?.notebookId
     );
-  }, [activeTab?.id, buildTabStorageKey, projectId, selectedDatasetId, tables]);
+  }, [activeTab?.id, activeTab?.notebookId, buildTabStorageKey, projectId, selectedDatasetId, tables]);
 
   return (
     <>
@@ -234,7 +253,7 @@ export function PreprocessingPanel() {
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
         composerPlaceholders={composerPlaceholders}
-        beforeSubmit={requestDatasetContinuityChoice}
+        beforeSubmit={preparePreprocessingPrompt}
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}
         initialPrompt={insightInitialPrompt}
@@ -304,6 +323,7 @@ export function PreprocessingPanel() {
         onUseOriginalDataset={handleUseOriginalDataset}
         onCancel={handleCancelChoice}
       />
+
 
     </>
   );

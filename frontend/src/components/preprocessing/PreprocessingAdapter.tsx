@@ -8,24 +8,54 @@ import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { useDataStore } from '@/stores/dataStore';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { AvailableTable } from '@/types/preprocessing';
-import { useNotebookStore } from '@/stores/notebookStore';
 import type { WorkflowState } from '@/types/workflow';
+import { isWorkflowThreadId } from '@/lib/workflowThread';
 import { getControllerSummaryFromWorkflowState } from './controllerSummaryParser';
 
 export function createPreprocessingAdapter(
   projectId: string,
   selectedDatasetId: string | null,
   tables: AvailableTable[],
-  sessionKey: string
+  sessionKey: string,
+  notebookId?: string | null
 ): DomainAdapter {
   function clearStaleWorkflowSession() {
     useWorkflowSessionStore.getState().clearSession(sessionKey);
     usePreprocessingStore.getState().clearRun();
   }
 
+  function resolveWorkflowSession() {
+    const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+    if (!session?.runId) {
+      return session;
+    }
+    if (!isWorkflowThreadId(session.runId)) {
+      return session;
+    }
+
+    clearStaleWorkflowSession();
+    return undefined;
+  }
+
+  function resolveToolFailureMessage(result: ToolResult): string | null {
+    if (typeof result.error === 'string' && result.error.trim()) {
+      return result.error.trim();
+    }
+    const output = result.output;
+    if (!output || typeof output !== 'object' || Array.isArray(output)) {
+      return null;
+    }
+    const message = (output as Record<string, unknown>).message;
+    return typeof message === 'string' && message.trim() ? message.trim() : null;
+  }
+
   const toolHandlers = {
     onCall: (call: ToolCall) => usePreprocessingStore.getState().processToolCall(call),
     onResult: (call: ToolCall, result: ToolResult) => {
+      const failureMessage = resolveToolFailureMessage(result);
+      if (/^Run\s+.+\s+not found\./i.test(failureMessage ?? '')) {
+        clearStaleWorkflowSession();
+      }
       usePreprocessingStore.getState().processToolResult(call, result);
       if (call.tool === 'commit_transformation_step' && projectId) {
         void useDataStore.getState().hydrateFromBackend(projectId, { force: true });
@@ -69,8 +99,10 @@ export function createPreprocessingAdapter(
 
   function syncWorkflowState(state: WorkflowState) {
     useWorkflowSessionStore.getState().updateSession(sessionKey, state);
-    usePreprocessingStore.getState().setRunId(state.runId);
     const controller = getControllerSummaryFromWorkflowState(state);
+    if (controller?.runId && !isWorkflowThreadId(controller.runId)) {
+      usePreprocessingStore.getState().setRunId(controller.runId);
+    }
     if (!controller) {
       return;
     }
@@ -83,15 +115,15 @@ export function createPreprocessingAdapter(
       if (!selectedDatasetId || !selectedTable) {
         throw new Error('Please select a valid dataset for this project before running preprocessing.');
       }
-      const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+      const session = resolveWorkflowSession();
       await streamWorkflowTurn(
         {
           projectId,
           phase: 'preprocessing',
           datasetId: selectedTable.datasetId,
-          runId: session?.runId ?? usePreprocessingStore.getState().runId ?? undefined,
+          runId: session?.runId ?? undefined,
           threadId: session?.threadId ?? undefined,
-          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
+          notebookId: notebookId?.trim() || undefined,
           prompt,
           model: options.model,
           reasoningEffort: options.reasoningEffort

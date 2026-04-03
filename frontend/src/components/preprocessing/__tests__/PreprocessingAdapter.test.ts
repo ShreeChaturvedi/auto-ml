@@ -167,6 +167,42 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     );
   });
 
+  it('uses the active preprocessing workbook notebook instead of the global active notebook', async () => {
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a', 'prep-notebook-1');
+
+    await adapter.buildRequest(
+      'Continue preprocessing',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high',
+        continuation: true
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'prep-notebook-1'
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
   it('does not fall back to a global controller thread when the workbook has no session', async () => {
     usePreprocessingStore.setState({
       runId: null,
@@ -210,6 +246,98 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         projectId: 'project-1',
         phase: 'preprocessing',
         datasetId: 'dataset-1',
+        threadId: undefined
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('drops a stale thread-shaped session run id before building the next request', async () => {
+    usePreprocessingStore.setState({
+      runId: 'prep-run-1'
+    });
+    useWorkflowSessionStore.setState({
+      sessions: {
+        'prep-tab-a': {
+          runId: 'thread-stale',
+          threadId: 'workflow-thread-1'
+        }
+      }
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    await adapter.buildRequest(
+      'Handle missing values',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high',
+        continuation: false
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        runId: undefined,
+        threadId: undefined
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+    expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toBeUndefined();
+    expect(usePreprocessingStore.getState().runId).toBeNull();
+  });
+
+  it('does not send the preprocessing snapshot run id as the workflow run id fallback', async () => {
+    usePreprocessingStore.setState({
+      runId: 'prep-run-1'
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    await adapter.buildRequest(
+      'Scale numeric columns',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'high',
+        continuation: false
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        runId: undefined,
         threadId: undefined
       }),
       expect.any(Function),
@@ -265,6 +393,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
       phaseContext: {
         controller: {
           threadId: 'workflow-thread-1',
+          runId: 'prep-run-1',
           turnMode: 'action_required',
           currentNode: 'plan_step',
           allowedTools: ['propose_transformation_step'],
@@ -276,7 +405,7 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
       }
     });
 
-    expect(usePreprocessingStore.getState().runId).toBe('workflow-run-1');
+    expect(usePreprocessingStore.getState().runId).toBe('prep-run-1');
     expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toMatchObject({
       runId: 'workflow-run-1',
       threadId: 'workflow-thread-1'
@@ -380,6 +509,47 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
     expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toBeUndefined();
     expect(usePreprocessingStore.getState().runId).toBeNull();
     expect(usePreprocessingStore.getState().controllerSummary).toBeNull();
+  });
+
+  it('clears stale workflow session state when a tool result reports a missing run', () => {
+    usePreprocessingStore.setState({
+      runId: 'prep-run-1',
+      selectedDatasetId: 'dataset-1'
+    });
+    useWorkflowSessionStore.setState({
+      sessions: {
+        'prep-tab-a': {
+          runId: 'prep-run-1',
+          threadId: 'thread-stale'
+        }
+      }
+    });
+
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'customer_churn.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    adapter.toolRegistry?.propose_transformation_step?.onResult?.(
+      {
+        id: 'call-1',
+        tool: 'propose_transformation_step',
+        args: {}
+      },
+      {
+        id: 'call-1',
+        tool: 'propose_transformation_step',
+        error: 'Run thread-stale not found.'
+      }
+    );
+
+    expect(useWorkflowSessionStore.getState().sessions['prep-tab-a']).toBeUndefined();
+    expect(usePreprocessingStore.getState().runId).toBeNull();
   });
 
   it('returns contextual tips with correct shape', () => {

@@ -252,8 +252,6 @@ export function AgenticShell({
     return () => { cancelled = true; };
   }, [activeNotebookId, isGenerating, messages, savepointsGetDiff]);
 
-  const getComposer = useCallback(() => mentionInputRef.current, []);
-
   const {
     state: voiceState,
     analyserRef: voiceAnalyserRef,
@@ -262,15 +260,17 @@ export function AgenticShell({
     handlePushToTalkKeyUp,
   } = useComposerVoiceInput({
     value: chatInput,
-    getComposer,
+    inputRef: mentionInputRef,
     onValueChange: mention.handleValueChange,
     disabled: isGenerating,
   });
 
-  const tips = useMemo(
-    () => domainAdapter.tipsProvider(messages, isGenerating),
-    [domainAdapter, messages, isGenerating]
-  );
+  const suggestions = useMemo(() => {
+    if (domainAdapter.suggestionProvider) {
+      return domainAdapter.suggestionProvider(messages, isGenerating);
+    }
+    return [];
+  }, [domainAdapter, messages, isGenerating]);
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
@@ -412,7 +412,7 @@ export function AgenticShell({
               setDismissedModelPromptFor={setDismissedModelPromptFor}
               isGenerating={isGenerating}
               composerStatusSlot={composerStatusSlot}
-              tips={tips}
+              suggestions={suggestions}
               domainLockReason={domainLockReason}
               submitPrompt={submitPrompt}
               chatInput={chatInput}

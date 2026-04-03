@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { executeMcpTool } from '../mcp/mcpAdapter.js';
+
 import type { WorkflowGraphState } from './graphState.js';
 import { MAX_IDENTICAL_TOOL_CALLS, MAX_SINGLE_TOOL_CALLS } from './graphState.js';
 import type { PhaseConfig } from './phaseConfig.js';
@@ -38,6 +40,14 @@ function createPhaseConfig(): PhaseConfig {
 }
 
 function createFeaturePhaseConfig(): PhaseConfig {
+  const featureTools = new Set([
+    'propose_feature',
+    'materialize_feature_code',
+    'execute_feature',
+    'validate_feature',
+    'register_feature',
+    'checkpoint_feature_pipeline'
+  ]);
   return {
     phase: 'feature_engineering',
     lifecycle: [],
@@ -57,7 +67,7 @@ function createFeaturePhaseConfig(): PhaseConfig {
     buildSystemPrompt: vi.fn(() => ''),
     buildUserContext: vi.fn(() => []),
     resolveNextStage: vi.fn(() => null),
-    isPhaseSpecificTool: vi.fn((toolName: string) => toolName === 'propose_feature'),
+    isPhaseSpecificTool: vi.fn((toolName: string) => featureTools.has(toolName)),
     executePhaseSpecificTool: executePhaseSpecificToolMock
   };
 }
@@ -125,6 +135,7 @@ function createState(): WorkflowGraphState {
 describe('executeToolsNode', () => {
   beforeEach(() => {
     executePhaseSpecificToolMock.mockReset();
+    vi.mocked(executeMcpTool).mockReset();
     executePhaseSpecificToolMock.mockResolvedValue({
       output: {
         runId: 'prep-1',
@@ -363,6 +374,141 @@ describe('executeToolsNode', () => {
     expect(result.errorCode).toBeNull();
   });
 
+  it('auto-runs a newly written FE code cell before returning to the model', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-cell',
+      tool: 'write_cell',
+      args: {
+        title: 'Create signup_month feature',
+        cellType: 'code',
+        content: 'print("hello")'
+      }
+    }];
+    state.toolResultHistory = [{
+      id: 'wf-call-materialize',
+      tool: 'materialize_feature_code',
+      output: {
+        featureId: 'feat-signup-month'
+      }
+    }];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        cellId: 'cell-1'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('execute_tools');
+    expect(result.pendingToolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'run_cell',
+        args: { cellId: 'cell-1' }
+      })
+    ]);
+  });
+
+  it('auto-writes a FE notebook code cell after materializing feature code', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-materialize',
+      tool: 'materialize_feature_code',
+      args: {
+        featureId: 'feat-signup-month',
+        code: 'df["signup_month"] = pd.to_datetime(df["signup_date"]).dt.month'
+      }
+    }];
+    executePhaseSpecificToolMock.mockResolvedValue({
+      output: {
+        featureId: 'feat-signup-month',
+        status: 'ok'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('execute_tools');
+    expect(result.pendingToolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          cellType: 'code',
+          content: 'df["signup_month"] = pd.to_datetime(df["signup_date"]).dt.month'
+        })
+      })
+    ]);
+  });
+
+  it('records FE run_cell output via execute_feature before returning to the model', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => false);
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-run-cell',
+      tool: 'run_cell',
+      args: {
+        cellId: 'cell-1'
+      }
+    }];
+    state.toolResultHistory = [
+      {
+        id: 'wf-call-materialize',
+        tool: 'materialize_feature_code',
+        output: {
+          featureId: 'feat-signup-month'
+        }
+      },
+      {
+        id: 'wf-call-write-cell',
+        tool: 'write_cell',
+        output: {
+          cellId: 'cell-1'
+        }
+      }
+    ];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        status: 'success',
+        stdout: 'ok',
+        stderr: ''
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('execute_tools');
+    expect(result.pendingToolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_feature',
+        args: expect.objectContaining({
+          featureId: 'feat-signup-month',
+          cellId: 'cell-1',
+          succeeded: true,
+          stdout: 'ok',
+          stderr: ''
+        })
+      })
+    ]);
+  });
+
   it('still fails when per-phase override is exceeded', async () => {
     const phaseConfig = createPhaseConfig();
     phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
@@ -394,5 +540,41 @@ describe('executeToolsNode', () => {
     // Raw-count repetition is now a soft warning — workflow continues
     expect(result.nextStep).toBe('prepare');
     expect(result.errorCode).toBeNull();
+  });
+
+  it('does not crash when a tool result has undefined output', async () => {
+    const phaseConfig = createPhaseConfig();
+    phaseConfig.isPhaseSpecificTool = vi.fn(() => false);
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-render-ui',
+      tool: 'render_ui',
+      args: {
+        version: '1',
+        kind: 'feature_engineering',
+        sections: []
+      }
+    }];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: undefined,
+      error: undefined
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'render_ui',
+        output: undefined,
+        error: undefined
+      })
+    ]);
   });
 });

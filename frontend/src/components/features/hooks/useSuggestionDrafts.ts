@@ -11,6 +11,14 @@ const methodCategoryMap = new Map<FeatureMethod, FeatureCategory>(
   FEATURE_TEMPLATES.map((template) => [template.method, template.category])
 );
 
+const fallbackMethodCategoryMap: Partial<Record<FeatureMethod, FeatureCategory>> = {
+  square_transform: 'numeric_transform',
+  reciprocal_transform: 'numeric_transform',
+  max_abs_scale: 'scaling',
+  binary_encode: 'encoding',
+  extract_day: 'datetime'
+};
+
 export type SuggestionDraft = {
   enabled: boolean;
   params: Record<string, unknown>;
@@ -55,7 +63,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
   const syncSuggestionToFeatureStore = useCallback(
     (item: FeatureSuggestionItem, draft: SuggestionDraft) => {
       const method = item.feature.method as FeatureMethod;
-      const category = methodCategoryMap.get(method);
+      const category = methodCategoryMap.get(method) ?? fallbackMethodCategoryMap[method];
       if (!category) {
         setPanelError(`Unsupported feature method: ${item.feature.method}`);
         return;
@@ -64,7 +72,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
       setPanelError(null);
 
       if (!draft.enabled) {
-        removeFeature(item.id);
+        removeFeature(item.id, { persist: false });
         return;
       }
 
@@ -82,7 +90,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
         createdAt: featureById.get(item.id)?.createdAt ?? new Date().toISOString()
       };
 
-      upsertFeature(feature);
+      upsertFeature(feature, { persist: false });
     },
     [featureById, projectId, removeFeature, upsertFeature, setPanelError]
   );

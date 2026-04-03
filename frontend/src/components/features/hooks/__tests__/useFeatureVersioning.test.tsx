@@ -8,6 +8,30 @@ import {
 } from '@/stores/workflowSessionStore';
 import { useFeatureVersioning } from '../useFeatureVersioning';
 
+const interruptWorkflowRunMock = vi.fn();
+const createNotebookMock = vi.fn();
+const deleteNotebookMock = vi.fn();
+const initializeNotebookMock = vi.fn();
+const loadNotebooksMock = vi.fn();
+
+vi.mock('@/lib/api/llm', () => ({
+  interruptWorkflowRun: (...args: unknown[]) => interruptWorkflowRunMock(...args)
+}));
+
+vi.mock('@/lib/api/notebooks', () => ({
+  createNotebook: (...args: unknown[]) => createNotebookMock(...args),
+  deleteNotebook: (...args: unknown[]) => deleteNotebookMock(...args)
+}));
+
+vi.mock('@/stores/notebookStore', () => ({
+  useNotebookStore: {
+    getState: () => ({
+      initializeNotebook: initializeNotebookMock,
+      loadNotebooks: loadNotebooksMock
+    })
+  }
+}));
+
 describe('useFeatureVersioning', () => {
   const projectId = 'project-1';
   const versionId = 'draft-1';
@@ -17,6 +41,16 @@ describe('useFeatureVersioning', () => {
   const initialWorkflowSessionState = useWorkflowSessionStore.getState();
 
   beforeEach(() => {
+    interruptWorkflowRunMock.mockReset();
+    interruptWorkflowRunMock.mockResolvedValue({ run: { runId: 'feature-run-1' } });
+    createNotebookMock.mockReset();
+    createNotebookMock.mockResolvedValue({ notebookId: 'fresh-fe-nb-1' });
+    deleteNotebookMock.mockReset();
+    deleteNotebookMock.mockResolvedValue({ success: true, fallbackNotebookId: 'fresh-fe-nb-1' });
+    initializeNotebookMock.mockReset();
+    initializeNotebookMock.mockResolvedValue(undefined);
+    loadNotebooksMock.mockReset();
+    loadNotebooksMock.mockResolvedValue(undefined);
     useFeatureStore.setState({
       ...initialFeatureState,
       versions: {
@@ -36,7 +70,8 @@ describe('useFeatureVersioning', () => {
               warnings: []
             },
             steps: []
-          }
+          },
+          notebookId: 'old-fe-nb-1'
         }]
       },
       currentVersionId: {
@@ -52,6 +87,7 @@ describe('useFeatureVersioning', () => {
       },
       currentStage: 'execute_feature',
       featureRunId: 'feature-run-1',
+      setVersionNotebookId: initialFeatureState.setVersionNotebookId,
       syncFeaturesToProject: vi.fn().mockResolvedValue(undefined)
     });
 
@@ -73,7 +109,12 @@ describe('useFeatureVersioning', () => {
     });
   });
 
-  it('clears the persisted workflow session when resetting the current draft', () => {
+  it('interrupts and clears the persisted workflow session when resetting the current draft', async () => {
+    localStorage.setItem(`${storageKey}-${projectId}`, JSON.stringify({
+      messages: [{ id: 'msg-1', type: 'user', content: 'hello' }],
+      savepoints: {}
+    }));
+
     const { result } = renderHook(() => useFeatureVersioning({
       projectId,
       setSuggestionDrafts: vi.fn(),
@@ -82,13 +123,28 @@ describe('useFeatureVersioning', () => {
       setApplyMessage: vi.fn()
     }));
 
-    act(() => {
-      result.current.handleReset();
+    await act(async () => {
+      await result.current.handleReset();
     });
 
+    expect(result.current.chatSessionVersion).toBe(1);
     expect(useFeatureStore.getState().featureRunId).toBeNull();
     expect(useFeatureStore.getState().currentStage).toBeNull();
     expect(useFeatureStore.getState().featureSteps).toEqual({});
+    expect(useFeatureStore.getState().versions[projectId]?.[0]?.notebookId).toBe('fresh-fe-nb-1');
     expect(useWorkflowSessionStore.getState().getSession(sessionKey)).toBeUndefined();
+    expect(localStorage.getItem(`${storageKey}-${projectId}`)).toBeNull();
+    expect(interruptWorkflowRunMock).toHaveBeenCalledWith('feature-run-1', 'Draft reset by user.');
+    expect(createNotebookMock).toHaveBeenCalledWith(projectId, expect.objectContaining({
+      name: 'Draft Pipeline v1',
+      metadata: expect.objectContaining({
+        phase: 'feature-engineering',
+        tabId: versionId,
+        tabName: 'Draft Pipeline v1'
+      })
+    }));
+    expect(initializeNotebookMock).toHaveBeenCalledWith(projectId, 'fresh-fe-nb-1');
+    expect(deleteNotebookMock).toHaveBeenCalledWith(projectId, 'old-fe-nb-1');
+    expect(loadNotebooksMock).toHaveBeenCalledWith(projectId);
   });
 });

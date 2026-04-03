@@ -31,6 +31,9 @@ import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
 import type { DomainAdapter, LeftPaneRenderProps } from '@/types/agentic';
 import type { SavepointDiff } from '@/types/savepoint';
 import { useModelSelection } from '@/hooks/useModelSelection';
+import { LLM_CHAT_COMPOSER_MIN_WIDTH_PX } from '@/components/llm/LlmChatComposer';
+
+const AGENTIC_LEFT_PANEL_MIN_WIDTH_PX = LLM_CHAT_COMPOSER_MIN_WIDTH_PX + 40;
 
 interface AgenticShellProps {
   projectId: string;
@@ -377,13 +380,47 @@ export function AgenticShell({
     : LeftPaneComponent
       ? <LeftPaneComponent {...leftPaneRenderProps} />
       : null;
+  const panelGroupRef = useRef<HTMLDivElement | null>(null);
+  const [panelGroupWidth, setPanelGroupWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const element = panelGroupRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const updateWidth = (nextWidth: number) => {
+      setPanelGroupWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth));
+    };
+
+    updateWidth(Math.round(element.getBoundingClientRect().width));
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      updateWidth(Math.round(entry.contentRect.width));
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const leftPanelMinSize = useMemo(() => {
+    if (!panelGroupWidth || panelGroupWidth <= 0) {
+      return 35;
+    }
+
+    const minSizeFromWidth = (AGENTIC_LEFT_PANEL_MIN_WIDTH_PX / panelGroupWidth) * 100;
+    return Math.min(70, Math.max(35, Number(minSizeFromWidth.toFixed(2))));
+  }, [panelGroupWidth]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+      <div ref={panelGroupRef} className="min-h-0 flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
         {/* ── Left panel: domain ribbon + content + chat ── */}
-        <ResizablePanel defaultSize={48} minSize={30}>
-          <div className="flex h-full min-h-0 flex-col">
+        <ResizablePanel defaultSize={48} minSize={leftPanelMinSize}>
+          <div className="flex h-full min-h-0 min-w-[400px] flex-col">
             {/* Left ribbon */}
             <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
               <div className="flex min-w-0 items-center gap-3">
@@ -456,7 +493,8 @@ export function AgenticShell({
             <NotebookEditor ref={editorRef} projectId={projectId} notebookId={requestedNotebookId ?? activeNotebookId ?? undefined} className="min-h-0 flex-1" />
           </div>
         </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,12 @@
-import { useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type RefObject
+} from 'react';
 
 import { MentionInput, type MentionInputHandle } from '@/components/llm/MentionInput';
 import type { LlmUsage } from '@/types/llmUi';
@@ -23,6 +31,12 @@ import {
 } from './modelOptions';
 import { ComposerModelBar } from './ComposerModelBar';
 import { ComposerAttachments } from './ComposerAttachments';
+
+export const LLM_CHAT_COMPOSER_MIN_WIDTH_PX = 360;
+
+const TIPS_HIDE_WIDTH_PX = 480;
+const MODEL_SELECTOR_HIDE_WIDTH_PX = 340;
+const USAGE_INDICATOR_HIDE_WIDTH_PX = 420;
 
 export type AttachmentStatus = 'idle' | 'queued' | 'uploading' | 'success' | 'error';
 
@@ -109,6 +123,34 @@ interface LlmChatComposerProps {
   slots?: ComposerSlots;
 }
 
+function useObservedWidth<T extends HTMLElement>(ref: RefObject<T | null>) {
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const updateWidth = (nextWidth: number) => {
+      setWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth));
+    };
+
+    updateWidth(Math.round(element.getBoundingClientRect().width));
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      updateWidth(Math.round(entry.contentRect.width));
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
+}
+
 export function LlmChatComposer({
   chatInput,
   modelConfig,
@@ -143,11 +185,21 @@ export function LlmChatComposer({
   const canSend = value.trim().length > 0;
   const attachmentItems = attachment?.items ?? [];
   const attachmentSupportLabel = 'Attach files';
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const toolbarWidth = useObservedWidth(toolbarRef);
+  const showTips = toolbarWidth === null || toolbarWidth >= TIPS_HIDE_WIDTH_PX;
+  const showModelSelector = toolbarWidth === null || toolbarWidth >= MODEL_SELECTOR_HIDE_WIDTH_PX;
+  const showUsageIndicator = toolbarWidth === null || toolbarWidth >= USAGE_INDICATOR_HIDE_WIDTH_PX;
 
   const { wrapperRef, isFocused, onFocusCapture, onBlurCapture } = useMetallicBorder();
 
   return (
-    <div className={cn('mx-auto w-full space-y-2', maxWidthClassName)}>
+    <div
+      className={cn(
+        'mx-auto w-full min-w-[360px] space-y-2',
+        maxWidthClassName
+      )}
+    >
       {attachment && attachmentItems.length > 0 ? (
         <ComposerAttachments items={attachmentItems} attachment={attachment} />
       ) : null}
@@ -188,29 +240,38 @@ export function LlmChatComposer({
             />
           )}
         <InputGroupAddon align="block-end">
-          <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
-            <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <div
+            ref={toolbarRef}
+            className="flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-hidden"
+          >
+            <div className="flex shrink-0 items-center gap-2">
               {leftSlot}
               <ComposerModelBar
                 modelConfig={modelConfig}
                 reasoningConfig={reasoningConfig}
                 usageConfig={usageConfig}
+                showModelSelector={showModelSelector}
+                showUsageIndicator={showUsageIndicator}
               />
             </div>
 
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="hidden min-w-0 flex-1 items-center sm:flex">
-                {tipsSlot ?? (
+              <div className="min-w-0 flex-1 overflow-hidden">
+                {showTips ? (
                   <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
-                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
-                      <ArrowUp className="h-3 w-3" />
-                    </kbd>
-                    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
-                      <CornerDownLeft className="h-3 w-3" />
-                    </kbd>
-                    <span>for newline</span>
+                    {tipsSlot ?? (
+                      <>
+                        <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                          <ArrowUp className="h-3 w-3" />
+                        </kbd>
+                        <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                          <CornerDownLeft className="h-3 w-3" />
+                        </kbd>
+                        <span>for newline</span>
+                      </>
+                    )}
                   </span>
-                )}
+                ) : null}
               </div>
 
               <div className="min-w-0 max-w-full overflow-hidden">

@@ -307,8 +307,8 @@ describe('buildTuningScript', () => {
     // Dataset loading & preprocessing
     expect(script).toContain('pd.read_csv');
     expect(script).toContain('dropna(subset=[target_col])');
-    expect(script).toContain('get_dummies');
-    expect(script).toContain('fillna(0)');
+    expect(script).toContain('ColumnTransformer');
+    expect(script).toContain('SimpleImputer');
 
     // Train/test split
     expect(script).toContain('train_test_split');
@@ -335,10 +335,10 @@ describe('buildTuningScript', () => {
 
     // Refit best model
     expect(script).toContain('best_params = study.best_params');
-    expect(script).toContain('best_model.fit(X_train, y_train)');
+    expect(script).toContain('best_pipeline.fit(X_train, y_train)');
 
     // Save artifacts
-    expect(script).toContain('joblib.dump(best_model');
+    expect(script).toContain('joblib.dump(best_pipeline');
     expect(script).toContain('tuning_summary.json');
     expect(script).toContain('{"type": "done"}');
   });
@@ -461,7 +461,7 @@ describe('buildTuningScript', () => {
       const callbackIdx = script.indexOf('def stream_callback(study, trial):');
       const studyIdx = script.indexOf('optuna.create_study');
       const optimizeIdx = script.indexOf('study.optimize');
-      const refitIdx = script.indexOf('best_model.fit');
+      const refitIdx = script.indexOf('best_pipeline.fit');
       const doneIdx = script.indexOf('{"type": "done"}');
 
       expect(importIdx).toBeLessThan(objectiveIdx);

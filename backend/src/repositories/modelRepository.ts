@@ -194,6 +194,8 @@ export class PgModelRepository implements ModelRepository {
     if (row.evaluation_status != null) record.evaluationStatus = row.evaluation_status as ModelRecord['evaluationStatus'];
     if (row.evaluation_computed_at != null) record.evaluationComputedAt = (row.evaluation_computed_at as Date).toISOString();
     if (row.evaluation_error != null) record.evaluationError = row.evaluation_error as string;
+    if (row.feature_types != null) record.featureTypes = row.feature_types as Record<string, 'float' | 'int' | 'str'>;
+    if (row.sample_request != null) record.sampleRequest = row.sample_request as Record<string, unknown>;
 
     return record;
   }
@@ -230,20 +232,23 @@ export class PgModelRepository implements ModelRepository {
         model_id, project_id, dataset_id, name, template_id, task_type,
         library, algorithm, parameters, metrics, status,
         version, training_ms, target_column, feature_columns, sample_count,
-        artifact, error, metadata, evaluation_status, evaluation_computed_at, evaluation_error
+        artifact, error, metadata, evaluation_status, evaluation_computed_at, evaluation_error,
+        feature_types, sample_request
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10, $11,
         COALESCE($12, (SELECT COALESCE(MAX(version), 0) + 1 FROM ${this.table} WHERE project_id = $2)),
         $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22
+        $17, $18, $19, $20, $21, $22,
+        $23, $24
       ) RETURNING *`,
       [
         id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
         input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
         input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, toJsonb(input.featureColumns), input.sampleCount ?? null,
         input.artifact ?? null, input.error ?? null, input.metadata ?? null,
-        input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
+        input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null,
+        toJsonb(input.featureTypes ?? null), toJsonb(input.sampleRequest ?? null)
       ]
     );
     return this.mapRowToModel(result.rows[0]);
@@ -265,6 +270,7 @@ export class PgModelRepository implements ModelRepository {
         version = $12, training_ms = $13, target_column = $14, feature_columns = $15, sample_count = $16,
         artifact = $17, error = $18, metadata = $19,
         evaluation_status = $20, evaluation_computed_at = $21, evaluation_error = $22,
+        feature_types = $23, sample_request = $24,
         updated_at = NOW()
       WHERE model_id = $1
       RETURNING *`,
@@ -273,7 +279,8 @@ export class PgModelRepository implements ModelRepository {
         updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
         updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, toJsonb(updated.featureColumns), updated.sampleCount ?? null,
         updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
-        updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null
+        updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null,
+        toJsonb(updated.featureTypes ?? null), toJsonb(updated.sampleRequest ?? null)
       ]
     );
 

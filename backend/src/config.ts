@@ -86,6 +86,7 @@ export const env = {
   insightsCacheDir: resolveBackendPath(process.env.INSIGHTS_CACHE_DIR ?? 'storage/insights'),
   modelStorageDir: resolveBackendPath(process.env.MODEL_STORAGE_DIR ?? 'storage/models/artifacts'),
   modelMetadataPath: resolveBackendPath(process.env.MODEL_METADATA_PATH ?? 'storage/models/metadata.json'),
+  deploymentStorageDir: resolveBackendPath(process.env.DEPLOYMENT_STORAGE_DIR ?? 'storage/deployments'),
   databaseUrl: process.env.DATABASE_URL,
   pgSslMode: process.env.PGSSLMODE ?? 'disable',
   pgPoolMin: parseInteger(process.env.PG_POOL_MIN, 0),

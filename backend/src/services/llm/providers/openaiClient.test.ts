@@ -119,7 +119,8 @@ describe('OpenAiClient streaming tool handling', () => {
       name: 'propose_transformation_step',
       args: {
         title: 'Scale numeric columns'
-      }
+      },
+      rawArgsText: '{"title":"Scale numeric columns"}'
     });
     expect(onUsage).toHaveBeenCalledWith({
       input_tokens: 11,
@@ -166,7 +167,8 @@ describe('OpenAiClient streaming tool handling', () => {
     }));
     expect(onToolCall).toHaveBeenCalledWith({
       name: 'materialize_step_code',
-      args: {}
+      args: {},
+      rawArgsText: 'not-json'
     });
   });
 

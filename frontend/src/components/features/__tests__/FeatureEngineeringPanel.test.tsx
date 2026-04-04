@@ -84,6 +84,7 @@ const mockState = vi.hoisted(() => ({
   createNotebookApiMock: vi.fn(),
   updateNotebookApiMock: vi.fn(),
   submitPromptMock: vi.fn(),
+  messages: [] as unknown[],
   featureSteps: {} as Record<string, { status: string }>,
   currentStage: null as string | null
 }));
@@ -113,9 +114,9 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
       <div data-testid="notebook-id">{notebookId ?? ''}</div>
       {domainLockReason ? <div data-testid="domain-lock">{domainLockReason}</div> : null}
       {renderLeftPane
-        ? renderLeftPane({ messages: [], isGenerating: false, error: null, submitPrompt: mockState.submitPromptMock })
+        ? renderLeftPane({ messages: mockState.messages, isGenerating: false, error: null, submitPrompt: mockState.submitPromptMock })
         : LeftPaneComponent
-          ? <LeftPaneComponent messages={[]} isGenerating={false} error={null} submitPrompt={mockState.submitPromptMock} />
+          ? <LeftPaneComponent messages={mockState.messages} isGenerating={false} error={null} submitPrompt={mockState.submitPromptMock} />
           : null}
     </div>
   )
@@ -279,6 +280,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.createNotebookApiMock.mockReset();
     mockState.updateNotebookApiMock.mockReset();
     mockState.submitPromptMock.mockReset();
+    mockState.messages = [];
     mockState.featureSteps = {};
     mockState.currentStage = null;
     mockState.createNotebookApiMock.mockResolvedValue({
@@ -378,6 +380,88 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
 
     expect(screen.queryByTestId('domain-lock')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Generate Notebook Steps/i })).toBeEnabled();
+  });
+
+  it('keeps the build gate styling stable between empty and enabled feature states', () => {
+    const firstRender = renderPanel();
+
+    const emptyStateCard = screen.getByText('Choose Features To Build').closest('.border-muted.bg-muted\\/30');
+    expect(emptyStateCard).not.toBeNull();
+    expect(emptyStateCard?.className).not.toContain('border-sky');
+    firstRender.unmount();
+
+    mockState.features = [
+      {
+        id: 'f1',
+        projectId: 'p1',
+        sourceColumn: 'Salary',
+        featureName: 'Salary_Scaled',
+        method: 'standardize',
+        category: 'scaling',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        params: {}
+      }
+    ];
+
+    renderPanel();
+    const enabledStateCard = screen.getByText('Build Enabled Features').closest('.border-muted.bg-muted\\/30');
+    expect(enabledStateCard).not.toBeNull();
+    expect(enabledStateCard?.className).not.toContain('border-sky');
+  });
+
+  it('does not duplicate propose_feature cards when feature suggestion UI is present', () => {
+    mockState.messages = [
+      {
+        id: 'tool-1',
+        type: 'tool_call',
+        call: {
+          id: 'call-1',
+          tool: 'propose_feature',
+          args: { featureName: 'salary_bucket' },
+          rationale: 'Buckets can capture nonlinear pay effects.'
+        },
+        result: {
+          id: 'call-1',
+          tool: 'propose_feature',
+          output: {
+            status: 'proposed',
+            featureId: 'feat-salary-bucket',
+            featureName: 'salary_bucket'
+          }
+        }
+      },
+      {
+        id: 'ui-1',
+        type: 'ui',
+        schema: {
+          version: '1',
+          kind: 'feature_engineering',
+          sections: [{
+            id: 'suggestions',
+            title: 'Feature Proposals',
+            items: [{
+              type: 'feature_suggestion',
+              id: 'feat-salary-bucket',
+              feature: {
+                sourceColumn: 'Salary',
+                featureName: 'salary_bucket',
+                method: 'bucketize',
+                params: {}
+              },
+              rationale: 'Buckets can capture nonlinear pay effects.',
+              impact: 'medium'
+            }]
+          }]
+        }
+      }
+    ];
+
+    renderPanel();
+
+    expect(screen.getByText('salary_bucket')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enable' })).toBeInTheDocument();
+    expect(screen.queryByText('Proposed')).not.toBeInTheDocument();
   });
 
   it('defaults output format to xlsx for excel datasets', async () => {

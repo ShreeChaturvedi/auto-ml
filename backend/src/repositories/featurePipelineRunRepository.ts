@@ -53,12 +53,17 @@ export interface FeatureStepRecord {
 export interface FeaturePipelineRunState {
   runId: string;
   projectId: string;
+  scopeNotebookId?: string;
   features: Record<string, FeatureStepRecord>;
   lastCheckpointId?: string;
   lastCheckpointLabel?: string;
   lastCheckpointAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FeaturePipelineRunScope {
+  notebookId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +73,11 @@ export interface FeaturePipelineRunState {
 export interface FeaturePipelineRunRepository {
   getById(runId: string): Promise<FeaturePipelineRunState | undefined>;
   listByProjectId(projectId: string): Promise<FeaturePipelineRunState[]>;
-  getOrCreate(projectId: string, explicitRunId?: string): Promise<FeaturePipelineRunState>;
+  getOrCreate(
+    projectId: string,
+    explicitRunId?: string,
+    scope?: FeaturePipelineRunScope
+  ): Promise<FeaturePipelineRunState>;
   save(run: FeaturePipelineRunState): Promise<void>;
 }
 
@@ -135,7 +144,11 @@ class FileFeaturePipelineRunRepository implements FeaturePipelineRunRepository {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
-  async getOrCreate(projectId: string, explicitRunId?: string): Promise<FeaturePipelineRunState> {
+  async getOrCreate(
+    projectId: string,
+    explicitRunId?: string,
+    scope?: FeaturePipelineRunScope
+  ): Promise<FeaturePipelineRunState> {
     const store = this.readAll();
     if (explicitRunId) {
       const existing = store.runs.find((run) => run.runId === explicitRunId);
@@ -144,8 +157,19 @@ class FileFeaturePipelineRunRepository implements FeaturePipelineRunRepository {
       }
     }
 
-    // Return latest existing run for this project if one exists and no explicit ID was given
-    if (!explicitRunId) {
+    // Prefer a notebook-scoped run when notebook context is available.
+    if (!explicitRunId && scope?.notebookId) {
+      const scopedRuns = store.runs
+        .filter((run) => run.projectId === projectId && run.scopeNotebookId === scope.notebookId)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      if (scopedRuns.length > 0) {
+        return scopedRuns[0];
+      }
+    }
+
+    // Return latest existing run for this project only when no notebook scope
+    // was provided.
+    if (!explicitRunId && !scope?.notebookId) {
       const projectRuns = store.runs
         .filter((run) => run.projectId === projectId)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -159,6 +183,7 @@ class FileFeaturePipelineRunRepository implements FeaturePipelineRunRepository {
     const created: FeaturePipelineRunState = {
       runId,
       projectId,
+      scopeNotebookId: scope?.notebookId,
       features: {},
       createdAt: timestamp,
       updatedAt: timestamp

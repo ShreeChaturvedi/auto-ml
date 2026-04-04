@@ -12,6 +12,7 @@ import { extname, join } from 'path';
 
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 import type { PythonVersion } from '../types/execution.js';
@@ -270,30 +271,54 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
   await writeFile(join(datasetDir, outputFilename), outputBuffer);
 
   let tableName = buildDatasetTableName(outputFilename, derivedDataset.datasetId);
+  let warning: string | undefined;
 
   if (hasDatabaseConfiguration()) {
-    const { tableName: loadedName, rowsLoaded } = await loadDatasetIntoPostgres({
-      datasetId: derivedDataset.datasetId,
-      filename: outputFilename,
-      fileType: outputFormat,
-      buffer: outputBuffer,
-      columns: normalizedColumns,
-      tableName
-    });
-    tableName = loadedName;
-    const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
-      ...current,
-      nRows: rowsLoaded,
-      metadata: {
-        ...(current.metadata ?? {}),
-        sqlName,
-        tableName,
-        rowsLoaded
+    try {
+      const { tableName: loadedName, rowsLoaded } = await loadDatasetIntoPostgres({
+        datasetId: derivedDataset.datasetId,
+        filename: outputFilename,
+        fileType: outputFormat,
+        buffer: outputBuffer,
+        columns: normalizedColumns,
+        tableName
+      });
+      tableName = loadedName;
+      const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
+        ...current,
+        nRows: rowsLoaded,
+        metadata: {
+          ...(current.metadata ?? {}),
+          sqlName,
+          tableName,
+          rowsLoaded
+        }
+      }));
+      if (updated) {
+        derivedDataset.nRows = updated.nRows;
+        derivedDataset.metadata = updated.metadata;
       }
-    }));
-    if (updated) {
-      derivedDataset.nRows = updated.nRows;
-      derivedDataset.metadata = updated.metadata;
+    } catch (error) {
+      warning = 'Dataset was created, but database indexing failed. It may be temporarily non-queryable.';
+      appLogger.warn('[feature-engineering] Derived dataset DB load failed; keeping file-backed dataset', {
+        datasetId: derivedDataset.datasetId,
+        projectId: input.projectId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
+        ...current,
+        metadata: {
+          ...(current.metadata ?? {}),
+          sqlName,
+          tableName,
+          loadWarning: warning,
+          queryError: error instanceof Error ? error.message : String(error)
+        }
+      }));
+      if (updated) {
+        derivedDataset.metadata = updated.metadata;
+      }
     }
   } else {
     const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
@@ -316,6 +341,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
 
   return {
     dataset: derivedDataset,
-    tableName
+    tableName,
+    warning
   };
 }

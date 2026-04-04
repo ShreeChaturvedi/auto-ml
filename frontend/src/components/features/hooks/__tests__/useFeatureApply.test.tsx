@@ -77,4 +77,48 @@ describe('useFeatureApply', () => {
       notebookId: 'notebook-1'
     }));
   });
+
+  it('surfaces backend apply warnings without failing the apply flow', async () => {
+    mockState.applyFeatureEngineering.mockResolvedValueOnce({
+      dataset: {
+        datasetId: 'derived-2',
+        filename: 'employees_features.xlsx'
+      },
+      warning: 'Dataset was created, but database indexing failed.'
+    });
+
+    const { result } = renderHook(() => useFeatureApply({
+      projectId: 'project-1',
+      notebookId: 'notebook-1',
+      projectFeatures: [{
+        id: 'feat-salary-scale',
+        projectId: 'project-1',
+        sourceColumn: 'salary',
+        featureName: 'salary_scaled',
+        description: 'Scale salary',
+        method: 'standardize',
+        category: 'scaling',
+        params: {},
+        enabled: true,
+        createdAt: new Date().toISOString()
+      }],
+      selectedDatasetFile: {
+        id: 'file-1',
+        metadata: {
+          datasetId: 'dataset-1',
+          columns: ['salary']
+        }
+      },
+      setSelectedDataset: mockState.setSelectedDataset
+    }));
+
+    await act(async () => {
+      await result.current.handleApplyFeatures();
+    });
+
+    expect(result.current.applyStatus).toBe('success');
+    expect(result.current.applyMessage).toContain('Created employees_features.xlsx');
+    expect(result.current.applyMessage).toContain('database indexing failed');
+    expect(mockState.setSelectedDataset).toHaveBeenCalledWith('derived-2');
+  });
 });

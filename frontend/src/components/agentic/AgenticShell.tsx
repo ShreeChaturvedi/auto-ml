@@ -364,6 +364,7 @@ export function AgenticShell({
     messages,
     isGenerating,
     error,
+    submitPrompt,
     activeTextMessageId,
     activeThinkingMessageId,
     hydratedMessageIds,

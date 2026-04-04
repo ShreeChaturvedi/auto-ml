@@ -79,8 +79,10 @@ export function createFeatureEngineeringRouter() {
           sample: dataset.sample,
           createdAt: dataset.createdAt,
           tableName: resolveDatasetSqlName(dataset),
-          physicalTableName: tableName
-        }
+          physicalTableName: tableName,
+          warning: result.warning
+        },
+        warning: result.warning
       });
     } catch (error) {
       appLogger.error('[feature-engineering] Apply failed:', error);

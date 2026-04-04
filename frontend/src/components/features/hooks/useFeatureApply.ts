@@ -123,7 +123,11 @@ export function useFeatureApply({
       await hydrateFromBackend(projectId, { force: true });
       setSelectedDataset(response.dataset.datasetId);
       setApplyStatus('success');
-      setApplyMessage(`Created ${response.dataset.filename}`);
+      setApplyMessage(
+        response.warning
+          ? `Created ${response.dataset.filename}. ${response.warning}`
+          : `Created ${response.dataset.filename}`
+      );
       setOutputName('');
     } catch (error) {
       setApplyStatus('error');

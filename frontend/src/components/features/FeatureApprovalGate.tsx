@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
 import { AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 
 interface FeatureApprovalGateProps {
@@ -26,10 +25,7 @@ export function FeatureApprovalGate({
   return (
     <div className="space-y-4 pb-4">
       <Card
-        className={cn(
-          'border',
-          activeFeaturesCount > 0 ? 'border-sky-300/70 bg-sky-50/60' : 'border-muted bg-muted/30'
-        )}
+        className="border-muted bg-muted/30"
       >
         <CardContent className="flex items-start justify-between gap-4 p-4">
           <div className="space-y-1">

@@ -101,4 +101,29 @@ describe('featureEngineeringPhaseConfig', () => {
       error: 'Failed to initialize feature run for project project-1: disk offline'
     });
   });
+
+  it('falls back to a notebook-scoped feature run when explicit runId lookup misses', async () => {
+    const getByIdSpy = vi.spyOn(featureRunRepository, 'getById').mockResolvedValueOnce(undefined);
+    const getOrCreateSpy = vi.spyOn(featureRunRepository, 'getOrCreate').mockResolvedValueOnce({
+      runId: 'feat-run-notebook-1',
+      projectId: 'project-1',
+      scopeNotebookId: 'nb-1',
+      features: {},
+      createdAt: new Date('2026-03-23T00:00:00.000Z').toISOString(),
+      updatedAt: new Date('2026-03-23T00:00:00.000Z').toISOString()
+    });
+
+    const result = await featureEngineeringPhaseConfig.executePhaseSpecificTool(
+      'unknown_feature_tool',
+      {
+        runId: 'workflow-run-1',
+        notebookId: 'nb-1'
+      },
+      baseContext
+    );
+
+    expect(getByIdSpy).toHaveBeenCalledWith('workflow-run-1');
+    expect(getOrCreateSpy).toHaveBeenCalledWith('project-1', undefined, { notebookId: 'nb-1' });
+    expect(result).toEqual({ error: 'Unknown feature tool: unknown_feature_tool' });
+  });
 });

@@ -255,6 +255,7 @@ export function createFeatureEngineeringAdapter(
       useFeatureStore.getState().clearDraft();
       useWorkflowSessionStore.getState().clearSession(config.sessionKey);
     },
+    preserveToolHistoryBetweenPrompts: true,
     toolRegistry,
     toolUiRegistry: {},
     tipsProvider: (messages) => buildFeatureTips(config, messages)

@@ -48,6 +48,23 @@ describe('FileFeaturePipelineRunRepository', () => {
     expect(run2.runId).toBe(run1.runId);
   });
 
+  it('getOrCreate reuses the same notebook-scoped run', async () => {
+    const run1 = await repo.getOrCreate('project-1', undefined, { notebookId: 'nb-1' });
+    const run2 = await repo.getOrCreate('project-1', undefined, { notebookId: 'nb-1' });
+
+    expect(run2.runId).toBe(run1.runId);
+    expect(run2.scopeNotebookId).toBe('nb-1');
+  });
+
+  it('getOrCreate isolates runs across different notebooks in the same project', async () => {
+    const run1 = await repo.getOrCreate('project-1', undefined, { notebookId: 'nb-1' });
+    const run2 = await repo.getOrCreate('project-1', undefined, { notebookId: 'nb-2' });
+
+    expect(run2.runId).not.toBe(run1.runId);
+    expect(run1.scopeNotebookId).toBe('nb-1');
+    expect(run2.scopeNotebookId).toBe('nb-2');
+  });
+
   it('getOrCreate with explicit runId creates run with that ID', async () => {
     const run = await repo.getOrCreate('project-1', 'feat-explicit-123');
     expect(run.runId).toBe('feat-explicit-123');

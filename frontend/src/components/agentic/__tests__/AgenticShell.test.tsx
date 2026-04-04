@@ -1,8 +1,13 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
 import type { DomainAdapter } from '@/types/agentic';
+
+const loopMocks = vi.hoisted(() => ({
+  runLoop: vi.fn(),
+  editAndResend: vi.fn()
+}));
 
 // Mock the entire child component tree to isolate hook-level re-render behavior
 vi.mock('../AgenticStepDisplay', () => ({
@@ -38,12 +43,12 @@ vi.mock('@/hooks/useAgenticLoop', () => ({
     activeTextMessageId: null,
     activeThinkingMessageId: null,
     hydratedMessageIds: new Set(),
-    runLoop: vi.fn(),
+    runLoop: loopMocks.runLoop,
     handleStop: vi.fn(),
     clearMessages: vi.fn(),
     editMessage: vi.fn(),
     revertToTurn: vi.fn(),
-    editAndResend: vi.fn(),
+    editAndResend: loopMocks.editAndResend,
     editingMessageId: null,
     setEditingMessageId: vi.fn(),
     registerSavepoint: vi.fn()
@@ -161,5 +166,45 @@ describe('AgenticShell smoke test', () => {
         />
       );
     }).not.toThrow();
+  });
+
+  it('passes submitPrompt to the left pane render props', async () => {
+    loopMocks.runLoop.mockReset();
+
+    const domainAdapter: DomainAdapter = {
+      buildRequest: vi.fn(async () => undefined),
+      toolRegistry: {},
+      toolUiRegistry: {},
+      tipsProvider: () => [],
+      preserveToolHistoryBetweenPrompts: true
+    };
+
+    render(
+      <AgenticShell
+        projectId="test-project"
+        domainAdapter={domainAdapter}
+        storageKey="left-pane-submit"
+        renderLeftPane={({ submitPrompt }) => (
+          <button type="button" onClick={() => submitPrompt?.('Generate notebook steps')}>
+            Trigger Submit
+          </button>
+        )}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger Submit' }));
+
+    await waitFor(() => {
+      expect(loopMocks.runLoop).toHaveBeenCalledWith(
+        'Generate notebook steps',
+        expect.objectContaining({
+          model: 'gpt-5.4',
+          reasoningEffort: 'medium'
+        }),
+        undefined,
+        undefined,
+        expect.stringMatching(/^user-/)
+      );
+    });
   });
 });

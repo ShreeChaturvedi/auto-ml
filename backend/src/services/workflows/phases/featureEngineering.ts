@@ -133,6 +133,7 @@ async function executeFeatureToolCall(
   datasetId: string | undefined
 ): Promise<ToolResult> {
   const explicitRunId = asString(args.runId);
+  const notebookId = asString(args.notebookId);
 
   let run;
   try {
@@ -144,7 +145,11 @@ async function executeFeatureToolCall(
       run = await featureRunRepository.getById(explicitRunId);
     }
     if (!run) {
-      run = await featureRunRepository.getOrCreate(projectId);
+      run = await featureRunRepository.getOrCreate(
+        projectId,
+        undefined,
+        notebookId ? { notebookId } : undefined
+      );
     }
   } catch (error) {
     return {

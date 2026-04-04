@@ -69,6 +69,24 @@ export function FeatureEngineeringLeftPane({
       .join('|'),
     [activeFeatures]
   );
+  const displayedMessages = useMemo(() => {
+    const hasFeatureSuggestionUi = renderProps.messages.some((message) => {
+      if (message.type !== 'ui') {
+        return false;
+      }
+      return message.schema.sections.some((section) =>
+        section.items.some((item) => item.type === 'feature_suggestion')
+      );
+    });
+
+    if (!hasFeatureSuggestionUi) {
+      return renderProps.messages;
+    }
+
+    return renderProps.messages.filter((message) =>
+      !(message.type === 'tool_call' && message.call.tool === 'propose_feature')
+    );
+  }, [renderProps.messages]);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
@@ -257,7 +275,7 @@ export function FeatureEngineeringLeftPane({
 
         <div className="space-y-4 py-4 pb-28">
           <ChatMessageRenderer
-            messages={renderProps.messages}
+            messages={displayedMessages}
             renderLifecycleCard={renderLifecycleCard}
             activeTextMessageId={renderProps.activeTextMessageId}
             activeThinkingMessageId={renderProps.activeThinkingMessageId}

@@ -77,6 +77,14 @@ export interface FeatureSpec {
   category?: string;
   params?: Record<string, unknown>;
   enabled?: boolean;
+  /**
+   * Optional LLM-authored Python code for this feature. When present, the
+   * apply pipeline uses this code verbatim (wrapped in a function scope)
+   * instead of regenerating from the method-based codegen map. This ensures
+   * complex features like groupby transforms (labelled method: 'ratio')
+   * produce the same data in export as they did in the notebook.
+   */
+  code?: string;
 }
 
 interface FeatureEngineeringInput {
@@ -184,6 +192,13 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
   }
 
   for (const feature of enabledFeatures) {
+    // When the LLM authored the code for this feature, skip structural
+    // validation — the notebook already ran it successfully, and the code
+    // handles its own column references. Structural guards only apply to
+    // features that fall back to the method-based codegen map.
+    const hasLlmCode = typeof feature.code === 'string' && feature.code.trim().length > 0;
+    if (hasLlmCode) continue;
+
     if (INTERACTION_METHODS.has(feature.method) && !feature.secondaryColumn) {
       throw new Error(`Feature "${feature.featureName}" requires a secondary column.`);
     }

@@ -20,7 +20,10 @@ export class OpenAiClient implements LlmClient {
       apiKey: options.apiKey,
       baseURL: options.baseUrl.replace(/\/$/, '') || undefined,
       timeout: options.timeoutMs,
-      maxRetries: 0
+      // 1 retry: absorbs transient 429/burst rate limits without excessive
+      // cost amplification (modelTurnCollector may already retry on empty
+      // output, so we keep this conservative).
+      maxRetries: 1
     });
     this.model = resolveCatalogModel(options.model).id;
   }

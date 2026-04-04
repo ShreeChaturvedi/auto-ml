@@ -84,9 +84,18 @@ export function useFeatureApply({
       return;
     }
 
+    // When a feature has LLM-authored code, structural validation is
+    // unnecessary — the code handles its own column references and was
+    // already proven to run in the notebook. Guards only apply to features
+    // that fall back to the method-based codegen template.
+    const needsStructuralValidation = (feature: typeof enabledFeatures[number]) =>
+      !(typeof feature.code === 'string' && feature.code.trim().length > 0);
+
     const missingSecondary = enabledFeatures.find(
       (feature) =>
-        ['ratio', 'difference', 'product'].includes(feature.method) && !feature.secondaryColumn
+        needsStructuralValidation(feature)
+        && ['ratio', 'difference', 'product'].includes(feature.method)
+        && !feature.secondaryColumn
     );
 
     if (missingSecondary) {
@@ -97,7 +106,9 @@ export function useFeatureApply({
 
     const missingTarget = enabledFeatures.find(
       (feature) =>
-        feature.method === 'target_encode' && typeof feature.params?.targetColumn !== 'string'
+        needsStructuralValidation(feature)
+        && feature.method === 'target_encode'
+        && typeof feature.params?.targetColumn !== 'string'
     );
 
     if (missingTarget) {

@@ -462,6 +462,10 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     expect(screen.getByText('salary_bucket')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Enable' })).toBeInTheDocument();
     expect(screen.queryByText('Proposed')).not.toBeInTheDocument();
+
+    expect(screen.queryByText('Buckets can capture nonlinear pay effects.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /What this feature does/i }));
+    expect(screen.getByText('Buckets can capture nonlinear pay effects.')).toBeInTheDocument();
   });
 
   it('defaults output format to xlsx for excel datasets', async () => {

@@ -20,6 +20,7 @@ const mockFeatureStore = vi.hoisted(() => ({
   setCurrentStage: vi.fn(),
   setFeatureStep: vi.fn(),
   setFeatureRunId: vi.fn(),
+  upsertFeature: vi.fn(),
   clearDraft: vi.fn()
 }));
 
@@ -45,7 +46,7 @@ vi.mock('@/stores/featureStore', () => ({
         setCurrentStage: mockFeatureStore.setCurrentStage,
         setFeatureStep: mockFeatureStore.setFeatureStep,
         setFeatureRunId: mockFeatureStore.setFeatureRunId,
-        upsertFeature: vi.fn(),
+        upsertFeature: mockFeatureStore.upsertFeature,
         clearDraft: mockFeatureStore.clearDraft
       })
     }
@@ -69,6 +70,7 @@ describe('FeatureEngineeringAdapter', () => {
     mockFeatureStore.setCurrentStage.mockReset();
     mockFeatureStore.setFeatureStep.mockReset();
     mockFeatureStore.setFeatureRunId.mockReset();
+    mockFeatureStore.upsertFeature.mockReset();
     mockFeatureStore.clearDraft.mockReset();
     mockFeatureStore.features = [];
     mockNotebookStore.activeNotebookId = 'notebook-1';
@@ -417,6 +419,95 @@ describe('FeatureEngineeringAdapter', () => {
         stepId: 'feat-1',
         status: 'error',
         error: 'Notebook cell execution failed'
+      })
+    );
+  });
+
+  it('maps lifecycle tool results to semantic step statuses', () => {
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    adapter.toolRegistry.register_feature.onResult?.(
+      {
+        id: 'call-register-1',
+        tool: 'register_feature',
+        args: {
+          featureId: 'feat-2',
+          featureName: 'division_lag_7d',
+          method: 'lag_transform'
+        }
+      },
+      {
+        id: 'call-register-1',
+        tool: 'register_feature',
+        output: {
+          featureId: 'feat-2',
+          status: 'ok'
+        }
+      }
+    );
+
+    expect(mockFeatureStore.setFeatureStep).toHaveBeenCalledWith(
+      'feat-2',
+      expect.objectContaining({
+        stepId: 'feat-2',
+        status: 'registered'
+      })
+    );
+  });
+
+  it('keeps project ownership when register_feature result omits projectId', () => {
+    mockFeatureStore.features = [
+      {
+        id: 'feat-2',
+        projectId: 'project-1',
+        featureName: 'division_lag_7d',
+        method: 'lag_transform',
+        sourceColumn: 'CF EE Division',
+        enabled: true
+      }
+    ];
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    adapter.toolRegistry.register_feature.onResult?.(
+      {
+        id: 'call-register-2',
+        tool: 'register_feature',
+        args: {
+          featureId: 'feat-2',
+          featureName: 'division_lag_7d',
+          method: 'lag_transform'
+        }
+      },
+      {
+        id: 'call-register-2',
+        tool: 'register_feature',
+        output: {
+          featureId: 'feat-2',
+          status: 'ok'
+        }
+      }
+    );
+
+    expect(mockFeatureStore.upsertFeature).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'feat-2',
+        projectId: 'project-1',
+        enabled: true
       })
     );
   });

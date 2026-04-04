@@ -102,6 +102,44 @@ interface FeatureMetadataResult {
   sample: Record<string, unknown>[];
 }
 
+/**
+ * Apply pipeline degenerate-feature guard.
+ *
+ * After the feature engineering script runs, the output dataset's columns
+ * must include AT LEAST ONE column that wasn't in the source dataset.
+ * If the output schema is identical to (or a subset of) the source, the
+ * features silently produced nothing useful — typically because the LLM
+ * materialized placeholder code (`# Placeholder...`) that Python ran as
+ * a no-op, or because the features targeted columns that don't exist in
+ * the active dataset.
+ *
+ * Exported as a pure helper so it can be unit-tested without spinning up
+ * Docker or the full apply pipeline.
+ *
+ * CRITICAL: This guard MUST run BEFORE datasetRepository.create() so a
+ * failure doesn't leave orphaned metadata behind.
+ */
+export function assertFeaturesProducedNewColumns(
+  sourceColumnNames: string[],
+  outputColumnNames: string[],
+  features: Array<{ featureName: string }>,
+  datasetFilename: string,
+  featureCount: number
+): void {
+  const sourceSet = new Set(sourceColumnNames);
+  const newColumns = outputColumnNames.filter((name) => !sourceSet.has(name));
+  if (newColumns.length === 0) {
+    const featureList = features.map((f) => `"${f.featureName}"`).join(', ');
+    throw new Error(
+      `Feature engineering produced no new columns in ${datasetFilename}. ` +
+      `Applied ${featureCount} feature(s) [${featureList}] but the output schema ` +
+      `matches the source exactly. This usually means the feature code was a ` +
+      `placeholder, or the features targeted columns that don't exist in this dataset. ` +
+      `Review the feature code in the notebook and re-run the lifecycle.`
+    );
+  }
+}
+
 function normalizeColumnDataType(dtype: string): ColumnDataType {
   const normalized = dtype.toLowerCase().trim();
   if (['integer', 'int', 'int64', 'int32', 'int16', 'int8', 'long', 'bigint'].includes(normalized)) {
@@ -255,6 +293,19 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     ...column,
     dtype: normalizeColumnDataType(column.dtype)
   }));
+
+  // Degenerate-feature guard: verify the apply actually added new columns.
+  // Runs BEFORE datasetRepository.create to prevent orphaned metadata when
+  // the script was a no-op (placeholder code, missing source columns, etc.)
+  const sourceColumnNames = dataset.columns.map((col) => col.name);
+  const outputColumnNames = normalizedColumns.map((col) => col.name);
+  assertFeaturesProducedNewColumns(
+    sourceColumnNames,
+    outputColumnNames,
+    enabledFeatures,
+    dataset.filename,
+    enabledFeatures.length
+  );
 
   const derivedDataset = await datasetRepository.create({
     projectId: input.projectId,

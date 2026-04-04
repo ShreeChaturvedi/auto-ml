@@ -221,22 +221,29 @@ describe('invokeModelNode', () => {
     });
   });
 
-  it('fails with MODEL_TOOL_OUTPUT_INVALID when streamed output is empty (no blind retry)', async () => {
-    // Previously this code path retried the whole stream on empty output,
-    // which doubled OpenAI requests per iteration and caused sustained 429s
-    // in long workflow turns. The retry was removed; empty output is now
-    // surfaced immediately to the caller.
-    const streamMock = vi.fn(async (): Promise<string> => '');
-    createLlmClientMock.mockReturnValue({
-      complete: llmCompleteMock,
-      stream: streamMock
+  it('retries once on empty stream output at iteration 0 and recovers a tool call', async () => {
+    // Reasoning models can end their first stream after emitting only
+    // reasoning tokens — retrying once almost always recovers. The retry
+    // is bounded to the first iteration of the turn to prevent the
+    // per-iteration amplification that caused sustained 429s before.
+    const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+      if (streamMock.mock.calls.length === 1) {
+        return '';
+      }
+      handlers.onToolCall?.({
+        name: 'materialize_feature_code',
+        args: { featureId: 'feat-1', code: 'df["feat_1"] = 1' }
+      });
+      return '';
     });
+    createLlmClientMock.mockReturnValue({ complete: llmCompleteMock, stream: streamMock });
 
     const state = createBaseState();
     state.turn.phase = 'feature_engineering';
     state.run.phase = 'feature_engineering';
     state.run.currentNode = 'continue_feature_pipeline';
     state.controllerSummary = undefined;
+    state.iteration = 0;
     state.request = {
       messages: [
         { role: 'system', content: 'Continue feature lifecycle.' },
@@ -260,7 +267,50 @@ describe('invokeModelNode', () => {
 
     const result = await invokeModelNode(state);
 
-    // Exactly one stream call — no retry amplification.
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      nextStep: 'execute_tools',
+      pendingToolCalls: [expect.objectContaining({ tool: 'materialize_feature_code' })]
+    });
+  });
+
+  it('does NOT retry on empty stream output after iteration 0 (prevents amplification)', async () => {
+    // After the first iteration, empty output is rare and retrying
+    // doubles per-iteration API calls (up to 24x per turn), so we surface
+    // the failure immediately instead of retrying.
+    const streamMock = vi.fn(async (): Promise<string> => '');
+    createLlmClientMock.mockReturnValue({ complete: llmCompleteMock, stream: streamMock });
+
+    const state = createBaseState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.controllerSummary = undefined;
+    state.iteration = 3; // simulating a mid-turn iteration
+    state.request = {
+      messages: [
+        { role: 'system', content: 'Continue feature lifecycle.' },
+        { role: 'user', content: 'Implement selected feature IDs.' }
+      ],
+      tools: [
+        {
+          name: 'materialize_feature_code',
+          description: 'Attach code to a proposed feature.',
+          parameters: {
+            type: 'object',
+            properties: {
+              featureId: { type: 'string' },
+              code: { type: 'string' }
+            }
+          }
+        }
+      ],
+      toolChoice: 'any'
+    };
+
+    const result = await invokeModelNode(state);
+
+    // Exactly one stream call — no retry amplification at iteration > 0.
     expect(streamMock).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       nextStep: 'fail',

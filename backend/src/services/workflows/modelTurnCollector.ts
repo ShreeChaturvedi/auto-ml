@@ -298,16 +298,28 @@ async function streamWorkflowText(
 
   await streamOnce();
 
-  // Log empty output so we still have observability, but do NOT retry —
-  // retrying doubled per-iteration API calls (a 24-iter turn could fire
-  // up to 48 LLM calls) and contributed to sustained rate-limit 429s.
-  // If empty-output patterns recur the right fix is upstream prompt
-  // engineering, not blind re-issue of identical requests.
-  if (!hasActionableOutput()) {
+  // Bounded retry: reasoning models (especially gpt-5.4 base on xhigh
+  // effort) sometimes end the first stream after emitting only reasoning
+  // tokens, leaving us with no tool call. A single retry almost always
+  // recovers. To prevent the 24-iteration × 2 amplification that caused
+  // sustained 429s before, we gate the retry to the FIRST iteration of
+  // the turn only — that's when cold-start empty outputs happen, and
+  // later iterations almost never hit this case.
+  if (!hasActionableOutput() && state.iteration === 0) {
     appLogger.warn(
-      '[modelTurnCollector] Empty stream output (phase=%s, node=%s) — will surface as MODEL_TOOL_OUTPUT_INVALID.',
+      '[modelTurnCollector] Empty stream output on first iteration (phase=%s, node=%s) — retrying once.',
       phase,
       state.run.currentNode
+    );
+    await streamOnce();
+  }
+
+  if (!hasActionableOutput()) {
+    appLogger.warn(
+      '[modelTurnCollector] Empty stream output (phase=%s, node=%s, iteration=%d) — will surface as MODEL_TOOL_OUTPUT_INVALID.',
+      phase,
+      state.run.currentNode,
+      state.iteration
     );
   }
 

@@ -194,10 +194,125 @@ ${df}[${prefix} + '_cos'] = np.cos(2 * np.pi * _val / ${mapping.period})`;
   ]
 ]);
 
+/* ------------------------------------------------------------------ */
+/*  LLM-authored code handling                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Strip self-loading dataset prelude lines from LLM-authored feature code.
+ *
+ * When the LLM writes a "Shape B" feature (self-contained with its own
+ * `dataset_path = resolve_dataset_path(...)` and `df = pd.read_csv(...)`
+ * at the top), inlining it verbatim into the monolithic apply script
+ * would clobber the shared `df` variable, destroying mutations from
+ * preceding features. Strip these lines so the LLM code operates on the
+ * already-loaded df.
+ *
+ * The stripper uses a balanced-paren scan to correctly handle multi-line
+ * function calls (e.g., `dataset_path = resolve_dataset_path(\n  "file",\n  "id"\n)`)
+ * — a simple line-by-line regex would leave orphaned arguments and
+ * produce a SyntaxError.
+ */
+export function stripSelfLoadingPrelude(code: string): string {
+  const lines = code.split(/\r?\n/);
+  const result: string[] = [];
+  let skipUntilBalanced = false;
+  let parenDepth = 0;
+
+  const selfLoadPattern = /^\s*(dataset_path\s*=\s*resolve_dataset_path\s*\(|df\s*=\s*pd\.read_(csv|json|excel|parquet)\s*\()/;
+
+  for (const line of lines) {
+    if (skipUntilBalanced) {
+      for (const ch of line) {
+        if (ch === '(') parenDepth += 1;
+        else if (ch === ')') parenDepth -= 1;
+      }
+      if (parenDepth <= 0) {
+        skipUntilBalanced = false;
+        parenDepth = 0;
+      }
+      continue;
+    }
+
+    if (selfLoadPattern.test(line)) {
+      // Count parens on the starting line. If unbalanced, enter multi-line
+      // skip mode until closing paren is seen.
+      parenDepth = 0;
+      for (const ch of line) {
+        if (ch === '(') parenDepth += 1;
+        else if (ch === ')') parenDepth -= 1;
+      }
+      if (parenDepth > 0) {
+        skipUntilBalanced = true;
+      } else {
+        parenDepth = 0;
+      }
+      continue;
+    }
+
+    result.push(line);
+  }
+
+  return result.join('\n');
+}
+
+/**
+ * Sanitize a feature name into a Python identifier for function naming.
+ * Collapses non-alphanumeric characters to underscores and lowercases.
+ */
+function sanitizePythonIdentifier(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9_]/g, '_').toLowerCase();
+  const trimmed = cleaned.replace(/^_+|_+$/g, '') || 'feature';
+  // Ensure it doesn't start with a digit
+  return /^[0-9]/.test(trimmed) ? `f_${trimmed}` : trimmed;
+}
+
+/**
+ * Wrap LLM-authored feature code in a Python function scope so its local
+ * variables don't pollute the shared kernel globals and so reassignments
+ * like `df = df.copy()` only affect the function's scope.
+ *
+ * The caller-visible `df` is rebound to the function's return value,
+ * so mutations (`df["col"] = ...`) and reassignments (`df = df.copy()`)
+ * both work correctly.
+ */
+export function wrapLlmFeatureCode(code: string, featureName: string): string {
+  const stripped = stripSelfLoadingPrelude(code).trim();
+  const safeName = sanitizePythonIdentifier(featureName);
+  const indented = stripped
+    .split('\n')
+    .map((line) => (line.length > 0 ? `    ${line}` : ''))
+    .join('\n');
+
+  return [
+    `def _apply_llm_feature_${safeName}(df):`,
+    indented,
+    '    return df',
+    '',
+    `df = _apply_llm_feature_${safeName}(df)`
+  ].join('\n');
+}
+
 /**
  * Generate the Python code snippet for a single feature transformation.
+ *
+ * When `feature.code` is present (LLM-authored), we wrap and use it verbatim
+ * so exported data matches what the notebook produced. This handles complex
+ * features like groupby transforms labelled with a simple method name
+ * (e.g., "ratio" tagging a group-share computation) where the codegen
+ * template can't reproduce the LLM's logic.
+ *
+ * When `feature.code` is absent, we fall back to the method-based codegen
+ * map. This preserves backward compatibility for simple features that
+ * never went through the full LLM lifecycle (e.g., user-toggled suggestion
+ * drafts that were never materialized).
  */
 export function buildFeatureCode(feature: FeatureSpec, dataframeName: string): string {
+  // Prefer LLM-authored code when present.
+  if (feature.code && feature.code.trim().length > 0) {
+    return wrapLlmFeatureCode(feature.code, feature.featureName ?? feature.method);
+  }
+
   const src = pyString(feature.sourceColumn);
   const dst = pyString(feature.featureName);
   const secondary = feature.secondaryColumn ? pyString(feature.secondaryColumn) : undefined;

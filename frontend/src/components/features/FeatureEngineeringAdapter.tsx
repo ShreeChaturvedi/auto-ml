@@ -83,7 +83,29 @@ const FEATURE_LIFECYCLE_SEMANTIC_TOOLS = [
   'checkpoint_feature_pipeline'
 ] as const;
 
-function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
+function resolveFeatureStepStatus(call: ToolCall, result: ToolResult): string {
+  if (result.error) {
+    return 'error';
+  }
+
+  const output = result.output as Record<string, unknown> | undefined;
+  switch (call.tool) {
+    case 'propose_feature':
+      return 'proposed';
+    case 'materialize_feature_code':
+      return 'code_ready';
+    case 'execute_feature':
+      return output?.status === 'failed' || output?.succeeded === false ? 'failed' : 'executed';
+    case 'validate_feature':
+      return 'validated';
+    case 'register_feature':
+      return output?.status === 'rejected' ? 'rejected' : 'registered';
+    default:
+      return typeof output?.status === 'string' ? output.status : 'ok';
+  }
+}
+
+function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistry'] {
   const toolHandlers: ToolHandlers = {
     onCall: (call: ToolCall) => {
       const store = useFeatureStore.getState();
@@ -103,12 +125,13 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
       if (featureId) {
         const featureName = (output?.featureName ?? call.args?.featureName ?? featureId) as string;
         const method = (output?.method ?? call.args?.method ?? call.tool) as string;
+        const existingFeature = store.features.find((feature) => feature.id === featureId);
 
         store.setFeatureStep(featureId, {
           stepId: featureId,
           name: featureName,
           method,
-          status: result.error ? 'error' : (output?.status ?? 'ok') as string,
+          status: resolveFeatureStepStatus(call, result),
           error: result.error,
           code: call.args?.code as string | undefined,
           metrics: output?.validation as Record<string, unknown> | undefined
@@ -122,15 +145,15 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
             const step = store.featureSteps[featureId];
             store.upsertFeature({
               id: featureId,
-              projectId: (output?.projectId as string) ?? '',
-              sourceColumn: sourceColumns?.[0] ?? step?.name ?? '',
-              featureName: step?.name ?? featureName,
+              projectId: (output?.projectId as string) ?? existingFeature?.projectId ?? projectId,
+              sourceColumn: sourceColumns?.[0] ?? existingFeature?.sourceColumn ?? step?.name ?? '',
+              featureName: existingFeature?.featureName ?? step?.name ?? featureName,
               description: (call.args?.rationale ?? output?.rationale ?? '') as string,
-              method: (step?.method ?? method ?? 'custom') as FeatureMethod,
-              category: 'numeric_transform' as FeatureCategory,
-              params: {},
+              method: (existingFeature?.method ?? step?.method ?? method ?? 'custom') as FeatureMethod,
+              category: (existingFeature?.category ?? 'numeric_transform') as FeatureCategory,
+              params: existingFeature?.params ?? {},
               enabled: true,
-              createdAt: new Date().toISOString()
+              createdAt: existingFeature?.createdAt ?? new Date().toISOString()
             });
           }
         }
@@ -157,7 +180,7 @@ function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
-  const toolRegistry = buildFeatureToolRegistry();
+  const toolRegistry = buildFeatureToolRegistry(config.projectId);
 
   return {
     buildRequest: async (rawPrompt, _toolCalls, _toolResults, onEvent, signal, options) => {

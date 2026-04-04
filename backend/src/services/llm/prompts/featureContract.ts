@@ -25,7 +25,9 @@ Do NOT skip stages or combine multiple stages into one tool call.
 ### Stage 3: execute_feature
 - Run the materialized code via a notebook cell.
 - Capture stdout, stderr, and execution success/failure.
-- If execution fails, revise the code and retry (do NOT skip to validation).
+- If execution fails, revise the code using edit_cell, then re-execute the cell before proceeding.
+- After editing a cell, you MUST run it again — an edit alone does not count as execution.
+- Do NOT skip to validation until execution succeeds.
 
 ### Stage 4: validate_feature
 - Check the feature for:
@@ -53,6 +55,7 @@ Do NOT skip stages or combine multiple stages into one tool call.
 - Never register a feature that has not been validated.
 - Do not auto-reject user-enabled features. If additional confirmation is needed, ask the user first.
 - If a step fails, diagnose the issue and retry that step — do NOT skip ahead.
+- After using edit_cell to fix code, always re-execute the cell — the system will reject validation of unexecuted edits.
 - After completing all tool work, end the turn with render_ui or ask_user.
 - Use ask_user when blocked by missing information or when approval is required.
 `.trim();

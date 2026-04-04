@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -5,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { FeatureSuggestionItem } from './featureEngineeringUtils';
 import {
   buildSuggestionDefaults,
@@ -27,6 +29,7 @@ export function FeatureSuggestionCard({
   onToggle,
   onControlChange
 }: FeatureSuggestionCardProps) {
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const draft: SuggestionDraft = draftProp ?? {
     enabled: false,
     params: buildSuggestionDefaults(item)
@@ -77,7 +80,14 @@ export function FeatureSuggestionCard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">{item.feature.featureName}</p>
-            <p className="text-xs text-muted-foreground">{item.rationale}</p>
+            <button
+              type="button"
+              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setDetailsExpanded((current) => !current)}
+            >
+              {detailsExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              What this feature does
+            </button>
           </div>
           <Button
             type="button"
@@ -107,6 +117,20 @@ export function FeatureSuggestionCard({
           <span className="rounded bg-muted px-2 py-0.5">{item.feature.method}</span>
           <span className="rounded bg-muted px-2 py-0.5">{item.impact} impact</span>
         </div>
+
+        {detailsExpanded ? (
+          <div className="space-y-1 rounded border border-border/60 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground">
+            <p>{item.rationale}</p>
+            <p>
+              Source column: <span className="font-medium text-foreground">{item.feature.sourceColumn}</span>
+            </p>
+            {item.feature.secondaryColumn ? (
+              <p>
+                Secondary column: <span className="font-medium text-foreground">{item.feature.secondaryColumn}</span>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {item.controls?.length ? (
           <div className="grid gap-3">

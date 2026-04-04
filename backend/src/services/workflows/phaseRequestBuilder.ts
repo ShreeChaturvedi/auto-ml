@@ -172,7 +172,6 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     : undefined;
   const ragSnippets = await loadRagSnippets(turn.projectId, turn.prompt ?? dataset?.filename ?? turn.phase);
   const modelOverride = turn.model && turn.model !== 'auto' ? turn.model : undefined;
-  const client = createLlmClient(modelOverride, turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined);
 
   const toolCallHistory = state.toolCallHistory.map((call) => ({
     name: call.tool,
@@ -192,6 +191,13 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         errorCode: 'DATASET_NOT_FOUND'
       };
     }
+
+    // Only preprocessing uses the controller client directly; other phases
+    // construct their LLM client in modelTurnCollector.invokeModelNode.
+    const client = createLlmClient(
+      modelOverride,
+      turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
+    );
 
     const controllerDecision = await resolvePreprocessingControllerTurn({
       client,

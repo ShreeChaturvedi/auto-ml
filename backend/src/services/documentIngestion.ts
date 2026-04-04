@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { env } from '../config.js';
 import { getDbPool } from '../db.js';
+import { __invalidateRagCacheForProject } from '../routes/llm/shared.js';
 
 import type { ParsedDocument } from './documentParser.js';
 import { computeEmbeddings, EMBEDDING_DIMENSION, toVecLiteral } from './embeddingService.js';
@@ -85,6 +86,13 @@ export async function ingestDocument(options: IngestOptions): Promise<IngestedDo
         [randomUUID(), chunkIds[i], options.projectId ?? null, vec, vec.length, vecLiteral]
       );
     }
+  }
+
+  // Invalidate any cached RAG snippets for this project so subsequent
+  // loadRagSnippets lookups see the newly ingested document immediately
+  // instead of waiting for the TTL to expire.
+  if (options.projectId) {
+    __invalidateRagCacheForProject(options.projectId);
   }
 
   return {

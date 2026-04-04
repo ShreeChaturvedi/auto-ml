@@ -10,23 +10,34 @@ import { searchDocuments } from '../../documentSearchService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
-export async function listProjectFiles(projectId: string) {
+export async function listProjectFiles(projectId: string, args?: ToolCall['args']) {
+  // The toolExecutor auto-injects `datasetId` from state.turn.datasetId into
+  // every tool call's args. When present (e.g., during feature engineering),
+  // we mark the matching dataset with `isActive: true` so the LLM knows which
+  // dataset to operate on. Without this flag, the LLM has seen all project
+  // datasets and hallucinated features targeting columns from sibling files.
+  const activeDatasetId = typeof args?.datasetId === 'string' ? args.datasetId : undefined;
   const datasets = (await datasetRepository.list()).filter((dataset) => dataset.projectId === projectId);
   const documents = await listDocuments(projectId);
 
   return {
+    ...(activeDatasetId ? { activeDatasetId } : {}),
     datasets: datasets.map((dataset) => ({
       datasetId: dataset.datasetId,
       filename: dataset.filename,
       nRows: dataset.nRows,
       nCols: dataset.nCols,
-      columns: dataset.columns.map((column) => column.name)
+      columns: dataset.columns.map((column) => column.name),
+      isActive: activeDatasetId ? dataset.datasetId === activeDatasetId : undefined
     })),
     documents: documents.map((doc) => ({
       documentId: doc.documentId,
       filename: doc.filename,
       mimeType: doc.mimeType
-    }))
+    })),
+    ...(activeDatasetId ? {
+      notice: 'During feature engineering, propose features ONLY on columns from the dataset marked `isActive: true`. Columns from other datasets belong to different workbooks and must not be referenced.'
+    } : {})
   };
 }
 

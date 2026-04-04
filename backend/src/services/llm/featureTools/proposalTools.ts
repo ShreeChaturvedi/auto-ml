@@ -1,6 +1,14 @@
+import { env } from '../../../config.js';
+import { appLogger } from '../../../logging/logger.js';
+import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
+import { isActionableFeatureCode } from '../../featureEngineering/codeGenerator.js';
 import { hashCode, nowIso } from '../preprocessingTools/helpers.js';
 
 import type { FeatureToolContext, FeatureToolHandler } from './types.js';
+
+// Singleton repository for dataset schema lookups during proposal validation.
+// Mirrors the pattern used elsewhere (dataHandlers.ts, toolExecutor.ts).
+const proposalDatasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
 function requireFeatureRun(
   ctx: FeatureToolContext,
@@ -19,6 +27,56 @@ function requireFeatureRun(
 }
 
 /**
+ * Validate that every sourceColumn exists in the active dataset's schema.
+ *
+ * Soft-fails open when:
+ *   - ctx.datasetId is absent (phase running without dataset binding)
+ *   - dataset lookup throws (transient repository error)
+ *   - dataset.columns is missing
+ *
+ * Returns an error object when columns are mismatched; undefined when valid.
+ */
+async function validateSourceColumnsAgainstDataset(
+  ctx: FeatureToolContext,
+  sourceColumns: string[]
+): Promise<{ error: string } | undefined> {
+  if (!ctx.datasetId) {
+    appLogger.debug('[proposeFeature] No datasetId in context; skipping column validation');
+    return undefined;
+  }
+  if (!Array.isArray(sourceColumns) || sourceColumns.length === 0) {
+    return undefined;
+  }
+  let dataset;
+  try {
+    dataset = await proposalDatasetRepository.getById(ctx.datasetId);
+  } catch (err) {
+    appLogger.warn('[proposeFeature] Dataset lookup failed, skipping column validation', {
+      datasetId: ctx.datasetId,
+      error: err instanceof Error ? err.message : String(err)
+    });
+    return undefined;
+  }
+  if (!dataset || !Array.isArray(dataset.columns)) {
+    return undefined;
+  }
+
+  const availableColumns = new Set(dataset.columns.map((col) => col.name));
+  const missing = sourceColumns.filter((col) => !availableColumns.has(col));
+  if (missing.length > 0) {
+    const missingList = missing.map((c) => `"${c}"`).join(', ');
+    return {
+      error:
+        `Proposed sourceColumns ${missingList} do not exist in the active dataset "${dataset.filename}". ` +
+        `Available columns: ${[...availableColumns].slice(0, 20).map((c) => `"${c}"`).join(', ')}` +
+        `${availableColumns.size > 20 ? ` (and ${availableColumns.size - 20} more)` : ''}. ` +
+        'Use only columns from the active dataset — do not reference columns from other datasets.'
+    };
+  }
+  return undefined;
+}
+
+/**
  * propose_feature — declare a feature intent with rationale, method, and parameters.
  * Persists the proposal as a FeatureStepRecord when a run is available.
  */
@@ -26,6 +84,18 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
   const { args } = ctx;
   const featureId = (args.featureId as string) ?? `feat-${Date.now()}`;
   const timestamp = nowIso();
+
+  // Validate that proposed source columns exist in the active dataset.
+  // Prevents the LLM from hallucinating columns from sibling datasets
+  // (e.g., proposing RPD documentation features when a tableau dataset
+  // is the active draft's binding).
+  const sourceColumns = Array.isArray(args.sourceColumns)
+    ? (args.sourceColumns as unknown[]).filter((c): c is string => typeof c === 'string')
+    : [];
+  const schemaError = await validateSourceColumnsAgainstDataset(ctx, sourceColumns);
+  if (schemaError) {
+    return { error: `propose_feature: ${schemaError.error}` };
+  }
 
   const output = {
     status: 'proposed',
@@ -49,7 +119,7 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
     name: (args.featureName as string) ?? featureId,
     method: (args.method as string) ?? 'unknown',
     rationale: args.rationale as string | undefined,
-    sourceColumns: (args.sourceColumns as string[]) ?? [],
+    sourceColumns,
     impact: (args.impact as string) ?? 'medium',
     status: 'proposed',
     createdAt: timestamp,
@@ -73,11 +143,49 @@ export const materializeFeatureCode: FeatureToolHandler = async (ctx: FeatureToo
     return { error: 'materialize_feature_code requires featureId and code' };
   }
 
+  // Content guard — reject placeholder comments and any code that doesn't
+  // reference the `df` dataframe. This stops the LLM's hallucinated pattern
+  // of writing "# Placeholder: materialization deferred..." as the code
+  // argument, which would otherwise pass through execute/validate/register
+  // silently and produce an empty output file in apply.
+  if (!isActionableFeatureCode(code)) {
+    return {
+      error:
+        'materialize_feature_code rejected: code is not actionable. It must be ' +
+        'final executable Python that references the `df` dataframe and creates ' +
+        "the declared outputColumns. Placeholder comments (e.g., '# Placeholder') " +
+        'and code that does not touch `df` are not allowed. Rewrite with the real ' +
+        'transformation.'
+    };
+  }
+
+  // outputColumns is now required and must contain at least one non-placeholder name.
+  const outputColumns = Array.isArray(args.outputColumns)
+    ? (args.outputColumns as unknown[]).filter((c): c is string => typeof c === 'string')
+    : [];
+  if (outputColumns.length === 0) {
+    return {
+      error:
+        'materialize_feature_code requires non-empty outputColumns. Pass the exact ' +
+        'column names your code creates in the df (e.g., ["department_usage_share"]).'
+    };
+  }
+  const hasPlaceholderOutputName = outputColumns.some((name) =>
+    name.trim().toLowerCase() === 'placeholder' || name.trim().length === 0
+  );
+  if (hasPlaceholderOutputName) {
+    return {
+      error:
+        'materialize_feature_code: outputColumns contains a placeholder name. Use ' +
+        'the actual column names your code creates in df, not "placeholder" or empty strings.'
+    };
+  }
+
   const output = {
     status: 'ok',
     message: 'Feature code materialized',
     featureId,
-    outputColumns: args.outputColumns ?? [],
+    outputColumns,
     codeLength: code.length,
     runId: ctx.run?.runId
   };
@@ -91,7 +199,7 @@ export const materializeFeatureCode: FeatureToolHandler = async (ctx: FeatureToo
   if (step) {
     step.code = code;
     step.codeHash = hashCode(code);
-    step.outputColumns = (args.outputColumns as string[]) ?? [];
+    step.outputColumns = outputColumns;
     step.status = 'code_ready';
     step.updatedAt = nowIso();
     await persistence.runRepository.save(persistence.run);

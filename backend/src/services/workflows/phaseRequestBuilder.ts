@@ -23,14 +23,21 @@ import { getPhaseConfig } from './phaseConfig.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
-const FEATURE_LIFECYCLE_TOOLS = new Set([
-  'propose_feature',
-  'materialize_feature_code',
-  'execute_feature',
-  'validate_feature',
-  'register_feature',
-  'checkpoint_feature_pipeline'
-]);
+function extractSelectedFeatureIds(prompt: string | undefined): string[] {
+  if (!prompt) {
+    return [];
+  }
+
+  const match = prompt.match(/^Selected feature IDs to implement:\s*(.+)$/im);
+  if (!match) {
+    return [];
+  }
+
+  return match[1]
+    .split(/\s*,\s*/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
 export function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
   if (state.iteration > 0) {
@@ -59,16 +66,15 @@ export function shouldRestrictFeatureToolsToProposalMode(
   toolResults: WorkflowGraphState['toolResultHistory'],
   prompt: string | undefined
 ): boolean {
-  const implementIntent = prompt
-    ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(prompt)
-    : false;
-
-  if (implementIntent) {
+  const selectedFeatureIds = extractSelectedFeatureIds(prompt);
+  if (selectedFeatureIds.length > 0) {
     return false;
   }
 
-  const hasLifecycleHistory = toolResults.some((result) => FEATURE_LIFECYCLE_TOOLS.has(result.tool));
-  return !hasLifecycleHistory;
+  // Without explicit selected IDs, keep the model in proposal/review mode
+  // even when prior lifecycle history exists.
+  void toolResults;
+  return true;
 }
 
 export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Partial<WorkflowGraphState>> {
@@ -249,15 +255,10 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
         'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
     );
-    const planIntent = turn.prompt
-      ? /\b(plan|proposal|suggest|recommend|what\s+would|which\s+should|ideas?|brainstorm)\b/i.test(turn.prompt)
-      : false;
-    const implementIntent = !planIntent && turn.prompt
-      ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(turn.prompt)
-      : false;
+    const selectedFeatureIds = extractSelectedFeatureIds(turn.prompt);
     const allProposals = currentTurnLifecycleResults.length > 0 && currentTurnLifecycleResults.every((r) => r.tool === 'propose_feature');
     if (allProposals) {
-      if (!implementIntent) {
+      if (selectedFeatureIds.length === 0) {
         // Build feature_suggestion UI items from the proposal results so the
         // user gets interactive cards with Enable/Disable toggles.  This is
         // deterministic — no LLM call needed for the render_ui step.
@@ -317,9 +318,8 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         toolCallHistory: featureToolCallHistory,
         toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
-        // On the first turn (no lifecycle results yet) and non-implementation
-        // prompts, restrict to proposal-only tools so the model can't skip the
-        // proposal review step by calling materialize directly.
+        // Require explicit selected feature IDs before unlocking lifecycle
+        // implementation tools. Without selection, remain in proposal/review.
         toolDefinitions: shouldRestrictFeatureToolsToProposalMode(featureRawToolResults, turn.prompt)
           ? LLM_FEATURE_PROPOSAL_TOOLS
           : LLM_FEATURE_CONTINUE_TOOLS,

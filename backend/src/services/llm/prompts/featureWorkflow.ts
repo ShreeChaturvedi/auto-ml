@@ -97,30 +97,21 @@ function buildContinuationDirective(
     return 'The feature pipeline has been checkpointed. Summarize progress via render_ui.';
   }
 
-  // Pause after proposals unless the user explicitly asked for implementation.
+  // Pause after proposals until the user explicitly selects feature IDs.
   const allProposals = lifecycleResults.every((r) => r.tool === 'propose_feature');
   if (allProposals) {
-    const planIntent = userPrompt
-      ? /\b(plan|proposal|suggest|recommend|what\s+would|which\s+should|ideas?|brainstorm)\b/i.test(userPrompt)
-      : false;
-    const implementIntent = !planIntent && userPrompt
-      ? /\b(create|build|generate|implement|code|execute|run|make|compute|calculate|square|apply|add|transform|derive|engineer|convert|extract|encode|normalize|scale)\b/i.test(userPrompt)
-      : false;
-    if (!implementIntent) {
-      // Proposal-only turns should broaden the option set before rendering UI.
-      // Implementation turns must continue the lifecycle instead of forcing
-      // additional proposals.
-      const countMatch = userPrompt?.match(/\b(\d+)\s*(?:features?|columns?|transforms?|transformations?)\b/i)
-        ?? userPrompt?.match(/\b(?:features?|columns?|transforms?|transformations?)\s*.*?(\d+)\b/i);
-      const requestedCount = countMatch ? Math.min(parseInt(countMatch[1], 10), 10) : 0;
-      const proposedCount = lifecycleResults.filter((r) => r.tool === 'propose_feature' && !r.error).length;
+    const countMatch = userPrompt?.match(/\b(\d+)\s*(?:features?|columns?|transforms?|transformations?)\b/i)
+      ?? userPrompt?.match(/\b(?:features?|columns?|transforms?|transformations?)\s*.*?(\d+)\b/i);
+    const requestedCount = countMatch ? Math.min(parseInt(countMatch[1], 10), 10) : 0;
+    const proposedCount = lifecycleResults.filter((r) => r.tool === 'propose_feature' && !r.error).length;
 
-      // Enforce minimum 3 proposals (or explicit count if higher)
-      const targetCount = Math.max(requestedCount, 3);
-      if (proposedCount < targetCount) {
-        return `You have proposed ${proposedCount} of ${targetCount} features. Call propose_feature for ${targetCount - proposedCount} more diverse candidate(s).`;
-      }
+    // Enforce minimum 3 proposals (or explicit count if higher)
+    const targetCount = Math.max(requestedCount, 3);
+    if (proposedCount < targetCount) {
+      return `You have proposed ${proposedCount} of ${targetCount} features. Call propose_feature for ${targetCount - proposedCount} more diverse candidate(s).`;
+    }
 
+    if (selectedFeatureIds.length === 0) {
       return 'All features have been proposed. Present proposals via render_ui with feature_suggestion items. Do NOT materialize code — wait for the user to select which features to implement.';
     }
 
@@ -163,19 +154,7 @@ function buildContinuationDirective(
       }
     }
 
-    // The user asked to implement and we already have at least one proposal in
-    // history. Continue the lifecycle from the earliest unresolved proposal
-    // instead of forcing more proposals first.
-    const firstProposal = lifecycleResults.find((result) => result.tool === 'propose_feature' && !result.error);
-    const firstProposalOutput = firstProposal?.output && typeof firstProposal.output === 'object' && !Array.isArray(firstProposal.output)
-      ? (firstProposal.output as Record<string, unknown>)
-      : undefined;
-    const firstProposalFeatureId = typeof firstProposalOutput?.featureId === 'string'
-      ? firstProposalOutput.featureId
-      : undefined;
-    if (firstProposalFeatureId) {
-      return `Next: call materialize_feature_code for feature "${firstProposalFeatureId}".`;
-    }
+    return 'Selected feature IDs were not found in the current proposal set. Present proposals via render_ui and ask the user to re-select features before implementation.';
   }
 
   // Determine the next lifecycle tool

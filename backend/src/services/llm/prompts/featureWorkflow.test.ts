@@ -62,7 +62,7 @@ describe('buildFeatureEngineeringRequest', () => {
     expect(userMessage?.content).not.toContain('Next: call materialize_feature_code for feature "feat-city-frequency".');
   });
 
-  it('builds an explicit continuation directive after propose_feature and requires a tool call', () => {
+  it('requires user selection after propose_feature when no selected feature IDs are provided', () => {
     const request = buildFeatureEngineeringRequest({
       dataset,
       prompt: 'Implement the selected feature in the notebook.',
@@ -74,14 +74,31 @@ describe('buildFeatureEngineeringRequest', () => {
             featureName: 'signup_month',
             method: 'extract_month'
           }
+        },
+        {
+          tool: 'propose_feature',
+          output: {
+            featureId: 'feat-city-frequency',
+            featureName: 'city_frequency',
+            method: 'frequency_encode'
+          }
+        },
+        {
+          tool: 'propose_feature',
+          output: {
+            featureId: 'feat-log-spend',
+            featureName: 'log_spend',
+            method: 'log1p_transform'
+          }
         }
       ],
-      featureMethods: ['extract_month', 'frequency_encode']
+      featureMethods: ['extract_month', 'frequency_encode', 'log1p_transform']
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
-    expect(userMessage?.content).toContain('CONTINUATION: Next: call materialize_feature_code for feature "feat-signup-month".');
-    expect(userMessage?.content).not.toContain('call render_ui now');
+    expect(userMessage?.content).toContain(
+      'CONTINUATION: All features have been proposed. Present proposals via render_ui with feature_suggestion items. Do NOT materialize code — wait for the user to select which features to implement.'
+    );
     expect(request.toolChoice).toBe('any');
     expect(request.maxOutputTokens).toBe(12000);
   });

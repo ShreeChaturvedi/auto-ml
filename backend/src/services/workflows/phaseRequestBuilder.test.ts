@@ -107,12 +107,24 @@ describe('shouldRestrictFeatureToolsToProposalMode', () => {
         ],
         'Summarize progress so far and continue with the next step for this draft.'
       )
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('keeps continuation tools available for explicit implementation prompts', () => {
+  it('keeps proposal mode for implementation prompts without selected feature IDs', () => {
     expect(
       shouldRestrictFeatureToolsToProposalMode([], 'Implement the enabled feature in this draft.')
+    ).toBe(true);
+  });
+
+  it('unlocks continuation tools when selected feature IDs are present', () => {
+    expect(
+      shouldRestrictFeatureToolsToProposalMode(
+        [],
+        [
+          'Implement the enabled features in this draft.',
+          'Selected feature IDs to implement: feat-1, feat-2'
+        ].join('\n')
+      )
     ).toBe(false);
   });
 });

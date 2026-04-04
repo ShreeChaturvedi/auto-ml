@@ -15,8 +15,11 @@ const mockFeatureStore = vi.hoisted(() => ({
     featureName: string;
     method: string;
     sourceColumn: string;
+    secondaryColumn?: string;
     enabled: boolean;
+    code?: string;
   }>,
+  featureSteps: {} as Record<string, { stepId: string; name: string; method: string; status: string; code?: string }>,
   setCurrentStage: vi.fn(),
   setFeatureStep: vi.fn(),
   setFeatureRunId: vi.fn(),
@@ -42,7 +45,7 @@ vi.mock('@/stores/featureStore', () => ({
     {
       getState: () => ({
         features: mockFeatureStore.features,
-        featureSteps: {},
+        featureSteps: mockFeatureStore.featureSteps,
         setCurrentStage: mockFeatureStore.setCurrentStage,
         setFeatureStep: mockFeatureStore.setFeatureStep,
         setFeatureRunId: mockFeatureStore.setFeatureRunId,
@@ -73,6 +76,7 @@ describe('FeatureEngineeringAdapter', () => {
     mockFeatureStore.upsertFeature.mockReset();
     mockFeatureStore.clearDraft.mockReset();
     mockFeatureStore.features = [];
+    mockFeatureStore.featureSteps = {};
     mockNotebookStore.activeNotebookId = 'notebook-1';
     mockNotebookStore.notebooks = [{ notebookId: 'notebook-1', metadata: { phase: 'feature-engineering' } }];
     mockNotebookStore.setActiveNotebook.mockReset();
@@ -508,6 +512,107 @@ describe('FeatureEngineeringAdapter', () => {
         id: 'feat-2',
         projectId: 'project-1',
         enabled: true
+      })
+    );
+  });
+
+  it('preserves step.code from materialize_feature_code when register_feature fires (BLOCKER F1)', () => {
+    // Pre-populate featureSteps with code persisted earlier by materialize_feature_code
+    mockFeatureStore.featureSteps = {
+      'feat-ratio': {
+        stepId: 'feat-ratio',
+        name: 'Department Usage Share',
+        method: 'ratio',
+        status: 'validated',
+        code: "df['department_usage_share'] = df.groupby('CF EE Division')['usage_count'].transform(lambda x: x / x.sum())"
+      }
+    };
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    // register_feature tool call has NO code arg (not in tool schema). Without
+    // the fix, setFeatureStep would overwrite step.code with undefined.
+    adapter.toolRegistry.register_feature.onResult?.(
+      {
+        id: 'call-register-3',
+        tool: 'register_feature',
+        args: { featureId: 'feat-ratio', approved: true }
+      },
+      {
+        id: 'call-register-3',
+        tool: 'register_feature',
+        output: { featureId: 'feat-ratio', status: 'ok' }
+      }
+    );
+
+    // setFeatureStep should have been called with the PRESERVED code, not undefined
+    expect(mockFeatureStore.setFeatureStep).toHaveBeenCalledWith(
+      'feat-ratio',
+      expect.objectContaining({
+        stepId: 'feat-ratio',
+        code: "df['department_usage_share'] = df.groupby('CF EE Division')['usage_count'].transform(lambda x: x / x.sum())"
+      })
+    );
+  });
+
+  it('copies step.code into the FeatureSpec on register_feature upsert (Bug B primary propagation)', () => {
+    mockFeatureStore.featureSteps = {
+      'feat-ratio': {
+        stepId: 'feat-ratio',
+        name: 'Department Usage Share',
+        method: 'ratio',
+        status: 'validated',
+        code: "df['department_usage_share'] = df.groupby('CF EE Division')['usage_count'].transform(lambda x: x / x.sum())"
+      }
+    };
+    // Existing feature from suggestion toggle (has columns but no code yet)
+    mockFeatureStore.features = [
+      {
+        id: 'feat-ratio',
+        projectId: 'project-1',
+        featureName: 'Department Usage Share',
+        method: 'ratio',
+        sourceColumn: 'CF EE Division',
+        secondaryColumn: 'CF EE Department',
+        enabled: true
+      }
+    ];
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    adapter.toolRegistry.register_feature.onResult?.(
+      {
+        id: 'call-register-4',
+        tool: 'register_feature',
+        args: { featureId: 'feat-ratio', approved: true }
+      },
+      {
+        id: 'call-register-4',
+        tool: 'register_feature',
+        output: { featureId: 'feat-ratio', status: 'ok' }
+      }
+    );
+
+    // upsertFeature should be called with BOTH the code AND the secondaryColumn preserved
+    expect(mockFeatureStore.upsertFeature).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'feat-ratio',
+        code: "df['department_usage_share'] = df.groupby('CF EE Division')['usage_count'].transform(lambda x: x / x.sum())",
+        secondaryColumn: 'CF EE Department'
       })
     );
   });

@@ -295,12 +295,17 @@ async function buildFeatureNotebookFollowUp(
     return null;
   }
 
-  if (
-    latestCall.tool === 'write_cell'
+  const isWriteCodeCell = latestCall.tool === 'write_cell'
     && latestCall.args?.cellType === 'code'
-    && latestResult.error == null
-  ) {
-    const cellId = extractLatestCellId([latestResult]);
+    && latestResult.error == null;
+  const isEditCell = latestCall.tool === 'edit_cell'
+    && latestResult.error == null;
+
+  if (isWriteCodeCell || isEditCell) {
+    // For edit_cell, cellId comes from args; for write_cell, from the result output.
+    const cellId = isEditCell
+      ? (typeof latestCall.args?.cellId === 'string' ? latestCall.args.cellId : undefined)
+      : extractLatestCellId([latestResult]);
     if (!cellId) {
       return null;
     }
@@ -309,17 +314,24 @@ async function buildFeatureNotebookFollowUp(
     const metadataRecord = latestCallMetadata && typeof latestCallMetadata === 'object' && !Array.isArray(latestCallMetadata)
       ? latestCallMetadata as Record<string, unknown>
       : null;
+    // For edit_cell, ensure featureId metadata is available for the downstream
+    // run_cell -> execute_feature chain even if the LLM didn't pass metadata.
+    const effectiveMetadata = metadataRecord ?? (isEditCell && latestFeatureId
+      ? { phase: 'feature-engineering', featureId: latestFeatureId, source: 'feature-lifecycle' }
+      : null);
 
     const parsed = ToolCallSchema.safeParse({
       id: `wf-call-auto-run-${cellId}`,
       tool: 'run_cell',
       args: {
         cellId,
-        ...(metadataRecord ? { metadata: metadataRecord } : {})
+        ...(effectiveMetadata ? { metadata: effectiveMetadata } : {})
       },
-      rationale: metadataRecord?.role === 'feature-lifecycle-load'
-        ? `Execute dataset load cell before feature ${latestFeatureId}.`
-        : `Execute notebook cell for feature ${latestFeatureId}.`
+      rationale: isEditCell
+        ? `Re-execute edited cell for feature ${latestFeatureId}.`
+        : (metadataRecord?.role === 'feature-lifecycle-load'
+          ? `Execute dataset load cell before feature ${latestFeatureId}.`
+          : `Execute notebook cell for feature ${latestFeatureId}.`)
     });
     return parsed.success ? [parsed.data] : null;
   }

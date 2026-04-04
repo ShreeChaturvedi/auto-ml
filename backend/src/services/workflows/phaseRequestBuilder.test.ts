@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
 import {
+  selectFeatureRequestToolResults,
+  shouldAllowFeatureCheckpointTool,
+  shouldAllowFeatureProposeTool,
   shouldContinuePreprocessingTurn,
   shouldRestrictFeatureToolsToProposalMode
 } from './phaseRequestBuilder.js';
@@ -126,5 +129,93 @@ describe('shouldRestrictFeatureToolsToProposalMode', () => {
         ].join('\n')
       )
     ).toBe(false);
+  });
+});
+
+describe('shouldAllowFeatureCheckpointTool', () => {
+  it('blocks checkpoint while any selected feature is not yet registered', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: '1', tool: 'register_feature', output: { featureId: 'feat-a' } },
+      { id: '2', tool: 'validate_feature', output: { featureId: 'feat-b' } }
+    ];
+
+    expect(
+      shouldAllowFeatureCheckpointTool(
+        results,
+        'Selected feature IDs to implement: feat-a, feat-b'
+      )
+    ).toBe(false);
+  });
+
+  it('allows checkpoint once all selected features are registered', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: '1', tool: 'register_feature', output: { featureId: 'feat-a' } },
+      { id: '2', tool: 'register_feature', output: { featureId: 'feat-b' } }
+    ];
+
+    expect(
+      shouldAllowFeatureCheckpointTool(
+        results,
+        'Selected feature IDs to implement: feat-a, feat-b'
+      )
+    ).toBe(true);
+  });
+
+  it('blocks checkpoint when a selected feature registration was rejected', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: '1', tool: 'register_feature', output: { featureId: 'feat-a', status: 'ok' } },
+      { id: '2', tool: 'register_feature', output: { featureId: 'feat-b', status: 'rejected' } }
+    ];
+
+    expect(
+      shouldAllowFeatureCheckpointTool(
+        results,
+        'Selected feature IDs to implement: feat-a, feat-b'
+      )
+    ).toBe(false);
+  });
+});
+
+describe('shouldAllowFeatureProposeTool', () => {
+  it('blocks propose_feature once selected feature IDs are present', () => {
+    expect(
+      shouldAllowFeatureProposeTool('Selected feature IDs to implement: feat-a, feat-b')
+    ).toBe(false);
+  });
+
+  it('allows propose_feature when no selected IDs are present', () => {
+    expect(shouldAllowFeatureProposeTool('Suggest useful features for this dataset.')).toBe(true);
+  });
+});
+
+describe('selectFeatureRequestToolResults', () => {
+  it('uses only current-turn results for fresh proposal-mode prompts', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: '1', tool: 'propose_feature', output: { featureId: 'feat-old' } },
+      { id: '2', tool: 'checkpoint_feature_pipeline', output: { status: 'ok' } }
+    ];
+
+    expect(
+      selectFeatureRequestToolResults(
+        results,
+        2,
+        'Build interaction features between Presentation Table and CF EE Department.'
+      )
+    ).toEqual([]);
+  });
+
+  it('keeps full lifecycle history when selected feature IDs are present', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: '1', tool: 'propose_feature', output: { featureId: 'feat-a' } },
+      { id: '2', tool: 'register_feature', output: { featureId: 'feat-a', status: 'ok' } }
+    ];
+
+    expect(
+      selectFeatureRequestToolResults(
+        results,
+        2,
+        'Selected feature IDs to implement: feat-a'
+      )
+    ).toEqual(results);
   });
 });

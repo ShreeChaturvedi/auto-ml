@@ -31,6 +31,20 @@ export function resolveWorkspaceFilePath(params: ResolveWorkspaceFilePathParams)
     return undefined;
   }
 
+  // Prefer dataset-id-scoped paths to avoid cross-workbook file collisions.
+  // The kernel's save_preprocessing_dataset writes to datasets/<datasetId>/<filename>,
+  // so look there first for the authoritative processed file.
+  const scopedPath = join(projectDir, 'datasets', params.datasetId, params.filename);
+  const scopedContainerMatch = containerCandidates.find((candidate) =>
+    candidate.includes(join('datasets', params.datasetId, params.filename))
+  );
+  if (scopedContainerMatch) {
+    return scopedContainerMatch;
+  }
+  if (allCandidates.includes(scopedPath)) {
+    return scopedPath;
+  }
+
   return allCandidates.reduce((best, candidate) => {
     const bestMtime = statSync(best).mtimeMs;
     const candidateMtime = statSync(candidate).mtimeMs;

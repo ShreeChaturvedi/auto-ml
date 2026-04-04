@@ -25,7 +25,8 @@ describe('proposalTools', () => {
       toolCallId: 'tool-2',
       args: {
         featureId: 'feat-1',
-        code: 'df["log_salary"] = np.log(df["salary"])'
+        code: 'df["log_salary"] = np.log(df["salary"])',
+        outputColumns: ['log_salary']
       }
     });
 
@@ -69,5 +70,114 @@ describe('proposalTools', () => {
       method: 'ratio',
       status: 'proposed'
     }));
+  });
+
+  describe('materializeFeatureCode content guards', () => {
+    const baseRun = () => ({
+      runId: 'feature-run-1',
+      projectId: 'project-1',
+      features: {
+        'feat-1': {
+          featureId: 'feat-1',
+          name: 'log_salary',
+          method: 'log_transform',
+          status: 'proposed' as const,
+          createdAt: '2026-04-04T00:00:00Z',
+          updatedAt: '2026-04-04T00:00:00Z'
+        }
+      },
+      createdAt: '2026-04-04T00:00:00Z',
+      updatedAt: '2026-04-04T00:00:00Z'
+    });
+
+    const stubRepository = () => ({
+      save: vi.fn(async () => undefined),
+      getById: vi.fn(),
+      listByProjectId: vi.fn(),
+      getOrCreate: vi.fn()
+    });
+
+    it('rejects the literal placeholder comment from the bug report', async () => {
+      const run = baseRun();
+      const result = await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'feat-1',
+          code: '# Placeholder: materialization deferred until proposal confirmation\n',
+          outputColumns: ['salary_log']
+        },
+        run,
+        runRepository: stubRepository()
+      });
+      expect(result.error).toMatch(/not actionable/);
+      expect(run.features['feat-1'].status).toBe('proposed');
+    });
+
+    it('rejects code that does not reference df', async () => {
+      const result = await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'feat-1',
+          code: 'x = 1 + 2',
+          outputColumns: ['salary_log']
+        },
+        run: baseRun(),
+        runRepository: stubRepository()
+      });
+      expect(result.error).toMatch(/not actionable/);
+    });
+
+    it('rejects empty outputColumns', async () => {
+      const result = await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'feat-1',
+          code: "df['x'] = 1",
+          outputColumns: []
+        },
+        run: baseRun(),
+        runRepository: stubRepository()
+      });
+      expect(result.error).toMatch(/non-empty outputColumns/);
+    });
+
+    it('rejects "placeholder" literal in outputColumns', async () => {
+      const result = await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'feat-1',
+          code: "df['x'] = 1",
+          outputColumns: ['placeholder']
+        },
+        run: baseRun(),
+        runRepository: stubRepository()
+      });
+      expect(result.error).toMatch(/placeholder/);
+    });
+
+    it('accepts real feature code with valid outputColumns', async () => {
+      const run = baseRun();
+      const repo = stubRepository();
+      const result = await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'feat-1',
+          code: 'df["salary_log"] = np.log1p(df["salary"])',
+          outputColumns: ['salary_log']
+        },
+        run,
+        runRepository: repo
+      });
+      expect(result.error).toBeUndefined();
+      expect(run.features['feat-1'].status).toBe('code_ready');
+      expect(run.features['feat-1'].code).toContain('np.log1p');
+      expect(run.features['feat-1'].outputColumns).toEqual(['salary_log']);
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
   });
 });

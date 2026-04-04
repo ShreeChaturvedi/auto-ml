@@ -107,6 +107,22 @@ export const validateFeature: FeatureToolHandler = async (ctx: FeatureToolContex
     return { error: 'validate_feature requires featureId' };
   }
 
+  // Guard: require successful execution before validation (mirrors preprocessing's
+  // STEP_VALIDATE_REQUIRES_SUCCESSFUL_EXECUTE gate in stepValidationHandler.ts).
+  if (ctx.run) {
+    const step = ctx.run.features[featureId];
+    if (step && step.status !== 'executed') {
+      return {
+        error: `Feature "${featureId}" must be successfully executed before validation. Current status: ${step.status}. If you edited the cell, re-run it first.`
+      };
+    }
+    if (step?.executionResult && !step.executionResult.succeeded) {
+      return {
+        error: `Feature "${featureId}" execution failed. Fix the code, re-execute, and then validate.`
+      };
+    }
+  }
+
   const validation = {
     nullRate: (args.nullRate as number) ?? null,
     correlationWithTarget: (args.correlationWithTarget as number) ?? null,

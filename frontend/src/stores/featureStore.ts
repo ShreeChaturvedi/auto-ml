@@ -391,7 +391,9 @@ export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
   partialize: (state) => ({
     featureRunId: state.featureRunId,
     currentStage: state.currentStage,
-    featureSteps: state.featureSteps
+    featureSteps: state.featureSteps,
+    versions: state.versions,
+    currentVersionId: state.currentVersionId
   })
 }));
 

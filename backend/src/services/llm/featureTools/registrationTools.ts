@@ -32,6 +32,7 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
         status: 'rejected',
         message: 'Feature registration rejected',
         featureId,
+        projectId: ctx.projectId,
         rejectionReason: args.rejectionReason ?? 'Rejected by user',
         runId: ctx.run?.runId
       }
@@ -54,6 +55,7 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
       status: 'ok',
       message: 'Feature registered',
       featureId,
+      projectId: ctx.projectId,
       datasetId: args.datasetId ?? ctx.datasetId,
       runId: ctx.run?.runId
     }

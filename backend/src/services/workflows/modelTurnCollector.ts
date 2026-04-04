@@ -210,81 +210,101 @@ async function streamWorkflowText(
   let latestMessage = '';
   let errorMessage: string | null = null;
 
-  await client.stream(state.request!, {
-    onToken: (token) => {
-      latestMessage += token;
-      emitEvent(sink, { type: 'token', text: token });
-    },
-    onThinking: (text) => {
-      emitEvent(sink, { type: 'thinking', text });
-    },
-    onUsage: (usage) => {
-      emitEvent(sink, { type: 'usage', usage });
-    },
-    onToolCall: (call: LlmToolCall) => {
-      if (call.name === 'ask_user') {
-        const parsed = AskUserPayloadSchema.safeParse(call.args);
-        if (parsed.success) {
-          askUserPayload = parsed.data;
-        } else {
-          errorMessage = 'ask_user payload failed validation.';
-        }
-        return;
-      }
+  const hasActionableOutput = () =>
+    pendingToolCalls.length > 0
+    || Boolean(askUserPayload)
+    || Boolean(planExitPayload)
+    || Boolean(uiPayload)
+    || Boolean(latestMessage.trim())
+    || Boolean(errorMessage);
 
-      if (call.name === 'plan_exit') {
-        const normalizedArgs = normalizePlanExitArgs(call.args, call.rawArgsText);
-        const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
-        if (parsed.success) {
-          planExitPayload = normalizePlanExitPayload(parsed.data);
-          if (!planExitPayload) {
-            appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
-            errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
+  const streamOnce = async () => {
+    await client.stream(state.request!, {
+      onToken: (token) => {
+        latestMessage += token;
+        emitEvent(sink, { type: 'token', text: token });
+      },
+      onThinking: (text) => {
+        emitEvent(sink, { type: 'thinking', text });
+      },
+      onUsage: (usage) => {
+        emitEvent(sink, { type: 'usage', usage });
+      },
+      onToolCall: (call: LlmToolCall) => {
+        if (call.name === 'ask_user') {
+          const parsed = AskUserPayloadSchema.safeParse(call.args);
+          if (parsed.success) {
+            askUserPayload = parsed.data;
+          } else {
+            errorMessage = 'ask_user payload failed validation.';
           }
-        } else {
-          appLogger.warn('[modelTurnCollector] plan_exit Zod validation failed: %o', parsed.error.issues);
-          errorMessage = `plan_exit payload failed validation: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
+          return;
         }
-        return;
-      }
 
-      if (call.name === LLM_RENDER_UI_TOOL.name) {
-        const parsed = parseUiPayload((call.args ?? {}) as Record<string, unknown>, phase);
-        if (!parsed) {
-          errorMessage = 'render_ui payload failed validation.';
-        } else if (!parsed.sections.some((s) => s.items.length > 0)) {
-          // Empty UI — don't set uiPayload so the turn falls through to the
-          // empty-output guard, which will properly fail with a user-visible message.
-          appLogger.warn('[modelTurnCollector] render_ui produced zero items; treating as empty output');
-        } else {
-          uiPayload = parsed;
+        if (call.name === 'plan_exit') {
+          const normalizedArgs = normalizePlanExitArgs(call.args, call.rawArgsText);
+          const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
+          if (parsed.success) {
+            planExitPayload = normalizePlanExitPayload(parsed.data);
+            if (!planExitPayload) {
+              appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
+              errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
+            }
+          } else {
+            appLogger.warn('[modelTurnCollector] plan_exit Zod validation failed: %o', parsed.error.issues);
+            errorMessage = `plan_exit payload failed validation: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
+          }
+          return;
         }
-        return;
-      }
 
-      const normalizedArgs = call.args && typeof call.args === 'object'
-        ? { ...(call.args as Record<string, unknown>) }
-        : {};
-      const rationale = typeof normalizedArgs.rationale === 'string' ? normalizedArgs.rationale : undefined;
-      if ('rationale' in normalizedArgs) {
-        delete normalizedArgs.rationale;
-      }
+        if (call.name === LLM_RENDER_UI_TOOL.name) {
+          const parsed = parseUiPayload((call.args ?? {}) as Record<string, unknown>, phase);
+          if (!parsed) {
+            errorMessage = 'render_ui payload failed validation.';
+          } else if (!parsed.sections.some((s) => s.items.length > 0)) {
+            // Empty UI — don't set uiPayload so the turn falls through to the
+            // empty-output guard, which will properly fail with a user-visible message.
+            appLogger.warn('[modelTurnCollector] render_ui produced zero items; treating as empty output');
+          } else {
+            uiPayload = parsed;
+          }
+          return;
+        }
 
-      const parsed = ToolCallSchema.safeParse({
-        id: `wf-call-${randomUUID()}`,
-        tool: call.name,
-        args: normalizedArgs,
-        rationale,
-        thoughtSignature: call.thoughtSignature
-      });
+        const normalizedArgs = call.args && typeof call.args === 'object'
+          ? { ...(call.args as Record<string, unknown>) }
+          : {};
+        const rationale = typeof normalizedArgs.rationale === 'string' ? normalizedArgs.rationale : undefined;
+        if ('rationale' in normalizedArgs) {
+          delete normalizedArgs.rationale;
+        }
 
-      if (parsed.success) {
-        pendingToolCalls.push(parsed.data);
-      } else {
-        errorMessage = `Unsupported tool call: ${call.name}`;
+        const parsed = ToolCallSchema.safeParse({
+          id: `wf-call-${randomUUID()}`,
+          tool: call.name,
+          args: normalizedArgs,
+          rationale,
+          thoughtSignature: call.thoughtSignature
+        });
+
+        if (parsed.success) {
+          pendingToolCalls.push(parsed.data);
+        } else {
+          errorMessage = `Unsupported tool call: ${call.name}`;
+        }
       }
-    }
-  });
+    });
+  };
+
+  await streamOnce();
+  if (!hasActionableOutput()) {
+    appLogger.warn(
+      '[modelTurnCollector] Empty stream output on first attempt — retrying once (phase=%s, node=%s).',
+      phase,
+      state.run.currentNode
+    );
+    await streamOnce();
+  }
 
   if (errorMessage) {
     return {

@@ -202,7 +202,9 @@ export function createExperimentsRouter(): Router {
       const normalizer = createNlFilterNormalizer(ctx);
 
       const result = await requestStructuredJson({
-        client: createLlmClient(),
+        // Use the cheap model (nl2sqlModel defaults to mini) — the nl-filter
+        // schema is trivial and this endpoint fires on every keystroke.
+        client: createLlmClient(env.nl2sqlModel),
         systemPrompt,
         userPrompt: query,
         schema: NlFilterResponseSchema,
@@ -291,7 +293,9 @@ export function createExperimentsRouter(): Router {
     setupNdjsonStream(res);
 
     try {
-      const client = isReport ? createLlmClient(undefined, 180_000) : createLlmClient();
+      // Reports need the strong model for long-form prose; all other insight
+      // types use the cheap model (mini) — they're short structured outputs.
+      const client = isReport ? createLlmClient(undefined, 180_000) : createLlmClient(env.nl2sqlModel);
       let accumulated = '';
 
       await client.stream(

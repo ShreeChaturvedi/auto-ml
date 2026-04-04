@@ -1,3 +1,4 @@
+import { isActionableFeatureCode } from '../../featureEngineering/codeGenerator.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
 import type { FeatureToolContext, FeatureToolHandler } from './types.js';
@@ -28,6 +29,28 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
     if (step?.executionResult && !step.executionResult.succeeded) {
       return {
         error: `Feature "${featureId}" execution did not succeed. Fix the code, re-execute, and re-validate before registering.`
+      };
+    }
+
+    // Defense-in-depth: double-check that the persisted code is still
+    // actionable and outputColumns are valid. If materialize_feature_code's
+    // guard passed but the step is now in a broken state (e.g., a tool call
+    // corruption, race, or bypass), catch it here before the feature goes
+    // live. Uses a distinct error prefix so operator logs can distinguish
+    // which layer caught the issue.
+    if (step && !isActionableFeatureCode(step.code)) {
+      return {
+        error: `register_feature (defense-in-depth): feature "${featureId}" has empty or placeholder-only code stored in the run state. This indicates the feature was never properly materialized. Re-run materialize_feature_code with final executable code.`
+      };
+    }
+    if (step && (!Array.isArray(step.outputColumns) || step.outputColumns.length === 0)) {
+      return {
+        error: `register_feature (defense-in-depth): feature "${featureId}" has empty outputColumns in the run state. Re-run materialize_feature_code with the actual column names your code produces.`
+      };
+    }
+    if (step?.outputColumns?.some((name) => name.trim().toLowerCase() === 'placeholder' || name.trim().length === 0)) {
+      return {
+        error: `register_feature (defense-in-depth): feature "${featureId}" has placeholder output column names. Re-run materialize_feature_code with real column names.`
       };
     }
   }

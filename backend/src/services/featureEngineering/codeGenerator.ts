@@ -199,6 +199,37 @@ ${df}[${prefix} + '_cos'] = np.cos(2 * np.pi * _val / ${mapping.period})`;
 /* ------------------------------------------------------------------ */
 
 /**
+ * Determine whether LLM-authored feature code is ACTIONABLE — i.e., it
+ * contains at least one real Python statement that references the `df`
+ * dataframe. This is a cheap sanity gate that rejects placeholder comments
+ * like `# Placeholder: materialization deferred until proposal confirmation`
+ * which the LLM occasionally hallucinates and which Python happily "runs"
+ * as a no-op, producing success signals all the way through the lifecycle.
+ *
+ * NOTE: This is a sanity gate, NOT a correctness guarantee. Code can still
+ * reference `df` without creating new columns (e.g., `print(df.shape)`).
+ * The apply-pipeline degenerate-feature guard is the real backstop for
+ * "code ran but produced nothing useful".
+ *
+ * Implementation detail: the comment-stripping regex inside strings is
+ * cosmetically imperfect (a `#` inside a string literal will truncate the
+ * line) but since we only use the result for a boolean check — never to
+ * rewrite the code — it is functionally safe.
+ */
+export function isActionableFeatureCode(code: string | undefined | null): boolean {
+  if (!code || typeof code !== 'string') return false;
+  const stripped = code
+    .split(/\r?\n/)
+    .map((line) => line.replace(/#.*$/, '').trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+  if (stripped.length === 0) return false;
+  // Must reference the canonical dataframe variable. Word boundary prevents
+  // matching inside identifiers like `df_temp` because `_` is a word char.
+  return /\bdf\b/.test(stripped);
+}
+
+/**
  * Strip self-loading dataset prelude lines from LLM-authored feature code.
  *
  * When the LLM writes a "Shape B" feature (self-contained with its own
@@ -308,9 +339,12 @@ export function wrapLlmFeatureCode(code: string, featureName: string): string {
  * drafts that were never materialized).
  */
 export function buildFeatureCode(feature: FeatureSpec, dataframeName: string): string {
-  // Prefer LLM-authored code when present.
-  if (feature.code && feature.code.trim().length > 0) {
-    return wrapLlmFeatureCode(feature.code, feature.featureName ?? feature.method);
+  // Prefer LLM-authored code ONLY when it's actionable. A comment-only or
+  // placeholder string (e.g., "# Placeholder: materialization deferred...")
+  // should fall through to the codegen template instead of wrapping a
+  // useless no-op in the apply script.
+  if (isActionableFeatureCode(feature.code)) {
+    return wrapLlmFeatureCode(feature.code!, feature.featureName ?? feature.method);
   }
 
   const src = pyString(feature.sourceColumn);
@@ -319,7 +353,10 @@ export function buildFeatureCode(feature: FeatureSpec, dataframeName: string): s
 
   const codegen = FEATURE_CODEGEN_MAP.get(feature.method);
   if (!codegen) {
-    return `# Unsupported method: ${feature.method}`;
+    // No actionable code AND no codegen template — surface a hard error in
+    // the generated script rather than producing silent no-op. This makes
+    // the Python execution fail loud instead of producing an empty output.
+    return `raise RuntimeError("Feature '${feature.featureName}' has no actionable code and no codegen template for method '${feature.method}'")`;
   }
   return codegen(feature, dataframeName, src, dst, secondary);
 }

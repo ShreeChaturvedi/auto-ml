@@ -39,6 +39,32 @@ function extractSelectedFeatureIds(prompt: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function extractFeatureIdFromToolResult(
+  result: WorkflowGraphState['toolResultHistory'][number]
+): string | undefined {
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return undefined;
+  }
+
+  const output = result.output as Record<string, unknown>;
+  return typeof output.featureId === 'string' ? output.featureId : undefined;
+}
+
+function isRejectedRegisterResult(
+  result: WorkflowGraphState['toolResultHistory'][number]
+): boolean {
+  if (result.tool !== 'register_feature') {
+    return false;
+  }
+
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return false;
+  }
+
+  const status = (result.output as Record<string, unknown>).status;
+  return typeof status === 'string' && status.toLowerCase() === 'rejected';
+}
+
 export function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
   if (state.iteration > 0) {
     return true;
@@ -75,6 +101,66 @@ export function shouldRestrictFeatureToolsToProposalMode(
   // even when prior lifecycle history exists.
   void toolResults;
   return true;
+}
+
+export function selectFeatureRequestToolResults(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  turnStartToolCallCount: number,
+  prompt: string | undefined
+): WorkflowGraphState['toolResultHistory'] {
+  return shouldRestrictFeatureToolsToProposalMode(toolResults, prompt)
+    ? toolResults.slice(turnStartToolCallCount)
+    : toolResults;
+}
+
+export function shouldAllowFeatureProposeTool(prompt: string | undefined): boolean {
+  return extractSelectedFeatureIds(prompt).length === 0;
+}
+
+export function shouldAllowFeatureCheckpointTool(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  prompt: string | undefined
+): boolean {
+  const selectedFeatureIds = extractSelectedFeatureIds(prompt);
+  if (selectedFeatureIds.length === 0) {
+    return true;
+  }
+
+  const stageByFeature = new Map<string, number>(selectedFeatureIds.map((id) => [id, -1]));
+  const stageByTool: Record<string, number> = {
+    propose_feature: 0,
+    materialize_feature_code: 1,
+    execute_feature: 2,
+    validate_feature: 3,
+    register_feature: 4
+  };
+
+  for (const result of toolResults) {
+    if (result.error) {
+      continue;
+    }
+
+    const featureId = extractFeatureIdFromToolResult(result);
+    if (!featureId || !stageByFeature.has(featureId)) {
+      continue;
+    }
+
+    const stage = stageByTool[result.tool];
+    if (typeof stage !== 'number') {
+      continue;
+    }
+
+    if (stage === stageByTool.register_feature && isRejectedRegisterResult(result)) {
+      continue;
+    }
+
+    const prev = stageByFeature.get(featureId) ?? -1;
+    if (stage > prev) {
+      stageByFeature.set(featureId, stage);
+    }
+  }
+
+  return selectedFeatureIds.every((id) => (stageByFeature.get(id) ?? -1) >= 4);
 }
 
 export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Partial<WorkflowGraphState>> {
@@ -216,22 +302,40 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     //   oversized context or a re-profiling loop (model sees no history entry but the
     //   user message says results are available, so it re-calls the tool).
     // - Limit to the most recent 8 pairs to prevent context explosion on long pipelines.
-    const MAX_FE_HISTORY_PAIRS = 8;
-    const filteredPairs = toolCallHistory
-      .map((call, i) => ({ call, result: toolResultHistory[i] }))
-      .filter(({ call, result }) => call.name !== 'get_dataset_profile' && result !== undefined)
-      .slice(-MAX_FE_HISTORY_PAIRS);
-    const featureToolCallHistory = filteredPairs.map(({ call }) => call);
-    const featureToolResultHistory = filteredPairs.map(({ result }) => result!);
     const featureRawToolResults = state.toolResultHistory.filter(
       (r) => r.tool !== 'get_dataset_profile'
+    );
+    const currentTurnResults = featureRawToolResults.slice(state.turnStartToolCallCount);
+    const selectedFeatureIds = extractSelectedFeatureIds(turn.prompt);
+    const restrictToProposalMode = shouldRestrictFeatureToolsToProposalMode(featureRawToolResults, turn.prompt);
+
+    // For proposal-mode prompts (no selected feature IDs), only use current-turn
+    // lifecycle context so old checkpoint/register history does not hijack the
+    // continuation directive for a brand new user request.
+    const historyOffset = restrictToProposalMode ? state.turnStartToolCallCount : 0;
+    const historyCalls = toolCallHistory.slice(historyOffset);
+    const historyResults = toolResultHistory.slice(historyOffset);
+
+    const MAX_FE_HISTORY_PAIRS = 8;
+    const filteredPairs = historyCalls
+      .map((call, i) => ({ call, result: historyResults[i] }))
+      .filter(({ call, result }) => call.name !== 'get_dataset_profile' && result !== undefined);
+    const trimmedPairs = restrictToProposalMode
+      ? filteredPairs
+      : filteredPairs.slice(-MAX_FE_HISTORY_PAIRS);
+
+    const featureToolCallHistory = trimmedPairs.map(({ call }) => call);
+    const featureToolResultHistory = trimmedPairs.map(({ result }) => result!);
+    const featureRequestToolResults = selectFeatureRequestToolResults(
+      featureRawToolResults,
+      state.turnStartToolCallCount,
+      turn.prompt
     );
 
     // When the lifecycle is complete (checkpoint was the last lifecycle tool
     // IN THIS TURN), skip the model invocation.  Only check results from the
     // current turn — a checkpoint from a previous turn must NOT block new work.
     const LIFECYCLE_TERMINAL_TOOLS = new Set(['checkpoint_feature_pipeline']);
-    const currentTurnResults = featureRawToolResults.slice(state.turnStartToolCallCount);
     const lastLifecycleToolThisTurn = [...currentTurnResults].reverse().find(
       (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
         'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
@@ -255,7 +359,6 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
         'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
     );
-    const selectedFeatureIds = extractSelectedFeatureIds(turn.prompt);
     const allProposals = currentTurnLifecycleResults.length > 0 && currentTurnLifecycleResults.every((r) => r.tool === 'propose_feature');
     if (allProposals) {
       if (selectedFeatureIds.length === 0) {
@@ -306,6 +409,14 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       }
     }
 
+    let continueTools = LLM_FEATURE_CONTINUE_TOOLS;
+    if (!shouldAllowFeatureProposeTool(turn.prompt)) {
+      continueTools = continueTools.filter((tool) => tool.name !== 'propose_feature');
+    }
+    if (!shouldAllowFeatureCheckpointTool(featureRawToolResults, turn.prompt)) {
+      continueTools = continueTools.filter((tool) => tool.name !== 'checkpoint_feature_pipeline');
+    }
+
     return {
       nextStep: 'invoke_model',
       request: buildFeatureEngineeringRequest({
@@ -314,15 +425,15 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         prompt: turn.prompt,
         projectPlan,
         ragSnippets,
-        toolResults: featureRawToolResults,
+        toolResults: featureRequestToolResults,
         toolCallHistory: featureToolCallHistory,
         toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
         // Require explicit selected feature IDs before unlocking lifecycle
         // implementation tools. Without selection, remain in proposal/review.
-        toolDefinitions: shouldRestrictFeatureToolsToProposalMode(featureRawToolResults, turn.prompt)
+        toolDefinitions: restrictToProposalMode
           ? LLM_FEATURE_PROPOSAL_TOOLS
-          : LLM_FEATURE_CONTINUE_TOOLS,
+          : continueTools,
         reasoningEffort: turn.reasoningEffort
       }),
       run: {

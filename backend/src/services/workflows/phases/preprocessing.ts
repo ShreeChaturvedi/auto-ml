@@ -206,7 +206,7 @@ async function resolveNotebookExecutionSnapshot(cellIds: string[]): Promise<Note
       }
       const { stdout, stderr } = summarizeNotebookCellOutputs(
         (cell.output ?? [])
-          .filter((output): output is { type: string; content: string } =>
+          .filter((output) =>
             Boolean(output) && typeof output.type === 'string' && typeof output.content === 'string')
       );
       if (stdout) {

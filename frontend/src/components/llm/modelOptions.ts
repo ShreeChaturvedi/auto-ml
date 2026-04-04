@@ -63,11 +63,16 @@ export function getReasoningEffortOptions(
 ): ReasoningEffortOption[] {
   const modelOption = getModelOption(modelValue, modelOptions);
 
-  return modelOption.supportedReasoningEfforts.map((effort) => ({
-    value: effort,
-    label: REASONING_EFFORT_META[effort].label,
-    icon: REASONING_EFFORT_META[effort].icon
-  }));
+  // Defensive filter: if the backend catalog ever ships an effort value the
+  // frontend doesn't recognize (e.g., a new tier added server-side before
+  // the client updates), skip it instead of crashing on undefined metadata.
+  return modelOption.supportedReasoningEfforts
+    .filter((effort): effort is ReasoningEffort => effort in REASONING_EFFORT_META)
+    .map((effort) => ({
+      value: effort,
+      label: REASONING_EFFORT_META[effort].label,
+      icon: REASONING_EFFORT_META[effort].icon
+    }));
 }
 
 export function getDefaultReasoningEffort(

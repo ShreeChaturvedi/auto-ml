@@ -297,13 +297,18 @@ async function streamWorkflowText(
   };
 
   await streamOnce();
+
+  // Log empty output so we still have observability, but do NOT retry —
+  // retrying doubled per-iteration API calls (a 24-iter turn could fire
+  // up to 48 LLM calls) and contributed to sustained rate-limit 429s.
+  // If empty-output patterns recur the right fix is upstream prompt
+  // engineering, not blind re-issue of identical requests.
   if (!hasActionableOutput()) {
     appLogger.warn(
-      '[modelTurnCollector] Empty stream output on first attempt — retrying once (phase=%s, node=%s).',
+      '[modelTurnCollector] Empty stream output (phase=%s, node=%s) — will surface as MODEL_TOOL_OUTPUT_INVALID.',
       phase,
       state.run.currentNode
     );
-    await streamOnce();
   }
 
   if (errorMessage) {

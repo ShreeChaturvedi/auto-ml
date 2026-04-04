@@ -221,20 +221,12 @@ describe('invokeModelNode', () => {
     });
   });
 
-  it('retries once when streamed output is empty and recovers a tool call on the second attempt', async () => {
-    const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
-      if (streamMock.mock.calls.length === 1) {
-        return '';
-      }
-      handlers.onToolCall?.({
-        name: 'materialize_feature_code',
-        args: {
-          featureId: 'feat-1',
-          code: 'df["feat_1"] = 1'
-        }
-      });
-      return '';
-    });
+  it('fails with MODEL_TOOL_OUTPUT_INVALID when streamed output is empty (no blind retry)', async () => {
+    // Previously this code path retried the whole stream on empty output,
+    // which doubled OpenAI requests per iteration and caused sustained 429s
+    // in long workflow turns. The retry was removed; empty output is now
+    // surfaced immediately to the caller.
+    const streamMock = vi.fn(async (): Promise<string> => '');
     createLlmClientMock.mockReturnValue({
       complete: llmCompleteMock,
       stream: streamMock
@@ -268,14 +260,11 @@ describe('invokeModelNode', () => {
 
     const result = await invokeModelNode(state);
 
-    expect(streamMock).toHaveBeenCalledTimes(2);
+    // Exactly one stream call — no retry amplification.
+    expect(streamMock).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
-      nextStep: 'execute_tools',
-      pendingToolCalls: [
-        expect.objectContaining({
-          tool: 'materialize_feature_code'
-        })
-      ]
+      nextStep: 'fail',
+      errorMessage: 'Model returned no actionable workflow output.'
     });
   });
 

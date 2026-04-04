@@ -20,6 +20,7 @@ import { persist } from 'zustand/middleware';
 import {
   DEFAULT_ASSISTANT_MODEL,
   DEFAULT_REASONING_EFFORT,
+  KNOWN_REASONING_EFFORTS,
   normalizeAssistantModelValue,
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
@@ -43,8 +44,14 @@ export const useLlmModelStore = create<LlmModelStore>()(
         return { ...state, selectedModel: next };
       }),
       setReasoningEffort: (effort) => set((state) => {
-        if (state.reasoningEffort === effort) return state;
-        return { ...state, reasoningEffort: effort };
+        // Validate against the known reasoning effort enum. Any caller writing
+        // a garbage value (stale type, test leakage, external mutation) falls
+        // back to the safe default instead of poisoning the persisted store.
+        const next = (KNOWN_REASONING_EFFORTS as readonly string[]).includes(effort)
+          ? effort
+          : DEFAULT_REASONING_EFFORT;
+        if (state.reasoningEffort === next) return state;
+        return { ...state, reasoningEffort: next };
       })
     }),
     {
@@ -54,13 +61,20 @@ export const useLlmModelStore = create<LlmModelStore>()(
         selectedModel: state.selectedModel,
         reasoningEffort: state.reasoningEffort
       }),
-      // Normalize legacy aliases once at hydration time so the store always
-      // contains canonical IDs, even for users who persisted old values.
+      // Normalize at hydration time so the store always contains canonical
+      // values, even for users who persisted stale data from a past code
+      // version. This covers:
+      //   - Legacy model aliases (gpt-5-mini → gpt-5.4-mini)
+      //   - Unknown reasoning efforts (e.g. 'minimal' leaked from a past
+      //     build or a stray external mutation) — coerced to the default
       onRehydrateStorage: () => (rehydrated) => {
         if (!rehydrated) return;
-        const canonical = normalizeAssistantModelValue(rehydrated.selectedModel);
-        if (canonical !== rehydrated.selectedModel) {
-          rehydrated.selectedModel = canonical;
+        const canonicalModel = normalizeAssistantModelValue(rehydrated.selectedModel);
+        if (canonicalModel !== rehydrated.selectedModel) {
+          rehydrated.selectedModel = canonicalModel;
+        }
+        if (!(KNOWN_REASONING_EFFORTS as readonly string[]).includes(rehydrated.reasoningEffort)) {
+          rehydrated.reasoningEffort = DEFAULT_REASONING_EFFORT;
         }
       }
     }

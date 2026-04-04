@@ -142,6 +142,19 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
           code: step.code,
           metrics: step.validation as Record<string, unknown> | undefined
         });
+
+        // Back-fill LLM-authored code into the existing FeatureSpec for
+        // registered features. Without this, features loaded from the
+        // backend run state (e.g., after a page reload) wouldn't have
+        // their `code` field populated — and the apply pipeline would
+        // fall back to the method-based codegen template, producing
+        // wrong data for complex features like groupby shares.
+        if (step.status === 'registered' && step.code) {
+          const existing = featureStore.features.find((f) => f.id === featureId);
+          if (existing && existing.code !== step.code) {
+            featureStore.upsertFeature({ ...existing, code: step.code });
+          }
+        }
       }
     };
 

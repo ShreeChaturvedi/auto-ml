@@ -52,6 +52,27 @@ function extractSelectedFeatureIds(userPrompt: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function extractFeatureIdFromResult(result: ToolResult): string | undefined {
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return undefined;
+  }
+  const output = result.output as Record<string, unknown>;
+  return typeof output.featureId === 'string' ? output.featureId : undefined;
+}
+
+function isRejectedRegisterResult(result: ToolResult): boolean {
+  if (result.tool !== 'register_feature') {
+    return false;
+  }
+
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return false;
+  }
+
+  const status = (result.output as Record<string, unknown>).status;
+  return typeof status === 'string' && status.toLowerCase() === 'rejected';
+}
+
 /**
  * Walk backwards through tool results, find the most recent lifecycle tool,
  * extract the featureId from its output, and return a one-line directive
@@ -65,7 +86,9 @@ function buildContinuationDirective(
 
   if (!toolResults?.length) {
     if (selectedFeatureIds.length > 0) {
-      return `The user already selected feature "${selectedFeatureIds[0]}" for implementation. Call materialize_feature_code for "${selectedFeatureIds[0]}" first using the enabled feature definition from the user message. Do NOT propose more features.`;
+      return selectedFeatureIds.length === 1
+        ? `The user selected feature "${selectedFeatureIds[0]}" for implementation. Call materialize_feature_code for "${selectedFeatureIds[0]}" first using the enabled feature definition from the user message. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT propose more features. Do NOT checkpoint until every selected feature is registered.`
+        : `The user selected ${selectedFeatureIds.length} features for implementation: ${selectedFeatureIds.map((id) => `"${id}"`).join(', ')}. Start with "${selectedFeatureIds[0]}" by calling materialize_feature_code using the enabled feature definition from the user message. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT propose unselected features. Do NOT checkpoint until every selected feature is registered.`;
     }
     return undefined;
   }
@@ -74,10 +97,39 @@ function buildContinuationDirective(
   const lifecycleResults = toolResults.filter((r) => LIFECYCLE_SET.has(r.tool));
   if (!lifecycleResults.length) {
     if (selectedFeatureIds.length > 0) {
-      return `The user already selected feature "${selectedFeatureIds[0]}" for implementation. Call materialize_feature_code for "${selectedFeatureIds[0]}" first using the enabled feature definition from the user message. Do NOT propose more features.`;
+      return selectedFeatureIds.length === 1
+        ? `The user selected feature "${selectedFeatureIds[0]}" for implementation. Call materialize_feature_code for "${selectedFeatureIds[0]}" first using the enabled feature definition from the user message. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT propose more features. Do NOT checkpoint until every selected feature is registered.`
+        : `The user selected ${selectedFeatureIds.length} features for implementation: ${selectedFeatureIds.map((id) => `"${id}"`).join(', ')}. Start with "${selectedFeatureIds[0]}" by calling materialize_feature_code using the enabled feature definition from the user message. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT propose unselected features. Do NOT checkpoint until every selected feature is registered.`;
     }
     return undefined;
   }
+
+  const selectedSet = new Set(selectedFeatureIds);
+  const selectedProposals = lifecycleResults
+    .filter((result) => result.tool === 'propose_feature' && !result.error)
+    .map((result) => {
+      const proposalOutput = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+        ? (result.output as Record<string, unknown>)
+        : undefined;
+      if (!proposalOutput || typeof proposalOutput.featureId !== 'string' || !selectedSet.has(proposalOutput.featureId)) {
+        return undefined;
+      }
+
+      return {
+        featureId: proposalOutput.featureId,
+        featureName: typeof proposalOutput.featureName === 'string' ? proposalOutput.featureName : proposalOutput.featureId,
+        method: typeof proposalOutput.method === 'string' ? proposalOutput.method : 'custom',
+        sourceColumns: Array.isArray(proposalOutput.sourceColumns)
+          ? proposalOutput.sourceColumns.filter((value): value is string => typeof value === 'string')
+          : []
+      };
+    })
+    .filter((proposal): proposal is {
+      featureId: string;
+      featureName: string;
+      method: string;
+      sourceColumns: string[];
+    } => Boolean(proposal));
 
   const last = lifecycleResults[lifecycleResults.length - 1];
   const output = last.output && typeof last.output === 'object' && !Array.isArray(last.output)
@@ -114,47 +166,75 @@ function buildContinuationDirective(
     if (selectedFeatureIds.length === 0) {
       return 'All features have been proposed. Present proposals via render_ui with feature_suggestion items. Do NOT materialize code — wait for the user to select which features to implement.';
     }
+  }
 
-    if (selectedFeatureIds.length > 0) {
-      const selectedSet = new Set(selectedFeatureIds);
-      const selectedProposals = lifecycleResults
-        .filter((result) => result.tool === 'propose_feature' && !result.error)
-        .map((result) => {
-          const proposalOutput = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
-            ? (result.output as Record<string, unknown>)
-            : undefined;
-          if (!proposalOutput || typeof proposalOutput.featureId !== 'string' || !selectedSet.has(proposalOutput.featureId)) {
-            return undefined;
-          }
+  if (selectedFeatureIds.length > 0) {
+    const stageByFeature = new Map<string, number>(selectedFeatureIds.map((id) => [id, 0]));
+    const rejectedSelectedFeatures = new Set<string>();
 
-          return {
-            featureId: proposalOutput.featureId,
-            featureName: typeof proposalOutput.featureName === 'string' ? proposalOutput.featureName : proposalOutput.featureId,
-            method: typeof proposalOutput.method === 'string' ? proposalOutput.method : 'custom',
-            sourceColumns: Array.isArray(proposalOutput.sourceColumns)
-              ? proposalOutput.sourceColumns.filter((value): value is string => typeof value === 'string')
-              : []
-          };
-        })
-        .filter((proposal): proposal is {
-          featureId: string;
-          featureName: string;
-          method: string;
-          sourceColumns: string[];
-        } => Boolean(proposal));
+    for (const result of lifecycleResults) {
+      if (result.error) {
+        continue;
+      }
+      const resultFeatureId = extractFeatureIdFromResult(result);
+      if (!resultFeatureId || !selectedSet.has(resultFeatureId)) {
+        continue;
+      }
 
-      if (selectedProposals.length > 0) {
-        const [firstSelectedProposal] = selectedProposals;
-        const proposalSummary = selectedProposals
-          .map((proposal) => `"${proposal.featureId}" (${proposal.featureName}: ${proposal.method} on ${proposal.sourceColumns.join(', ') || 'unspecified columns'})`)
-          .join(', ');
-        return selectedProposals.length === 1
-          ? `The user enabled feature ${proposalSummary}. Call materialize_feature_code for "${firstSelectedProposal.featureId}" first, using the proposed feature definition exactly as reviewed. Do NOT materialize or execute unselected proposals.`
-          : `The user enabled ${selectedProposals.length} proposed features: ${proposalSummary}. Start with "${firstSelectedProposal.featureId}" by calling materialize_feature_code using the reviewed proposal details for that feature. Do NOT materialize or execute unselected proposals.`;
+      const stageIndex = LIFECYCLE_SEQUENCE.indexOf(result.tool);
+      if (stageIndex < 0 || stageIndex > 4) {
+        continue;
+      }
+
+      if (stageIndex === 4 && isRejectedRegisterResult(result)) {
+        rejectedSelectedFeatures.add(resultFeatureId);
+        continue;
+      }
+
+      const prevStage = stageByFeature.get(resultFeatureId) ?? -1;
+      if (stageIndex > prevStage) {
+        stageByFeature.set(resultFeatureId, stageIndex);
+        if (stageIndex === 4) {
+          rejectedSelectedFeatures.delete(resultFeatureId);
+        }
       }
     }
 
-    return 'Selected feature IDs were not found in the current proposal set. Present proposals via render_ui and ask the user to re-select features before implementation.';
+    const rejectedFeatureId = selectedFeatureIds.find((id) => rejectedSelectedFeatures.has(id));
+    if (rejectedFeatureId) {
+      return `Selected feature "${rejectedFeatureId}" was rejected at registration. Enabled features are user-approved for implementation, so continue by fixing any validation concerns and call register_feature for "${rejectedFeatureId}" with approved=true unless the user explicitly rejects. Do NOT checkpoint until every selected feature is registered.`;
+    }
+
+    const nextFeatureId = selectedFeatureIds.find((id) => (stageByFeature.get(id) ?? -1) < 4);
+    if (!nextFeatureId) {
+      return 'All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.';
+    }
+
+    const nextStage = stageByFeature.get(nextFeatureId) ?? -1;
+    const nextTool = nextStage <= 0
+      ? 'materialize_feature_code'
+      : nextStage === 1
+        ? 'execute_feature'
+        : nextStage === 2
+          ? 'validate_feature'
+          : 'register_feature';
+
+    if (nextTool === 'materialize_feature_code') {
+      const proposalSummary = selectedProposals
+        .map((proposal) => `"${proposal.featureId}" (${proposal.featureName}: ${proposal.method} on ${proposal.sourceColumns.join(', ') || 'unspecified columns'})`)
+        .join(', ');
+      if (selectedProposals.length === 0) {
+        return selectedFeatureIds.length === 1
+          ? `The user enabled feature "${nextFeatureId}". Call materialize_feature_code for "${nextFeatureId}" first, using the enabled feature definition in the user message. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT materialize or execute unselected proposals. Do NOT checkpoint until every selected feature is registered.`
+          : `The user enabled ${selectedFeatureIds.length} features: ${selectedFeatureIds.map((id) => `"${id}"`).join(', ')}. Start with "${nextFeatureId}" by calling materialize_feature_code using the enabled feature definitions in the user message. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT materialize or execute unselected proposals. Do NOT checkpoint until every selected feature is registered.`;
+      }
+
+      return selectedProposals.length === 1
+        ? `The user enabled feature ${proposalSummary}. Call materialize_feature_code for "${nextFeatureId}" first, using the proposed feature definition exactly as reviewed. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT materialize or execute unselected proposals. Do NOT checkpoint until every selected feature is registered.`
+        : `The user enabled ${selectedProposals.length} proposed features: ${proposalSummary}. Start with "${nextFeatureId}" by calling materialize_feature_code using the reviewed proposal details for that feature. Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT materialize or execute unselected proposals. Do NOT checkpoint until every selected feature is registered.`;
+    }
+
+    return `Continue selected-feature implementation. Next: call ${nextTool} for feature "${nextFeatureId}". Treat enabled features as user-approved and register with approved=true unless the user explicitly rejects. Do NOT checkpoint until every selected feature is registered.`;
   }
 
   // Determine the next lifecycle tool
@@ -211,6 +291,7 @@ You MUST use the feature engineering lifecycle tools (propose_feature, materiali
 execute_feature, validate_feature, register_feature, checkpoint_feature_pipeline) to drive the
 feature engineering process. Do NOT describe features in plain text -- call propose_feature for
 each feature you want to create. The lifecycle tools are the primary mechanism for this phase.
+When implementing features selected by the user, treat those enabled selections as approved for implementation. Use register_feature with approved=true unless the user explicitly asks to reject a feature.
 
 When no prior tool results exist, call propose_feature for each candidate feature. Propose at least 3 diverse features (covering different methods and column types) before presenting results. More is better — aim for 3-5 proposals per turn.
 When prior tool results exist, continue the lifecycle for the feature currently being processed

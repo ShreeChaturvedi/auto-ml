@@ -14,27 +14,24 @@
   animation-play-state: paused;
   stroke-linecap: round;
   pointer-events: none;
-  opacity: 0.3;
-  transition: opacity 0.3s ease;
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
 }
 
 .execute-icon {
   --comet-head-color: currentColor;
   --comet-head-max: 100%;
-  --comet-tail-color: currentColor;
-  --comet-tail-max: 0%;
 }
 
 .dark .execute-icon {
   --comet-head-color: white;
   --comet-head-max: 100%;
-  --comet-tail-color: currentColor;
-  --comet-tail-max: 0%;
 }
 
 .group\/execute:hover .execute-icon-trace-base {
   animation-play-state: running;
   opacity: 1;
+  transition: opacity 0.3s ease-in;
 }
 
 .group\/execute[disabled] .execute-icon-trace-base,
@@ -45,5 +42,9 @@
 @media (prefers-reduced-motion: reduce) {
   .execute-icon-trace-base {
     animation: none;
+  }
+
+  .group\/execute:hover .execute-icon-trace-base {
+    opacity: 0.5;
   }
 }

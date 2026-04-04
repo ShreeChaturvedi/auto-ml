@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type { Responses } from 'openai/resources/responses/responses';
 
+import { appLogger } from '../../../logging/logger.js';
 import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall, RawLlmUsage } from '../llmClient.js';
 import { normalizeReasoningSelection, resolveCatalogModel } from '../modelCatalog.js';
 
@@ -29,11 +30,23 @@ export class OpenAiClient implements LlmClient {
   }
 
   async complete(request: LlmRequest): Promise<string> {
+    appLogger.debug('[OpenAiClient.complete] Dispatching to OpenAI', {
+      model: this.model,
+      messages: request.messages.length,
+      tools: request.tools?.length ?? 0,
+      reasoningEffort: request.reasoningEffort ?? null
+    });
     const response = await this.client.responses.create(buildOpenAiCreateBody(request, this.model));
     return extractResponseText(response);
   }
 
   async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
+    appLogger.debug('[OpenAiClient.stream] Dispatching to OpenAI', {
+      model: this.model,
+      messages: request.messages.length,
+      tools: request.tools?.length ?? 0,
+      reasoningEffort: request.reasoningEffort ?? null
+    });
     let fullText = '';
     const streamedToolItemIds = new Set<string>();
     const stream = this.client.responses.stream(buildOpenAiStreamBody(request, this.model));

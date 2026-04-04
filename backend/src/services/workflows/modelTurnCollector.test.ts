@@ -221,6 +221,64 @@ describe('invokeModelNode', () => {
     });
   });
 
+  it('retries once when streamed output is empty and recovers a tool call on the second attempt', async () => {
+    const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+      if (streamMock.mock.calls.length === 1) {
+        return '';
+      }
+      handlers.onToolCall?.({
+        name: 'materialize_feature_code',
+        args: {
+          featureId: 'feat-1',
+          code: 'df["feat_1"] = 1'
+        }
+      });
+      return '';
+    });
+    createLlmClientMock.mockReturnValue({
+      complete: llmCompleteMock,
+      stream: streamMock
+    });
+
+    const state = createBaseState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.controllerSummary = undefined;
+    state.request = {
+      messages: [
+        { role: 'system', content: 'Continue feature lifecycle.' },
+        { role: 'user', content: 'Implement selected feature IDs.' }
+      ],
+      tools: [
+        {
+          name: 'materialize_feature_code',
+          description: 'Attach code to a proposed feature.',
+          parameters: {
+            type: 'object',
+            properties: {
+              featureId: { type: 'string' },
+              code: { type: 'string' }
+            }
+          }
+        }
+      ],
+      toolChoice: 'any'
+    };
+
+    const result = await invokeModelNode(state);
+
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      nextStep: 'execute_tools',
+      pendingToolCalls: [
+        expect.objectContaining({
+          tool: 'materialize_feature_code'
+        })
+      ]
+    });
+  });
+
   it('recovers plan_exit markdown from raw tool argument text when parsed args are empty', async () => {
     const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
       handlers.onToolCall?.({

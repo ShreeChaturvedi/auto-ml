@@ -157,13 +157,42 @@ function stripDatasetSyncMode(metadata: Record<string, unknown> | undefined): Re
   };
 }
 
-export async function deleteCell(args: ToolCall['args']) {
+// RFC 4122 v4 UUID (also accepts other v1-v5 variants). Rejects the nil
+// UUID "00000000-0000-0000-0000-000000000000" because it's almost always
+// an LLM-invented fallback rather than a real cell reference.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+export async function deleteCell(projectId: string, args: ToolCall['args']) {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Notebook operations require database configuration.');
   }
   const cellId = typeof args?.cellId === 'string' ? args.cellId : '';
   if (!cellId) {
     throw new Error('cellId is required');
+  }
+  // Reject null UUID and malformed strings — the LLM occasionally hallucinates
+  // "00000000-0000-0000-0000-000000000000" as a fallback cellId when it has
+  // no valid reference in context. A downstream "Cell not found" error is
+  // less informative than a clear validation rejection.
+  if (cellId === NIL_UUID || !UUID_REGEX.test(cellId)) {
+    throw new Error(
+      `Invalid cellId "${cellId}". Expected a valid UUID. Call list_cells to get the real cellIds for the active notebook before deleting.`
+    );
+  }
+
+  // Resolve the active notebook and verify the cell actually belongs to it
+  // before deleting. Without this scope check, the LLM could delete cells in
+  // a sibling notebook by passing a valid-but-wrong UUID.
+  const notebookId = await resolveNotebookId(projectId, args);
+  const cell = await notebookService.readCell(cellId);
+  if (!cell) {
+    throw new Error(`Cell ${cellId} not found in project`);
+  }
+  if (cell.notebookId !== notebookId) {
+    throw new Error(
+      `Cell ${cellId} belongs to notebook ${cell.notebookId}, not the active notebook ${notebookId}. Refusing to delete cross-notebook.`
+    );
   }
 
   await notebookService.deleteCell(cellId);

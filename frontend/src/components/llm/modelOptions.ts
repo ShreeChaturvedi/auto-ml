@@ -1,4 +1,12 @@
-export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
+/** Full enum of recognized reasoning effort values, in ascending order of effort. */
+export const KNOWN_REASONING_EFFORTS: readonly ReasoningEffort[] = [
+  'low',
+  'medium',
+  'high',
+  'xhigh'
+];
 
 export type ReasoningIcon = 'zap' | 'gauge' | 'brain' | 'flame' | 'rocket';
 
@@ -43,7 +51,6 @@ export function normalizeAssistantModelValue(modelValue: string): string {
 }
 
 const REASONING_EFFORT_META: Record<ReasoningEffort, { label: string; icon: ReasoningIcon }> = {
-  minimal: { label: 'Minimal', icon: 'zap' },
   low: { label: 'Low', icon: 'gauge' },
   medium: { label: 'Medium', icon: 'brain' },
   high: { label: 'High', icon: 'flame' },

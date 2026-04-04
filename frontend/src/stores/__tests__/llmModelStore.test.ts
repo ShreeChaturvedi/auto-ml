@@ -82,10 +82,17 @@ describe('llmModelStore', () => {
     });
 
     it('falls back to the default when given an unknown effort', () => {
-      // Intentionally cast a bogus value to ReasoningEffort — this simulates
-      // a stray external mutation (test leakage, stale type, etc.)
+      // Pre-state is a NON-default value so we can prove the setter both
+      // rejected the bogus value AND coerced the outcome to the default
+      // rather than leaving the previous value in place.
+      useLlmModelStore.getState().setReasoningEffort('low');
+      expect(useLlmModelStore.getState().reasoningEffort).toBe('low');
+
+      // Cast a bogus value to ReasoningEffort — simulates stray external
+      // mutation (test leakage, stale type, etc.)
       useLlmModelStore.getState().setReasoningEffort('minimal' as unknown as ReasoningEffort);
       expect(useLlmModelStore.getState().reasoningEffort).toBe(DEFAULT_REASONING_EFFORT);
+      expect(useLlmModelStore.getState().reasoningEffort).not.toBe('low');
     });
 
     it('short-circuits identical writes to avoid redundant rerenders', () => {
@@ -134,13 +141,22 @@ describe('llmModelStore', () => {
       expect(useLlmModelStore.getState().reasoningEffort).toBe(DEFAULT_REASONING_EFFORT);
     });
 
-    it('preserves valid state through rehydration', async () => {
-      seedLocalStorage({ selectedModel: 'gpt-5.4', reasoningEffort: 'high' });
+    it('preserves valid state through rehydration (proving rehydrate actually read localStorage)', async () => {
+      // Order matters: set in-memory state FIRST (which the persist middleware
+      // auto-writes to localStorage), THEN overwrite localStorage directly
+      // with the values we want rehydrate to pull in. If we seeded first,
+      // the setState call would overwrite our seed.
+      useLlmModelStore.setState({ selectedModel: 'gpt-5.4-mini', reasoningEffort: 'medium' });
+      expect(useLlmModelStore.getState().selectedModel).toBe('gpt-5.4-mini');
+
+      seedLocalStorage({ selectedModel: 'gpt-5.4-nano', reasoningEffort: 'low' });
 
       await useLlmModelStore.persist.rehydrate();
 
-      expect(useLlmModelStore.getState().selectedModel).toBe('gpt-5.4');
-      expect(useLlmModelStore.getState().reasoningEffort).toBe('high');
+      // If rehydrate is a no-op, in-memory stays at 'gpt-5.4-mini'.
+      // If rehydrate works, it loads the seeded values from localStorage.
+      expect(useLlmModelStore.getState().selectedModel).toBe('gpt-5.4-nano');
+      expect(useLlmModelStore.getState().reasoningEffort).toBe('low');
     });
   });
 });

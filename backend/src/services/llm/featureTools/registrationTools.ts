@@ -16,6 +16,22 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
 
   const approved = (args.approved as boolean) ?? true;
 
+  // Guard: require validated status before registration (mirrors preprocessing's
+  // STEP_COMMIT_REQUIRES_EXECUTE_VALIDATE gate in stepCommitHandler.ts).
+  if (approved && ctx.run) {
+    const step = ctx.run.features[featureId];
+    if (step && step.status !== 'validated' && step.status !== 'registered') {
+      return {
+        error: `Feature "${featureId}" cannot be registered before successful execution and validation. Current status: ${step.status}.`
+      };
+    }
+    if (step?.executionResult && !step.executionResult.succeeded) {
+      return {
+        error: `Feature "${featureId}" execution did not succeed. Fix the code, re-execute, and re-validate before registering.`
+      };
+    }
+  }
+
   if (!approved) {
     if (ctx.run && ctx.runRepository) {
       const step = ctx.run.features[featureId];

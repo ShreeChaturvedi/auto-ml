@@ -1,14 +1,4 @@
-/* Execute icon: layered traces flow along stroke paths, hover-only */
-@keyframes execute-icon-trace {
-  0% {
-    stroke-dashoffset: 0;
-  }
-
-  100% {
-    stroke-dashoffset: 1;
-  }
-}
-
+/* Execute icon: layered traces flow along stroke paths */
 @keyframes execute-trace-movement {
   from {
     stroke-dashoffset: 1;
@@ -21,9 +11,10 @@
 
 .execute-icon-trace-base {
   animation: execute-trace-movement 1.5s linear infinite;
+  animation-play-state: paused;
   stroke-linecap: round;
   pointer-events: none;
-  opacity: 0;
+  opacity: 0.3;
   transition: opacity 0.3s ease;
 }
 
@@ -42,12 +33,17 @@
 }
 
 .group\/execute:hover .execute-icon-trace-base {
+  animation-play-state: running;
   opacity: 1;
+}
+
+.group\/execute[disabled] .execute-icon-trace-base,
+.group\/execute[disabled]:hover .execute-icon-trace-base {
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .execute-icon-trace-base {
-    stroke-dashoffset: 0;
     animation: none;
   }
 }

@@ -375,14 +375,24 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
           .filter((r) => r.tool === 'propose_feature' && !r.error && r.output)
           .map((r) => {
             const out = r.output as Record<string, unknown>;
+            const sourceColumns = Array.isArray(out.sourceColumns)
+              ? (out.sourceColumns as unknown[]).filter((c): c is string => typeof c === 'string')
+              : [];
+            const secondaryColumn = sourceColumns.length > 1 ? sourceColumns[1] : undefined;
             return {
               type: 'feature_suggestion' as const,
               id: (out.featureId as string) ?? `feat-${Date.now()}`,
               feature: {
-                sourceColumn: Array.isArray(out.sourceColumns) ? (out.sourceColumns[0] as string ?? '') : '',
+                sourceColumn: sourceColumns[0] ?? '',
+                // Propagate the second source column for interaction features
+                // (ratio, difference, product, groupby-shares) so the frontend
+                // guard doesn't block them with a "needs secondary column" error.
+                ...(secondaryColumn ? { secondaryColumn } : {}),
                 featureName: (out.featureName as string) ?? 'unnamed',
                 method: (out.method as string) ?? 'custom',
-                params: {}
+                params: (out.params && typeof out.params === 'object' && !Array.isArray(out.params)
+                  ? out.params as Record<string, unknown>
+                  : {})
               },
               rationale: (out.rationale as string) ?? (out.message as string) ?? '',
               impact: (['high', 'medium', 'low'].includes(out.impact as string) ? out.impact : 'medium') as 'high' | 'medium' | 'low'

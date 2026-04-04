@@ -126,6 +126,15 @@ function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistr
         const featureName = (output?.featureName ?? call.args?.featureName ?? featureId) as string;
         const method = (output?.method ?? call.args?.method ?? call.tool) as string;
         const existingFeature = store.features.find((feature) => feature.id === featureId);
+        const existingStep = store.featureSteps[featureId];
+
+        // Preserve prior step.code when the current tool call doesn't include
+        // it. `register_feature` in particular has no `code` arg in its schema,
+        // so a naive `code: call.args?.code` would overwrite the code that
+        // `materialize_feature_code` persisted earlier — which then kills it
+        // in localStorage on page reload. (Flagged by harsh critic review.)
+        const toolCode = call.args?.code as string | undefined;
+        const preservedCode = toolCode ?? existingStep?.code;
 
         store.setFeatureStep(featureId, {
           stepId: featureId,
@@ -133,7 +142,7 @@ function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistr
           method,
           status: resolveFeatureStepStatus(call, result),
           error: result.error,
-          code: call.args?.code as string | undefined,
+          code: preservedCode,
           metrics: output?.validation as Record<string, unknown> | undefined
         });
 
@@ -142,18 +151,27 @@ function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistr
           const rejected = (output?.status as string) === 'rejected';
           if (!rejected) {
             const sourceColumns = (output?.sourceColumns ?? call.args?.sourceColumns) as string[] | undefined;
-            const step = store.featureSteps[featureId];
+            // Prefer existingFeature's columns (set from the suggestion card
+            // toggle path with correct sourceColumn + secondaryColumn from the
+            // propose_feature output). Fall back to sourceColumns[0]/[1] only
+            // for features that bypassed the suggestion card entirely.
+            const secondaryColumn = existingFeature?.secondaryColumn ?? sourceColumns?.[1];
             store.upsertFeature({
               id: featureId,
               projectId: (output?.projectId as string) ?? existingFeature?.projectId ?? projectId,
-              sourceColumn: sourceColumns?.[0] ?? existingFeature?.sourceColumn ?? step?.name ?? '',
-              featureName: existingFeature?.featureName ?? step?.name ?? featureName,
-              description: (call.args?.rationale ?? output?.rationale ?? '') as string,
-              method: (existingFeature?.method ?? step?.method ?? method ?? 'custom') as FeatureMethod,
+              sourceColumn: existingFeature?.sourceColumn ?? sourceColumns?.[0] ?? existingStep?.name ?? '',
+              ...(secondaryColumn ? { secondaryColumn } : {}),
+              featureName: existingFeature?.featureName ?? existingStep?.name ?? featureName,
+              description: (call.args?.rationale ?? output?.rationale ?? existingFeature?.description ?? '') as string,
+              method: (existingFeature?.method ?? existingStep?.method ?? method ?? 'custom') as FeatureMethod,
               category: (existingFeature?.category ?? 'numeric_transform') as FeatureCategory,
               params: existingFeature?.params ?? {},
               enabled: true,
-              createdAt: existingFeature?.createdAt ?? new Date().toISOString()
+              createdAt: existingFeature?.createdAt ?? new Date().toISOString(),
+              // Copy LLM-authored code from the step so the apply pipeline
+              // can use it verbatim instead of regenerating from the method
+              // template. The code was persisted earlier by materialize_feature_code.
+              code: preservedCode ?? existingFeature?.code
             });
           }
         }

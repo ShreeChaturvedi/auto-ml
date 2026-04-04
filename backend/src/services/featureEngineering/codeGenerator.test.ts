@@ -2,7 +2,63 @@ import { describe, expect, it } from 'vitest';
 
 import type { FeatureSpec } from '../featureEngineering.js';
 
-import { buildFeatureCode, stripSelfLoadingPrelude, wrapLlmFeatureCode } from './codeGenerator.js';
+import { buildFeatureCode, isActionableFeatureCode, stripSelfLoadingPrelude, wrapLlmFeatureCode } from './codeGenerator.js';
+
+describe('isActionableFeatureCode', () => {
+  it('rejects undefined, null, and empty strings', () => {
+    expect(isActionableFeatureCode(undefined)).toBe(false);
+    expect(isActionableFeatureCode(null)).toBe(false);
+    expect(isActionableFeatureCode('')).toBe(false);
+  });
+
+  it('rejects whitespace-only strings', () => {
+    expect(isActionableFeatureCode('   \n\t  ')).toBe(false);
+  });
+
+  it('rejects the reported placeholder comment verbatim (the actual bug)', () => {
+    expect(
+      isActionableFeatureCode('# Placeholder: materialization deferred until proposal confirmation\n')
+    ).toBe(false);
+  });
+
+  it('rejects multi-line comment blocks without code', () => {
+    expect(isActionableFeatureCode('# TODO\n# implement later\n# ---')).toBe(false);
+  });
+
+  it('rejects code that does not reference df', () => {
+    expect(isActionableFeatureCode('x = 1 + 2\nprint(x)')).toBe(false);
+  });
+
+  it('rejects code that uses a differently-named dataframe', () => {
+    expect(isActionableFeatureCode("input_df['x'] = 1")).toBe(false);
+  });
+
+  it('accepts a single simple df mutation', () => {
+    expect(isActionableFeatureCode("df['x'] = 1")).toBe(true);
+  });
+
+  it('accepts code with a comment preamble followed by a df mutation', () => {
+    expect(isActionableFeatureCode("# header comment\ndf['salary_log'] = np.log1p(df['salary'])")).toBe(true);
+  });
+
+  it('accepts multi-line real feature code (Department Usage Share groupby)', () => {
+    const code = [
+      'import numpy as np',
+      "division_total = df.groupby('CF EE Division')['usage_count'].transform('sum')",
+      "df['dept_share'] = np.where(division_total > 0, df['usage_count'] / division_total, 0.0)"
+    ].join('\n');
+    expect(isActionableFeatureCode(code)).toBe(true);
+  });
+
+  it('handles Windows CRLF line endings', () => {
+    expect(isActionableFeatureCode("# comment\r\ndf['x'] = 1")).toBe(true);
+  });
+
+  it('rejects df_temp as a different variable (word boundary)', () => {
+    // \bdf\b should NOT match df_temp because underscore is a word char
+    expect(isActionableFeatureCode("df_temp = 1")).toBe(false);
+  });
+});
 
 describe('stripSelfLoadingPrelude', () => {
   it('returns code unchanged when no self-loading lines present', () => {
@@ -237,5 +293,32 @@ describe('buildFeatureCode', () => {
     const result = buildFeatureCode(feature, 'df');
     expect(result).toContain("df['name'].str.upper()");
     expect(result).toContain('def _apply_llm_feature_custom_feature(df):');
+  });
+
+  it('falls back to codegen template when feature.code is a placeholder comment', () => {
+    const feature: FeatureSpec = {
+      sourceColumn: 'value',
+      featureName: 'value_log',
+      method: 'log1p_transform',
+      code: '# Placeholder: materialization deferred until proposal confirmation\n'
+    };
+    const result = buildFeatureCode(feature, 'df');
+    // Template fallback produces the simple form, NOT the wrapped LLM code
+    expect(result).toBe('df["value_log"] = np.log1p(df["value"])');
+    expect(result).not.toContain('Placeholder');
+    expect(result).not.toContain('_apply_llm_feature');
+  });
+
+  it('emits a raise RuntimeError when placeholder code has no template fallback', () => {
+    const feature = {
+      sourceColumn: 'x',
+      featureName: 'custom_feature',
+      method: 'custom' as unknown as FeatureSpec['method'],
+      code: '# deferred\n'
+    } as FeatureSpec;
+    const result = buildFeatureCode(feature, 'df');
+    // No LLM code (not actionable) AND no template → hard error
+    expect(result).toContain('raise RuntimeError');
+    expect(result).toContain('custom_feature');
   });
 });

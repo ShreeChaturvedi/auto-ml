@@ -104,9 +104,13 @@ async function executeWorkflowToolCall(
     };
   }
 
-  // MCP fallback for non-phase-specific tools (notebook, data tools)
+  // MCP fallback for non-phase-specific tools (notebook, data tools).
+  // Forward datasetId from the turn context so tools like list_project_files
+  // can mark the active dataset (prevents the LLM from hallucinating columns
+  // from sibling datasets in the same project).
   const result = await executeMcpTool(state.turn.projectId, call.tool, {
     ...(call.args ?? {}),
+    ...(state.turn.datasetId && call.tool !== 'set_active_dataset' ? { datasetId: state.turn.datasetId } : {}),
     ...(state.turn.notebookId ? { notebookId: state.turn.notebookId } : {})
   });
 

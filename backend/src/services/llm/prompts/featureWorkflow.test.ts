@@ -118,10 +118,154 @@ describe('buildFeatureEngineeringRequest', () => {
 
     const userMessage = request.messages.find((message) => message.role === 'user');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: The user already selected feature "feat-signup-month" for implementation. Call materialize_feature_code for "feat-signup-month" first'
+      'CONTINUATION: The user selected 2 features for implementation: "feat-signup-month", "feat-city-frequency". Start with "feat-signup-month" by calling materialize_feature_code'
     );
-    expect(userMessage?.content).toContain('Do NOT propose more features.');
+    expect(userMessage?.content).toContain('Do NOT checkpoint until every selected feature is registered.');
     expect(request.toolChoice).toBe('any');
+  });
+
+  it('continues the remaining selected feature even when proposal history is unavailable', () => {
+    const request = buildFeatureEngineeringRequest({
+      dataset,
+      prompt: [
+        'Implement the enabled features in the notebook.',
+        '',
+        'Selected feature IDs to implement: feat-signup-month, feat-city-frequency',
+        'Enabled features to implement: signup_month (extract_month on signup_date); city_frequency (frequency_encode on city)'
+      ].join('\n'),
+      toolResults: [
+        {
+          tool: 'register_feature',
+          output: { featureId: 'feat-signup-month' }
+        }
+      ],
+      featureMethods: ['extract_month', 'frequency_encode']
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain(
+      'CONTINUATION: The user enabled 2 features: "feat-signup-month", "feat-city-frequency". Start with "feat-city-frequency" by calling materialize_feature_code'
+    );
+    expect(userMessage?.content).toContain('Do NOT checkpoint until every selected feature is registered.');
+  });
+
+  it('moves to the next selected feature instead of checkpointing after the first feature is registered', () => {
+    const request = buildFeatureEngineeringRequest({
+      dataset,
+      prompt: [
+        'Implement the enabled features in the notebook.',
+        '',
+        'Selected feature IDs to implement: feat-signup-month, feat-city-frequency',
+        'Enabled features to implement: signup_month (extract_month on signup_date); city_frequency (frequency_encode on city)'
+      ].join('\n'),
+      toolResults: [
+        {
+          tool: 'propose_feature',
+          output: {
+            featureId: 'feat-signup-month',
+            featureName: 'signup_month',
+            method: 'extract_month'
+          }
+        },
+        {
+          tool: 'propose_feature',
+          output: {
+            featureId: 'feat-city-frequency',
+            featureName: 'city_frequency',
+            method: 'frequency_encode'
+          }
+        },
+        {
+          tool: 'materialize_feature_code',
+          output: { featureId: 'feat-signup-month' }
+        },
+        {
+          tool: 'execute_feature',
+          output: { featureId: 'feat-signup-month' }
+        },
+        {
+          tool: 'validate_feature',
+          output: { featureId: 'feat-signup-month' }
+        },
+        {
+          tool: 'register_feature',
+          output: { featureId: 'feat-signup-month' }
+        }
+      ],
+      featureMethods: ['extract_month', 'frequency_encode']
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain(
+      'CONTINUATION: The user enabled 2 proposed features:'
+    );
+    expect(userMessage?.content).toContain(
+      'Start with "feat-city-frequency" by calling materialize_feature_code'
+    );
+    expect(userMessage?.content).toContain('Do NOT checkpoint until every selected feature is registered.');
+  });
+
+  it('checkpoints only after all selected features are registered', () => {
+    const request = buildFeatureEngineeringRequest({
+      dataset,
+      prompt: [
+        'Implement the enabled features in the notebook.',
+        '',
+        'Selected feature IDs to implement: feat-signup-month, feat-city-frequency',
+        'Enabled features to implement: signup_month (extract_month on signup_date); city_frequency (frequency_encode on city)'
+      ].join('\n'),
+      toolResults: [
+        {
+          tool: 'propose_feature',
+          output: {
+            featureId: 'feat-signup-month',
+            featureName: 'signup_month',
+            method: 'extract_month'
+          }
+        },
+        {
+          tool: 'propose_feature',
+          output: {
+            featureId: 'feat-city-frequency',
+            featureName: 'city_frequency',
+            method: 'frequency_encode'
+          }
+        },
+        { tool: 'register_feature', output: { featureId: 'feat-signup-month' } },
+        { tool: 'register_feature', output: { featureId: 'feat-city-frequency' } }
+      ],
+      featureMethods: ['extract_month', 'frequency_encode']
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain(
+      'CONTINUATION: All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.'
+    );
+  });
+
+  it('does not treat rejected register_feature as completion for selected features', () => {
+    const request = buildFeatureEngineeringRequest({
+      dataset,
+      prompt: [
+        'Implement the enabled features in the notebook.',
+        '',
+        'Selected feature IDs to implement: feat-signup-month, feat-city-frequency',
+        'Enabled features to implement: signup_month (extract_month on signup_date); city_frequency (frequency_encode on city)'
+      ].join('\n'),
+      toolResults: [
+        { tool: 'register_feature', output: { featureId: 'feat-signup-month', status: 'ok' } },
+        { tool: 'register_feature', output: { featureId: 'feat-city-frequency', status: 'rejected' } }
+      ],
+      featureMethods: ['extract_month', 'frequency_encode']
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain(
+      'CONTINUATION: Selected feature "feat-city-frequency" was rejected at registration.'
+    );
+    expect(userMessage?.content).not.toContain(
+      'CONTINUATION: All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.'
+    );
   });
 
   it('pauses at proposals with a render_ui directive when the user only asked for ideas', () => {

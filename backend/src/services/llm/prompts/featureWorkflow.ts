@@ -309,7 +309,8 @@ OUTPUT ENVELOPE:
   - feature_suggestion items when feasible
   - code_cell only when runnable code is necessary for review.
 - feature_suggestion items must use this structure:
-  { "id": "...", "feature": { "sourceColumn": "...", "featureName": "...", "method": "...", "params": {} }, "rationale": "...", "impact": "high|medium|low" }.
+  { "id": "...", "feature": { "sourceColumn": "...", "secondaryColumn": "...", "featureName": "...", "method": "...", "params": {} }, "rationale": "...", "impact": "high|medium|low" }.
+  - secondaryColumn is REQUIRED for interaction methods (ratio, difference, product) and for any groupby-style feature whose computation needs two input columns. Omit it for single-column transforms.
 - Only call render_ui when directed by the CONTINUATION instruction in the user message, or after all lifecycle stages are complete.`;
   const toolSummary = summarizeFeatureToolResults(toolResults);
   const continuationDirective = buildContinuationDirective(toolResults, prompt);

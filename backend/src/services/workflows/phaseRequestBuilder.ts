@@ -163,6 +163,60 @@ export function shouldAllowFeatureCheckpointTool(
   return selectedFeatureIds.every((id) => (stageByFeature.get(id) ?? -1) >= 4);
 }
 
+/** Maximum number of non-proposal call/result pairs retained in the
+ *  feature_engineering conversation history per turn. propose_feature
+ *  pairs are ALWAYS retained regardless of this cap so the LLM never
+ *  loses sight of which features it is iterating on mid-loop. */
+export const MAX_FE_HISTORY_PAIRS = 16;
+
+/**
+ * Trim the feature_engineering conversation history while preserving
+ * enough context for multi-feature loops. The previous implementation
+ * used a plain `slice(-8)` which could drop propose_feature entries
+ * during long runs (3 features × ~7 tool pairs each > 8), and the LLM
+ * would then stall mid-loop with text-only output instead of tool calls.
+ *
+ * Strategy:
+ * - Filter out get_dataset_profile noise (dataset context is in the
+ *   user message already).
+ * - When restricted to proposal-mode, return everything (no trim).
+ * - Otherwise, keep ALL propose_feature pairs unconditionally, plus the
+ *   most recent MAX_FE_HISTORY_PAIRS non-proposal pairs. Preserve the
+ *   original chronological order.
+ */
+export function trimFeatureEngineeringHistory<
+  Call extends { name: string },
+  Result
+>(
+  historyCalls: readonly Call[],
+  historyResults: readonly (Result | undefined)[],
+  restrictToProposalMode: boolean
+): { calls: Call[]; results: Result[] } {
+  const indexedPairs: { call: Call; result: Result; index: number }[] = [];
+  for (let i = 0; i < historyCalls.length; i += 1) {
+    const call = historyCalls[i];
+    const result = historyResults[i];
+    if (result === undefined) continue;
+    if (call.name === 'get_dataset_profile') continue;
+    indexedPairs.push({ call, result, index: i });
+  }
+
+  let trimmedPairs: typeof indexedPairs;
+  if (restrictToProposalMode) {
+    trimmedPairs = indexedPairs;
+  } else {
+    const proposalPairs = indexedPairs.filter(({ call }) => call.name === 'propose_feature');
+    const nonProposalPairs = indexedPairs.filter(({ call }) => call.name !== 'propose_feature');
+    const recentNonProposalPairs = nonProposalPairs.slice(-MAX_FE_HISTORY_PAIRS);
+    trimmedPairs = [...proposalPairs, ...recentNonProposalPairs].sort((a, b) => a.index - b.index);
+  }
+
+  return {
+    calls: trimmedPairs.map(({ call }) => call),
+    results: trimmedPairs.map(({ result }) => result)
+  };
+}
+
 export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Partial<WorkflowGraphState>> {
   const turn = state.turn;
   const dataset = turn.datasetId ? await datasetRepository.getById(turn.datasetId) : undefined;
@@ -322,16 +376,11 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     const historyCalls = toolCallHistory.slice(historyOffset);
     const historyResults = toolResultHistory.slice(historyOffset);
 
-    const MAX_FE_HISTORY_PAIRS = 8;
-    const filteredPairs = historyCalls
-      .map((call, i) => ({ call, result: historyResults[i] }))
-      .filter(({ call, result }) => call.name !== 'get_dataset_profile' && result !== undefined);
-    const trimmedPairs = restrictToProposalMode
-      ? filteredPairs
-      : filteredPairs.slice(-MAX_FE_HISTORY_PAIRS);
-
-    const featureToolCallHistory = trimmedPairs.map(({ call }) => call);
-    const featureToolResultHistory = trimmedPairs.map(({ result }) => result!);
+    const { calls: featureToolCallHistory, results: featureToolResultHistory } = trimFeatureEngineeringHistory(
+      historyCalls,
+      historyResults,
+      restrictToProposalMode
+    );
     const featureRequestToolResults = selectFeatureRequestToolResults(
       featureRawToolResults,
       state.turnStartToolCallCount,

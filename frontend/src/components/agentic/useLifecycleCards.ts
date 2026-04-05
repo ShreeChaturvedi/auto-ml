@@ -14,6 +14,7 @@
 
 import { useCallback } from 'react';
 import { createElement, type ReactNode } from 'react';
+import { useParams } from 'react-router-dom';
 import type { ChatMessage, ToolCall } from '@/types/llmUi';
 import { StepProposalCard } from './cards/StepProposalCard';
 import { CodeGenerationCard } from './cards/CodeGenerationCard';
@@ -21,8 +22,9 @@ import { ExecutionCard } from './cards/ExecutionCard';
 import { ValidationCard } from './cards/ValidationCard';
 import { CommitBadge } from './cards/CommitBadge';
 import { ErrorCard } from './cards/ErrorCard';
+import { ModelSavedCard } from './cards/ModelSavedCard';
 
-type CardType = 'proposal' | 'code' | 'execution' | 'validation' | 'commit' | 'error';
+type CardType = 'proposal' | 'code' | 'execution' | 'validation' | 'commit' | 'model_saved' | 'error';
 
 /** Determine which card type (if any) a tool name maps to. */
 function classifyTool(toolName: string): CardType | null {
@@ -63,11 +65,17 @@ function classifyTool(toolName: string): CardType | null {
     return 'validation';
   }
 
+  // register_model gets its own card (ModelSavedCard) so the Training
+  // chat can surface a deep link into the Experiments ModelDetailPanel
+  // as soon as the model is persisted.
+  if (toolName === 'register_model') {
+    return 'model_saved';
+  }
+
   // Commit / register tools
   if (
     toolName === 'commit_transformation_step' ||
     toolName === 'register_derived_dataset' ||
-    toolName === 'register_model' ||
     toolName.startsWith('commit_') ||
     toolName.startsWith('register_')
   ) {
@@ -113,6 +121,8 @@ function detectPhase(toolName: string): string {
  * ```
  */
 export function useLifecycleCards(): (message: ChatMessage) => ReactNode | null {
+  const { projectId } = useParams<{ projectId: string }>();
+
   return useCallback((message: ChatMessage): ReactNode | null => {
     if (message.type !== 'tool_call') return null;
 
@@ -224,8 +234,43 @@ export function useLifecycleCards(): (message: ChatMessage) => ReactNode | null 
           details: call.rationale,
         });
 
+      case 'model_saved': {
+        // Tool hasn't returned yet — show an ephemeral commit-style badge
+        // until the result arrives with modelId and metrics.
+        if (!result || !result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+          return createElement(CommitBadge, {
+            key: message.id,
+            title: title || 'Registering model...',
+            details: call.rationale,
+          });
+        }
+        const output = result.output as Record<string, unknown>;
+        const modelId = typeof output.modelId === 'string' ? output.modelId : undefined;
+        const modelName = typeof output.modelName === 'string'
+          ? output.modelName
+          : typeof call.args?.modelName === 'string'
+            ? (call.args.modelName as string)
+            : 'Untitled Model';
+        const modelType = typeof output.modelType === 'string' ? output.modelType : 'unknown';
+        const taskType = typeof output.taskType === 'string' ? output.taskType : 'classification';
+        const metrics = (output.metrics && typeof output.metrics === 'object' && !Array.isArray(output.metrics))
+          ? (output.metrics as Record<string, number>)
+          : undefined;
+        const artifactSize = typeof output.artifactSize === 'number' ? output.artifactSize : undefined;
+        return createElement(ModelSavedCard, {
+          key: message.id,
+          projectId: projectId ?? '',
+          modelId,
+          modelName,
+          modelType,
+          taskType,
+          metrics,
+          artifactSize,
+        });
+      }
+
       default:
         return null;
     }
-  }, []);
+  }, [projectId]);
 }

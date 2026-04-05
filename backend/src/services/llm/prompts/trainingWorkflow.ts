@@ -73,6 +73,7 @@ export function buildTrainingRequest(params: {
     `[Context - Available dataset: "${dataset.filename}" (${dataset.nRows} rows, ${dataset.nCols} columns)]`,
     targetColumn ? `[Target column: ${targetColumn}]` : null,
     `[Columns: ${dataset.columns.map((column) => `${column.name} (${column.dtype})`).join(', ')}]`,
+    `[Dataset access: use resolve_dataset_path("${dataset.filename}", "${dataset.datasetId}") when writing Python code. This returns the correct filesystem path inside the execution sandbox. Do NOT use pd.read_csv with a guessed path — the sandbox path is not /mnt/data or /workspace.]`,
     featureSpecs?.length
       ? formatFeatureContext(featureSpecs)
       : featureSummary ? `[Feature engineering applied: ${featureSummary}]` : null,

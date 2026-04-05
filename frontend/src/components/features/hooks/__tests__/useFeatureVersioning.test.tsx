@@ -117,7 +117,6 @@ describe('useFeatureVersioning', () => {
 
     const { result } = renderHook(() => useFeatureVersioning({
       projectId,
-      setSuggestionDrafts: vi.fn(),
       setPanelError: vi.fn(),
       setApplyStatus: vi.fn(),
       setApplyMessage: vi.fn()

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
 import {
+  MAX_FE_HISTORY_PAIRS,
   selectFeatureRequestToolResults,
   shouldAllowFeatureCheckpointTool,
   shouldAllowFeatureProposeTool,
   shouldContinuePreprocessingTurn,
-  shouldRestrictFeatureToolsToProposalMode
+  shouldRestrictFeatureToolsToProposalMode,
+  trimFeatureEngineeringHistory
 } from './phaseRequestBuilder.js';
 
 function createState(overrides: Partial<WorkflowGraphState> = {}): WorkflowGraphState {
@@ -217,5 +219,136 @@ describe('selectFeatureRequestToolResults', () => {
         'Selected feature IDs to implement: feat-a'
       )
     ).toEqual(results);
+  });
+});
+
+describe('trimFeatureEngineeringHistory', () => {
+  // Regression: in multi-feature runs the old slice(-8) trim would drop
+  // propose_feature entries after feature 1 finished, causing the LLM to
+  // lose track of features 2+ and stall with text-only output.
+  //
+  // The new strategy keeps ALL propose_feature pairs unconditionally plus
+  // the last MAX_FE_HISTORY_PAIRS non-proposal pairs in chronological order.
+
+  type TestCall = { name: string };
+  type TestResult = { output: unknown };
+
+  function mkCalls(...names: string[]): TestCall[] {
+    return names.map((name) => ({ name }));
+  }
+  function mkResults(count: number): TestResult[] {
+    return Array.from({ length: count }, (_, i) => ({ output: { index: i } }));
+  }
+
+  it('preserves all propose_feature pairs even when non-proposal history exceeds the cap', () => {
+    // Scenario: 3 features proposed, then 3 × (materialize, write_cell,
+    // run_cell, execute_feature, validate_feature, register_feature)
+    // = 18 non-proposal pairs. Old 8-cap trim would drop all 3 proposals.
+    const calls = mkCalls(
+      'propose_feature',
+      'propose_feature',
+      'propose_feature',
+      ...Array.from({ length: 18 }, (_, i) => (i % 6 === 0 ? 'materialize_feature_code' : 'write_cell'))
+    );
+    const results = mkResults(calls.length);
+
+    const { calls: trimmed } = trimFeatureEngineeringHistory(calls, results, false);
+
+    const proposalCount = trimmed.filter((c) => c.name === 'propose_feature').length;
+    expect(proposalCount).toBe(3);
+    // Non-proposal tail capped to MAX_FE_HISTORY_PAIRS (16)
+    const nonProposalCount = trimmed.filter((c) => c.name !== 'propose_feature').length;
+    expect(nonProposalCount).toBe(MAX_FE_HISTORY_PAIRS);
+  });
+
+  it('caps non-proposal pairs at MAX_FE_HISTORY_PAIRS while keeping the most recent', () => {
+    const calls = mkCalls(
+      'propose_feature',
+      ...Array.from({ length: 30 }, (_, i) => `tool_${i}`)
+    );
+    const results = mkResults(calls.length);
+
+    const { calls: trimmed } = trimFeatureEngineeringHistory(calls, results, false);
+
+    // 1 proposal + 16 most recent non-proposals = 17 total
+    expect(trimmed.length).toBe(1 + MAX_FE_HISTORY_PAIRS);
+    expect(trimmed[0].name).toBe('propose_feature');
+    // Last non-proposal retained is tool_29 (most recent), first retained is tool_14
+    expect(trimmed[trimmed.length - 1].name).toBe('tool_29');
+    expect(trimmed[1].name).toBe('tool_14');
+  });
+
+  it('preserves chronological order after combining proposals and recent pairs', () => {
+    const calls = mkCalls(
+      'tool_a',
+      'propose_feature',
+      'tool_b',
+      'propose_feature',
+      'tool_c'
+    );
+    const results = mkResults(calls.length);
+
+    const { calls: trimmed } = trimFeatureEngineeringHistory(calls, results, false);
+
+    // Everything fits under the cap, so order should be preserved exactly
+    expect(trimmed.map((c) => c.name)).toEqual([
+      'tool_a',
+      'propose_feature',
+      'tool_b',
+      'propose_feature',
+      'tool_c'
+    ]);
+  });
+
+  it('bypasses trim and returns everything when restrictToProposalMode is true', () => {
+    const calls = mkCalls(
+      ...Array.from({ length: 25 }, (_, i) => `tool_${i}`)
+    );
+    const results = mkResults(calls.length);
+
+    const { calls: trimmed } = trimFeatureEngineeringHistory(calls, results, true);
+
+    expect(trimmed.length).toBe(25);
+  });
+
+  it('filters out get_dataset_profile pairs (dataset context is already in the user message)', () => {
+    const calls = mkCalls(
+      'get_dataset_profile',
+      'propose_feature',
+      'get_dataset_profile',
+      'materialize_feature_code'
+    );
+    const results = mkResults(calls.length);
+
+    const { calls: trimmed } = trimFeatureEngineeringHistory(calls, results, false);
+
+    expect(trimmed.map((c) => c.name)).toEqual(['propose_feature', 'materialize_feature_code']);
+  });
+
+  it('skips pairs whose result is undefined (in-flight calls)', () => {
+    const calls = mkCalls('propose_feature', 'materialize_feature_code');
+    const results: (TestResult | undefined)[] = [{ output: {} }, undefined];
+
+    const { calls: trimmed } = trimFeatureEngineeringHistory(calls, results, false);
+
+    expect(trimmed.length).toBe(1);
+    expect(trimmed[0].name).toBe('propose_feature');
+  });
+
+  it('returns paired calls and results aligned by original index', () => {
+    const calls = mkCalls('propose_feature', 'materialize_feature_code', 'write_cell');
+    const results: TestResult[] = [
+      { output: { id: 0 } },
+      { output: { id: 1 } },
+      { output: { id: 2 } }
+    ];
+
+    const { calls: trimmedCalls, results: trimmedResults } = trimFeatureEngineeringHistory(calls, results, false);
+
+    expect(trimmedCalls.length).toBe(trimmedResults.length);
+    expect(trimmedCalls[0].name).toBe('propose_feature');
+    expect(trimmedResults[0]).toEqual({ output: { id: 0 } });
+    expect(trimmedCalls[1].name).toBe('materialize_feature_code');
+    expect(trimmedResults[1]).toEqual({ output: { id: 1 } });
   });
 });

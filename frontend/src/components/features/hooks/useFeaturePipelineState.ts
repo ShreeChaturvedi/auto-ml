@@ -300,7 +300,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
   // --- Suggestion drafts (extracted hook) ---
   const {
     suggestionDrafts,
-    setSuggestionDrafts,
     toggleSuggestion,
     updateSuggestionControl,
   } = useSuggestionDrafts({
@@ -353,7 +352,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleDeleteConfirm,
   } = useFeatureVersioning({
     projectId,
-    setSuggestionDrafts,
     setPanelError,
     setApplyStatus,
     setApplyMessage,

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { FeaturePipelineRunState } from '../../../repositories/featurePipelineRunRepository.js';
+
 import { registerFeature } from './registrationTools.js';
 
 function buildRun(overrides: Partial<FeaturePipelineRunState['features']['feat-1']> = {}): FeaturePipelineRunState {

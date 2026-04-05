@@ -368,12 +368,25 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     setIsReadinessExpanded
   } = useFeatureReadiness(projectId, activeFeatures, datasetColumns, currentVersion);
 
-  // --- Default dataset selection effect (prefer previous phase's dataset) ---
+  // --- Default dataset selection effect ---
+  // Precedence order when the local state is empty (fresh mount, tab switch,
+  // page reload):
+  //   1. This phase's own persisted dataset (so user selections survive
+  //      remounts and tab switches within the FE phase).
+  //   2. The previous phase's dataset (cross-phase continuity from
+  //      preprocessing → FE).
+  //   3. pickBestDataset fallback (heuristic: first processed or first file).
+  //
+  // The previous code only checked the 'preprocessing' phase, which meant
+  // any user dataset change within FE was overwritten on the next remount
+  // with the preprocessing phase's dataset. Reported by user: "everytime a
+  // go away from the draft pipeline of FE, to some other tab or the page
+  // is refreshed, it switches to a single datafile again and again."
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
-      const previousId = getPreviousPhaseDataset(projectId, 'preprocessing');
-      const match = previousId
-        ? datasetFiles.find(f => f.id === previousId || f.metadata?.datasetId === previousId)
+      const persistedId = getPreviousPhaseDataset(projectId, 'feature-engineering', 'preprocessing');
+      const match = persistedId
+        ? datasetFiles.find(f => f.id === persistedId || f.metadata?.datasetId === persistedId)
         : undefined;
       setSelectedDataset(match?.id ?? pickBestDataset(datasetFiles).id);
     }

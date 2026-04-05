@@ -22,6 +22,10 @@ Use \`configure_experiment\` to set up the experiment parameters:
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)
 - Specify target column and feature columns
 
+**Feature pipeline rule (HARD):** If the user's project lists engineered features from the Feature Engineering phase (you'll see them in the context as \`[Feature engineering pipeline (N approved features): ...]\`), \`featureColumns\` MUST be a subset of those feature names. Do NOT train on raw dataset columns when engineered features exist — the whole point of the FE phase was to produce the inputs for training, and the target column may have been derived via that pipeline (e.g. \`usage_log1p\` from \`usage\`). Training on raw columns while computing metrics against a derived target produces silent correctness failures. If you omit \`featureColumns\` entirely, the backend will auto-populate them from the FE pipeline for you — that's fine, but do not pass a list that mixes raw column names with engineered ones.
+
+**Training code rule (pairs with the above):** The code you write in Stage 4/5 MUST load the dataset, select exactly the \`featureColumns\` specified on the experiment (via \`df[experiment_feature_columns]\` or equivalent), and fit the model on that subset. Do NOT use \`df.drop(target, axis=1)\` as a shortcut — it includes every raw column and bypasses the FE pipeline handoff.
+
 ### Stage 3: Propose Model
 Use \`propose_training_plan\` to present your training approach:
 - Provide clear rationale for model choice

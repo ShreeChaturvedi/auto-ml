@@ -67,10 +67,12 @@ function isUsableTrainingNotebookBinding(
 ): boolean {
   const metadata = readMetadata(notebook);
 
-  // Unphased notebooks are treated as adoptable legacy state (matches the
-  // behavior of useFeatureNotebookSync's equivalent helper). New bindings
-  // will be tagged with training metadata on first use.
-  if (!metadata) {
+  // Unphased notebooks (null metadata OR empty object OR phase field
+  // missing) are treated as adoptable legacy state. They will be healed
+  // with training metadata on adoption. Notebooks with a phase set to
+  // something other than 'training' belong to another phase and must NOT
+  // be adopted.
+  if (!metadata || metadata.phase === undefined) {
     return true;
   }
 
@@ -93,14 +95,20 @@ export function useTrainingNotebookSync({
   const workbookName = activeWorkbook?.name ?? null;
   const workbookNotebookId = activeWorkbook?.notebookId ?? null;
 
-  const [notebookId, setNotebookId] = useState<string | null>(workbookNotebookId);
+  // IMPORTANT: initialize state and refs to null — not to workbookNotebookId.
+  // The workbook's persisted binding is UNVERIFIED at mount: the notebook
+  // may have been deleted, repurposed for another phase, or never existed.
+  // We must always run at least one listNotebooks → validate cycle before
+  // trusting the binding. Pre-populating the ref would let the same-
+  // workbook early-exit skip that validation on first render.
+  const [notebookId, setNotebookId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const notebookEnsureLockRef = useRef<{ workbookId: string; promise: Promise<string | null> } | null>(null);
-  const activeWorkbookIdRef = useRef<string | null>(workbookId);
+  const activeWorkbookIdRef = useRef<string | null>(null);
   // The resolved notebook id is also tracked in a ref so the effect can
   // early-exit on re-runs without needing `notebookId` in its deps (which
   // would cause a redundant extra ensure round-trip per setState).
-  const resolvedNotebookIdRef = useRef<string | null>(workbookNotebookId);
+  const resolvedNotebookIdRef = useRef<string | null>(null);
   // Ensure the URL deep-link adoption only runs once per mount.
   const initialAdoptionRef = useRef(false);
 

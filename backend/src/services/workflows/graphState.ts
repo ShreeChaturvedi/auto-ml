@@ -8,12 +8,22 @@ import type { LlmRequest } from '../llm/llmClient.js';
 
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
-// A full preprocessing turn can legitimately span inspection, planning, code
-// authoring, notebook execution, execution recording, validation, and commit.
-// Each stage uses 1-2 iterations, and the model may profile datasets before
-// planning. Budget: ~3 profile + 1 plan + 1 code-gen + 2 write/exec + 1 validate
-// + 1 commit + 1 summarize ≈ 10-12 on the happy path, with headroom for retries.
-export const MAX_WORKFLOW_ITERATIONS = 24;
+// Per-turn iteration budget. The budget has to fit the heaviest legitimate
+// workflow path, which is multi-feature implementation in feature_engineering:
+//
+//   For each selected feature (up to 5):
+//     materialize_feature_code, write_cell (dataset load), run_cell,
+//     write_cell (feature code), run_cell, execute_feature, validate_feature,
+//     register_feature  = 8 tool calls
+//   + 1 checkpoint_feature_pipeline at the end
+//   + headroom for error retries (register-before-validate recovery etc.)
+//
+// 5 × 8 + 1 + headroom = ~48. Preprocessing turns typically use 10-12 and
+// training uses fewer, so the shared cap doesn't penalize them.
+//
+// Previously 24, which caused MAX_ITERATIONS_EXCEEDED for 3-feature FE runs
+// because 3 × 8 = 24 exactly hit the cap before the final checkpoint call.
+export const MAX_WORKFLOW_ITERATIONS = 48;
 
 // Cap how many times any single tool can be called in one turn.
 // Prevents the LLM from looping on a stage (e.g. configure_experiment)

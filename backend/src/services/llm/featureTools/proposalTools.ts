@@ -113,11 +113,27 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
   // hallucination — it should be calling materialize_feature_code for one of
   // the already-selected feature IDs. Return an error so the retry logic can
   // steer the LLM back to the correct lifecycle step.
-  if (promptHasSelectedFeatureIds(ctx.prompt)) {
+  const implementationMode = promptHasSelectedFeatureIds(ctx.prompt);
+  if (implementationMode) {
+    appLogger.warn(
+      '[proposeFeature] guard fired — rejecting propose_feature in implementation mode (featureId=%s, promptLen=%d)',
+      args.featureId ?? '<unset>',
+      ctx.prompt?.length ?? 0
+    );
     return {
       error: 'propose_feature is not allowed in implementation mode. The user has already selected features to implement (see "Selected feature IDs to implement" in the user message). Call materialize_feature_code for the next selected feature id instead. Do NOT propose additional features.'
     };
   }
+  // Diagnostic trace: log every propose_feature dispatch so we can confirm
+  // whether ctx.prompt is reaching the handler and whether the marker is
+  // present. Previously, runs were losing ctx.prompt via executeFeatureToolCall
+  // and the guard silently skipped.
+  appLogger.debug(
+    '[proposeFeature] guard pass-through (featureId=%s, hasPrompt=%s, promptLen=%d)',
+    args.featureId ?? '<unset>',
+    Boolean(ctx.prompt),
+    ctx.prompt?.length ?? 0
+  );
 
   const featureId = (args.featureId as string) ?? `feat-${Date.now()}`;
   const timestamp = nowIso();
@@ -232,15 +248,39 @@ export const materializeFeatureCode: FeatureToolHandler = async (ctx: FeatureToo
     return { error: persistence.error };
   }
 
-  const step = persistence.run.features[featureId];
-  if (step) {
-    step.code = code;
-    step.codeHash = hashCode(code);
-    step.outputColumns = outputColumns;
-    step.status = 'code_ready';
-    step.updatedAt = nowIso();
-    await persistence.runRepository.save(persistence.run);
+  // If the featureId already has a proposal in the run state, update it.
+  // Otherwise create a new entry on the fly — the previous code silently
+  // dropped the materialization when the id wasn't in run.features, then
+  // returned {output: {status: 'ok'}}, which misled the LLM into calling
+  // execute_feature on a feature that had no persisted code. The execute
+  // handler then looped with "No code found for feature X — call
+  // materialize_feature_code first", burning iterations until the workflow
+  // hit MAX_ITERATIONS_EXCEEDED.
+  const now = nowIso();
+  const existing = persistence.run.features[featureId];
+  if (existing) {
+    existing.code = code;
+    existing.codeHash = hashCode(code);
+    existing.outputColumns = outputColumns;
+    existing.status = 'code_ready';
+    existing.updatedAt = now;
+  } else {
+    persistence.run.features[featureId] = {
+      featureId,
+      name: (args.featureName as string) ?? featureId,
+      method: (args.method as string) ?? 'custom',
+      sourceColumns: Array.isArray(args.sourceColumns)
+        ? (args.sourceColumns as unknown[]).filter((c): c is string => typeof c === 'string')
+        : [],
+      status: 'code_ready',
+      code,
+      codeHash: hashCode(code),
+      outputColumns,
+      createdAt: now,
+      updatedAt: now
+    };
   }
+  await persistence.runRepository.save(persistence.run);
 
   return { output };
 };

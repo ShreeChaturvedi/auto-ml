@@ -3,15 +3,12 @@
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  ArrowRight,
-  Wand2
-} from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
 import { ModelRecommendationCard } from './ModelRecommendationCard';
 import type { Cell } from '@/types/cell';
@@ -20,7 +17,6 @@ import { useExecutionStore } from '@/stores/executionStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
-import { useProjectStore } from '@/stores/projectStore';
 import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
@@ -35,7 +31,6 @@ import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
-const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -105,15 +100,8 @@ export function TrainingPanel() {
 
   // Features
   const features = useFeatureStore((s) => s.features);
-  const pipelineVersions = useFeatureStore((s) => (
-    projectId ? s.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS : EMPTY_PIPELINE_VERSIONS
-  ));
   const hydrateFeatures = useFeatureStore((s) => s.hydrateFromProject);
-  const projectMetadata = useProjectStore((state) => projectId ? state.getProjectById(projectId)?.metadata : undefined);
   const projectFeatures = useMemo(() => projectId ? features.filter(f => f.projectId === projectId && f.enabled) : [], [features, projectId]);
-  const feWorkflowVersion = typeof projectMetadata?.feWorkflowVersion === 'number' ? projectMetadata.feWorkflowVersion : undefined;
-  const hasApprovedFePipeline = pipelineVersions.some((version) => version.status === 'approved');
-  const trainingBlockedByFeGate = feWorkflowVersion === 2 && !hasApprovedFePipeline;
 
   useEffect(() => {
     if (!projectId) return;
@@ -359,7 +347,6 @@ export function TrainingPanel() {
         projectId={projectId ?? ''}
         composerPlaceholders={composerPlaceholders}
         storageKey={trainingStorageKey}
-        domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
         domainAdapter={trainingAdapter}
         renderLeftPane={(renderProps) => {
           // Sync LLM code cells whenever messages change
@@ -367,27 +354,6 @@ export function TrainingPanel() {
 
           return (
             <div className="p-6 space-y-4 pb-28">
-              {trainingBlockedByFeGate ? (
-                <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                      Feature Pipeline Approval Required
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-2">
-                    <p>Approve a Feature Engineering pipeline before starting model training.</p>
-                    <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
-                    <Link
-                      to={`/project/${projectId}/feature-engineering`}
-                      className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200/60 hover:bg-amber-200 dark:bg-amber-800/40 dark:hover:bg-amber-800/60 text-amber-900 dark:text-amber-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      Open Feature Engineering
-                      <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  </CardContent>
-                </Card>
-              ) : null}
-
               {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
 
               <ChatMessageRenderer
@@ -424,7 +390,7 @@ export function TrainingPanel() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
+                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode}>
                     <Wand2 className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>

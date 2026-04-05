@@ -1,13 +1,24 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { FeatureSpec } from '@/types/feature';
+
 import { useFeatureApply } from '../useFeatureApply';
 
 const mockState = vi.hoisted(() => ({
   hydrateFromBackend: vi.fn(),
   applyFeatureEngineering: vi.fn(),
   setSelectedDataset: vi.fn(),
-  featureRunId: 'feat-run-1'
+  featureRunId: 'feat-run-1',
+  // The handler reads the latest features via useFeatureStore.getState() to
+  // avoid stale prop closures during the register_feature → Apply race. The
+  // mock `featureStore` lives inside this hoisted container so each test can
+  // mutate `storeFeatures` / `storeFeatureSteps` between render and click to
+  // simulate the race (adapter upserts features into the store, but the
+  // component hasn't re-rendered yet so the prop closure is still the old
+  // pre-register snapshot).
+  storeFeatures: [] as Array<Record<string, unknown>>,
+  storeFeatureSteps: {} as Record<string, Record<string, unknown>>
 }));
 
 vi.mock('@/stores/dataStore', () => ({
@@ -16,11 +27,18 @@ vi.mock('@/stores/dataStore', () => ({
   })
 }));
 
-vi.mock('@/stores/featureStore', () => ({
-  useFeatureStore: (selector: (state: unknown) => unknown) => selector({
-    featureRunId: mockState.featureRunId
-  })
-}));
+vi.mock('@/stores/featureStore', () => {
+  const buildState = () => ({
+    featureRunId: mockState.featureRunId,
+    features: mockState.storeFeatures,
+    featureSteps: mockState.storeFeatureSteps
+  });
+  const useFeatureStore = Object.assign(
+    (selector: (state: unknown) => unknown) => selector(buildState()),
+    { getState: () => buildState() }
+  );
+  return { useFeatureStore };
+});
 
 vi.mock('@/lib/api/featureEngineering', () => ({
   applyFeatureEngineering: (...args: unknown[]) => mockState.applyFeatureEngineering(...args)
@@ -32,6 +50,8 @@ describe('useFeatureApply', () => {
     mockState.applyFeatureEngineering.mockReset();
     mockState.setSelectedDataset.mockReset();
     mockState.featureRunId = 'feat-run-1';
+    mockState.storeFeatures = [];
+    mockState.storeFeatureSteps = {};
     mockState.applyFeatureEngineering.mockResolvedValue({
       dataset: {
         datasetId: 'derived-1',
@@ -268,5 +288,158 @@ describe('useFeatureApply', () => {
     expect(result.current.applyStatus).toBe('error');
     expect(result.current.applyMessage).toContain('secondary column');
     expect(mockState.applyFeatureEngineering).not.toHaveBeenCalled();
+  });
+
+  describe('race-free apply payload construction', () => {
+    // Regression: when the user clicks Apply immediately after the FE lifecycle
+    // runs, React hasn't yet committed the re-render that would rebuild the
+    // useCallback with the new `projectFeatures` prop. The Zustand store DOES
+    // have the post-register state (updated synchronously by the adapter's
+    // upsertFeature call from a WS event handler that runs outside React's
+    // batching). The hook must read via useFeatureStore.getState() at click
+    // time so the payload reflects the latest store, not the stale closure.
+
+    it('prefers the fresh Zustand store over a stale prop closure (race simulation)', async () => {
+      const llmCode = "df['salary_log1p'] = np.log1p(df['salary'])";
+      const staleFeature: FeatureSpec = {
+        id: 'feat-race',
+        projectId: 'project-1',
+        sourceColumn: 'salary',
+        featureName: 'salary_log1p',
+        description: 'log1p of salary',
+        method: 'log1p_transform',
+        category: 'numeric_transform',
+        params: {},
+        enabled: true,
+        createdAt: new Date().toISOString()
+        // No `code` — this is the pre-register snapshot.
+      };
+      // Both the store and the prop start as the pre-register snapshot,
+      // matching production (both sourced from the same Zustand state).
+      mockState.storeFeatures = [staleFeature as unknown as Record<string, unknown>];
+
+      const { result } = renderHook(() => useFeatureApply({
+        projectId: 'project-1',
+        notebookId: 'notebook-1',
+        projectFeatures: [staleFeature],
+        selectedDatasetFile: {
+          id: 'file-1',
+          metadata: { datasetId: 'dataset-1', columns: ['salary'] }
+        },
+        setSelectedDataset: mockState.setSelectedDataset
+      }));
+
+      // THE RACE: adapter's onResult for register_feature runs (outside React
+      // dispatch), upserts the fresh feature with code into the store. React
+      // will eventually commit and rebuild the useCallback, but before that
+      // happens the user clicks Apply. The click handler's closure still
+      // references the old prop. Without the getState() fix, the payload
+      // would have the stale empty code.
+      mockState.storeFeatures = [{ ...staleFeature, code: llmCode }];
+      // NOTE: no rerender() — the point is that the callback's prop closure
+      // has NOT been refreshed yet.
+
+      await act(async () => {
+        await result.current.handleApplyFeatures();
+      });
+
+      expect(mockState.applyFeatureEngineering).toHaveBeenCalledWith(expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ id: 'feat-race', code: llmCode })
+        ])
+      }));
+    });
+
+    it('falls back to featureSteps[id].code on reload/bridge-miss when the feature spec is missing code', async () => {
+      // Real-world scenario this guards against: on page reload, features are
+      // hydrated from project metadata via hydrateFromProject. If the metadata
+      // was written during a pre-fix session (or sync was interrupted before
+      // feature.code was persisted), the features array lacks code — but the
+      // backend feature pipeline run still has the authoritative code, and
+      // the adapter's run-hydration path back-fills it into featureSteps.
+      // This test guarantees the fallback path hydrates code from featureSteps
+      // so the apply payload is still correct after a reload.
+      const llmCode = "df['tenure_bucket'] = pd.cut(df['years'], bins=[0,2,5,10], labels=['a','b','c'])";
+      mockState.storeFeatures = [{
+        id: 'feat-bridge-miss',
+        projectId: 'project-1',
+        sourceColumn: 'years',
+        featureName: 'tenure_bucket',
+        description: 'Tenure buckets',
+        method: 'bucketize',
+        category: 'numeric_transform',
+        params: {},
+        enabled: true,
+        createdAt: new Date().toISOString()
+        // No code on the feature spec
+      }];
+      mockState.storeFeatureSteps = {
+        'feat-bridge-miss': {
+          stepId: 'feat-bridge-miss',
+          name: 'tenure_bucket',
+          method: 'bucketize',
+          status: 'registered',
+          code: llmCode
+        }
+      };
+
+      const { result } = renderHook(() => useFeatureApply({
+        projectId: 'project-1',
+        notebookId: 'notebook-1',
+        projectFeatures: [],
+        selectedDatasetFile: {
+          id: 'file-1',
+          metadata: { datasetId: 'dataset-1', columns: ['years'] }
+        },
+        setSelectedDataset: mockState.setSelectedDataset
+      }));
+
+      await act(async () => {
+        await result.current.handleApplyFeatures();
+      });
+
+      expect(mockState.applyFeatureEngineering).toHaveBeenCalledWith(expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ id: 'feat-bridge-miss', code: llmCode })
+        ])
+      }));
+    });
+
+    it('leaves code undefined when neither the store nor featureSteps has it (template fallback path)', async () => {
+      // Legitimate path: user toggled a template-based suggestion that never
+      // went through materialize_feature_code. Backend will use its codegen
+      // template. No regression on this path.
+      mockState.storeFeatures = [{
+        id: 'feat-template',
+        projectId: 'project-1',
+        sourceColumn: 'salary',
+        featureName: 'salary_scaled',
+        description: 'Template-generated',
+        method: 'standardize',
+        category: 'scaling',
+        params: {},
+        enabled: true,
+        createdAt: new Date().toISOString()
+      }];
+
+      const { result } = renderHook(() => useFeatureApply({
+        projectId: 'project-1',
+        notebookId: 'notebook-1',
+        projectFeatures: [],
+        selectedDatasetFile: {
+          id: 'file-1',
+          metadata: { datasetId: 'dataset-1', columns: ['salary'] }
+        },
+        setSelectedDataset: mockState.setSelectedDataset
+      }));
+
+      await act(async () => {
+        await result.current.handleApplyFeatures();
+      });
+
+      const call = mockState.applyFeatureEngineering.mock.calls[0][0] as { features: Array<{ code?: string }> };
+      expect(call.features).toHaveLength(1);
+      expect(call.features[0].code).toBeUndefined();
+    });
   });
 });

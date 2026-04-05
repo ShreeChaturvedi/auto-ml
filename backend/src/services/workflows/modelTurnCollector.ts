@@ -314,6 +314,89 @@ async function streamWorkflowText(
     await streamOnce();
   }
 
+  // feature_engineering text-only stall detection.
+  //
+  // When the LLM emits text tokens but no tool call during a feature
+  // engineering turn while selected features are still unregistered, the
+  // turn would silently route to 'complete' (because latestMessage.trim()
+  // counts as actionable in hasActionableOutput), and the frontend would
+  // re-fire the same "Implement the enabled features..." prompt in a loop.
+  // The user experiences this as the prompt repeating with no progress.
+  //
+  // Detect this specifically and retry ONCE with a hardened directive
+  // demanding a tool call. If the retry also emits text-only, surface a
+  // MODEL_TOOL_OUTPUT_INVALID error so the user sees the stall instead of
+  // watching the frontend loop indefinitely.
+  const isFeatureEngineeringStall = (): boolean => {
+    if (phase !== 'feature_engineering') return false;
+    if (pendingToolCalls.length > 0) return false;
+    if (askUserPayload || planExitPayload || uiPayload) return false;
+    if (!latestMessage.trim()) return false;
+
+    const prompt = state.turn.prompt;
+    if (!prompt) return false;
+    const match = prompt.match(/^Selected feature IDs to implement:\s*(.+)$/im);
+    if (!match) return false;
+    const selectedFeatureIds = match[1]
+      .split(/\s*,\s*/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (selectedFeatureIds.length === 0) return false;
+
+    const terminalFeatureIds = new Set<string>();
+    for (const result of state.toolResultHistory) {
+      if (result.tool !== 'register_feature' || result.error) continue;
+      if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) continue;
+      const output = result.output as Record<string, unknown>;
+      const status = output.status;
+      const featureId = typeof output.featureId === 'string' ? output.featureId : undefined;
+      // Count both 'ok' and 'rejected' as terminal states for this purpose —
+      // the user has either accepted or explicitly rejected the feature.
+      if (featureId && (status === 'ok' || status === 'rejected')) {
+        terminalFeatureIds.add(featureId);
+      }
+    }
+    return selectedFeatureIds.some((id) => !terminalFeatureIds.has(id));
+  };
+
+  if (isFeatureEngineeringStall()) {
+    appLogger.warn(
+      '[modelTurnCollector] feature_engineering text-only stall detected (iteration=%d, toolHistory=%d) — retrying with hardened directive.',
+      state.iteration,
+      state.toolCallHistory.length
+    );
+    // Reset the text accumulator so a successful retry's output replaces the
+    // stall text (otherwise latestMessage would carry both streams concatenated).
+    latestMessage = '';
+    // Temporarily swap the request with a hardened version that appends an
+    // imperative instruction demanding a tool call. We restore the original
+    // request afterward so no side effect leaks into the workflow state.
+    const originalRequest = state.request;
+    state.request = {
+      ...originalRequest!,
+      messages: [
+        ...originalRequest!.messages,
+        {
+          role: 'user',
+          content: 'CRITICAL: Your previous response emitted text but no tool call. You MUST emit a tool call now. Call the next feature-engineering tool for the next unregistered selected feature. Do NOT output explanatory text. Do NOT ask for clarification.'
+        }
+      ]
+    };
+    try {
+      await streamOnce();
+    } finally {
+      state.request = originalRequest;
+    }
+
+    if (isFeatureEngineeringStall()) {
+      appLogger.warn(
+        '[modelTurnCollector] feature_engineering stall persisted after retry (iteration=%d) — failing turn.',
+        state.iteration
+      );
+      errorMessage = 'Feature engineering turn stalled: the model produced text but no tool call while selected features still need implementation. Please click Generate Notebook Steps again.';
+    }
+  }
+
   if (!hasActionableOutput()) {
     appLogger.warn(
       '[modelTurnCollector] Empty stream output (phase=%s, node=%s, iteration=%d) — will surface as MODEL_TOOL_OUTPUT_INVALID.',

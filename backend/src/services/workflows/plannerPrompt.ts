@@ -103,6 +103,28 @@ function summarizeToolResults(state: WorkflowGraphState): string {
     .join('\n');
 }
 
+function summarizeExperimentContext(state: WorkflowGraphState): string | null {
+  const experiments = state.run.metadata?.experiments;
+  if (!experiments || typeof experiments !== 'object' || Array.isArray(experiments)) {
+    return null;
+  }
+  const entries = Object.values(experiments as Record<string, Record<string, unknown>>);
+  if (entries.length === 0) return null;
+
+  const lines = entries.map((exp) => {
+    const id = typeof exp.experimentId === 'string' ? exp.experimentId : '?';
+    const name = typeof exp.experimentName === 'string' ? exp.experimentName : 'unnamed';
+    const status = typeof exp.status === 'string' ? exp.status : '?';
+    const target = typeof exp.targetColumn === 'string' ? `, target=${exp.targetColumn}` : '';
+    const features = Array.isArray(exp.featureColumns)
+      ? `, features=[${(exp.featureColumns as string[]).join(', ')}]`
+      : '';
+    return `- ${id} (${name}) — status: ${status}${target}${features}`;
+  });
+
+  return `Active experiments:\n${lines.join('\n')}`;
+}
+
 function summarizeWorkflowState(state: WorkflowGraphState): string {
   // DO NOT add `Workflow thread: ${state.run.threadId}` back. The thread id
   // is an internal routing concern, not a planning input — exposing it led
@@ -114,7 +136,12 @@ function summarizeWorkflowState(state: WorkflowGraphState): string {
     state.controllerSummary?.runId ? `Preprocessing run: ${state.controllerSummary.runId}` : null,
     state.controllerSummary?.activeStepId ? `Active step: ${state.controllerSummary.activeStepId}` : null,
     state.run.activeDatasetId ? `Active dataset: ${state.run.activeDatasetId}` : null,
-    state.run.activeNotebookId ? `Active notebook: ${state.run.activeNotebookId}` : null
+    state.run.activeNotebookId ? `Active notebook: ${state.run.activeNotebookId}` : null,
+    // Experiment context persists across the MAX_TOOL_RESULTS sliding window
+    // so the planner can always see the experimentId it needs for lifecycle
+    // tools (execute_training, evaluate_results, register_model) even after
+    // configure_experiment drops out of the recent-results summary.
+    summarizeExperimentContext(state)
   ].filter((value): value is string => Boolean(value)).join('\n');
 }
 

@@ -22,8 +22,16 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
   if (approved && ctx.run) {
     const step = ctx.run.features[featureId];
     if (step && step.status !== 'validated' && step.status !== 'registered') {
+      // Prescriptive recovery: if the feature already executed, the LLM just
+      // needs to call validate_feature. Otherwise, point at the missing step
+      // in the lifecycle so the LLM doesn't retry register blindly.
+      const nextStep =
+        step.status === 'executed' ? 'validate_feature'
+          : step.status === 'code_ready' ? 'execute_feature'
+            : step.status === 'proposed' ? 'materialize_feature_code'
+              : 'materialize_feature_code';
       return {
-        error: `Feature "${featureId}" cannot be registered before successful execution and validation. Current status: ${step.status}.`
+        error: `Feature "${featureId}" cannot be registered before validation. Current status: "${step.status}". Call ${nextStep} for "${featureId}" first, then retry register_feature.`
       };
     }
     if (step?.executionResult && !step.executionResult.succeeded) {

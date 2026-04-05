@@ -306,5 +306,64 @@ describe('proposalTools', () => {
       expect(run.features['feat-1'].outputColumns).toEqual(['salary_log']);
       expect(repo.save).toHaveBeenCalledTimes(1);
     });
+
+    it('creates a new feature entry when featureId is not in run.features (regression: MAX_ITERATIONS loop)', async () => {
+      // Bug: when the LLM called materialize_feature_code with a featureId
+      // that didn't exist in run.features (e.g., because the user selected
+      // IDs that never went through propose_feature), the handler silently
+      // skipped the persist and returned {status: 'ok'}. Then execute_feature
+      // looked up the feature and found no code, returning an error. The LLM
+      // retried materialize, which again silently skipped — burning iterations
+      // until MAX_ITERATIONS_EXCEEDED.
+      const run = baseRun();
+      const repo = stubRepository();
+      const result = await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'f_brand_new',
+          featureName: 'Brand New Feature',
+          method: 'log1p_transform',
+          sourceColumns: ['salary'],
+          code: 'df["brand_new_col"] = np.log1p(df["salary"])',
+          outputColumns: ['brand_new_col']
+        },
+        run,
+        runRepository: repo
+      });
+      expect(result.error).toBeUndefined();
+      // The new entry must exist and be fully populated so execute_feature
+      // can find the code.
+      expect(run.features['f_brand_new']).toBeDefined();
+      expect(run.features['f_brand_new'].code).toContain('np.log1p');
+      expect(run.features['f_brand_new'].outputColumns).toEqual(['brand_new_col']);
+      expect(run.features['f_brand_new'].status).toBe('code_ready');
+      expect(run.features['f_brand_new'].name).toBe('Brand New Feature');
+      expect(run.features['f_brand_new'].method).toBe('log1p_transform');
+      expect(run.features['f_brand_new'].sourceColumns).toEqual(['salary']);
+      // Must have saved the run so the change is durable.
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates a new entry with sensible defaults when featureName/method are missing', async () => {
+      const run = baseRun();
+      const repo = stubRepository();
+      await materializeFeatureCode({
+        projectId: 'project-1',
+        toolCallId: 't-1',
+        args: {
+          featureId: 'f_minimal',
+          code: 'df["x"] = 1',
+          outputColumns: ['x']
+        },
+        run,
+        runRepository: repo
+      });
+      expect(run.features['f_minimal']).toBeDefined();
+      expect(run.features['f_minimal'].name).toBe('f_minimal');
+      expect(run.features['f_minimal'].method).toBe('custom');
+      expect(run.features['f_minimal'].sourceColumns).toEqual([]);
+      expect(run.features['f_minimal'].code).toBe('df["x"] = 1');
+    });
   });
 });

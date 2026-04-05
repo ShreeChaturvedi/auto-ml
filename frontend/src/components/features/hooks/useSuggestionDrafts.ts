@@ -19,6 +19,14 @@ const fallbackMethodCategoryMap: Partial<Record<FeatureMethod, FeatureCategory>>
   extract_day: 'datetime'
 };
 
+// Last-resort category for suggestions whose method isn't in FEATURE_TEMPLATES
+// and isn't in the fallback map. The backend's uiNormalization now filters
+// suggestions with invalid/missing methods into a report item, but this guard
+// handles any that slip through (e.g., a legacy cached draft from before
+// the backend fix shipped). Without this, toggling Enable on such a card
+// surfaces an "Unsupported feature method" error in the panel.
+const LAST_RESORT_CATEGORY: FeatureCategory = 'numeric_transform';
+
 export type SuggestionDraft = {
   enabled: boolean;
   params: Record<string, unknown>;
@@ -63,11 +71,13 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
   const syncSuggestionToFeatureStore = useCallback(
     (item: FeatureSuggestionItem, draft: SuggestionDraft) => {
       const method = item.feature.method as FeatureMethod;
-      const category = methodCategoryMap.get(method) ?? fallbackMethodCategoryMap[method];
-      if (!category) {
-        setPanelError(`Unsupported feature method: ${item.feature.method}`);
-        return;
-      }
+      // Prefer the template map, fall back to the partial map, then the
+      // last-resort category so unknown methods don't surface a blocking
+      // error. The backend also validates methods at the apply-payload
+      // boundary, so this is purely a defensive UI fallback.
+      const category = methodCategoryMap.get(method)
+        ?? fallbackMethodCategoryMap[method]
+        ?? LAST_RESORT_CATEGORY;
 
       setPanelError(null);
 

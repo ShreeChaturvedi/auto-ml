@@ -130,7 +130,8 @@ async function executeFeatureToolCall(
   toolName: string,
   args: Record<string, unknown>,
   toolCallId: string | undefined,
-  datasetId: string | undefined
+  datasetId: string | undefined,
+  prompt: string | undefined
 ): Promise<ToolResult> {
   const explicitRunId = asString(args.runId);
   const notebookId = asString(args.notebookId);
@@ -174,6 +175,11 @@ async function executeFeatureToolCall(
       toolCallId,
       args,
       datasetId,
+      // prompt is load-bearing for the propose_feature implementation-mode
+      // guard in proposalTools.ts. Without it the guard sees undefined and
+      // always returns false, letting hallucinated propose_feature calls slip
+      // through even when the user's turn prompt has selected feature IDs.
+      prompt,
       run,
       runRepository: featureRunRepository
     };
@@ -244,7 +250,8 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
       name,
       asRecord(args) ?? {},
       ctx.toolCallId,
-      ctx.turn.datasetId
+      ctx.turn.datasetId,
+      ctx.turn.prompt
     );
   }
 };

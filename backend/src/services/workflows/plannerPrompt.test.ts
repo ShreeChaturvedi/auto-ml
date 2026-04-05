@@ -255,4 +255,101 @@ describe('buildPlannerRequest', () => {
       expect(userMessage?.content).not.toMatch(/notebookId=(?:,|$|\s)/);
     });
   });
+
+  describe('experiment context in workflow state summary', () => {
+    // Path B fix (sprint11): inject Active experiments section into the
+    // planner's state summary so the planner can thread experimentId
+    // into lifecycle tool args even after configure_experiment's tool
+    // result drops out of the MAX_TOOL_RESULTS=3 sliding window.
+
+    const contract: WorkflowNodeContract = {
+      mode: 'action',
+      allowedTools: [
+        { name: 'execute_training', description: 'Record training results.', parameters: { type: 'object', properties: {} } }
+      ],
+      allowAssistantMessage: false,
+      allowAskUser: true,
+      allowRenderUi: true,
+      allowPlanExit: false,
+      requireToolCall: true
+    };
+
+    it('includes experiment context when run.metadata.experiments exists', () => {
+      const request = buildPlannerRequest(
+        createState({
+          run: {
+            ...createState().run,
+            metadata: {
+              experiments: {
+                'exp-abc123': {
+                  experimentId: 'exp-abc123',
+                  experimentName: 'Ridge Regression Baseline',
+                  status: 'configured',
+                  targetColumn: 'usage_log1p',
+                  featureColumns: ['date_month', 'date_year']
+                }
+              }
+            }
+          }
+        }),
+        contract
+      );
+
+      const userMessage = request.messages.find((m) => m.role === 'user');
+      expect(userMessage?.content).toContain('Active experiments:');
+      expect(userMessage?.content).toContain('exp-abc123');
+      expect(userMessage?.content).toContain('Ridge Regression Baseline');
+      expect(userMessage?.content).toContain('status: configured');
+      expect(userMessage?.content).toContain('target=usage_log1p');
+      expect(userMessage?.content).toContain('features=[date_month, date_year]');
+    });
+
+    it('lists multiple experiments with their individual statuses', () => {
+      const request = buildPlannerRequest(
+        createState({
+          run: {
+            ...createState().run,
+            metadata: {
+              experiments: {
+                'exp-1': {
+                  experimentId: 'exp-1',
+                  experimentName: 'Baseline',
+                  status: 'registered'
+                },
+                'exp-2': {
+                  experimentId: 'exp-2',
+                  experimentName: 'Tuned',
+                  status: 'configured',
+                  targetColumn: 'y',
+                  featureColumns: ['x1', 'x2']
+                }
+              }
+            }
+          }
+        }),
+        contract
+      );
+
+      const userMessage = request.messages.find((m) => m.role === 'user');
+      expect(userMessage?.content).toContain('exp-1');
+      expect(userMessage?.content).toContain('status: registered');
+      expect(userMessage?.content).toContain('exp-2');
+      expect(userMessage?.content).toContain('status: configured');
+    });
+
+    it('omits experiment context when no experiments are configured', () => {
+      const request = buildPlannerRequest(
+        createState({
+          run: {
+            ...createState().run,
+            metadata: {}
+          }
+        }),
+        contract
+      );
+
+      const userMessage = request.messages.find((m) => m.role === 'user');
+      expect(userMessage?.content).not.toContain('Active experiments:');
+    });
+  });
 });

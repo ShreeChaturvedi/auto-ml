@@ -150,7 +150,6 @@ vi.mock('../useFeatureApply', () => ({
 vi.mock('../useSuggestionDrafts', () => ({
   useSuggestionDrafts: () => ({
     suggestionDrafts: {},
-    setSuggestionDrafts: vi.fn(),
     toggleSuggestion: vi.fn(),
     updateSuggestionControl: vi.fn()
   })

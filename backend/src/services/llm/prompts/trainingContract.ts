@@ -73,10 +73,21 @@ The user may request:
 - Model registration (proceed to Stage 9)
 
 ### Stage 9: Register Model
-Use \`register_model\` to commit the approved model:
-- Include all final metrics and hyperparameters
-- Add descriptive tags (baseline, tuned, production-candidate)
-- Record artifact path if model was serialized
+Before calling \`register_model\`, you MUST save the trained model artifact in a notebook cell using a RELATIVE filename, then reference that filename in the tool args:
+
+\`\`\`python
+import joblib
+joblib.dump(model, "model.joblib")
+\`\`\`
+
+Then call \`register_model\` with \`artifactPath: "model.joblib"\` (relative, no leading slash, no subdirectories). The backend resolves this against the project's execution workspace, copies the file to permanent storage, and stores the permanent path + real file size on the model record.
+
+Additional rules:
+- Include all final metrics and hyperparameters.
+- Add descriptive tags (baseline, tuned, production-candidate).
+- Do NOT pass an absolute path or a path containing ".." — the backend will reject it.
+- If you used a Pipeline (e.g. StandardScaler + model), call \`joblib.dump\` on the ENTIRE pipeline, not just the final estimator. The evaluation service reloads this file and feeds raw dataset rows to it.
+- After the tool returns success, the model appears in the Experiments tab. Tell the user "Model registered — open the Experiments tab (or click Open Details) to see evaluation plots."
 
 ### Stage 10: Summarize
 Provide a final summary of the training session:

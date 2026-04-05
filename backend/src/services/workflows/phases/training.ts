@@ -114,15 +114,53 @@ function buildStageConfig(stage: string): StageConfig {
   };
 }
 
+function isSuccessfulRunCell(result: import('../../../types/llm.js').ToolResult): boolean {
+  if (result.tool !== 'run_cell' || result.error) return false;
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) return false;
+  return (result.output as Record<string, unknown>).status === 'success';
+}
+
 function resolveNextTrainingStage(
   current: string,
   toolResults: import('../../../types/llm.js').ToolResult[]
 ): string | null {
-  const hasTrainingFailure = toolResults.some(
-    (result) => result.tool === 'execute_training' && result.error
-  );
+  // Fix 2 — widen execute_training failure detection. The handler at
+  // executionTools.ts:79-88 returns { output: { status: 'failed' } } with
+  // result.error = null when the LLM calls execute_training(succeeded: false).
+  // The old check only matched result.error, so the loop-back to generate_code
+  // never triggered on LLM-reported failures.
+  const hasTrainingFailure = toolResults.some((result) => {
+    if (result.tool !== 'execute_training') return false;
+    if (result.error) return true;
+    if (result.output && typeof result.output === 'object' && !Array.isArray(result.output)) {
+      return (result.output as Record<string, unknown>).status === 'failed';
+    }
+    return false;
+  });
   if (hasTrainingFailure && current === 'execute_training') {
     return 'generate_code';
+  }
+
+  // Fix 1 — gate write_code → execute_training on a successful run_cell.
+  // Without this, the stage advances after one iteration regardless of
+  // whether the LLM actually ran the training code. At the forced
+  // execute_training stage, run_cell is blocked (Path A), so the LLM
+  // would call execute_training(succeeded: false) — producing a "trained"
+  // model that was never actually trained. Stay at write_code until the
+  // tool history contains evidence that a cell ran successfully.
+  //
+  // An early run_cell from generate_code stage also satisfies this gate
+  // (toolResultHistory is cumulative), which is correct — if the code was
+  // already written and run at generate_code, skipping write_code is fine.
+  //
+  // If the LLM never calls run_cell, MAX_WORKFLOW_ITERATIONS (48) in
+  // graphState.ts terminates the workflow with ITERATIONS_EXCEEDED, which
+  // is the right failure mode — not a silently fake "registered" model.
+  if (current === 'write_code') {
+    const hasSuccessfulRun = toolResults.some(isSuccessfulRunCell);
+    if (!hasSuccessfulRun) {
+      return current; // Stay at write_code
+    }
   }
 
   const currentIndex = STAGE_ORDER.indexOf(current);

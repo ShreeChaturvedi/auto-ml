@@ -1,9 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkflowRunState, WorkflowTurnRequest } from '../../workflows/types.js';
 
-import { configureExperiment, proposeTrainingPlan } from './experimentTools.js';
 import type { TrainingToolContext } from './types.js';
+
+// Mock projectRepository BEFORE the experimentTools module is imported so
+// configureExperiment's auto-populate path (added in sprint11 Step 3a) can
+// read a controllable project.metadata.features list.
+const mockGetProjectById = vi.fn();
+vi.mock('../../../repositories/projectRepository.js', () => ({
+  createProjectRepository: () => ({
+    getById: mockGetProjectById
+  })
+}));
+
+const { configureExperiment, proposeTrainingPlan } = await import('./experimentTools.js');
 
 const LIVE_BUG_THREAD_ID = 'thread-9adbfc59-9ef3-48ff-9201-9dc4e3f30ec9';
 
@@ -44,6 +55,146 @@ function buildCtx(run: WorkflowRunState, args: Record<string, unknown>): Trainin
     turn: buildTurn()
   };
 }
+
+describe('configureExperiment — Feature Engineering pipeline handoff', () => {
+  // Sprint11 Step 3a: when the project has enabled engineered features and
+  // the LLM omits featureColumns, the handler defaults to the FE feature
+  // names so models train on the engineered inputs — not raw dataset
+  // columns that silently bypass the pipeline. On the user's actual
+  // project this prevents a "successful" training run that computes
+  // metrics against the derived usage_log1p target using raw columns.
+
+  beforeEach(() => {
+    mockGetProjectById.mockReset();
+  });
+
+  it('auto-populates featureColumns from project.metadata.features when the LLM omits them', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {
+        features: [
+          { featureName: 'dept_usage_rollavg_7d', enabled: true },
+          { featureName: 'dept_subject_usage_rollavg_7d', enabled: true },
+          { featureName: 'usage_weekday_seasonality', enabled: true }
+        ]
+      }
+    });
+
+    const run = buildRun();
+    const result = await configureExperiment(buildCtx(run, {
+      experimentName: 'Ridge Baseline',
+      modelType: 'ridge',
+      splitStrategy: 'train_test',
+      targetColumn: 'usage_log1p'
+      // Deliberately no featureColumns — LLM forgot to specify them.
+    }));
+
+    expect(result.error).toBeUndefined();
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    const experimentId = Object.keys(experiments)[0];
+    expect(experiments[experimentId].featureColumns).toEqual([
+      'dept_usage_rollavg_7d',
+      'dept_subject_usage_rollavg_7d',
+      'usage_weekday_seasonality'
+    ]);
+
+    const output = result.output as Record<string, unknown>;
+    expect(output.featureColumns).toEqual([
+      'dept_usage_rollavg_7d',
+      'dept_subject_usage_rollavg_7d',
+      'usage_weekday_seasonality'
+    ]);
+    expect(output.message).toContain('3 feature columns');
+  });
+
+  it('skips disabled features when auto-populating', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {
+        features: [
+          { featureName: 'enabled_feat_1', enabled: true },
+          { featureName: 'disabled_feat', enabled: false },
+          { featureName: 'enabled_feat_2', enabled: true }
+        ]
+      }
+    });
+
+    const run = buildRun();
+    await configureExperiment(buildCtx(run, {
+      experimentName: 'Exp',
+      modelType: 'ridge',
+      targetColumn: 'y'
+    }));
+
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    const experimentId = Object.keys(experiments)[0];
+    expect(experiments[experimentId].featureColumns).toEqual(['enabled_feat_1', 'enabled_feat_2']);
+  });
+
+  it('does NOT overwrite an explicit featureColumns supplied by the LLM', async () => {
+    // The user may ask "train on only columns A and B" — honor that.
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {
+        features: [
+          { featureName: 'feat_a', enabled: true },
+          { featureName: 'feat_b', enabled: true },
+          { featureName: 'feat_c', enabled: true }
+        ]
+      }
+    });
+
+    const run = buildRun();
+    await configureExperiment(buildCtx(run, {
+      experimentName: 'Exp',
+      modelType: 'ridge',
+      targetColumn: 'y',
+      featureColumns: ['feat_a'] // explicit subset
+    }));
+
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    const experimentId = Object.keys(experiments)[0];
+    expect(experiments[experimentId].featureColumns).toEqual(['feat_a']);
+  });
+
+  it('leaves featureColumns undefined when the project has no engineered features', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {}
+    });
+
+    const run = buildRun();
+    await configureExperiment(buildCtx(run, {
+      experimentName: 'Exp',
+      modelType: 'linear_regression',
+      targetColumn: 'y'
+    }));
+
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    const experimentId = Object.keys(experiments)[0];
+    expect(experiments[experimentId].featureColumns).toBeUndefined();
+  });
+
+  it('does not block configure when projectRepository fails', async () => {
+    // Defensive fallback: repo read errors must not prevent experiment
+    // creation — the LLM can still proceed, just without the auto-populated
+    // featureColumns. A warning is logged (not asserted here) and the
+    // training contract asks the LLM to supply featureColumns explicitly.
+    mockGetProjectById.mockRejectedValue(new Error('project store corrupted'));
+
+    const run = buildRun();
+    const result = await configureExperiment(buildCtx(run, {
+      experimentName: 'Exp',
+      modelType: 'ridge',
+      targetColumn: 'y'
+    }));
+
+    expect(result.error).toBeUndefined();
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    const experimentId = Object.keys(experiments)[0];
+    expect(experiments[experimentId].featureColumns).toBeUndefined();
+  });
+});
 
 describe('training tools — propose_training_plan recovers from planner threadId leak', () => {
   // This is the full end-to-end reproduction of the sprint10 live bug on

@@ -57,7 +57,8 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
-    expect(userMessage?.content).toContain('CONTINUATION: The user enabled 2 proposed features: "feat-signup-month" (signup_month: extract_month');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
+    expect(userMessage?.content).toContain('The user enabled 2 proposed features: "feat-signup-month" (signup_month: extract_month');
     expect(userMessage?.content).toContain('Start with "feat-signup-month" by calling materialize_feature_code');
     expect(userMessage?.content).not.toContain('Next: call materialize_feature_code for feature "feat-city-frequency".');
   });
@@ -96,8 +97,9 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: All features have been proposed. Present proposals via render_ui with feature_suggestion items. Do NOT materialize code — wait for the user to select which features to implement.'
+      'All features have been proposed. Present proposals via render_ui with feature_suggestion items. Do NOT materialize code — wait for the user to select which features to implement.'
     );
     expect(request.toolChoice).toBe('any');
     expect(request.maxOutputTokens).toBe(12000);
@@ -117,8 +119,9 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: The user selected 2 features for implementation: "feat-signup-month", "feat-city-frequency". Start with "feat-signup-month" by calling materialize_feature_code'
+      'The user selected 2 features for implementation: "feat-signup-month", "feat-city-frequency". Start with "feat-signup-month" by calling materialize_feature_code'
     );
     expect(userMessage?.content).toContain('Do NOT checkpoint until every selected feature is registered.');
     expect(request.toolChoice).toBe('any');
@@ -143,8 +146,9 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: The user enabled 2 features: "feat-signup-month", "feat-city-frequency". Start with "feat-city-frequency" by calling materialize_feature_code'
+      'The user enabled 2 features: "feat-signup-month", "feat-city-frequency". Start with "feat-city-frequency" by calling materialize_feature_code'
     );
     expect(userMessage?.content).toContain('Do NOT checkpoint until every selected feature is registered.');
   });
@@ -196,8 +200,9 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: The user enabled 2 proposed features:'
+      'The user enabled 2 proposed features:'
     );
     expect(userMessage?.content).toContain(
       'Start with "feat-city-frequency" by calling materialize_feature_code'
@@ -238,8 +243,9 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.'
+      'All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.'
     );
   });
 
@@ -260,11 +266,12 @@ describe('buildFeatureEngineeringRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('CONTINUATION: ACTION REQUIRED:');
     expect(userMessage?.content).toContain(
-      'CONTINUATION: Selected feature "feat-city-frequency" was rejected at registration.'
+      'Selected feature "feat-city-frequency" was rejected at registration.'
     );
     expect(userMessage?.content).not.toContain(
-      'CONTINUATION: All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.'
+      'All selected features are registered. Call checkpoint_feature_pipeline to finalize the pipeline.'
     );
   });
 
@@ -304,6 +311,32 @@ describe('buildFeatureEngineeringRequest', () => {
     const userMessage = request.messages.find((message) => message.role === 'user');
     expect(userMessage?.content).toContain('Present proposals via render_ui with feature_suggestion items');
     expect(userMessage?.content).not.toContain('materialize_feature_code');
+  });
+
+  it('prepends an imperative ACTION REQUIRED prefix to every continuation directive', () => {
+    // Regression: in long multi-feature runs the LLM would sometimes emit
+    // text tokens ("I'll continue with feature 2...") but no tool call. The
+    // text made hasActionableOutput() return true and the turn routed to
+    // 'complete' without progress. The imperative prefix tells the model
+    // explicitly to emit a tool call and not to reply with plain text.
+    const request = buildFeatureEngineeringRequest({
+      dataset,
+      prompt: [
+        'Implement the enabled features in the notebook.',
+        '',
+        'Selected feature IDs to implement: feat-a, feat-b',
+        'Enabled features to implement: feat_a (log1p_transform); feat_b (frequency_encode)'
+      ].join('\n'),
+      toolResults: [
+        { tool: 'register_feature', output: { featureId: 'feat-a', status: 'ok' } }
+      ],
+      featureMethods: ['log1p_transform', 'frequency_encode']
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toMatch(/CONTINUATION: ACTION REQUIRED: Emit a tool call on your next response/);
+    expect(userMessage?.content).toMatch(/Do NOT reply with plain text/);
+    expect(userMessage?.content).toMatch(/Do NOT ask for clarification/);
   });
 
   it('injects the lifecycle contract and tool instructions into the system prompt', () => {

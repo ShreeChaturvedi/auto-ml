@@ -39,10 +39,26 @@ const STAGE_ORDER = TRAINING_LIFECYCLE.map((s) => s.name);
 const TEXT_STAGES = new Set(['answer', 'await_review', 'summarize']);
 const APPROVAL_STAGES = new Set(['propose_model', 'await_review']);
 
+// Stages where the planner MUST call exactly the lifecycle tool listed in
+// STAGE_TOOL_ALLOWLIST — notebook tools (write_cell, run_cell, ...) are
+// stripped from the planner's visible tool list so it cannot fall back to
+// code-editing behavior. Without this, the planner picks notebook tools
+// over execute_training/evaluate_results/register_model every time
+// (observed on runs 76683752 and 0cf16fc1 — see sprint11 curl evidence).
+//
+// If execute_training is called with succeeded=false, resolveNextTrainingStage
+// loops back to generate_code where notebook tools ARE available, so the
+// code-repair path is preserved.
+const FORCED_LIFECYCLE_STAGES = new Set([
+  'execute_training',
+  'evaluate_results',
+  'register_model'
+]);
+
 // Maps each lifecycle stage to the training-specific tools permitted at that stage.
-// Non-training tools (notebook, data discovery, ask_user, render_ui) are always
-// available. Only training-semantic tools are gated so the model cannot, e.g.,
-// call configure_experiment during the evaluate_results stage.
+// For non-forced stages, non-training tools (notebook, data discovery, ask_user,
+// render_ui) are always available. For FORCED_LIFECYCLE_STAGES, only the
+// lifecycle tool + ask_user + render_ui are available.
 const STAGE_TOOL_ALLOWLIST: Record<string, Set<string>> = {
   answer: new Set(),
   configure_experiment: new Set(['configure_experiment']),
@@ -56,14 +72,30 @@ const STAGE_TOOL_ALLOWLIST: Record<string, Set<string>> = {
   summarize: new Set(['compare_models'])
 };
 
+// Tools the planner always needs at forced stages (without these it can't
+// render final output or ask the user for clarification).
+const ALWAYS_ALLOWED_AT_FORCED_STAGES = new Set(['ask_user', 'render_ui']);
+
 function buildStageConfig(stage: string): StageConfig {
   const isText = TEXT_STAGES.has(stage);
+  const isForced = FORCED_LIFECYCLE_STAGES.has(stage);
   const stageAllowlist = STAGE_TOOL_ALLOWLIST[stage];
-  const allowedTools = stageAllowlist
-    ? (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).filter(
-        (tool) => !TRAINING_TOOL_NAME_SET.has(tool.name) || stageAllowlist.has(tool.name)
-      )
-    : (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]);
+
+  let allowedTools: LlmToolDefinition[];
+  if (isForced && stageAllowlist) {
+    // Only the lifecycle tool + ask_user + render_ui. NO notebook tools.
+    // The planner must call the lifecycle tool or the turn fails — there
+    // is no escape hatch to write_cell/run_cell.
+    allowedTools = (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).filter(
+      (tool) => stageAllowlist.has(tool.name) || ALWAYS_ALLOWED_AT_FORCED_STAGES.has(tool.name)
+    );
+  } else {
+    allowedTools = stageAllowlist
+      ? (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).filter(
+          (tool) => !TRAINING_TOOL_NAME_SET.has(tool.name) || stageAllowlist.has(tool.name)
+        )
+      : (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]);
+  }
 
   return {
     name: stage,
@@ -71,11 +103,14 @@ function buildStageConfig(stage: string): StageConfig {
     allowedTools,
     toolChoice: 'auto',
     requiresApproval: APPROVAL_STAGES.has(stage),
-    allowAssistantMessage: true,
-    allowAskUser: isText,
+    // At forced stages, the planner MUST emit a tool call — not a text
+    // message. Without this, the planner can return assistant_message and
+    // the turn completes without ever calling the lifecycle tool.
+    allowAssistantMessage: !isForced,
+    allowAskUser: isText || isForced,
     allowRenderUi: stage !== 'write_code',
     allowPlanExit: false,
-    requireToolCall: false
+    requireToolCall: isForced
   };
 }
 

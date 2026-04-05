@@ -97,39 +97,44 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
 
   const toggleSuggestion = useCallback(
     (item: FeatureSuggestionItem, enabled: boolean) => {
-      setSuggestionDrafts((previous) => {
-        const current = previous[item.id] ?? {
-          enabled: featureById.get(item.id)?.enabled ?? false,
-          params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
-        };
-        const next: SuggestionDraft = { ...current, enabled };
-        syncSuggestionToFeatureStore(item, next);
-        return { ...previous, [item.id]: next };
-      });
+      // Compute the next draft state OUTSIDE the setSuggestionDrafts updater.
+      // React state updater functions must be pure — calling upsertFeature
+      // (via syncSuggestionToFeatureStore) inside an updater triggers
+      // cross-store writes during React's state computation phase, causing
+      // the "Cannot update a component while rendering a different component"
+      // warning. Under load that warning can cascade into the phase error
+      // boundary, which is what the user saw as "frontend crashed" during
+      // Apply. Do the pure state update first, then fire the side effect.
+      const previous = suggestionDrafts;
+      const current = previous[item.id] ?? {
+        enabled: featureById.get(item.id)?.enabled ?? false,
+        params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
+      };
+      const next: SuggestionDraft = { ...current, enabled };
+      setSuggestionDrafts({ ...previous, [item.id]: next });
+      syncSuggestionToFeatureStore(item, next);
     },
-    [featureById, syncSuggestionToFeatureStore]
+    [featureById, suggestionDrafts, syncSuggestionToFeatureStore]
   );
 
   const updateSuggestionControl = useCallback(
     (item: FeatureSuggestionItem, key: string, value: unknown) => {
-      setSuggestionDrafts((previous) => {
-        const current = previous[item.id] ?? {
-          enabled: featureById.get(item.id)?.enabled ?? false,
-          params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
-        };
-        const next: SuggestionDraft = {
-          ...current,
-          params: { ...current.params, [key]: value }
-        };
-
-        if (next.enabled) {
-          syncSuggestionToFeatureStore(item, next);
-        }
-
-        return { ...previous, [item.id]: next };
-      });
+      // Same pattern: pure updater first, side effect after.
+      const previous = suggestionDrafts;
+      const current = previous[item.id] ?? {
+        enabled: featureById.get(item.id)?.enabled ?? false,
+        params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
+      };
+      const next: SuggestionDraft = {
+        ...current,
+        params: { ...current.params, [key]: value }
+      };
+      setSuggestionDrafts({ ...previous, [item.id]: next });
+      if (next.enabled) {
+        syncSuggestionToFeatureStore(item, next);
+      }
     },
-    [featureById, syncSuggestionToFeatureStore]
+    [featureById, suggestionDrafts, syncSuggestionToFeatureStore]
   );
 
   return {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   buildSuggestionDefaults,
   type FeatureSuggestionItem
@@ -42,30 +42,31 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
   const upsertFeature = useFeatureStore((state) => state.upsertFeature);
   const removeFeature = useFeatureStore((state) => state.removeFeature);
 
-  // Hydrate drafts from the feature store so toggles persist across tab switches.
-  const [suggestionDrafts, setSuggestionDrafts] = useState<Record<string, SuggestionDraft>>(() => {
-    const initial: Record<string, SuggestionDraft> = {};
+  // Derive suggestionDrafts purely from featureById on every render.
+  //
+  // Previously this hook cached a snapshot of featureById in useState at mount
+  // time, then re-synced via useEffect when featureById changed. That pattern
+  // had a user-visible bug: on page reload or phase-tab switch, the component
+  // remounts with an empty Zustand features array (while hydrateFromProject
+  // is still async-in-flight from project metadata). useState initializes
+  // with empty featureById, the cards render with "Enable" labels, then the
+  // useEffect fires later and flips them to "Enabled" — a visible flicker
+  // that made the user think their selections were lost.
+  //
+  // Deriving with useMemo makes the enabled state a pure function of the
+  // Zustand store. The moment hydration populates featureStore.features,
+  // featureById changes identity, useMemo recomputes, and cards re-render
+  // with the correct label in the same React commit. Combined with the
+  // features array now being in featureStore's `partialize`, hydration is
+  // synchronous on the very first render after reload — no flicker at all.
+  const suggestionDrafts = useMemo<Record<string, SuggestionDraft>>(() => {
+    const drafts: Record<string, SuggestionDraft> = {};
     for (const [id, feature] of featureById) {
       if (feature.enabled) {
-        initial[id] = { enabled: true, params: feature.params ?? {} };
+        drafts[id] = { enabled: true, params: feature.params ?? {} };
       }
     }
-    return initial;
-  });
-
-  // Re-sync when featureById updates asynchronously (e.g. backend hydration)
-  useEffect(() => {
-    setSuggestionDrafts((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const [id, feature] of featureById) {
-        if (feature.enabled && !prev[id]) {
-          next[id] = { enabled: true, params: feature.params ?? {} };
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
+    return drafts;
   }, [featureById]);
 
   const syncSuggestionToFeatureStore = useCallback(
@@ -107,49 +108,43 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
 
   const toggleSuggestion = useCallback(
     (item: FeatureSuggestionItem, enabled: boolean) => {
-      // Compute the next draft state OUTSIDE the setSuggestionDrafts updater.
-      // React state updater functions must be pure — calling upsertFeature
-      // (via syncSuggestionToFeatureStore) inside an updater triggers
-      // cross-store writes during React's state computation phase, causing
-      // the "Cannot update a component while rendering a different component"
-      // warning. Under load that warning can cascade into the phase error
-      // boundary, which is what the user saw as "frontend crashed" during
-      // Apply. Do the pure state update first, then fire the side effect.
-      const previous = suggestionDrafts;
-      const current = previous[item.id] ?? {
-        enabled: featureById.get(item.id)?.enabled ?? false,
-        params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
-      };
-      const next: SuggestionDraft = { ...current, enabled };
-      setSuggestionDrafts({ ...previous, [item.id]: next });
+      // No local state to update — the suggestionDrafts memo re-derives from
+      // featureById on the next render, which updates synchronously via
+      // Zustand once upsertFeature/removeFeature (inside syncSuggestionToFeatureStore)
+      // mutates the store. Pure event-handler work; no setState-in-render
+      // risk (see commit 440ea93 for the prior fix of that class of bug).
+      const existing = featureById.get(item.id);
+      const existingParams = existing?.params ?? buildSuggestionDefaults(item);
+      const next: SuggestionDraft = { enabled, params: existingParams };
       syncSuggestionToFeatureStore(item, next);
     },
-    [featureById, suggestionDrafts, syncSuggestionToFeatureStore]
+    [featureById, syncSuggestionToFeatureStore]
   );
 
   const updateSuggestionControl = useCallback(
     (item: FeatureSuggestionItem, key: string, value: unknown) => {
-      // Same pattern: pure updater first, side effect after.
-      const previous = suggestionDrafts;
-      const current = previous[item.id] ?? {
-        enabled: featureById.get(item.id)?.enabled ?? false,
-        params: featureById.get(item.id)?.params ?? buildSuggestionDefaults(item)
-      };
+      // Read latest params from the store, merge the new key, and sync back.
+      // Zustand updates are synchronous, so the next render's useMemo will
+      // immediately reflect the merged params — no in-flight ref needed.
+      const existing = featureById.get(item.id);
+      const existingParams = existing?.params ?? buildSuggestionDefaults(item);
+      const nextParams = { ...existingParams, [key]: value };
       const next: SuggestionDraft = {
-        ...current,
-        params: { ...current.params, [key]: value }
+        enabled: existing?.enabled ?? false,
+        params: nextParams
       };
-      setSuggestionDrafts({ ...previous, [item.id]: next });
+      // Only sync back to the store if the feature is enabled. Unenabled
+      // features have no persisted entry to update; drafts for them are
+      // ephemeral until the user clicks Enable.
       if (next.enabled) {
         syncSuggestionToFeatureStore(item, next);
       }
     },
-    [featureById, suggestionDrafts, syncSuggestionToFeatureStore]
+    [featureById, syncSuggestionToFeatureStore]
   );
 
   return {
     suggestionDrafts,
-    setSuggestionDrafts,
     toggleSuggestion,
     updateSuggestionControl
   };

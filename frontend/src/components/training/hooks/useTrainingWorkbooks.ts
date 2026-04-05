@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { nextWorkbookName, createWorkbookId } from '@/components/preprocessing/preprocessingTabUtils';
+import { deleteNotebook } from '@/lib/api/notebooks';
 import type { WorkbookEntry } from '@/types/workbook';
 
 const DEFAULT_WORKBOOK_ID = 'training-wb-1';
@@ -51,6 +52,7 @@ export interface UseTrainingWorkbooksResult {
   handleRename: (name: string) => void;
   handleReplay: () => void;
   handleReset: () => void;
+  setWorkbookNotebookId: (workbookId: string, notebookId: string | null) => void;
   renameDialogOpen: boolean;
   setRenameDialogOpen: (open: boolean) => void;
   renameDialogValue: string;
@@ -157,10 +159,39 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
 
     if (projectId) {
       localStorage.removeItem(buildMessageKey(current.id, projectId));
+      // Delete the bound training notebook so it can't be orphaned and later
+      // adopted by another workbook through the metadata-match path in
+      // useTrainingNotebookSync. Fire-and-forget; UI has already moved on.
+      if (current.notebookId) {
+        void deleteNotebook(projectId, current.notebookId).catch((error) => {
+          console.warn('[useTrainingWorkbooks] Failed to delete bound notebook', {
+            notebookId: current.notebookId,
+            error
+          });
+        });
+      }
     }
     setWorkbooks((prev) => prev.filter((wb) => wb.id !== current.id));
     setActiveWorkbookId(fallback.id);
   }, [activeWorkbookId, projectId, workbooks]);
+
+  // Idempotent: short-circuits when the value is unchanged to prevent the
+  // effect-setter-effect render loop that useTrainingNotebookSync would
+  // otherwise trigger when it re-derives notebookId every run.
+  const setWorkbookNotebookId = useCallback(
+    (workbookId: string, notebookId: string | null) => {
+      setWorkbooks((prev) => {
+        const target = prev.find((wb) => wb.id === workbookId);
+        if (!target || target.notebookId === notebookId) {
+          return prev;
+        }
+        return prev.map((wb) =>
+          wb.id === workbookId ? { ...wb, notebookId } : wb
+        );
+      });
+    },
+    []
+  );
 
   const activeWorkbook = useMemo(
     () => workbooks.find((wb) => wb.id === activeWorkbookId) ?? workbooks[0],
@@ -231,6 +262,7 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     handleRename,
     handleReplay,
     handleReset,
+    setWorkbookNotebookId,
     renameDialogOpen,
     setRenameDialogOpen,
     renameDialogValue,

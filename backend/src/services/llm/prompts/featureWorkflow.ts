@@ -77,8 +77,23 @@ function isRejectedRegisterResult(result: ToolResult): boolean {
  * Walk backwards through tool results, find the most recent lifecycle tool,
  * extract the featureId from its output, and return a one-line directive
  * telling the model exactly which tool to call next and for which feature.
+ *
+ * All non-undefined directives are prefixed with an imperative that demands
+ * the LLM emit a tool call on the next response. This is belt-and-suspenders
+ * against the "text-only output stall" bug where reasoning models would
+ * sometimes echo the directive back as plain text instead of calling the
+ * tool, silently routing the turn to 'complete' without progress.
  */
 function buildContinuationDirective(
+  toolResults: ToolResult[] | undefined,
+  userPrompt: string | undefined
+): string | undefined {
+  const body = buildContinuationDirectiveBody(toolResults, userPrompt);
+  if (!body) return undefined;
+  return `ACTION REQUIRED: Emit a tool call on your next response. Do NOT reply with plain text. Do NOT ask for clarification. ${body}`;
+}
+
+function buildContinuationDirectiveBody(
   toolResults: ToolResult[] | undefined,
   userPrompt: string | undefined
 ): string | undefined {

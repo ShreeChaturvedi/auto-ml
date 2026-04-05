@@ -14,7 +14,6 @@ import { ModelRecommendationCard } from './ModelRecommendationCard';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
-import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
 import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
@@ -28,6 +27,7 @@ import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs
 import { createTrainingAdapter } from './TrainingAdapter';
 import { TrainingToolbarLeft } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
+import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
@@ -41,7 +41,7 @@ export function TrainingPanel() {
   const {
     workbooks: trainingWorkbooks,
     activeWorkbookId: activeTrainingWorkbookId,
-    // activeWorkbook not needed here — used by sidebar via registry store
+    activeWorkbook: activeTrainingWorkbook,
     buildStorageKey: buildTrainingStorageKey,
     handleSwitch: handleWorkbookSwitch,
     handleNew: handleNewWorkbook,
@@ -49,12 +49,39 @@ export function TrainingPanel() {
     handleRename: handleRenameWorkbook,
     handleReplay: handleReplayWorkbook,
     handleReset: handleResetWorkbook,
+    setWorkbookNotebookId,
     renameDialogOpen,
     setRenameDialogOpen,
     renameDialogValue,
     setRenameDialogValue,
     openRenameDialog
   } = useTrainingWorkbooks(projectId);
+
+  // Resolve a training-scoped notebook for the active workbook. The hook
+  // creates/adopts a notebook with metadata { phase: 'training', tabId, tabName }
+  // and never adopts notebooks from other phases — so the FE notebook left
+  // over from a previous tab is not touched, keeping FE cells intact. The
+  // isTrainingNotebookReady flag gates AgenticShell's mount below; without
+  // that gate, AgenticShell's initializeNotebook(undefined) fallback would
+  // activate notebooks[0] (often an FE notebook) during the first render.
+  const { notebookId: resolvedTrainingNotebookId, isReady: isTrainingNotebookReady } = useTrainingNotebookSync({
+    projectId,
+    activeWorkbook: activeTrainingWorkbook,
+    setWorkbookNotebookId,
+    initialNotebookId: initialNotebookIdRef.current
+  });
+
+  // Stable getter for the adapter — reading the ref means the adapter
+  // identity does not change on every notebook resolution update, which
+  // would otherwise cascade into useAgenticLoop state churn mid-session.
+  const resolvedNotebookIdRef = useRef<string | null>(resolvedTrainingNotebookId);
+  useEffect(() => {
+    resolvedNotebookIdRef.current = resolvedTrainingNotebookId;
+  }, [resolvedTrainingNotebookId]);
+  const getTrainingNotebookId = useCallback(
+    () => resolvedNotebookIdRef.current ?? undefined,
+    []
+  );
 
   const [cells, setCells] = useState<Cell[]>([]);
   const cellsRef = useRef<Cell[]>(cells);
@@ -65,21 +92,12 @@ export function TrainingPanel() {
 
   const { executeCode: executeWithStore } = useExecutionStore();
 
-  // Apply initial notebook from URL search params
-  useEffect(() => {
-    if (initialNotebookIdRef.current) {
-      void useNotebookStore.getState().setActiveNotebook(initialNotebookIdRef.current);
-    }
-  }, []);
-
-  // Tag notebook with training phase metadata
-  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
-  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
-
-  useEffect(() => {
-    if (!activeNotebookId) return;
-    void updateNotebookMetadata(activeNotebookId, { phase: 'training' });
-  }, [activeNotebookId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: the URL ?notebook=<id> deep link is no longer applied by calling
+  // setActiveNotebook directly — that bypassed phase isolation and would
+  // activate an FE/preprocessing notebook globally. useTrainingNotebookSync
+  // now consumes initialNotebookIdRef.current, adopts the deep-linked
+  // notebook only if its metadata.phase === 'training', and ignores
+  // anything else with a console warning.
 
   // Files
   const files = useDataStore((s) => s.files);
@@ -329,7 +347,10 @@ export function TrainingPanel() {
     sessionKey: buildWorkflowSessionKey(
       projectId ?? 'training',
       `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
-    )
+    ),
+    // Ref-backed getter keeps adapter identity stable across notebook
+    // resolution updates — avoids cascading useAgenticLoop resets.
+    getNotebookId: getTrainingNotebookId
   }), [
     buildFeatureSummary,
     datasetFiles,
@@ -337,16 +358,19 @@ export function TrainingPanel() {
     projectId,
     selectedTrainingFile?.metadata?.datasetId,
     trainingStorageKey,
-    trainingTargetColumn
+    trainingTargetColumn,
+    getTrainingNotebookId
   ]);
 
   return (
     <>
+      {isTrainingNotebookReady ? (
       <AgenticShell
         key={activeTrainingWorkbookId}
         projectId={projectId ?? ''}
         composerPlaceholders={composerPlaceholders}
         storageKey={trainingStorageKey}
+        notebookId={resolvedTrainingNotebookId ?? undefined}
         domainAdapter={trainingAdapter}
         renderLeftPane={(renderProps) => {
           // Sync LLM code cells whenever messages change
@@ -400,6 +424,11 @@ export function TrainingPanel() {
           ) : undefined
         }
       />
+      ) : (
+        <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/20 text-sm text-muted-foreground">
+          Preparing training notebook...
+        </div>
+      )}
 
       <RenameTabDialog
         open={renameDialogOpen}

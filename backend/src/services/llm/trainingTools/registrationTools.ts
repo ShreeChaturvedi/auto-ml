@@ -213,8 +213,10 @@ export const registerModel: TrainingToolHandler = async (
   return {
     output: {
       experimentId: experiment.experimentId,
+      modelId: experiment.persistedModelId,
       modelName,
       modelType,
+      taskType,
       status: 'registered',
       metrics: args.metrics,
       tags: args.tags ?? [],

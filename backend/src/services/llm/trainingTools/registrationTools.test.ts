@@ -167,8 +167,12 @@ describe('registerModel', () => {
     expect(permanentStat.isFile()).toBe(true);
     expect(permanentStat.size).toBe(payload.length);
 
-    // Tool output must report the permanent path so the chat can surface it.
+    // Tool output must report the permanent path so the chat can surface it,
+    // plus the modelId and taskType so the Training chat "Open in Experiments"
+    // button can route to the correct ModelDetailPanel.
     const output = result.output as Record<string, unknown>;
+    expect(output.modelId).toBe('model-uuid-1');
+    expect(output.taskType).toBe('classification'); // random_forest inferred
     expect(output.artifactPath).toBe(artifact.path);
     expect(output.artifactSize).toBe(payload.length);
   });

@@ -71,7 +71,43 @@ export function useFeatureApply({
   const handleApplyFeatures = useCallback(async () => {
     if (!selectedDatasetFile?.metadata?.datasetId) return;
 
-    const enabledFeatures = projectFeatures.filter((feature) => feature.enabled);
+    // Read the LATEST features directly from Zustand at click time instead of
+    // trusting the prop closure alone. The prop can be stale during a race:
+    // adapter finishes processing `register_feature` events and calls
+    // `upsertFeature` with the LLM code, but if the user clicks Apply before
+    // React re-renders the parent, the callback still holds the old
+    // `projectFeatures` without code. Reading via getState() sees fresh state.
+    //
+    // Fall back to the prop if the store is empty (test scenarios where the
+    // parent wires projectFeatures without also mocking the store).
+    //
+    // Fall back to `featureSteps[id].code` if a feature is missing code —
+    // defense-in-depth: materialize_feature_code persists code to the step,
+    // register_feature bridges step.code into the feature spec. If the bridge
+    // missed for any reason, the step still holds the code from materialize.
+    const storeState = useFeatureStore.getState();
+    const storeFeatures = storeState.features.filter(
+      (feature) => feature.projectId === projectId
+    );
+    // Also filter the prop fallback by projectId so a future refactor that
+    // wires projectFeatures from a different source cannot leak cross-project
+    // features into the apply payload.
+    const propFeatures = projectFeatures.filter(
+      (feature) => feature.projectId === projectId
+    );
+    const sourceFeatures = storeFeatures.length > 0 ? storeFeatures : propFeatures;
+    const enabledFeatures = sourceFeatures
+      .filter((feature) => feature.enabled)
+      .map((feature) => {
+        if (typeof feature.code === 'string' && feature.code.trim().length > 0) {
+          return feature;
+        }
+        const stepCode = storeState.featureSteps?.[feature.id]?.code;
+        if (typeof stepCode === 'string' && stepCode.trim().length > 0) {
+          return { ...feature, code: stepCode };
+        }
+        return feature;
+      });
     if (enabledFeatures.length === 0) {
       setApplyStatus('error');
       setApplyMessage('Select at least one feature.');

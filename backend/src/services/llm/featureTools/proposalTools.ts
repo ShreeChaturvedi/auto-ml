@@ -80,8 +80,45 @@ async function validateSourceColumnsAgainstDataset(
  * propose_feature — declare a feature intent with rationale, method, and parameters.
  * Persists the proposal as a FeatureStepRecord when a run is available.
  */
+/**
+ * Detect when the turn prompt contains the "Selected feature IDs to implement"
+ * marker. When present, `propose_feature` must be rejected at the handler level
+ * because we're in IMPLEMENTATION mode, not proposal mode — the user already
+ * reviewed and selected features, and the LLM must materialize them.
+ *
+ * The backend filters `propose_feature` from the tool list in continuation
+ * mode (phaseRequestBuilder.ts), but OpenAI's Responses API still allows the
+ * LLM to hallucinate tool calls for unlisted tools — especially when the
+ * tool call history shows a strong prior pattern of proposing. Without this
+ * handler-level guard, the LLM gets stuck in a "propose more" loop instead
+ * of materializing the features the user selected.
+ */
+function promptHasSelectedFeatureIds(prompt: string | undefined): boolean {
+  if (!prompt) return false;
+  const match = prompt.match(/^Selected feature IDs to implement:\s*(.+)$/im);
+  if (!match) return false;
+  const ids = match[1]
+    .split(/\s*,\s*/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return ids.length > 0;
+}
+
 export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext) => {
   const { args } = ctx;
+
+  // Hard-reject propose_feature in implementation mode. When the user clicks
+  // "Generate Notebook Steps" the prompt contains "Selected feature IDs to
+  // implement: ...". Any propose_feature call at this point is an LLM
+  // hallucination — it should be calling materialize_feature_code for one of
+  // the already-selected feature IDs. Return an error so the retry logic can
+  // steer the LLM back to the correct lifecycle step.
+  if (promptHasSelectedFeatureIds(ctx.prompt)) {
+    return {
+      error: 'propose_feature is not allowed in implementation mode. The user has already selected features to implement (see "Selected feature IDs to implement" in the user message). Call materialize_feature_code for the next selected feature id instead. Do NOT propose additional features.'
+    };
+  }
+
   const featureId = (args.featureId as string) ?? `feat-${Date.now()}`;
   const timestamp = nowIso();
 

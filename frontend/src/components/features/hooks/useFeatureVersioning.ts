@@ -7,13 +7,11 @@ import { fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import { interruptWorkflowRun } from '@/lib/api/llm';
 import * as notebooksApi from '@/lib/api/notebooks';
 import type { PipelineVersion } from '@/types/feature';
-import type { SuggestionDraft } from './useFeaturePipelineState';
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
 
 interface UseFeatureVersioningOptions {
   projectId: string;
-  setSuggestionDrafts: React.Dispatch<React.SetStateAction<Record<string, SuggestionDraft>>>;
   setPanelError: (error: string | null) => void;
   setApplyStatus: (status: 'idle' | 'loading' | 'success' | 'error') => void;
   setApplyMessage: (message: string | null) => void;
@@ -47,7 +45,6 @@ interface UseFeatureVersioningReturn {
 
 export function useFeatureVersioning({
   projectId,
-  setSuggestionDrafts,
   setPanelError,
   setApplyStatus,
   setApplyMessage,
@@ -152,12 +149,14 @@ export function useFeatureVersioning({
 
   const handleNewDraft = useCallback(() => {
     createDraftVersion(projectId, 'New Draft Pipeline');
+    // clearProjectFeatures drops the features array from the store; because
+    // suggestionDrafts is now derived from featureById in useSuggestionDrafts,
+    // we no longer need to also reset local draft state here.
     clearProjectFeatures(projectId);
-    setSuggestionDrafts({});
     setPanelError(null);
     setApplyStatus('idle');
     setApplyMessage(null);
-  }, [clearProjectFeatures, createDraftVersion, projectId, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+  }, [clearProjectFeatures, createDraftVersion, projectId, setPanelError, setApplyStatus, setApplyMessage]);
 
   // --- Delete with shadcn AlertDialog ---
   const handleDeleteDraft = useCallback(() => {
@@ -180,11 +179,10 @@ export function useFeatureVersioning({
     }
     clearProjectFeatures(projectId);
     clearDraft();
-    setSuggestionDrafts({});
     setApplyStatus('idle');
     setApplyMessage(null);
     setPanelError(null);
-  }, [clearDraft, clearProjectFeatures, createDraftVersion, currentVersion, interruptDraftWorkflow, projectId, removeVersion, versions.length, setSuggestionDrafts, setPanelError, setApplyStatus, setApplyMessage]);
+  }, [clearDraft, clearProjectFeatures, createDraftVersion, currentVersion, interruptDraftWorkflow, projectId, removeVersion, versions.length, setPanelError, setApplyStatus, setApplyMessage]);
 
   // --- Rename with shadcn Dialog ---
   const handleRenameDraft = useCallback(() => {
@@ -267,7 +265,6 @@ export function useFeatureVersioning({
     globalThis.localStorage?.removeItem(messageStorageScope);
     clearDraft();
     clearProjectFeatures(projectId);
-    setSuggestionDrafts({});
     setPanelError(null);
     setApplyStatus('idle');
     setApplyMessage(null);
@@ -280,7 +277,6 @@ export function useFeatureVersioning({
     currentVersion?.notebookId,
     interruptDraftWorkflow,
     projectId,
-    setSuggestionDrafts,
     setPanelError,
     setApplyStatus,
     setApplyMessage,

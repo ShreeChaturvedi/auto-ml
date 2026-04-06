@@ -14,8 +14,7 @@ import {
   buildOnboardingRequest,
   buildTrainingRequest
 } from '../llm/prompts/index.js';
-import { LLM_ALL_TOOLS, LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
-import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
+import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_TOOLS, LLM_TRAINING_LIFECYCLE_TOOLS } from '../llm/toolRegistry.js';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
@@ -553,7 +552,12 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       featureSpecs,
       toolCallHistory,
       toolResultHistory,
-      toolDefinitions: await listMcpToolsForLlm().catch(() => LLM_ALL_TOOLS),
+      // Use LLM_TRAINING_LIFECYCLE_TOOLS which merges the 6 training lifecycle
+      // tools (configure_experiment, propose_training_plan, execute_training,
+      // evaluate_results, register_model, compare_models) with notebook + data
+      // discovery tools. Without this, the streaming model only sees notebook
+      // tools (from LLM_ALL_TOOLS) and literally cannot call lifecycle tools.
+      toolDefinitions: LLM_TRAINING_LIFECYCLE_TOOLS,
       reasoningEffort: turn.reasoningEffort
     }),
     run: {

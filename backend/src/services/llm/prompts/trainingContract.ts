@@ -121,39 +121,20 @@ Provide a final summary of the training session:
 6. Explain trade-offs clearly: accuracy vs. speed, complexity vs. interpretability.
 7. Call \`configure_experiment\` ONCE per experiment. Do not reconfigure the same experiment.
 
-### MANDATORY turn-completion contract
+### Turn-completion rules
 
-A training turn is NOT complete until a model is persisted. After \`run_cell\` has executed your training code successfully, you MUST continue the lifecycle to the end within the SAME turn. Do not stop at "the code ran, here are the metrics in stdout" — the metrics must land in the training registry via explicit tool calls.
+The training workflow is MULTI-TURN by design. Each turn has a natural stopping point:
 
-Specifically, after a successful \`run_cell\` of training code:
+**Turn 1 — Propose:** After \`configure_experiment\` + \`propose_training_plan\`, present the proposal to the user via \`render_ui\` and END the turn. The user needs to review and approve the plan before you write any code. Do NOT configure more experiments. Do NOT write code. Just render the plan and stop.
 
-1. **You MUST call \`execute_training\`** with:
-   - \`experimentId\`: the id returned by your earlier \`configure_experiment\` call
-   - \`cellIds\`: the list of cell ids you ran to produce the training result
-   - \`metrics\`: the training-set metrics you parsed from the cell stdout (do NOT use placeholder numbers)
-   - \`trainingDurationMs\`: wall-clock duration from cell output
-   - \`succeeded: true\`
-   Do NOT skip this step. Do NOT tell the user "training is complete" until you have called execute_training.
+**Turn 2 — Train (user approved):** When the user sends a follow-up after reviewing the proposal, write training code, run it, and complete the full lifecycle:
+1. Write training code in a notebook cell and run it with \`run_cell\`.
+2. After \`run_cell\` succeeds, call \`execute_training\` with the metrics from stdout.
+3. Then call \`evaluate_results\` with the evaluation metrics.
+4. Then save the model (\`joblib.dump(model, "model.joblib")\`) and call \`register_model\` with \`artifactPath: "model.joblib"\`.
+5. Finally, call \`render_ui\` to summarize the results.
 
-2. **Then you MUST call \`evaluate_results\`** with:
-   - \`experimentId\`: same id
-   - \`metrics\`: the test/validation metrics (accuracy/f1/precision/recall for classification, rmse/mae/r2 for regression)
-   - \`confusionMatrix\` when classification (labels + matrix 2D array)
-   - \`learningCurve\` if available (trainScores, valScores, trainSizes)
-   - \`featureImportance\` if the model supports it (list of {feature, importance})
-   - \`notes\`: any observations you want recorded for later review
+Once \`run_cell\` has succeeded, do NOT stop until \`register_model\` has returned a \`modelId\`. The metrics must land in the registry — do not end the turn with "the code ran" and no registration.
 
-3. **Then you MUST save the artifact and call \`register_model\`**:
-   - Save the trained estimator (pipeline + model) in a cell: \`joblib.dump(model, "model.joblib")\` (relative filename, no leading slash, no subdirectories).
-   - Call \`register_model\` with \`artifactPath: "model.joblib"\`, the final metrics, hyperparameters, and descriptive tags.
-   - The backend resolves the relative path, copies the file to permanent storage, and returns a \`modelId\`. If the response has no \`modelId\` in its output, something went wrong with persistence — do not claim success.
-
-4. **Then call \`render_ui\` (or reply in text)** telling the user:
-   - The registered modelId
-   - The primary metric and its value
-   - "Click 'Open in Experiments' on the training card, or switch to the Experiments tab, to see evaluation plots."
-
-**The LLM equivalent of "job done" for a training turn is: a modelId has been returned by \`register_model\`.** Any turn that ends with a proposed/trained/evaluated experiment but NO \`modelId\` is a failed turn, and the user sees nothing persistent in the Experiments tab.
-
-If the user explicitly asks you to STOP before registration (e.g., "just propose models, don't train yet" or "show me the metrics first, I'll decide whether to register"), that's the ONE allowed early exit — in that case wait for their follow-up before continuing the lifecycle.
+**Important:** Always follow the CONTINUATION directive in the user message. It tells you exactly what to do next based on the current state.
 `.trim();

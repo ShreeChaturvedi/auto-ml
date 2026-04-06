@@ -36,83 +36,37 @@ const TRAINING_LIFECYCLE: LifecycleStageDefinition[] = [
 
 const STAGE_ORDER = TRAINING_LIFECYCLE.map((s) => s.name);
 
-const TEXT_STAGES = new Set(['answer', 'await_review', 'summarize']);
 const APPROVAL_STAGES = new Set(['propose_model', 'await_review']);
 
-// Stages where the planner MUST call exactly the lifecycle tool listed in
-// STAGE_TOOL_ALLOWLIST — notebook tools (write_cell, run_cell, ...) are
-// stripped from the planner's visible tool list so it cannot fall back to
-// code-editing behavior. Without this, the planner picks notebook tools
-// over execute_training/evaluate_results/register_model every time
-// (observed on runs 76683752 and 0cf16fc1 — see sprint11 curl evidence).
+// ALL training stages now use mode='text' which routes to streamWorkflowText
+// (the same reliable streaming path Feature Engineering uses) instead of
+// mode='action' (the planner path). The planner is a low-reasoning-effort
+// JSON-output LLM call that repeatedly fails with:
+//  - "Response did not contain valid JSON" (can't produce JSON reliably)
+//  - Missing required fields in render_ui/tool_call payloads (Zod rejection)
+//  - Wrong tool args (experimentId hallucinated from threadId or omitted)
+//  - Notebook tool preference over lifecycle tools (no amount of forced-stage
+//    gating fixes this because the planner's context is too compressed)
 //
-// If execute_training is called with succeeded=false, resolveNextTrainingStage
-// loops back to generate_code where notebook tools ARE available, so the
-// code-repair path is preserved.
-const FORCED_LIFECYCLE_STAGES = new Set([
-  'configure_experiment',
-  'propose_model',
-  'execute_training',
-  'evaluate_results',
-  'register_model'
-]);
-
-// Maps each lifecycle stage to the training-specific tools permitted at that stage.
-// For non-forced stages, non-training tools (notebook, data discovery, ask_user,
-// render_ui) are always available. For FORCED_LIFECYCLE_STAGES, only the
-// lifecycle tool + ask_user + render_ui are available.
-const STAGE_TOOL_ALLOWLIST: Record<string, Set<string>> = {
-  answer: new Set(),
-  configure_experiment: new Set(['configure_experiment']),
-  propose_model: new Set(['propose_training_plan']),
-  generate_code: new Set(),
-  write_code: new Set(),
-  execute_training: new Set(['execute_training']),
-  evaluate_results: new Set(['evaluate_results']),
-  await_review: new Set(),
-  register_model: new Set(['register_model']),
-  summarize: new Set(['compare_models'])
-};
-
-// Tools the planner always needs at forced stages (without these it can't
-// render final output or ask the user for clarification).
-const ALWAYS_ALLOWED_AT_FORCED_STAGES = new Set(['ask_user', 'render_ui']);
+// streamWorkflowText uses the MAIN LLM (gpt-5.4) with the full training
+// contract, dataset context, tool definitions, and tool call/result history.
+// The LLM calls tools directly in its streaming output — configure_experiment,
+// write_cell, run_cell, execute_training, etc. — exactly like FE does with
+// propose_feature, materialize_feature_code, etc. The contract guides the
+// lifecycle sequence; no planner intermediary needed.
 
 function buildStageConfig(stage: string): StageConfig {
-  const isText = TEXT_STAGES.has(stage);
-  const isForced = FORCED_LIFECYCLE_STAGES.has(stage);
-  const stageAllowlist = STAGE_TOOL_ALLOWLIST[stage];
-
-  let allowedTools: LlmToolDefinition[];
-  if (isForced && stageAllowlist) {
-    // Only the lifecycle tool + ask_user + render_ui. NO notebook tools.
-    // The planner must call the lifecycle tool or the turn fails — there
-    // is no escape hatch to write_cell/run_cell.
-    allowedTools = (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).filter(
-      (tool) => stageAllowlist.has(tool.name) || ALWAYS_ALLOWED_AT_FORCED_STAGES.has(tool.name)
-    );
-  } else {
-    allowedTools = stageAllowlist
-      ? (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).filter(
-          (tool) => !TRAINING_TOOL_NAME_SET.has(tool.name) || stageAllowlist.has(tool.name)
-        )
-      : (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]);
-  }
-
   return {
     name: stage,
-    mode: isText ? 'text' : 'action',
-    allowedTools,
+    mode: 'text',
+    allowedTools: LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[],
     toolChoice: 'auto',
     requiresApproval: APPROVAL_STAGES.has(stage),
-    // At forced stages, the planner MUST emit a tool call — not a text
-    // message. Without this, the planner can return assistant_message and
-    // the turn completes without ever calling the lifecycle tool.
-    allowAssistantMessage: !isForced,
-    allowAskUser: isText || isForced,
-    allowRenderUi: stage !== 'write_code',
+    allowAssistantMessage: true,
+    allowAskUser: true,
+    allowRenderUi: true,
     allowPlanExit: false,
-    requireToolCall: isForced
+    requireToolCall: false
   };
 }
 

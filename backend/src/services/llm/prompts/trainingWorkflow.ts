@@ -92,15 +92,23 @@ export function buildTrainingRequest(params: {
     ? `${prompt}\n\n${contextParts.join('\n')}`
     : contextParts.join('\n');
 
+  // When prior tool results exist, force the model to emit a tool call
+  // (toolChoice='any') so it can't just respond with text and silently
+  // exit the turn. This matches the FE pattern at featureWorkflow.ts:335.
+  const hasPriorResults = (toolResults?.length ?? 0) > 0 || (toolResultHistory?.length ?? 0) > 0;
+  const effectiveToolChoice = hasPriorResults ? 'any' as const : 'auto' as const;
+
   return {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent }
     ],
     temperature: 0.4,
-    maxOutputTokens: 4096,
+    // Reasoning models need output budget for thinking + rich JSON responses.
+    // 4096 is too small when the model generates code cells + evaluation tables.
+    maxOutputTokens: 12000,
     tools,
-    toolChoice: 'auto',
+    toolChoice: effectiveToolChoice,
     toolCallHistory,
     toolResultHistory,
     reasoningEffort,

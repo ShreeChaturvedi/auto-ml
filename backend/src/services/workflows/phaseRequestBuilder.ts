@@ -530,12 +530,12 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
 
   // Resolve the current training lifecycle stage so that stage-based tool
   // filtering in the PhaseConfig can restrict which tools the LLM may call.
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
   let trainingNode: string;
   if (state.iteration === 0) {
     trainingNode = 'configure_experiment';
   } else {
     const trainingPhase = getPhaseConfig('training');
-    const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
     const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
     trainingNode = nextStage ?? state.run.currentNode;
   }

@@ -272,10 +272,15 @@ export const compareModels: TrainingToolHandler = async (
     comparisonRows.push(row);
   }
 
+  const LOWER_IS_BETTER = new Set(['rmse', 'mse', 'mae', 'mape', 'log_loss', 'hinge_loss', 'cross_entropy', 'brier_score', 'loss', 'error']);
+  const sortAscending = args.sortOrder === 'ascending' ||
+    (args.sortOrder !== 'descending' && LOWER_IS_BETTER.has(primaryMetric.toLowerCase()));
+
   comparisonRows.sort((a, b) => {
-    const aVal = (a.primaryMetricValue as number) ?? -Infinity;
-    const bVal = (b.primaryMetricValue as number) ?? -Infinity;
-    return bVal - aVal;
+    const fallback = sortAscending ? Infinity : -Infinity;
+    const aVal = (a.primaryMetricValue as number) ?? fallback;
+    const bVal = (b.primaryMetricValue as number) ?? fallback;
+    return sortAscending ? aVal - bVal : bVal - aVal;
   });
 
   comparisonRows.forEach((row, index) => {

@@ -250,8 +250,13 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
 
   const handleReset = useCallback(() => {
     if (!projectId) return;
-    // 1. Clear persisted chat messages
-    localStorage.removeItem(buildMessageKey(activeWorkbookId, projectId));
+    // 1. Clear persisted chat messages. useMessageAccumulator stores under
+    //    `${storageKey}-${projectId}` where storageKey is already
+    //    `training-messages-v1-${workbookId}-${projectId}`. So the actual
+    //    localStorage key has projectId appended twice.
+    const storageKey = buildMessageKey(activeWorkbookId, projectId);
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(`${storageKey}-${projectId}`);
     // 2. Unbind the notebook so useTrainingNotebookSync creates a fresh one
     //    on the next render (same pattern as FE's handleReset which deletes
     //    the old notebook and creates a new one).

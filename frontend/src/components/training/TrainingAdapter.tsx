@@ -53,8 +53,9 @@ function buildTrainingTips(
   }
 
   if (config.featureSummary) {
-    const featureCount = (config.featureSummary.match(/\n/g) ?? []).length + 1;
-    tips.push({ id: 'tip-features', icon: Layers, content: `${featureCount} engineered features in your pipeline` });
+    const countMatch = config.featureSummary.match(/^(\d+)\s+enabled\s+feature/);
+    const featureCount = countMatch ? parseInt(countMatch[1], 10) : 1;
+    tips.push({ id: 'tip-features', icon: Layers, content: `${featureCount} engineered feature${featureCount === 1 ? '' : 's'} in your pipeline` });
   } else {
     tips.push({ id: 'tip-no-features', icon: AlertTriangle, content: 'No feature pipeline — model trains on raw columns' });
   }

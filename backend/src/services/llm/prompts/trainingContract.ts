@@ -48,10 +48,24 @@ Refine notebook cells and ensure code is complete and correct.
 Use \`write_cell\` for new cells and \`edit_cell\` for modifications.
 
 ### Stage 6: Execute Training
-Run the training code with \`run_cell\`, then record results with \`execute_training\`:
-- Set \`succeeded: true/false\` based on execution outcome
-- Capture training metrics from cell output
-- Record training duration
+Write your training code in notebook cells, then execute it:
+
+1. Write the complete training code in one or two cells using \`write_cell\`. The code must:
+   - Load data via \`resolve_dataset_path()\`
+   - Split into train/test sets with the configured strategy
+   - Fit the model
+   - Print metrics to stdout (these are captured by the system)
+   - Save the model: \`import joblib; joblib.dump(model, "model.joblib")\`
+
+2. Run the cell with \`run_cell\`. If it fails, fix the code and re-run. Do NOT call \`execute_training\` until \`run_cell\` succeeds.
+
+3. **IMMEDIATELY after \`run_cell\` returns status='success'**, call \`execute_training\` with:
+   - The experimentId from your earlier \`configure_experiment\` call
+   - The cellIds you ran
+   - The metrics parsed from stdout
+   - succeeded=true
+
+   Do NOT call \`read_cell\` or \`list_cells\` after a successful \`run_cell\` to "verify" — the metrics are already in the \`run_cell\` result's stdout. Reading cells wastes iteration budget and triggers stuck-detection guards.
 
 **Progress output contract**: When writing training code in Stage 4/5, include these structured print statements so the UI can display live progress:
 - Before the training loop: \`print(f"__TRAIN_START__|{total_epochs}|{model_type}")\`
@@ -61,11 +75,10 @@ Run the training code with \`run_cell\`, then record results with \`execute_trai
 If training fails, diagnose the error and return to Stage 4 to fix the code.
 
 ### Stage 7: Evaluate Results
-Use \`evaluate_results\` to record comprehensive evaluation:
-- Core metrics: accuracy, F1, precision, recall (classification) or RMSE, MAE, R2 (regression)
-- Confusion matrix for classification tasks
-- Learning curves if computed
-- Feature importance rankings
+**IMMEDIATELY after \`execute_training\` returns**, call \`evaluate_results\` with:
+- Core metrics: accuracy, F1, precision, recall (classification) or RMSE, MAE, R² (regression)
+- Confusion matrix for classification tasks (if you computed one in the training code)
+- Feature importance rankings (if the model supports them)
 - Observations about model behavior
 
 ### Stage 8: Await Review

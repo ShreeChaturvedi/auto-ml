@@ -43,11 +43,17 @@ function formatFeatureContext(specs: FeatureSpec[]): string {
  * of it picking read_cell or list_cells instead.
  */
 function extractForcedToolFromDirective(directive: string): string | undefined {
-  // Match "Call configure_experiment", "call execute_training NOW", etc.
-  const match = directive.match(
-    /\bcall\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model)\b/i
+  // Only match POSITIVE directives like "Call execute_training NOW" or
+  // "call configure_experiment to set up". Must NOT match negative
+  // contexts like "Do NOT call configure_experiment again".
+  // The regex requires "Call" as the FIRST word of a sentence (after
+  // period, colon, or start-of-string) OR "call" preceded by "must".
+  const positiveMatch = directive.match(
+    /(?:^|[.!:]\s*)Call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model)\b/
+  ) ?? directive.match(
+    /\bmust\s+call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model)\b/i
   );
-  return match?.[1] ?? undefined;
+  return positiveMatch?.[1] ?? undefined;
 }
 
 /**

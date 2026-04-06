@@ -194,11 +194,12 @@ export function buildTrainingRequest(params: {
     continuationDirective ? `\nCONTINUATION: ${continuationDirective}` : null
   ].filter(Boolean).join('\n');
 
-  // When prior tool results exist, force the model to emit a tool call
-  // (toolChoice='any') so it can't just respond with text and silently
-  // exit the turn. This matches the FE pattern at featureWorkflow.ts:335.
-  const hasPriorResults = (toolResults?.length ?? 0) > 0 || (toolResultHistory?.length ?? 0) > 0;
-  const effectiveToolChoice = hasPriorResults ? 'any' as const : 'auto' as const;
+  // Always force tool calls in training. The continuation directive tells
+  // the model which tool to call at every state (configure_experiment on
+  // the first iteration, execute_training after run_cell succeeds, etc.).
+  // Without 'any', the model produces text-only responses and silently
+  // exits the turn without advancing the lifecycle.
+  const effectiveToolChoice = continuationDirective ? 'any' as const : 'auto' as const;
 
   return {
     messages: [

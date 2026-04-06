@@ -37,8 +37,10 @@ function classifyTool(toolName: string): CardType | null {
     return 'proposal';
   }
 
-  // Code generation tools
+  // Code generation / writing tools
   if (
+    toolName === 'write_cell' ||
+    toolName === 'edit_cell' ||
     toolName === 'materialize_step_code' ||
     toolName === 'generate_code' ||
     toolName.startsWith('materialize_')
@@ -160,7 +162,10 @@ export function useLifecycleCards(): (message: ChatMessage) => ReactNode | null 
         });
 
       case 'code': {
+        // write_cell passes code in args.content; materialize_step_code
+        // returns code in result.output; generate_code uses args.code.
         const code =
+          (typeof call.args?.content === 'string' ? (call.args.content as string) : null) ??
           (typeof result?.output === 'string' ? result.output : null) ??
           (typeof call.args?.code === 'string' ? (call.args.code as string) : '') ??
           '';

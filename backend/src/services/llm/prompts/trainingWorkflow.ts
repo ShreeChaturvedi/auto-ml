@@ -68,8 +68,19 @@ function extractForcedToolFromDirective(directive: string): string | undefined {
  * ACTION REQUIRED so the model doesn't treat it as a suggestion.
  */
 function buildTrainingContinuationDirective(
-  toolResults: ToolResult[] | undefined
+  toolResults: ToolResult[] | undefined,
+  toolCallHistory?: LlmToolCallHistory[]
 ): string | undefined {
+  // Check if a previous turn already configured + proposed an experiment.
+  // If so, this is a CONTINUATION (user approved the plan). Proceed to code.
+  const priorHistory = toolCallHistory ?? [];
+  const hasPriorConfigure = priorHistory.some((h) => h.name === 'configure_experiment');
+  const hasPriorPropose = priorHistory.some((h) => h.name === 'propose_training_plan');
+
+  if (!toolResults?.length && hasPriorConfigure && hasPriorPropose) {
+    return 'ACTION REQUIRED: The user approved the training plan from the previous turn. Write the training code in a notebook cell using resolve_dataset_path() to load the data, then run it with run_cell. Do NOT call configure_experiment or propose_training_plan again — they were already completed.';
+  }
+
   if (!toolResults?.length) {
     return 'ACTION REQUIRED: Start by calling configure_experiment to set up the experiment parameters (modelType, targetColumn, splitStrategy, hyperparameters). Do NOT write any code cells yet — configure first, then propose_training_plan, then write code.';
   }
@@ -134,8 +145,10 @@ function buildTrainingContinuationDirective(
     (r) => r.tool === 'propose_training_plan' && !r.error
   );
 
-  if (hasProposed) {
-    return 'ACTION REQUIRED: The training plan was proposed. Write the training code in a notebook cell and run it with run_cell. Do NOT call configure_experiment or propose_training_plan again.';
+  if (hasProposed && !hasSuccessfulRunCell) {
+    // After proposing IN THIS TURN, PAUSE for user approval. Present the
+    // plan via render_ui, then STOP. The user reviews and sends a follow-up.
+    return 'Present the training plan to the user via render_ui. Include the model type, rationale, expected metrics, and risks from the proposal. STOP after render_ui — do NOT write code or call any other tool. Wait for the user to approve the plan in a follow-up message before proceeding.';
   }
 
   if (hasConfigured && experimentId) {
@@ -209,7 +222,7 @@ export function buildTrainingRequest(params: {
   // as FE's buildContinuationDirective in featureWorkflow.ts). This tells
   // the LLM explicitly which lifecycle tool to call next, preventing it
   // from defaulting to read_cell/list_cells loops.
-  const continuationDirective = buildTrainingContinuationDirective(toolResults);
+  const continuationDirective = buildTrainingContinuationDirective(toolResults, toolCallHistory);
 
   // User prompt is the PRIMARY content
   const userContent = [

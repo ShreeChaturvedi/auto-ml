@@ -195,7 +195,8 @@ vi.mock('@/lib/features/codeGenerator', () => ({
 
 // Toolbar/model-card children don't matter for isolation assertions.
 vi.mock('../TrainingToolbar', () => ({
-  TrainingToolbarLeft: () => null
+  TrainingToolbarLeft: () => null,
+  TrainingToolbarRight: () => null
 }));
 vi.mock('../CodeCell', () => ({
   CodeCell: () => null

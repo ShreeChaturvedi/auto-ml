@@ -25,7 +25,7 @@ import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { createTrainingAdapter } from './TrainingAdapter';
-import { TrainingToolbarLeft } from './TrainingToolbar';
+import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
 import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
@@ -410,18 +410,28 @@ export function TrainingPanel() {
           />
         }
         toolbarRight={
-          projectFeatures.length > 0 ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode}>
-                    <Wand2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <TrainingToolbarRight
+              selectedDatasetId={trainingDatasetId ?? ''}
+              datasetOptions={trainingDatasetOptions}
+              onDatasetSelect={setTrainingDatasetId}
+              selectedTargetColumn={trainingTargetColumn ?? ''}
+              targetColumns={selectedTrainingFile?.metadata?.columns ?? []}
+              onTargetColumnSelect={setTrainingTargetColumn}
+            />
+            {projectFeatures.length > 0 && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode}>
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
         }
       />
       ) : (

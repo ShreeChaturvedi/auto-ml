@@ -308,7 +308,7 @@ describe('useTrainingNotebookSync', () => {
         activeWorkbook: props.activeWorkbook,
         setWorkbookNotebookId
       }),
-      { initialProps: { projectId: 'project-1', activeWorkbook: makeWorkbook({ id: 'training-wb-1' }) } }
+      { initialProps: { projectId: 'project-1' as string | undefined, activeWorkbook: makeWorkbook({ id: 'training-wb-1' }) as WorkbookEntry | undefined } }
     );
 
     await waitFor(() => {

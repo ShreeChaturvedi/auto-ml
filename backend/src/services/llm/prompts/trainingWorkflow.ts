@@ -108,7 +108,11 @@ function buildTrainingContinuationDirective(
   }
 
   if (hasEvalResults && experimentId) {
-    return `ACTION REQUIRED: Call register_model now. First write a cell with joblib.dump(model, "model.joblib") and run it, then call register_model with experimentId="${experimentId}", artifactPath="model.joblib", and the metrics from evaluate_results. Do NOT call read_cell or list_cells.`;
+    // Do NOT force register_model here — the LLM needs to write a joblib.dump
+    // cell and run it BEFORE calling register_model. Use a non-forced directive
+    // (no "Call register_model" at sentence start) so extractForcedToolFromDirective
+    // returns undefined and toolChoice stays at 'any'.
+    return `ACTION REQUIRED: The model has been evaluated. Now save it: write a cell with \`import joblib; joblib.dump(model, "model.joblib")\` and run it with run_cell. After the save cell succeeds, call register_model with experimentId="${experimentId}", artifactPath="model.joblib". Do NOT call read_cell or list_cells.`;
   }
 
   if (hasSuccessfulExecute && experimentId) {

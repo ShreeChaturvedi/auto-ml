@@ -50,6 +50,8 @@ const APPROVAL_STAGES = new Set(['propose_model', 'await_review']);
 // loops back to generate_code where notebook tools ARE available, so the
 // code-repair path is preserved.
 const FORCED_LIFECYCLE_STAGES = new Set([
+  'configure_experiment',
+  'propose_model',
   'execute_training',
   'evaluate_results',
   'register_model'

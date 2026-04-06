@@ -535,7 +535,8 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     trainingNode = 'configure_experiment';
   } else {
     const trainingPhase = getPhaseConfig('training');
-    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, state.toolResultHistory);
+    const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
     trainingNode = nextStage ?? state.run.currentNode;
   }
 
@@ -547,7 +548,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       prompt: turn.prompt,
       projectPlan,
       ragSnippets,
-      toolResults: state.toolResultHistory,
+      toolResults: currentTurnResults,
       featureSummary: turn.featureSummary,
       featureSpecs,
       toolCallHistory,

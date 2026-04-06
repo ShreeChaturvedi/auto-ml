@@ -139,7 +139,13 @@ export const proposeTrainingPlan: TrainingToolHandler = async (
   return {
     output: {
       experimentId: experiment.experimentId,
-      status: 'proposed',
+      // 'awaiting_approval' triggers the existing pause mechanism in
+      // toolExecutor.ts via getApprovalPauseDetails/getToolResultPauseReason.
+      // The turn ends here — user sees the proposal via StepProposalCard
+      // and must send a follow-up message to continue. This replaces the
+      // broken approach of asking the LLM to call render_ui (which
+      // produced invisible output tokens with gpt-5.4).
+      status: 'awaiting_approval',
       rationale: args.rationale,
       expectedMetrics: args.expectedMetrics ?? {},
       risks: Array.isArray(args.risks) ? args.risks : [],

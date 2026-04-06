@@ -84,10 +84,20 @@ export class OpenAiClient implements LlmClient {
     });
 
     const response = await stream.finalResponse();
+
     emitToolCalls(response, handlers, streamedToolItemIds);
 
     if (handlers.onUsage && response.usage) {
       handlers.onUsage(response.usage as RawLlmUsage);
+    }
+
+    // Capture text from the final response that wasn't emitted via streaming
+    // deltas. This can happen when the model produces text in a message output
+    // item but no response.output_text.delta events were fired.
+    if (!fullText && response.output_text?.trim()) {
+      const finalText = response.output_text.trim();
+      fullText = finalText;
+      handlers.onToken(finalText);
     }
 
     return fullText || response.output_text || '';

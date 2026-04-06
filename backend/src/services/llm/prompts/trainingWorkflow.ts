@@ -120,15 +120,10 @@ function buildTrainingContinuationDirective(
   const hasConfigured = toolResults.some(
     (r) => r.tool === 'configure_experiment' && !r.error
   );
-  const hasProposed = toolResults.some(
-    (r) => r.tool === 'propose_training_plan' && !r.error
-  );
-
-  if (hasProposed && !hasSuccessfulRunCell) {
-    // After proposing IN THIS TURN, PAUSE for user approval. Force render_ui
-    // so the LLM can't re-call configure_experiment or propose_training_plan.
-    return 'Call render_ui to present the training plan to the user. Include the model type, rationale, expected metrics, and risks from the proposal in a report section. STOP after render_ui — do NOT write code, do NOT call configure_experiment or propose_training_plan again.';
-  }
+  // NOTE: No directive needed after proposal. propose_training_plan returns
+  // status='awaiting_approval' which triggers the existing pause mechanism
+  // in toolExecutor.ts. The turn ends deterministically — no LLM call needed.
+  // The user sees the proposal via StepProposalCard and sends a follow-up.
 
   if (hasConfigured && experimentId) {
     return `ACTION REQUIRED: Experiment ${experimentId} is configured. Call propose_training_plan with experimentId="${experimentId}" to present the training approach.`;

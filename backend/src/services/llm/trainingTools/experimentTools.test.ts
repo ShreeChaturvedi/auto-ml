@@ -246,7 +246,7 @@ describe('training tools — propose_training_plan recovers from planner threadI
     expect(proposeResult.error).toBeUndefined();
     const proposeOutput = proposeResult.output as Record<string, unknown>;
     expect(proposeOutput.experimentId).toBe(realExperimentId);
-    expect(proposeOutput.status).toBe('proposed');
+    expect(proposeOutput.status).toBe('awaiting_approval');
     expect(proposeOutput.rationale).toContain('Ridge');
 
     // Downstream: the experiment in run metadata must now carry the
@@ -318,6 +318,6 @@ describe('training tools — propose_training_plan recovers from planner threadI
     expect(proposeResult.error).toBeUndefined();
     const proposeOutput = proposeResult.output as Record<string, unknown>;
     expect(proposeOutput.experimentId).toBe(realExperimentId);
-    expect(proposeOutput.status).toBe('proposed');
+    expect(proposeOutput.status).toBe('awaiting_approval');
   });
 });

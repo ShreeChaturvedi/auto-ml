@@ -49,9 +49,9 @@ function extractForcedToolFromDirective(directive: string): string | undefined {
   // The regex requires "Call" as the FIRST word of a sentence (after
   // period, colon, or start-of-string) OR "call" preceded by "must".
   const positiveMatch = directive.match(
-    /(?:^|[.!:]\s*)Call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model)\b/
+    /(?:^|[.!:]\s*)Call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model|render_ui)\b/
   ) ?? directive.match(
-    /\bmust\s+call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model)\b/i
+    /\bmust\s+call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model|render_ui)\b/i
   );
   return positiveMatch?.[1] ?? undefined;
 }
@@ -146,9 +146,9 @@ function buildTrainingContinuationDirective(
   );
 
   if (hasProposed && !hasSuccessfulRunCell) {
-    // After proposing IN THIS TURN, PAUSE for user approval. Present the
-    // plan via render_ui, then STOP. The user reviews and sends a follow-up.
-    return 'Present the training plan to the user via render_ui. Include the model type, rationale, expected metrics, and risks from the proposal. STOP after render_ui — do NOT write code or call any other tool. Wait for the user to approve the plan in a follow-up message before proceeding.';
+    // After proposing IN THIS TURN, PAUSE for user approval. Force render_ui
+    // so the LLM can't re-call configure_experiment or propose_training_plan.
+    return 'Call render_ui to present the training plan to the user. Include the model type, rationale, expected metrics, and risks from the proposal in a report section. STOP after render_ui — do NOT write code, do NOT call configure_experiment or propose_training_plan again.';
   }
 
   if (hasConfigured && experimentId) {

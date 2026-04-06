@@ -36,27 +36,6 @@ function formatFeatureContext(specs: FeatureSpec[]): string {
 }
 
 /**
- * Extract the forced tool name from the continuation directive, if it
- * specifies one of the training lifecycle tools. When a specific tool is
- * identified, we can set toolChoice to `{ type: 'function', function: { name } }`
- * which MECHANICALLY forces the LLM to call exactly that tool — no chance
- * of it picking read_cell or list_cells instead.
- */
-function extractForcedToolFromDirective(directive: string): string | undefined {
-  // Only match POSITIVE directives like "Call execute_training NOW" or
-  // "call configure_experiment to set up". Must NOT match negative
-  // contexts like "Do NOT call configure_experiment again".
-  // The regex requires "Call" as the FIRST word of a sentence (after
-  // period, colon, or start-of-string) OR "call" preceded by "must".
-  const positiveMatch = directive.match(
-    /(?:^|[.!:]\s*)Call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model|render_ui)\b/
-  ) ?? directive.match(
-    /\bmust\s+call\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model|render_ui)\b/i
-  );
-  return positiveMatch?.[1] ?? undefined;
-}
-
-/**
  * Build a continuation directive for the training lifecycle — the training
  * equivalent of FE's `buildContinuationDirective` in featureWorkflow.ts.
  *
@@ -115,7 +94,7 @@ function buildTrainingContinuationDirective(
   }
 
   if (hasRegistered) {
-    return 'The model has been registered. Call render_ui to summarize the training results for the user.';
+    return 'ACTION REQUIRED: The model has been registered. Call render_ui to summarize the training results for the user.';
   }
 
   if (hasEvalResults && experimentId) {
@@ -232,21 +211,17 @@ export function buildTrainingRequest(params: {
     continuationDirective ? `\nCONTINUATION: ${continuationDirective}` : null
   ].filter(Boolean).join('\n');
 
-  // Force specific lifecycle tool calls when the continuation directive
-  // identifies the exact next tool. This is the mechanical enforcement
-  // that eliminates LLM non-compliance — the model literally cannot
-  // call read_cell or list_cells when toolChoice says "must call
-  // execute_training". Falls back to 'any' for generic directives
-  // and 'auto' when no directive exists.
-  const forcedToolName = continuationDirective
-    ? extractForcedToolFromDirective(continuationDirective)
-    : undefined;
-  const effectiveToolChoice: import('../llmClient.js').LlmToolChoice =
-    forcedToolName
-      ? { function: forcedToolName }
-      : continuationDirective
-        ? 'any'
-        : 'auto';
+  // Match FE's pattern exactly (featureWorkflow.ts:335):
+  // - 'any' when directive exists: forces the LLM to call SOME tool (can't
+  //   exit with text only), but the directive text guides which tool.
+  // - 'auto' otherwise: LLM is free to respond with text or tool calls.
+  //
+  // NEVER use { function: 'specific_tool' }. FE doesn't, and it works
+  // reliably. The previous extractForcedToolFromDirective approach caused
+  // configure_experiment loops, register_model loops, and render_ui loops
+  // because the regex-based extraction was fragile and matched negative
+  // contexts like "Do NOT call X".
+  const effectiveToolChoice = continuationDirective ? 'any' as const : 'auto' as const;
 
   return {
     messages: [

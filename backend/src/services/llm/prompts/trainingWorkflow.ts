@@ -49,7 +49,9 @@ function formatFeatureContext(specs: FeatureSpec[]): string {
 function buildTrainingContinuationDirective(
   toolResults: ToolResult[] | undefined
 ): string | undefined {
-  if (!toolResults?.length) return undefined;
+  if (!toolResults?.length) {
+    return 'ACTION REQUIRED: Start by calling configure_experiment to set up the experiment parameters (modelType, targetColumn, splitStrategy, hyperparameters). Do NOT write any code cells yet — configure first, then propose_training_plan, then write code.';
+  }
 
   // Find the most relevant training lifecycle signals
   const lastRunCell = [...(toolResults ?? [])].reverse().find((r) => r.tool === 'run_cell');
@@ -113,6 +115,15 @@ function buildTrainingContinuationDirective(
 
   if (hasConfigured && experimentId) {
     return `ACTION REQUIRED: Experiment ${experimentId} is configured. Call propose_training_plan with experimentId="${experimentId}" to present the training approach.`;
+  }
+
+  // Fallback: no lifecycle tools have been called yet (LLM has been
+  // calling notebook tools without starting the lifecycle). Redirect it.
+  const hasAnyLifecycleTool = toolResults.some(
+    (r) => ['configure_experiment', 'propose_training_plan', 'execute_training', 'evaluate_results', 'register_model'].includes(r.tool)
+  );
+  if (!hasAnyLifecycleTool) {
+    return 'ACTION REQUIRED: No training experiment is configured yet. Call configure_experiment first to set up the experiment parameters before writing any more code. Do NOT call read_cell or list_cells.';
   }
 
   return undefined;

@@ -531,6 +531,29 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
   // Resolve the current training lifecycle stage so that stage-based tool
   // filtering in the PhaseConfig can restrict which tools the LLM may call.
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+
+  // When register_model was the last lifecycle tool this turn, the training
+  // lifecycle is complete. Skip the LLM invocation — the frontend already
+  // renders a ModelSavedCard from the tool_executed event. This mirrors FE's
+  // checkpoint_feature_pipeline terminal detection at lines 392-408 above.
+  const TRAINING_LIFECYCLE_TOOLS_LIST = ['configure_experiment', 'propose_training_plan',
+    'execute_training', 'evaluate_results', 'register_model', 'compare_models'];
+  const lastTrainingLifecycleTool = [...currentTurnResults].reverse().find(
+    (r) => TRAINING_LIFECYCLE_TOOLS_LIST.includes(r.tool)
+  );
+  if (lastTrainingLifecycleTool?.tool === 'register_model' && !lastTrainingLifecycleTool.error) {
+    return {
+      nextStep: 'complete',
+      request: null,
+      run: {
+        ...state.run,
+        currentNode: 'register_model',
+        activeDatasetId: turn.datasetId,
+        activeNotebookId: turn.notebookId
+      }
+    };
+  }
+
   let trainingNode: string;
   if (state.iteration === 0) {
     trainingNode = 'configure_experiment';

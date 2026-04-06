@@ -228,22 +228,35 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
 
   const handleReplay = useCallback(() => {
     if (!projectId) return;
-    // Replay clears the workflow session so the next prompt re-runs from scratch
-    const key = buildMessageKey(activeWorkbookId, projectId);
-    const raw = localStorage.getItem(key);
+    const baseKey = buildMessageKey(activeWorkbookId, projectId);
+    // useMessageAccumulator stores at `${storageKey}-${projectId}` where
+    // storageKey already contains projectId, so the key has it twice.
+    const actualKey = `${baseKey}-${projectId}`;
+    const raw = localStorage.getItem(actualKey) ?? localStorage.getItem(baseKey);
     if (!raw) return;
+    const usedKey = localStorage.getItem(actualKey) ? actualKey : baseKey;
     try {
-      const messages = JSON.parse(raw) as Array<{ role?: string }>;
-      // Find the last user message and keep everything up to (and including) it,
-      // dropping any subsequent assistant/tool messages so they re-generate.
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const messages = Array.isArray(parsed)
+        ? parsed
+        : (parsed?.version === 2 && Array.isArray(parsed.messages))
+          ? (parsed.messages as Array<Record<string, unknown>>)
+          : [];
       let lastUserIdx = -1;
       for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === 'user') { lastUserIdx = i; break; }
+        if ((messages[i] as Record<string, unknown>).type === 'user') { lastUserIdx = i; break; }
       }
       if (lastUserIdx >= 0) {
-        localStorage.setItem(key, JSON.stringify(messages.slice(0, lastUserIdx + 1)));
+        const truncated = messages.slice(0, lastUserIdx + 1);
+        // Write back in the same format (V2 if it was V2)
+        if (!Array.isArray(parsed) && parsed?.version === 2) {
+          localStorage.setItem(usedKey, JSON.stringify({ ...parsed, messages: truncated }));
+        } else {
+          localStorage.setItem(usedKey, JSON.stringify(truncated));
+        }
       }
     } catch { /* ignore parse errors */ }
+    setChatSessionVersion((v) => v + 1);
   }, [activeWorkbookId, projectId]);
 
   // ---- Reset (clear chat + notebook + workflow session for the active workbook) --

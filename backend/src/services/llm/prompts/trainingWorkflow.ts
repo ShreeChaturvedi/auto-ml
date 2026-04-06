@@ -94,7 +94,12 @@ function buildTrainingContinuationDirective(
   }
 
   if (hasRegistered) {
-    return 'ACTION REQUIRED: The model has been registered. Call render_ui to summarize the training results for the user.';
+    // register_model is now detected as terminal in phaseRequestBuilder.ts,
+    // so this branch is normally unreachable. Return a neutral message (no
+    // render_ui instruction) as a safety net — avoids the invisible-token
+    // failure mode where toolChoice='any' + render_ui directive produced
+    // empty LLM output with gpt-5.4.
+    return undefined;
   }
 
   if (hasEvalResults && experimentId) {

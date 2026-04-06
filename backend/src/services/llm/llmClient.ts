@@ -17,7 +17,7 @@ export interface LlmToolDefinition {
   parameters: Record<string, unknown>;
 }
 
-export type LlmToolChoice = 'auto' | 'any' | 'none';
+export type LlmToolChoice = 'auto' | 'any' | 'none' | { function: string };
 
 export interface LlmToolCall {
   name: string;

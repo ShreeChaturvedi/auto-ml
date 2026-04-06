@@ -130,9 +130,11 @@ function buildOpenAiBodyBase(
     : undefined;
 
   const toolChoice = request.toolChoice
-    ? request.toolChoice === 'any'
-      ? 'required'
-      : request.toolChoice
+    ? typeof request.toolChoice === 'object'
+      ? { type: 'function' as const, name: request.toolChoice.function }
+      : request.toolChoice === 'any'
+        ? 'required'
+        : request.toolChoice
     : undefined;
 
   const reasoningEffort = normalizeReasoningEffort(request, resolvedModel.id);

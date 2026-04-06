@@ -36,6 +36,21 @@ function formatFeatureContext(specs: FeatureSpec[]): string {
 }
 
 /**
+ * Extract the forced tool name from the continuation directive, if it
+ * specifies one of the training lifecycle tools. When a specific tool is
+ * identified, we can set toolChoice to `{ type: 'function', function: { name } }`
+ * which MECHANICALLY forces the LLM to call exactly that tool — no chance
+ * of it picking read_cell or list_cells instead.
+ */
+function extractForcedToolFromDirective(directive: string): string | undefined {
+  // Match "Call configure_experiment", "call execute_training NOW", etc.
+  const match = directive.match(
+    /\bcall\s+(configure_experiment|propose_training_plan|execute_training|evaluate_results|register_model)\b/i
+  );
+  return match?.[1] ?? undefined;
+}
+
+/**
  * Build a continuation directive for the training lifecycle — the training
  * equivalent of FE's `buildContinuationDirective` in featureWorkflow.ts.
  *
@@ -194,12 +209,21 @@ export function buildTrainingRequest(params: {
     continuationDirective ? `\nCONTINUATION: ${continuationDirective}` : null
   ].filter(Boolean).join('\n');
 
-  // Always force tool calls in training. The continuation directive tells
-  // the model which tool to call at every state (configure_experiment on
-  // the first iteration, execute_training after run_cell succeeds, etc.).
-  // Without 'any', the model produces text-only responses and silently
-  // exits the turn without advancing the lifecycle.
-  const effectiveToolChoice = continuationDirective ? 'any' as const : 'auto' as const;
+  // Force specific lifecycle tool calls when the continuation directive
+  // identifies the exact next tool. This is the mechanical enforcement
+  // that eliminates LLM non-compliance — the model literally cannot
+  // call read_cell or list_cells when toolChoice says "must call
+  // execute_training". Falls back to 'any' for generic directives
+  // and 'auto' when no directive exists.
+  const forcedToolName = continuationDirective
+    ? extractForcedToolFromDirective(continuationDirective)
+    : undefined;
+  const effectiveToolChoice: import('../llmClient.js').LlmToolChoice =
+    forcedToolName
+      ? { function: forcedToolName }
+      : continuationDirective
+        ? 'any'
+        : 'auto';
 
   return {
     messages: [

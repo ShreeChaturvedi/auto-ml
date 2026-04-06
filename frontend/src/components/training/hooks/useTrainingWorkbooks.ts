@@ -45,6 +45,8 @@ export interface UseTrainingWorkbooksResult {
   activeWorkbookId: string;
   activeWorkbook: WorkbookEntry | undefined;
   ready: boolean;
+  /** Bumped on reset to force AgenticShell remount. */
+  chatSessionVersion: number;
   buildStorageKey: (workbookId: string) => string;
   handleSwitch: (workbookId: string) => void;
   handleNew: () => void;
@@ -66,6 +68,7 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
   const [ready, setReady] = useState(false);
   const hydratedRef = useRef<string | null>(null);
   const skipPersistRef = useRef(false);
+  const [chatSessionVersion, setChatSessionVersion] = useState(0);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameDialogValue, setRenameDialogValue] = useState('');
 
@@ -243,18 +246,35 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     } catch { /* ignore parse errors */ }
   }, [activeWorkbookId, projectId]);
 
-  // ---- Reset (clear all messages for the active workbook) ---------------------
+  // ---- Reset (clear chat + notebook + workflow session for the active workbook) --
 
   const handleReset = useCallback(() => {
     if (!projectId) return;
+    // 1. Clear persisted chat messages
     localStorage.removeItem(buildMessageKey(activeWorkbookId, projectId));
-  }, [activeWorkbookId, projectId]);
+    // 2. Unbind the notebook so useTrainingNotebookSync creates a fresh one
+    //    on the next render (same pattern as FE's handleReset which deletes
+    //    the old notebook and creates a new one).
+    const current = workbooks.find((wb) => wb.id === activeWorkbookId);
+    if (current?.notebookId) {
+      void deleteNotebook(projectId, current.notebookId).catch(() => undefined);
+      setWorkbooks((prev) =>
+        prev.map((wb) =>
+          wb.id === activeWorkbookId ? { ...wb, notebookId: null } : wb
+        )
+      );
+    }
+    // 3. Bump session version to force AgenticShell remount → picks up
+    //    the empty localStorage + fresh notebook binding.
+    setChatSessionVersion((v) => v + 1);
+  }, [activeWorkbookId, projectId, workbooks]);
 
   return {
     workbooks,
     activeWorkbookId,
     activeWorkbook,
     ready,
+    chatSessionVersion,
     buildStorageKey,
     handleSwitch,
     handleNew,

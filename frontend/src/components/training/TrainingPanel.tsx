@@ -42,6 +42,7 @@ export function TrainingPanel() {
     workbooks: trainingWorkbooks,
     activeWorkbookId: activeTrainingWorkbookId,
     activeWorkbook: activeTrainingWorkbook,
+    chatSessionVersion: trainingChatSessionVersion,
     buildStorageKey: buildTrainingStorageKey,
     handleSwitch: handleWorkbookSwitch,
     handleNew: handleNewWorkbook,
@@ -366,7 +367,7 @@ export function TrainingPanel() {
     <>
       {isTrainingNotebookReady ? (
       <AgenticShell
-        key={activeTrainingWorkbookId}
+        key={`${activeTrainingWorkbookId}-${trainingChatSessionVersion}`}
         projectId={projectId ?? ''}
         composerPlaceholders={composerPlaceholders}
         storageKey={trainingStorageKey}

@@ -45,8 +45,14 @@ export function StepProposalCard({
   onReject,
 }: StepProposalCardProps) {
   const [rationaleExpanded, setRationaleExpanded] = useState(false);
+  // Track local decision so the card updates immediately when the user clicks
+  // Accept/Reject. The prop `status` stays at 'pending' because the underlying
+  // tool result never changes — only the user's follow-up message indicates
+  // their decision.
+  const [decision, setDecision] = useState<'accepted' | 'rejected' | null>(null);
+  const effectiveStatus = decision ?? status;
   const accent = PHASE_ACCENT[phase] ?? 'border-l-muted-foreground';
-  const badgeInfo = STATUS_BADGE[status];
+  const badgeInfo = STATUS_BADGE[effectiveStatus];
 
   return (
     <div
@@ -89,14 +95,14 @@ export function StepProposalCard({
         </div>
       )}
 
-      {/* Action buttons (only when pending) */}
-      {status === 'pending' && (
+      {/* Action buttons (only when pending and no decision made yet) */}
+      {effectiveStatus === 'pending' && (
         <div className="mt-3 flex items-center gap-2">
-          <Button size="sm" className="h-7 text-xs" onClick={onAccept}>
+          <Button size="sm" className="h-7 text-xs" onClick={() => { setDecision('accepted'); onAccept?.(); }}>
             <Check className="mr-1 h-3 w-3" />
             Accept
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={onReject}>
+          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => { setDecision('rejected'); onReject?.(); }}>
             <X className="mr-1 h-3 w-3" />
             Reject
           </Button>

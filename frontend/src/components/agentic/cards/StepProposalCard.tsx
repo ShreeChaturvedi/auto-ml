@@ -34,10 +34,6 @@ export interface StepProposalCardProps {
   phase: string;
   status: 'pending' | 'proposed' | 'accepted' | 'rejected' | 'modified';
   onToggleSelect?: (selected: boolean) => void;
-  /** @deprecated Use onToggleSelect instead */
-  onAccept?: () => void;
-  /** @deprecated Use onToggleSelect instead */
-  onReject?: () => void;
 }
 
 export function StepProposalCard({
@@ -47,8 +43,6 @@ export function StepProposalCard({
   phase,
   status,
   onToggleSelect,
-  onAccept,
-  onReject,
 }: StepProposalCardProps) {
   const [rationaleExpanded, setRationaleExpanded] = useState(false);
   // Auto-select pending proposals so the "Apply" button is immediately visible.
@@ -71,7 +65,6 @@ export function StepProposalCard({
       : status;
   const accent = PHASE_ACCENT[phase] ?? 'border-l-muted-foreground';
   const badgeInfo = STATUS_BADGE[effectiveStatus];
-  const isPending = status === 'pending' && selected === null;
   const isToggleable = status === 'pending';
 
   return (

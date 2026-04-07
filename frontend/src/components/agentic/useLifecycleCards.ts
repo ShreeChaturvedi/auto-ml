@@ -15,7 +15,7 @@
 import { useCallback } from 'react';
 import { createElement, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import type { ChatMessage, ToolCall } from '@/types/llmUi';
+import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
 import { StepProposalCard } from './cards/StepProposalCard';
 import { CodeGenerationCard } from './cards/CodeGenerationCard';
 import { ExecutionCard } from './cards/ExecutionCard';

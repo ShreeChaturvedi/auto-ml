@@ -225,7 +225,12 @@ export class DeploymentWSServer {
       const now = new Date();
       const timeout = env.wsHeartbeatMs * 2;
 
-      for (const [clientId, client] of this.clients) {
+      // Snapshot keys to prevent mutation during iteration
+      const clientIds = [...this.clients.keys()];
+      for (const clientId of clientIds) {
+        const client = this.clients.get(clientId);
+        if (!client) continue;
+
         const elapsed = now.getTime() - client.lastPing.getTime();
 
         if (elapsed > timeout) {

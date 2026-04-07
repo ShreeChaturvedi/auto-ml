@@ -60,12 +60,18 @@ export function detectTaskTypes(models: ModelRecord[]): ModelTaskType[] {
   return Array.from(new Set(models.map((m) => m.taskType)));
 }
 
-export function findChampionModelId(models: ModelRecord[]): string | null {
+export function findChampionModelId(
+  models: ModelRecord[],
+  taskTypeFilter?: ModelTaskType[],
+): string | null {
   let champion: ModelRecord | null = null;
   let championValue = NaN;
 
   for (const model of models) {
     if (model.status !== 'completed') {
+      continue;
+    }
+    if (taskTypeFilter && !taskTypeFilter.includes(model.taskType)) {
       continue;
     }
 
@@ -281,8 +287,16 @@ export const REGRESSION_METRICS = [
   { value: 'neg_mean_absolute_error', label: 'Neg MAE' },
 ];
 
+export const CLUSTERING_METRICS = [
+  { value: 'silhouette_score', label: 'Silhouette Score' },
+  { value: 'calinski_harabasz_score', label: 'Calinski-Harabasz' },
+  { value: 'davies_bouldin_score', label: 'Davies-Bouldin' },
+];
+
 export function getAvailableMetrics(taskType: string) {
-  return taskType === 'regression' ? REGRESSION_METRICS : CLASSIFICATION_METRICS;
+  if (taskType === 'regression') return REGRESSION_METRICS;
+  if (taskType === 'clustering') return CLUSTERING_METRICS;
+  return CLASSIFICATION_METRICS;
 }
 
 /* ── Cross-phase recommendation generator ──────────────────────────── */

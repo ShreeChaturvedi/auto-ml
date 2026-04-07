@@ -17,6 +17,12 @@ import { execDockerWithStdin } from './dockerUtils.js';
 
 const logger = appLogger.child({ service: 'driftDetection' });
 
+let _deploymentRepo: ReturnType<typeof createDeploymentRepository> | null = null;
+function getDeploymentRepo() {
+  if (!_deploymentRepo) _deploymentRepo = createDeploymentRepository();
+  return _deploymentRepo;
+}
+
 export async function runDriftDetection(deployment: DeploymentRecord): Promise<DriftReport> {
   // 1. Check container is running
   if (!deployment.containerId) {
@@ -33,7 +39,7 @@ export async function runDriftDetection(deployment: DeploymentRecord): Promise<D
   }
 
   // 3. Load recent predictions from DB
-  const deploymentRepo = createDeploymentRepository();
+  const deploymentRepo = getDeploymentRepo();
   const { logs } = await deploymentRepo.getPredictionLogs(deployment.deploymentId, { limit: 500 });
 
   if (logs.length < 10) {

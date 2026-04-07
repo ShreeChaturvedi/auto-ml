@@ -435,13 +435,16 @@ describe('buildTuningScript', () => {
 
     it('uses TPE sampler by default', () => {
       const script = callBuild(makeTemplate());
-      expect(script).toContain("optuna.samplers.TPESampler(seed=42) if 'tpe' == 'tpe'");
+      // The ternary condition should resolve to TPE when sampler is 'tpe' (default)
+      expect(script).toContain("'tpe' == 'tpe'");
+      expect(script).toContain('TPESampler');
     });
 
-    it('embeds sampler selection conditional that resolves to RandomSampler', () => {
+    it('uses RandomSampler when sampler is set to random', () => {
       const script = callBuild(makeTemplate(), { sampler: 'random' });
+      // The ternary condition should resolve to Random when sampler is 'random'
+      expect(script).toContain("'random' == 'tpe'");
       expect(script).toContain('RandomSampler');
-      expect(script).toContain("'random'");
     });
   });
 

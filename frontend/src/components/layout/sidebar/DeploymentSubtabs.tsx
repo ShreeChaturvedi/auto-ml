@@ -10,36 +10,35 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useDeploymentStore } from '@/stores/deploymentStore';
 import type { DeploymentStatus } from '@/types/deployment';
 import { cn } from '@/lib/utils';
+import { statusDotColor, PULSE_STATUSES } from '@/components/deployment/statusHelpers';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
-function statusDotColor(status: DeploymentStatus): string {
-  if (status === 'healthy') return 'bg-green-500';
-  if (['starting', 'creating'].includes(status)) return 'bg-amber-500';
-  if (status === 'unhealthy') return 'bg-amber-500';
-  if (status === 'stopped') return 'bg-muted-foreground';
-  return 'bg-red-500';
-}
-
-const PULSE_STATUSES = new Set<DeploymentStatus>(['healthy', 'starting', 'creating']);
-
-/** Inline status-dot icon component for SubtabItem */
-function makeStatusIcon(status: DeploymentStatus): ComponentType<{ className?: string }> {
+/** Static status-dot icon component per status (avoids new component type per render) */
+function StatusDotIcon({ status, className }: { status: DeploymentStatus; className?: string }) {
   const dotColor = statusDotColor(status);
   const pulse = PULSE_STATUSES.has(status);
 
-  return function StatusDot({ className }: { className?: string }) {
-    return (
-      <span className={cn('relative inline-flex h-2 w-2', className)} aria-hidden="true">
-        {pulse && (
-          <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', dotColor)} />
-        )}
-        <span className={cn('relative inline-flex h-2 w-2 rounded-full', dotColor)} />
-      </span>
-    );
-  };
+  return (
+    <span className={cn('relative inline-flex h-2 w-2', className)} aria-hidden="true">
+      {pulse && (
+        <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', dotColor)} />
+      )}
+      <span className={cn('relative inline-flex h-2 w-2 rounded-full', dotColor)} />
+    </span>
+  );
 }
+
+const STATUS_ICON_MAP: Record<DeploymentStatus, ComponentType<{ className?: string }>> = {
+  creating:  (props) => <StatusDotIcon status="creating" {...props} />,
+  starting:  (props) => <StatusDotIcon status="starting" {...props} />,
+  healthy:   (props) => <StatusDotIcon status="healthy" {...props} />,
+  unhealthy: (props) => <StatusDotIcon status="unhealthy" {...props} />,
+  stopping:  (props) => <StatusDotIcon status="stopping" {...props} />,
+  stopped:   (props) => <StatusDotIcon status="stopped" {...props} />,
+  failed:    (props) => <StatusDotIcon status="failed" {...props} />,
+};
 
 interface DeploymentSubtabsProps {
   projectId: string;
@@ -83,7 +82,7 @@ export function DeploymentSubtabs({ projectId, isActivePhase }: DeploymentSubtab
           return (
             <SubtabItem
               key={dep.deploymentId}
-              icon={makeStatusIcon(dep.status)}
+              icon={STATUS_ICON_MAP[dep.status]}
               label={dep.name}
               isActive={isOnDeployment && dep.deploymentId === selectedDeploymentId}
               onClick={() => {

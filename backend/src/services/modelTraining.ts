@@ -193,7 +193,7 @@ function buildTrainingScript(params: {
     lines.push('metrics["recall"] = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))');
     lines.push('metrics["f1"] = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))');
   } else if (template.taskType === 'regression') {
-    lines.push('metrics["rmse"] = float(mean_squared_error(y_test, y_pred, squared=False))');
+    lines.push('metrics["rmse"] = float(np.sqrt(mean_squared_error(y_test, y_pred)))');
     lines.push('metrics["mae"] = float(mean_absolute_error(y_test, y_pred))');
     lines.push('metrics["r2"] = float(r2_score(y_test, y_pred))');
   } else {

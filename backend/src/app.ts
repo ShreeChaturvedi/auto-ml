@@ -74,10 +74,21 @@ export function createApp() {
         },
         pathRewrite: { '^/api/deployments/[^/]+/predict': '/predict' },
         on: {
+          proxyReq: (_proxyReq, req: IncomingMessage) => {
+            // Capture and buffer the request body before the proxy consumes the stream
+            const predictReq = req as PredictRequest & { parsedBody?: Record<string, unknown> };
+            const reqChunks: Buffer[] = [];
+            req.on('data', (chunk: Buffer) => reqChunks.push(chunk));
+            req.on('end', () => {
+              try {
+                predictReq.parsedBody = JSON.parse(Buffer.concat(reqChunks).toString());
+              } catch { /* body might not be JSON */ }
+            });
+          },
           proxyRes: async (proxyRes, req: IncomingMessage, res: ServerResponse) => {
             const startTime = Date.now();
             const chunks: Buffer[] = [];
-            const predictReq = req as PredictRequest;
+            const predictReq = req as PredictRequest & { parsedBody?: Record<string, unknown> };
             proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
             proxyRes.on('end', async () => {
               const body = Buffer.concat(chunks).toString();
@@ -96,23 +107,24 @@ export function createApp() {
                   const hourBucket = new Date();
                   hourBucket.setMinutes(0, 0, 0);
 
-                  await predictDeploymentRepo.insertPredictionLog({
-                    deploymentId: deployment.deploymentId,
-                    modelId: deployment.modelId,
-                    projectId: deployment.projectId,
-                    createdAt: new Date().toISOString(),
-                    latencyMs,
-                    inputFeatures: (predictReq as PredictRequest & { body?: Record<string, unknown> }).body ?? {},
-                    prediction: parsed,
-                    status: proxyRes.statusCode === 200 ? 'success' : 'error',
-                    metadata: {},
-                  });
-
-                  await predictDeploymentRepo.upsertHourlyStats(deployment.deploymentId, hourBucket, {
-                    requestCount: 1,
-                    errorCount: proxyRes.statusCode !== 200 ? 1 : 0,
-                    latencyAvg: latencyMs,
-                  });
+                  await Promise.all([
+                    predictDeploymentRepo.insertPredictionLog({
+                      deploymentId: deployment.deploymentId,
+                      modelId: deployment.modelId,
+                      projectId: deployment.projectId,
+                      createdAt: new Date().toISOString(),
+                      latencyMs,
+                      inputFeatures: predictReq.parsedBody ?? {},
+                      prediction: parsed,
+                      status: proxyRes.statusCode === 200 ? 'success' : 'error',
+                      metadata: {},
+                    }),
+                    predictDeploymentRepo.upsertHourlyStats(deployment.deploymentId, hourBucket, {
+                      requestCount: 1,
+                      errorCount: proxyRes.statusCode !== 200 ? 1 : 0,
+                      latencyAvg: latencyMs,
+                    }),
+                  ]);
                 }
               } catch {
                 /* don't fail prediction on log error */

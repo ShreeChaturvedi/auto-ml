@@ -4,23 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useDeploymentStore } from '@/stores/deploymentStore';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
-import type { DeploymentStatus } from '@/types/deployment';
-
-function statusLabel(status: DeploymentStatus): string {
-  const labels: Record<DeploymentStatus, string> = {
-    creating: 'Creating', starting: 'Starting', healthy: 'Healthy',
-    unhealthy: 'Unhealthy', stopping: 'Stopping', stopped: 'Stopped', failed: 'Failed',
-  };
-  return labels[status] ?? status;
-}
-
-function statusColor(status: DeploymentStatus): string {
-  if (status === 'healthy') return 'bg-green-500';
-  if (['starting', 'creating', 'unhealthy'].includes(status)) return 'bg-amber-500';
-  return 'bg-red-500';
-}
-
-const PULSE_STATUSES: DeploymentStatus[] = ['healthy', 'starting', 'creating'];
+import { statusLabel, statusDotColor, PULSE_STATUSES } from './statusHelpers';
 
 export function DeploymentList() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -34,8 +18,8 @@ export function DeploymentList() {
     <div className="flex items-center gap-2 overflow-x-auto pb-1 min-w-0">
       {deployments.map((d) => {
         const isSelected = d.deploymentId === selectedId;
-        const dotColor = statusColor(d.status);
-        const pulse = PULSE_STATUSES.includes(d.status);
+        const dotColor = statusDotColor(d.status);
+        const pulse = PULSE_STATUSES.has(d.status);
 
         return (
           <button

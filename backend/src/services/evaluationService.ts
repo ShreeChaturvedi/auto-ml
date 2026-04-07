@@ -106,11 +106,17 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('# Feature importance');
   lines.push('fi = {}');
   lines.push('');
+  lines.push('# Resolve OHE-expanded feature names from the trained pipeline');
+  lines.push('try:');
+  lines.push('    ohe_feature_names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())');
+  lines.push('except Exception:');
+  lines.push('    ohe_feature_names = feature_columns');
+  lines.push('');
   lines.push('# Model-based importance');
   lines.push('fitted_model = pipeline.named_steps["model"]');
   lines.push('if hasattr(fitted_model, "feature_importances_"):');
   lines.push('    fi["model_based"] = {');
-  lines.push('        "features": feature_columns,');
+  lines.push('        "features": ohe_feature_names,');
   lines.push('        "importances": [float(x) for x in fitted_model.feature_importances_]');
   lines.push('    }');
   lines.push('elif hasattr(fitted_model, "coef_"):');
@@ -120,7 +126,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('    else:');
   lines.push('        coefs = np.abs(coefs)');
   lines.push('    fi["model_based"] = {');
-  lines.push('        "features": feature_columns,');
+  lines.push('        "features": ohe_feature_names,');
   lines.push('        "importances": [float(x) for x in coefs]');
   lines.push('    }');
   lines.push('');

@@ -6,7 +6,7 @@
  */
 
 import { type ComponentType } from 'react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 interface SubtabItemProps {
@@ -52,14 +52,16 @@ export function SubtabItem({
       <div className="shrink-0">
         <Icon className={cn('h-3.5 w-3.5 transition-colors duration-200', iconColor)} />
       </div>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className={cn('flex-1 truncate', isActive && 'text-foreground')}>{label}</span>
-        </TooltipTrigger>
-        <TooltipContent side="right" className="max-w-xs text-xs">
-          {label}
-        </TooltipContent>
-      </Tooltip>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={cn('flex-1 truncate', isActive && 'text-foreground')}>{label}</span>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-xs text-xs">
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       {actionSlot && (
         <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
           {actionSlot}

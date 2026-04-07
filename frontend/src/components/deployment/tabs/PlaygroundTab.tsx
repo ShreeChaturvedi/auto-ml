@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState, useCallback } from 'react';
+import { useEffect, useReducer, useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -58,7 +58,7 @@ export function PlaygroundTab({ deployment }: PlaygroundTabProps) {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState<PinnedResult[]>([]);
-  const [pinCounter, setPinCounter] = useState(0);
+  const pinCounterRef = useRef(0);
 
   const isHealthy = deployment.status === 'healthy';
 
@@ -136,9 +136,9 @@ export function PlaygroundTab({ deployment }: PlaygroundTabProps) {
   const handlePin = useCallback(() => {
     if (!result) return;
     const input = inputMode === 'json' ? JSON.parse(jsonText) : { ...state.features };
-    setPinCounter((c) => c + 1);
-    setPinned((prev) => [...prev, { id: pinCounter + 1, input, result }]);
-  }, [result, inputMode, jsonText, state.features, pinCounter]);
+    pinCounterRef.current += 1;
+    setPinned((prev) => [...prev, { id: pinCounterRef.current, input, result }]);
+  }, [result, inputMode, jsonText, state.features]);
 
   if (schemaError) {
     return (

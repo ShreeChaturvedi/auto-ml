@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useModelStore } from '@/stores/modelStore';
 import { useDeploymentStore } from '@/stores/deploymentStore';
-import { findChampionModelId } from '@/lib/model-utils';
+import { findChampionModelId } from '@/components/experiments/utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import type { ModelRecord } from '@/types/model';
@@ -93,35 +93,45 @@ function ModelCard({ model, colorClasses }: ModelCardProps) {
   const metricLabel = PRIMARY_METRIC_LABEL[model.taskType];
   const metricValue = formatMetric(model.metrics[metricKey]);
 
+  const [deployError, setDeployError] = useState<string | null>(null);
+
   async function handleDeploy() {
     if (!projectId) return;
-    await deploy(model.modelId, projectId, `${model.name} endpoint`);
+    setDeployError(null);
+    try {
+      await deploy(model.modelId, projectId, `${model.name} endpoint`);
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Deploy failed');
+    }
   }
 
   return (
-    <div className="group flex items-center gap-3 rounded-lg border border-border/50 bg-card px-3 py-2.5 hover:border-border transition-colors">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-foreground">{model.name}</p>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <TaskBadge taskType={model.taskType} />
-          <span className="text-[10px] text-muted-foreground">
-            {metricLabel}: <span className="font-medium text-foreground">{metricValue}</span>
-          </span>
+    <div className="group rounded-lg border border-border/50 bg-card px-3 py-2.5 hover:border-border transition-colors">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium text-foreground">{model.name}</p>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <TaskBadge taskType={model.taskType} />
+            <span className="text-[10px] text-muted-foreground">
+              {metricLabel}: <span className="font-medium text-foreground">{metricValue}</span>
+            </span>
+          </div>
         </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className={cn(
+            'h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity gap-1',
+            colorClasses?.text,
+          )}
+          disabled={isLoading}
+          onClick={() => { void handleDeploy(); }}
+        >
+          Deploy
+          <ArrowRight className="h-3 w-3" />
+        </Button>
       </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        className={cn(
-          'h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity gap-1',
-          colorClasses?.text,
-        )}
-        disabled={isLoading}
-        onClick={() => { void handleDeploy(); }}
-      >
-        Deploy
-        <ArrowRight className="h-3 w-3" />
-      </Button>
+      {deployError && <p className="mt-1 text-[11px] text-destructive">{deployError}</p>}
     </div>
   );
 }

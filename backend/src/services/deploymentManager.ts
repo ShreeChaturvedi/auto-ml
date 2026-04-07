@@ -51,13 +51,14 @@ const modelRepository = createModelRepository(env.modelMetadataPath);
 
 type DeploymentRepository = Awaited<ReturnType<typeof import('../repositories/deploymentRepository.js').createDeploymentRepository>>;
 
-let _deploymentRepo: DeploymentRepository | null = null;
+let _deploymentRepoPromise: Promise<DeploymentRepository> | null = null;
 async function getDeploymentRepo(): Promise<DeploymentRepository> {
-  if (!_deploymentRepo) {
-    const mod = await import('../repositories/deploymentRepository.js');
-    _deploymentRepo = mod.createDeploymentRepository();
+  if (!_deploymentRepoPromise) {
+    _deploymentRepoPromise = import('../repositories/deploymentRepository.js').then(
+      (mod) => mod.createDeploymentRepository(),
+    );
   }
-  return _deploymentRepo;
+  return _deploymentRepoPromise;
 }
 
 /* ------------------------------------------------------------------ */
@@ -107,8 +108,8 @@ let healthCheckTimer: NodeJS.Timeout | null = null;
 export function startHealthCheckLoop(): void {
   if (healthCheckTimer) return;
 
-  healthCheckTimer = setInterval(async () => {
-    for (const [id, entry] of deploymentCache) {
+  async function runHealthCheck() {
+    for (const [id, entry] of [...deploymentCache]) {
       if (entry.status === 'stopped' || entry.status === 'failed') continue;
 
       try {
@@ -140,12 +141,16 @@ export function startHealthCheckLoop(): void {
         }
       }
     }
-  }, HEALTH_CHECK_INTERVAL_MS);
+    if (healthCheckTimer) {
+      healthCheckTimer = setTimeout(runHealthCheck, HEALTH_CHECK_INTERVAL_MS);
+    }
+  }
+  healthCheckTimer = setTimeout(runHealthCheck, HEALTH_CHECK_INTERVAL_MS);
 }
 
 export function stopHealthCheckLoop(): void {
   if (healthCheckTimer) {
-    clearInterval(healthCheckTimer);
+    clearTimeout(healthCheckTimer);
     healthCheckTimer = null;
   }
 }

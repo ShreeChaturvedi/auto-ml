@@ -12,9 +12,15 @@ function evictOld(deploymentId: string) {
   const timestamps = windows.get(deploymentId);
   if (!timestamps) return;
   const cutoff = Date.now() - WINDOW_MS;
-  const idx = timestamps.findIndex((t) => t > cutoff);
-  if (idx > 0) timestamps.splice(0, idx);
-  else if (idx === -1) windows.delete(deploymentId);
+  // Single-pass compaction: overwrite in place
+  let write = 0;
+  for (let read = 0; read < timestamps.length; read++) {
+    if (timestamps[read] > cutoff) {
+      timestamps[write++] = timestamps[read];
+    }
+  }
+  if (write === 0) windows.delete(deploymentId);
+  else timestamps.length = write;
 }
 
 /** In-memory sliding-window rate limiter: 60 req/min per deployment. */
@@ -39,10 +45,8 @@ export function deploymentRateLimit(req: PredictRequest, res: Response, next: Ne
   }
 
   const now = Date.now();
-  const cutoff = now - WINDOW_MS;
-  const recentCount = timestamps.filter((t) => t > cutoff).length;
 
-  if (recentCount >= MAX_REQUESTS) {
+  if (timestamps.length >= MAX_REQUESTS) {
     res.status(429).json({ error: 'Rate limit exceeded. Max 60 requests per minute.' });
     return;
   }

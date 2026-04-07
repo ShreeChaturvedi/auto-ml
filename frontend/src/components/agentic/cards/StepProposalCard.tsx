@@ -18,6 +18,7 @@ const PHASE_ACCENT: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
+  pending: { label: 'Awaiting Approval', variant: 'secondary' },
   proposed: { label: 'Proposed', variant: 'secondary' },
   accepted: { label: 'Accepted', variant: 'default' },
   rejected: { label: 'Rejected', variant: 'destructive' },

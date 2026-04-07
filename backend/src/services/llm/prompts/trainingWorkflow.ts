@@ -122,20 +122,21 @@ function buildTrainingContinuationDirective(
     return 'ACTION REQUIRED: Training code ran successfully but no experiment is configured. Call configure_experiment first, then execute_training.';
   }
 
-  const configuredCount = toolResults.filter(
+  const hasConfigured = toolResults.some(
     (r) => r.tool === 'configure_experiment' && !r.error
-  ).length;
-  const hasConfigured = configuredCount > 0;
+  );
   // NOTE: No directive needed after proposal. propose_training_plan returns
   // status='awaiting_approval' which triggers the existing pause mechanism
   // in toolExecutor.ts. The turn ends deterministically — no LLM call needed.
   // The user sees the proposal via StepProposalCard and sends a follow-up.
 
-  if (hasConfigured && experimentId) {
-    // Don't force an immediate proposal — the LLM may want to configure
-    // more experiments first (e.g. user asked "propose 3 models"). Let it
-    // call configure_experiment again or propose_training_plan when ready.
-    return `Experiment ${experimentId} is configured (${configuredCount} total). You may call configure_experiment again for additional models, or call propose_training_plan with experimentId="${experimentId}" when ready to present the approach.`;
+  if (hasConfigured) {
+    // Return undefined so toolChoice stays at 'auto' (not 'any'). This lets
+    // the LLM follow the user's intent — if they asked for 3 models, the LLM
+    // can call configure_experiment multiple times before proposing. A
+    // directive here would force toolChoice='any' which biases the LLM toward
+    // the first tool mentioned and overrides the user's multi-model request.
+    return undefined;
   }
 
   // Fallback: no lifecycle tools have been called yet (LLM has been

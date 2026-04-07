@@ -61,7 +61,7 @@ function buildTrainingContinuationDirective(
   }
 
   if (!toolResults?.length) {
-    return 'ACTION REQUIRED: Start by calling configure_experiment to set up the experiment parameters (modelType, targetColumn, splitStrategy, hyperparameters). Do NOT write any code cells yet — configure first, then propose_training_plan, then write code.';
+    return 'ACTION REQUIRED: Start by calling configure_experiment for each model the user wants (up to 3 per turn). If the user asks for multiple models, call configure_experiment multiple times BEFORE calling propose_training_plan. Do NOT write any code cells yet.';
   }
 
   // Find the most relevant training lifecycle signals

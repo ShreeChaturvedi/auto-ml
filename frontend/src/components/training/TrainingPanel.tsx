@@ -2,7 +2,7 @@
  * TrainingPanel - Jupyter-style training interface with AI assistance
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import type { ReactNode } from 'react';
+import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,12 +25,155 @@ import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { createTrainingAdapter } from './TrainingAdapter';
+import { TrainingApprovalGate } from './TrainingApprovalGate';
 import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
+type TrainingProposalSelection = { title: string; selected: boolean };
+
+function isPendingTrainingProposal(message: ChatMessage): message is Extract<ChatMessage, { type: 'tool_call' }> {
+  if (message.type !== 'tool_call' || message.call.tool !== 'propose_training_plan') {
+    return false;
+  }
+  if (!message.result) {
+    return true;
+  }
+  const output = message.result.output;
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return false;
+  }
+  return (output as Record<string, unknown>).status === 'awaiting_approval';
+}
+
+interface TrainingConversationPaneProps {
+  messages: ChatMessage[];
+  error: string | null;
+  isGenerating: boolean;
+  activeTextMessageId?: string | null;
+  activeThinkingMessageId?: string | null;
+  hydratedMessageIds?: Set<string>;
+  onEditMessage?: (id: string) => void;
+  onRevertToMessage?: (id: string) => void;
+  editingMessageId?: string | null;
+  turnDiffs?: Map<string, unknown>;
+  onRetryWorkflow?: () => void;
+  renderLifecycleCard: (message: ChatMessage) => ReactNode | null;
+  syncLlmCells: (messages: ChatMessage[]) => void;
+  proposalSelections: Map<string, TrainingProposalSelection>;
+  setProposalSelections: Dispatch<SetStateAction<Map<string, TrainingProposalSelection>>>;
+  proposalsSubmitted: boolean;
+  setProposalsSubmitted: Dispatch<SetStateAction<boolean>>;
+  submitPromptRef: MutableRefObject<((prompt: string) => void) | undefined>;
+}
+
+function TrainingConversationPane({
+  messages,
+  error,
+  isGenerating,
+  activeTextMessageId,
+  activeThinkingMessageId,
+  hydratedMessageIds,
+  onEditMessage,
+  onRevertToMessage,
+  editingMessageId,
+  turnDiffs,
+  onRetryWorkflow,
+  renderLifecycleCard,
+  syncLlmCells,
+  proposalSelections,
+  setProposalSelections,
+  proposalsSubmitted,
+  setProposalsSubmitted,
+  submitPromptRef
+}: TrainingConversationPaneProps) {
+  useEffect(() => {
+    syncLlmCells(messages);
+  }, [messages, syncLlmCells]);
+
+  const pendingProposalIds = useMemo(
+    () => messages.filter(isPendingTrainingProposal).map((message) => message.call.id),
+    [messages]
+  );
+  const pendingProposalSignature = useMemo(
+    () => [...pendingProposalIds].sort().join('|'),
+    [pendingProposalIds]
+  );
+
+  useEffect(() => {
+    setProposalSelections((prev) => {
+      let changed = prev.size !== pendingProposalIds.length;
+      const next = new Map<string, TrainingProposalSelection>();
+      for (const proposalId of pendingProposalIds) {
+        const existing = prev.get(proposalId);
+        if (existing) {
+          next.set(proposalId, existing);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [pendingProposalIds, setProposalSelections]);
+
+  const lastProposalSignatureRef = useRef<string>('');
+  useEffect(() => {
+    if (lastProposalSignatureRef.current === pendingProposalSignature) {
+      return;
+    }
+    lastProposalSignatureRef.current = pendingProposalSignature;
+    setProposalsSubmitted(false);
+  }, [pendingProposalSignature, setProposalsSubmitted]);
+
+  const selectedProposalEntries = useMemo(
+    () => pendingProposalIds
+      .map((proposalId) => {
+        const proposal = proposalSelections.get(proposalId);
+        return proposal?.selected ? proposal : null;
+      })
+      .filter((proposal): proposal is TrainingProposalSelection => proposal !== null),
+    [pendingProposalIds, proposalSelections]
+  );
+
+  return (
+    <div className="p-6 space-y-4 pb-28">
+      {error && <div className="text-sm text-red-500">{error}</div>}
+
+      <ChatMessageRenderer
+        messages={messages}
+        renderLifecycleCard={renderLifecycleCard}
+        activeTextMessageId={activeTextMessageId}
+        activeThinkingMessageId={activeThinkingMessageId}
+        hydratedMessageIds={hydratedMessageIds}
+        onEditMessage={onEditMessage}
+        onRevertToMessage={onRevertToMessage}
+        editingMessageId={editingMessageId}
+        turnDiffs={turnDiffs}
+        isGenerating={isGenerating}
+        onRetryWorkflow={onRetryWorkflow}
+      />
+
+      {pendingProposalIds.length > 0 ? (
+        <TrainingApprovalGate
+          totalModels={pendingProposalIds.length}
+          selectedModels={selectedProposalEntries.length}
+          isGenerating={isGenerating && proposalsSubmitted}
+          isSubmitted={proposalsSubmitted}
+          onApply={() => {
+            if (selectedProposalEntries.length === 0) {
+              return;
+            }
+            const names = selectedProposalEntries.map((proposal) => proposal.title).join(', ');
+            setProposalsSubmitted(true);
+            submitPromptRef.current?.(`Approved. Proceed with training the selected models: ${names}.`);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -93,7 +236,7 @@ export function TrainingPanel() {
   const submitPromptRef = useRef<((prompt: string) => void) | undefined>(undefined);
 
   // Track proposal selections for multi-model approval flow
-  const [proposalSelections, setProposalSelections] = useState<Map<string, { title: string; selected: boolean }>>(new Map());
+  const [proposalSelections, setProposalSelections] = useState<Map<string, TrainingProposalSelection>>(new Map());
   const [proposalsSubmitted, setProposalsSubmitted] = useState(false);
 
   const { executeCode: executeWithStore } = useExecutionStore();
@@ -388,6 +531,11 @@ export function TrainingPanel() {
     getTrainingNotebookId
   ]);
 
+  useEffect(() => {
+    setProposalSelections(new Map());
+    setProposalsSubmitted(false);
+  }, [activeTrainingWorkbookId, trainingChatSessionVersion]);
+
   return (
     <>
       {isTrainingNotebookReady ? (
@@ -400,54 +548,27 @@ export function TrainingPanel() {
         domainAdapter={trainingAdapter}
         renderLeftPane={(renderProps) => {
           submitPromptRef.current = renderProps.submitPrompt;
-          // Sync LLM code cells whenever messages change
-          syncLlmCells(renderProps.messages);
-
           return (
-            <div className="p-6 space-y-4 pb-28">
-              {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
-
-              <ChatMessageRenderer
-                messages={renderProps.messages}
-                renderLifecycleCard={renderLifecycleCard}
-                activeTextMessageId={renderProps.activeTextMessageId}
-                activeThinkingMessageId={renderProps.activeThinkingMessageId}
-                hydratedMessageIds={renderProps.hydratedMessageIds}
-                onEditMessage={renderProps.onEditMessage}
-                onRevertToMessage={renderProps.onRevertToMessage}
-                editingMessageId={renderProps.editingMessageId}
-                turnDiffs={renderProps.turnDiffs}
-                isGenerating={renderProps.isGenerating}
-                onRetryWorkflow={renderProps.onRetryWorkflow}
-              />
-
-              {/* Apply Selected Models button — shown when proposals are pending */}
-              {proposalSelections.size > 0 && !proposalsSubmitted && !renderProps.isGenerating && (() => {
-                const selectedModels = [...proposalSelections.values()].filter(p => p.selected);
-                const hasSelections = selectedModels.length > 0;
-                return (
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      disabled={!hasSelections}
-                      onClick={() => {
-                        const names = selectedModels.map(p => p.title).join(', ');
-                        setProposalsSubmitted(true);
-                        submitPromptRef.current?.(`Approved. Proceed with training the selected models: ${names}.`);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Apply {hasSelections ? `${selectedModels.length} Selected` : 'Models'}
-                    </button>
-                    <span className="text-xs text-muted-foreground">
-                      {hasSelections
-                        ? `${selectedModels.length} of ${proposalSelections.size} models selected`
-                        : 'Select models above to proceed'}
-                    </span>
-                  </div>
-                );
-              })()}
-            </div>
+            <TrainingConversationPane
+              messages={renderProps.messages}
+              error={renderProps.error}
+              isGenerating={renderProps.isGenerating}
+              activeTextMessageId={renderProps.activeTextMessageId}
+              activeThinkingMessageId={renderProps.activeThinkingMessageId}
+              hydratedMessageIds={renderProps.hydratedMessageIds}
+              onEditMessage={renderProps.onEditMessage}
+              onRevertToMessage={renderProps.onRevertToMessage}
+              editingMessageId={renderProps.editingMessageId}
+              turnDiffs={renderProps.turnDiffs}
+              onRetryWorkflow={renderProps.onRetryWorkflow}
+              renderLifecycleCard={renderLifecycleCard}
+              syncLlmCells={syncLlmCells}
+              proposalSelections={proposalSelections}
+              setProposalSelections={setProposalSelections}
+              proposalsSubmitted={proposalsSubmitted}
+              setProposalsSubmitted={setProposalsSubmitted}
+              submitPromptRef={submitPromptRef}
+            />
           );
         }}
         toolbarLeft={

@@ -132,13 +132,12 @@ function detectPhase(toolName: string): string {
  * ```
  */
 interface UseLifecycleCardsOptions {
-  onProposalAccept?: (stepId: string) => void;
-  onProposalReject?: (stepId: string) => void;
   onProposalToggle?: (stepId: string, title: string, selected: boolean) => void;
 }
 
 export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message: ChatMessage) => ReactNode | null {
   const { projectId } = useParams<{ projectId: string }>();
+  const onProposalToggle = options?.onProposalToggle;
 
   return useCallback((message: ChatMessage): ReactNode | null => {
     if (message.type !== 'tool_call') return null;
@@ -179,11 +178,9 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
           rationale: call.rationale,
           phase: detectPhase(call.tool),
           status: proposalStatus,
-          onToggleSelect: options?.onProposalToggle
-            ? (selected: boolean) => options.onProposalToggle!(call.id, title, selected)
+          onToggleSelect: onProposalToggle
+            ? (selected: boolean) => onProposalToggle(call.id, title, selected)
             : undefined,
-          onAccept: options?.onProposalAccept ? () => options.onProposalAccept!(call.id) : undefined,
-          onReject: options?.onProposalReject ? () => options.onProposalReject!(call.id) : undefined,
         });
       }
 
@@ -303,5 +300,5 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
       default:
         return null;
     }
-  }, [projectId]);
+  }, [onProposalToggle, projectId]);
 }

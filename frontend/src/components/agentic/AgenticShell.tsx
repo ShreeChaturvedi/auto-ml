@@ -317,6 +317,9 @@ export function AgenticShell({
         preparedPrompt += `\n\n[Referenced files: ${fileList}]`;
       }
 
+      // Snapshot the user-visible text before beforeSubmit augments it
+      const displayContent = preparedPrompt;
+
       if (beforeSubmit) {
         const nextPrompt = await beforeSubmit(preparedPrompt);
         if (!nextPrompt?.trim()) {
@@ -344,7 +347,7 @@ export function AgenticShell({
       void runLoop(preparedPrompt, {
         model: assistantModel,
         reasoningEffort
-      }, undefined, undefined, userMsgId);
+      }, undefined, undefined, userMsgId, displayContent);
     };
 
     void startRun();

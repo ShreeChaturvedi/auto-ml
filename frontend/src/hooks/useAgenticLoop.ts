@@ -107,7 +107,9 @@ export function useAgenticLoop({
     requestOptions: BuildRequestOptions,
     toolResultsOverride?: import('@/types/llmUi').ToolResult[],
     toolCallsOverride?: ToolCall[],
-    userMessageId?: string
+    userMessageId?: string,
+    /** Text shown in the chat bubble. Defaults to `prompt` when omitted. */
+    displayContent?: string
   ) => {
     if (domainLockReason) {
       setError(domainLockReason);
@@ -132,7 +134,7 @@ export function useAgenticLoop({
         const userChatMessage: ChatMessage = {
           id: userMessageId ?? `user-${Date.now()}`,
           type: 'user',
-          content: prompt,
+          content: displayContent ?? prompt,
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, userChatMessage]);

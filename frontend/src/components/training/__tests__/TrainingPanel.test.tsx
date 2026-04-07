@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,7 +37,11 @@ const mockState = vi.hoisted(() => ({
   executeCodeMock: vi.fn(),
 
   // workbook registry
-  setWorkbooksMock: vi.fn()
+  setWorkbooksMock: vi.fn(),
+
+  // agentic shell
+  messages: [] as Array<unknown>,
+  submitPromptMock: vi.fn()
 }));
 
 // Mock AgenticShell so we can observe what notebookId it receives and skip
@@ -73,9 +77,10 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
       <div data-testid="toolbar-right">{toolbarRight}</div>
       {renderLeftPane
         ? renderLeftPane({
-            messages: [],
+            messages: mockState.messages,
             isGenerating: false,
             error: null,
+            submitPrompt: mockState.submitPromptMock,
             activeTextMessageId: null,
             activeThinkingMessageId: null,
             hydratedMessageIds: new Set<string>(),
@@ -171,9 +176,14 @@ vi.mock('@/hooks/useWorkflowPlaceholders', () => ({
   useWorkflowPlaceholders: () => []
 }));
 
-vi.mock('@/components/agentic/useLifecycleCards', () => ({
-  useLifecycleCards: () => () => null
-}));
+vi.mock('@/components/agentic/useLifecycleCards', async () => {
+  const actual = await vi.importActual<typeof import('@/components/agentic/useLifecycleCards')>(
+    '@/components/agentic/useLifecycleCards'
+  );
+  return {
+    useLifecycleCards: actual.useLifecycleCards
+  };
+});
 
 vi.mock('@/components/preprocessing/PreprocessingDialogs', () => ({
   RenameTabDialog: () => null
@@ -195,7 +205,17 @@ vi.mock('@/lib/features/codeGenerator', () => ({
 
 // Toolbar/model-card children don't matter for isolation assertions.
 vi.mock('../TrainingToolbar', () => ({
-  TrainingToolbarLeft: () => null,
+  TrainingToolbarLeft: ({ onReset }: { onReset: () => void }) => (
+    <button
+      type="button"
+      onClick={() => {
+        mockState.messages = [];
+        onReset();
+      }}
+    >
+      Reset workbook
+    </button>
+  ),
   TrainingToolbarRight: () => null
 }));
 vi.mock('../CodeCell', () => ({
@@ -205,7 +225,19 @@ vi.mock('../ModelRecommendationCard', () => ({
   ModelRecommendationCard: () => null
 }));
 vi.mock('@/components/agentic/ChatMessageRenderer', () => ({
-  ChatMessageRenderer: () => null
+  ChatMessageRenderer: ({
+    messages,
+    renderLifecycleCard
+  }: {
+    messages: Array<unknown>;
+    renderLifecycleCard?: (message: never) => unknown;
+  }) => (
+    <div>
+      {messages.map((message, index) => (
+        <div key={index}>{renderLifecycleCard?.(message as never)}</div>
+      ))}
+    </div>
+  )
 }));
 
 describe('TrainingPanel', () => {
@@ -231,6 +263,8 @@ describe('TrainingPanel', () => {
     mockState.disconnectNotebookMock.mockReset();
     mockState.executeCodeMock.mockReset();
     mockState.setWorkbooksMock.mockReset();
+    mockState.submitPromptMock.mockReset();
+    mockState.messages = [];
 
     mockState.listNotebooksMock.mockReset();
     mockState.listNotebooksMock.mockImplementation(async () => mockState.notebooksInApi);
@@ -338,5 +372,57 @@ describe('TrainingPanel', () => {
       tabId: 'draft-1',
       tabName: 'Draft Pipeline v1'
     });
+  });
+
+  it('replaces the stale apply strip with an approval card and clears it on reset', async () => {
+    mockState.messages = [
+      {
+        id: 'proposal-message-1',
+        type: 'tool_call',
+        call: {
+          id: 'proposal-call-1',
+          tool: 'propose_training_plan',
+          args: { modelName: 'Random Forest' }
+        },
+        result: {
+          id: 'proposal-call-1',
+          tool: 'propose_training_plan',
+          output: { status: 'awaiting_approval' }
+        }
+      },
+      {
+        id: 'proposal-message-2',
+        type: 'tool_call',
+        call: {
+          id: 'proposal-call-2',
+          tool: 'propose_training_plan',
+          args: { modelName: 'XGBoost' }
+        },
+        result: {
+          id: 'proposal-call-2',
+          tool: 'propose_training_plan',
+          output: { status: 'awaiting_approval' }
+        }
+      }
+    ];
+
+    renderPanel();
+
+    const applyButton = await screen.findByRole('button', { name: /Apply 2 Selected/i });
+    expect(screen.getByText(/2 of 2 models selected/i)).toBeInTheDocument();
+
+    fireEvent.click(applyButton);
+
+    expect(mockState.submitPromptMock).toHaveBeenCalledWith(
+      'Approved. Proceed with training the selected models: Random Forest, XGBoost.'
+    );
+    expect(await screen.findByRole('button', { name: /Applied/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Reset workbook/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Applied/i })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText(/2 of 2 models selected/i)).not.toBeInTheDocument();
   });
 });

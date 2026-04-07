@@ -32,6 +32,7 @@ import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
 import { ModelSubtabs } from './sidebar/ModelSubtabs';
+import { DeploymentSubtabs } from './sidebar/DeploymentSubtabs';
 
 const EXPANDABLE_PHASES = new Set<Phase>([
   'upload',
@@ -39,7 +40,8 @@ const EXPANDABLE_PHASES = new Set<Phase>([
   'preprocessing',
   'feature-engineering',
   'training',
-  'experiments'
+  'experiments',
+  'deployment'
 ]);
 
 const WORKBOOK_PHASES = new Set<Phase>(['preprocessing', 'feature-engineering', 'training']);
@@ -259,6 +261,7 @@ const PhaseItem = memo(function PhaseItem({
               />
             )}
             {hasBeenExpanded && phase === 'experiments' && <ModelSubtabs projectId={projectId} isActivePhase={isActive} />}
+            {hasBeenExpanded && phase === 'deployment' && <DeploymentSubtabs projectId={projectId} isActivePhase={isActive} />}
           </div>
         </div>
       )}

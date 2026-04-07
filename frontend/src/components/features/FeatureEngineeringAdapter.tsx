@@ -42,9 +42,9 @@ function buildFeatureTips(
     const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
 
     if (isClassification) {
-      tips.push({ id: 'tip-target-class', icon: Target, content: `Classification target: ${config.targetColumn} — class balance matters` });
+      tips.push({ id: 'tip-target-class', icon: Target, content: 'Classification target — class balance matters' });
     } else {
-      tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: `Regression target: ${config.targetColumn} — check for skewness` });
+      tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: 'Regression target — check for skewness' });
     }
   } else if (!config.targetColumn) {
     tips.push({ id: 'tip-no-target', icon: Target, content: 'Set a target column in Training for task-aware tips' });
@@ -58,7 +58,7 @@ function buildFeatureTips(
   }
 
   if (config.documentFiles.length > 0) {
-    tips.push({ id: 'tip-docs', icon: FileText, content: `${config.documentFiles.length} context documents available for domain guidance` });
+    tips.push({ id: 'tip-docs', icon: FileText, content: `${config.documentFiles.length} context documents available` });
   }
 
   if (messages.findLast((m) => m.type === 'error')) {

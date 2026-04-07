@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { FileSubtabs } from '../FileSubtabs';
 
 const mockState = vi.hoisted(() => ({
@@ -67,11 +68,13 @@ describe('FileSubtabs', () => {
 
   it('renders existing files without hydrating on mount', () => {
     render(
-      <MemoryRouter initialEntries={['/project/p1/upload']}>
-        <Routes>
-          <Route path="/project/:projectId/upload" element={<FileSubtabs projectId="p1" />} />
-        </Routes>
-      </MemoryRouter>
+      <TooltipProvider>
+        <MemoryRouter initialEntries={['/project/p1/upload']}>
+          <Routes>
+            <Route path="/project/:projectId/upload" element={<FileSubtabs projectId="p1" />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
     );
 
     expect(screen.getByText('employees.csv')).toBeInTheDocument();

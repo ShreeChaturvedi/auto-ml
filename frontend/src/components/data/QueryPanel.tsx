@@ -187,7 +187,7 @@ export function QueryPanel({
     const onClick = isSql
       ? handleExecute
       : () => nlWorkflowRef.current?.triggerGenerate();
-    const tooltipText = isSql ? `Execute query  ${modKey}↵` : `Generate SQL  ${modKey}↵`;
+    const tooltipText = 'Process query';
 
     return (
       <Tooltip>

@@ -218,7 +218,7 @@ describe('runEvaluation', () => {
   it('sets evaluationStatus to computing then ready on success', async () => {
     const model = makeModelRecord();
     const container = makeContainer();
-    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
 
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
@@ -254,7 +254,7 @@ describe('runEvaluation', () => {
   it('sets evaluationStatus to failed on Docker error', async () => {
     const model = makeModelRecord();
     const container = makeContainer();
-    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
 
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
@@ -287,7 +287,7 @@ describe('runEvaluation', () => {
   it('copies artifacts to modelStorageDir on success', async () => {
     const model = makeModelRecord();
     const container = makeContainer();
-    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
 
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
@@ -325,7 +325,7 @@ describe('runEvaluation', () => {
   it('reuses the stored model test size when building the evaluation script', async () => {
     const model = makeModelRecord({ metadata: { testSize: 0.3 } });
     const container = makeContainer();
-    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
 
     mockGetById.mockResolvedValue(model);
     mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));

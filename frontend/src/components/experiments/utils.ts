@@ -37,6 +37,24 @@ export const PRIMARY_METRIC_LABEL: Record<ModelTaskType, string> = {
   clustering: 'Silhouette',
 };
 
+const METRIC_DISPLAY_LABEL: Readonly<Record<string, string>> = {
+  accuracy: 'Accuracy',
+  precision: 'Precision',
+  recall: 'Recall',
+  f1: 'F1',
+  rmse: 'RMSE',
+  mse: 'MSE',
+  mae: 'MAE',
+  r2: 'R\u00B2',
+  silhouette: 'Silhouette',
+};
+
+/** Short display name for a metric key (tooltips, charts). Unknown keys become title case. */
+export function formatMetricDisplayName(key: string): string {
+  const k = key.toLowerCase();
+  return METRIC_DISPLAY_LABEL[k] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Detect whether models span more than one task type. */
 export function detectTaskTypes(models: ModelRecord[]): ModelTaskType[] {
   return Array.from(new Set(models.map((m) => m.taskType)));

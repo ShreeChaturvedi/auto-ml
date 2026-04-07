@@ -31,6 +31,9 @@ import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
 import type { DomainAdapter, LeftPaneRenderProps } from '@/types/agentic';
 import type { SavepointDiff } from '@/types/savepoint';
 import { useModelSelection } from '@/hooks/useModelSelection';
+import { LLM_CHAT_COMPOSER_MIN_WIDTH_PX } from '@/components/llm/LlmChatComposer';
+
+const AGENTIC_LEFT_PANEL_MIN_WIDTH_PX = LLM_CHAT_COMPOSER_MIN_WIDTH_PX + 40;
 
 interface AgenticShellProps {
   projectId: string;
@@ -380,12 +383,13 @@ export function AgenticShell({
     : LeftPaneComponent
       ? <LeftPaneComponent {...leftPaneRenderProps} />
       : null;
-
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
         {/* ── Left panel: domain ribbon + content + chat ── */}
-        <ResizablePanel defaultSize={48} minSize={30}>
+        {/* number = pixels in react-resizable-panels v4; string "X%" = percentage */}
+        <ResizablePanel defaultSize="48%" minSize={AGENTIC_LEFT_PANEL_MIN_WIDTH_PX}>
           <div className="flex h-full min-h-0 flex-col">
             {/* Left ribbon */}
             <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
@@ -449,7 +453,7 @@ export function AgenticShell({
         <ResizableHandle withHandle />
 
         {/* ── Right panel: notebook ribbon + cells ── */}
-        <ResizablePanel defaultSize={52} minSize={30}>
+        <ResizablePanel defaultSize="52%" minSize={300}>
           <div className="flex h-full flex-col">
             <NotebookToolbar
               projectId={projectId}
@@ -459,7 +463,8 @@ export function AgenticShell({
             <NotebookEditor ref={editorRef} projectId={projectId} notebookId={requestedNotebookId ?? activeNotebookId ?? undefined} className="min-h-0 flex-1" />
           </div>
         </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      </div>
     </div>
   );
 }

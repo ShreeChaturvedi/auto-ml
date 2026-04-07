@@ -245,7 +245,7 @@ describe('runErrorAnalysis', () => {
     mockGetById.mockResolvedValue(model);
     mockDatasetGetById.mockResolvedValue({
       datasetId: 'test-dataset',
-      columns: [{ name: 'feature1' }, { name: 'feature2' }, { name: 'target' }],
+      columns: ['feature1', 'feature2', 'target'],
     });
     mockResolveAndHealTargetColumn.mockResolvedValue('target');
     mockOrchestrateContainerExecution.mockResolvedValue({

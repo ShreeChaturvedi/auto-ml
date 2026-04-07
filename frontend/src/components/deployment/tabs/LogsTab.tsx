@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -84,19 +84,8 @@ export function LogsTab({ deployment }: Props) {
   const handleFeedback = async (log: PredictionLog, value: 'positive' | 'negative') => {
     const current = feedbackState[log.id] ?? log.feedback;
     if (current === value) return;
-    const previous = current;
     setFeedbackState(prev => ({ ...prev, [log.id]: value }));
-    try {
-      await submitFeedback(deployment.deploymentId, log.id, value);
-    } catch {
-      // Roll back optimistic update on failure
-      setFeedbackState(prev => {
-        const next = { ...prev };
-        if (previous) next[log.id] = previous;
-        else delete next[log.id];
-        return next;
-      });
-    }
+    await submitFeedback(deployment.deploymentId, log.id, value);
   };
 
   const handleReplay = (log: PredictionLog) => {
@@ -175,8 +164,9 @@ export function LogsTab({ deployment }: Props) {
                 const isExpanded = expandedId === log.id;
                 const fb = feedbackState[log.id] ?? log.feedback;
                 return (
-                  <React.Fragment key={log.id}>
+                  <>
                     <TableRow
+                      key={log.id}
                       className="cursor-pointer hover:bg-muted/30 transition-colors"
                       onClick={() => setExpandedId(isExpanded ? null : log.id)}
                     >
@@ -271,7 +261,7 @@ export function LogsTab({ deployment }: Props) {
                         </TableCell>
                       </TableRow>
                     )}
-                  </React.Fragment>
+                  </>
                 );
               })}
             </TableBody>

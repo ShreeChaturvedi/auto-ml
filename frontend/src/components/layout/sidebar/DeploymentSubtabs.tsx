@@ -1,41 +1,45 @@
-import { useEffect, useMemo } from 'react';
+/**
+ * DeploymentSubtabs — renders deployed models under the Deployment phase.
+ * Reuses SubtabItem for uniform sidebar spacing.
+ */
+
+import { type ComponentType, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trash2, Square, Play } from 'lucide-react';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useDeploymentStore } from '@/stores/deploymentStore';
 import type { DeploymentStatus } from '@/types/deployment';
 import { cn } from '@/lib/utils';
-import { statusDotColor, PULSE_STATUSES } from '@/components/deployment/statusHelpers';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
-/** Stable status-dot component — rendered via STATUS_ICON_MAP to avoid creating a new component type per render. */
-function StatusDot({ dotColor, pulse, className }: { dotColor: string; pulse: boolean; className?: string }) {
-  return (
-    <span className={cn('relative inline-flex h-2 w-2', className)} aria-hidden="true">
-      {pulse && (
-        <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', dotColor)} />
-      )}
-      <span className={cn('relative inline-flex h-2 w-2 rounded-full', dotColor)} />
-    </span>
-  );
+function statusDotColor(status: DeploymentStatus): string {
+  if (status === 'healthy') return 'bg-green-500';
+  if (['starting', 'creating'].includes(status)) return 'bg-amber-500';
+  if (status === 'unhealthy') return 'bg-amber-500';
+  if (status === 'stopped') return 'bg-muted-foreground';
+  return 'bg-red-500';
 }
 
-/** Pre-built icon component per status — avoids creating a new component type on every render. */
-const STATUS_ICON_MAP: Record<DeploymentStatus, React.ComponentType<{ className?: string }>> = Object.fromEntries(
-  (['creating', 'starting', 'healthy', 'unhealthy', 'stopping', 'stopped', 'failed'] as DeploymentStatus[]).map(
-    (s) => {
-      const dotColor = statusDotColor(s);
-      const pulse = PULSE_STATUSES.has(s);
-      const Icon = ({ className }: { className?: string }) => (
-        <StatusDot dotColor={dotColor} pulse={pulse} className={className} />
-      );
-      Icon.displayName = `StatusDot_${s}`;
-      return [s, Icon] as const;
-    }
-  )
-) as Record<DeploymentStatus, React.ComponentType<{ className?: string }>>;
+const PULSE_STATUSES = new Set<DeploymentStatus>(['healthy', 'starting', 'creating']);
+
+/** Inline status-dot icon component for SubtabItem */
+function makeStatusIcon(status: DeploymentStatus): ComponentType<{ className?: string }> {
+  const dotColor = statusDotColor(status);
+  const pulse = PULSE_STATUSES.has(status);
+
+  return function StatusDot({ className }: { className?: string }) {
+    return (
+      <span className={cn('relative inline-flex h-2 w-2', className)} aria-hidden="true">
+        {pulse && (
+          <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', dotColor)} />
+        )}
+        <span className={cn('relative inline-flex h-2 w-2 rounded-full', dotColor)} />
+      </span>
+    );
+  };
+}
 
 interface DeploymentSubtabsProps {
   projectId: string;
@@ -79,7 +83,7 @@ export function DeploymentSubtabs({ projectId, isActivePhase }: DeploymentSubtab
           return (
             <SubtabItem
               key={dep.deploymentId}
-              icon={STATUS_ICON_MAP[dep.status]}
+              icon={makeStatusIcon(dep.status)}
               label={dep.name}
               isActive={isOnDeployment && dep.deploymentId === selectedDeploymentId}
               onClick={() => {

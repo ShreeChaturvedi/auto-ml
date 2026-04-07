@@ -1,4 +1,4 @@
-import { randomUUID, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomUUID, createHash, randomBytes } from 'node:crypto';
 
 import { getDbPool } from '../db.js';
 import { appLogger } from '../logging/logger.js';
@@ -41,7 +41,7 @@ export interface DeploymentRepository {
   createApiKey(deploymentId: string, name: string): Promise<{ key: DeploymentApiKey; rawKey: string }>;
   getApiKeyByPrefix(prefix: string): Promise<DeploymentApiKey | undefined>;
   listApiKeys(deploymentId: string): Promise<DeploymentApiKey[]>;
-  revokeApiKey(keyId: string, deploymentId?: string): Promise<boolean>;
+  revokeApiKey(keyId: string): Promise<boolean>;
   updateApiKeyLastUsed(keyId: string): Promise<void>;
 
   // Feedback
@@ -192,9 +192,9 @@ class PgDeploymentRepository implements DeploymentRepository {
       setClauses.push(`endpoint_url = $${idx++}`);
       params.push(fields.endpointUrl);
     }
-    if ('errorMessage' in fields) {
+    if (fields.errorMessage !== undefined) {
       setClauses.push(`error_message = $${idx++}`);
-      params.push(fields.errorMessage ?? null);
+      params.push(fields.errorMessage);
     }
     if (fields.stoppedAt !== undefined) {
       setClauses.push(`stopped_at = $${idx++}`);
@@ -380,16 +380,8 @@ class PgDeploymentRepository implements DeploymentRepository {
     return result.rows.map(mapRowToApiKey);
   }
 
-  async revokeApiKey(keyId: string, deploymentId?: string): Promise<boolean> {
+  async revokeApiKey(keyId: string): Promise<boolean> {
     const pool = getDbPool();
-    if (deploymentId) {
-      // Scoped revoke — ensures the key belongs to this deployment (avoids N+1 listApiKeys check)
-      const result = await pool.query(
-        'UPDATE deployment_api_keys SET revoked_at = NOW() WHERE key_id = $1 AND deployment_id = $2 AND revoked_at IS NULL RETURNING key_id',
-        [keyId, deploymentId],
-      );
-      return (result.rowCount ?? 0) > 0;
-    }
     const result = await pool.query(
       'UPDATE deployment_api_keys SET revoked_at = NOW() WHERE key_id = $1 AND revoked_at IS NULL RETURNING key_id',
       [keyId],
@@ -423,9 +415,8 @@ export async function verifyApiKey(rawKey: string, repo: DeploymentRepository): 
   const keyRecord = await repo.getApiKeyByPrefix(prefix);
   if (!keyRecord || keyRecord.revokedAt) return null;
 
-  const hashBuf = createHash('sha256').update(keyRecord.keySalt + rawKey).digest();
-  const storedBuf = Buffer.from(keyRecord.keyHash, 'hex');
-  if (hashBuf.length !== storedBuf.length || !timingSafeEqual(hashBuf, storedBuf)) return null;
+  const hash = createHash('sha256').update(keyRecord.keySalt + rawKey).digest('hex');
+  if (hash !== keyRecord.keyHash) return null;
 
   // Update last_used_at (fire-and-forget)
   repo.updateApiKeyLastUsed(keyRecord.keyId).catch(() => {});

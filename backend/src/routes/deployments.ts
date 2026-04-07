@@ -191,10 +191,9 @@ export function createDeploymentsRouter(): Router {
   }));
 
   // DELETE /:id/api-keys/:keyId — Revoke API key
-  // Scoped revoke: single query verifies ownership + revokes (replaces N+1 listApiKeys check)
   router.delete('/:id/api-keys/:keyId', requireDeploymentOwnership, asyncHandler(async (req: DeploymentAuthRequest, res: Response) => {
-    const ok = await deploymentRepo.revokeApiKey(req.params.keyId, req.deployment!.deploymentId);
-    if (!ok) { res.status(404).json({ error: 'API key not found or already revoked' }); return; }
+    const ok = await deploymentRepo.revokeApiKey(req.params.keyId);
+    if (!ok) { res.status(404).json({ error: 'API key not found' }); return; }
     res.status(204).end();
   }));
 

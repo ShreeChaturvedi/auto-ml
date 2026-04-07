@@ -22,7 +22,6 @@ import type { DeploymentRecord, DeploymentStatus } from '@/types/deployment';
 import { useDeploymentStore } from '@/stores/deploymentStore';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
-import { statusLabel, statusDotColor, statusBadgeVariant, PULSE_STATUSES } from './statusHelpers';
 import { PlaygroundTab } from './tabs/PlaygroundTab';
 import { ApiTab } from './tabs/ApiTab';
 import { LogsTab } from './tabs/LogsTab';
@@ -39,9 +38,18 @@ const TAB_LABELS: Record<TabId, string> = {
   monitoring: 'Monitoring',
 };
 
+// ---------------------------------------------------------------------------
+// Status helpers
+// ---------------------------------------------------------------------------
+
 function StatusDot({ status }: { status: DeploymentStatus }) {
-  const color = statusDotColor(status);
-  const pulse = PULSE_STATUSES.has(status);
+  const color =
+    status === 'healthy'
+      ? 'bg-green-500'
+      : ['starting', 'creating', 'unhealthy'].includes(status)
+        ? 'bg-amber-500'
+        : 'bg-red-500';
+  const pulse = status === 'healthy' || status === 'starting';
 
   return (
     <span className="relative inline-flex h-2.5 w-2.5">
@@ -54,6 +62,21 @@ function StatusDot({ status }: { status: DeploymentStatus }) {
     </span>
   );
 }
+
+function statusLabel(status: DeploymentStatus): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function statusVariant(status: DeploymentStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (status === 'healthy') return 'default';
+  if (['starting', 'creating'].includes(status)) return 'secondary';
+  if (['failed', 'stopped'].includes(status)) return 'destructive';
+  return 'outline';
+}
+
+// ---------------------------------------------------------------------------
+// DeploymentDetail
+// ---------------------------------------------------------------------------
 
 export function DeploymentDetail({ deployment }: { deployment: DeploymentRecord }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -94,7 +117,7 @@ export function DeploymentDetail({ deployment }: { deployment: DeploymentRecord 
       <div className="flex items-center gap-3 border-b px-5 py-3">
         <StatusDot status={deployment.status} />
         <h2 className={cn('text-base font-semibold truncate', colorClasses?.text)}>{deployment.name}</h2>
-        <Badge variant={statusBadgeVariant(deployment.status)} className="ml-1 text-xs capitalize">
+        <Badge variant={statusVariant(deployment.status)} className="ml-1 text-xs capitalize">
           {statusLabel(deployment.status)}
         </Badge>
 

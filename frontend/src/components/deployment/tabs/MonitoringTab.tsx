@@ -61,20 +61,15 @@ export function MonitoringTab({ deployment }: Props) {
   const [stats, setStats] = useState<DeploymentStatsHourly[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [statsError, setStatsError] = useState<string | null>(null);
-
   const [drift, setDrift] = useState<DriftReport | null>(null);
   const [driftLoading, setDriftLoading] = useState(false);
 
   /* ---- fetch stats ---- */
   const fetchStats = useCallback(async () => {
     setLoading(true);
-    setStatsError(null);
     try {
       const res = await getDeploymentStats(deployment.deploymentId, timeRange);
       setStats(res.stats);
-    } catch (err) {
-      setStatsError(err instanceof Error ? err.message : 'Failed to load monitoring data');
     } finally {
       setLoading(false);
     }
@@ -134,20 +129,6 @@ export function MonitoringTab({ deployment }: Props) {
       setDriftLoading(false);
     }
   };
-
-  /* ---- error state ---- */
-  if (!loading && statsError) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
-        <AlertTriangle className="h-8 w-8 text-destructive/60" />
-        <p className="text-sm font-medium text-foreground">Failed to load monitoring data</p>
-        <p className="text-xs text-muted-foreground">{statsError}</p>
-        <Button variant="outline" size="sm" onClick={() => void fetchStats()} className="mt-2">
-          Retry
-        </Button>
-      </div>
-    );
-  }
 
   /* ---- empty state ---- */
   if (!loading && stats.length === 0) {

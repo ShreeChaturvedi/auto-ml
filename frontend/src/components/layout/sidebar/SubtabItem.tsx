@@ -1,5 +1,12 @@
+/**
+ * SubtabItem — reusable sidebar subtab with icon, label, underline hover, and theme color active state.
+ *
+ * Uses a <div role="button"> so that interactive content (e.g. dropdown menus)
+ * can be placed in the actionSlot without nesting <button> violations.
+ */
+
 import { type ComponentType } from 'react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 interface SubtabItemProps {
@@ -45,16 +52,14 @@ export function SubtabItem({
       <div className="shrink-0">
         <Icon className={cn('h-3.5 w-3.5 transition-colors duration-200', iconColor)} />
       </div>
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className={cn('flex-1 truncate', isActive && 'text-foreground')}>{label}</span>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="max-w-xs text-xs">
-            {label}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={cn('flex-1 truncate', isActive && 'text-foreground')}>{label}</span>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-xs text-xs">
+          {label}
+        </TooltipContent>
+      </Tooltip>
       {actionSlot && (
         <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
           {actionSlot}

@@ -122,7 +122,12 @@ function detectPhase(toolName: string): string {
  * <ChatMessageRenderer messages={messages} renderLifecycleCard={renderLifecycleCard} />
  * ```
  */
-export function useLifecycleCards(): (message: ChatMessage) => ReactNode | null {
+interface UseLifecycleCardsOptions {
+  onProposalAccept?: (stepId: string) => void;
+  onProposalReject?: (stepId: string) => void;
+}
+
+export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message: ChatMessage) => ReactNode | null {
   const { projectId } = useParams<{ projectId: string }>();
 
   return useCallback((message: ChatMessage): ReactNode | null => {
@@ -146,20 +151,28 @@ export function useLifecycleCards(): (message: ChatMessage) => ReactNode | null 
     }
 
     switch (cardType) {
-      case 'proposal':
+      case 'proposal': {
+        const outputStatus = (result?.output && typeof result.output === 'object' && !Array.isArray(result.output))
+          ? (result.output as Record<string, unknown>).status
+          : undefined;
+        const proposalStatus: 'pending' | 'proposed' | 'accepted' = !result
+          ? 'pending'
+          : outputStatus === 'awaiting_approval'
+            ? 'pending'
+            : outputStatus === 'proposed'
+              ? 'proposed'
+              : 'accepted';
         return createElement(StepProposalCard, {
           key: message.id,
           stepId: call.id,
           title,
           rationale: call.rationale,
           phase: detectPhase(call.tool),
-          status: !result
-            ? 'pending'
-            : (result.output && typeof result.output === 'object' && !Array.isArray(result.output)
-                && (result.output as Record<string, unknown>).status === 'proposed')
-              ? 'proposed'
-              : 'accepted',
+          status: proposalStatus,
+          onAccept: options?.onProposalAccept ? () => options.onProposalAccept!(call.id) : undefined,
+          onReject: options?.onProposalReject ? () => options.onProposalReject!(call.id) : undefined,
         });
+      }
 
       case 'code': {
         // write_cell passes code in args.content; materialize_step_code

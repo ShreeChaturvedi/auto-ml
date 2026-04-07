@@ -203,7 +203,8 @@ describe('AgenticShell smoke test', () => {
         }),
         undefined,
         undefined,
-        expect.stringMatching(/^user-/)
+        expect.stringMatching(/^user-/),
+        'Generate notebook steps'
       );
     });
   });

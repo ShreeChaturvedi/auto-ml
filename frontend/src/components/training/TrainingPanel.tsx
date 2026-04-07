@@ -88,8 +88,9 @@ export function TrainingPanel() {
   const cellsRef = useRef<Cell[]>(cells);
   const [trainingDatasetId, setTrainingDatasetId] = useState<string | null>(null);
   const [trainingTargetColumn, setTrainingTargetColumn] = useState<string | undefined>();
-  
+
   const autoRunIdsRef = useRef(new Set<string>());
+  const submitPromptRef = useRef<((prompt: string) => void) | undefined>(undefined);
 
   const { executeCode: executeWithStore } = useExecutionStore();
 
@@ -271,7 +272,10 @@ export function TrainingPanel() {
     }
   };
 
-  const baseRenderLifecycleCard = useLifecycleCards();
+  const baseRenderLifecycleCard = useLifecycleCards({
+    onProposalAccept: () => submitPromptRef.current?.('Approved. Proceed with training.'),
+    onProposalReject: () => submitPromptRef.current?.('Reject this plan. Please propose a different approach.'),
+  });
 
   /** Extends lifecycle cards with training-specific ui message rendering */
   const renderLifecycleCard = useCallback(
@@ -374,6 +378,7 @@ export function TrainingPanel() {
         notebookId={resolvedTrainingNotebookId ?? undefined}
         domainAdapter={trainingAdapter}
         renderLeftPane={(renderProps) => {
+          submitPromptRef.current = renderProps.submitPrompt;
           // Sync LLM code cells whenever messages change
           syncLlmCells(renderProps.messages);
 

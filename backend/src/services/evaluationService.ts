@@ -9,12 +9,12 @@ import {
   copyArtifactsToPermanentStorage,
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
+import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import { resolveModelTestSize } from './modelTestSize.js';
 import {
   buildDatasetLoadLines,
   buildOutputDirSetup,
-  buildPreprocessingLines,
   buildResultSaving,
   buildStandardImports,
   buildTrainTestSplitLines,
@@ -73,19 +73,20 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   // ── Output dir ──
   lines.push(...buildOutputDirSetup(outputDir));
 
-  // ── Load model ──
-  lines.push(`model = joblib.load(${JSON.stringify(modelPath)})`);
+  // ── Load pipeline ──
+  lines.push(`pipeline = joblib.load(${JSON.stringify(modelPath)})`);
   lines.push('');
 
   // ── Load dataset ──
   lines.push(...buildDatasetLoadLines(datasetPath));
   lines.push('');
 
-  // ── Preprocessing (same as training) ──
-  lines.push(...buildPreprocessingLines({
-    targetColumn,
-    includeFeatureColumns: true,
-  }));
+  // ── Extract raw features (Pipeline handles preprocessing internally) ──
+  lines.push(`target_col = ${JSON.stringify(targetColumn)}`);
+  lines.push('df = df.dropna(subset=[target_col])');
+  lines.push('y = df[target_col]');
+  lines.push('X = df.drop(columns=[target_col])');
+  lines.push('feature_columns = list(X.columns)');
   lines.push('');
 
   // ── Train/test split ──
@@ -93,7 +94,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('');
 
   // ── Predictions ──
-  lines.push('y_pred = model.predict(X_test)');
+  lines.push('y_pred = pipeline.predict(X_test)');
   lines.push('');
 
   // ── Result dict ──
@@ -106,13 +107,14 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('fi = {}');
   lines.push('');
   lines.push('# Model-based importance');
-  lines.push('if hasattr(model, "feature_importances_"):');
+  lines.push('fitted_model = pipeline.named_steps["model"]');
+  lines.push('if hasattr(fitted_model, "feature_importances_"):');
   lines.push('    fi["model_based"] = {');
   lines.push('        "features": feature_columns,');
-  lines.push('        "importances": [float(x) for x in model.feature_importances_]');
+  lines.push('        "importances": [float(x) for x in fitted_model.feature_importances_]');
   lines.push('    }');
-  lines.push('elif hasattr(model, "coef_"):');
-  lines.push('    coefs = model.coef_');
+  lines.push('elif hasattr(fitted_model, "coef_"):');
+  lines.push('    coefs = fitted_model.coef_');
   lines.push('    if coefs.ndim > 1:');
   lines.push('        coefs = np.mean(np.abs(coefs), axis=0)');
   lines.push('    else:');
@@ -123,7 +125,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('    }');
   lines.push('');
   lines.push('# Permutation importance');
-  lines.push('perm_result = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42, n_jobs=-1)');
+  lines.push('perm_result = permutation_importance(pipeline, X_test, y_test, n_repeats=10, random_state=42, n_jobs=-1)');
   lines.push('fi["permutation"] = {');
   lines.push('    "features": feature_columns,');
   lines.push('    "importances_mean": [float(x) for x in perm_result.importances_mean],');
@@ -138,7 +140,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('X_lc = X.iloc[:max_samples]');
   lines.push('y_lc = y.iloc[:max_samples]');
   lines.push('train_sizes_abs, train_scores, test_scores = learning_curve(');
-  lines.push('    model, X_lc, y_lc, train_sizes=np.linspace(0.1, 1.0, 8), cv=5, n_jobs=-1');
+  lines.push('    pipeline, X_lc, y_lc, train_sizes=np.linspace(0.1, 1.0, 8), cv=5, n_jobs=-1');
   lines.push(')');
   lines.push('result["learning_curve"] = {');
   lines.push('    "train_sizes": [int(x) for x in train_sizes_abs],');
@@ -156,7 +158,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   } else {
     lines.push('scoring = "r2"');
   }
-  lines.push('cv_scores = cross_val_score(model, X, y, cv=5, scoring=scoring, n_jobs=-1)');
+  lines.push('cv_scores = cross_val_score(pipeline, X, y, cv=5, scoring=scoring, n_jobs=-1)');
   lines.push('result["cross_validation"] = {');
   lines.push('    "scores": [float(x) for x in cv_scores],');
   lines.push('    "mean": float(cv_scores.mean()),');
@@ -201,23 +203,23 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('');
 
     lines.push('# Probability-based curves');
-    lines.push('has_proba = hasattr(model, "predict_proba")');
+    lines.push('has_proba = hasattr(pipeline, "predict_proba")');
     lines.push('try:');
     lines.push('  if has_proba:');
-    lines.push('    y_proba = model.predict_proba(X_test)');
-    lines.push('    classes = [str(c) for c in model.classes_]');
+    lines.push('    y_proba = pipeline.predict_proba(X_test)');
+    lines.push('    classes = [str(c) for c in pipeline.named_steps["model"].classes_]');
     lines.push('    n_classes = len(classes)');
     lines.push('');
     lines.push('    # Binarize for multiclass curves');
     lines.push('    y_test_bin = None');
     lines.push('    if n_classes > 2:');
     lines.push('        from sklearn.preprocessing import label_binarize');
-    lines.push('        y_test_bin = label_binarize(y_test, classes=model.classes_)');
+    lines.push('        y_test_bin = label_binarize(y_test, classes=pipeline.named_steps["model"].classes_)');
     lines.push('');
     lines.push('    # ROC curves');
     lines.push('    roc_curves = {}');
     lines.push('    if n_classes == 2:');
-    lines.push('        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1], pos_label=model.classes_[1])');
+    lines.push('        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1], pos_label=pipeline.named_steps["model"].classes_[1])');
     lines.push('        roc_auc = float(auc(fpr, tpr))');
     lines.push('        roc_curves[classes[1]] = {"fpr": fpr.tolist(), "tpr": tpr.tolist(), "auc": roc_auc}');
     lines.push('    else:');
@@ -230,8 +232,8 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    # Precision-recall curves');
     lines.push('    pr_curves = {}');
     lines.push('    if n_classes == 2:');
-    lines.push('        prec, rec, _ = precision_recall_curve(y_test, y_proba[:, 1], pos_label=model.classes_[1])');
-    lines.push('        ap = float(average_precision_score(y_test == model.classes_[1], y_proba[:, 1]))');
+    lines.push('        prec, rec, _ = precision_recall_curve(y_test, y_proba[:, 1], pos_label=pipeline.named_steps["model"].classes_[1])');
+    lines.push('        ap = float(average_precision_score(y_test == pipeline.named_steps["model"].classes_[1], y_proba[:, 1]))');
     lines.push('        pr_curves[classes[1]] = {"precision": prec.tolist(), "recall": rec.tolist(), "ap": ap}');
     lines.push('    else:');
     lines.push('        for i, cls in enumerate(classes):');
@@ -243,7 +245,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    # Calibration curve (binary only)');
     lines.push('    if n_classes == 2:');
     lines.push('        from sklearn.calibration import calibration_curve as cal_curve');
-    lines.push('        prob_true, prob_pred = cal_curve(y_test == model.classes_[1], y_proba[:, 1], n_bins=10)');
+    lines.push('        prob_true, prob_pred = cal_curve(y_test == pipeline.named_steps["model"].classes_[1], y_proba[:, 1], n_bins=10)');
     lines.push('        result["calibration_curve"] = {');
     lines.push('            "prob_true": prob_true.tolist(),');
     lines.push('            "prob_pred": prob_pred.tolist(),');
@@ -307,18 +309,22 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('# SHAP computation (best-effort, failure does not block evaluation)');
   lines.push('try:');
   lines.push('    import shap');
+  lines.push('    fitted_model = pipeline.named_steps["model"]');
   lines.push('    X_shap = X_test.iloc[:1000] if len(X_test) > 1000 else X_test');
+  lines.push('    X_shap_transformed = pipeline.named_steps["preprocessor"].transform(X_shap)');
+  lines.push('    shap_feature_names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())');
   lines.push('    shap_values = None');
   lines.push('    explainer = None');
   lines.push('');
   lines.push('    # Tree-based models');
-  lines.push('    if hasattr(model, "estimators_") or hasattr(model, "get_booster"):');
-  lines.push('        explainer = shap.TreeExplainer(model)');
-  lines.push('        shap_values = explainer.shap_values(X_shap)');
+  lines.push('    if hasattr(fitted_model, "estimators_") or hasattr(fitted_model, "get_booster"):');
+  lines.push('        explainer = shap.TreeExplainer(fitted_model)');
+  lines.push('        shap_values = explainer.shap_values(X_shap_transformed)');
   lines.push('    # Linear models');
-  lines.push('    elif hasattr(model, "coef_"):');
-  lines.push('        explainer = shap.LinearExplainer(model, X_train)');
-  lines.push('        shap_values = explainer.shap_values(X_shap)');
+  lines.push('    elif hasattr(fitted_model, "coef_"):');
+  lines.push('        X_train_transformed = pipeline.named_steps["preprocessor"].transform(X_train)');
+  lines.push('        explainer = shap.LinearExplainer(fitted_model, X_train_transformed)');
+  lines.push('        shap_values = explainer.shap_values(X_shap_transformed)');
   lines.push('');
   lines.push('    if shap_values is not None and explainer is not None:');
   lines.push('        # Handle multiclass (list of arrays)');
@@ -338,8 +344,8 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('        shap_result = {');
   lines.push('            "values": shap_arr.tolist(),');
   lines.push('            "base_values": base_val,');
-  lines.push('            "data": X_shap.values.tolist(),');
-  lines.push('            "feature_names": feature_columns,');
+  lines.push('            "data": X_shap_transformed.tolist() if hasattr(X_shap_transformed, "tolist") else np.array(X_shap_transformed).tolist(),');
+  lines.push('            "feature_names": shap_feature_names,');
   lines.push('            "mean_abs_values": [float(x) for x in np.mean(np.abs(shap_arr), axis=0)]');
   lines.push('        }');
   lines.push('        with open(os.path.join(output_dir, "shap.json"), "w") as f:');
@@ -371,9 +377,6 @@ export async function runEvaluation(modelId: string): Promise<void> {
     if (!model.artifact?.path) {
       throw new Error('Model has no artifact path');
     }
-    if (!model.targetColumn) {
-      throw new Error('Model has no target column (clustering models are not evaluated)');
-    }
     if (model.taskType === 'clustering') {
       throw new Error('Clustering models do not support evaluation');
     }
@@ -384,12 +387,15 @@ export async function runEvaluation(modelId: string): Promise<void> {
       throw new Error('Dataset not found');
     }
 
-    // 5. Pre-compute workspace paths (same pattern as containerOrchestrator)
+    // 5. Resolve target column (heals stale metadata)
+    const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
+
+    // 6. Pre-compute workspace paths (same pattern as containerOrchestrator)
     const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
     const workspaceModelPath = join(workspacePath, 'models', modelId, 'model.joblib');
     const testSize = resolveModelTestSize(model);
 
-    // 6. Orchestrate container execution
+    // 7. Orchestrate container execution
     const { container, executionResult } = await orchestrateContainerExecution({
       projectId: model.projectId,
       pythonVersion: '3.11',
@@ -399,7 +405,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
           datasetPath: `/workspace/datasets/${dataset.filename}`,
           outputDir: `/workspace/eval/${modelId}`,
           taskType: model.taskType as 'classification' | 'regression',
-          targetColumn: model.targetColumn!,
+          targetColumn,
           testSize,
         }),
       filesToCopy: [
@@ -412,12 +418,12 @@ export async function runEvaluation(modelId: string): Promise<void> {
       containerOutputDir: `/workspace/eval/${modelId}`,
     });
 
-    // 7. Check execution result
+    // 8. Check execution result
     if (executionResult.status !== 'success') {
       throw new Error(executionResult.stderr || executionResult.error || 'Evaluation execution failed');
     }
 
-    // 8. Copy artifacts to permanent storage
+    // 9. Copy artifacts to permanent storage
     await copyArtifactsToPermanentStorage(modelId, container, [
       {
         workspace: `eval/${modelId}/evaluation.json`,
@@ -435,7 +441,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
       },
     ]);
 
-    // 9. Set evaluationStatus = 'ready'
+    // 10. Set evaluationStatus = 'ready'
     await modelRepository.update(modelId, (current) => ({
       ...current,
       evaluationStatus: 'ready' as const,

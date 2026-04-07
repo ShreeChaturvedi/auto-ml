@@ -11,15 +11,20 @@ import type { WorkbookEntry } from '@/types/workbook';
 
 type WorkbookPhase = 'preprocessing' | 'feature-engineering' | 'training';
 
+/** Phase-aware delete handler: returns new active workbook ID on success, undefined if rejected. */
+export type WorkbookDeleteHandler = (workbookId: string) => string | undefined;
+
 interface WorkbookRegistryState {
   preprocessing: WorkbookEntry[];
   'feature-engineering': WorkbookEntry[];
   training: WorkbookEntry[];
+  deleteHandlers: Partial<Record<WorkbookPhase, WorkbookDeleteHandler>>;
 
   setWorkbooks: (phase: WorkbookPhase, workbooks: WorkbookEntry[]) => void;
   addWorkbook: (phase: WorkbookPhase, workbook: WorkbookEntry) => void;
   removeWorkbook: (phase: WorkbookPhase, workbookId: string) => void;
   updateWorkbook: (phase: WorkbookPhase, workbookId: string, updates: Partial<WorkbookEntry>) => void;
+  setDeleteHandler: (phase: WorkbookPhase, handler: WorkbookDeleteHandler | null) => void;
 }
 
 export type { WorkbookPhase };
@@ -28,6 +33,7 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
   preprocessing: [],
   'feature-engineering': [],
   training: [],
+  deleteHandlers: {},
 
   setWorkbooks: (phase, workbooks) =>
     set((state) => {
@@ -69,5 +75,15 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
       });
       if (!changed) return state;
       return { [phase]: next };
+    }),
+
+  setDeleteHandler: (phase, handler) =>
+    set((state) => {
+      if (handler === null) {
+        const next = { ...state.deleteHandlers };
+        delete next[phase];
+        return { deleteHandlers: next };
+      }
+      return { deleteHandlers: { ...state.deleteHandlers, [phase]: handler } };
     })
 }));

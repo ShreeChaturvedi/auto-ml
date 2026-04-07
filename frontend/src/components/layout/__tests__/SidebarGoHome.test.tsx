@@ -46,12 +46,13 @@ vi.mock('@/stores/planChatStore', () => ({
 vi.mock('@/stores/workbookRegistryStore', () => ({
   useWorkbookRegistryStore: Object.assign(
     (selector: (state: unknown) => unknown) =>
-      selector({ preprocessing: [], 'feature-engineering': [], training: [] }),
+      selector({ preprocessing: [], 'feature-engineering': [], training: [], deleteHandlers: {} }),
     {
       getState: () => ({
         preprocessing: [],
         'feature-engineering': [],
         training: [],
+        deleteHandlers: {},
         addWorkbook: vi.fn(),
       }),
     },

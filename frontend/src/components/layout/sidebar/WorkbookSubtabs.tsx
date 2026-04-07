@@ -59,10 +59,16 @@ export function WorkbookSubtabs({
   };
 
   const handleDelete = (workbookId: string) => {
-    removeWorkbook(phase, workbookId);
-    if (activeWorkbookId === workbookId) {
-      navigateToPhase();
+    const handler = useWorkbookRegistryStore.getState().deleteHandlers[phase];
+    if (handler) {
+      const nextActiveId = handler(workbookId);
+      if (nextActiveId === undefined) return; // rejected (e.g. approved version)
+      if (activeWorkbookId === workbookId) navigateToPhase(nextActiveId);
+      return;
     }
+    // Fallback for phases without a registered handler (preprocessing, training)
+    removeWorkbook(phase, workbookId);
+    if (activeWorkbookId === workbookId) navigateToPhase();
   };
 
   if (workbooks.length === 0) {

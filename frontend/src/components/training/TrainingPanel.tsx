@@ -92,6 +92,10 @@ export function TrainingPanel() {
   const autoRunIdsRef = useRef(new Set<string>());
   const submitPromptRef = useRef<((prompt: string) => void) | undefined>(undefined);
 
+  // Track proposal selections for multi-model approval flow
+  const [proposalSelections, setProposalSelections] = useState<Map<string, { title: string; selected: boolean }>>(new Map());
+  const [proposalsSubmitted, setProposalsSubmitted] = useState(false);
+
   const { executeCode: executeWithStore } = useExecutionStore();
 
   // NOTE: the URL ?notebook=<id> deep link is no longer applied by calling
@@ -273,8 +277,13 @@ export function TrainingPanel() {
   };
 
   const baseRenderLifecycleCard = useLifecycleCards({
-    onProposalAccept: () => submitPromptRef.current?.('Approved. Proceed with training.'),
-    onProposalReject: () => submitPromptRef.current?.('Reject this plan. Please propose a different approach.'),
+    onProposalToggle: (stepId, title, selected) => {
+      setProposalSelections(prev => {
+        const next = new Map(prev);
+        next.set(stepId, { title, selected });
+        return next;
+      });
+    },
   });
 
   /** Extends lifecycle cards with training-specific ui message rendering */
@@ -399,6 +408,33 @@ export function TrainingPanel() {
                 isGenerating={renderProps.isGenerating}
                 onRetryWorkflow={renderProps.onRetryWorkflow}
               />
+
+              {/* Apply Selected Models button — shown when proposals are pending */}
+              {proposalSelections.size > 0 && !proposalsSubmitted && !renderProps.isGenerating && (() => {
+                const selectedModels = [...proposalSelections.values()].filter(p => p.selected);
+                const hasSelections = selectedModels.length > 0;
+                return (
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={!hasSelections}
+                      onClick={() => {
+                        const names = selectedModels.map(p => p.title).join(', ');
+                        setProposalsSubmitted(true);
+                        submitPromptRef.current?.(`Approved. Proceed with training the selected models: ${names}.`);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Apply {hasSelections ? `${selectedModels.length} Selected` : 'Models'}
+                    </button>
+                    <span className="text-xs text-muted-foreground">
+                      {hasSelections
+                        ? `${selectedModels.length} of ${proposalSelections.size} models selected`
+                        : 'Select models above to proceed'}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           );
         }}

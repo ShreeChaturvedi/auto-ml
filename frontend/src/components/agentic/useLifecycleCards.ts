@@ -125,6 +125,7 @@ function detectPhase(toolName: string): string {
 interface UseLifecycleCardsOptions {
   onProposalAccept?: (stepId: string) => void;
   onProposalReject?: (stepId: string) => void;
+  onProposalToggle?: (stepId: string, title: string, selected: boolean) => void;
 }
 
 export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message: ChatMessage) => ReactNode | null {
@@ -169,6 +170,9 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
           rationale: call.rationale,
           phase: detectPhase(call.tool),
           status: proposalStatus,
+          onToggleSelect: options?.onProposalToggle
+            ? (selected: boolean) => options.onProposalToggle!(call.id, title, selected)
+            : undefined,
           onAccept: options?.onProposalAccept ? () => options.onProposalAccept!(call.id) : undefined,
           onReject: options?.onProposalReject ? () => options.onProposalReject!(call.id) : undefined,
         });

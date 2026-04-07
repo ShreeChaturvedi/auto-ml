@@ -79,9 +79,9 @@ export function PlanSelector({
                 onClick={() => navigate(`/project/${effectiveProjectId}/upload?chatId=${chat.id}`)}
                 className="cursor-pointer"
               >
-                <MessageSquare className="h-4 w-4 mr-2 text-amber-500" />
+                <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />
                 <span className="truncate flex-1">{chat.name}</span>
-                <span className="ml-auto text-[10px] text-amber-500 shrink-0">Draft</span>
+                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">Draft</span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />

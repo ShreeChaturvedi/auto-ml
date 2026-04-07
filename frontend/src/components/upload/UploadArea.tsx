@@ -94,6 +94,7 @@ export function UploadArea() {
         setActivePlanChatId(persistedPlanChatId);
       } else {
         // Clear dangling reference
+        setActivePlanChatId(null);
         const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
         void updateProject(activeProject.id, {
           metadata: { ...existingMetadata, activePlanChatId: undefined },
@@ -173,6 +174,19 @@ export function UploadArea() {
       setSearchParams(nextParams, { replace: true });
     })();
   }, [activeProject, isInitialized, searchParams, setSearchParams, updateProject]);
+
+  // Handle ?planId=xxx — switch to viewing a completed plan (clears active chat)
+  useEffect(() => {
+    const planId = searchParams.get('planId');
+    if (!planId || !activeProject) return;
+
+    // Directly clear local chat state — no metadata round-trip needed
+    setActivePlanChatId(null);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('planId');
+    setSearchParams(nextParams, { replace: true });
+  }, [activeProject, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!activeProject) return;

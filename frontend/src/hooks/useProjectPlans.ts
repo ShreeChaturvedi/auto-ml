@@ -60,7 +60,7 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
           uploadStage: 'upload',
         },
       });
-      navigate(`/project/${projectId}/upload`);
+      navigate(`/project/${projectId}/upload?planId=${planId}`);
     },
     [projectId, updateProject, metadata, navigate, plans]
   );

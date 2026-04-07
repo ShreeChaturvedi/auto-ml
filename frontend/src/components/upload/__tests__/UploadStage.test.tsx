@@ -74,18 +74,11 @@ describe('UploadStage', () => {
     mockPlans = [];
   });
 
-  it('hides New Plan button when no files are uploaded', () => {
-    mockFiles = [];
-    render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
-
-    expect(screen.queryByText('New Plan')).not.toBeInTheDocument();
-  });
-
-  it('shows New Plan button when files are uploaded and ready', () => {
+  it('does not render a New Plan button in the left ribbon', () => {
     mockFiles = readyFiles;
     render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
 
-    expect(screen.getByText('New Plan')).toBeInTheDocument();
+    expect(screen.queryByText('New Plan')).not.toBeInTheDocument();
   });
 
   it('does not render a bottom Next button row', () => {
@@ -121,11 +114,11 @@ describe('UploadStage', () => {
     expect(screen.queryByTestId('plan-viewer-pane')).not.toBeInTheDocument();
   });
 
-  it('shows New Plan button even when plans exist (if files are ready)', () => {
+  it('does not render New Plan button even when plans exist', () => {
     mockFiles = readyFiles;
     mockPlans = [{ id: 'plan-1', name: 'My Plan', content: '# Plan' }];
     render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
 
-    expect(screen.getByText('New Plan')).toBeInTheDocument();
+    expect(screen.queryByText('New Plan')).not.toBeInTheDocument();
   });
 });

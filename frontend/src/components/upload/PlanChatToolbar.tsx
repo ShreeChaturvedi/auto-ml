@@ -20,7 +20,7 @@ export function PlanChatToolbar({ chatName, onChatNameChange }: PlanChatToolbarP
       </div>
       <PlanSelector
         className="h-7 gap-1.5 border-0 bg-transparent shadow-none hover:bg-accent text-sm px-2 shrink-0"
-        nameMaxWidthClass="max-w-[160px]"
+        nameMaxWidthClass="max-w-[240px]"
       />
     </div>
   );

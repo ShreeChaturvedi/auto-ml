@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TrainingPanel } from '../TrainingPanel';
@@ -230,7 +231,7 @@ vi.mock('@/components/agentic/ChatMessageRenderer', () => ({
     renderLifecycleCard
   }: {
     messages: Array<unknown>;
-    renderLifecycleCard?: (message: never) => unknown;
+    renderLifecycleCard?: (message: never) => ReactNode;
   }) => (
     <div>
       {messages.map((message, index) => (

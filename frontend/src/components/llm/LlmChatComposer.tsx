@@ -136,7 +136,8 @@ function useObservedWidth<T extends HTMLElement>(ref: RefObject<T | null>) {
       setWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth));
     };
 
-    updateWidth(Math.round(element.getBoundingClientRect().width));
+    const initialWidth = Math.round(element.getBoundingClientRect().width);
+    if (initialWidth > 0) updateWidth(initialWidth);
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];

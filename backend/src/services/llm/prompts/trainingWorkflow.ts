@@ -61,7 +61,7 @@ function buildTrainingContinuationDirective(
   }
 
   if (!toolResults?.length) {
-    return 'ACTION REQUIRED: Start by calling configure_experiment for each model the user wants (up to 3 per turn). If the user asks for multiple models, call configure_experiment multiple times BEFORE calling propose_training_plan. Do NOT write any code cells yet.';
+    return 'ACTION REQUIRED: Start by calling configure_experiment for each model the user wants (up to 3 per turn). If the user asks for multiple models, call configure_experiment multiple times BEFORE calling propose_training_plan. Do NOT call list_cells, read_cell, write_cell, or any notebook tools yet — configure experiments first.';
   }
 
   // Find the most relevant training lifecycle signals

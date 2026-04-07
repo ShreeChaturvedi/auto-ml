@@ -25,9 +25,7 @@ vi.mock('@/stores/planChatStore', () => ({
     }),
 }));
 
-vi.mock('../PlanChatToolbar', () => ({
-  PlanChatToolbar: () => <div data-testid="plan-chat-toolbar" />,
-}));
+
 
 vi.mock('@/stores/dataStore', () => ({
   useDataStore: (selector: (state: unknown) => unknown) =>

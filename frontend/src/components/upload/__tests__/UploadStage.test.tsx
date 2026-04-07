@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UploadStage } from '../UploadStage';
@@ -67,6 +68,19 @@ vi.mock('../PlanViewerPane', () => ({
   PlanViewerPane: () => <div data-testid="plan-viewer-pane" />
 }));
 
+function renderUploadStage(activePlanChatId: string | null) {
+  return render(
+    <MemoryRouter>
+      <UploadStage
+        projectId="p1"
+        activePlanChatId={activePlanChatId}
+        onPlanApproved={vi.fn()}
+        onFirstUpload={vi.fn()}
+      />
+    </MemoryRouter>
+  );
+}
+
 describe('UploadStage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -76,21 +90,21 @@ describe('UploadStage', () => {
 
   it('does not render a New Plan button in the left ribbon', () => {
     mockFiles = readyFiles;
-    render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
+    renderUploadStage(null);
 
     expect(screen.queryByText('New Plan')).not.toBeInTheDocument();
   });
 
   it('does not render a bottom Next button row', () => {
     mockFiles = readyFiles;
-    render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
+    renderUploadStage(null);
 
     expect(screen.queryByTestId('upload-next-button')).not.toBeInTheDocument();
   });
 
   it('renders PlanChatPane when activePlanChatId is set', () => {
     mockFiles = readyFiles;
-    render(<UploadStage projectId="p1" activePlanChatId="chat-123" onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
+    renderUploadStage('chat-123');
 
     expect(screen.getByTestId('plan-chat-pane')).toBeInTheDocument();
     expect(screen.queryByTestId('plan-viewer-pane')).not.toBeInTheDocument();
@@ -99,7 +113,7 @@ describe('UploadStage', () => {
   it('renders PlanViewerPane when activePlanChatId is null and plans exist', () => {
     mockFiles = readyFiles;
     mockPlans = [{ id: 'plan-1', name: 'My Plan', content: '# Plan' }];
-    render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
+    renderUploadStage(null);
 
     expect(screen.getByTestId('plan-viewer-pane')).toBeInTheDocument();
     expect(screen.queryByTestId('plan-chat-pane')).not.toBeInTheDocument();
@@ -108,7 +122,7 @@ describe('UploadStage', () => {
   it('hides right column when no activePlanChatId and no plans', () => {
     mockFiles = readyFiles;
     mockPlans = [];
-    render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
+    renderUploadStage(null);
 
     expect(screen.queryByTestId('plan-chat-pane')).not.toBeInTheDocument();
     expect(screen.queryByTestId('plan-viewer-pane')).not.toBeInTheDocument();
@@ -117,7 +131,7 @@ describe('UploadStage', () => {
   it('does not render New Plan button even when plans exist', () => {
     mockFiles = readyFiles;
     mockPlans = [{ id: 'plan-1', name: 'My Plan', content: '# Plan' }];
-    render(<UploadStage projectId="p1" activePlanChatId={null} onPlanApproved={vi.fn()} onFirstUpload={vi.fn()} />);
+    renderUploadStage(null);
 
     expect(screen.queryByText('New Plan')).not.toBeInTheDocument();
   });

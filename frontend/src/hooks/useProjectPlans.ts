@@ -1,5 +1,5 @@
 /**
- * useProjectPlans — shared hook for plan metadata, open, and create actions.
+ * useProjectPlans — shared hook for plan metadata, open, create, rename, and delete actions.
  * Used by both PlanSubtabs (sidebar) and FileExplorer (panel).
  */
 
@@ -18,6 +18,8 @@ export interface UseProjectPlansReturn {
   selectedPlanId: string | undefined;
   handleOpenPlan: (planId: string) => void;
   handleCreateNewPlan: (e?: React.MouseEvent) => void;
+  handleRenamePlan: (planId: string, newName: string) => void;
+  handleDeletePlan: (planId: string) => void;
 }
 
 export function useProjectPlans(projectId: string): UseProjectPlansReturn {
@@ -52,6 +54,7 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
         metadata: {
           ...metadata,
           activePlanId: planId,
+          activePlanChatId: undefined,
           projectPlanName: selectedPlan?.name,
           projectPlan: selectedPlan?.content,
           uploadStage: 'upload',
@@ -70,5 +73,40 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
     [projectId, navigate]
   );
 
-  return { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan };
+  const handleRenamePlan = useCallback(
+    (planId: string, newName: string) => {
+      const updatedPlans = plans.map((p) =>
+        p.id === planId ? { ...p, name: newName } : p
+      );
+      const renamedPlan = updatedPlans.find((p) => p.id === planId);
+      const legacyCompat = planId === selectedPlanId
+        ? { projectPlanName: renamedPlan?.name }
+        : {};
+      void updateProject(projectId, {
+        metadata: { ...metadata, plans: updatedPlans, ...legacyCompat },
+      });
+    },
+    [plans, metadata, projectId, selectedPlanId, updateProject]
+  );
+
+  const handleDeletePlan = useCallback(
+    (planId: string) => {
+      const remaining = plans.filter((p) => p.id !== planId);
+      const nextSelected = remaining[0];
+      const legacyCompat = nextSelected
+        ? { projectPlanName: nextSelected.name, projectPlan: nextSelected.content }
+        : { projectPlanName: undefined, projectPlan: undefined };
+      void updateProject(projectId, {
+        metadata: {
+          ...metadata,
+          plans: remaining,
+          activePlanId: nextSelected?.id,
+          ...legacyCompat,
+        },
+      });
+    },
+    [plans, metadata, projectId, updateProject]
+  );
+
+  return { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan, handleRenamePlan, handleDeletePlan };
 }

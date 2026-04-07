@@ -55,7 +55,7 @@ export async function getPlanChat(
 export async function updatePlanChatState(
   projectId: string,
   chatId: string,
-  patch: { messages?: unknown[]; answerHistory?: unknown[]; currentRound?: number }
+  patch: { messages?: unknown[]; answerHistory?: unknown[]; currentRound?: number; name?: string }
 ): Promise<PlanChat> {
   return apiRequest<PlanChat>(`/projects/${projectId}/plan-chats/${chatId}/state`, {
     method: 'PUT',

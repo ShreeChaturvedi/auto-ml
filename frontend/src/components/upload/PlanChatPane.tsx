@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Brain, Database, FileText, Loader2 } from 'lucide-react';
 import { PlanMessageCard } from './PlanMessageCard';
+import { PlanChatToolbar } from './PlanChatToolbar';
 
 import { LlmChatComposer, type ChatInputConfig, type ModelConfig, type ReasoningConfig, type ComposerSlots } from '@/components/llm/LlmChatComposer';
 import { useModelSelection } from '@/hooks/useModelSelection';
@@ -10,20 +11,20 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessageList } from '@/components/llm/ChatMessageList';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { usePlanChatStore } from '@/stores/planChatStore';
 import { QuestionCards } from './QuestionCards';
 import { buildInitialSuggestions, buildFollowUpSuggestions } from './planningUtils';
 import { usePlanningChat } from './hooks/usePlanningChat';
 import { useAttachmentUploader, CONTEXT_ATTACHMENT_ACCEPT } from './hooks/useAttachmentUploader';
 import { CenteredSuggestionPills, FollowUpSuggestionPills } from './PlanSuggestionPills';
 
-interface PlanningStageProps {
+interface PlanChatPaneProps {
   projectId: string;
   onPlanApproved: (plan: string, planName: string) => void;
   planChatId?: string | null;
-  onChatCreated?: (chatId: string) => void;
 }
 
-export function PlanningStage({ projectId, onPlanApproved, planChatId }: PlanningStageProps) {
+export function PlanChatPane({ projectId, onPlanApproved, planChatId }: PlanChatPaneProps) {
   const files = useDataStore((state) => state.files);
   const projects = useProjectStore((state) => state.projects);
 
@@ -76,6 +77,8 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
   });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const chatEntry = usePlanChatStore((s) => planChatId ? s.chats[planChatId] : undefined);
+  const renameChat = usePlanChatStore((s) => s.renameChat);
 
   const project = useMemo(() => projects.find((entry) => entry.id === projectId), [projectId, projects]);
   const projectFiles = useMemo(
@@ -124,6 +127,10 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
 
   return (
     <div className="flex h-full flex-col bg-background" data-testid="planning-stage">
+      <PlanChatToolbar
+        chatName={chatEntry?.name ?? ''}
+        onChatNameChange={(name) => { if (planChatId) void renameChat(planChatId, name); }}
+      />
       {/* Messages area */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0">
         {showCenteredSuggestions && centeredSuggestions.length > 0 ? (
@@ -281,7 +288,7 @@ export function PlanningStage({ projectId, onPlanApproved, planChatId }: Plannin
                 onRetryItem: handleRetryAttachment,
                 accept: CONTEXT_ATTACHMENT_ACCEPT,
               },
-              maxWidthClassName: "max-w-5xl",
+              maxWidthClassName: "",
             } satisfies ComposerSlots}
           />
         </div>

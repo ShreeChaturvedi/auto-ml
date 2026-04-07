@@ -53,9 +53,10 @@ const acceptedFileTypes = {
 
 interface DataUploadPanelProps {
   projectId: string;
+  onFirstUpload?: () => void;
 }
 
-export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
+export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelProps) {
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'uploading' | 'uploaded' | 'error'>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
 
@@ -106,6 +107,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   // Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
+      const isFirstUpload = projectFiles.length === 0;
       const addFile = useDataStore.getState().addFile;
       const newFiles: UploadedFile[] = acceptedFiles.map((file) => createUploadedProjectFile(projectId, file));
 
@@ -120,9 +122,10 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           useDataStore.getState().hydrateFromBackend(projectId, { force: true }),
           useNlSuggestionStore.getState().fetchProjectSuggestions(projectId, { force: true }),
         ]);
+        if (isFirstUpload) onFirstUpload?.();
       });
     },
-    [projectId, ingestFile]
+    [projectId, projectFiles.length, ingestFile, onFirstUpload]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

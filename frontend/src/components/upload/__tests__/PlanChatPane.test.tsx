@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-import { PlanningStage } from '../PlanningStage';
+import { PlanChatPane } from '../PlanChatPane';
 import { streamOnboardingPlan } from '@/lib/api/llm';
 import { uploadDatasetFile } from '@/lib/api/datasets';
 import { uploadDocument } from '@/lib/api/documents';
@@ -16,6 +16,18 @@ const addPreviewMock = vi.fn();
 const setFileMetadataMock = vi.fn();
 const hydrateFromBackendMock = vi.fn();
 const fetchProjectSuggestionsMock = vi.fn();
+
+vi.mock('@/stores/planChatStore', () => ({
+  usePlanChatStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      chats: {},
+      renameChat: vi.fn(),
+    }),
+}));
+
+vi.mock('../PlanChatToolbar', () => ({
+  PlanChatToolbar: () => <div data-testid="plan-chat-toolbar" />,
+}));
 
 vi.mock('@/stores/dataStore', () => ({
   useDataStore: (selector: (state: unknown) => unknown) =>
@@ -137,7 +149,7 @@ function createMockModelCatalogState() {
   };
 }
 
-describe('PlanningStage Accessibility', () => {
+describe('PlanChatPane Accessibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseLlmModelCatalog.mockReturnValue(createMockModelCatalogState());
@@ -158,7 +170,7 @@ describe('PlanningStage Accessibility', () => {
     });
 
     render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -180,7 +192,7 @@ describe('PlanningStage Accessibility', () => {
 
   it('queues attachment with preview and allows removing before send', async () => {
     const { container } = render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -215,7 +227,7 @@ describe('PlanningStage Accessibility', () => {
     });
 
     const { container } = render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -259,7 +271,7 @@ describe('PlanningStage Accessibility', () => {
     });
 
     const { container } = render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -289,7 +301,7 @@ describe('PlanningStage Accessibility', () => {
 
   it('sends GPT-5 model and reasoningEffort without legacy thinking fields', async () => {
     render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -313,7 +325,7 @@ describe('PlanningStage Accessibility', () => {
   });
 });
 
-describe('PlanningStage progressive assistant rendering', () => {
+describe('PlanChatPane progressive assistant rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -333,7 +345,7 @@ describe('PlanningStage progressive assistant rendering', () => {
     });
 
     const { container } = render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -365,7 +377,7 @@ describe('PlanningStage progressive assistant rendering', () => {
     });
 
     render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />
@@ -395,7 +407,7 @@ describe('PlanningStage progressive assistant rendering', () => {
     });
 
     render(
-      <PlanningStage
+      <PlanChatPane
         projectId="p1"
         onPlanApproved={vi.fn()}
       />

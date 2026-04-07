@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { FileText, Plus } from 'lucide-react';
 
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
@@ -9,15 +9,17 @@ import { useProjectPlans } from '@/hooks/useProjectPlans';
 import { DataUploadPanel } from './DataUploadPanel';
 import { DescriptionInput } from './DescriptionInput';
 import { PlanViewerPane } from './PlanViewerPane';
+import { PlanChatPane } from './PlanChatPane';
 import { isProjectFileReady } from './projectFileIngestion';
 
-interface UploadStageProps {
+export interface UploadStageProps {
   projectId: string;
-  /** @deprecated No longer used — kept for caller compatibility. */
-  onNext?: () => void;
+  activePlanChatId: string | null;
+  onPlanApproved: (plan: string, planName: string) => void;
+  onFirstUpload: () => void;
 }
 
-export function UploadStage({ projectId }: UploadStageProps) {
+export function UploadStage({ projectId, activePlanChatId, onPlanApproved, onFirstUpload }: UploadStageProps) {
   const files = useDataStore((state) => state.files);
   const project = useProjectStore((state) => state.projects.find((p) => p.id === projectId));
   const updateProject = useProjectStore((state) => state.updateProject);
@@ -33,6 +35,8 @@ export function UploadStage({ projectId }: UploadStageProps) {
   const currentPlan = selectedPlanId ? plans.find((p) => p.id === selectedPlanId) : plans[0];
   const hasPlans = plans.length > 0 && currentPlan;
 
+  const rightColumnMode = activePlanChatId ? 'chat' : hasPlans ? 'plan' : 'none';
+
   const handleDescriptionChange = (description: string) => {
     void updateProject(projectId, { description });
   };
@@ -40,16 +44,17 @@ export function UploadStage({ projectId }: UploadStageProps) {
   return (
     <div className="flex h-full overflow-hidden" data-testid="upload-stage">
       {/* Left column */}
-      <div className={`flex flex-col min-w-0 ${hasPlans ? 'flex-1' : 'flex-1 w-full'}`}>
+      <div className={`flex flex-col min-w-0 ${rightColumnMode !== 'none' ? 'flex-1' : 'flex-1 w-full'}`}>
         {/* Left ribbon */}
         <div className="flex h-14 items-center border-b px-3 shrink-0">
           <div className="min-w-0 flex-1">
             <DescriptionInput
               value={project?.description ?? ''}
               onChange={handleDescriptionChange}
+              icon={FileText}
             />
           </div>
-          {!hasPlans && hasFiles && (
+          {hasFiles && (
             <Button
               variant="ghost"
               size="sm"
@@ -63,15 +68,24 @@ export function UploadStage({ projectId }: UploadStageProps) {
           )}
         </div>
 
-        {/* Upload panel body — fills the entire remaining area */}
+        {/* Upload panel body */}
         <div className="min-h-0 flex-1 overflow-auto">
-          <DataUploadPanel projectId={projectId} />
+          <DataUploadPanel projectId={projectId} onFirstUpload={onFirstUpload} />
         </div>
-
       </div>
 
-      {/* Right column: Plan viewer (only when plans exist) */}
-      {hasPlans && (
+      {/* Right column */}
+      {rightColumnMode === 'chat' && (
+        <div className="flex flex-col min-w-0 w-full lg:w-[55%] lg:min-w-[360px] border-t lg:border-t-0 lg:border-l border-border">
+          <PlanChatPane
+            projectId={projectId}
+            planChatId={activePlanChatId}
+            onPlanApproved={onPlanApproved}
+          />
+        </div>
+      )}
+
+      {rightColumnMode === 'plan' && currentPlan && (
         <div className="flex flex-col min-w-0 w-full lg:w-[55%] lg:min-w-[360px] border-t lg:border-t-0 lg:border-l border-border">
           <PlanViewerPane plan={currentPlan} />
         </div>

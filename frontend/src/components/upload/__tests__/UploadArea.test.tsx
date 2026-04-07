@@ -90,20 +90,27 @@ vi.mock('@/components/ui/button', () => ({
 }));
 
 vi.mock('../UploadStage', () => ({
-  UploadStage: ({ onNext }: { onNext: () => void }) => (
-    <button type="button" data-testid="upload-stage-next" onClick={onNext}>Upload Next</button>
+  UploadStage: ({
+    activePlanChatId,
+    onPlanApproved,
+    onFirstUpload,
+  }: {
+    projectId: string;
+    activePlanChatId: string | null;
+    onPlanApproved: (plan: string, name: string) => void;
+    onFirstUpload: () => void;
+  }) => (
+    <div data-testid="upload-stage">
+      {activePlanChatId && <span data-testid="active-chat-id">{activePlanChatId}</span>}
+      <button type="button" data-testid="plan-approve" onClick={() => onPlanApproved('# Plan', 'bold-falcon-123')}>Approve</button>
+      <button type="button" data-testid="first-upload" onClick={onFirstUpload}>First Upload</button>
+    </div>
   )
 }));
 
 vi.mock('../ProcessingStage', () => ({
   ProcessingStage: ({ onComplete }: { onComplete: () => void }) => (
     <button type="button" data-testid="processing-complete" onClick={onComplete}>Processing Complete</button>
-  )
-}));
-
-vi.mock('../PlanningStage', () => ({
-  PlanningStage: ({ onPlanApproved }: { onPlanApproved: (plan: string, name: string) => void }) => (
-    <button type="button" data-testid="plan-approve" onClick={() => onPlanApproved('# Plan', 'bold-falcon-123')}>Approve</button>
   )
 }));
 
@@ -144,144 +151,43 @@ describe('UploadArea stage machine', () => {
     };
   });
 
-  it('transitions upload -> processing -> chat', async () => {
-    renderUploadArea();
-
-    expect(hydrateFromBackendMock).toHaveBeenCalledWith('p1');
-
-    fireEvent.click(screen.getByTestId('upload-stage-next'));
-    expect(screen.getByTestId('processing-complete')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('processing-complete'));
-    expect(screen.getByTestId('plan-approve')).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(updateProjectMock).toHaveBeenCalled();
-    });
-  });
-
-  it('does not persist upload metadata on mount when store metadata already matches', async () => {
-    renderUploadArea();
-
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(updateProjectMock).not.toHaveBeenCalled();
-  });
-
-  it('restores saved chat stage and navigates to data-viewer on approve', async () => {
-    projectState.projects[0].metadata = { uploadStage: 'chat' };
-
-    renderUploadArea();
-    expect(screen.getByTestId('plan-approve')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('plan-approve'));
-
-    await waitFor(() => {
-      expect(completePhaseMock).toHaveBeenCalledWith('p1', 'upload');
-      expect(screen.getByTestId('data-viewer-route')).toBeInTheDocument();
-    });
-  });
-
-  it('calls async completeChat on plan approval', async () => {
-    // Set up an active in-progress chat so completeChat gets called
-    planChatStoreState.chats = {
-      'active-chat': {
-        id: 'active-chat', projectId: 'p1', name: 'Plan 1',
-        status: 'in_progress', messages: [], answerHistory: [],
-        currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
-      },
-    };
-    getInProgressChatsMock.mockReturnValue([planChatStoreState.chats['active-chat']]);
-    projectState.projects[0].metadata = {
-      uploadStage: 'chat',
-      activePlanChatId: 'active-chat',
-    };
-
-    renderUploadArea();
-
-    fireEvent.click(screen.getByTestId('plan-approve'));
-
-    await waitFor(() => {
-      expect(completeChatMock).toHaveBeenCalled();
-      expect(updateProjectMock).toHaveBeenCalledWith('p1', expect.objectContaining({
-        metadata: expect.objectContaining({
-          activePlanChatId: undefined,
-          uploadStage: 'upload',
-        })
-      }));
-    });
-  });
-
-  it('does not restore activePlanChatId when store is not initialized', () => {
-    planChatStoreState = { chats: {}, isInitialized: false };
-    projectState.projects[0].metadata = {
-      uploadStage: 'chat',
-      activePlanChatId: 'chat-123',
-    };
-
-    renderUploadArea();
-
-    // Should still render the stage (from metadata), but not attempt to access chats
-    expect(screen.getByTestId('plan-approve')).toBeInTheDocument();
-    // loadFullChat should NOT have been called since store isn't initialized
-    expect(loadFullChatMock).not.toHaveBeenCalled();
-  });
-
-  it('does not rewrite identical chat metadata on mount', async () => {
-    planChatStoreState.chats = {
-      'active-chat': {
-        id: 'active-chat', projectId: 'p1', name: 'Plan 1',
-        status: 'in_progress', messages: [], answerHistory: [],
-        currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
-      },
-    };
-    projectState.projects[0].metadata = {
-      uploadStage: 'chat',
-      activePlanChatId: 'active-chat',
-    };
-
-    renderUploadArea();
-    expect(screen.getByTestId('plan-approve')).toBeInTheDocument();
-
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(updateProjectMock).not.toHaveBeenCalled();
-  });
-
-  it('creates chat asynchronously on ?newPlan=1', async () => {
+  it('onFirstUpload enters processing then returns to upload with activePlanChatId set', async () => {
     createChatMock.mockResolvedValueOnce({
-      id: 'server-uuid-1', projectId: 'p1', name: 'Plan 1',
+      id: 'first-chat', projectId: 'p1', name: 'Plan 1',
       status: 'in_progress' as const, messages: [], answerHistory: [],
       currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
     });
 
-    renderUploadArea('/project/p1/upload?newPlan=1');
+    renderUploadArea();
+    expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+
+    // Trigger first upload
+    fireEvent.click(screen.getByTestId('first-upload'));
 
     await waitFor(() => {
       expect(createChatMock).toHaveBeenCalledWith('p1', expect.any(String));
     });
 
-    // Should persist the server-generated chat ID (not a client timestamp ID)
+    // Should enter processing
     await waitFor(() => {
-      expect(updateProjectMock).toHaveBeenCalledWith('p1', expect.objectContaining({
-        metadata: expect.objectContaining({
-          activePlanChatId: 'server-uuid-1',
-          uploadStage: 'processing',
-        })
-      }));
+      expect(screen.getByTestId('processing-complete')).toBeInTheDocument();
     });
-    expect(updateProjectMock).toHaveBeenCalledTimes(1);
+
+    // Complete processing → returns to upload
+    fireEvent.click(screen.getByTestId('processing-complete'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+    });
   });
 
-  it('loads full chat on ?chatId=xxx and transitions to chat stage', async () => {
+  it('?chatId=xxx sets activePlanChatId and stays on upload', async () => {
     const mockChat = {
       id: 'chat-abc', projectId: 'p1', name: 'Plan 1',
       status: 'in_progress' as const, messages: [{ id: '1', type: 'user' as const, content: 'hello', timestamp: 1 }],
       answerHistory: [], currentRound: 1, createdAt: Date.now(), updatedAt: Date.now(),
     };
-    // Store starts empty — loadFullChat should be called to fetch the chat
     loadFullChatMock.mockImplementationOnce(async () => {
-      // Simulate loadFullChat populating the store
       planChatStoreState.chats = { 'chat-abc': mockChat };
       return mockChat;
     });
@@ -292,81 +198,137 @@ describe('UploadArea stage machine', () => {
       expect(loadFullChatMock).toHaveBeenCalledWith('p1', 'chat-abc');
     });
 
+    // Should stay on upload stage (not transition to chat)
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+    });
+
+    // Metadata should persist uploadStage as 'upload', not 'chat'
     await waitFor(() => {
       expect(updateProjectMock).toHaveBeenCalledWith('p1', expect.objectContaining({
         metadata: expect.objectContaining({
-          uploadStage: 'chat',
+          uploadStage: 'upload',
           activePlanChatId: 'chat-abc',
         })
       }));
     });
   });
 
-  it('does not re-persist chat stage on unrelated rerenders after restoring an in-progress chat', async () => {
-    const restoredChat = {
-      id: 'restored-chat',
-      projectId: 'p1',
-      name: 'Plan 1',
-      status: 'in_progress' as const,
-      messages: [],
-      answerHistory: [],
-      currentRound: 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    planChatStoreState.chats = {
-      [restoredChat.id]: restoredChat,
-    };
-    getInProgressChatsMock.mockReturnValue([restoredChat]);
+  it('?newPlan=1 with existing plans creates chat and stays on upload (no animation)', async () => {
     projectState.projects[0].metadata = {
-      uploadStage: 'chat',
+      plans: [{ id: 'plan-1', name: 'Existing Plan', content: '# Plan' }],
     };
 
-    const view = renderUploadArea();
-
-    await waitFor(() => {
-      expect(getInProgressChatsMock).toHaveBeenCalledWith('p1');
+    createChatMock.mockResolvedValueOnce({
+      id: 'new-chat-2', projectId: 'p1', name: 'Plan 2',
+      status: 'in_progress' as const, messages: [], answerHistory: [],
+      currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
     });
 
-    updateProjectMock.mockClear();
+    renderUploadArea('/project/p1/upload?newPlan=1');
 
-    projectState = {
-      ...projectState,
-      projects: [{
-        ...projectState.projects[0],
-        description: 'updated description',
-        metadata: { uploadStage: 'chat' }
-      }]
+    await waitFor(() => {
+      expect(createChatMock).toHaveBeenCalledWith('p1', expect.any(String));
+    });
+
+    // Should stay on upload (not enter processing) since plans already exist
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+    });
+
+    // Should persist uploadStage as 'upload'
+    await waitFor(() => {
+      expect(updateProjectMock).toHaveBeenCalledWith('p1', expect.objectContaining({
+        metadata: expect.objectContaining({
+          uploadStage: 'upload',
+          activePlanChatId: 'new-chat-2',
+        })
+      }));
+    });
+  });
+
+  it('plan approval clears activePlanChatId and does NOT navigate to data-viewer', async () => {
+    planChatStoreState.chats = {
+      'active-chat': {
+        id: 'active-chat', projectId: 'p1', name: 'Plan 1',
+        status: 'in_progress', messages: [], answerHistory: [],
+        currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
+      },
+    };
+    projectState.projects[0].metadata = {
+      activePlanChatId: 'active-chat',
     };
 
-    view.rerender(
-      <MemoryRouter initialEntries={['/project/p1/upload']}>
-        <Routes>
-          <Route path="/project/:projectId/upload" element={<UploadArea />} />
-          <Route path="/project/:projectId/data-viewer" element={<div data-testid="data-viewer-route" />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderUploadArea();
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(screen.getByTestId('plan-approve'));
+
+    await waitFor(() => {
+      expect(completeChatMock).toHaveBeenCalled();
+      expect(completePhaseMock).toHaveBeenCalledWith('p1', 'upload');
+      expect(updateProjectMock).toHaveBeenCalledWith('p1', expect.objectContaining({
+        metadata: expect.objectContaining({
+          activePlanChatId: undefined,
+          uploadStage: 'upload',
+        })
+      }));
+    });
+
+    // Should NOT navigate to data-viewer
+    expect(screen.queryByTestId('data-viewer-route')).not.toBeInTheDocument();
+    expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+  });
+
+  it('does not re-trigger processing on subsequent uploads', async () => {
+    renderUploadArea();
+
+    // First upload triggers processing
+    createChatMock.mockResolvedValueOnce({
+      id: 'first-chat', projectId: 'p1', name: 'Plan 1',
+      status: 'in_progress' as const, messages: [], answerHistory: [],
+      currentRound: 0, createdAt: Date.now(), updatedAt: Date.now(),
+    });
+
+    fireEvent.click(screen.getByTestId('first-upload'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('processing-complete')).toBeInTheDocument();
+    });
+
+    // Complete processing
+    fireEvent.click(screen.getByTestId('processing-complete'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+    });
+
+    // Second "first upload" click should NOT re-trigger processing
+    // (the handler uses a `called` flag to prevent re-entry)
+    fireEvent.click(screen.getByTestId('first-upload'));
+
+    // Should still be on upload stage
+    expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+    expect(screen.queryByTestId('processing-complete')).not.toBeInTheDocument();
+  });
+
+  it('does not persist upload metadata on mount when store metadata already matches', async () => {
+    renderUploadArea();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(updateProjectMock).not.toHaveBeenCalled();
   });
 
   it('does not create duplicate chats when ?newPlan=1 re-renders', async () => {
-    // Simulate slow API response
     let resolveCreate!: (v: unknown) => void;
     createChatMock.mockReturnValueOnce(new Promise<unknown>((r) => { resolveCreate = r; }));
 
     renderUploadArea('/project/p1/upload?newPlan=1');
 
-    // Wait a tick to ensure the effect has fired
     await new Promise((r) => setTimeout(r, 10));
 
     expect(createChatMock).toHaveBeenCalledTimes(1);
 
-    // Resolve the pending create
     resolveCreate!({
       id: 'chat-1', projectId: 'p1', name: 'Plan 1',
       status: 'in_progress' as const, messages: [], answerHistory: [],
@@ -376,5 +338,17 @@ describe('UploadArea stage machine', () => {
     await waitFor(() => {
       expect(createChatMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('does not restore activePlanChatId when store is not initialized', () => {
+    planChatStoreState = { chats: {}, isInitialized: false };
+    projectState.projects[0].metadata = {
+      activePlanChatId: 'chat-123',
+    };
+
+    renderUploadArea();
+
+    expect(screen.getByTestId('upload-stage')).toBeInTheDocument();
+    expect(loadFullChatMock).not.toHaveBeenCalled();
   });
 });

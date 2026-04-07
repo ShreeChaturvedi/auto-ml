@@ -77,6 +77,7 @@ export async function updatePlanChatState(
     messages?: unknown[];
     answerHistory?: unknown[];
     currentRound?: number;
+    name?: string;
   }
 ): Promise<PlanChat | null> {
   requireDb();
@@ -97,6 +98,10 @@ export async function updatePlanChatState(
   if (patch.currentRound !== undefined) {
     setClauses.push(`current_round = $${paramIndex++}`);
     values.push(patch.currentRound);
+  }
+  if (patch.name !== undefined) {
+    setClauses.push(`name = $${paramIndex++}`);
+    values.push(patch.name);
   }
 
   if (setClauses.length === 0) {

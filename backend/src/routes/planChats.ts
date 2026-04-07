@@ -23,9 +23,10 @@ const stateSchema = z.object({
   messages: z.array(z.unknown()).max(500).optional(),
   answerHistory: z.array(z.unknown()).max(200).optional(),
   currentRound: z.number().int().min(0).optional(),
+  name: z.string().trim().min(1).max(200).optional(),
 }).refine(
-  (data) => data.messages !== undefined || data.answerHistory !== undefined || data.currentRound !== undefined,
-  { message: 'At least one field (messages, answerHistory, currentRound) is required' }
+  (data) => data.messages !== undefined || data.answerHistory !== undefined || data.currentRound !== undefined || data.name !== undefined,
+  { message: 'At least one field (messages, answerHistory, currentRound, name) is required' }
 );
 
 const completeSchema = z.object({

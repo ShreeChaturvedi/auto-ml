@@ -38,6 +38,7 @@ interface PlanChatStore {
 
   initialize: (projectId: string) => Promise<void>;
   createChat: (projectId: string, name: string) => Promise<PlanChatEntry>;
+  renameChat: (chatId: string, newName: string) => Promise<void>;
   completeChat: (chatId: string, completedPlanId: string, newName: string) => Promise<void>;
   deleteChat: (chatId: string) => Promise<void>;
   persistChatState: (chatId: string, patch: { messages?: ChatMessage[]; answerHistory?: QuestionAnswer[]; currentRound?: number }) => Promise<void>;
@@ -123,6 +124,18 @@ export const usePlanChatStore = create<PlanChatStore>()((set, get) => ({
     const entry = toPlanChatEntry(await createPlanChatApi(projectId, name));
     set((state) => ({ chats: { ...state.chats, [entry.id]: entry } }));
     return entry;
+  },
+
+  renameChat: async (chatId, newName) => {
+    const chat = get().chats[chatId];
+    if (!chat) return;
+    await updatePlanChatStateApi(chat.projectId, chatId, { name: newName });
+    set((state) => ({
+      chats: {
+        ...state.chats,
+        [chatId]: { ...state.chats[chatId], name: newName, updatedAt: Date.now() },
+      },
+    }));
   },
 
   completeChat: async (chatId, completedPlanId, newName) => {

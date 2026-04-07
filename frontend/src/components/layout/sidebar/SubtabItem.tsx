@@ -1,3 +1,10 @@
+/**
+ * SubtabItem — reusable sidebar subtab with icon, label, underline hover, and theme color active state.
+ *
+ * Uses a <div role="button"> so that interactive content (e.g. dropdown menus)
+ * can be placed in the actionSlot without nesting <button> violations.
+ */
+
 import { type ComponentType } from 'react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';

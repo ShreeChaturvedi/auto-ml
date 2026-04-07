@@ -16,7 +16,6 @@ const projectRepo = getProjectRepository();
 export interface PredictRequest extends IncomingMessage {
   params: Record<string, string>;
   deployment?: DeploymentRecord;
-  parsedBody?: Record<string, unknown>;
 }
 
 /**

@@ -74,34 +74,31 @@ export function createApp() {
         },
         pathRewrite: { '^/api/deployments/[^/]+/predict': '/predict' },
         on: {
-          proxyReq: (proxyReq, req: IncomingMessage) => {
+          proxyReq: (_proxyReq, req: IncomingMessage) => {
+            // Capture and buffer the request body before the proxy consumes the stream
+            const predictReq = req as PredictRequest & { parsedBody?: Record<string, unknown> };
             const reqChunks: Buffer[] = [];
             req.on('data', (chunk: Buffer) => reqChunks.push(chunk));
             req.on('end', () => {
               try {
-                const raw = Buffer.concat(reqChunks).toString();
-                (req as PredictRequest).parsedBody = raw ? JSON.parse(raw) : {};
-              } catch {
-                (req as PredictRequest).parsedBody = {};
-              }
+                predictReq.parsedBody = JSON.parse(Buffer.concat(reqChunks).toString());
+              } catch { /* body might not be JSON */ }
             });
-            // Ensure the proxy request content-length is forwarded
-            if (req.headers['content-length']) {
-              proxyReq.setHeader('content-length', req.headers['content-length']);
-            }
           },
           proxyRes: async (proxyRes, req: IncomingMessage, res: ServerResponse) => {
             const startTime = Date.now();
             const chunks: Buffer[] = [];
-            const predictReq = req as PredictRequest;
+            const predictReq = req as PredictRequest & { parsedBody?: Record<string, unknown> };
             proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
             proxyRes.on('end', async () => {
               const body = Buffer.concat(chunks).toString();
+              // Forward to client first
               res.statusCode = proxyRes.statusCode ?? 200;
               for (const [k, v] of Object.entries(proxyRes.headers)) {
                 if (v) res.setHeader(k, v);
               }
               res.end(body);
+              // Log asynchronously
               try {
                 const parsed = JSON.parse(body);
                 const deployment = predictReq.deployment;

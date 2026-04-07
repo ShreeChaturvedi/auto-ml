@@ -1,4 +1,9 @@
-import { useEffect, useMemo } from 'react';
+/**
+ * DeploymentSubtabs — renders deployed models under the Deployment phase.
+ * Reuses SubtabItem for uniform sidebar spacing.
+ */
+
+import { type ComponentType, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trash2, Square, Play } from 'lucide-react';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -10,8 +15,11 @@ import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
-/** Stable status-dot component — rendered via STATUS_ICON_MAP to avoid creating a new component type per render. */
-function StatusDot({ dotColor, pulse, className }: { dotColor: string; pulse: boolean; className?: string }) {
+/** Static status-dot icon component per status (avoids new component type per render) */
+function StatusDotIcon({ status, className }: { status: DeploymentStatus; className?: string }) {
+  const dotColor = statusDotColor(status);
+  const pulse = PULSE_STATUSES.has(status);
+
   return (
     <span className={cn('relative inline-flex h-2 w-2', className)} aria-hidden="true">
       {pulse && (
@@ -22,20 +30,15 @@ function StatusDot({ dotColor, pulse, className }: { dotColor: string; pulse: bo
   );
 }
 
-/** Pre-built icon component per status — avoids creating a new component type on every render. */
-const STATUS_ICON_MAP: Record<DeploymentStatus, React.ComponentType<{ className?: string }>> = Object.fromEntries(
-  (['creating', 'starting', 'healthy', 'unhealthy', 'stopping', 'stopped', 'failed'] as DeploymentStatus[]).map(
-    (s) => {
-      const dotColor = statusDotColor(s);
-      const pulse = PULSE_STATUSES.has(s);
-      const Icon = ({ className }: { className?: string }) => (
-        <StatusDot dotColor={dotColor} pulse={pulse} className={className} />
-      );
-      Icon.displayName = `StatusDot_${s}`;
-      return [s, Icon] as const;
-    }
-  )
-) as Record<DeploymentStatus, React.ComponentType<{ className?: string }>>;
+const STATUS_ICON_MAP: Record<DeploymentStatus, ComponentType<{ className?: string }>> = {
+  creating:  (props) => <StatusDotIcon status="creating" {...props} />,
+  starting:  (props) => <StatusDotIcon status="starting" {...props} />,
+  healthy:   (props) => <StatusDotIcon status="healthy" {...props} />,
+  unhealthy: (props) => <StatusDotIcon status="unhealthy" {...props} />,
+  stopping:  (props) => <StatusDotIcon status="stopping" {...props} />,
+  stopped:   (props) => <StatusDotIcon status="stopped" {...props} />,
+  failed:    (props) => <StatusDotIcon status="failed" {...props} />,
+};
 
 interface DeploymentSubtabsProps {
   projectId: string;

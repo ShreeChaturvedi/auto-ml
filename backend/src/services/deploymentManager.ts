@@ -52,7 +52,7 @@ const modelRepository = createModelRepository(env.modelMetadataPath);
 type DeploymentRepository = Awaited<ReturnType<typeof import('../repositories/deploymentRepository.js').createDeploymentRepository>>;
 
 let _deploymentRepoPromise: Promise<DeploymentRepository> | null = null;
-function getDeploymentRepo(): Promise<DeploymentRepository> {
+async function getDeploymentRepo(): Promise<DeploymentRepository> {
   if (!_deploymentRepoPromise) {
     _deploymentRepoPromise = import('../repositories/deploymentRepository.js').then(
       (mod) => mod.createDeploymentRepository(),
@@ -108,8 +108,8 @@ let healthCheckTimer: NodeJS.Timeout | null = null;
 export function startHealthCheckLoop(): void {
   if (healthCheckTimer) return;
 
-  async function runHealthChecks() {
-    for (const [id, entry] of deploymentCache) {
+  async function runHealthCheck() {
+    for (const [id, entry] of [...deploymentCache]) {
       if (entry.status === 'stopped' || entry.status === 'failed') continue;
 
       try {
@@ -141,11 +141,11 @@ export function startHealthCheckLoop(): void {
         }
       }
     }
-    // Schedule next check only after current check completes — prevents overlap
-    healthCheckTimer = setTimeout(runHealthChecks, HEALTH_CHECK_INTERVAL_MS);
+    if (healthCheckTimer) {
+      healthCheckTimer = setTimeout(runHealthCheck, HEALTH_CHECK_INTERVAL_MS);
+    }
   }
-
-  healthCheckTimer = setTimeout(runHealthChecks, HEALTH_CHECK_INTERVAL_MS);
+  healthCheckTimer = setTimeout(runHealthCheck, HEALTH_CHECK_INTERVAL_MS);
 }
 
 export function stopHealthCheckLoop(): void {
@@ -338,6 +338,7 @@ export async function stopDeployment(deploymentId: string): Promise<void> {
 
   const cacheEntry = deploymentCache.get(deploymentId);
 
+  // Stop the container
   if (record.containerId) {
     try {
       await execDocker(['stop', '-t', '5', record.containerId]);
@@ -351,6 +352,7 @@ export async function stopDeployment(deploymentId: string): Promise<void> {
     }
   }
 
+  // Update status
   const stoppedAt = new Date().toISOString();
   await updateDeploymentStatus(deploymentId, 'stopped', { stoppedAt });
 
@@ -462,6 +464,7 @@ export async function deleteDeployment(deploymentId: string): Promise<void> {
   const record: DeploymentRecord | undefined = await repo.getById(deploymentId);
   if (!record) throw new Error(`Deployment not found: ${deploymentId}`);
 
+  // Stop container if running
   if (record.containerId && record.status !== 'stopped' && record.status !== 'failed') {
     try {
       await execDocker(['rm', '-f', record.containerId]);
@@ -470,7 +473,10 @@ export async function deleteDeployment(deploymentId: string): Promise<void> {
     }
   }
 
+  // Remove from cache
   deploymentCache.delete(deploymentId);
+
+  // Delete DB record
   await repo.delete(deploymentId);
 
   appLogger.info(`${LOG_TAG} Deleted deployment ${deploymentId}`);

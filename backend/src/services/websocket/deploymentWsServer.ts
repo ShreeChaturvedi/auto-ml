@@ -224,9 +224,9 @@ export class DeploymentWSServer {
     this.heartbeatInterval = setInterval(() => {
       const now = new Date();
       const timeout = env.wsHeartbeatMs * 2;
-      // Snapshot keys to avoid mutating the Map during iteration
-      const clientIds = [...this.clients.keys()];
 
+      // Snapshot keys to prevent mutation during iteration
+      const clientIds = [...this.clients.keys()];
       for (const clientId of clientIds) {
         const client = this.clients.get(clientId);
         if (!client) continue;

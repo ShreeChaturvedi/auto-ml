@@ -304,6 +304,9 @@ describe('runEvaluation', () => {
 
     await runEvaluation('test-model-id');
 
+    // Guard: verify orchestration was actually invoked
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
+
     // Verify copyArtifactsToPermanentStorage was called
     expect(mockCopyArtifactsToPermanentStorage).toHaveBeenCalledTimes(1);
 
@@ -341,8 +344,6 @@ describe('runEvaluation', () => {
     });
 
     await runEvaluation('test-model-id');
-
-    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
   });
 
   it('does not throw when model is not found', async () => {

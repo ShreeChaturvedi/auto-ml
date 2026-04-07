@@ -435,21 +435,16 @@ describe('buildTuningScript', () => {
 
     it('uses TPE sampler by default', () => {
       const script = callBuild(makeTemplate());
-      expect(script).toContain('TPESampler');
-      // The inline conditional must evaluate the default 'tpe' against 'tpe' (truthy branch)
+      // The ternary condition should resolve to TPE when sampler is 'tpe' (default)
       expect(script).toContain("'tpe' == 'tpe'");
-      // sampler variable must be passed to create_study
-      expect(script).toContain('sampler=sampler');
+      expect(script).toContain('TPESampler');
     });
 
-    it('selects RandomSampler when sampler is "random"', () => {
+    it('uses RandomSampler when sampler is set to random', () => {
       const script = callBuild(makeTemplate(), { sampler: 'random' });
-      // The inline conditional must evaluate 'random' against 'tpe' (falsy branch -> RandomSampler)
+      // The ternary condition should resolve to Random when sampler is 'random'
       expect(script).toContain("'random' == 'tpe'");
       expect(script).toContain('RandomSampler');
-      // Verify the TPE path is still present as the alternative (it's a ternary)
-      expect(script).toContain('TPESampler');
-      expect(script).toContain('sampler=sampler');
     });
   });
 

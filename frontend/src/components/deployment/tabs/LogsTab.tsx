@@ -84,15 +84,15 @@ export function LogsTab({ deployment }: Props) {
   const handleFeedback = async (log: PredictionLog, value: 'positive' | 'negative') => {
     const current = feedbackState[log.id] ?? log.feedback;
     if (current === value) return;
-    const previous = current;
+    const previous = feedbackState[log.id];
     setFeedbackState(prev => ({ ...prev, [log.id]: value }));
     try {
       await submitFeedback(deployment.deploymentId, log.id, value);
     } catch {
-      // Roll back optimistic update on failure
+      // Rollback optimistic update on failure
       setFeedbackState(prev => {
         const next = { ...prev };
-        if (previous) next[log.id] = previous;
+        if (previous !== undefined) next[log.id] = previous;
         else delete next[log.id];
         return next;
       });

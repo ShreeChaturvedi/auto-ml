@@ -60,11 +60,6 @@ export function detectTaskTypes(models: ModelRecord[]): ModelTaskType[] {
   return Array.from(new Set(models.map((m) => m.taskType)));
 }
 
-/**
- * Find the model ID with the best primary metric score.
- * Optionally filters by task type (default: all task types).
- * Used by experiments (all types) and deployment (classification + regression only).
- */
 export function findChampionModelId(
   models: ModelRecord[],
   taskTypeFilter?: ModelTaskType[],
@@ -73,12 +68,18 @@ export function findChampionModelId(
   let championValue = NaN;
 
   for (const model of models) {
-    if (model.status !== 'completed') continue;
-    if (taskTypeFilter && !taskTypeFilter.includes(model.taskType)) continue;
+    if (model.status !== 'completed') {
+      continue;
+    }
+    if (taskTypeFilter && !taskTypeFilter.includes(model.taskType)) {
+      continue;
+    }
 
     const metricKey = PRIMARY_METRIC[model.taskType];
     const metricValue = model.metrics[metricKey];
-    if (!Number.isFinite(metricValue)) continue;
+    if (!Number.isFinite(metricValue)) {
+      continue;
+    }
 
     const lowerIsBetter = LOWER_IS_BETTER.has(metricKey);
     if (
@@ -287,7 +288,7 @@ export const REGRESSION_METRICS = [
 ];
 
 export const CLUSTERING_METRICS = [
-  { value: 'silhouette_score', label: 'Silhouette' },
+  { value: 'silhouette_score', label: 'Silhouette Score' },
   { value: 'calinski_harabasz_score', label: 'Calinski-Harabasz' },
   { value: 'davies_bouldin_score', label: 'Davies-Bouldin' },
 ];

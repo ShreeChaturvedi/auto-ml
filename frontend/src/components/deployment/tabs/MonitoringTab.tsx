@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Activity, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Activity, Clock, AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
 import { LazyPlot, getPlotlyLayout, useIsDark, PLOTLY_CONFIG } from '@/components/data/eda/edaTheme';
 import { PlotSuspense } from '@/components/data/eda/PlotSuspense';
 import { Sparkline } from '@/components/experiments/charts/Sparkline';
@@ -61,10 +61,9 @@ export function MonitoringTab({ deployment }: Props) {
   const [stats, setStats] = useState<DeploymentStatsHourly[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [statsError, setStatsError] = useState<string | null>(null);
-
   const [drift, setDrift] = useState<DriftReport | null>(null);
   const [driftLoading, setDriftLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   /* ---- fetch stats ---- */
   const fetchStats = useCallback(async () => {
@@ -74,7 +73,7 @@ export function MonitoringTab({ deployment }: Props) {
       const res = await getDeploymentStats(deployment.deploymentId, timeRange);
       setStats(res.stats);
     } catch (err) {
-      setStatsError(err instanceof Error ? err.message : 'Failed to load monitoring data');
+      setStatsError(err instanceof Error ? err.message : 'Failed to load stats');
     } finally {
       setLoading(false);
     }
@@ -136,13 +135,14 @@ export function MonitoringTab({ deployment }: Props) {
   };
 
   /* ---- error state ---- */
-  if (!loading && statsError) {
+  if (statsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
+      <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
         <AlertTriangle className="h-8 w-8 text-destructive/60" />
         <p className="text-sm font-medium text-foreground">Failed to load monitoring data</p>
         <p className="text-xs text-muted-foreground">{statsError}</p>
-        <Button variant="outline" size="sm" onClick={() => void fetchStats()} className="mt-2">
+        <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => void fetchStats()}>
+          <RotateCcw className="h-3.5 w-3.5" />
           Retry
         </Button>
       </div>

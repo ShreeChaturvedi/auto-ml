@@ -22,11 +22,11 @@ import type { DeploymentRecord, DeploymentStatus } from '@/types/deployment';
 import { useDeploymentStore } from '@/stores/deploymentStore';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
-import { statusLabel, statusDotColor, statusBadgeVariant, PULSE_STATUSES } from './statusHelpers';
 import { PlaygroundTab } from './tabs/PlaygroundTab';
 import { ApiTab } from './tabs/ApiTab';
 import { LogsTab } from './tabs/LogsTab';
 import { MonitoringTab } from './tabs/MonitoringTab';
+import { statusLabel, statusDotColor, statusBadgeVariant, PULSE_STATUSES } from './statusHelpers';
 
 const TABS = ['overview', 'playground', 'api', 'logs', 'monitoring'] as const;
 type TabId = (typeof TABS)[number];
@@ -38,6 +38,10 @@ const TAB_LABELS: Record<TabId, string> = {
   logs: 'Logs',
   monitoring: 'Monitoring',
 };
+
+// ---------------------------------------------------------------------------
+// Status dot component
+// ---------------------------------------------------------------------------
 
 function StatusDot({ status }: { status: DeploymentStatus }) {
   const color = statusDotColor(status);
@@ -54,6 +58,10 @@ function StatusDot({ status }: { status: DeploymentStatus }) {
     </span>
   );
 }
+
+// ---------------------------------------------------------------------------
+// DeploymentDetail
+// ---------------------------------------------------------------------------
 
 export function DeploymentDetail({ deployment }: { deployment: DeploymentRecord }) {
   const [searchParams, setSearchParams] = useSearchParams();

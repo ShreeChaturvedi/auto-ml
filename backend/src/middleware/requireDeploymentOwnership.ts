@@ -23,7 +23,8 @@ export async function requireDeploymentOwnership(
   const deployment = await deploymentRepo.getById(deploymentId);
   if (!deployment) { res.status(404).json({ error: 'Deployment not found' }); return; }
 
-  const project = await verifyProjectOwnership(deployment.projectId, req.user!.user_id, projectRepo);
+  // Verify user owns the deployment's project
+  const project = await verifyProjectOwnership(deployment.projectId, req.user?.user_id ?? '', projectRepo);
   if (!project) { res.status(404).json({ error: 'Deployment not found' }); return; }
 
   req.deployment = deployment;

@@ -17,11 +17,10 @@ import { execDockerWithStdin } from './dockerUtils.js';
 
 const logger = appLogger.child({ service: 'driftDetection' });
 
-// Reuse a single repository instance across calls
-let _driftRepo: ReturnType<typeof createDeploymentRepository> | null = null;
-function getDriftRepo() {
-  if (!_driftRepo) _driftRepo = createDeploymentRepository();
-  return _driftRepo;
+let _deploymentRepo: ReturnType<typeof createDeploymentRepository> | null = null;
+function getDeploymentRepo() {
+  if (!_deploymentRepo) _deploymentRepo = createDeploymentRepository();
+  return _deploymentRepo;
 }
 
 export async function runDriftDetection(deployment: DeploymentRecord): Promise<DriftReport> {
@@ -40,7 +39,8 @@ export async function runDriftDetection(deployment: DeploymentRecord): Promise<D
   }
 
   // 3. Load recent predictions from DB
-  const { logs } = await getDriftRepo().getPredictionLogs(deployment.deploymentId, { limit: 500 });
+  const deploymentRepo = getDeploymentRepo();
+  const { logs } = await deploymentRepo.getPredictionLogs(deployment.deploymentId, { limit: 500 });
 
   if (logs.length < 10) {
     return { available: false, reason: 'insufficient_predictions' };

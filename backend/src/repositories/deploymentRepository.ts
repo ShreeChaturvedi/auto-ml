@@ -382,18 +382,11 @@ class PgDeploymentRepository implements DeploymentRepository {
 
   async revokeApiKey(keyId: string, deploymentId?: string): Promise<boolean> {
     const pool = getDbPool();
-    if (deploymentId) {
-      // Scoped revoke — ensures the key belongs to this deployment (avoids N+1 listApiKeys check)
-      const result = await pool.query(
-        'UPDATE deployment_api_keys SET revoked_at = NOW() WHERE key_id = $1 AND deployment_id = $2 AND revoked_at IS NULL RETURNING key_id',
-        [keyId, deploymentId],
-      );
-      return (result.rowCount ?? 0) > 0;
-    }
-    const result = await pool.query(
-      'UPDATE deployment_api_keys SET revoked_at = NOW() WHERE key_id = $1 AND revoked_at IS NULL RETURNING key_id',
-      [keyId],
-    );
+    const query = deploymentId
+      ? 'UPDATE deployment_api_keys SET revoked_at = NOW() WHERE key_id = $1 AND deployment_id = $2 AND revoked_at IS NULL RETURNING key_id'
+      : 'UPDATE deployment_api_keys SET revoked_at = NOW() WHERE key_id = $1 AND revoked_at IS NULL RETURNING key_id';
+    const params = deploymentId ? [keyId, deploymentId] : [keyId];
+    const result = await pool.query(query, params);
     return (result.rowCount ?? 0) > 0;
   }
 

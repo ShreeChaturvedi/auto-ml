@@ -24,6 +24,7 @@ import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
+import type { SavepointDiff } from '@/types/savepoint';
 import { createTrainingAdapter } from './TrainingAdapter';
 import { TrainingApprovalGate } from './TrainingApprovalGate';
 import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
@@ -58,7 +59,7 @@ interface TrainingConversationPaneProps {
   onEditMessage?: (id: string) => void;
   onRevertToMessage?: (id: string) => void;
   editingMessageId?: string | null;
-  turnDiffs?: Map<string, unknown>;
+  turnDiffs?: ReadonlyMap<string, SavepointDiff>;
   onRetryWorkflow?: () => void;
   renderLifecycleCard: (message: ChatMessage) => ReactNode | null;
   syncLlmCells: (messages: ChatMessage[]) => void;

@@ -141,8 +141,15 @@ export function useTrainingNotebookSync({
       if (workbookChanged) {
         setIsReady(false);
       } else if (resolvedNotebookIdRef.current) {
-        // Same workbook, already resolved. Nothing to do.
-        return;
+        // Same workbook, already resolved — but if the binding was cleared
+        // (e.g. handleReset set notebookId to null), invalidate the cached
+        // resolution so we fall through and create a fresh notebook.
+        if (workbookNotebookId === null) {
+          resolvedNotebookIdRef.current = null;
+          setIsReady(false);
+        } else {
+          return;
+        }
       }
 
       try {

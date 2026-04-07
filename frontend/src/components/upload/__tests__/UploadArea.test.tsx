@@ -268,7 +268,7 @@ describe('UploadArea stage machine', () => {
       expect(completePhaseMock).toHaveBeenCalledWith('p1', 'upload');
       expect(updateProjectMock).toHaveBeenCalledWith('p1', expect.objectContaining({
         metadata: expect.objectContaining({
-          activePlanChatId: undefined,
+          activePlanChatId: null,
           uploadStage: 'upload',
         })
       }));

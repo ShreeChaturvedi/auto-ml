@@ -20,7 +20,7 @@ interface UploadFlowMetadata {
   projectPlan?: string;
   projectPlanName?: string;
   customInstructions?: string;
-  activePlanChatId?: string;
+  activePlanChatId?: string | null;
   plans?: unknown[];
   [key: string]: unknown;
 }
@@ -59,6 +59,7 @@ export function UploadArea() {
   const syncingFromMetadataRef = useRef(false);
   const creatingPlanRef = useRef(false);
 
+
   useEffect(() => {
     if (!activeProjectId) return;
     void useDataStore.getState().hydrateFromBackend(activeProjectId);
@@ -69,14 +70,13 @@ export function UploadArea() {
     setActivePlanChatId(null);
   }, [activeProjectId]);
 
+  // Restore stage + active chat from metadata on project load
   useEffect(() => {
     if (!activeProject) return;
 
     const metadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
-    // Treat legacy 'chat' stage as 'upload' (chat is now inline in the right column)
     const rawStage = metadata.uploadStage;
     const nextStage = isValidUploadStage(rawStage) ? rawStage : 'upload';
-    const persistedPlanChatId = getPersistedPlanChatId(metadata);
     const hasProjectChanged = initializedProjectIdRef.current !== activeProject.id;
     const hasStageChanged = persistedStageRef.current !== nextStage;
 
@@ -87,18 +87,16 @@ export function UploadArea() {
       initializedProjectIdRef.current = activeProject.id;
     }
 
-    // Restore persisted active chat ID (guarded by store init)
-    if (persistedPlanChatId && isInitialized) {
-      const chat = usePlanChatStore.getState().chats[persistedPlanChatId];
-      if (chat?.status === 'in_progress') {
-        setActivePlanChatId(persistedPlanChatId);
-      } else {
-        // Clear dangling reference
-        setActivePlanChatId(null);
-        const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
-        void updateProject(activeProject.id, {
-          metadata: { ...existingMetadata, activePlanChatId: undefined },
-        }).catch(() => {});
+    // Only restore chat on project init (not every metadata change)
+    if (hasProjectChanged && isInitialized) {
+      const persistedPlanChatId = getPersistedPlanChatId(metadata);
+      if (persistedPlanChatId) {
+        const chat = usePlanChatStore.getState().chats[persistedPlanChatId];
+        if (chat?.status === 'in_progress') {
+          setActivePlanChatId(persistedPlanChatId);
+        } else {
+          setActivePlanChatId(null);
+        }
       }
     }
   }, [activeProject, isInitialized, updateProject]);
@@ -119,24 +117,21 @@ export function UploadArea() {
       const inProgressChats = usePlanChatStore.getState().getInProgressChats(activeProject.id);
       const chatName = getNextPlanName(existingPlans, inProgressChats);
       const chat = await createChat(activeProject.id, chatName);
+
       setActivePlanChatId(chat.id);
 
       if (existingPlans.length > 0) {
-        // Plans already exist — skip processing animation, go straight to chat
         const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
         void updateProject(activeProject.id, {
           metadata: { ...existingMetadata, uploadStage: 'upload', activePlanChatId: chat.id },
         }).catch(() => {});
       } else {
-        // First plan — show processing animation
         setStage('processing');
         persistedStageRef.current = 'processing';
         const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
         void updateProject(activeProject.id, {
           metadata: { ...existingMetadata, uploadStage: 'processing', activePlanChatId: chat.id },
-        }).catch((error) => {
-          console.error('Failed to persist new-plan stage metadata', error);
-        });
+        }).catch(() => {});
       }
 
       const nextParams = new URLSearchParams(searchParams);
@@ -154,7 +149,6 @@ export function UploadArea() {
       const store = usePlanChatStore.getState();
       let chat = store.chats[chatId];
 
-      // Load full chat if we only have a summary
       if (!chat || chat.messages.length === 0) {
         const loaded = await store.loadFullChat(activeProject.id, chatId);
         if (loaded) chat = loaded;
@@ -162,10 +156,9 @@ export function UploadArea() {
 
       if (chat && chat.projectId === activeProject.id && chat.status === 'in_progress') {
         setActivePlanChatId(chatId);
-
-        const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
+        const existingMeta = (activeProject.metadata ?? {}) as UploadFlowMetadata;
         void updateProject(activeProject.id, {
-          metadata: { ...existingMetadata, uploadStage: 'upload', activePlanChatId: chatId },
+          metadata: { ...existingMeta, uploadStage: 'upload', activePlanChatId: chatId },
         }).catch(() => {});
       }
 
@@ -178,16 +171,17 @@ export function UploadArea() {
   // Handle ?planId=xxx — switch to viewing a completed plan (clears active chat)
   useEffect(() => {
     const planId = searchParams.get('planId');
-    if (!planId || !activeProject) return;
+    if (!planId) return;
 
-    // Directly clear local chat state — no metadata round-trip needed
+    // handleOpenPlan already persisted activePlanChatId: null to metadata — just clear local state
     setActivePlanChatId(null);
 
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('planId');
     setSearchParams(nextParams, { replace: true });
-  }, [activeProject, searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams]);
 
+  // Persist stage changes to metadata
   useEffect(() => {
     if (!activeProject) return;
     if (initializedProjectIdRef.current !== activeProject.id) return;
@@ -207,13 +201,8 @@ export function UploadArea() {
 
     const existingMetadata = (activeProject.metadata ?? {}) as UploadFlowMetadata;
     void updateProject(activeProject.id, {
-      metadata: {
-        ...existingMetadata,
-        uploadStage: stage,
-      },
-    }).catch((error) => {
-      console.error('Failed to persist upload stage metadata', error);
-    });
+      metadata: { ...existingMetadata, uploadStage: stage },
+    }).catch(() => {});
   }, [activeProject, stage, updateProject]);
 
   // onFirstUpload: create chat + start processing animation
@@ -265,12 +254,8 @@ export function UploadArea() {
     const newPlan = { id: newPlanId, name: planName, content: plan };
     const existingPlans = Array.isArray(metadata.plans) ? (metadata.plans as ProjectPlan[]) : [];
 
-    const legacyCompat = {
-      projectPlan: plan,
-      projectPlanName: planName,
-    };
+    const legacyCompat = { projectPlan: plan, projectPlanName: planName };
 
-    // Complete chat + update project in parallel
     const completeChatPromise = activePlanChatId
       ? completeStoreChat(activePlanChatId, newPlanId, planName).catch((err) => {
           console.error('Failed to complete chat', err);
@@ -283,7 +268,7 @@ export function UploadArea() {
         ...legacyCompat,
         plans: [...existingPlans, newPlan],
         activePlanId: newPlan.id,
-        activePlanChatId: undefined,
+        activePlanChatId: null,
         uploadStage: 'upload',
       },
     });

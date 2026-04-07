@@ -54,7 +54,7 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
         metadata: {
           ...metadata,
           activePlanId: planId,
-          activePlanChatId: undefined,
+          activePlanChatId: null,
           projectPlanName: selectedPlan?.name,
           projectPlan: selectedPlan?.content,
           uploadStage: 'upload',

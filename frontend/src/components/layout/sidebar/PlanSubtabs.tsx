@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { useProjectPlans } from '@/hooks/useProjectPlans';
+import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
 import { downloadMarkdownFile } from '@/lib/exportMarkdown';
 import { SubtabItem } from './SubtabItem';
@@ -28,7 +29,13 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
   const renameChat = usePlanChatStore((s) => s.renameChat);
   const deleteChat = usePlanChatStore((s) => s.deleteChat);
   const isOnUpload = location.pathname.endsWith('/upload');
-  const activeChatId = new URLSearchParams(location.search).get('chatId');
+
+  // Read activePlanChatId from project metadata (not URL params — those are transient)
+  const activePlanChatId = useProjectStore((s) => {
+    const project = s.projects.find((p) => p.id === projectId);
+    const val = (project?.metadata as Record<string, unknown> | undefined)?.activePlanChatId;
+    return typeof val === 'string' && val.length > 0 ? val : null;
+  });
 
   const { requestDelete, confirmDialog } = useSidebarDeleteConfirm();
 
@@ -63,7 +70,7 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
             key={chat.id}
             icon={MessageSquare}
             label={chat.name}
-            isActive={isOnUpload && activeChatId === chat.id}
+            isActive={isOnUpload && activePlanChatId === chat.id}
             onClick={() => navigate(`/project/${projectId}/upload?chatId=${chat.id}`)}
             actionSlot={
               <SidebarSubtabActionMenu ariaLabel="Chat options">
@@ -93,7 +100,7 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
             key={plan.id}
             icon={ClipboardList}
             label={plan.name}
-            isActive={isOnUpload && plan.id === selectedPlanId}
+            isActive={isOnUpload && plan.id === selectedPlanId && !activePlanChatId}
             onClick={() => handleOpenPlan(plan.id)}
             actionSlot={
               <SidebarSubtabActionMenu ariaLabel="Plan options">

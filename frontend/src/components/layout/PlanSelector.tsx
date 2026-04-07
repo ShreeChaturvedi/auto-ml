@@ -44,11 +44,25 @@ export function PlanSelector({
   const isInitialized = usePlanChatStore((s) => s.isInitialized);
   const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, effectiveProjectId)));
 
+  // Read activePlanChatId from project metadata to know what's currently shown
+  const activePlanChatId = useProjectStore((s) => {
+    const project = s.projects.find((p) => p.id === effectiveProjectId);
+    const val = (project?.metadata as Record<string, unknown> | undefined)?.activePlanChatId;
+    return typeof val === 'string' && val.length > 0 ? val : null;
+  });
+
   if (!isInitialized || !effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
     return null;
   }
 
+  const activeChat = activePlanChatId ? inProgressChats.find((c) => c.id === activePlanChatId) : null;
   const activePlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
+
+  // Show active chat name if a chat is selected, otherwise show plan name
+  const triggerLabel = activeChat?.name ?? activePlan?.name ?? 'Plans';
+  const triggerIcon = activeChat
+    ? <MessageSquare className="h-4 w-4 text-muted-foreground" />
+    : <ClipboardList className="h-4 w-4 text-muted-foreground" />;
 
   return (
     <DropdownMenu>
@@ -61,9 +75,9 @@ export function PlanSelector({
             className
           )}
         >
-          {iconSlot ?? <ClipboardList className="h-4 w-4 text-primary" />}
+          {iconSlot ?? triggerIcon}
           <span className={cn('truncate text-left', nameMaxWidthClass ?? 'max-w-[150px]')}>
-            {activePlan?.name ?? inProgressChats[0]?.name ?? 'Plans'}
+            {triggerLabel}
           </span>
         </Button>
       </DropdownMenuTrigger>
@@ -77,7 +91,10 @@ export function PlanSelector({
               <DropdownMenuItem
                 key={chat.id}
                 onClick={() => navigate(`/project/${effectiveProjectId}/upload?chatId=${chat.id}`)}
-                className="cursor-pointer"
+                className={cn(
+                  "cursor-pointer",
+                  activePlanChatId === chat.id && "bg-accent text-accent-foreground font-medium"
+                )}
               >
                 <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />
                 <span className="truncate flex-1">{chat.name}</span>
@@ -93,7 +110,7 @@ export function PlanSelector({
             onClick={() => handleOpenPlan(plan.id)}
             className={cn(
               "cursor-pointer",
-              plan.id === selectedPlanId ? "bg-accent text-accent-foreground font-medium" : ""
+              !activePlanChatId && plan.id === selectedPlanId && "bg-accent text-accent-foreground font-medium"
             )}
           >
             <ClipboardList className="h-4 w-4 mr-2 opacity-70" />

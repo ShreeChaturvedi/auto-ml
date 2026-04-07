@@ -6,7 +6,7 @@
  * selects which ones to approve, then clicks a shared "Apply" button.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +51,17 @@ export function StepProposalCard({
   onReject,
 }: StepProposalCardProps) {
   const [rationaleExpanded, setRationaleExpanded] = useState(false);
-  const [selected, setSelected] = useState<boolean | null>(null);
+  // Auto-select pending proposals so the "Apply" button is immediately visible.
+  // User can deselect (Skip) ones they don't want.
+  const [selected, setSelected] = useState<boolean | null>(status === 'pending' ? true : null);
+
+  // Notify parent of auto-selection on mount
+  useEffect(() => {
+    if (status === 'pending' && onToggleSelect) {
+      onToggleSelect(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Determine effective display status
   const effectiveStatus = selected === true

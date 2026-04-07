@@ -1,4 +1,4 @@
-import { copyFile, mkdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
 import { env } from '../../../config.js';
@@ -23,7 +23,7 @@ const modelRepository = createModelRepository(env.modelMetadataPath);
  * Returns the absolute resolved path, or throws a descriptive error that
  * the tool handler surfaces to the LLM so it can retry its code cell.
  */
-function resolveWorkspaceArtifactPath(projectId: string, artifactPath: string): string {
+async function resolveWorkspaceArtifactPath(projectId: string, artifactPath: string): Promise<string> {
   if (!artifactPath.trim()) {
     throw new Error('artifactPath is empty. The training code must save a model file (e.g. joblib.dump(model, "model.joblib")) and pass the relative filename as artifactPath.');
   }
@@ -38,6 +38,32 @@ function resolveWorkspaceArtifactPath(projectId: string, artifactPath: string): 
   if (resolved !== workspaceRoot && !resolved.startsWith(rootWithSep)) {
     throw new Error(`artifactPath "${artifactPath}" resolves outside the project workspace and was rejected for safety.`);
   }
+
+  // Check the project root first.
+  try {
+    await stat(resolved);
+    return resolved;
+  } catch { /* not at project root — fall through to session search */ }
+
+  // The execution service creates session-scoped workspaces at
+  // `{executionWorkspaceDir}/{projectId}/{sessionId}/`. Files written by
+  // run_cell land inside the session directory, not at the project root.
+  // Search session subdirectories for the artifact.
+  const filename = artifactPath.split('/').pop()!;
+  try {
+    const entries = await readdir(workspaceRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'datasets') continue;
+      const candidate = join(workspaceRoot, entry.name, filename);
+      try {
+        await stat(candidate);
+        return candidate;
+      } catch { /* not in this session dir */ }
+    }
+  } catch { /* workspace root doesn't exist or can't be read */ }
+
+  // Return the original resolved path — the caller's stat will produce
+  // the ENOENT error with a clear message.
   return resolved;
 }
 
@@ -122,7 +148,7 @@ export const registerModel: TrainingToolHandler = async (
   let resolvedSourcePath: string | undefined;
   if (typeof args.artifactPath === 'string') {
     try {
-      resolvedSourcePath = resolveWorkspaceArtifactPath(projectId, args.artifactPath);
+      resolvedSourcePath = await resolveWorkspaceArtifactPath(projectId, args.artifactPath);
       await stat(resolvedSourcePath);
     } catch (err) {
       return {

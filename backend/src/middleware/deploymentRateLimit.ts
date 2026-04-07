@@ -8,21 +8,10 @@ const MAX_ENTRIES = 500;
 
 const windows = new Map<string, number[]>();
 
-function evictOld(deploymentId: string) {
-  const timestamps = windows.get(deploymentId);
-  if (!timestamps) return;
-  const cutoff = Date.now() - WINDOW_MS;
-  const idx = timestamps.findIndex((t) => t > cutoff);
-  if (idx > 0) timestamps.splice(0, idx);
-  else if (idx === -1) windows.delete(deploymentId);
-}
-
 /** In-memory sliding-window rate limiter: 60 req/min per deployment. */
 export function deploymentRateLimit(req: PredictRequest, res: Response, next: NextFunction): void {
   const deploymentId = req.params.deploymentId ?? req.deployment?.deploymentId;
   if (!deploymentId) return next();
-
-  evictOld(deploymentId);
 
   // Cap total tracked deployments to bound memory
   if (windows.size > MAX_ENTRIES) {
@@ -38,11 +27,18 @@ export function deploymentRateLimit(req: PredictRequest, res: Response, next: Ne
     windows.set(deploymentId, timestamps);
   }
 
+  // Single pass: evict old entries and count recent ones
   const now = Date.now();
   const cutoff = now - WINDOW_MS;
-  const recentCount = timestamps.filter((t) => t > cutoff).length;
+  let writeIdx = 0;
+  for (let i = 0; i < timestamps.length; i++) {
+    if (timestamps[i] > cutoff) {
+      timestamps[writeIdx++] = timestamps[i];
+    }
+  }
+  timestamps.length = writeIdx;
 
-  if (recentCount >= MAX_REQUESTS) {
+  if (writeIdx >= MAX_REQUESTS) {
     res.status(429).json({ error: 'Rate limit exceeded. Max 60 requests per minute.' });
     return;
   }

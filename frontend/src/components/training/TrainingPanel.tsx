@@ -28,7 +28,7 @@ import { createTrainingAdapter } from './TrainingAdapter';
 import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
-import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 
@@ -351,6 +351,18 @@ export function TrainingPanel() {
 
   const trainingStorageKey = buildTrainingStorageKey(activeTrainingWorkbookId);
 
+  // Wrap handleResetWorkbook to also clear the workflow session store so
+  // the stale runId/threadId (pointing at the old run with the deleted
+  // notebook's activeNotebookId) cannot survive into the next prompt.
+  const handleResetWithSessionClear = useCallback(() => {
+    const sessionKey = buildWorkflowSessionKey(
+      projectId ?? 'training',
+      `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
+    );
+    useWorkflowSessionStore.getState().clearSession(sessionKey);
+    handleResetWorkbook();
+  }, [handleResetWorkbook, projectId, trainingStorageKey, selectedTrainingFile?.metadata?.datasetId]);
+
   const trainingAdapter = useMemo(() => createTrainingAdapter({
     projectId: projectId ?? '',
     datasetId: selectedTrainingFile?.metadata?.datasetId,
@@ -446,7 +458,7 @@ export function TrainingPanel() {
             onNew={handleNewWorkbook}
             onRename={openRenameDialog}
             onReplay={handleReplayWorkbook}
-            onReset={handleResetWorkbook}
+            onReset={handleResetWithSessionClear}
             onDelete={handleDeleteWorkbook}
             canDelete={trainingWorkbooks.length > 1}
           />

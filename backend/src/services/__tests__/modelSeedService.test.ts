@@ -87,10 +87,10 @@ describe('seedModels', () => {
     expect(firstCall.datasetId).toBe('00000000-0000-0000-0000-000000000001');
   });
 
-  it('writes evaluation.json, shap.json, and baseline.json artifacts for each model', async () => {
+  it('writes evaluation.json and shap.json artifacts for each model', async () => {
     await seedModels('proj-1');
-    // 5 models × 3 files = 15 writes
-    expect(mockWriteFile).toHaveBeenCalledTimes(15);
+    // 5 models × 2 files = 10 writes
+    expect(mockWriteFile).toHaveBeenCalledTimes(10);
     // Every write should produce valid JSON
     for (const [, content] of mockWriteFile.mock.calls) {
       expect(() => JSON.parse(content as string)).not.toThrow();
@@ -138,20 +138,18 @@ describe('seedOneModel', () => {
     expect(model.name).toBe('Test Model');
   });
 
-  it('writes evaluation, shap, and baseline artifacts', async () => {
+  it('writes evaluation and shap artifacts', async () => {
     await seedOneModel('proj-1', {
       name: 'Test Reg',
       taskType: 'regression',
       algorithm: 'LinearRegression',
     });
 
-    expect(mockWriteFile).toHaveBeenCalledTimes(3);
+    expect(mockWriteFile).toHaveBeenCalledTimes(2);
     const [evalPath, evalContent] = mockWriteFile.mock.calls[0];
     const [shapPath, shapContent] = mockWriteFile.mock.calls[1];
-    const [baselinePath] = mockWriteFile.mock.calls[2];
     expect(evalPath).toContain('evaluation.json');
     expect(shapPath).toContain('shap.json');
-    expect(baselinePath).toContain('baseline.json');
     const evalData = JSON.parse(evalContent as string);
     expect(evalData.taskType).toBe('regression');
     const shapData = JSON.parse(shapContent as string);

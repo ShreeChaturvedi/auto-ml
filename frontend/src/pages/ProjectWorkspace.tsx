@@ -6,7 +6,6 @@ import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPane
 import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
 import { TrainingPanel } from '@/components/training/TrainingPanel';
 import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
-import { DeploymentDashboard } from '@/components/deployment/DeploymentDashboard';
 import { NotebookPage } from '@/components/notebook/NotebookPage';
 import { Button } from '@/components/ui/button';
 import { useProjectStore } from '@/stores/projectStore';
@@ -163,7 +162,19 @@ export function ProjectWorkspace() {
       return <ExperimentsDashboard />;
 
     case 'deployment':
-      return <DeploymentDashboard />;
+      return (
+        <div className="flex h-full items-center justify-center p-6">
+          <div className="text-center space-y-2">
+            <h3 className="text-lg font-semibold text-foreground">Deployment</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Model deployment interface with containerization and API endpoint management.
+            </p>
+            <p className="text-xs text-muted-foreground italic">
+              TODO: Implement deployment UI.
+            </p>
+          </div>
+        </div>
+      );
 
     case 'notebook':
       return <NotebookPage projectId={projectId!} />;

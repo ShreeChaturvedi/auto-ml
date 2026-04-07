@@ -29,7 +29,6 @@ vi.mock('../../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
     getById: hoisted.mockModelGetById,
     create: hoisted.mockModelCreate,
-    update: vi.fn(),
   }),
 }));
 
@@ -273,7 +272,7 @@ describe('isNegatedScorer', () => {
 describe('buildTuningScript', () => {
   it('maps type=number integer param to trial.suggest_int()', () => {
     const script = callBuild(makeTemplate());
-    expect(script).toContain('trial.suggest_int("n_estimators", 10, 1000)');
+    expect(script).toContain('trial.suggest_int("n_estimators", 10, 1000, step=10)');
     expect(script).toContain('trial.suggest_int("max_depth", 2, 50)');
     expect(script).toContain('trial.suggest_int("min_samples_split", 2, 20)');
   });
@@ -281,7 +280,7 @@ describe('buildTuningScript', () => {
   it('maps type=number float param to trial.suggest_float()', () => {
     const script = callBuild(makeTemplate(LOGISTIC_OVERRIDES));
     expect(script).toContain('trial.suggest_float("C", 0.01, 10, log=True)');
-    expect(script).toContain('trial.suggest_int("max_iter", 100, 1000)');
+    expect(script).toContain('trial.suggest_int("max_iter", 100, 1000, step=50)');
   });
 
   it('maps type=select param to trial.suggest_categorical()', () => {
@@ -308,8 +307,8 @@ describe('buildTuningScript', () => {
     // Dataset loading & preprocessing
     expect(script).toContain('pd.read_csv');
     expect(script).toContain('dropna(subset=[target_col])');
-    expect(script).toContain('ColumnTransformer');
-    expect(script).toContain('SimpleImputer');
+    expect(script).toContain('get_dummies');
+    expect(script).toContain('fillna(0)');
 
     // Train/test split
     expect(script).toContain('train_test_split');
@@ -336,10 +335,10 @@ describe('buildTuningScript', () => {
 
     // Refit best model
     expect(script).toContain('best_params = study.best_params');
-    expect(script).toContain('best_pipeline.fit(X_train, y_train)');
+    expect(script).toContain('best_model.fit(X_train, y_train)');
 
     // Save artifacts
-    expect(script).toContain('joblib.dump(best_pipeline');
+    expect(script).toContain('joblib.dump(best_model');
     expect(script).toContain('tuning_summary.json');
     expect(script).toContain('{"type": "done"}');
   });
@@ -462,7 +461,7 @@ describe('buildTuningScript', () => {
       const callbackIdx = script.indexOf('def stream_callback(study, trial):');
       const studyIdx = script.indexOf('optuna.create_study');
       const optimizeIdx = script.indexOf('study.optimize');
-      const refitIdx = script.indexOf('best_pipeline.fit');
+      const refitIdx = script.indexOf('best_model.fit');
       const doneIdx = script.indexOf('{"type": "done"}');
 
       expect(importIdx).toBeLessThan(objectiveIdx);
@@ -478,12 +477,7 @@ describe('buildTuningScript', () => {
 // -- runTuningStudy -----------------------------------------------------------
 
 describe('runTuningStudy', () => {
-  const dataset = {
-    datasetId: 'test-dataset',
-    filename: 'data.csv',
-    projectId: 'test-project',
-    columns: [{ name: 'feat1' }, { name: 'feat2' }, { name: 'target' }],
-  };
+  const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project' };
 
   function setupRunMocks(model = makeModelRecord()) {
     const template = makeTemplate();

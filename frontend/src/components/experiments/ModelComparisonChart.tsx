@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { Radar as RadarIcon, BarChart3 } from 'lucide-react';
 import type { ModelRecord } from '@/types/model';
-import { PRIMARY_METRIC, formatMetricDisplayName } from './utils';
+import { PRIMARY_METRIC } from './utils';
 import { getEdaColors, useIsDark } from '@/components/data/eda/edaTheme';
 import { Button } from '@/components/ui/button';
 
@@ -19,6 +19,10 @@ const AXIS_MUTED = 'rgba(255,255,255,0.4)';
 const AXIS_MUTED_LIGHT = 'rgba(0,0,0,0.4)';
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
+
+function formatMetricName(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '\u2026' : str;
@@ -58,7 +62,7 @@ function buildRadarData(models: ModelRecord[], metricKeys: string[]) {
   });
 
   return ranges.map(({ key, min, max }) => {
-    const row: Record<string, string | number> = { metric: formatMetricDisplayName(key) };
+    const row: Record<string, string | number> = { metric: formatMetricName(key) };
     for (const m of models) {
       const raw = m.metrics[key];
       row[m.name] = raw != null && Number.isFinite(raw)
@@ -76,7 +80,7 @@ function buildBarData(models: ModelRecord[], metricKeys: string[], primaryKey: s
   );
   return sorted.map((m) => {
     const row: Record<string, string | number> = { name: m.name };
-    for (const key of metricKeys) row[formatMetricDisplayName(key)] = m.metrics[key] ?? 0;
+    for (const key of metricKeys) row[formatMetricName(key)] = m.metrics[key] ?? 0;
     return row;
   });
 }
@@ -107,7 +111,7 @@ export function ModelComparisonChart({ models }: { models: ModelRecord[] }) {
     () => Array.from(new Set(models.flatMap((m) => Object.keys(m.metrics)))),
     [models],
   );
-  const formattedKeys = useMemo(() => metricKeys.map(formatMetricDisplayName), [metricKeys]);
+  const formattedKeys = useMemo(() => metricKeys.map(formatMetricName), [metricKeys]);
 
   // Only compute the transform for the active chart view
   const radarData = useMemo(

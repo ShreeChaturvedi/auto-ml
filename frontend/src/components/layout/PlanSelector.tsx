@@ -103,7 +103,7 @@ export function PlanSelector({
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleCreateNewPlan} className="cursor-pointer text-primary">
           <Plus className="h-4 w-4 mr-2" />
-          New Plan
+          New plan file
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

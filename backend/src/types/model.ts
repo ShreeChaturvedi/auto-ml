@@ -61,8 +61,6 @@ export interface ModelRecord {
   evaluationStatus?: 'pending' | 'computing' | 'ready' | 'failed';
   evaluationComputedAt?: string;
   evaluationError?: string;
-  featureTypes?: Record<string, 'float' | 'int' | 'str'>;
-  sampleRequest?: Record<string, unknown>;
 }
 
 export interface TrainModelRequest {

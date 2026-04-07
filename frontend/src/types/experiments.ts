@@ -61,13 +61,7 @@ export type TuningStreamEvent =
   | TuningTrialEvent
   | TuningImportanceEvent
   | TuningConvergenceEvent
-  | {
-      type: 'done';
-      resultModelId?: string;
-      optimization_history?: { trial_numbers: number[]; values: number[]; best_values: number[] };
-      best_value?: number;
-      best_params?: Record<string, unknown>;
-    }
+  | { type: 'done'; resultModelId?: string }
   | { type: 'error'; message: string };
 
 export interface TuningStudyResult {

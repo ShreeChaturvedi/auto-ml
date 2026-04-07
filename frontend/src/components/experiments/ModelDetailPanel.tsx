@@ -1,17 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Dialog, DialogPortal, DialogOverlay, DialogTitle, DialogContent, DialogHeader, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogPortal, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Download, RefreshCcw, Clock, Rocket, X, BarChart3, Brain, AlertTriangle, GitBranch, SlidersHorizontal } from 'lucide-react';
+import { Download, RefreshCcw, Clock, X, BarChart3, Brain, AlertTriangle, GitBranch, SlidersHorizontal } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useNavigate, useParams } from 'react-router-dom';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
-import { useProjectStore } from '@/stores/projectStore';
-import { useDeploymentStore } from '@/stores/deploymentStore';
 import { getModelArtifactUrl } from '@/lib/api/models';
 import { cn } from '@/lib/utils';
 import { resolveModelIcon, TASK_TEXT_STYLES, TASK_LABELS, METRIC_ICONS } from './modelIcons';
@@ -24,7 +19,8 @@ import { ErrorsTab } from './tabs/ErrorsTab';
 import { ProvenanceTab } from './tabs/ProvenanceTab';
 import { TuneTab } from './tabs/tune/TuneTab';
 import { EvalTabContent } from './EvalTabContent';
-import { formatMetric, formatDurationCompact, formatMetricDisplayName } from './utils';
+import { formatMetric, formatDurationCompact, formatDurationLong } from './utils';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
 const TAB_OPTIONS = [
   { value: 'plots', ariaLabel: 'Plots', icon: BarChart3, tooltip: 'Plots' },
@@ -50,33 +46,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const retryEvaluation = useExperimentsStore((s) => s.retryEvaluation);
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
-
-  const [deployOpen, setDeployOpen] = useState(false);
-  const [deployName, setDeployName] = useState('');
-  const [deploying, setDeploying] = useState(false);
-  const navigate = useNavigate();
-  const { projectId } = useParams<{ projectId: string }>();
-  const completePhase = useProjectStore((s) => s.completePhase);
-  const deploy = useDeploymentStore((s) => s.deploy);
-
-  useEffect(() => {
-    if (deployOpen && model) setDeployName(`${model.name} endpoint`);
-  }, [deployOpen, model]);
-
-  async function handleDeploy() {
-    if (!model || !projectId) return;
-    setDeploying(true);
-    try {
-      await deploy(model.modelId, projectId, deployName);
-      completePhase(projectId, 'experiments');
-      setDeployOpen(false);
-      navigate(`/project/${projectId}/deployment`);
-    } catch {
-      // Error stored in deploymentStore
-    } finally {
-      setDeploying(false);
-    }
-  }
+  const { themeColor } = useProjectThemeColor();
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
@@ -107,6 +77,15 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             duration-200"
           onOpenAutoFocus={(e) => { e.preventDefault(); }}
         >
+          <div
+            className="h-[1px] w-full shrink-0"
+            style={{
+              background: themeColor
+                ? `linear-gradient(90deg, transparent 0%, ${themeColor}60 30%, ${themeColor} 50%, ${themeColor}60 70%, transparent 100%)`
+                : 'linear-gradient(90deg, transparent 0%, hsl(var(--muted-foreground) / 0.3) 50%, transparent 100%)',
+            }}
+          />
+
           <div className="flex h-14 items-center gap-3 border-b border-border/40 px-5 shrink-0">
             <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
             <DialogTitle className="text-sm font-semibold truncate min-w-0">
@@ -122,12 +101,12 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
 
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide min-w-0">
               {model.trainingMs != null && (
-                <Pill icon={Clock} tooltip="Training duration" className="tabular-nums shrink-0">
+                <Pill icon={Clock} tooltip={`Training duration: ${formatDurationLong(model.trainingMs)}`} className="tabular-nums shrink-0">
                   {formatDurationCompact(model.trainingMs)}
                 </Pill>
               )}
               {metricEntries.map(([key, value]) => (
-                <Pill key={key} icon={METRIC_ICONS[key]} tooltip={formatMetricDisplayName(key)} className="tabular-nums shrink-0">
+                <Pill key={key} icon={METRIC_ICONS[key]} tooltip={`${key.charAt(0).toUpperCase() + key.slice(1)}: ${formatMetric(value)}`} className="tabular-nums shrink-0">
                   {formatMetric(value)}
                 </Pill>
               ))}
@@ -163,17 +142,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Retry evaluation</TooltipContent>
-                </Tooltip>
-              )}
-
-              {model.taskType !== 'clustering' && model.evaluationStatus === 'ready' && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => setDeployOpen(true)}>
-                      <Rocket className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Deploy model</TooltipContent>
                 </Tooltip>
               )}
 
@@ -217,41 +185,6 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
           </div>
         </DialogPrimitive.Content>
       </DialogPortal>
-
-      <Dialog open={deployOpen} onOpenChange={setDeployOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Rocket className="h-4 w-4" />
-              Deploy model
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="deploy-model-name">Model</Label>
-              <Input id="deploy-model-name" value={model.name} readOnly className="bg-muted/30 text-muted-foreground" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="deploy-endpoint-name">Deployment name</Label>
-              <Input
-                id="deploy-endpoint-name"
-                value={deployName}
-                onChange={(e) => setDeployName(e.target.value)}
-                placeholder="e.g. my-model-endpoint"
-                autoFocus
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="ghost" size="sm" disabled={deploying}>Cancel</Button>
-            </DialogClose>
-            <Button size="sm" disabled={!deployName.trim() || deploying} onClick={handleDeploy}>
-              {deploying ? 'Deploying…' : 'Deploy'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Dialog>
   );
 }

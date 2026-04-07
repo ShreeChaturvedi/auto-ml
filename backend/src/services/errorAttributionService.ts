@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
-import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ErrorAnalysisResult } from '../types/experiments.js';
 import type { ModelTaskType } from '../types/model.js';
@@ -11,7 +10,6 @@ import {
   copyArtifactsToPermanentStorage,
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
-import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import {
   buildOutputDirSetup,
@@ -19,7 +17,6 @@ import {
   buildStandardImports,
 } from './pythonScriptUtils.js';
 
-const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = appLogger.child({ service: 'errorAttribution' });
@@ -161,25 +158,21 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
       logger.warn('Model has no artifact path', { modelId });
       return null;
     }
+    if (!model.targetColumn) {
+      logger.warn('Model has no target column', { modelId });
+      return null;
+    }
     if (model.taskType === 'clustering') {
       logger.warn('Clustering models do not support error analysis', { modelId });
       return null;
     }
 
-    // 3. Resolve target column (heals stale metadata)
-    const dataset = await datasetRepository.getById(model.datasetId);
-    if (!dataset) {
-      logger.warn('Dataset not found for error analysis', { modelId, datasetId: model.datasetId });
-      return null;
-    }
-    const resolvedTargetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
-
-    // 4. Compute paths
+    // 3. Compute paths
     const storagePredictionsPath = join(env.modelStorageDir, modelId, 'predictions.parquet');
     const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
     const workspacePredPath = join(workspacePath, 'eval', modelId, 'predictions.parquet');
 
-    // 5-8. Orchestrate container execution
+    // 4-7. Orchestrate container execution
     const { container, executionResult } = await orchestrateContainerExecution({
       projectId: model.projectId,
       pythonVersion: '3.11',
@@ -187,7 +180,7 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
         buildErrorAnalysisScript({
           predictionsPath: `/workspace/eval/${modelId}/predictions.parquet`,
           outputDir: `/workspace/error-analysis/${modelId}`,
-          targetColumn: resolvedTargetColumn,
+          targetColumn: model.targetColumn!,
           taskType: model.taskType as 'classification' | 'regression',
         }),
       filesToCopy: [
@@ -209,7 +202,7 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
       return null;
     }
 
-    // 9. Copy error_analysis.json to permanent storage
+    // 8. Copy error_analysis.json to permanent storage
     await copyArtifactsToPermanentStorage(modelId, container, [
       {
         workspace: `error-analysis/${modelId}/error_analysis.json`,
@@ -217,7 +210,7 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
       },
     ]);
 
-    // 10. Read and return the result
+    // 9. Read and return the result
     const raw = await readFile(join(env.modelStorageDir, modelId, 'error_analysis.json'), 'utf8');
     const parsed = JSON.parse(raw) as ErrorAnalysisResult;
 

@@ -8,15 +8,11 @@ const hoisted = vi.hoisted(() => {
   const mockOrchestrateContainerExecution = vi.fn();
   const mockCopyArtifactsToPermanentStorage = vi.fn();
   const mockGetById = vi.fn();
-  const mockDatasetGetById = vi.fn();
-  const mockResolveAndHealTargetColumn = vi.fn();
 
   return {
     mockOrchestrateContainerExecution,
     mockCopyArtifactsToPermanentStorage,
     mockGetById,
-    mockDatasetGetById,
-    mockResolveAndHealTargetColumn,
   };
 });
 
@@ -33,16 +29,6 @@ vi.mock('../../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
     getById: hoisted.mockGetById,
   }),
-}));
-
-vi.mock('../../repositories/datasetRepository.js', () => ({
-  createDatasetRepository: () => ({
-    getById: hoisted.mockDatasetGetById,
-  }),
-}));
-
-vi.mock('../../utils/modelUtils.js', () => ({
-  resolveAndHealTargetColumn: hoisted.mockResolveAndHealTargetColumn,
 }));
 
 vi.mock('../../config.js', () => ({
@@ -63,14 +49,9 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn().mockResolvedValue('{"error_tree": {"node_id": 0, "error_rate": 0.25, "sample_count": 100, "error_count": 25}}'),
 }));
 
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
-  return {
-    ...actual,
-    existsSync: vi.fn().mockReturnValue(true),
-    mkdirSync: vi.fn(),
-  };
-});
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn().mockReturnValue(true),
+}));
 
 /* ------------------------------------------------------------------ */
 /*  Import SUT (after mocks)                                           */
@@ -86,8 +67,6 @@ const {
   mockOrchestrateContainerExecution,
   mockCopyArtifactsToPermanentStorage,
   mockGetById,
-  mockDatasetGetById,
-  mockResolveAndHealTargetColumn,
 } = hoisted;
 
 function makeModelRecord(overrides: Record<string, unknown> = {}) {
@@ -243,11 +222,6 @@ describe('runErrorAnalysis', () => {
     const container = makeContainer();
 
     mockGetById.mockResolvedValue(model);
-    mockDatasetGetById.mockResolvedValue({
-      datasetId: 'test-dataset',
-      columns: ['feature1', 'feature2', 'target'],
-    });
-    mockResolveAndHealTargetColumn.mockResolvedValue('target');
     mockOrchestrateContainerExecution.mockResolvedValue({
       container,
       executionResult: {
@@ -281,10 +255,9 @@ describe('runErrorAnalysis', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when dataset not found', async () => {
-    const model = makeModelRecord();
+  it('returns null when model has no targetColumn', async () => {
+    const model = makeModelRecord({ targetColumn: undefined });
     mockGetById.mockResolvedValue(model);
-    mockDatasetGetById.mockResolvedValue(undefined);
 
     const result = await runErrorAnalysis('test-model-id');
     expect(result).toBeNull();
@@ -303,11 +276,6 @@ describe('runErrorAnalysis', () => {
     const container = makeContainer();
 
     mockGetById.mockResolvedValue(model);
-    mockDatasetGetById.mockResolvedValue({
-      datasetId: 'test-dataset',
-      columns: [{ name: 'feature1' }, { name: 'target' }],
-    });
-    mockResolveAndHealTargetColumn.mockResolvedValue('target');
     mockOrchestrateContainerExecution.mockResolvedValue({
       container,
       executionResult: {

@@ -2,13 +2,11 @@ import { createServer } from 'node:http';
 
 import { createApp } from './app.js';
 import { env } from './config.js';
-import { hasDatabaseConfiguration, verifyDatabaseConnection } from './db.js';
+import { verifyDatabaseConnection } from './db.js';
 import { appLogger } from './logging/logger.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
-import { setDeploymentWSBroadcast, recoverDeployments, startHealthCheckLoop, destroyAllDeploymentContainers } from './services/deploymentManager.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
-import { initializeDeploymentWebSocket, broadcastDeploymentEvent, getDeploymentWSServer } from './services/websocket/deploymentWsServer.js';
 import { initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
 import { handleStdinError } from './utils/stdinError.js';
 
@@ -36,19 +34,6 @@ wsServer = initializeWebSocket(server);
 setWebSocketBroadcast(broadcastNotebookEvent);
 setCellExecutionBroadcast(broadcastNotebookEvent);
 
-// Deployment services (requires Postgres)
-if (hasDatabaseConfiguration()) {
-  initializeDeploymentWebSocket(server);
-  setDeploymentWSBroadcast(broadcastDeploymentEvent);
-
-  // Recover deployment state from DB and start health check loop
-  recoverDeployments().then(() => {
-    startHealthCheckLoop();
-    appLogger.info('[server] Deployment services started');
-  }).catch(err => {
-    appLogger.error('[server] Failed to recover deployments', err);
-  });
-}
 /**
  * Graceful shutdown handler - cleans up containers before exit
  */
@@ -65,13 +50,9 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
 
   // Stop accepting new WebSocket connections
   wsServer?.close();
-  if (hasDatabaseConfiguration()) {
-    getDeploymentWSServer()?.close();
-  }
 
   // Destroy all active containers
   await destroyAllContainers();
-  await destroyAllDeploymentContainers();
 
   if (!server?.listening) {
     process.exit(process.exitCode ?? 0);

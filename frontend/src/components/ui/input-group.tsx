@@ -36,12 +36,12 @@ const InputGroupAddon = React.forwardRef<
     data-slot="input-group-addon"
     data-align={align}
     className={cn(
-      "text-muted-foreground group-data-[disabled=true]/input-group:opacity-50 flex h-auto min-w-0 cursor-text items-center gap-2 py-1.5 text-sm font-medium select-none",
+      "text-muted-foreground group-data-[disabled=true]/input-group:opacity-50 flex h-auto cursor-text items-center gap-2 py-1.5 text-sm font-medium select-none",
       "[&>svg:not([class*=size-])]:size-4 [&>kbd]:rounded-[calc(var(--radius)-5px)]",
       align === "inline-start" && "order-first pl-3 has-[>button]:ml-[-0.45rem] has-[>kbd]:ml-[-0.35rem]",
       align === "inline-end" && "order-last pr-3 has-[>button]:mr-[-0.45rem] has-[>kbd]:mr-[-0.35rem]",
       align === "block-start" && "order-first w-full justify-start px-3 pt-3 [.border-b]:pb-3",
-      align === "block-end" && "order-last w-full justify-start overflow-hidden px-3 pb-3 [.border-t]:pt-3 group-has-[>input]/input-group:pb-2.5",
+      align === "block-end" && "order-last w-full justify-start px-3 pb-3 [.border-t]:pt-3 group-has-[>input]/input-group:pb-2.5",
       className
     )}
     {...props}

@@ -202,7 +202,8 @@ export function createPreprocessingAdapter(
           .sort(([, a], [, b]) => b - a);
 
         if (highNullCols.length > 0) {
-          tips.push({ id: 'tip-nulls', icon: AlertTriangle, content: `${highNullCols.length} columns have missing values` });
+          const topCols = highNullCols.slice(0, 3).map(([name]) => name).join(', ');
+          tips.push({ id: 'tip-nulls', icon: AlertTriangle, content: `${topCols} have missing values` });
         }
 
         const stringCols = Object.entries(profile.dtypes)

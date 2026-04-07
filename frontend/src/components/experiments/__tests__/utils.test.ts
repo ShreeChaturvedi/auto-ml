@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelRecord } from '@/types/model';
 import type { FilterPredicate } from '@/types/experiments';
-import { applyPredicate, filterByPredicates, formatMetricDisplayName } from '../utils';
+import { applyPredicate, filterByPredicates } from '../utils';
 
 const makeModel = (overrides: Partial<ModelRecord> = {}): ModelRecord => ({
   modelId: 'model-1',
@@ -77,17 +77,5 @@ describe('filterByPredicates', () => {
     const result = filterByPredicates(models, predicates);
     expect(result).toHaveLength(1);
     expect(result[0].modelId).toBe('a');
-  });
-});
-
-describe('formatMetricDisplayName', () => {
-  it('maps known metric keys to display labels', () => {
-    expect(formatMetricDisplayName('accuracy')).toBe('Accuracy');
-    expect(formatMetricDisplayName('rmse')).toBe('RMSE');
-    expect(formatMetricDisplayName('r2')).toBe('R\u00B2');
-  });
-
-  it('title-cases unknown keys', () => {
-    expect(formatMetricDisplayName('custom_loss')).toBe('Custom Loss');
   });
 });

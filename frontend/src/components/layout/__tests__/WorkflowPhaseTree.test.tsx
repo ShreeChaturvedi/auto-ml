@@ -36,7 +36,7 @@ vi.mock('@/stores/planChatStore', () => ({
 
 vi.mock('@/stores/workbookRegistryStore', () => ({
   useWorkbookRegistryStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ preprocessing: [], 'feature-engineering': [], training: [], deleteHandlers: {} })
+    selector({ preprocessing: [], 'feature-engineering': [], training: [] })
 }));
 
 vi.mock('@/hooks/useProjectThemeColor', () => ({

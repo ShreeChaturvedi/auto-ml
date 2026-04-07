@@ -2,7 +2,6 @@ import { useMemo, useEffect, useLayoutEffect, useSyncExternalStore } from 'react
 import { useProjectStore } from '@/stores/projectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@/components/theme-provider';
-import { projectColorClasses, type ProjectColorEntry } from '@/types/project';
 import {
   computeSyntaxPalette,
   STATIC_SYNTAX_PALETTE,
@@ -165,15 +164,7 @@ export function useProjectThemeColor() {
     }).catch(() => {});
   }, [hue, isDark, color, adaptivePref]);
 
-  const colorClasses: ProjectColorEntry | undefined = useMemo(
-    () => (color ? projectColorClasses[color] : undefined),
-    [color],
-  );
-
-  /** Convenience text-color class for the active project color. */
-  const themeColorClass = colorClasses?.text;
-
-  return { themeColor, hue, syntaxThemeId, colorClasses, themeColorClass };
+  return { themeColor, hue, syntaxThemeId };
 }
 
 function clearAccentVars(root: HTMLElement) {

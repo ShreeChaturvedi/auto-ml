@@ -129,14 +129,7 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   const randomStateSuffix = 'random_state' in template.defaultParams ? ', random_state=42' : '';
   lines.push(`    model = ${template.modelClass}(**params${randomStateSuffix})`);
-  lines.push('    _MAX_TUNING_ROWS = 2000');
-  lines.push('    if len(X_train) > _MAX_TUNING_ROWS:');
-  lines.push('        _idx = np.random.RandomState(42).choice(len(X_train), _MAX_TUNING_ROWS, replace=False)');
-  lines.push('        _X_tune, _y_tune = X_train.iloc[_idx], y_train.iloc[_idx]');
-  lines.push('    else:');
-  lines.push('        _X_tune, _y_tune = X_train, y_train');
-  lines.push('    _cv_folds = 3 if len(X_train) > 2000 else 5');
-  lines.push(`    scores = cross_val_score(model, _X_tune, _y_tune, cv=_cv_folds, scoring=${JSON.stringify(sklearnScoring)}, n_jobs=-1)`);
+  lines.push(`    scores = cross_val_score(model, X_train, y_train, cv=5, scoring=${JSON.stringify(sklearnScoring)})`);
   lines.push('    return scores.mean()');
   lines.push('');
 
@@ -184,11 +177,6 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   lines.push(`study = optuna.create_study(direction=${JSON.stringify(direction)}, sampler=sampler)`);
   lines.push(`study.optimize(objective, n_trials=${nTrials}, timeout=${timeoutSeconds}, callbacks=[stream_callback])`);
-  lines.push('try:');
-  lines.push('    _final_imp = optuna.importance.get_param_importances(study)');
-  lines.push("    print(json.dumps({'type': 'importance_update', 'importances': dict(_final_imp), 'n_trials_used': len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}), flush=True)");
-  lines.push('except Exception:');
-  lines.push('    pass');
   lines.push('');
 
   lines.push('best_params = study.best_params');

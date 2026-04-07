@@ -91,13 +91,22 @@ function classifyTool(toolName: string): CardType | null {
   return null;
 }
 
-/** Extract a human-readable title from a tool call's args. */
-function extractTitle(call: ToolCall): string {
+/** Extract a human-readable title from a tool call's args or result. */
+function extractTitle(call: ToolCall, result?: ToolResult | null): string {
   const args = call.args ?? {};
   if (typeof args.title === 'string') return args.title;
   if (typeof args.name === 'string') return args.name;
+  if (typeof args.experimentName === 'string') return args.experimentName as string;
+  if (typeof args.modelName === 'string') return args.modelName as string;
+  if (typeof args.modelType === 'string') return (args.modelType as string).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   if (typeof args.step_name === 'string') return args.step_name as string;
   if (typeof args.description === 'string') return args.description as string;
+  // Check result output for experiment/model name
+  if (result?.output && typeof result.output === 'object' && !Array.isArray(result.output)) {
+    const out = result.output as Record<string, unknown>;
+    if (typeof out.experimentName === 'string') return out.experimentName;
+    if (typeof out.modelName === 'string') return out.modelName;
+  }
   // Fallback: humanize the tool name
   return call.tool.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -138,7 +147,7 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
     const cardType = classifyTool(call.tool);
     if (!cardType) return null;
 
-    const title = extractTitle(call);
+    const title = extractTitle(call, result);
     const hasError = !!result?.error;
 
     // If the tool errored, show an ErrorCard instead

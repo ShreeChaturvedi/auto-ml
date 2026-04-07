@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type { Responses } from 'openai/resources/responses/responses';
 
+import { appLogger } from '../../../logging/logger.js';
 import type { LlmClient, LlmRequest, LlmStreamHandlers, LlmToolCall, RawLlmUsage } from '../llmClient.js';
 import { normalizeReasoningSelection, resolveCatalogModel } from '../modelCatalog.js';
 
@@ -20,17 +21,32 @@ export class OpenAiClient implements LlmClient {
       apiKey: options.apiKey,
       baseURL: options.baseUrl.replace(/\/$/, '') || undefined,
       timeout: options.timeoutMs,
-      maxRetries: 0
+      // 1 retry: absorbs transient 429/burst rate limits without excessive
+      // cost amplification (modelTurnCollector may already retry on empty
+      // output, so we keep this conservative).
+      maxRetries: 1
     });
     this.model = resolveCatalogModel(options.model).id;
   }
 
   async complete(request: LlmRequest): Promise<string> {
+    appLogger.debug('[OpenAiClient.complete] Dispatching to OpenAI', {
+      model: this.model,
+      messages: request.messages.length,
+      tools: request.tools?.length ?? 0,
+      reasoningEffort: request.reasoningEffort ?? null
+    });
     const response = await this.client.responses.create(buildOpenAiCreateBody(request, this.model));
     return extractResponseText(response);
   }
 
   async stream(request: LlmRequest, handlers: LlmStreamHandlers): Promise<string> {
+    appLogger.debug('[OpenAiClient.stream] Dispatching to OpenAI', {
+      model: this.model,
+      messages: request.messages.length,
+      tools: request.tools?.length ?? 0,
+      reasoningEffort: request.reasoningEffort ?? null
+    });
     let fullText = '';
     const streamedToolItemIds = new Set<string>();
     const stream = this.client.responses.stream(buildOpenAiStreamBody(request, this.model));
@@ -62,15 +78,26 @@ export class OpenAiClient implements LlmClient {
       streamedToolItemIds.add(event.item_id);
       handlers.onToolCall({
         name: event.name,
-        args: parseToolArguments(event.arguments)
+        args: parseToolArguments(event.arguments),
+        rawArgsText: event.arguments
       });
     });
 
     const response = await stream.finalResponse();
+
     emitToolCalls(response, handlers, streamedToolItemIds);
 
     if (handlers.onUsage && response.usage) {
       handlers.onUsage(response.usage as RawLlmUsage);
+    }
+
+    // Capture text from the final response that wasn't emitted via streaming
+    // deltas. This can happen when the model produces text in a message output
+    // item but no response.output_text.delta events were fired.
+    if (!fullText && response.output_text?.trim()) {
+      const finalText = response.output_text.trim();
+      fullText = finalText;
+      handlers.onToken(finalText);
     }
 
     return fullText || response.output_text || '';
@@ -224,7 +251,8 @@ function emitToolCalls(
 
     const toolCall: LlmToolCall = {
       name: item.name,
-      args: parseToolArguments(item.arguments)
+      args: parseToolArguments(item.arguments),
+      rawArgsText: item.arguments
     };
     handlers.onToolCall(toolCall);
   }

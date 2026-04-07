@@ -341,6 +341,8 @@ describe('runEvaluation', () => {
     });
 
     await runEvaluation('test-model-id');
+
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
   });
 
   it('does not throw when model is not found', async () => {

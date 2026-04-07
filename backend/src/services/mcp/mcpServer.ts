@@ -60,10 +60,11 @@ export function createMcpServer() {
     {
       description: toolDescription('list_project_files'),
       inputSchema: {
-        projectId: projectIdSchema
+        projectId: projectIdSchema,
+        datasetId: z.string().min(1).optional().describe('Optional active dataset ID — when provided, the matching dataset is flagged with isActive: true so the LLM knows which dataset to operate on for feature engineering.')
       }
     },
-    async ({ projectId }) => toMcpResult(await runTool(projectId, 'list_project_files'))
+    async ({ projectId, datasetId }) => toMcpResult(await runTool(projectId, 'list_project_files', datasetId ? { datasetId } : undefined))
   );
 
   server.registerTool(

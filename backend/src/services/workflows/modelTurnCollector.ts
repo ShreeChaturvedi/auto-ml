@@ -29,38 +29,147 @@ function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
 
 const PLAN_MARKDOWN_MAX = 50_000;
 
-function normalizePlanExitArgs(args: Record<string, unknown> | string | undefined): Record<string, unknown> {
-  if (typeof args === 'string') return { planMarkdown: args };
-  if (!args || typeof args !== 'object') return {};
-  const raw = args as Record<string, unknown>;
+const PLAN_MARKDOWN_KEYS = [
+  'planMarkdown',
+  'plan_markdown',
+  'markdown',
+  'content',
+  'text',
+  'body',
+  'plan_text',
+  'plan_content'
+] as const;
 
-  // Resolve planMarkdown from common model variants
-  let markdown = raw.planMarkdown;
-  if (typeof markdown !== 'string') {
-    for (const key of [
-      'plan_markdown', 'markdown', 'content', 'plan',
-      'text', 'body', 'plan_text', 'plan_content', 'output'
-    ] as const) {
-      if (typeof raw[key] === 'string') { markdown = raw[key]; break; }
+const PLAN_NAME_KEYS = ['planName', 'plan_name', 'name', 'filename', 'fileName'] as const;
+
+function tryParseLooseJson(rawText: string | undefined): unknown {
+  if (typeof rawText !== 'string' || !rawText.trim()) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(rawText) as unknown;
+  } catch {
+    return rawText;
+  }
+}
+
+function extractPlanMarkdownCandidate(value: unknown, depth = 0): string | undefined {
+  if (depth > 5 || value == null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = extractPlanMarkdownCandidate(item, depth + 1);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  if (typeof value !== 'object') {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+
+  for (const key of PLAN_MARKDOWN_KEYS) {
+    const direct = extractPlanMarkdownCandidate(raw[key], depth + 1);
+    if (direct) return direct;
+  }
+
+  for (const key of ['payload', 'plan', 'data', 'result', 'output'] as const) {
+    const nested = extractPlanMarkdownCandidate(raw[key], depth + 1);
+    if (nested) return nested;
+  }
+
+  let fallbackLongString: string | undefined;
+  for (const nestedValue of Object.values(raw)) {
+    if (typeof nestedValue === 'string') {
+      const trimmed = nestedValue.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (trimmed.startsWith('#') || /^```(?:markdown|md)?/i.test(trimmed)) {
+        return trimmed;
+      }
+      if (!fallbackLongString && trimmed.length > 50) {
+        fallbackLongString = trimmed;
+      }
+      continue;
+    }
+
+    const nested = extractPlanMarkdownCandidate(nestedValue, depth + 1);
+    if (nested) return nested;
+  }
+
+  return fallbackLongString;
+}
+
+function extractPlanNameCandidate(value: unknown, depth = 0): string | undefined {
+  if (depth > 5 || value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  for (const key of PLAN_NAME_KEYS) {
+    const candidate = raw[key];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
     }
   }
 
-  // Last-resort: use the first string value longer than 50 chars
-  if (typeof markdown !== 'string') {
-    const firstLongString = Object.values(raw).find(
-      (v) => typeof v === 'string' && v.length > 50
-    );
-    if (typeof firstLongString === 'string') markdown = firstLongString;
+  for (const key of ['payload', 'plan', 'data', 'result', 'output'] as const) {
+    const nested = extractPlanNameCandidate(raw[key], depth + 1);
+    if (nested) return nested;
   }
 
-  // Truncate if too long rather than failing validation
+  return undefined;
+}
+
+function normalizePlanExitArgs(
+  args: Record<string, unknown> | string | undefined,
+  rawArgsText?: string
+): Record<string, unknown> {
+  const candidates: unknown[] = [];
+  if (typeof args === 'string') {
+    candidates.push(args);
+  } else if (args && typeof args === 'object') {
+    candidates.push(args);
+  }
+
+  const parsedRaw = tryParseLooseJson(rawArgsText);
+  if (parsedRaw !== undefined) {
+    candidates.push(parsedRaw);
+  }
+
+  let markdown: string | undefined;
+  let planName: string | undefined;
+
+  for (const candidate of candidates) {
+    if (!markdown) {
+      markdown = extractPlanMarkdownCandidate(candidate);
+    }
+    if (!planName) {
+      planName = extractPlanNameCandidate(candidate);
+    }
+    if (markdown && planName) {
+      break;
+    }
+  }
+
   if (typeof markdown === 'string' && markdown.length > PLAN_MARKDOWN_MAX) {
     markdown = markdown.slice(0, PLAN_MARKDOWN_MAX);
   }
 
   return {
     planMarkdown: markdown,
-    planName: raw.planName ?? raw.plan_name ?? raw.name
+    planName
   };
 }
 
@@ -101,75 +210,201 @@ async function streamWorkflowText(
   let latestMessage = '';
   let errorMessage: string | null = null;
 
-  await client.stream(state.request!, {
-    onToken: (token) => {
-      latestMessage += token;
-      emitEvent(sink, { type: 'token', text: token });
-    },
-    onThinking: (text) => {
-      emitEvent(sink, { type: 'thinking', text });
-    },
-    onUsage: (usage) => {
-      emitEvent(sink, { type: 'usage', usage });
-    },
-    onToolCall: (call: LlmToolCall) => {
-      if (call.name === 'ask_user') {
-        const parsed = AskUserPayloadSchema.safeParse(call.args);
-        if (parsed.success) {
-          askUserPayload = parsed.data;
-        } else {
-          errorMessage = 'ask_user payload failed validation.';
-        }
-        return;
-      }
+  const hasActionableOutput = () =>
+    pendingToolCalls.length > 0
+    || Boolean(askUserPayload)
+    || Boolean(planExitPayload)
+    || Boolean(uiPayload)
+    || Boolean(latestMessage.trim())
+    || Boolean(errorMessage);
 
-      if (call.name === 'plan_exit') {
-        const normalizedArgs = normalizePlanExitArgs(call.args);
-        const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
-        if (parsed.success) {
-          planExitPayload = normalizePlanExitPayload(parsed.data);
-          if (!planExitPayload) {
-            appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
-            errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
+  const streamOnce = async () => {
+    await client.stream(state.request!, {
+      onToken: (token) => {
+        latestMessage += token;
+        emitEvent(sink, { type: 'token', text: token });
+      },
+      onThinking: (text) => {
+        emitEvent(sink, { type: 'thinking', text });
+      },
+      onUsage: (usage) => {
+        emitEvent(sink, { type: 'usage', usage });
+      },
+      onToolCall: (call: LlmToolCall) => {
+        if (call.name === 'ask_user') {
+          const parsed = AskUserPayloadSchema.safeParse(call.args);
+          if (parsed.success) {
+            askUserPayload = parsed.data;
+          } else {
+            errorMessage = 'ask_user payload failed validation.';
           }
+          return;
+        }
+
+        if (call.name === 'plan_exit') {
+          const normalizedArgs = normalizePlanExitArgs(call.args, call.rawArgsText);
+          const parsed = PlanExitPayloadSchema.safeParse(normalizedArgs);
+          if (parsed.success) {
+            planExitPayload = normalizePlanExitPayload(parsed.data);
+            if (!planExitPayload) {
+              appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
+              errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
+            }
+          } else {
+            appLogger.warn('[modelTurnCollector] plan_exit Zod validation failed: %o', parsed.error.issues);
+            errorMessage = `plan_exit payload failed validation: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
+          }
+          return;
+        }
+
+        if (call.name === LLM_RENDER_UI_TOOL.name) {
+          const parsed = parseUiPayload((call.args ?? {}) as Record<string, unknown>, phase);
+          if (!parsed) {
+            errorMessage = 'render_ui payload failed validation.';
+          } else if (!parsed.sections.some((s) => s.items.length > 0)) {
+            // Empty UI — don't set uiPayload so the turn falls through to the
+            // empty-output guard, which will properly fail with a user-visible message.
+            appLogger.warn('[modelTurnCollector] render_ui produced zero items; treating as empty output');
+          } else {
+            uiPayload = parsed;
+          }
+          return;
+        }
+
+        const normalizedArgs = call.args && typeof call.args === 'object'
+          ? { ...(call.args as Record<string, unknown>) }
+          : {};
+        const rationale = typeof normalizedArgs.rationale === 'string' ? normalizedArgs.rationale : undefined;
+        if ('rationale' in normalizedArgs) {
+          delete normalizedArgs.rationale;
+        }
+
+        const parsed = ToolCallSchema.safeParse({
+          id: `wf-call-${randomUUID()}`,
+          tool: call.name,
+          args: normalizedArgs,
+          rationale,
+          thoughtSignature: call.thoughtSignature
+        });
+
+        if (parsed.success) {
+          pendingToolCalls.push(parsed.data);
         } else {
-          appLogger.warn('[modelTurnCollector] plan_exit Zod validation failed: %o', parsed.error.issues);
-          errorMessage = `plan_exit payload failed validation: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
+          errorMessage = `Unsupported tool call: ${call.name}`;
         }
-        return;
       }
+    });
+  };
 
-      if (call.name === LLM_RENDER_UI_TOOL.name) {
-        uiPayload = parseUiPayload((call.args ?? {}) as Record<string, unknown>, phase);
-        if (!uiPayload) {
-          errorMessage = 'render_ui payload failed validation.';
-        }
-        return;
-      }
+  await streamOnce();
 
-      const normalizedArgs = call.args && typeof call.args === 'object'
-        ? { ...(call.args as Record<string, unknown>) }
-        : {};
-      const rationale = typeof normalizedArgs.rationale === 'string' ? normalizedArgs.rationale : undefined;
-      if ('rationale' in normalizedArgs) {
-        delete normalizedArgs.rationale;
-      }
+  // Bounded retry: reasoning models (especially gpt-5.4 base on xhigh
+  // effort) sometimes end the first stream after emitting only reasoning
+  // tokens, leaving us with no tool call. A single retry almost always
+  // recovers. To prevent the 24-iteration × 2 amplification that caused
+  // sustained 429s before, we gate the retry to the FIRST iteration of
+  // the turn only — that's when cold-start empty outputs happen, and
+  // later iterations almost never hit this case.
+  if (!hasActionableOutput() && state.iteration === 0) {
+    appLogger.warn(
+      '[modelTurnCollector] Empty stream output on first iteration (phase=%s, node=%s) — retrying once.',
+      phase,
+      state.run.currentNode
+    );
+    await streamOnce();
+  }
 
-      const parsed = ToolCallSchema.safeParse({
-        id: `wf-call-${randomUUID()}`,
-        tool: call.name,
-        args: normalizedArgs,
-        rationale,
-        thoughtSignature: call.thoughtSignature
-      });
+  // feature_engineering text-only stall detection.
+  //
+  // When the LLM emits text tokens but no tool call during a feature
+  // engineering turn while selected features are still unregistered, the
+  // turn would silently route to 'complete' (because latestMessage.trim()
+  // counts as actionable in hasActionableOutput), and the frontend would
+  // re-fire the same "Implement the enabled features..." prompt in a loop.
+  // The user experiences this as the prompt repeating with no progress.
+  //
+  // Detect this specifically and retry ONCE with a hardened directive
+  // demanding a tool call. If the retry also emits text-only, surface a
+  // MODEL_TOOL_OUTPUT_INVALID error so the user sees the stall instead of
+  // watching the frontend loop indefinitely.
+  const isFeatureEngineeringStall = (): boolean => {
+    if (phase !== 'feature_engineering') return false;
+    if (pendingToolCalls.length > 0) return false;
+    if (askUserPayload || planExitPayload || uiPayload) return false;
+    if (!latestMessage.trim()) return false;
 
-      if (parsed.success) {
-        pendingToolCalls.push(parsed.data);
-      } else {
-        errorMessage = `Unsupported tool call: ${call.name}`;
+    const prompt = state.turn.prompt;
+    if (!prompt) return false;
+    const match = prompt.match(/^Selected feature IDs to implement:\s*(.+)$/im);
+    if (!match) return false;
+    const selectedFeatureIds = match[1]
+      .split(/\s*,\s*/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (selectedFeatureIds.length === 0) return false;
+
+    const terminalFeatureIds = new Set<string>();
+    for (const result of state.toolResultHistory) {
+      if (result.tool !== 'register_feature' || result.error) continue;
+      if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) continue;
+      const output = result.output as Record<string, unknown>;
+      const status = output.status;
+      const featureId = typeof output.featureId === 'string' ? output.featureId : undefined;
+      // Count both 'ok' and 'rejected' as terminal states for this purpose —
+      // the user has either accepted or explicitly rejected the feature.
+      if (featureId && (status === 'ok' || status === 'rejected')) {
+        terminalFeatureIds.add(featureId);
       }
     }
-  });
+    return selectedFeatureIds.some((id) => !terminalFeatureIds.has(id));
+  };
+
+  if (isFeatureEngineeringStall()) {
+    appLogger.warn(
+      '[modelTurnCollector] feature_engineering text-only stall detected (iteration=%d, toolHistory=%d) — retrying with hardened directive.',
+      state.iteration,
+      state.toolCallHistory.length
+    );
+    // Reset the text accumulator so a successful retry's output replaces the
+    // stall text (otherwise latestMessage would carry both streams concatenated).
+    latestMessage = '';
+    // Temporarily swap the request with a hardened version that appends an
+    // imperative instruction demanding a tool call. We restore the original
+    // request afterward so no side effect leaks into the workflow state.
+    const originalRequest = state.request;
+    state.request = {
+      ...originalRequest!,
+      messages: [
+        ...originalRequest!.messages,
+        {
+          role: 'user',
+          content: 'CRITICAL: Your previous response emitted text but no tool call. You MUST emit a tool call now. Call the next feature-engineering tool for the next unregistered selected feature. Do NOT output explanatory text. Do NOT ask for clarification.'
+        }
+      ]
+    };
+    try {
+      await streamOnce();
+    } finally {
+      state.request = originalRequest;
+    }
+
+    if (isFeatureEngineeringStall()) {
+      appLogger.warn(
+        '[modelTurnCollector] feature_engineering stall persisted after retry (iteration=%d) — failing turn.',
+        state.iteration
+      );
+      errorMessage = 'Feature engineering turn stalled: the model produced text but no tool call while selected features still need implementation. Please click Generate Notebook Steps again.';
+    }
+  }
+
+  if (!hasActionableOutput()) {
+    appLogger.warn(
+      '[modelTurnCollector] Empty stream output (phase=%s, node=%s, iteration=%d) — will surface as MODEL_TOOL_OUTPUT_INVALID.',
+      phase,
+      state.run.currentNode,
+      state.iteration
+    );
+  }
 
   if (errorMessage) {
     return {
@@ -187,6 +422,13 @@ async function streamWorkflowText(
   } else if (!latestMessage.trim() && !uiPayload) {
     nextStep = 'fail';
     errorMessage = 'Model returned no actionable workflow output.';
+    appLogger.warn(
+      '[modelTurnCollector] Empty output — phase=%s, node=%s, iteration=%d, toolHistory=%d',
+      phase,
+      state.run.currentNode,
+      state.iteration,
+      state.toolCallHistory.length
+    );
   }
 
   return {

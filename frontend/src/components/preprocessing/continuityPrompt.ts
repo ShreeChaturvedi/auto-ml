@@ -30,7 +30,8 @@ Dataset continuity directive:
   return `${basePrompt}
 
 Dataset continuity directive:
-- Continue from the CURRENT working edited dataset for this tab/run.
+- Continue from the CURRENT working edited dataset for this workbook/tab only.
 - Reuse current run context and in-memory dataframe state when available.
+- Do not reuse state from any other workbook/tab.
 - Do not reload the original source dataset unless explicitly requested.`;
 }

@@ -68,7 +68,14 @@ export const EXPANDABLE_TOOLS = new Set([
   'list_cells',
   'read_cell',
   'edit_cell',
-  'list_packages'
+  'list_packages',
+  // Feature engineering lifecycle tools
+  'propose_feature',
+  'materialize_feature_code',
+  'execute_feature',
+  'validate_feature',
+  'register_feature',
+  'checkpoint_feature_pipeline'
 ]);
 
 // ─── Main dispatcher ────────────────────────────────────────────

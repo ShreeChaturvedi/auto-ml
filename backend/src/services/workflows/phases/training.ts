@@ -36,58 +36,87 @@ const TRAINING_LIFECYCLE: LifecycleStageDefinition[] = [
 
 const STAGE_ORDER = TRAINING_LIFECYCLE.map((s) => s.name);
 
-const TEXT_STAGES = new Set(['answer', 'await_review', 'summarize']);
 const APPROVAL_STAGES = new Set(['propose_model', 'await_review']);
 
-// Maps each lifecycle stage to the training-specific tools permitted at that stage.
-// Non-training tools (notebook, data discovery, ask_user, render_ui) are always
-// available. Only training-semantic tools are gated so the model cannot, e.g.,
-// call configure_experiment during the evaluate_results stage.
-const STAGE_TOOL_ALLOWLIST: Record<string, Set<string>> = {
-  answer: new Set(),
-  configure_experiment: new Set(['configure_experiment']),
-  propose_model: new Set(['propose_training_plan']),
-  generate_code: new Set(),
-  write_code: new Set(),
-  execute_training: new Set(['execute_training']),
-  evaluate_results: new Set(['evaluate_results']),
-  await_review: new Set(),
-  register_model: new Set(['register_model']),
-  summarize: new Set(['compare_models'])
-};
+// ALL training stages now use mode='text' which routes to streamWorkflowText
+// (the same reliable streaming path Feature Engineering uses) instead of
+// mode='action' (the planner path). The planner is a low-reasoning-effort
+// JSON-output LLM call that repeatedly fails with:
+//  - "Response did not contain valid JSON" (can't produce JSON reliably)
+//  - Missing required fields in render_ui/tool_call payloads (Zod rejection)
+//  - Wrong tool args (experimentId hallucinated from threadId or omitted)
+//  - Notebook tool preference over lifecycle tools (no amount of forced-stage
+//    gating fixes this because the planner's context is too compressed)
+//
+// streamWorkflowText uses the MAIN LLM (gpt-5.4) with the full training
+// contract, dataset context, tool definitions, and tool call/result history.
+// The LLM calls tools directly in its streaming output — configure_experiment,
+// write_cell, run_cell, execute_training, etc. — exactly like FE does with
+// propose_feature, materialize_feature_code, etc. The contract guides the
+// lifecycle sequence; no planner intermediary needed.
 
 function buildStageConfig(stage: string): StageConfig {
-  const isText = TEXT_STAGES.has(stage);
-  const stageAllowlist = STAGE_TOOL_ALLOWLIST[stage];
-  const allowedTools = stageAllowlist
-    ? (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).filter(
-        (tool) => !TRAINING_TOOL_NAME_SET.has(tool.name) || stageAllowlist.has(tool.name)
-      )
-    : (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]);
-
   return {
     name: stage,
-    mode: isText ? 'text' : 'action',
-    allowedTools,
+    mode: 'text',
+    allowedTools: LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[],
     toolChoice: 'auto',
     requiresApproval: APPROVAL_STAGES.has(stage),
     allowAssistantMessage: true,
-    allowAskUser: isText,
-    allowRenderUi: stage !== 'write_code',
+    allowAskUser: true,
+    allowRenderUi: true,
     allowPlanExit: false,
     requireToolCall: false
   };
+}
+
+function isSuccessfulRunCell(result: import('../../../types/llm.js').ToolResult): boolean {
+  if (result.tool !== 'run_cell' || result.error) return false;
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) return false;
+  return (result.output as Record<string, unknown>).status === 'success';
 }
 
 function resolveNextTrainingStage(
   current: string,
   toolResults: import('../../../types/llm.js').ToolResult[]
 ): string | null {
-  const hasTrainingFailure = toolResults.some(
-    (result) => result.tool === 'execute_training' && result.error
-  );
+  // Fix 2 — widen execute_training failure detection. The handler at
+  // executionTools.ts:79-88 returns { output: { status: 'failed' } } with
+  // result.error = null when the LLM calls execute_training(succeeded: false).
+  // The old check only matched result.error, so the loop-back to generate_code
+  // never triggered on LLM-reported failures.
+  const hasTrainingFailure = toolResults.some((result) => {
+    if (result.tool !== 'execute_training') return false;
+    if (result.error) return true;
+    if (result.output && typeof result.output === 'object' && !Array.isArray(result.output)) {
+      return (result.output as Record<string, unknown>).status === 'failed';
+    }
+    return false;
+  });
   if (hasTrainingFailure && current === 'execute_training') {
     return 'generate_code';
+  }
+
+  // Fix 1 — gate write_code → execute_training on a successful run_cell.
+  // Without this, the stage advances after one iteration regardless of
+  // whether the LLM actually ran the training code. At the forced
+  // execute_training stage, run_cell is blocked (Path A), so the LLM
+  // would call execute_training(succeeded: false) — producing a "trained"
+  // model that was never actually trained. Stay at write_code until the
+  // tool history contains evidence that a cell ran successfully.
+  //
+  // An early run_cell from generate_code stage also satisfies this gate
+  // (toolResultHistory is cumulative), which is correct — if the code was
+  // already written and run at generate_code, skipping write_code is fine.
+  //
+  // If the LLM never calls run_cell, MAX_WORKFLOW_ITERATIONS (48) in
+  // graphState.ts terminates the workflow with ITERATIONS_EXCEEDED, which
+  // is the right failure mode — not a silently fake "registered" model.
+  if (current === 'write_code') {
+    const hasSuccessfulRun = toolResults.some(isSuccessfulRunCell);
+    if (!hasSuccessfulRun) {
+      return current; // Stay at write_code
+    }
   }
 
   const currentIndex = STAGE_ORDER.indexOf(current);

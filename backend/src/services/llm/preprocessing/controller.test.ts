@@ -85,6 +85,37 @@ describe('resolvePreprocessingControllerTurn', () => {
     expect(decision.request.toolChoice).toBe('any');
   });
 
+  it('ignores thread-shaped run references from prior tool results', async () => {
+    const client = createClient({
+      turnMode: 'action_required',
+      rationale: 'The user asked to modify preprocessing.'
+    });
+    const toolResults: ToolResult[] = [
+      {
+        id: 'result-1',
+        tool: 'propose_transformation_step',
+        output: {
+          runId: 'thread-9d8f6554-3c4d-4e2e-a385-9f1951dab555',
+          stepId: 'step-1',
+          status: 'pending'
+        }
+      }
+    ];
+
+    const decision = await resolvePreprocessingControllerTurn({
+      client,
+      dataset,
+      prompt: 'Continue',
+      toolResults,
+      continuation: true,
+      threadId: 'prep-thread:test:ignore-thread-run'
+    });
+
+    expect(decision.summary.runId).toBeUndefined();
+    expect(decision.summary.currentNode).toBe('generate_code');
+    expect(decision.request.messages[1]?.content).toContain('Run ID: (none)');
+  });
+
   it('routes executed steps to validation with validate-only tools', async () => {
     const client = createClient({
       turnMode: 'action_required',
@@ -154,6 +185,62 @@ describe('resolvePreprocessingControllerTurn', () => {
     expect(decision.summary.currentNode).toBe('write_code');
     expect(decision.summary.allowedTools).toContain('run_cell');
     expect(decision.summary.requireToolCall).toBe(true);
+  });
+
+  it('keeps multi-cell steps in write_code after the first run_cell succeeds', async () => {
+    const client = createClient({
+      turnMode: 'action_required',
+      rationale: 'unused'
+    });
+    const toolResults: ToolResult[] = [
+      {
+        id: 'result-1',
+        tool: 'materialize_step_code',
+        output: {
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          step: {
+            stepId: 'step-1',
+            code: [
+              '# Cell 1',
+              'missing_before = df.isna().sum()',
+              'print(missing_before)',
+              '',
+              '# Cell 2',
+              'df = df.fillna(0)'
+            ].join('\n')
+          }
+        }
+      },
+      {
+        id: 'result-2',
+        tool: 'write_cell',
+        output: {
+          cellId: 'cell-1'
+        }
+      },
+      {
+        id: 'result-3',
+        tool: 'run_cell',
+        output: {
+          cellId: 'cell-1',
+          status: 'success'
+        }
+      }
+    ];
+
+    const decision = await resolvePreprocessingControllerTurn({
+      client,
+      dataset,
+      prompt: 'Continue',
+      continuation: true,
+      toolResults,
+      threadId: 'prep-thread:test:multicell-write'
+    });
+
+    expect(decision.summary.currentNode).toBe('write_code');
+    expect(decision.summary.allowedTools).toContain('write_cell');
+    expect(decision.summary.allowedTools).toContain('run_cell');
   });
 
   it('blocks on pending approval without classifying again', async () => {

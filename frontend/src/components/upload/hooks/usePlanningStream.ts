@@ -82,11 +82,17 @@ export function usePlanningStream({
             }
 
             if (event.type === 'error' || event.type === 'workflow_error') {
-              handleStreamEvent(
-                event.type === 'workflow_error'
-                  ? { type: 'error', message: event.message }
-                  : event
-              );
+              // Preserve the structured error code so resolveErrorDisplay can
+              // render friendly copy for UPSTREAM_RATE_LIMITED etc.
+              const errorEvent = event.type === 'workflow_error'
+                ? {
+                    type: 'error' as const,
+                    message: event.message,
+                    code: event.code,
+                    retryable: event.retryable
+                  }
+                : event;
+              handleStreamEvent(errorEvent);
               return;
             }
 

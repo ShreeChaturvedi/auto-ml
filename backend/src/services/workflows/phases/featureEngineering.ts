@@ -12,7 +12,7 @@ import type { FeatureToolContext } from '../../llm/featureTools/types.js';
 import type { LlmToolDefinition } from '../../llm/llmClient.js';
 import { FEATURE_ENGINEERING_CONTRACT } from '../../llm/prompts/featureContract.js';
 import { FEATURE_TOOL_NAMES } from '../../llm/tools/featureTools.js';
-import { LLM_FEATURE_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
+import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import type {
   LifecycleStageDefinition,
   PhaseConfig,
@@ -94,7 +94,7 @@ function buildStageConfig(
     return {
       name: stageName,
       mode: 'text',
-      allowedTools: [],
+      allowedTools: LLM_FEATURE_CONTINUE_TOOLS as LlmToolDefinition[],
       toolChoice: 'auto',
       requiresApproval: false,
       allowAssistantMessage: true,
@@ -130,20 +130,27 @@ async function executeFeatureToolCall(
   toolName: string,
   args: Record<string, unknown>,
   toolCallId: string | undefined,
-  datasetId: string | undefined
+  datasetId: string | undefined,
+  prompt: string | undefined
 ): Promise<ToolResult> {
   const explicitRunId = asString(args.runId);
+  const notebookId = asString(args.notebookId);
 
   let run;
   try {
     if (explicitRunId) {
-      const existing = await featureRunRepository.getById(explicitRunId);
-      if (!existing) {
-        return { error: `Feature run ${explicitRunId} not found` };
-      }
-      run = existing;
-    } else {
-      run = await featureRunRepository.getOrCreate(projectId);
+      // The explicitRunId may be a workflow run ID (from toolExecutor's runId
+      // injection) rather than a feature pipeline run ID.  If the lookup fails,
+      // fall through to getOrCreate instead of hard-erroring — the feature
+      // pipeline run lives in a different data store than workflow runs.
+      run = await featureRunRepository.getById(explicitRunId);
+    }
+    if (!run) {
+      run = await featureRunRepository.getOrCreate(
+        projectId,
+        undefined,
+        notebookId ? { notebookId } : undefined
+      );
     }
   } catch (error) {
     return {
@@ -168,6 +175,11 @@ async function executeFeatureToolCall(
       toolCallId,
       args,
       datasetId,
+      // prompt is load-bearing for the propose_feature implementation-mode
+      // guard in proposalTools.ts. Without it the guard sees undefined and
+      // always returns false, letting hallucinated propose_feature calls slip
+      // through even when the user's turn prompt has selected feature IDs.
+      prompt,
       run,
       runRepository: featureRunRepository
     };
@@ -238,7 +250,8 @@ export const featureEngineeringPhaseConfig: PhaseConfig = {
       name,
       asRecord(args) ?? {},
       ctx.toolCallId,
-      ctx.turn.datasetId
+      ctx.turn.datasetId,
+      ctx.turn.prompt
     );
   }
 };

@@ -19,7 +19,6 @@ interface FeatureEngineeringFooterProps {
   onApplyFeatures: () => void;
   applyStatus: 'idle' | 'loading' | 'success' | 'error';
   applyMessage: string | null;
-  isApproved: boolean;
   activeFeaturesCount: number;
 }
 
@@ -35,7 +34,6 @@ export function FeatureEngineeringFooter({
   onApplyFeatures,
   applyStatus,
   applyMessage,
-  isApproved,
   activeFeaturesCount
 }: FeatureEngineeringFooterProps) {
   return (
@@ -45,7 +43,7 @@ export function FeatureEngineeringFooter({
           <p className="text-sm font-medium">Unified Readiness Report</p>
           <p className="text-xs text-muted-foreground">
             {readinessReportUnlocked
-              ? 'Review enabled transformations and quality checks before approval.'
+              ? 'Review enabled transformations and quality checks before applying the derived dataset.'
               : 'Enable at least one feature to unlock the readiness report.'}
           </p>
         </div>
@@ -145,12 +143,11 @@ export function FeatureEngineeringFooter({
                 onChange={(event) => onOutputNameChange(event.currentTarget.value)}
                 placeholder="e.g. features_v1"
                 className="h-8 text-xs"
-                disabled={isApproved}
               />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Format</Label>
-              <Select value={outputFormat} onValueChange={onOutputFormatChange} disabled={isApproved}>
+              <Select value={outputFormat} onValueChange={onOutputFormatChange}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -164,7 +161,7 @@ export function FeatureEngineeringFooter({
             <Button
               className="h-8 text-xs"
               onClick={onApplyFeatures}
-              disabled={applyStatus === 'loading' || isApproved || activeFeaturesCount === 0}
+              disabled={applyStatus === 'loading' || activeFeaturesCount === 0}
             >
               {applyStatus === 'loading' ? (
                 <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />

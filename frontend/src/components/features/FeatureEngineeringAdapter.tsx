@@ -1,6 +1,7 @@
 import type { DomainAdapter, ToolHandlers } from '@/types/agentic';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { useFeatureStore } from '@/stores/featureStore';
+import type { FeatureCategory, FeatureMethod } from '@/types/feature';
 import type { UploadedFile } from '@/types/file';
 import type { ColumnDataType } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
@@ -19,8 +20,10 @@ export interface FeatureEngineeringAdapterConfig {
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
   sessionKey: string;
+  notebookId?: string;
   notebookName?: string;
   notebookMetadata?: NotebookPhaseMetadata;
+  onNotebookCreated?: (notebookId: string) => void;
 }
 
 function buildFeatureTips(
@@ -80,7 +83,29 @@ const FEATURE_LIFECYCLE_SEMANTIC_TOOLS = [
   'checkpoint_feature_pipeline'
 ] as const;
 
-function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
+function resolveFeatureStepStatus(call: ToolCall, result: ToolResult): string {
+  if (result.error) {
+    return 'error';
+  }
+
+  const output = result.output as Record<string, unknown> | undefined;
+  switch (call.tool) {
+    case 'propose_feature':
+      return 'proposed';
+    case 'materialize_feature_code':
+      return 'code_ready';
+    case 'execute_feature':
+      return output?.status === 'failed' || output?.succeeded === false ? 'failed' : 'executed';
+    case 'validate_feature':
+      return 'validated';
+    case 'register_feature':
+      return output?.status === 'rejected' ? 'rejected' : 'registered';
+    default:
+      return typeof output?.status === 'string' ? output.status : 'ok';
+  }
+}
+
+function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistry'] {
   const toolHandlers: ToolHandlers = {
     onCall: (call: ToolCall) => {
       const store = useFeatureStore.getState();
@@ -98,15 +123,58 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
       }
 
       if (featureId) {
+        const featureName = (output?.featureName ?? call.args?.featureName ?? featureId) as string;
+        const method = (output?.method ?? call.args?.method ?? call.tool) as string;
+        const existingFeature = store.features.find((feature) => feature.id === featureId);
+        const existingStep = store.featureSteps[featureId];
+
+        // Preserve prior step.code when the current tool call doesn't include
+        // it. `register_feature` in particular has no `code` arg in its schema,
+        // so a naive `code: call.args?.code` would overwrite the code that
+        // `materialize_feature_code` persisted earlier — which then kills it
+        // in localStorage on page reload. (Flagged by harsh critic review.)
+        const toolCode = call.args?.code as string | undefined;
+        const preservedCode = toolCode ?? existingStep?.code;
+
         store.setFeatureStep(featureId, {
           stepId: featureId,
-          name: (output?.featureName ?? call.args?.featureName ?? featureId) as string,
-          method: (output?.method ?? call.args?.method ?? call.tool) as string,
-          status: result.error ? 'error' : (output?.status ?? 'ok') as string,
+          name: featureName,
+          method,
+          status: resolveFeatureStepStatus(call, result),
           error: result.error,
-          code: call.args?.code as string | undefined,
+          code: preservedCode,
           metrics: output?.validation as Record<string, unknown> | undefined
         });
+
+        // Bridge registered features into the FeatureSpec array for readiness report
+        if (call.tool === 'register_feature' && !result.error) {
+          const rejected = (output?.status as string) === 'rejected';
+          if (!rejected) {
+            const sourceColumns = (output?.sourceColumns ?? call.args?.sourceColumns) as string[] | undefined;
+            // Prefer existingFeature's columns (set from the suggestion card
+            // toggle path with correct sourceColumn + secondaryColumn from the
+            // propose_feature output). Fall back to sourceColumns[0]/[1] only
+            // for features that bypassed the suggestion card entirely.
+            const secondaryColumn = existingFeature?.secondaryColumn ?? sourceColumns?.[1];
+            store.upsertFeature({
+              id: featureId,
+              projectId: (output?.projectId as string) ?? existingFeature?.projectId ?? projectId,
+              sourceColumn: existingFeature?.sourceColumn ?? sourceColumns?.[0] ?? existingStep?.name ?? '',
+              ...(secondaryColumn ? { secondaryColumn } : {}),
+              featureName: existingFeature?.featureName ?? existingStep?.name ?? featureName,
+              description: (call.args?.rationale ?? output?.rationale ?? existingFeature?.description ?? '') as string,
+              method: (existingFeature?.method ?? existingStep?.method ?? method ?? 'custom') as FeatureMethod,
+              category: (existingFeature?.category ?? 'numeric_transform') as FeatureCategory,
+              params: existingFeature?.params ?? {},
+              enabled: true,
+              createdAt: existingFeature?.createdAt ?? new Date().toISOString(),
+              // Copy LLM-authored code from the step so the apply pipeline
+              // can use it verbatim instead of regenerating from the method
+              // template. The code was persisted earlier by materialize_feature_code.
+              code: preservedCode ?? existingFeature?.code
+            });
+          }
+        }
       }
     }
   };
@@ -119,11 +187,9 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
 }
 
 function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
-  // Prefer the first-class runId; fall back to runId inside payload for older events.
-  const runId = artifact.runId
-    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
-      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
-      : undefined);
+  const runId = artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
+    ? (artifact.payload as Record<string, unknown>).featureRunId as string | undefined
+    : undefined;
   if (runId) {
     useFeatureStore.getState().setFeatureRunId(runId);
   }
@@ -132,24 +198,69 @@ function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
-  const toolRegistry = buildFeatureToolRegistry();
+  const toolRegistry = buildFeatureToolRegistry(config.projectId);
 
   return {
-    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
+    buildRequest: async (rawPrompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) {
         throw new Error('Select a dataset before generating a feature plan.');
       }
 
+      // Enrich the prompt with enabled features so the LLM knows what to implement
+      const featureStore = useFeatureStore.getState();
+      const enabledFeatures = featureStore.features.filter(
+        (f) => f.projectId === config.projectId && f.enabled
+      );
+      let prompt = rawPrompt;
+      if (enabledFeatures.length > 0 && /\b(implement|apply|build|execute|run|make)\b/i.test(rawPrompt)) {
+        const featureIds = enabledFeatures.map((f) => f.id).join(', ');
+        const featureList = enabledFeatures
+          .map((f) => `${f.featureName} (${f.method} on ${f.sourceColumn})`)
+          .join('; ');
+        prompt = `${rawPrompt}\n\nSelected feature IDs to implement: ${featureIds}\nEnabled features to implement: ${featureList}`;
+      }
+
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
       const notebookStore = useNotebookStore.getState();
-      let notebookId = notebookStore.activeNotebookId ?? undefined;
+
+      // Feature engineering uses a notebook scoped to the active draft
+      // pipeline. Never adopt a preprocessing notebook or an arbitrary FE
+      // notebook from another draft.
+      let notebookId = config.notebookId?.trim() || undefined;
+      if (notebookId && notebookStore.activeNotebookId !== notebookId) {
+        await notebookStore.setActiveNotebook(notebookId);
+        if (useNotebookStore.getState().activeNotebookId !== notebookId) {
+          notebookId = undefined;
+        }
+      }
+
+      if (!notebookId) {
+        const activeNotebook = notebookStore.notebooks.find(
+          (entry) => entry.notebookId === notebookStore.activeNotebookId
+        );
+        const activeMetadata = activeNotebook?.metadata as Record<string, unknown> | undefined;
+        const expectedTabId = config.notebookMetadata && typeof config.notebookMetadata === 'object'
+          ? (config.notebookMetadata as Record<string, unknown>).tabId
+          : undefined;
+        if (
+          activeNotebook
+          && activeMetadata?.phase === 'feature-engineering'
+          && (!expectedTabId || activeMetadata?.tabId === expectedTabId)
+        ) {
+          notebookId = activeNotebook.notebookId;
+        }
+      }
 
       if (!notebookId) {
         const createdNotebook = await notebookStore.createNotebook(
           config.notebookName ?? 'Feature Engineering Notebook',
-          config.notebookMetadata
+          config.notebookMetadata ?? { phase: 'feature-engineering' }
         );
         notebookId = createdNotebook?.notebookId;
+        if (notebookId) {
+          config.onNotebookCreated?.(notebookId);
+          await notebookStore.setActiveNotebook(notebookId);
+        }
       }
 
       if (!notebookId) {
@@ -177,9 +288,6 @@ export function createFeatureEngineeringAdapter(
     },
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
-      if (state.runId) {
-        useFeatureStore.getState().setFeatureRunId(state.runId);
-      }
     },
     onWorkflowArtifactUpdate: (artifact) => {
       syncFeatureRunIdFromArtifact(artifact);
@@ -188,6 +296,7 @@ export function createFeatureEngineeringAdapter(
       useFeatureStore.getState().clearDraft();
       useWorkflowSessionStore.getState().clearSession(config.sessionKey);
     },
+    preserveToolHistoryBetweenPrompts: true,
     toolRegistry,
     toolUiRegistry: {},
     tipsProvider: (messages) => buildFeatureTips(config, messages)

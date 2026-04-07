@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildPreprocessingCellContent,
+  buildPreprocessingCellContents,
   resolvePreprocessingExecutionContext
 } from './preprocessingExecutionContext.js';
 
@@ -203,5 +204,30 @@ describe('preprocessingExecutionContext', () => {
     expect(lines[0]).toBe('df = load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(lines[lines.length - 1]).toBe('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(content).toContain('df["age"] = df["age"].fillna(0)');
+  });
+
+  it('splits code with explicit cell markers into separate visible notebook cells', () => {
+    const cells = buildPreprocessingCellContents({
+      filename: 'data.csv',
+      datasetId: 'ds-1',
+      fileType: 'csv',
+      dataframeName: 'df',
+      userCode: [
+        '# Cell 1',
+        'missing_before = df.isna().sum()',
+        'print(missing_before)',
+        '',
+        '# Cell 2',
+        'df = df.fillna(0)'
+      ].join('\n')
+    });
+
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toContain('load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
+    expect(cells[0]).toContain('missing_before = df.isna().sum()');
+    expect(cells[0]).not.toContain('save_preprocessing_dataset(');
+    expect(cells[1]).toContain('df = df.fillna(0)');
+    expect(cells[1]).toContain('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
+    expect(cells[1]).not.toContain('load_preprocessing_dataset(');
   });
 });

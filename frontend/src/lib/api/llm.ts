@@ -77,7 +77,7 @@ export type LlmStreamEvent =
   | { type: 'ask_user'; questions: NonNullable<LlmEnvelope['ask_user']>['questions'] }
   | { type: 'plan_exit'; planName?: string; planMarkdown: string }
   | { type: 'usage'; usage: LlmUsage }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; code?: string; retryable?: boolean }
   | { type: 'done' };
 
 export type { PreprocessingControllerSummary };
@@ -92,6 +92,13 @@ export async function streamWorkflowTurn(
   signal?: AbortSignal
 ) {
   return streamLlm('/workflows/turns/stream', request, onEvent, signal);
+}
+
+export async function interruptWorkflowRun(runId: string, reason?: string) {
+  return apiRequest<{ run: WorkflowState }>(`/workflows/${runId}/interrupt`, {
+    method: 'POST',
+    body: reason ? { reason } : {}
+  });
 }
 
 export async function streamFeaturePlan(
@@ -186,18 +193,40 @@ async function streamLlm(
   if (!response.ok || !response.body) {
     const rawMessage = await response.text().catch(() => '');
     let message = rawMessage;
+    let code: string | undefined;
 
     if (rawMessage) {
       try {
         const payload = JSON.parse(rawMessage) as { error?: string; message?: string; code?: string };
-        const baseMessage = payload.error || payload.message || rawMessage;
-        message = payload.code ? `${baseMessage} (${payload.code})` : baseMessage;
+        message = payload.error || payload.message || rawMessage;
+        code = typeof payload.code === 'string' ? payload.code : undefined;
+        // The backend returns error codes in the `error` field for 409s
+        // (e.g. WORKFLOW_ALREADY_RUNNING). Promote these to the code slot.
+        if (!code && typeof payload.error === 'string' && /^[A-Z_]+$/.test(payload.error)) {
+          code = payload.error;
+          message = payload.message ?? payload.error;
+        }
       } catch {
         message = rawMessage;
       }
     }
 
-    throw new Error(message || `LLM request failed (${response.status})`);
+    // Promote HTTP status to a stable code so the UI can render friendly messages.
+    if (!code) {
+      if (response.status === 429) code = 'UPSTREAM_RATE_LIMITED';
+      else if (response.status === 401 || response.status === 403) code = 'UPSTREAM_AUTH_FAILED';
+      else if (response.status === 503 || response.status === 502 || response.status === 504) {
+        code = 'UPSTREAM_MODEL_UNAVAILABLE';
+      }
+    }
+
+    const error = new Error(message || `LLM request failed (${response.status})`) as Error & {
+      status?: number;
+      code?: string;
+    };
+    error.status = response.status;
+    error.code = code;
+    throw error;
   }
 
   let sawDone = false;

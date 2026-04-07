@@ -114,6 +114,7 @@ export function resolveFailureStatus(errorCode: string | null): WorkflowRunState
     errorCode === 'DATASET_NOT_FOUND'
     || errorCode === 'DATASET_REQUIRED'
     || errorCode === 'FE_PIPELINE_APPROVAL_REQUIRED'
+    || errorCode === 'UPSTREAM_AUTH_FAILED'
   ) {
     return 'failed_terminal';
   }

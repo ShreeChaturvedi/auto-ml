@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { env } from '../../../config.js';
+import { createFilePreprocessingRunRepository } from '../../../repositories/preprocessingRunRepository.js';
+import * as notebookService from '../../notebook/notebookService.js';
+import type { WorkflowGraphState } from '../graphState.js';
 
 import { inferPreprocessingActionNode } from './preprocessing/transition.js';
+import { preprocessingPhaseConfig } from './preprocessing.js';
 
 describe('preprocessingPhaseConfig', () => {
   it('routes failed execution status to validate to preserve existing behavior', () => {
@@ -62,5 +68,776 @@ describe('preprocessingPhaseConfig', () => {
         }
       }
     ])).toBe('summarize');
+  });
+
+  it('falls back to persisted preprocessing run state for deterministic validate actions', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-validate-fallback',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-1',
+      derivedDatasetIds: [],
+      steps: {
+        'step-1': {
+          stepId: 'step-1',
+          title: 'Clean NULL QUERY_TEXT values and standardize SUCCESS_FLG codes',
+          intentType: 'clean_and_standardize',
+          status: 'running',
+          toolCallId: 'tool-call-1',
+          code: 'print("step")',
+          codeHash: 'hash-1',
+          version: 2,
+          cellIds: ['cell-1', 'cell-2', 'cell-3'],
+          requiresApproval: false,
+          lastExecuteSucceeded: true,
+          lastValidateSucceeded: false,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-1',
+        threadId: 'workflow-thread-1',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'validate',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeDatasetId: 'dataset-1',
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'result-1',
+          tool: 'execute_transformation_step',
+          output: {
+            runId: 'prep-run-validate-fallback',
+            status: 'running'
+          }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-validate-fallback',
+        activeStepId: 'step-1',
+        currentNode: 'validate'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('validate');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'validate_step_result',
+        args: expect.objectContaining({
+          runId: 'prep-run-validate-fallback',
+          stepId: 'step-1',
+          requiresApproval: false
+        })
+      })
+    ]);
+  });
+
+  it('falls back to notebook execution status when run_cell output is missing from current turn context', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-record-fallback',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-1',
+      derivedDatasetIds: [],
+      steps: {
+        'step-2': {
+          stepId: 'step-2',
+          title: 'Clean NULL QUERY_TEXT values and standardize SUCCESS_FLG codes',
+          intentType: 'data_cleaning',
+          status: 'pending',
+          toolCallId: 'tool-call-2',
+          code: '# Cell 1\nprint("a")\n# Cell 2\nprint("b")\n# Cell 3\nprint("c")',
+          codeHash: 'hash-2',
+          version: 2,
+          cellIds: [],
+          requiresApproval: false,
+          lastExecuteSucceeded: false,
+          lastValidateSucceeded: false,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const readCellSpy = vi.spyOn(notebookService, 'readCell').mockResolvedValue({
+      cellId: 'cell-3',
+      notebookId: 'notebook-1',
+      cellType: 'code',
+      title: 'Cell 3',
+      content: 'print("c")',
+      position: 2,
+      metadata: {},
+      executionCount: 1,
+      executionOrder: 3,
+      executionStatus: 'success',
+      executionDurationMs: 12,
+      executedAt: new Date('2026-04-03T00:00:00.000Z'),
+      isDirty: false,
+      output: [{ type: 'text', content: 'done' }],
+      outputRefs: [],
+      lockedBy: null,
+      lockedAt: null,
+      createdAt: new Date('2026-04-03T00:00:00.000Z'),
+      updatedAt: new Date('2026-04-03T00:00:00.000Z')
+    });
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-2',
+        threadId: 'workflow-thread-2',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'record_execution',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeDatasetId: 'dataset-1',
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'result-1',
+          tool: 'write_cell',
+          output: {
+            cellId: 'cell-1'
+          }
+        },
+        {
+          id: 'result-2',
+          tool: 'write_cell',
+          output: {
+            cellId: 'cell-2'
+          }
+        },
+        {
+          id: 'result-3',
+          tool: 'write_cell',
+          output: {
+            cellId: 'cell-3'
+          }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-record-fallback',
+        activeStepId: 'step-2',
+        currentNode: 'record_execution'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('record_execution');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(readCellSpy).toHaveBeenCalledWith('cell-3');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls?.[0]).toEqual(expect.objectContaining({
+      tool: 'execute_transformation_step',
+      args: expect.objectContaining({
+        runId: 'prep-run-record-fallback',
+        stepId: 'step-2',
+        cellId: 'cell-3',
+        cellIds: ['cell-1', 'cell-2', 'cell-3'],
+        succeeded: true,
+        stderr: ''
+      })
+    }));
+    expect(String(toolCalls?.[0]?.args?.stdout ?? '')).toContain('done');
+
+    readCellSpy.mockRestore();
+  });
+
+  it('treats a status-less run_cell result without tool error as successful execution', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-record-missing-status',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-1',
+      derivedDatasetIds: [],
+      steps: {
+        'step-3': {
+          stepId: 'step-3',
+          title: 'Encode SUBJECT_AREA_NAME and REPOSITORY_NAME',
+          intentType: 'encode_categorical',
+          status: 'pending',
+          toolCallId: 'tool-call-3',
+          code: '# Cell 1\nprint("encode")',
+          codeHash: 'hash-3',
+          version: 2,
+          cellIds: ['cell-1'],
+          requiresApproval: false,
+          lastExecuteSucceeded: false,
+          lastValidateSucceeded: false,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const readCellSpy = vi.spyOn(notebookService, 'readCell').mockResolvedValue({
+      cellId: 'cell-1',
+      notebookId: 'notebook-1',
+      cellType: 'code',
+      title: 'Cell 1',
+      content: 'print("encode")',
+      position: 0,
+      metadata: {},
+      executionCount: null,
+      executionOrder: null,
+      executionStatus: null,
+      executionDurationMs: null,
+      executedAt: null,
+      isDirty: false,
+      output: [],
+      outputRefs: [],
+      lockedBy: null,
+      lockedAt: null,
+      createdAt: new Date('2026-04-03T00:00:00.000Z'),
+      updatedAt: new Date('2026-04-03T00:00:00.000Z')
+    });
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-3',
+        threadId: 'workflow-thread-3',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'record_execution',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeDatasetId: 'dataset-1',
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'write-result-1',
+          tool: 'write_cell',
+          output: {
+            cellId: 'cell-1'
+          }
+        },
+        {
+          id: 'run-result-1',
+          tool: 'run_cell',
+          output: {
+            _truncated: true,
+            _originalSize: 999999,
+            cellId: 'cell-1',
+            stdout: ''
+          }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-record-missing-status',
+        activeStepId: 'step-3',
+        currentNode: 'record_execution'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('record_execution');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_transformation_step',
+        args: expect.objectContaining({
+          runId: 'prep-run-record-missing-status',
+          stepId: 'step-3',
+          succeeded: true,
+          cellIds: ['cell-1']
+        })
+      })
+    ]);
+
+    readCellSpy.mockRestore();
+  });
+
+  it('infers successful execution from executed notebook cells even when executionStatus is missing', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-record-executed-without-status',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-1',
+      derivedDatasetIds: [],
+      steps: {
+        'step-4': {
+          stepId: 'step-4',
+          title: 'Scale ROW_COUNT and NUM_DB_QUERY',
+          intentType: 'scale_numeric_features',
+          status: 'pending',
+          toolCallId: 'tool-call-4',
+          code: '# Cell 1\nprint("scale")',
+          codeHash: 'hash-4',
+          version: 2,
+          cellIds: ['cell-1', 'cell-2', 'cell-3'],
+          requiresApproval: false,
+          lastExecuteSucceeded: false,
+          lastValidateSucceeded: false,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const cells = new Map([
+      ['cell-1', {
+        cellId: 'cell-1',
+        notebookId: 'notebook-1',
+        cellType: 'code',
+        title: 'Cell 1',
+        content: 'print("scale 1")',
+        position: 0,
+        metadata: {},
+        executionCount: 1,
+        executionOrder: 1,
+        executionStatus: null,
+        executionDurationMs: 100,
+        executedAt: new Date('2026-04-03T00:00:00.000Z'),
+        isDirty: false,
+        output: [{ type: 'text', content: 'scaled 1' }],
+        outputRefs: [],
+        lockedBy: null,
+        lockedAt: null,
+        createdAt: new Date('2026-04-03T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-03T00:00:00.000Z')
+      }],
+      ['cell-2', {
+        cellId: 'cell-2',
+        notebookId: 'notebook-1',
+        cellType: 'code',
+        title: 'Cell 2',
+        content: 'print("scale 2")',
+        position: 1,
+        metadata: {},
+        executionCount: 1,
+        executionOrder: 2,
+        executionStatus: null,
+        executionDurationMs: 120,
+        executedAt: new Date('2026-04-03T00:00:00.000Z'),
+        isDirty: false,
+        output: [{ type: 'text', content: 'scaled 2' }],
+        outputRefs: [],
+        lockedBy: null,
+        lockedAt: null,
+        createdAt: new Date('2026-04-03T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-03T00:00:00.000Z')
+      }],
+      ['cell-3', {
+        cellId: 'cell-3',
+        notebookId: 'notebook-1',
+        cellType: 'code',
+        title: 'Cell 3',
+        content: 'print("scale 3")',
+        position: 2,
+        metadata: {},
+        executionCount: 1,
+        executionOrder: 3,
+        executionStatus: null,
+        executionDurationMs: 140,
+        executedAt: new Date('2026-04-03T00:00:00.000Z'),
+        isDirty: false,
+        output: [{ type: 'text', content: 'scaled 3' }],
+        outputRefs: [],
+        lockedBy: null,
+        lockedAt: null,
+        createdAt: new Date('2026-04-03T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-03T00:00:00.000Z')
+      }]
+    ]);
+    const readCellSpy = vi.spyOn(notebookService, 'readCell').mockImplementation(async (cellId: string) => {
+      const cell = cells.get(cellId);
+      if (!cell) {
+        throw new Error(`Missing cell ${cellId}`);
+      }
+      return cell;
+    });
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-4',
+        threadId: 'workflow-thread-4',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'record_execution',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeDatasetId: 'dataset-1',
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'write-result-1',
+          tool: 'write_cell',
+          output: { cellId: 'cell-1' }
+        },
+        {
+          id: 'write-result-2',
+          tool: 'write_cell',
+          output: { cellId: 'cell-2' }
+        },
+        {
+          id: 'write-result-3',
+          tool: 'write_cell',
+          output: { cellId: 'cell-3' }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-record-executed-without-status',
+        activeStepId: 'step-4',
+        currentNode: 'record_execution'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('record_execution');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_transformation_step',
+        args: expect.objectContaining({
+          runId: 'prep-run-record-executed-without-status',
+          stepId: 'step-4',
+          succeeded: true,
+          cellId: 'cell-3',
+          cellIds: ['cell-1', 'cell-2', 'cell-3']
+        })
+      })
+    ]);
+
+    readCellSpy.mockRestore();
+  });
+
+  it('creates a new notebook cell when a persisted bound cell id no longer exists', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-write-missing-cell',
+      projectId: 'project-1',
+      derivedDatasetIds: [],
+      steps: {
+        'step-5': {
+          stepId: 'step-5',
+          title: 'Encode SUBJECT_AREA_NAME and REPOSITORY_NAME',
+          intentType: 'encoding',
+          status: 'pending',
+          toolCallId: 'tool-call-5',
+          code: '# Cell 1\nprint("encode")',
+          codeHash: 'hash-5',
+          version: 2,
+          cellIds: ['missing-cell-id'],
+          requiresApproval: false,
+          lastExecuteSucceeded: false,
+          lastValidateSucceeded: false,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const readCellSpy = vi.spyOn(notebookService, 'readCell').mockRejectedValue(new Error('Cell not found'));
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-5',
+        threadId: 'workflow-thread-5',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'write_code',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'result-1',
+          tool: 'materialize_step_code',
+          output: {
+            runId: 'prep-run-write-missing-cell',
+            stepId: 'step-5',
+            step: {
+              stepId: 'step-5',
+              title: 'Encode SUBJECT_AREA_NAME and REPOSITORY_NAME',
+              code: '# Cell 1\nprint("encode")',
+              codeHash: 'hash-5',
+              version: 2,
+              requiresApproval: false,
+              cellIds: ['missing-cell-id']
+            }
+          }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-write-missing-cell',
+        activeStepId: 'step-5',
+        currentNode: 'write_code'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('write_code');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(readCellSpy).toHaveBeenCalledWith('missing-cell-id');
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.not.objectContaining({
+          cellId: 'missing-cell-id'
+        })
+      })
+    ]);
+
+    readCellSpy.mockRestore();
+  });
+
+  it('builds a deterministic commit action after validation using the active dataset and workbook notebook', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-commit-deterministic',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-derived-1',
+      derivedDatasetIds: ['dataset-derived-1'],
+      steps: {
+        'step-4': {
+          stepId: 'step-4',
+          title: 'Commit cleaned dataset',
+          intentType: 'data_cleaning',
+          status: 'running',
+          toolCallId: 'tool-call-4',
+          code: '# Cell 1\nprint("commit")',
+          codeHash: 'hash-4',
+          version: 2,
+          cellIds: ['cell-1'],
+          requiresApproval: false,
+          lastExecuteSucceeded: true,
+          lastValidateSucceeded: true,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-4',
+        threadId: 'workflow-thread-4',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'commit',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeDatasetId: 'dataset-derived-1',
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'result-1',
+          tool: 'validate_step_result',
+          output: {
+            runId: 'prep-run-commit-deterministic',
+            stepId: 'step-4',
+            status: 'running'
+          }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-commit-deterministic',
+        activeStepId: 'step-4',
+        currentNode: 'commit'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('commit');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'commit_transformation_step',
+        args: expect.objectContaining({
+          runId: 'prep-run-commit-deterministic',
+          stepId: 'step-4',
+          datasetId: 'dataset-derived-1',
+          notebookId: 'notebook-1'
+        })
+      })
+    ]);
   });
 });

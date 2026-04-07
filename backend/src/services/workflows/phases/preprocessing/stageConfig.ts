@@ -13,7 +13,8 @@ const PREPROCESSING_TEXT_STAGES = new Set(['answer', 'await_approval', 'summariz
 const PREPROCESSING_DETERMINISTIC_STAGES = new Set([
   'write_code',
   'record_execution',
-  'validate'
+  'validate',
+  'commit'
 ]);
 
 const ORCHESTRATION_TOOL_MAP = new Map<string, LlmToolDefinition>(
@@ -57,6 +58,7 @@ interface PreprocessingStageActions {
   buildWriteCodeAction: NonNullable<StageConfig['deterministicAction']>;
   buildRecordExecutionAction: NonNullable<StageConfig['deterministicAction']>;
   buildValidateAction: NonNullable<StageConfig['deterministicAction']>;
+  buildCommitAction: NonNullable<StageConfig['deterministicAction']>;
 }
 
 function toolsByNames(names: string[]): LlmToolDefinition[] {
@@ -105,6 +107,8 @@ export function buildPreprocessingStageConfig(
     config.deterministicAction = actions.buildRecordExecutionAction;
   } else if (stage === 'validate') {
     config.deterministicAction = actions.buildValidateAction;
+  } else if (stage === 'commit') {
+    config.deterministicAction = actions.buildCommitAction;
   }
 
   return config;

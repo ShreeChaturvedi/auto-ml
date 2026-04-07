@@ -66,6 +66,7 @@ export class DeploymentWSClient {
 
       this.ws.onerror = () => {
         this._isConnecting = false;
+        this._intentionalClose = true; // Prevent onclose from also triggering reconnect
         reject(new Error('WebSocket connection failed'));
       };
     });

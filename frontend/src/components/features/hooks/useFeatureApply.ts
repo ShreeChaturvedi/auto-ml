@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
 import { useDataStore } from '@/stores/dataStore';
+import { useFeatureStore } from '@/stores/featureStore';
 import type { FeatureSpec } from '@/types/feature';
 
 interface UseFeatureApplyOptions {
   projectId: string;
+  notebookId?: string;
   projectFeatures: FeatureSpec[];
   selectedDatasetFile: { id: string; metadata?: { datasetId?: string; columns?: string[] } } | undefined;
   setSelectedDataset: (id: string | null) => void;
@@ -24,11 +26,13 @@ interface UseFeatureApplyReturn {
 
 export function useFeatureApply({
   projectId,
+  notebookId,
   projectFeatures,
   selectedDatasetFile,
   setSelectedDataset,
 }: UseFeatureApplyOptions): UseFeatureApplyReturn {
   const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
+  const featureRunId = useFeatureStore((state) => state.featureRunId);
 
   const [outputName, setOutputName] = useState('');
   const [outputFormat, setOutputFormat] = useState<'csv' | 'json' | 'xlsx'>('csv');
@@ -67,16 +71,67 @@ export function useFeatureApply({
   const handleApplyFeatures = useCallback(async () => {
     if (!selectedDatasetFile?.metadata?.datasetId) return;
 
-    const enabledFeatures = projectFeatures.filter((feature) => feature.enabled);
+    // Read the LATEST features directly from Zustand at click time instead of
+    // trusting the prop closure alone. The prop can be stale during a race:
+    // adapter finishes processing `register_feature` events and calls
+    // `upsertFeature` with the LLM code, but if the user clicks Apply before
+    // React re-renders the parent, the callback still holds the old
+    // `projectFeatures` without code. Reading via getState() sees fresh state.
+    //
+    // Fall back to the prop if the store is empty (test scenarios where the
+    // parent wires projectFeatures without also mocking the store).
+    //
+    // Fall back to `featureSteps[id].code` if a feature is missing code —
+    // defense-in-depth: materialize_feature_code persists code to the step,
+    // register_feature bridges step.code into the feature spec. If the bridge
+    // missed for any reason, the step still holds the code from materialize.
+    const storeState = useFeatureStore.getState();
+    const storeFeatures = storeState.features.filter(
+      (feature) => feature.projectId === projectId
+    );
+    // Also filter the prop fallback by projectId so a future refactor that
+    // wires projectFeatures from a different source cannot leak cross-project
+    // features into the apply payload.
+    const propFeatures = projectFeatures.filter(
+      (feature) => feature.projectId === projectId
+    );
+    const sourceFeatures = storeFeatures.length > 0 ? storeFeatures : propFeatures;
+    const enabledFeatures = sourceFeatures
+      .filter((feature) => feature.enabled)
+      .map((feature) => {
+        if (typeof feature.code === 'string' && feature.code.trim().length > 0) {
+          return feature;
+        }
+        const stepCode = storeState.featureSteps?.[feature.id]?.code;
+        if (typeof stepCode === 'string' && stepCode.trim().length > 0) {
+          return { ...feature, code: stepCode };
+        }
+        return feature;
+      });
     if (enabledFeatures.length === 0) {
       setApplyStatus('error');
       setApplyMessage('Select at least one feature.');
       return;
     }
 
+    if (!notebookId) {
+      setApplyStatus('error');
+      setApplyMessage('Feature notebook is still initializing. Try again in a moment.');
+      return;
+    }
+
+    // When a feature has LLM-authored code, structural validation is
+    // unnecessary — the code handles its own column references and was
+    // already proven to run in the notebook. Guards only apply to features
+    // that fall back to the method-based codegen template.
+    const needsStructuralValidation = (feature: typeof enabledFeatures[number]) =>
+      !(typeof feature.code === 'string' && feature.code.trim().length > 0);
+
     const missingSecondary = enabledFeatures.find(
       (feature) =>
-        ['ratio', 'difference', 'product'].includes(feature.method) && !feature.secondaryColumn
+        needsStructuralValidation(feature)
+        && ['ratio', 'difference', 'product'].includes(feature.method)
+        && !feature.secondaryColumn
     );
 
     if (missingSecondary) {
@@ -87,7 +142,9 @@ export function useFeatureApply({
 
     const missingTarget = enabledFeatures.find(
       (feature) =>
-        feature.method === 'target_encode' && typeof feature.params?.targetColumn !== 'string'
+        needsStructuralValidation(feature)
+        && feature.method === 'target_encode'
+        && typeof feature.params?.targetColumn !== 'string'
     );
 
     if (missingTarget) {
@@ -103,6 +160,8 @@ export function useFeatureApply({
       const response = await applyFeatureEngineering({
         projectId,
         datasetId: selectedDatasetFile.metadata.datasetId,
+        runId: featureRunId ?? undefined,
+        notebookId,
         outputName: outputName.trim() || undefined,
         outputFormat,
         features: enabledFeatures
@@ -111,13 +170,17 @@ export function useFeatureApply({
       await hydrateFromBackend(projectId, { force: true });
       setSelectedDataset(response.dataset.datasetId);
       setApplyStatus('success');
-      setApplyMessage(`Created ${response.dataset.filename}`);
+      setApplyMessage(
+        response.warning
+          ? `Created ${response.dataset.filename}. ${response.warning}`
+          : `Created ${response.dataset.filename}`
+      );
       setOutputName('');
     } catch (error) {
       setApplyStatus('error');
       setApplyMessage(error instanceof Error ? error.message : 'Failed to apply features.');
     }
-  }, [hydrateFromBackend, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
+  }, [featureRunId, hydrateFromBackend, notebookId, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
 
   return {
     outputName,

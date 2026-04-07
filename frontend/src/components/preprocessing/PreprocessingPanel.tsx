@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -17,7 +17,6 @@ import {
 } from './PreprocessingToolbar';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
-import { DatasetContinuityDialog } from './DatasetContinuityDialog';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
 import { DEFAULT_WORKBOOK_ID } from './preprocessingTabUtils';
 import { usePreprocessingPanelSearchState } from './usePreprocessingPanelSearchState';
@@ -54,69 +53,6 @@ function usePreprocessingRunHydration(
       cancelled = true;
     };
   }, [hydrateRunById, invalidateActiveTabSession, projectId, runId]);
-}
-
-function useDatasetContinuityChoice(
-  selectedDatasetId: string | null,
-  selectedTableFilename: string | undefined,
-  openDatasetSelector: () => void,
-  setNextRunCellMode: (mode: 'continue' | 'restart_from_original') => void,
-  clearRun: () => void,
-) {
-  const submitPromptResolverRef = useRef<((prompt: string | null) => void) | null>(null);
-  const [isSubmitChoiceOpen, setSubmitChoiceOpen] = useState(false);
-  const [pendingSubmitPrompt, setPendingSubmitPrompt] = useState('');
-
-  const resolvePendingSubmitPrompt = useCallback((nextPrompt: string | null) => {
-    const resolver = submitPromptResolverRef.current;
-    submitPromptResolverRef.current = null;
-    setSubmitChoiceOpen(false);
-    setPendingSubmitPrompt('');
-    resolver?.(nextPrompt);
-  }, []);
-
-  const requestDatasetContinuityChoice = useCallback((prompt: string): Promise<string | null> => {
-    if (!selectedDatasetId) {
-      openDatasetSelector();
-      toast.info('Select a dataset to get started', {
-        description: 'Choose a dataset from the selector, then re-send your prompt.'
-      });
-      return Promise.resolve(null);
-    }
-
-    return new Promise<string | null>((resolve) => {
-      submitPromptResolverRef.current = resolve;
-      setPendingSubmitPrompt(prompt);
-      setSubmitChoiceOpen(true);
-    });
-  }, [openDatasetSelector, selectedDatasetId]);
-
-  const buildContinuityPrompt = useCallback((mode: 'continue' | 'restart_from_original') => (
-    buildDatasetContinuityPrompt(pendingSubmitPrompt, mode, {
-      datasetId: selectedDatasetId,
-      datasetLabel: selectedTableFilename
-    })
-  ), [pendingSubmitPrompt, selectedDatasetId, selectedTableFilename]);
-
-  const handleUseCurrentDataset = useCallback(() => {
-    setNextRunCellMode('continue');
-    resolvePendingSubmitPrompt(buildContinuityPrompt('continue'));
-  }, [buildContinuityPrompt, resolvePendingSubmitPrompt, setNextRunCellMode]);
-
-  const handleUseOriginalDataset = useCallback(() => {
-    setNextRunCellMode('restart_from_original');
-    clearRun();
-    resolvePendingSubmitPrompt(buildContinuityPrompt('restart_from_original'));
-  }, [buildContinuityPrompt, clearRun, resolvePendingSubmitPrompt, setNextRunCellMode]);
-
-  return {
-    isSubmitChoiceOpen,
-    setSubmitChoiceOpen,
-    requestDatasetContinuityChoice,
-    handleUseCurrentDataset,
-    handleUseOriginalDataset,
-    handleCancelChoice: () => resolvePendingSubmitPrompt(null)
-  };
 }
 
 export function PreprocessingPanel() {
@@ -182,22 +118,27 @@ export function PreprocessingPanel() {
     () => tables.find((table) => table.datasetId === selectedDatasetId),
     [tables, selectedDatasetId]
   );
-  const {
-    isSubmitChoiceOpen,
-    setSubmitChoiceOpen,
-    requestDatasetContinuityChoice,
-    handleUseCurrentDataset,
-    handleUseOriginalDataset,
-    handleCancelChoice
-  } = useDatasetContinuityChoice(
-    selectedDatasetId,
-    selectedTable?.filename,
-    openDatasetSelector,
-    setNextRunCellMode,
-    clearRun
-  );
 
   usePreprocessingRunHydration(projectId, runId, hydrateRunById, invalidateActiveTabSession);
+
+  const preparePreprocessingPrompt = useCallback(async (prompt: string): Promise<string | null> => {
+    if (!selectedDatasetId) {
+      openDatasetSelector();
+      toast.info('Select a dataset to get started', {
+        description: 'Choose a dataset from the selector, then re-send your prompt.'
+      });
+      return null;
+    }
+    setNextRunCellMode('continue');
+    return buildDatasetContinuityPrompt(
+      prompt,
+      'continue',
+      {
+        datasetId: selectedDatasetId,
+        datasetLabel: selectedTable?.filename
+      }
+    );
+  }, [openDatasetSelector, selectedDatasetId, selectedTable?.filename, setNextRunCellMode]);
 
   const handleReplayCheck = () => {
     if (!projectId) {
@@ -223,9 +164,10 @@ export function PreprocessingPanel() {
       projectId ?? '',
       selectedDatasetId,
       tables,
-      projectId ? buildWorkflowSessionKey(projectId, storageKey) : storageKey
+      projectId ? buildWorkflowSessionKey(projectId, storageKey) : storageKey,
+      activeTab?.notebookId
     );
-  }, [activeTab?.id, buildTabStorageKey, projectId, selectedDatasetId, tables]);
+  }, [activeTab?.id, activeTab?.notebookId, buildTabStorageKey, projectId, selectedDatasetId, tables]);
 
   return (
     <>
@@ -234,7 +176,7 @@ export function PreprocessingPanel() {
         projectId={projectId ?? ''}
         domainAdapter={domainAdapter}
         composerPlaceholders={composerPlaceholders}
-        beforeSubmit={requestDatasetContinuityChoice}
+        beforeSubmit={preparePreprocessingPrompt}
         storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
         sessionVersion={activeTab?.storageVersion ?? 0}
         initialPrompt={insightInitialPrompt}
@@ -295,16 +237,6 @@ export function PreprocessingPanel() {
         onValueChange={setRenameTabName}
         onSave={handleRenameTab}
       />
-
-      <DatasetContinuityDialog
-        open={isSubmitChoiceOpen}
-        onOpenChange={setSubmitChoiceOpen}
-        selectedTableFilename={selectedTable?.filename}
-        onUseCurrentDataset={handleUseCurrentDataset}
-        onUseOriginalDataset={handleUseOriginalDataset}
-        onCancel={handleCancelChoice}
-      />
-
     </>
   );
 }

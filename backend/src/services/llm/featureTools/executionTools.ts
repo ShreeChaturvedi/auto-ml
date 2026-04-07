@@ -33,9 +33,15 @@ export const executeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
   let stderr: string | undefined;
   let executionMs: number | undefined;
 
-  const dockerReady = await isDockerAvailable();
+  const useNotebookExecutionResult = typeof args.cellId === 'string' || args.executionSource === 'notebook';
+  const dockerReady = useNotebookExecutionResult ? false : await isDockerAvailable();
 
-  if (dockerReady) {
+  if (useNotebookExecutionResult) {
+    succeeded = (args.succeeded as boolean) ?? false;
+    stdout = args.stdout as string | undefined;
+    stderr = args.stderr as string | undefined;
+    executionMs = args.executionMs as number | undefined;
+  } else if (dockerReady) {
     const startMs = Date.now();
     try {
       const container = await getOrCreateContainer({
@@ -72,6 +78,7 @@ export const executeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
     stderr,
     executionMs,
     dockerExecution: dockerReady,
+    executionSource: useNotebookExecutionResult ? 'notebook' : 'docker',
     runId: ctx.run?.runId
   };
 
@@ -98,6 +105,22 @@ export const validateFeature: FeatureToolHandler = async (ctx: FeatureToolContex
 
   if (!featureId) {
     return { error: 'validate_feature requires featureId' };
+  }
+
+  // Guard: require successful execution before validation (mirrors preprocessing's
+  // STEP_VALIDATE_REQUIRES_SUCCESSFUL_EXECUTE gate in stepValidationHandler.ts).
+  if (ctx.run) {
+    const step = ctx.run.features[featureId];
+    if (step && step.status !== 'executed') {
+      return {
+        error: `Feature "${featureId}" must be successfully executed before validation. Current status: ${step.status}. If you edited the cell, re-run it first.`
+      };
+    }
+    if (step?.executionResult && !step.executionResult.succeeded) {
+      return {
+        error: `Feature "${featureId}" execution failed. Fix the code, re-execute, and then validate.`
+      };
+    }
   }
 
   const validation = {

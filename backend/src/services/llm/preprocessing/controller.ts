@@ -4,6 +4,7 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
 import type { DatasetProfile } from '../../../types/dataset.js';
 import type { ToolResult } from '../../../types/llm.js';
+import { splitPreprocessingUserCode } from '../../notebook/preprocessingExecutionContext.js';
 import type {
   LlmClient,
   LlmRequest,
@@ -68,6 +69,7 @@ export interface ResolvePreprocessingControllerTurnParams {
 const READ_ONLY_CELL_TOOLS = new Set(['list_cells', 'read_cell']);
 const NOTEBOOK_WRITE_TOOLS = new Set(['write_cell', 'edit_cell', 'run_cell']);
 
+
 const ControllerAnnotation = Annotation.Root({
   threadId: Annotation<string>(),
   runId: Annotation<string | undefined>(),
@@ -86,6 +88,7 @@ const ControllerAnnotation = Annotation.Root({
   latestToolName: Annotation<string | undefined>(),
   latestToolSucceeded: Annotation<boolean>(),
   latestOutputStatus: Annotation<string | undefined>(),
+  hasPendingNotebookCells: Annotation<boolean>(),
   updatedAt: Annotation<string>()
 });
 
@@ -94,6 +97,44 @@ type ControllerState = typeof ControllerAnnotation.State;
 function nowIso(): string {
   return new Date().toISOString();
 }
+
+function hasPendingNotebookCells(toolResults?: ToolResult[]): boolean {
+  if (!toolResults?.length) {
+    return false;
+  }
+
+  let latestCode: string | undefined;
+  let writeCellCount = 0;
+  let runCellCount = 0;
+
+  for (const result of toolResults) {
+    if (result.tool === 'materialize_step_code') {
+      const output = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+        ? result.output as Record<string, unknown>
+        : null;
+      const step = output?.step && typeof output.step === 'object' && !Array.isArray(output.step)
+        ? output.step as Record<string, unknown>
+        : null;
+      if (typeof step?.code === 'string' && step.code.trim()) {
+        latestCode = step.code;
+      }
+    }
+
+    if (result.tool === 'write_cell' || result.tool === 'edit_cell') {
+      writeCellCount += 1;
+    } else if (result.tool === 'run_cell') {
+      runCellCount += 1;
+    }
+  }
+
+  if (!latestCode) {
+    return false;
+  }
+
+  const plannedCellCount = splitPreprocessingUserCode(latestCode).length;
+  return plannedCellCount > 1 && writeCellCount >= runCellCount && runCellCount < plannedCellCount;
+}
+
 
 async function classifyTurnNode(
   state: ControllerState,
@@ -218,6 +259,7 @@ export async function resolvePreprocessingControllerTurn(
     latestToolName: latestToolOutcome.latestToolName,
     latestToolSucceeded: latestToolOutcome.latestToolSucceeded,
     latestOutputStatus: latestToolOutcome.latestOutputStatus,
+    hasPendingNotebookCells: hasPendingNotebookCells(params.toolResults),
     updatedAt: nowIso()
   }) as ControllerState;
 

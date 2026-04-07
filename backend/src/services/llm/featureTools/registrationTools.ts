@@ -1,3 +1,4 @@
+import { isActionableFeatureCode } from '../../featureEngineering/codeGenerator.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
 import type { FeatureToolContext, FeatureToolHandler } from './types.js';
@@ -16,6 +17,52 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
 
   const approved = (args.approved as boolean) ?? true;
 
+  // Guard: require validated status before registration (mirrors preprocessing's
+  // STEP_COMMIT_REQUIRES_EXECUTE_VALIDATE gate in stepCommitHandler.ts).
+  if (approved && ctx.run) {
+    const step = ctx.run.features[featureId];
+    if (step && step.status !== 'validated' && step.status !== 'registered') {
+      // Prescriptive recovery: if the feature already executed, the LLM just
+      // needs to call validate_feature. Otherwise, point at the missing step
+      // in the lifecycle so the LLM doesn't retry register blindly.
+      const nextStep =
+        step.status === 'executed' ? 'validate_feature'
+          : step.status === 'code_ready' ? 'execute_feature'
+            : step.status === 'proposed' ? 'materialize_feature_code'
+              : 'materialize_feature_code';
+      return {
+        error: `Feature "${featureId}" cannot be registered before validation. Current status: "${step.status}". Call ${nextStep} for "${featureId}" first, then retry register_feature.`
+      };
+    }
+    if (step?.executionResult && !step.executionResult.succeeded) {
+      return {
+        error: `Feature "${featureId}" execution did not succeed. Fix the code, re-execute, and re-validate before registering.`
+      };
+    }
+
+    // Defense-in-depth: double-check that the persisted code is still
+    // actionable and outputColumns are valid. If materialize_feature_code's
+    // guard passed but the step is now in a broken state (e.g., a tool call
+    // corruption, race, or bypass), catch it here before the feature goes
+    // live. Uses a distinct error prefix so operator logs can distinguish
+    // which layer caught the issue.
+    if (step && !isActionableFeatureCode(step.code)) {
+      return {
+        error: `register_feature (defense-in-depth): feature "${featureId}" has empty or placeholder-only code stored in the run state. This indicates the feature was never properly materialized. Re-run materialize_feature_code with final executable code.`
+      };
+    }
+    if (step && (!Array.isArray(step.outputColumns) || step.outputColumns.length === 0)) {
+      return {
+        error: `register_feature (defense-in-depth): feature "${featureId}" has empty outputColumns in the run state. Re-run materialize_feature_code with the actual column names your code produces.`
+      };
+    }
+    if (step?.outputColumns?.some((name) => name.trim().toLowerCase() === 'placeholder' || name.trim().length === 0)) {
+      return {
+        error: `register_feature (defense-in-depth): feature "${featureId}" has placeholder output column names. Re-run materialize_feature_code with real column names.`
+      };
+    }
+  }
+
   if (!approved) {
     if (ctx.run && ctx.runRepository) {
       const step = ctx.run.features[featureId];
@@ -32,6 +79,7 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
         status: 'rejected',
         message: 'Feature registration rejected',
         featureId,
+        projectId: ctx.projectId,
         rejectionReason: args.rejectionReason ?? 'Rejected by user',
         runId: ctx.run?.runId
       }
@@ -54,6 +102,7 @@ export const registerFeature: FeatureToolHandler = async (ctx: FeatureToolContex
       status: 'ok',
       message: 'Feature registered',
       featureId,
+      projectId: ctx.projectId,
       datasetId: args.datasetId ?? ctx.datasetId,
       runId: ctx.run?.runId
     }

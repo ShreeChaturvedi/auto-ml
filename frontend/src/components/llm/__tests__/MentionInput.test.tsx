@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,7 +7,15 @@ import {
   type MentionInputHandle,
 } from '@/components/llm/MentionInput';
 
-function MentionInputHarness({ voiceActive = false, placeholders }: { voiceActive?: boolean; placeholders?: string[] }) {
+function MentionInputHarness({
+  voiceActive = false,
+  placeholder = 'Ask something',
+  placeholders
+}: {
+  voiceActive?: boolean;
+  placeholder?: string;
+  placeholders?: string[];
+}) {
   const [value, setValue] = useState('');
   const [cursorOffset, setCursorOffset] = useState<number | null>(null);
   const inputRef = useRef<MentionInputHandle>(null);
@@ -20,7 +28,7 @@ function MentionInputHarness({ voiceActive = false, placeholders }: { voiceActiv
         onValueChange={(nextValue) => setValue(nextValue)}
         onKeyDown={() => {}}
         mentionNames={new Set()}
-        placeholder="Ask something"
+        placeholder={placeholder}
         placeholders={placeholders}
         voiceActive={voiceActive}
       />
@@ -41,10 +49,15 @@ function MentionInputHarness({ voiceActive = false, placeholders }: { voiceActiv
 
 describe('MentionInput', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);
   });
 
   afterEach(() => {
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -80,14 +93,28 @@ describe('MentionInput', () => {
     expect(screen.getByRole('textbox').innerHTML).toBe('');
   });
 
-  it('fills the input with the current placeholder when Tab is pressed on empty', () => {
-    render(
-      <MentionInputHarness placeholders={['Try asking about your data', 'Summarize the columns']} />
-    );
+  it('accepts the static placeholder text when pressing Tab on an empty composer', () => {
+    render(<MentionInputHarness placeholder="Inspect missing values and suggest fixes" />);
 
     const editor = screen.getByRole('textbox');
+    fireEvent.focus(editor);
     fireEvent.keyDown(editor, { key: 'Tab' });
 
-    expect(screen.getByTestId('value')).toHaveTextContent('Try asking about your data');
+    expect(screen.getByTestId('value')).toHaveTextContent('Inspect missing values and suggest fixes');
+  });
+
+  it('accepts the currently visible animated placeholder when pressing Tab', () => {
+    render(<MentionInputHarness placeholders={['First prompt', 'Second prompt']} />);
+
+    const editor = screen.getByRole('textbox');
+    fireEvent.focus(editor);
+
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    fireEvent.keyDown(editor, { key: 'Tab' });
+
+    expect(screen.getByTestId('value')).toHaveTextContent('Second prompt');
   });
 });

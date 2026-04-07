@@ -16,12 +16,27 @@ export const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
   'This operation was aborted'
 ]);
 
+let pendingFeatureLeftPaneScrollTop: number | null = null;
+
 export function stripAssistantArtifacts(text: string): string {
   return sanitizeAssistantText(text);
 }
 
-export function hasUiItems(ui: UiSchema | null): boolean {
-  return Boolean(ui?.sections.some((section) => section.items.length > 0));
+export function captureFeatureLeftPaneScrollTop(scrollTop: number) {
+  pendingFeatureLeftPaneScrollTop = scrollTop;
+}
+
+export function peekFeatureLeftPaneScrollTop(): number | null {
+  return pendingFeatureLeftPaneScrollTop;
+}
+
+export function clearFeatureLeftPaneScrollTop() {
+  pendingFeatureLeftPaneScrollTop = null;
+}
+
+export function hasUiItems(ui: UiSchema | null | undefined): boolean {
+  if (!ui || !Array.isArray(ui.sections)) return false;
+  return ui.sections.some((section) => Array.isArray(section.items) && section.items.length > 0);
 }
 
 export function buildReadinessReport(features: FeatureSpec[], sourceColumns: string[]): ReadinessReport {

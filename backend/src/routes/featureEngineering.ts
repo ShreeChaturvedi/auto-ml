@@ -26,7 +26,11 @@ const featureSpecSchema = z.object({
   method: z.enum(FEATURE_METHODS),
   category: z.string().optional(),
   params: z.record(z.unknown()).optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  // LLM-authored Python code. Capped at 50KB per feature (typical
+  // real-world LLM code is 1-4KB; this gives 10x+ headroom and keeps
+  // a 50-feature apply payload under ~2.5MB, well below Express's 10MB body limit).
+  code: z.string().max(50000).optional()
 });
 
 const applySchema = z.object({
@@ -79,8 +83,10 @@ export function createFeatureEngineeringRouter() {
           sample: dataset.sample,
           createdAt: dataset.createdAt,
           tableName: resolveDatasetSqlName(dataset),
-          physicalTableName: tableName
-        }
+          physicalTableName: tableName,
+          warning: result.warning
+        },
+        warning: result.warning
       });
     } catch (error) {
       appLogger.error('[feature-engineering] Apply failed:', error);

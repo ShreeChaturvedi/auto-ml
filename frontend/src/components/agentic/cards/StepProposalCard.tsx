@@ -1,14 +1,14 @@
 /**
- * StepProposalCard - Displays a proposed pipeline step with accept/modify/reject controls.
+ * StepProposalCard - Displays a proposed pipeline step with selection controls.
  *
  * Shows a left accent bar colored by phase, a title, an expandable rationale,
- * and action buttons that collapse to a status badge once a decision is made.
+ * and a toggle to select/deselect. When multiple proposals are shown, the user
+ * selects which ones to approve, then clicks a shared "Apply" button.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 const PHASE_ACCENT: Record<string, string> = {
@@ -18,6 +18,10 @@ const PHASE_ACCENT: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
+  pending: { label: 'Awaiting Approval', variant: 'secondary' },
+  selected: { label: 'Selected', variant: 'default' },
+  deselected: { label: 'Skipped', variant: 'destructive' },
+  proposed: { label: 'Proposed', variant: 'secondary' },
   accepted: { label: 'Accepted', variant: 'default' },
   rejected: { label: 'Rejected', variant: 'destructive' },
   modified: { label: 'Modified', variant: 'secondary' },
@@ -28,9 +32,8 @@ export interface StepProposalCardProps {
   title: string;
   rationale?: string;
   phase: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'modified';
-  onAccept?: () => void;
-  onReject?: () => void;
+  status: 'pending' | 'proposed' | 'accepted' | 'rejected' | 'modified';
+  onToggleSelect?: (selected: boolean) => void;
 }
 
 export function StepProposalCard({
@@ -39,12 +42,30 @@ export function StepProposalCard({
   rationale,
   phase,
   status,
-  onAccept,
-  onReject,
+  onToggleSelect,
 }: StepProposalCardProps) {
   const [rationaleExpanded, setRationaleExpanded] = useState(false);
+  // Auto-select pending proposals so the "Apply" button is immediately visible.
+  // User can deselect (Skip) ones they don't want.
+  const [selected, setSelected] = useState<boolean | null>(status === 'pending' ? true : null);
+
+  // Notify parent of auto-selection on mount
+  useEffect(() => {
+    if (status === 'pending' && onToggleSelect) {
+      onToggleSelect(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Determine effective display status
+  const effectiveStatus = selected === true
+    ? 'selected'
+    : selected === false
+      ? 'deselected'
+      : status;
   const accent = PHASE_ACCENT[phase] ?? 'border-l-muted-foreground';
-  const badgeInfo = STATUS_BADGE[status];
+  const badgeInfo = STATUS_BADGE[effectiveStatus];
+  const isToggleable = status === 'pending';
 
   return (
     <div
@@ -52,6 +73,8 @@ export function StepProposalCard({
       className={cn(
         'rounded-md border border-l-4 bg-card p-3 shadow-sm dark:shadow-none transition-colors',
         accent,
+        isToggleable && selected === true && 'ring-1 ring-primary/40',
+        isToggleable && selected === false && 'opacity-50',
       )}
     >
       {/* Header */}
@@ -87,17 +110,43 @@ export function StepProposalCard({
         </div>
       )}
 
-      {/* Action buttons (only when pending) */}
-      {status === 'pending' && (
+      {/* Toggle buttons for selection */}
+      {isToggleable && (
         <div className="mt-3 flex items-center gap-2">
-          <Button size="sm" className="h-7 text-xs" onClick={onAccept}>
-            <Check className="mr-1 h-3 w-3" />
-            Accept
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={onReject}>
-            <X className="mr-1 h-3 w-3" />
-            Reject
-          </Button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = selected === true ? null : true;
+              setSelected(next);
+              onToggleSelect?.(next === true);
+            }}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              selected === true
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+          >
+            <Check className="h-3 w-3" />
+            {selected === true ? 'Selected' : 'Select'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = selected === false ? null : false;
+              setSelected(next);
+              onToggleSelect?.(false);
+            }}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              selected === false
+                ? 'bg-destructive/10 text-destructive'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+          >
+            <X className="h-3 w-3" />
+            Skip
+          </button>
         </div>
       )}
     </div>

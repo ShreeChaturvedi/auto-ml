@@ -101,6 +101,70 @@ describe('resolveWorkspaceFilePath', () => {
     })).toBe(newerContainerPath);
   });
 
+  it('prefers dataset-id-scoped static path over newer unscoped files', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'issue-workbook-isolation-'));
+    createdDirs.push(rootDir);
+
+    const projectDir = join(rootDir, PROJECT_ID);
+    const unscopedDir = join(projectDir, 'datasets');
+    const scopedDir = join(projectDir, 'datasets', 'dataset-A');
+
+    mkdirSync(unscopedDir, { recursive: true });
+    mkdirSync(scopedDir, { recursive: true });
+
+    const unscopedPath = join(unscopedDir, 'train.csv');
+    const scopedPath = join(scopedDir, 'train.csv');
+
+    // Unscoped file is NEWER but belongs to a different workbook's write
+    writeFileSync(unscopedPath, 'workbook-1-data');
+    writeFileSync(scopedPath, 'workbook-2-data');
+    utimesSync(unscopedPath, new Date('2026-04-01T00:00:02.000Z'), new Date('2026-04-01T00:00:02.000Z'));
+    utimesSync(scopedPath, new Date('2026-04-01T00:00:01.000Z'), new Date('2026-04-01T00:00:01.000Z'));
+
+    const { resolveWorkspaceFilePath } = await loadPersistenceModule();
+    // Should prefer the dataset-id-scoped path despite the unscoped file being newer
+    expect(resolveWorkspaceFilePath({
+      executionWorkspaceDir: rootDir,
+      projectId: PROJECT_ID,
+      filename: 'train.csv',
+      datasetId: 'dataset-A'
+    })).toBe(scopedPath);
+  });
+
+  it('isolates two workbooks using different dataset IDs', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'issue-multi-workbook-'));
+    createdDirs.push(rootDir);
+
+    const projectDir = join(rootDir, PROJECT_ID);
+    const datasetADir = join(projectDir, 'datasets', 'dataset-A');
+    const datasetBDir = join(projectDir, 'datasets', 'dataset-B');
+
+    mkdirSync(datasetADir, { recursive: true });
+    mkdirSync(datasetBDir, { recursive: true });
+
+    writeFileSync(join(datasetADir, 'train.csv'), 'age,income\n30,50000\n');
+    writeFileSync(join(datasetBDir, 'train.csv'), 'name,score\nAlice,95\n');
+
+    const { resolveWorkspaceFilePath } = await loadPersistenceModule();
+
+    const pathA = resolveWorkspaceFilePath({
+      executionWorkspaceDir: rootDir,
+      projectId: PROJECT_ID,
+      filename: 'train.csv',
+      datasetId: 'dataset-A'
+    });
+    const pathB = resolveWorkspaceFilePath({
+      executionWorkspaceDir: rootDir,
+      projectId: PROJECT_ID,
+      filename: 'train.csv',
+      datasetId: 'dataset-B'
+    });
+
+    expect(pathA).toBe(join(datasetADir, 'train.csv'));
+    expect(pathB).toBe(join(datasetBDir, 'train.csv'));
+    expect(pathA).not.toBe(pathB);
+  });
+
   it('reuses the existing derived dataset for the same run when the source dataset is already derived', async () => {
     const rootDir = mkdtempSync(join(tmpdir(), 'issue-249-persist-'));
     createdDirs.push(rootDir);
@@ -168,7 +232,7 @@ describe('resolveWorkspaceFilePath', () => {
       updatedAt: '2026-03-01T00:00:00.000Z'
     };
 
-    const derivedDatasetId = await persistProcessedDataset(run, sourceDataset);
+    const derivedDatasetId = await persistProcessedDataset(run, sourceDataset, undefined, repo);
 
     expect(derivedDatasetId).toBe(existingDerived.datasetId);
     expect(run.derivedDatasetIds).toEqual([]);

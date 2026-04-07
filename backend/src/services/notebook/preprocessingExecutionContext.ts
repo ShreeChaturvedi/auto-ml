@@ -15,6 +15,7 @@ export interface PreprocessingExecutionContext {
 
 const DEFAULT_DATAFRAME_NAME = 'df';
 const PYTHON_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const CELL_MARKER_RE = /^\s*#\s*(?:cell\b.*|%%.*)$/i;
 const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
 
 function sanitizeIdentifier(name: string | undefined): string {
@@ -84,4 +85,65 @@ export function buildPreprocessingCellContent(opts: {
     '',
     `save_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`
   ].join('\n');
+}
+
+export function splitPreprocessingUserCode(userCode: string): string[] {
+  const trimmed = userCode.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const segments: string[] = [];
+  let current: string[] = [];
+  let sawMarker = false;
+
+  for (const line of trimmed.split('\n')) {
+    if (CELL_MARKER_RE.test(line)) {
+      sawMarker = true;
+      const chunk = current.join('\n').trim();
+      if (chunk) {
+        segments.push(chunk);
+      }
+      current = [];
+      continue;
+    }
+    current.push(line);
+  }
+
+  const finalChunk = current.join('\n').trim();
+  if (finalChunk) {
+    segments.push(finalChunk);
+  }
+
+  return sawMarker && segments.length > 0 ? segments : [trimmed];
+}
+
+export function buildPreprocessingCellContents(opts: {
+  filename: string;
+  datasetId: string;
+  fileType: DatasetFileType;
+  dataframeName: string;
+  userCode: string;
+}): string[] {
+  const codeSegments = splitPreprocessingUserCode(opts.userCode);
+  if (codeSegments.length <= 1) {
+    return [buildPreprocessingCellContent(opts)];
+  }
+
+  const fn = JSON.stringify(opts.filename);
+  const ds = JSON.stringify(opts.datasetId);
+  const ft = JSON.stringify(opts.fileType);
+  const df = JSON.stringify(opts.dataframeName);
+
+  return codeSegments.map((segment, index) => {
+    const lines: string[] = [];
+    if (index === 0) {
+      lines.push(`${opts.dataframeName} = load_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`, '');
+    }
+    lines.push(segment.trim());
+    if (index === codeSegments.length - 1) {
+      lines.push('', `save_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`);
+    }
+    return lines.join('\n');
+  });
 }

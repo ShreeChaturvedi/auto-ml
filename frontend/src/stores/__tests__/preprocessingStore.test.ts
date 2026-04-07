@@ -278,6 +278,66 @@ describe('preprocessingStore hydration', () => {
     expect(state.controllerSummary).toBeNull();
   });
 
+  it('preserves the active run when selecting a committed processed dataset within the same workbook', () => {
+    usePreprocessingStore.setState({
+      tables: [
+        {
+          datasetId: 'dataset-1',
+          name: 'dataset_1',
+          filename: 'dataset.csv',
+          sizeBytes: 123
+        },
+        {
+          datasetId: 'dataset-derived-1',
+          name: 'dataset_1_processed',
+          filename: 'dataset_processed.csv',
+          sizeBytes: 140
+        }
+      ],
+      selectedDatasetId: 'dataset-1',
+      runId: 'prep-run-1',
+      nextRunCellMode: 'continue',
+      latestCheckpointId: 'ckpt-1',
+      timeline: [
+        {
+          id: 'evt-1',
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          toolName: 'commit_transformation_step',
+          title: 'Commit transformation',
+          status: 'applied',
+          requiresApproval: false,
+          cellIds: ['cell-1'],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ],
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'plan_step',
+        allowedTools: ['propose_transformation_step'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().selectDataset('dataset-derived-1', {
+      preserveRunState: true
+    });
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('dataset-derived-1');
+    expect(state.runId).toBe('prep-run-1');
+    expect(state.latestCheckpointId).toBe('ckpt-1');
+    expect(state.timeline).toHaveLength(1);
+    expect(state.controllerSummary).toMatchObject({
+      threadId: 'prep-thread:test'
+    });
+  });
+
   it('clears controller summary when the active run is cleared', () => {
     usePreprocessingStore.setState({
       runId: 'prep-run-1',

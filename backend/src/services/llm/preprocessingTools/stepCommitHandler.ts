@@ -111,12 +111,44 @@ export const commitTransformationStep: ToolHandler = async (ctx: ToolContext) =>
     });
   }
 
+  let derivedDatasetId: string | undefined;
+  try {
+    derivedDatasetId = await persistProcessedDataset(run, dataset, asString(args.notebookId), datasetRepository);
+  } catch (persistError) {
+    appLogger.error('[commitTransformationStep] Failed to persist processed dataset', persistError);
+    return fail(
+      run.runId,
+      'PROCESSED_DATASET_PERSIST_FAILED',
+      'Commit could not persist the processed workbook dataset.',
+      { stepId: step.stepId, datasetId: dataset.datasetId }
+    );
+  }
+
+  if (!derivedDatasetId) {
+    return fail(
+      run.runId,
+      'PROCESSED_DATASET_PERSIST_FAILED',
+      'Commit could not persist the processed workbook dataset.',
+      { stepId: step.stepId, datasetId: dataset.datasetId }
+    );
+  }
+
+  const committedDataset = await resolveProjectDataset(datasetRepository, projectId, derivedDatasetId);
+  if (!committedDataset) {
+    return fail(
+      run.runId,
+      'PROCESSED_DATASET_NOT_FOUND',
+      'Commit persisted a processed dataset but it could not be resolved in project context.',
+      { stepId: step.stepId, datasetId: derivedDatasetId }
+    );
+  }
+
   step.status = 'applied';
   step.approvalDecision = 'approved';
   step.decisionReason = undefined;
   step.toolCallId = toolCallId ?? step.toolCallId;
   step.updatedAt = nowIso();
-  run.activeDatasetId = dataset.datasetId;
+  run.activeDatasetId = committedDataset.datasetId;
   const cellBindings = toCellBindings(run.runId, step, step.updatedAt, toolCallId);
 
   appendEvent(run, {
@@ -124,14 +156,15 @@ export const commitTransformationStep: ToolHandler = async (ctx: ToolContext) =>
     runId: run.runId,
     type: 'step_committed',
     stepId: step.stepId,
-    datasetId: dataset.datasetId,
+    datasetId: committedDataset.datasetId,
     payload: {
       toolCallId: step.toolCallId,
       approved: approved ?? true,
-      requiredInputSchema: toSchemaSnapshot(dataset),
+      requiredInputSchema: toSchemaSnapshot(committedDataset),
       cellBindings,
       cellIds: step.cellIds,
-      status: step.status
+      status: step.status,
+      derivedDatasetId: committedDataset.datasetId
     }
   });
 
@@ -139,7 +172,7 @@ export const commitTransformationStep: ToolHandler = async (ctx: ToolContext) =>
   const checkpoint = {
     checkpointId,
     label: asString(args.label) ?? `Committed ${step.title}`,
-    datasetId: dataset.datasetId,
+    datasetId: committedDataset.datasetId,
     stepIds: [step.stepId],
     createdAt: nowIso(),
     replayUntilEventSequence: run.events.length
@@ -157,13 +190,6 @@ export const commitTransformationStep: ToolHandler = async (ctx: ToolContext) =>
       replayUntilEventSequence: checkpoint.replayUntilEventSequence
     }
   });
-
-  let derivedDatasetId: string | undefined;
-  try {
-    derivedDatasetId = await persistProcessedDataset(run, dataset, asString(args.notebookId));
-  } catch (persistError) {
-    appLogger.error('[commitTransformationStep] Failed to persist processed dataset (non-fatal)', persistError);
-  }
 
   await runRepository.save(run);
   return ok(run.runId, {

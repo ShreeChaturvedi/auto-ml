@@ -2,7 +2,6 @@ import { env } from '../../config.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import { createProjectRepository } from '../../repositories/projectRepository.js';
 import {
-  getFeatureEngineeringGateState,
   listProjectDocuments,
   loadRagSnippets
 } from '../../routes/llm/shared.js';
@@ -15,8 +14,7 @@ import {
   buildOnboardingRequest,
   buildTrainingRequest
 } from '../llm/prompts/index.js';
-import { LLM_ALL_TOOLS, LLM_FEATURE_ENGINEERING_TOOLS, LLM_ONBOARDING_TOOLS } from '../llm/toolRegistry.js';
-import { listMcpToolsForLlm } from '../mcp/mcpAdapter.js';
+import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_TOOLS, LLM_TRAINING_LIFECYCLE_TOOLS } from '../llm/toolRegistry.js';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
@@ -24,10 +22,55 @@ import { getPhaseConfig } from './phaseConfig.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
+function extractSelectedFeatureIds(prompt: string | undefined): string[] {
+  if (!prompt) {
+    return [];
+  }
 
-function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
+  const match = prompt.match(/^Selected feature IDs to implement:\s*(.+)$/im);
+  if (!match) {
+    return [];
+  }
+
+  return match[1]
+    .split(/\s*,\s*/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function extractFeatureIdFromToolResult(
+  result: WorkflowGraphState['toolResultHistory'][number]
+): string | undefined {
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return undefined;
+  }
+
+  const output = result.output as Record<string, unknown>;
+  return typeof output.featureId === 'string' ? output.featureId : undefined;
+}
+
+function isRejectedRegisterResult(
+  result: WorkflowGraphState['toolResultHistory'][number]
+): boolean {
+  if (result.tool !== 'register_feature') {
+    return false;
+  }
+
+  if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return false;
+  }
+
+  const status = (result.output as Record<string, unknown>).status;
+  return typeof status === 'string' && status.toLowerCase() === 'rejected';
+}
+
+export function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
   if (state.iteration > 0) {
     return true;
+  }
+
+  if (state.turn.prompt?.trim()) {
+    return false;
   }
 
   const startingStatus = typeof state.run.metadata?.workflowTurnStartStatus === 'string'
@@ -44,6 +87,135 @@ function shouldContinuePreprocessingTurn(state: WorkflowGraphState): boolean {
   return false;
 }
 
+export function shouldRestrictFeatureToolsToProposalMode(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  prompt: string | undefined
+): boolean {
+  const selectedFeatureIds = extractSelectedFeatureIds(prompt);
+  if (selectedFeatureIds.length > 0) {
+    return false;
+  }
+
+  // Without explicit selected IDs, keep the model in proposal/review mode
+  // even when prior lifecycle history exists.
+  void toolResults;
+  return true;
+}
+
+export function selectFeatureRequestToolResults(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  turnStartToolCallCount: number,
+  prompt: string | undefined
+): WorkflowGraphState['toolResultHistory'] {
+  return shouldRestrictFeatureToolsToProposalMode(toolResults, prompt)
+    ? toolResults.slice(turnStartToolCallCount)
+    : toolResults;
+}
+
+export function shouldAllowFeatureProposeTool(prompt: string | undefined): boolean {
+  return extractSelectedFeatureIds(prompt).length === 0;
+}
+
+export function shouldAllowFeatureCheckpointTool(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  prompt: string | undefined
+): boolean {
+  const selectedFeatureIds = extractSelectedFeatureIds(prompt);
+  if (selectedFeatureIds.length === 0) {
+    return true;
+  }
+
+  const stageByFeature = new Map<string, number>(selectedFeatureIds.map((id) => [id, -1]));
+  const stageByTool: Record<string, number> = {
+    propose_feature: 0,
+    materialize_feature_code: 1,
+    execute_feature: 2,
+    validate_feature: 3,
+    register_feature: 4
+  };
+
+  for (const result of toolResults) {
+    if (result.error) {
+      continue;
+    }
+
+    const featureId = extractFeatureIdFromToolResult(result);
+    if (!featureId || !stageByFeature.has(featureId)) {
+      continue;
+    }
+
+    const stage = stageByTool[result.tool];
+    if (typeof stage !== 'number') {
+      continue;
+    }
+
+    if (stage === stageByTool.register_feature && isRejectedRegisterResult(result)) {
+      continue;
+    }
+
+    const prev = stageByFeature.get(featureId) ?? -1;
+    if (stage > prev) {
+      stageByFeature.set(featureId, stage);
+    }
+  }
+
+  return selectedFeatureIds.every((id) => (stageByFeature.get(id) ?? -1) >= 4);
+}
+
+/** Maximum number of non-proposal call/result pairs retained in the
+ *  feature_engineering conversation history per turn. propose_feature
+ *  pairs are ALWAYS retained regardless of this cap so the LLM never
+ *  loses sight of which features it is iterating on mid-loop. */
+export const MAX_FE_HISTORY_PAIRS = 16;
+
+/**
+ * Trim the feature_engineering conversation history while preserving
+ * enough context for multi-feature loops. The previous implementation
+ * used a plain `slice(-8)` which could drop propose_feature entries
+ * during long runs (3 features × ~7 tool pairs each > 8), and the LLM
+ * would then stall mid-loop with text-only output instead of tool calls.
+ *
+ * Strategy:
+ * - Filter out get_dataset_profile noise (dataset context is in the
+ *   user message already).
+ * - When restricted to proposal-mode, return everything (no trim).
+ * - Otherwise, keep ALL propose_feature pairs unconditionally, plus the
+ *   most recent MAX_FE_HISTORY_PAIRS non-proposal pairs. Preserve the
+ *   original chronological order.
+ */
+export function trimFeatureEngineeringHistory<
+  Call extends { name: string },
+  Result
+>(
+  historyCalls: readonly Call[],
+  historyResults: readonly (Result | undefined)[],
+  restrictToProposalMode: boolean
+): { calls: Call[]; results: Result[] } {
+  const indexedPairs: { call: Call; result: Result; index: number }[] = [];
+  for (let i = 0; i < historyCalls.length; i += 1) {
+    const call = historyCalls[i];
+    const result = historyResults[i];
+    if (result === undefined) continue;
+    if (call.name === 'get_dataset_profile') continue;
+    indexedPairs.push({ call, result, index: i });
+  }
+
+  let trimmedPairs: typeof indexedPairs;
+  if (restrictToProposalMode) {
+    trimmedPairs = indexedPairs;
+  } else {
+    const proposalPairs = indexedPairs.filter(({ call }) => call.name === 'propose_feature');
+    const nonProposalPairs = indexedPairs.filter(({ call }) => call.name !== 'propose_feature');
+    const recentNonProposalPairs = nonProposalPairs.slice(-MAX_FE_HISTORY_PAIRS);
+    trimmedPairs = [...proposalPairs, ...recentNonProposalPairs].sort((a, b) => a.index - b.index);
+  }
+
+  return {
+    calls: trimmedPairs.map(({ call }) => call),
+    results: trimmedPairs.map(({ result }) => result)
+  };
+}
+
 export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Partial<WorkflowGraphState>> {
   const turn = state.turn;
   const dataset = turn.datasetId ? await datasetRepository.getById(turn.datasetId) : undefined;
@@ -53,7 +225,6 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     : undefined;
   const ragSnippets = await loadRagSnippets(turn.projectId, turn.prompt ?? dataset?.filename ?? turn.phase);
   const modelOverride = turn.model && turn.model !== 'auto' ? turn.model : undefined;
-  const client = createLlmClient(modelOverride, turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined);
 
   const toolCallHistory = state.toolCallHistory.map((call) => ({
     name: call.tool,
@@ -73,6 +244,13 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         errorCode: 'DATASET_NOT_FOUND'
       };
     }
+
+    // Only preprocessing uses the controller client directly; other phases
+    // construct their LLM client in modelTurnCollector.invokeModelNode.
+    const client = createLlmClient(
+      modelOverride,
+      turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
+    );
 
     const controllerDecision = await resolvePreprocessingControllerTurn({
       client,
@@ -183,16 +361,126 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     //   oversized context or a re-profiling loop (model sees no history entry but the
     //   user message says results are available, so it re-calls the tool).
     // - Limit to the most recent 8 pairs to prevent context explosion on long pipelines.
-    const MAX_FE_HISTORY_PAIRS = 8;
-    const filteredPairs = toolCallHistory
-      .map((call, i) => ({ call, result: toolResultHistory[i] }))
-      .filter(({ call, result }) => call.name !== 'get_dataset_profile' && result !== undefined)
-      .slice(-MAX_FE_HISTORY_PAIRS);
-    const featureToolCallHistory = filteredPairs.map(({ call }) => call);
-    const featureToolResultHistory = filteredPairs.map(({ result }) => result!);
     const featureRawToolResults = state.toolResultHistory.filter(
       (r) => r.tool !== 'get_dataset_profile'
     );
+    const currentTurnResults = featureRawToolResults.slice(state.turnStartToolCallCount);
+    const selectedFeatureIds = extractSelectedFeatureIds(turn.prompt);
+    const restrictToProposalMode = shouldRestrictFeatureToolsToProposalMode(featureRawToolResults, turn.prompt);
+
+    // For proposal-mode prompts (no selected feature IDs), only use current-turn
+    // lifecycle context so old checkpoint/register history does not hijack the
+    // continuation directive for a brand new user request.
+    const historyOffset = restrictToProposalMode ? state.turnStartToolCallCount : 0;
+    const historyCalls = toolCallHistory.slice(historyOffset);
+    const historyResults = toolResultHistory.slice(historyOffset);
+
+    const { calls: featureToolCallHistory, results: featureToolResultHistory } = trimFeatureEngineeringHistory(
+      historyCalls,
+      historyResults,
+      restrictToProposalMode
+    );
+    const featureRequestToolResults = selectFeatureRequestToolResults(
+      featureRawToolResults,
+      state.turnStartToolCallCount,
+      turn.prompt
+    );
+
+    // When the lifecycle is complete (checkpoint was the last lifecycle tool
+    // IN THIS TURN), skip the model invocation.  Only check results from the
+    // current turn — a checkpoint from a previous turn must NOT block new work.
+    const LIFECYCLE_TERMINAL_TOOLS = new Set(['checkpoint_feature_pipeline']);
+    const lastLifecycleToolThisTurn = [...currentTurnResults].reverse().find(
+      (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
+        'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
+    );
+    if (lastLifecycleToolThisTurn && LIFECYCLE_TERMINAL_TOOLS.has(lastLifecycleToolThisTurn.tool) && !lastLifecycleToolThisTurn.error) {
+      return {
+        nextStep: 'complete',
+        request: null,
+        run: {
+          ...state.run,
+          currentNode: 'continue_feature_pipeline',
+          activeDatasetId: turn.datasetId,
+          activeNotebookId: turn.notebookId
+        }
+      };
+    }
+
+    // Pause after proposals unless the user explicitly asked for implementation.
+    // Only check THIS turn's lifecycle results so previous turns don't interfere.
+    const currentTurnLifecycleResults = currentTurnResults.filter(
+      (r) => ['propose_feature', 'materialize_feature_code', 'execute_feature',
+        'validate_feature', 'register_feature', 'checkpoint_feature_pipeline'].includes(r.tool)
+    );
+    const allProposals = currentTurnLifecycleResults.length > 0 && currentTurnLifecycleResults.every((r) => r.tool === 'propose_feature');
+    if (allProposals) {
+      if (selectedFeatureIds.length === 0) {
+        // Build feature_suggestion UI items from the proposal results so the
+        // user gets interactive cards with Enable/Disable toggles.  This is
+        // deterministic — no LLM call needed for the render_ui step.
+        const proposalItems = currentTurnLifecycleResults
+          .filter((r) => r.tool === 'propose_feature' && !r.error && r.output)
+          .map((r) => {
+            const out = r.output as Record<string, unknown>;
+            const sourceColumns = Array.isArray(out.sourceColumns)
+              ? (out.sourceColumns as unknown[]).filter((c): c is string => typeof c === 'string')
+              : [];
+            const secondaryColumn = sourceColumns.length > 1 ? sourceColumns[1] : undefined;
+            return {
+              type: 'feature_suggestion' as const,
+              id: (out.featureId as string) ?? `feat-${Date.now()}`,
+              feature: {
+                sourceColumn: sourceColumns[0] ?? '',
+                // Propagate the second source column for interaction features
+                // (ratio, difference, product, groupby-shares) so the frontend
+                // guard doesn't block them with a "needs secondary column" error.
+                ...(secondaryColumn ? { secondaryColumn } : {}),
+                featureName: (out.featureName as string) ?? 'unnamed',
+                method: (out.method as string) ?? 'custom',
+                params: (out.params && typeof out.params === 'object' && !Array.isArray(out.params)
+                  ? out.params as Record<string, unknown>
+                  : {})
+              },
+              rationale: (out.rationale as string) ?? (out.message as string) ?? '',
+              impact: (['high', 'medium', 'low'].includes(out.impact as string) ? out.impact : 'medium') as 'high' | 'medium' | 'low'
+            };
+          });
+
+        return {
+          nextStep: 'complete',
+          request: null,
+          uiPayload: proposalItems.length > 0
+            ? {
+                version: '1' as const,
+                kind: 'feature_engineering' as const,
+                title: 'Proposed Features',
+                summary: `${proposalItems.length} feature(s) proposed. Enable the ones you want, then ask me to implement them.`,
+                sections: [{
+                  id: 'proposals',
+                  title: 'Feature Proposals',
+                  items: proposalItems
+                }]
+              }
+            : null,
+          run: {
+            ...state.run,
+            currentNode: 'continue_feature_pipeline',
+            activeDatasetId: turn.datasetId,
+            activeNotebookId: turn.notebookId
+          }
+        };
+      }
+    }
+
+    let continueTools = LLM_FEATURE_CONTINUE_TOOLS;
+    if (!shouldAllowFeatureProposeTool(turn.prompt)) {
+      continueTools = continueTools.filter((tool) => tool.name !== 'propose_feature');
+    }
+    if (!shouldAllowFeatureCheckpointTool(featureRawToolResults, turn.prompt)) {
+      continueTools = continueTools.filter((tool) => tool.name !== 'checkpoint_feature_pipeline');
+    }
+
     return {
       nextStep: 'invoke_model',
       request: buildFeatureEngineeringRequest({
@@ -201,17 +489,21 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         prompt: turn.prompt,
         projectPlan,
         ragSnippets,
-        toolResults: featureRawToolResults,
+        toolResults: featureRequestToolResults,
         toolCallHistory: featureToolCallHistory,
         toolResultHistory: featureToolResultHistory,
         featureMethods: [...FEATURE_METHODS],
-        toolDefinitions: LLM_FEATURE_ENGINEERING_TOOLS,
+        // Require explicit selected feature IDs before unlocking lifecycle
+        // implementation tools. Without selection, remain in proposal/review.
+        toolDefinitions: restrictToProposalMode
+          ? LLM_FEATURE_PROPOSAL_TOOLS
+          : continueTools,
         reasoningEffort: turn.reasoningEffort
       }),
       run: {
         ...state.run,
-        // Always use continue_feature_pipeline (text mode → main model). Dataset
-        // columns, types, and sample rows are already in the user message, so the
+        // Always use continue_feature_pipeline (text mode). Dataset columns,
+        // types, and sample rows are already in the user message, so the
         // plan_feature_pipeline deterministic profile step is not needed.
         currentNode: 'continue_feature_pipeline',
         activeDatasetId: turn.datasetId,
@@ -220,14 +512,8 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     };
   }
 
-  const feGate = getFeatureEngineeringGateState(project?.metadata);
-  if (feGate.requiresApproval && !feGate.hasApprovedVersion) {
-    return {
-      nextStep: 'fail',
-      errorMessage: 'Training is blocked until an approved feature engineering pipeline is available.',
-      errorCode: 'FE_PIPELINE_APPROVAL_REQUIRED'
-    };
-  }
+  // Feature engineering approval is informational — it does not block training.
+  // Users can proceed to training with or without an approved FE pipeline.
 
   const featureSpecs = (
     Array.isArray(project?.metadata?.features)
@@ -244,12 +530,36 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
 
   // Resolve the current training lifecycle stage so that stage-based tool
   // filtering in the PhaseConfig can restrict which tools the LLM may call.
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+
+  // When register_model was the last lifecycle tool this turn, the training
+  // lifecycle is complete. Skip the LLM invocation — the frontend already
+  // renders a ModelSavedCard from the tool_executed event. This mirrors FE's
+  // checkpoint_feature_pipeline terminal detection at lines 392-408 above.
+  const TRAINING_LIFECYCLE_TOOLS_LIST = ['configure_experiment', 'propose_training_plan',
+    'execute_training', 'evaluate_results', 'register_model', 'compare_models'];
+  const lastTrainingLifecycleTool = [...currentTurnResults].reverse().find(
+    (r) => TRAINING_LIFECYCLE_TOOLS_LIST.includes(r.tool)
+  );
+  if (lastTrainingLifecycleTool?.tool === 'register_model' && !lastTrainingLifecycleTool.error) {
+    return {
+      nextStep: 'complete',
+      request: null,
+      run: {
+        ...state.run,
+        currentNode: 'register_model',
+        activeDatasetId: turn.datasetId,
+        activeNotebookId: turn.notebookId
+      }
+    };
+  }
+
   let trainingNode: string;
   if (state.iteration === 0) {
     trainingNode = 'configure_experiment';
   } else {
     const trainingPhase = getPhaseConfig('training');
-    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, state.toolResultHistory);
+    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
     trainingNode = nextStage ?? state.run.currentNode;
   }
 
@@ -261,12 +571,17 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       prompt: turn.prompt,
       projectPlan,
       ragSnippets,
-      toolResults: state.toolResultHistory,
+      toolResults: currentTurnResults,
       featureSummary: turn.featureSummary,
       featureSpecs,
       toolCallHistory,
       toolResultHistory,
-      toolDefinitions: await listMcpToolsForLlm().catch(() => LLM_ALL_TOOLS),
+      // Use LLM_TRAINING_LIFECYCLE_TOOLS which merges the 6 training lifecycle
+      // tools (configure_experiment, propose_training_plan, execute_training,
+      // evaluate_results, register_model, compare_models) with notebook + data
+      // discovery tools. Without this, the streaming model only sees notebook
+      // tools (from LLM_ALL_TOOLS) and literally cannot call lifecycle tools.
+      toolDefinitions: LLM_TRAINING_LIFECYCLE_TOOLS,
       reasoningEffort: turn.reasoningEffort
     }),
     run: {

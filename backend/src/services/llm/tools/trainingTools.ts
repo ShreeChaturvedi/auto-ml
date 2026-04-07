@@ -244,6 +244,11 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
         includeHyperparameters: {
           type: 'boolean',
           description: 'Whether to include hyperparameter details in the comparison.'
+        },
+        sortOrder: {
+          type: 'string',
+          enum: ['ascending', 'descending'],
+          description: 'Sort order for ranking. Use "ascending" for error metrics (RMSE, MAE) where lower is better. Defaults to auto-detect based on metric name.'
         }
       },
       required: ['experimentIds', 'primaryMetric']

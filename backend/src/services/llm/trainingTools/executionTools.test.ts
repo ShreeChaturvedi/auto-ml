@@ -74,7 +74,7 @@ describe('executeTraining', () => {
     const result = await executeTraining(buildCtx({
       experimentId: 'exp-1',
       cellIds: ['cell-1', 'cell-2'],
-      succeeded: true,
+      succeeded: false,
       metrics: { accuracy: 0.9 }
     }));
 
@@ -95,7 +95,7 @@ describe('executeTraining', () => {
     const result = await executeTraining(buildCtx({
       experimentId: 'exp-1',
       cellIds: ['cell-1'],
-      succeeded: true
+      succeeded: false
     }));
 
     expect(result.output).toBeDefined();

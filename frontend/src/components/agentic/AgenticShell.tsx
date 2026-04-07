@@ -270,10 +270,12 @@ export function AgenticShell({
     disabled: isGenerating,
   });
 
-  const tips = useMemo(
-    () => domainAdapter.tipsProvider(messages, isGenerating),
-    [domainAdapter, messages, isGenerating]
-  );
+  const tips = useMemo(() => {
+    if (domainAdapter.tipsProvider) {
+      return domainAdapter.tipsProvider(messages, isGenerating);
+    }
+    return [];
+  }, [domainAdapter, messages, isGenerating]);
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
@@ -365,6 +367,7 @@ export function AgenticShell({
     messages,
     isGenerating,
     error,
+    submitPrompt,
     activeTextMessageId,
     activeThinkingMessageId,
     hydratedMessageIds,

@@ -53,7 +53,7 @@ export const executeTraining: TrainingToolHandler = async (
   let executionErrors: string[] = [];
   const startMs = Date.now();
 
-  if (cellIds.length > 0) {
+  if (cellIds.length > 0 && !succeeded) {
     try {
       const execResult = await runCells(projectId, notebookId, cellIds);
       succeeded = execResult.succeeded;

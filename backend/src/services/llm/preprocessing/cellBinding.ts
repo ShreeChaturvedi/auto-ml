@@ -57,6 +57,7 @@ export function createPreprocessingCellInspector(): PreprocessingCellInspector {
       }
       return {
         cellId: cell.cellId,
+        notebookId: cell.notebookId,
         content: cell.content,
         metadata: asRecord(cell.metadata) ?? {}
       };

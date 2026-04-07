@@ -51,6 +51,36 @@ const ERROR_CODE_MAP: Record<string, ErrorDisplay> = {
     title: 'Invalid workflow plan',
     description: 'The model produced a plan that could not be validated. Retrying usually fixes this.',
   },
+  UPSTREAM_RATE_LIMITED: {
+    title: 'Model provider rate limit reached',
+    description:
+      'The AI model provider is temporarily throttling requests (HTTP 429). This is a short-term burst limit, not a billing quota issue. Wait a few seconds and retry.',
+  },
+  UPSTREAM_MODEL_UNAVAILABLE: {
+    title: 'Model temporarily unavailable',
+    description:
+      'The selected AI model is unavailable right now. Retry in a moment, or switch to a different model from the model selector.',
+  },
+  UPSTREAM_AUTH_FAILED: {
+    title: 'Provider authentication failed',
+    description:
+      'The server could not authenticate with the AI provider. This is a configuration issue — contact your administrator.',
+  },
+  UPSTREAM_TIMEOUT: {
+    title: 'Model request timed out',
+    description:
+      'The AI provider took too long to respond. Retry, or switch to a faster model from the model selector.',
+  },
+  UPSTREAM_UNKNOWN: {
+    title: 'Model provider error',
+    description:
+      'An unexpected error occurred while contacting the AI provider. Retrying usually resolves this.',
+  },
+  WORKFLOW_ALREADY_RUNNING: {
+    title: 'Another workflow is already running',
+    description:
+      'A workflow for this phase is already in progress. Wait for it to finish or reset the draft before starting a new turn.',
+  },
 };
 
 const FALLBACK_DISPLAY: ErrorDisplay = {

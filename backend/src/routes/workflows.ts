@@ -89,16 +89,65 @@ export function createWorkflowRouter(): Router {
       await executeWorkflowTurn(sink, parsed.data, phaseConfig);
       sink.emit({ type: 'done' });
       res.end();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Workflow execution failed';
+    } catch {
+      // The executor already emitted workflow_state and workflow_error with a
+      // structured code, and persisted the failure to the DB. Here we only
+      // ensure the response is closed cleanly — never double-emit the error.
       if (!res.writableEnded) {
-        sink.emit({ type: 'workflow_error', message, retryable: true });
         sink.emit({ type: 'done' });
         res.end();
       }
     }
 
     return undefined;
+  }));
+
+  const interruptBodySchema = z.object({
+    reason: z.string().max(500).optional()
+  });
+
+  router.post('/workflows/:runId/interrupt', asyncHandler(async (req: AuthRequest, res) => {
+    const paramsParsed = workflowParamsSchema.safeParse(req.params);
+    if (!paramsParsed.success) {
+      return res.status(400).json({ error: 'Invalid workflow id', details: paramsParsed.error.issues });
+    }
+
+    const bodyParsed = interruptBodySchema.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      return res.status(400).json({ error: 'Invalid interrupt body', details: bodyParsed.error.issues });
+    }
+
+    const snapshot = await repository.getRun(paramsParsed.data.runId);
+    if (!snapshot) {
+      return res.status(404).json({ error: 'Workflow run not found' });
+    }
+
+    if (req.user && snapshot.run.projectId) {
+      const project = await verifyProjectOwnership(snapshot.run.projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        return res.status(404).json({ error: 'Workflow run not found' });
+      }
+    }
+
+    // Idempotent: only flip runs that are still active.
+    const isActive = snapshot.run.status === 'running' || snapshot.run.status === 'paused';
+    if (!isActive) {
+      return res.json({ run: snapshot.run, interrupted: false });
+    }
+
+    const reason = bodyParsed.data.reason ?? 'Interrupted by user.';
+    const updated = await repository.saveRun({
+      ...snapshot.run,
+      status: 'interrupted',
+      pendingInputKind: undefined,
+      pauseReason: undefined,
+      lastFailureCode: 'USER_INTERRUPTED',
+      lastFailureMessage: reason
+    });
+
+    await repository.appendEvent(updated.runId, 'workflow_interrupted', { reason });
+
+    return res.json({ run: updated, interrupted: true });
   }));
 
   router.get('/workflows', asyncHandler(async (req, res) => {

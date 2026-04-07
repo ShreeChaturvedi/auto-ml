@@ -110,8 +110,12 @@ export function createAgenticEventHandler({
       if (event.ui) {
         appendUiSchema(event.ui);
       }
-      if (event.message?.trim() && !currentTextIdRef.current) {
-        appendToken(event.message);
+      const pauseMessage = event.message?.trim()
+        || (event.pendingInputKind === 'approval'
+          ? 'A step requires your approval. Review the proposal above and click Accept or type your response to continue.'
+          : undefined);
+      if (pauseMessage && !currentTextIdRef.current) {
+        appendToken(pauseMessage);
       }
       setIsStreaming(false);
       return;

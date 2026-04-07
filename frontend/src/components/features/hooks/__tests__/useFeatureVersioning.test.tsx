@@ -31,6 +31,30 @@ function makeDraftVersion(overrides: Partial<PipelineVersion> & { id: string }):
   };
 }
 
+const interruptWorkflowRunMock = vi.fn();
+const createNotebookMock = vi.fn();
+const deleteNotebookMock = vi.fn();
+const initializeNotebookMock = vi.fn();
+const loadNotebooksMock = vi.fn();
+
+vi.mock('@/lib/api/llm', () => ({
+  interruptWorkflowRun: (...args: unknown[]) => interruptWorkflowRunMock(...args)
+}));
+
+vi.mock('@/lib/api/notebooks', () => ({
+  createNotebook: (...args: unknown[]) => createNotebookMock(...args),
+  deleteNotebook: (...args: unknown[]) => deleteNotebookMock(...args)
+}));
+
+vi.mock('@/stores/notebookStore', () => ({
+  useNotebookStore: {
+    getState: () => ({
+      initializeNotebook: initializeNotebookMock,
+      loadNotebooks: loadNotebooksMock
+    })
+  }
+}));
+
 describe('useFeatureVersioning', () => {
   const projectId = 'project-1';
   const versionId = 'draft-1';
@@ -42,7 +66,6 @@ describe('useFeatureVersioning', () => {
   function renderVersioning(overrides?: Partial<Parameters<typeof useFeatureVersioning>[0]>) {
     return renderHook(() => useFeatureVersioning({
       projectId,
-      setSuggestionDrafts: vi.fn(),
       setPanelError: vi.fn(),
       setApplyStatus: vi.fn(),
       setApplyMessage: vi.fn(),
@@ -51,10 +74,20 @@ describe('useFeatureVersioning', () => {
   }
 
   beforeEach(() => {
+    interruptWorkflowRunMock.mockReset();
+    interruptWorkflowRunMock.mockResolvedValue({ run: { runId: 'feature-run-1' } });
+    createNotebookMock.mockReset();
+    createNotebookMock.mockResolvedValue({ notebookId: 'fresh-fe-nb-1' });
+    deleteNotebookMock.mockReset();
+    deleteNotebookMock.mockResolvedValue({ success: true, fallbackNotebookId: 'fresh-fe-nb-1' });
+    initializeNotebookMock.mockReset();
+    initializeNotebookMock.mockResolvedValue(undefined);
+    loadNotebooksMock.mockReset();
+    loadNotebooksMock.mockResolvedValue(undefined);
     useFeatureStore.setState({
       ...initialFeatureState,
       versions: {
-        [projectId]: [makeDraftVersion({ id: versionId })]
+        [projectId]: [makeDraftVersion({ id: versionId, notebookId: 'old-fe-nb-1' })]
       },
       currentVersionId: {
         [projectId]: versionId
@@ -69,6 +102,7 @@ describe('useFeatureVersioning', () => {
       },
       currentStage: 'execute_feature',
       featureRunId: 'feature-run-1',
+      setVersionNotebookId: initialFeatureState.setVersionNotebookId,
       syncFeaturesToProject: vi.fn().mockResolvedValue(undefined)
     });
 
@@ -91,21 +125,130 @@ describe('useFeatureVersioning', () => {
   });
 
   afterEach(() => {
-    // Ensure handler cleanup
     useWorkbookRegistryStore.getState().setDeleteHandler('feature-engineering', null);
   });
 
-  it('clears the persisted workflow session when resetting the current draft', () => {
+  it('interrupts and clears the persisted workflow session when resetting the current draft', async () => {
+    localStorage.setItem(`${storageKey}-${projectId}`, JSON.stringify({
+      messages: [{ id: 'msg-1', type: 'user', content: 'hello' }],
+      savepoints: {}
+    }));
+
     const { result } = renderVersioning();
 
-    act(() => {
-      result.current.handleReset();
+    await act(async () => {
+      await result.current.handleReset();
     });
 
+    expect(result.current.chatSessionVersion).toBe(1);
     expect(useFeatureStore.getState().featureRunId).toBeNull();
     expect(useFeatureStore.getState().currentStage).toBeNull();
     expect(useFeatureStore.getState().featureSteps).toEqual({});
+    expect(useFeatureStore.getState().versions[projectId]?.[0]?.notebookId).toBe('fresh-fe-nb-1');
     expect(useWorkflowSessionStore.getState().getSession(sessionKey)).toBeUndefined();
+    expect(localStorage.getItem(`${storageKey}-${projectId}`)).toBeNull();
+    expect(interruptWorkflowRunMock).toHaveBeenCalledWith('feature-run-1', 'Draft reset by user.');
+    expect(createNotebookMock).toHaveBeenCalledWith(projectId, expect.objectContaining({
+      name: 'Draft Pipeline v1',
+      metadata: expect.objectContaining({
+        phase: 'feature-engineering',
+        tabId: versionId,
+        tabName: 'Draft Pipeline v1'
+      })
+    }));
+    expect(initializeNotebookMock).toHaveBeenCalledWith(projectId, 'fresh-fe-nb-1');
+    expect(deleteNotebookMock).toHaveBeenCalledWith(projectId, 'old-fe-nb-1');
+    expect(loadNotebooksMock).toHaveBeenCalledWith(projectId);
+  });
+
+  describe('sidebar delete handler', () => {
+    it('registers on mount and deregisters on unmount', () => {
+      const { unmount } = renderVersioning();
+
+      const handler = useWorkbookRegistryStore.getState().deleteHandlers['feature-engineering'];
+      expect(handler).toBeTypeOf('function');
+
+      unmount();
+
+      const handlerAfterUnmount = useWorkbookRegistryStore.getState().deleteHandlers['feature-engineering'];
+      expect(handlerAfterUnmount).toBeUndefined();
+    });
+
+    it('deletes a draft version and returns the new current ID', () => {
+      const secondId = 'draft-2';
+      useFeatureStore.setState({
+        versions: {
+          [projectId]: [
+            makeDraftVersion({ id: versionId }),
+            makeDraftVersion({ id: secondId, name: 'Draft Pipeline v2' })
+          ]
+        },
+        currentVersionId: { [projectId]: versionId }
+      });
+
+      renderVersioning();
+
+      const handler = useWorkbookRegistryStore.getState().deleteHandlers['feature-engineering']!;
+      let newId: string | undefined;
+      act(() => {
+        newId = handler(versionId);
+      });
+
+      const state = useFeatureStore.getState();
+      expect(state.versions[projectId]).toHaveLength(1);
+      expect(state.versions[projectId]![0].id).toBe(secondId);
+      expect(newId).toBe(secondId);
+    });
+
+    it('rejects deletion of approved versions', () => {
+      useFeatureStore.setState({
+        versions: {
+          [projectId]: [makeDraftVersion({ id: versionId, status: 'approved' })]
+        }
+      });
+
+      renderVersioning();
+
+      const handler = useWorkbookRegistryStore.getState().deleteHandlers['feature-engineering']!;
+      let result: string | undefined;
+      act(() => {
+        result = handler(versionId);
+      });
+
+      expect(result).toBeUndefined();
+      expect(useFeatureStore.getState().versions[projectId]).toHaveLength(1);
+    });
+
+    it('creates a replacement draft when deleting the last version', () => {
+      renderVersioning();
+
+      const handler = useWorkbookRegistryStore.getState().deleteHandlers['feature-engineering']!;
+      let newId: string | undefined;
+      act(() => {
+        newId = handler(versionId);
+      });
+
+      const state = useFeatureStore.getState();
+      // A replacement draft was created, old one removed
+      expect(state.versions[projectId]).toHaveLength(1);
+      expect(state.versions[projectId]![0].id).not.toBe(versionId);
+      expect(state.versions[projectId]![0].name).toBe('Draft Pipeline v1');
+      expect(newId).toBe(state.versions[projectId]![0].id);
+    });
+
+    it('clears feature store ephemeral state on delete', () => {
+      renderVersioning();
+
+      const handler = useWorkbookRegistryStore.getState().deleteHandlers['feature-engineering']!;
+      act(() => {
+        handler(versionId);
+      });
+
+      const state = useFeatureStore.getState();
+      expect(state.featureRunId).toBeNull();
+      expect(state.currentStage).toBeNull();
+      expect(state.featureSteps).toEqual({});
+    });
   });
 
   describe('sidebar delete handler', () => {

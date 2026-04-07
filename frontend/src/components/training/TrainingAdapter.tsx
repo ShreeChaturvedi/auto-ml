@@ -17,6 +17,18 @@ export interface TrainingAdapterConfig {
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
   sessionKey: string;
+  /**
+   * Lazily resolve the training notebook id at request-build time. Passed as
+   * a getter (rather than a static value) so the adapter identity stays
+   * stable across notebook resolution updates — otherwise every sync-hook
+   * setState would replace the adapter memo and cascade into useAgenticLoop
+   * state resets mid-conversation.
+   *
+   * Optional for backward compatibility with callers that have not yet wired
+   * useTrainingNotebookSync; those callers still fall back to the global
+   * activeNotebookId selector below.
+   */
+  getNotebookId?: () => string | null | undefined;
 }
 
 function buildTrainingTips(
@@ -41,8 +53,9 @@ function buildTrainingTips(
   }
 
   if (config.featureSummary) {
-    const featureCount = (config.featureSummary.match(/\n/g) ?? []).length + 1;
-    tips.push({ id: 'tip-features', icon: Layers, content: `${featureCount} engineered features in your pipeline` });
+    const countMatch = config.featureSummary.match(/^(\d+)\s+enabled\s+feature/);
+    const featureCount = countMatch ? parseInt(countMatch[1], 10) : 1;
+    tips.push({ id: 'tip-features', icon: Layers, content: `${featureCount} engineered feature${featureCount === 1 ? '' : 's'} in your pipeline` });
   } else {
     tips.push({ id: 'tip-no-features', icon: AlertTriangle, content: 'No feature pipeline — model trains on raw columns' });
   }
@@ -161,6 +174,11 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
     buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) return;
       const session = useWorkflowSessionStore.getState().sessions[config.sessionKey];
+      // Prefer the caller-supplied getter (wired to useTrainingNotebookSync).
+      // Fall back to the global active notebook for backward compatibility;
+      // TrainingPanel always provides getNotebookId in practice.
+      const resolvedNotebookId =
+        config.getNotebookId?.() ?? useNotebookStore.getState().activeNotebookId ?? undefined;
       await streamWorkflowTurn(
         {
           projectId: config.projectId,
@@ -168,7 +186,7 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
           datasetId: config.datasetId,
           runId: session?.runId,
           threadId: session?.threadId,
-          notebookId: useNotebookStore.getState().activeNotebookId ?? undefined,
+          notebookId: resolvedNotebookId ?? undefined,
           targetColumn: config.targetColumn,
           prompt,
           featureSummary: config.featureSummary,

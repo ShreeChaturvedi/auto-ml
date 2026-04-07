@@ -38,20 +38,25 @@ export const FEATURE_TOOL_DEFINITIONS: LlmToolDefinition[] = [
   },
   {
     name: 'materialize_feature_code',
-    description: 'Generate or attach executable Python code for a proposed feature.',
+    description: 'Generate or attach executable Python code for a proposed feature. The code MUST be final executable Python that references the `df` dataframe and produces the declared outputColumns. Placeholder or comment-only code will be rejected.',
     parameters: {
       type: 'object',
       properties: {
         runId: { type: 'string' },
         featureId: { type: 'string', description: 'The feature identifier from propose_feature.' },
-        code: { type: 'string', description: 'Python code that creates the feature column(s).' },
+        code: {
+          type: 'string',
+          minLength: 10,
+          description: 'Final executable Python code that creates the feature column(s) in df. Must reference df. Placeholder or stub code (e.g., "# Placeholder") will be rejected.'
+        },
         outputColumns: {
           type: 'array',
-          items: { type: 'string' },
-          description: 'Column name(s) produced by this code.'
+          items: { type: 'string', minLength: 1 },
+          minItems: 1,
+          description: 'REQUIRED. Column name(s) produced by this code. Must be non-empty and contain the actual column names your code creates (e.g., ["salary_log"]), never "placeholder" or empty strings.'
         }
       },
-      required: ['featureId', 'code']
+      required: ['featureId', 'code', 'outputColumns']
     }
   },
   {

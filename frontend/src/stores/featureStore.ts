@@ -57,6 +57,7 @@ interface FeatureState {
   updateReadinessReport: (projectId: string, versionId: string, report: Partial<ReadinessReport>) => void;
   approveVersion: (projectId: string, versionId: string) => void;
   setCurrentVersion: (projectId: string, versionId: string) => void;
+  setVersionNotebookId: (projectId: string, versionId: string, notebookId: string) => void;
 }
 
 export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
@@ -344,6 +345,21 @@ export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
     void get().syncFeaturesToProject(projectId);
   },
 
+  setVersionNotebookId(projectId, versionId, notebookId) {
+    set((state) => {
+      const projectVersions = state.versions[projectId] || [];
+      return {
+        versions: {
+          ...state.versions,
+          [projectId]: projectVersions.map((version) =>
+            version.id === versionId ? { ...version, notebookId } : version
+          )
+        }
+      };
+    });
+    void get().syncFeaturesToProject(projectId);
+  },
+
   async syncFeaturesToProject(projectId: string) {
     const projectStore = useProjectStore.getState();
     const project = projectStore.getProjectById(projectId);
@@ -371,11 +387,36 @@ export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
   }
 }), {
   name: 'automl-feature-lifecycle-v1',
-  version: 1,
+  // Bumped from 1 to 2 when `features` was added to partialize so existing
+  // localStorage payloads from version 1 get a migration pass.
+  version: 2,
+  migrate: (persistedState: unknown, fromVersion: number) => {
+    const state = (persistedState && typeof persistedState === 'object')
+      ? (persistedState as Record<string, unknown>)
+      : {};
+    if (fromVersion < 2 && !('features' in state)) {
+      // v1 payloads did not persist features. Seed with [] so the first
+      // render doesn't blow up while hydrateFromProject refills from the
+      // projectStore's own persisted project metadata.
+      state.features = [];
+    }
+    return state;
+  },
   partialize: (state) => ({
     featureRunId: state.featureRunId,
     currentStage: state.currentStage,
-    featureSteps: state.featureSteps
+    featureSteps: state.featureSteps,
+    versions: state.versions,
+    currentVersionId: state.currentVersionId,
+    // `features` must be persisted so the enable state of suggestion cards
+    // survives remounts (page reload, phase-tab switch). Without this,
+    // Zustand rehydrates with features=[] and useSuggestionDrafts briefly
+    // shows "Enable" on cards the user had previously enabled — the async
+    // hydrateFromProject effect fills features later but the user sees the
+    // flicker. projectStore ('automl-projects-storage') already persists
+    // project metadata which includes the same features, so this is not a
+    // new source of truth — just a synchronous cache for the first render.
+    features: state.features
   })
 }));
 

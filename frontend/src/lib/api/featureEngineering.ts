@@ -6,6 +6,8 @@ import type { PythonVersion } from '@/lib/api/execution';
 export interface ApplyFeatureEngineeringRequest {
   projectId: string;
   datasetId: string;
+  runId?: string;
+  notebookId?: string;
   outputName?: string;
   outputFormat?: 'csv' | 'json' | 'xlsx';
   pythonVersion?: PythonVersion;

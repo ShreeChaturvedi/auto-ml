@@ -4,18 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import { buildWorkbookTabsStateKey } from '../../storagePersistence';
 import { usePreprocessingTabs } from '../usePreprocessingTabs';
+
+const ensureNotebookForTabMock = vi.fn(async () => null);
+const reconcileTabNotebookMappingsMock = vi.fn(async () => undefined);
 
 vi.mock('../useTabNotebookSync', () => ({
   useTabNotebookSync: () => ({
-    ensureNotebookForTab: vi.fn(async () => null),
-    reconcileTabNotebookMappings: vi.fn(async () => undefined)
+    ensureNotebookForTab: ensureNotebookForTabMock,
+    reconcileTabNotebookMappings: reconcileTabNotebookMappingsMock
   })
 }));
 
 describe('usePreprocessingTabs', () => {
   beforeEach(() => {
     localStorage.clear();
+    ensureNotebookForTabMock.mockReset();
+    ensureNotebookForTabMock.mockResolvedValue(null);
+    reconcileTabNotebookMappingsMock.mockReset();
+    reconcileTabNotebookMappingsMock.mockResolvedValue(undefined);
     useNotebookStore.getState().reset();
     useWorkflowSessionStore.setState({ sessions: {} });
     usePreprocessingStore.setState({
@@ -112,6 +120,117 @@ describe('usePreprocessingTabs', () => {
       replayReport: null
     });
     expect(onNeedsDatasetSelection).toHaveBeenCalledWith('dataset-1');
+  });
+
+  it('deletes the active workbook without re-ensuring the fallback notebook when it is already bound', async () => {
+    const deleteNotebookMock = vi.fn(async () => true);
+    useNotebookStore.setState({
+      ...useNotebookStore.getState(),
+      deleteNotebook: deleteNotebookMock
+    });
+
+    localStorage.setItem(
+      buildWorkbookTabsStateKey('proj-1'),
+      JSON.stringify({
+        activeTabId: 'tab-2',
+        tabs: [
+          {
+            id: 'tab-1',
+            name: 'Workbook 1',
+            storageVersion: 0,
+            notebookId: 'nb-1',
+            selectedDatasetId: 'dataset-1'
+          },
+          {
+            id: 'tab-2',
+            name: 'Workbook 2',
+            storageVersion: 0,
+            notebookId: 'nb-2',
+            selectedDatasetId: 'dataset-1'
+          }
+        ]
+      })
+    );
+
+    const { result } = renderHook(() =>
+      usePreprocessingTabs({
+        projectId: 'proj-1',
+        onNeedsDatasetSelection: vi.fn()
+      })
+    );
+
+    await waitFor(() => expect(result.current.tabsReady).toBe(true));
+    await waitFor(() => expect(result.current.activeTabId).toBe('tab-2'));
+
+    let fallbackTabId: string | null = null;
+    act(() => {
+      fallbackTabId = result.current.handleDeleteTab();
+    });
+
+    await waitFor(() => expect(fallbackTabId).toBe('tab-1'));
+    await waitFor(() => expect(result.current.activeTabId).toBe('tab-1'));
+    await waitFor(() => expect(deleteNotebookMock).toHaveBeenCalledWith('nb-2'));
+  });
+
+  it('keeps each workbook dataset selection isolated after remounting from a different active workbook', async () => {
+    localStorage.setItem(
+      buildWorkbookTabsStateKey('proj-1'),
+      JSON.stringify({
+        activeTabId: 'tab-2',
+        tabs: [
+          {
+            id: 'default',
+            name: 'Workbook 1',
+            storageVersion: 0,
+            notebookId: 'nb-1',
+            selectedDatasetId: 'dataset-1'
+          },
+          {
+            id: 'tab-2',
+            name: 'Workbook 2',
+            storageVersion: 0,
+            notebookId: 'nb-2',
+            selectedDatasetId: 'dataset-2'
+          }
+        ]
+      })
+    );
+
+    usePreprocessingStore.setState((state) => ({
+      ...state,
+      tables: [
+        ...state.tables,
+        {
+          datasetId: 'dataset-2',
+          name: 'dataset-2',
+          filename: 'dataset-2.csv',
+          sizeBytes: 456,
+          columns: []
+        }
+      ],
+      selectedDatasetId: 'dataset-2'
+    }));
+
+    const { result } = renderHook(() =>
+      usePreprocessingTabs({
+        projectId: 'proj-1',
+        onNeedsDatasetSelection: vi.fn()
+      })
+    );
+
+    await waitFor(() => expect(result.current.tabsReady).toBe(true));
+    await waitFor(() => expect(result.current.activeTabId).toBe('tab-2'));
+    await waitFor(() => {
+      expect(result.current.tabs.find((tab) => tab.id === 'default')?.snapshot.selectedDatasetId).toBe('dataset-1');
+    });
+
+    act(() => {
+      result.current.handleTabSwitch('default');
+    });
+
+    await waitFor(() => expect(usePreprocessingStore.getState().selectedDatasetId).toBe('dataset-1'));
+    expect(result.current.activeTab?.id).toBe('default');
+    expect(result.current.activeTab?.snapshot.selectedDatasetId).toBe('dataset-1');
   });
 
   it('syncs the workbook URL param whenever the active workbook changes', async () => {

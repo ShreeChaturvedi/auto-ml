@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   buildInlineModelOptions,
-  DEFAULT_ASSISTANT_MODEL,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
   normalizeAssistantModelValue,
   type ReasoningEffort
 } from '@/components/llm/modelOptions';
 import { useLlmModelCatalog } from '@/hooks/useLlmModelCatalog';
+import { useLlmModelStore } from '@/stores/llmModelStore';
 
 export interface UseModelSelectionReturn {
   /** The currently selected model ID. */
@@ -22,14 +22,15 @@ export interface UseModelSelectionReturn {
   /**
    * Dismissed model switch error string. When non-null, the model switch
    * prompt for the given error message has been dismissed by the user.
-   * Only relevant when a model switch error is present.
+   * Only relevant when a model switch error is present. Intentionally
+   * ephemeral — resets on component unmount.
    */
   dismissedModelPromptFor: string | null;
   /** Set dismissedModelPromptFor manually (e.g. to reset on new errors). */
   setDismissedModelPromptFor: (value: string | null) => void;
   /**
-   * Change the selected model. Automatically resets reasoningEffort to the
-   * new model's default.
+   * Change the selected model. Preserves the current reasoning effort if the
+   * new model supports it; otherwise falls back to the new model's default.
    */
   handleModelChange: (model: string) => void;
   /** Direct setter for reasoningEffort (e.g. from the effort picker). */
@@ -39,43 +40,41 @@ export interface UseModelSelectionReturn {
 /**
  * Encapsulates model selection state shared by PlanningStage and AgenticShell.
  *
- * Handles:
- * - selectedModel + reasoningEffort state
- * - Catalog hydration: waits for useLlmModelCatalog to resolve then validates
- *   the selected model and reasoning effort against the available options.
- * - Fallback: if the current model is not in the catalog, falls back to
- *   defaultModel. If reasoning effort is unsupported, resets to model default.
- * - dismissedModelPromptFor: tracks which model-switch error the user has
- *   dismissed (used by AgenticShell's model availability prompt).
+ * Backed by the persisted `useLlmModelStore` so the selection survives
+ * AgenticShell remounts (caused by FE draft switches, tab navigation, page
+ * reloads, etc). Previously this state lived in `useState` and silently reset
+ * to the default on every remount.
+ *
+ * Responsibilities:
+ * - Reads selectedModel + reasoningEffort from the persisted store.
+ * - After catalog hydration, validates the selection against the catalog and
+ *   falls back to defaults if the persisted model was removed.
+ * - `dismissedModelPromptFor` stays as local state (ephemeral UI dismissal).
  */
 export function useModelSelection(): UseModelSelectionReturn {
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_ASSISTANT_MODEL);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('high');
+  const selectedModel = useLlmModelStore((state) => state.selectedModel);
+  const reasoningEffort = useLlmModelStore((state) => state.reasoningEffort);
+  const setSelectedModelInStore = useLlmModelStore((state) => state.setSelectedModel);
+  const setReasoningEffortInStore = useLlmModelStore((state) => state.setReasoningEffort);
+
   const [dismissedModelPromptFor, setDismissedModelPromptFor] = useState<string | null>(null);
 
   const {
     featuredModelOptions,
     allModelOptions,
-    defaultModel,
-    defaultReasoningEffort
+    defaultModel
   } = useLlmModelCatalog();
 
-  // When the catalog default model arrives and no model has been explicitly
-  // chosen yet, adopt the catalog default.
-  useEffect(() => {
-    if (!selectedModel && defaultModel) {
-      setSelectedModel(defaultModel);
-    }
-  }, [defaultModel, selectedModel]);
-
   // After the catalog loads, validate the selected model and reasoning effort.
-  // If the current model is not in the catalog, fall back to the default.
+  // If the persisted model is not in the catalog, fall back to the default.
   // If the reasoning effort is unsupported by the (possibly new) model, reset
-  // it to that model's default effort.
+  // it to that model's default.
+  //
+  // CRITICAL: do NOT touch reasoning effort while the catalog is still loading
+  // — we'd overwrite the user's persisted preference with a pre-catalog guess
+  // on every page load.
   useEffect(() => {
     if (!allModelOptions.length) {
-      // Catalog not yet loaded — apply the pre-catalog default effort.
-      setReasoningEffort(defaultReasoningEffort);
       return;
     }
 
@@ -85,26 +84,33 @@ export function useModelSelection(): UseModelSelectionReturn {
       : defaultModel;
 
     if (nextModel !== selectedModel) {
-      setSelectedModel(nextModel);
-      // Don't also validate reasoning in this tick; let the next render pick
-      // it up with the updated model value.
+      setSelectedModelInStore(nextModel);
+      // Let the next render pick up reasoning effort validation with the
+      // updated model value.
       return;
     }
 
     const supportsCurrent = getReasoningEffortOptions(nextModel, allModelOptions)
       .some((option) => option.value === reasoningEffort);
     if (!supportsCurrent) {
-      setReasoningEffort(getDefaultReasoningEffort(nextModel, allModelOptions));
+      setReasoningEffortInStore(getDefaultReasoningEffort(nextModel, allModelOptions));
     }
-  }, [allModelOptions, defaultModel, defaultReasoningEffort, reasoningEffort, selectedModel]);
+  }, [allModelOptions, defaultModel, reasoningEffort, selectedModel, setReasoningEffortInStore, setSelectedModelInStore]);
 
   const handleModelChange = useCallback(
     (model: string) => {
       const normalizedModel = normalizeAssistantModelValue(model);
-      setSelectedModel(normalizedModel);
-      setReasoningEffort(getDefaultReasoningEffort(normalizedModel, allModelOptions));
+      setSelectedModelInStore(normalizedModel);
+      // Preserve the user's reasoning effort across model switches when the
+      // new model supports it — only fall back to the new model's default
+      // when the current effort is unsupported.
+      const supported = getReasoningEffortOptions(normalizedModel, allModelOptions)
+        .some((option) => option.value === reasoningEffort);
+      if (!supported) {
+        setReasoningEffortInStore(getDefaultReasoningEffort(normalizedModel, allModelOptions));
+      }
     },
-    [allModelOptions]
+    [allModelOptions, reasoningEffort, setReasoningEffortInStore, setSelectedModelInStore]
   );
 
   const inlineModelOptions = useMemo(
@@ -125,6 +131,6 @@ export function useModelSelection(): UseModelSelectionReturn {
     dismissedModelPromptFor,
     setDismissedModelPromptFor,
     handleModelChange,
-    setReasoningEffort
+    setReasoningEffort: setReasoningEffortInStore
   };
 }

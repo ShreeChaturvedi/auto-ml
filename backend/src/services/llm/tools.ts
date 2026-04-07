@@ -33,7 +33,7 @@ type ToolHandler = (projectId: string, args: ToolCall['args']) => Promise<unknow
 
 const toolHandlers = new Map<string, ToolHandler>([
   // Data tools
-  ['list_project_files', (projectId) => listProjectFiles(projectId)],
+  ['list_project_files', (projectId, args) => listProjectFiles(projectId, args)],
   ['get_dataset_profile', (_projectId, args) => getDatasetProfile(args)],
   ['get_dataset_sample', (_projectId, args) => getDatasetSample(args)],
   ['search_documents', (projectId, args) => searchProjectDocuments(projectId, args)],
@@ -44,7 +44,7 @@ const toolHandlers = new Map<string, ToolHandler>([
   ['write_cell', (projectId, args) => writeCell(projectId, args)],
   ['edit_cell', (_projectId, args) => editCell(args)],
   ['run_cell', (projectId, args) => runCell(projectId, args)],
-  ['delete_cell', (_projectId, args) => deleteCell(args)],
+  ['delete_cell', (projectId, args) => deleteCell(projectId, args)],
   ['reorder_cells', (projectId, args) => reorderCells(projectId, args)],
   ['insert_cell', (projectId, args) => insertCell(projectId, args)],
 

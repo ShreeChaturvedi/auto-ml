@@ -56,7 +56,8 @@ Senior Design Project Proposal.pdf
 .opencode/
 
 # Local agent/debug logs
-.cursor/*.log
+.cursor/
+.playwright-cli/
 .superpowers/
 
 # Git worktrees

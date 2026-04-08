@@ -37,6 +37,7 @@ import { createRealtimeSessionRouter } from './routes/realtimeSession.js';
 import { createSettingsRouter } from './routes/settings.js';
 import { createWorkflowRouter } from './routes/workflows.js';
 import * as deploymentManager from './services/deploymentManager.js';
+import { resolveDeploymentPredictTarget, rewriteDeploymentPredictPath } from './services/deploymentPredictProxy.js';
 
 export function createApp() {
   const app = express();
@@ -69,10 +70,9 @@ export function createApp() {
           const deployment = predictReq.deployment;
           if (!deployment) throw new Error('No deployment');
           const entry = deploymentManager.getDeploymentFromCache(deployment.deploymentId);
-          if (!entry || entry.status !== 'healthy') throw new Error('Deployment not available');
-          return `http://127.0.0.1:${entry.port}`;
+          return resolveDeploymentPredictTarget(deployment, entry);
         },
-        pathRewrite: { '^/api/deployments/[^/]+/predict': '/predict' },
+        pathRewrite: rewriteDeploymentPredictPath,
         on: {
           proxyReq: (_proxyReq, req: IncomingMessage) => {
             // Capture and buffer the request body before the proxy consumes the stream

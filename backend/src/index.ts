@@ -5,7 +5,7 @@ import { env } from './config.js';
 import { hasDatabaseConfiguration, verifyDatabaseConnection } from './db.js';
 import { appLogger } from './logging/logger.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
-import { setDeploymentWSBroadcast, recoverDeployments, startHealthCheckLoop, destroyAllDeploymentContainers } from './services/deploymentManager.js';
+import { setDeploymentWSBroadcast, recoverDeployments, startHealthCheckLoop } from './services/deploymentManager.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
 import { initializeDeploymentWebSocket, broadcastDeploymentEvent, getDeploymentWSServer } from './services/websocket/deploymentWsServer.js';
@@ -71,7 +71,6 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
 
   // Destroy all active containers
   await destroyAllContainers();
-  await destroyAllDeploymentContainers();
 
   if (!server?.listening) {
     process.exit(process.exitCode ?? 0);

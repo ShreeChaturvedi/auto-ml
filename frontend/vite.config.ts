@@ -44,6 +44,11 @@ export default defineConfig({
     // Ensure React is deduplicated to prevent multiple instances
     dedupe: ['react', 'react-dom'],
   },
+  optimizeDeps: {
+    // Keep CSP-sensitive packages out of Vite's prebundle cache so dev mode
+    // always executes the patched sources instead of stale optimized chunks.
+    exclude: ['zod', '@hookform/resolvers', '@hookform/resolvers/zod', 'plotly.js', 'plotly.js/dist/plotly', 'react-plotly.js'],
+  },
   server: {},
   build: {
     // Large Monaco/Plotly/PDF/WebAssembly bundles are intentionally lazy-loaded.

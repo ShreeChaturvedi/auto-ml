@@ -1,5 +1,5 @@
 /**
- * PlanSubtabs — renders plan items and in-progress chats under Data Upload phase.
+ * PlanSubtabs — renders saved plans + separator + in-progress plan chats under Data Upload phase.
  */
 
 import { useState } from 'react';
@@ -12,6 +12,7 @@ import { useProjectPlans } from '@/hooks/useProjectPlans';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
 import { downloadMarkdownFile } from '@/lib/exportMarkdown';
+import { SidebarSubtabSectionDivider } from './SidebarSubtabSectionDivider';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
@@ -65,6 +66,43 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
   return (
     <>
       <div className="space-y-0.5">
+        {plans.map((plan) => (
+          <SubtabItem
+            key={plan.id}
+            icon={ClipboardList}
+            label={plan.name}
+            isActive={isOnUpload && plan.id === selectedPlanId && !activePlanChatId}
+            onClick={() => handleOpenPlan(plan.id)}
+            actionSlot={
+              <SidebarSubtabActionMenu ariaLabel="Plan options">
+                <DropdownMenuItem onClick={() => openRename(plan.id, plan.name, 'plan')}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadMarkdownFile(plan.name, plan.content)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    requestDelete({
+                      title: 'Delete plan?',
+                      description: `Permanently remove "${plan.name}". This cannot be undone.`,
+                      onConfirm: () => handleDeletePlan(plan.id),
+                    })
+                  }
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </SidebarSubtabActionMenu>
+            }
+          />
+        ))}
+
+        {plans.length > 0 && inProgressChats.length > 0 && <SidebarSubtabSectionDivider />}
+
         {inProgressChats.map((chat) => (
           <SubtabItem
             key={chat.id}
@@ -84,40 +122,6 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
                       title: 'Delete chat?',
                       description: `Permanently remove "${chat.name}". This cannot be undone.`,
                       onConfirm: () => void deleteChat(chat.id),
-                    })
-                  }
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </SidebarSubtabActionMenu>
-            }
-          />
-        ))}
-        {plans.map((plan) => (
-          <SubtabItem
-            key={plan.id}
-            icon={ClipboardList}
-            label={plan.name}
-            isActive={isOnUpload && plan.id === selectedPlanId && !activePlanChatId}
-            onClick={() => handleOpenPlan(plan.id)}
-            actionSlot={
-              <SidebarSubtabActionMenu ariaLabel="Plan options">
-                <DropdownMenuItem onClick={() => openRename(plan.id, plan.name, 'plan')}>
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadMarkdownFile(plan.name, plan.content)}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Download .md
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() =>
-                    requestDelete({
-                      title: 'Delete plan?',
-                      description: `Permanently remove "${plan.name}". This cannot be undone.`,
-                      onConfirm: () => handleDeletePlan(plan.id),
                     })
                   }
                   className="text-destructive focus:text-destructive"

@@ -233,7 +233,7 @@ export function PlanChatPane({ projectId, onPlanApproved, planChatId }: PlanChat
         )}
       </ScrollArea>
 
-      <div className="shrink-0 border-t bg-background">
+      <div className="shrink-0 bg-background">
         {hasUserMessages && followUpSuggestions.length > 0 ? (
           <FollowUpSuggestionPills
             suggestions={followUpSuggestions}

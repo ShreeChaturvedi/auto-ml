@@ -108,7 +108,7 @@ export function AgenticStepDisplay({
   onCancelEdit,
 }: AgenticStepDisplayProps) {
   return (
-    <div className="border-t bg-background">
+    <div className="bg-background">
       {editingMessageId ? (
         <div className="flex items-center justify-between border-b px-4 py-1.5 bg-muted/30">
           <span className="text-xs text-muted-foreground">Editing message</span>

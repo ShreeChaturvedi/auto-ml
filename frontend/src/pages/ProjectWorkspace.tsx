@@ -1,17 +1,19 @@
-import React, { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { UploadArea } from '@/components/upload/UploadArea';
-import { DataViewerTab } from '@/components/data/DataViewerTab';
-import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPanel';
-import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
-import { TrainingPanel } from '@/components/training/TrainingPanel';
-import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
-import { DeploymentDashboard } from '@/components/deployment/DeploymentDashboard';
-import { NotebookPage } from '@/components/notebook/NotebookPage';
 import { Button } from '@/components/ui/button';
 import { useProjectStore } from '@/stores/projectStore';
+import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
 import { isAuxiliaryPhase } from '@/types/phase';
 import type { Phase } from '@/types/phase';
+
+const UploadArea = lazy(() => import('@/components/upload/UploadArea').then(m => ({ default: m.UploadArea })));
+const DataViewerTab = lazy(() => import('@/components/data/DataViewerTab').then(m => ({ default: m.DataViewerTab })));
+const PreprocessingPanel = lazy(() => import('@/components/preprocessing/PreprocessingPanel').then(m => ({ default: m.PreprocessingPanel })));
+const FeatureEngineeringPanel = lazy(() => import('@/components/features/FeatureEngineeringPanel').then(m => ({ default: m.FeatureEngineeringPanel })));
+const TrainingPanel = lazy(() => import('@/components/training/TrainingPanel').then(m => ({ default: m.TrainingPanel })));
+const ExperimentsDashboard = lazy(() => import('@/components/experiments/ExperimentsDashboard').then(m => ({ default: m.ExperimentsDashboard })));
+const DeploymentDashboard = lazy(() => import('@/components/deployment/DeploymentDashboard').then(m => ({ default: m.DeploymentDashboard })));
+const NotebookPage = lazy(() => import('@/components/notebook/NotebookPage').then(m => ({ default: m.NotebookPage })));
 
 // ---------------------------------------------------------------------------
 // Phase-level ErrorBoundary — prevents a single phase crash from white-screening
@@ -88,6 +90,7 @@ export function ProjectWorkspace() {
   useEffect(() => {
     if (!isInitialized || !projectId) return;
     if (projectId !== activeProjectId) {
+      useExperimentsStore.setState(createInitialExperimentsState());
       setActiveProject(projectId);
     }
   }, [isInitialized, projectId, activeProjectId, setActiveProject]);
@@ -133,44 +136,76 @@ export function ProjectWorkspace() {
   // Render content based on phase
   switch (phase as Phase) {
     case 'upload':
-      return <UploadArea />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <UploadArea />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'data-viewer':
-      return <DataViewerTab />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <DataViewerTab />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'preprocessing':
       return (
         <PhaseErrorBoundary>
-          <PreprocessingPanel />
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <PreprocessingPanel />
+          </Suspense>
         </PhaseErrorBoundary>
       );
 
     case 'feature-engineering':
       return (
         <PhaseErrorBoundary>
-          <FeatureEngineeringPanel projectId={projectId!} />
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <FeatureEngineeringPanel projectId={projectId!} />
+          </Suspense>
         </PhaseErrorBoundary>
       );
 
     case 'training':
       return (
         <PhaseErrorBoundary>
-          <TrainingPanel />
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <TrainingPanel />
+          </Suspense>
         </PhaseErrorBoundary>
       );
 
     case 'experiments':
-      return <ExperimentsDashboard />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <ExperimentsDashboard />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'deployment':
       return (
         <PhaseErrorBoundary>
-          <DeploymentDashboard />
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <DeploymentDashboard />
+          </Suspense>
         </PhaseErrorBoundary>
       );
 
     case 'notebook':
-      return <NotebookPage projectId={projectId!} />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <NotebookPage projectId={projectId!} />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     default:
       return <Navigate to={`/project/${project.id}/upload`} replace />;

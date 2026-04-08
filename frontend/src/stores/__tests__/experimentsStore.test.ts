@@ -304,4 +304,108 @@ describe('experimentsStore', () => {
     expect(state.reportModelHash).toBeNull();
     expect(state.reportFetchedAt).toBe(0);
   });
+
+  describe('LRU eviction', () => {
+    it('createInitialExperimentsState() includes modelAccessOrder and cacheGeneration', () => {
+      const initial = createInitialExperimentsState();
+      expect(initial.modelAccessOrder).toEqual([]);
+      expect(initial.cacheGeneration).toBe(0);
+    });
+
+    it('selectModel(null) clears selectedModelId without updating modelAccessOrder', () => {
+      useExperimentsStore.getState().selectModel('model-1');
+      const orderAfterSelect = useExperimentsStore.getState().modelAccessOrder;
+      useExperimentsStore.getState().selectModel(null);
+      expect(useExperimentsStore.getState().selectedModelId).toBeNull();
+      expect(useExperimentsStore.getState().modelAccessOrder).toEqual(orderAfterSelect);
+    });
+
+    it('selectModel() tracks access order and deduplicates', () => {
+      useExperimentsStore.getState().selectModel('model-1');
+      useExperimentsStore.getState().selectModel('model-2');
+      useExperimentsStore.getState().selectModel('model-1');
+      expect(useExperimentsStore.getState().modelAccessOrder).toEqual(['model-2', 'model-1']);
+    });
+
+    it('selecting 6 models evicts oldest cache entries', async () => {
+      fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+
+      // Populate evaluations cache for models 1-5
+      for (let i = 1; i <= 5; i++) {
+        useExperimentsStore.getState().selectModel(`model-${i}`);
+        await useExperimentsStore.getState().fetchEvaluation(`model-${i}`);
+      }
+      // All 5 should be cached
+      for (let i = 1; i <= 5; i++) {
+        expect(useExperimentsStore.getState().evaluations[`model-${i}`]).toEqual(MOCK_EVALUATION);
+      }
+
+      const genBefore = useExperimentsStore.getState().cacheGeneration;
+
+      // Selecting model-6 should evict model-1 (oldest)
+      useExperimentsStore.getState().selectModel('model-6');
+
+      expect(useExperimentsStore.getState().cacheGeneration).toBe(genBefore + 1);
+      expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+      // model-2 through model-5 should remain
+      for (let i = 2; i <= 5; i++) {
+        expect(useExperimentsStore.getState().evaluations[`model-${i}`]).toEqual(MOCK_EVALUATION);
+      }
+    });
+
+    it('comparison models are pinned and not evicted', async () => {
+      fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+
+      // model-1 is added to comparison
+      useExperimentsStore.getState().toggleComparison('model-1');
+
+      // Populate cache for models 1-5
+      for (let i = 1; i <= 5; i++) {
+        useExperimentsStore.getState().selectModel(`model-${i}`);
+        await useExperimentsStore.getState().fetchEvaluation(`model-${i}`);
+      }
+
+      // Selecting model-6 would normally evict model-1, but it's pinned
+      useExperimentsStore.getState().selectModel('model-6');
+
+      // model-1 should still be cached (pinned by comparison)
+      expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+      // model-2 (next oldest) should have been evicted instead
+      expect(useExperimentsStore.getState().evaluations['model-2']).toBeUndefined();
+    });
+
+    it('purgeModelCache() removes the model from modelAccessOrder', async () => {
+      fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+
+      useExperimentsStore.getState().selectModel('model-1');
+      await useExperimentsStore.getState().fetchEvaluation('model-1');
+      expect(useExperimentsStore.getState().modelAccessOrder).toContain('model-1');
+
+      useExperimentsStore.getState().purgeModelCache('model-1');
+
+      expect(useExperimentsStore.getState().modelAccessOrder).not.toContain('model-1');
+      expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+    });
+
+    it('stale-fetch guard: result from evicted generation is dropped', async () => {
+      let resolveEval!: (v: EvaluationResult) => void;
+      fetchEvaluationMock.mockReturnValueOnce(
+        new Promise<EvaluationResult>((res) => { resolveEval = res; })
+      );
+
+      // Start a fetch for model-1 but don't await yet
+      const pending = useExperimentsStore.getState().fetchEvaluation('model-1');
+
+      // Simulate project switch: reset state but with a higher cacheGeneration so
+      // the stale-fetch guard detects that the captured gen is no longer current.
+      useExperimentsStore.setState({ ...createInitialExperimentsState(), cacheGeneration: 1 });
+
+      // Now resolve the in-flight request
+      resolveEval(MOCK_EVALUATION);
+      await pending;
+
+      // The stale result should NOT have been written
+      expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+    });
+  });
 });

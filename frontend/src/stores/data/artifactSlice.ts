@@ -36,6 +36,8 @@ export interface ArtifactSlice {
   clearProjectArtifacts: (projectId: string) => void;
 }
 
+const MAX_ARTIFACTS_PER_PROJECT = 30;
+
 export const createArtifactSlice: StateCreator<DataState, [], [], ArtifactSlice> = (set, get) => ({
   queryArtifacts: [],
   activeArtifactId: null,
@@ -71,11 +73,23 @@ export const createArtifactSlice: StateCreator<DataState, [], [], ArtifactSlice>
       explanation: metadata?.explanation
     };
 
-    set((state) => ({
-      queryArtifacts: [...state.queryArtifacts, artifact],
-      activeArtifactId: id,
-      queryCounter: counter
-    }));
+    set((state) => {
+      const allArtifacts = [...state.queryArtifacts, artifact];
+      const projectArtifacts = allArtifacts.filter((a) => a.projectId === projectId);
+      const evictIds = projectArtifacts.length > MAX_ARTIFACTS_PER_PROJECT
+        ? new Set(
+            projectArtifacts
+              .filter((a) => !a.isSaved)
+              .slice(0, projectArtifacts.length - MAX_ARTIFACTS_PER_PROJECT)
+              .map((a) => a.id)
+          )
+        : null;
+      return {
+        queryArtifacts: evictIds ? allArtifacts.filter((a) => !evictIds.has(a.id)) : allArtifacts,
+        activeArtifactId: id,
+        queryCounter: counter
+      };
+    });
 
     return id;
   },

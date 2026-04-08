@@ -2,10 +2,6 @@ type MonacoWorkerFactory = () => unknown
 
 type MonacoWorkerFactories = {
   editor: MonacoWorkerFactory
-  json: MonacoWorkerFactory
-  css: MonacoWorkerFactory
-  html: MonacoWorkerFactory
-  typescript: MonacoWorkerFactory
 }
 
 type MonacoEnvironmentLike = {
@@ -27,25 +23,8 @@ type ConfigureMonacoForViteOptions<TMonaco> = {
 }
 
 function createMonacoWorkerResolver(workerFactories: MonacoWorkerFactories) {
-  return (_moduleId: string | undefined, label: string) => {
-    if (label === 'json') {
-      return workerFactories.json()
-    }
-
-    if (label === 'css' || label === 'scss' || label === 'less') {
-      return workerFactories.css()
-    }
-
-    if (label === 'html' || label === 'handlebars' || label === 'razor') {
-      return workerFactories.html()
-    }
-
-    if (label === 'typescript' || label === 'javascript') {
-      return workerFactories.typescript()
-    }
-
-    return workerFactories.editor()
-  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return (_moduleId: string | undefined, _label: string) => workerFactories.editor()
 }
 
 export function configureMonacoForVite<TMonaco>({

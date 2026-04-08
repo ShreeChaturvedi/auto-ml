@@ -24,6 +24,7 @@ import {
 import { Eye, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DataPreview } from '@/types/file';
+import { MAX_PREVIEW_ROWS } from '@/stores/data/fileSlice';
 import { EDAPanel, type EdaTab } from './eda/EDAPanel';
 import { EDAToolbar } from './eda/EDAToolbar';
 import type { DistributionMode, CorrViewMode } from './eda/edaConstants';
@@ -297,6 +298,14 @@ export function DataTable({
                   <span className="flex items-center gap-1.5 opacity-70" title="Total dataset rows">
                     <Database className="h-3 w-3 shrink-0" />
                     {preview.totalRows.toLocaleString()}
+                  </span>
+                </>
+              )}
+              {preview.previewRows >= MAX_PREVIEW_ROWS && preview.totalRows > MAX_PREVIEW_ROWS && (
+                <>
+                  <span className="opacity-30">·</span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Showing first {MAX_PREVIEW_ROWS.toLocaleString()} of {preview.totalRows.toLocaleString()} rows
                   </span>
                 </>
               )}

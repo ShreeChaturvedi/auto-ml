@@ -20,31 +20,17 @@ export function ensureMonacoBootstrap(): Promise<void> {
     const [
       { loader },
       monaco,
-      { default: EditorWorker },
-      { default: JsonWorker },
-      { default: CssWorker },
-      { default: HtmlWorker },
-      { default: TsWorker }
+      { default: EditorWorker }
     ] = await Promise.all([
       import('@monaco-editor/react'),
       import('monaco-editor/esm/vs/editor/editor.main.js'),
-      import('monaco-editor/esm/vs/editor/editor.worker?worker'),
-      import('monaco-editor/esm/vs/language/json/json.worker?worker'),
-      import('monaco-editor/esm/vs/language/css/css.worker?worker'),
-      import('monaco-editor/esm/vs/language/html/html.worker?worker'),
-      import('monaco-editor/esm/vs/language/typescript/ts.worker?worker')
+      import('monaco-editor/esm/vs/editor/editor.worker?worker')
     ])
 
     configureMonacoForVite({
       loader,
       monaco,
-      workerFactories: {
-        editor: () => new EditorWorker(),
-        json: () => new JsonWorker(),
-        css: () => new CssWorker(),
-        html: () => new HtmlWorker(),
-        typescript: () => new TsWorker()
-      }
+      workerFactories: { editor: () => new EditorWorker() }
     })
   })()
 

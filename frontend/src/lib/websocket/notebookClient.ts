@@ -34,6 +34,8 @@ export class NotebookWSClient {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private pingInterval: NodeJS.Timeout | null = null;
+  private connectPromise: Promise<void> | null = null;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(baseUrl?: string) {
     // Derive WebSocket URL from API base URL
@@ -50,26 +52,18 @@ export class NotebookWSClient {
   // ============================================================
 
   public connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        resolve();
-        return;
-      }
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
 
-      if (this.state.isConnecting) {
-        // Already connecting, wait for it
-        const checkConnected = setInterval(() => {
-          if (this.state.isConnected) {
-            clearInterval(checkConnected);
-            resolve();
-          }
-        }, 100);
-        return;
-      }
+    if (this.state.isConnecting && this.connectPromise) {
+      return this.connectPromise;
+    }
 
-      this.state.isConnecting = true;
-      console.log('[ws] Connecting to', this.baseUrl);
+    this.state.isConnecting = true;
+    console.log('[ws] Connecting to', this.baseUrl);
 
+    const connectionPromise = new Promise<void>((resolve, reject) => {
       try {
         const token = useAuthStore.getState().accessToken;
         const url = token ? `${this.baseUrl}?token=${encodeURIComponent(token)}` : this.baseUrl;
@@ -80,6 +74,7 @@ export class NotebookWSClient {
           this.state.isConnecting = false;
           this.state.isConnected = true;
           this.state.reconnectAttempts = 0;
+          this.connectPromise = null;
           this.startPing();
           this.emit('connected', {});
           resolve();
@@ -97,6 +92,7 @@ export class NotebookWSClient {
         this.ws.onerror = (error) => {
           console.error('[ws] Error:', error);
           this.state.isConnecting = false;
+          this.connectPromise = null;
           this.emit('error', { error });
 
           if (!this.state.isConnected) {
@@ -109,19 +105,36 @@ export class NotebookWSClient {
         };
       } catch (error) {
         this.state.isConnecting = false;
+        this.connectPromise = null;
         reject(error);
       }
     });
+
+    const timeout = new Promise<void>((_, reject) =>
+      setTimeout(() => {
+        this.connectPromise = null;
+        reject(new Error('WebSocket connection timed out'));
+      }, 10000)
+    );
+
+    this.connectPromise = Promise.race([connectionPromise, timeout]);
+    return this.connectPromise;
   }
 
   public disconnect(): void {
     this.stopPing();
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
 
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect');
       this.ws = null;
     }
 
+    this.connectPromise = null;
     this.state.isConnected = false;
     this.state.isConnecting = false;
     this.state.reconnectAttempts = this.maxReconnectAttempts; // Prevent reconnect
@@ -139,7 +152,8 @@ export class NotebookWSClient {
 
     console.log(`[ws] Reconnecting in ${delay}ms (attempt ${this.state.reconnectAttempts})`);
 
-    setTimeout(() => {
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
       this.connect()
         .then(() => {
           // Re-subscribe to notebook if we were subscribed

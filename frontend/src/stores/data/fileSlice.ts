@@ -48,6 +48,8 @@ export interface FileSlice {
   closeFileTab: (id: string) => void;
 }
 
+export const MAX_PREVIEW_ROWS = 2000;
+
 export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set, get) => ({
   files: [],
   previews: [],
@@ -151,12 +153,13 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
         const nextRows = overlap >= rows.length
           ? preview.rows
           : [...preview.rows, ...rows.slice(overlap)];
+        const clamped = nextRows.length > MAX_PREVIEW_ROWS ? nextRows.slice(0, MAX_PREVIEW_ROWS) : nextRows;
 
         return {
           ...preview,
-          rows: nextRows,
+          rows: clamped,
           totalRows: rowCount,
-          previewRows: nextRows.length
+          previewRows: clamped.length
         };
       })
     }));

@@ -3,10 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { configureMonacoForVite } from './configureMonaco'
 
 class MockEditorWorker {}
-class MockJsonWorker {}
-class MockCssWorker {}
-class MockHtmlWorker {}
-class MockTsWorker {}
 
 describe('configureMonacoForVite', () => {
   afterEach(() => {
@@ -20,13 +16,7 @@ describe('configureMonacoForVite', () => {
     configureMonacoForVite({
       loader: { config },
       monaco,
-      workerFactories: {
-        editor: () => new MockEditorWorker(),
-        json: () => new MockJsonWorker(),
-        css: () => new MockCssWorker(),
-        html: () => new MockHtmlWorker(),
-        typescript: () => new MockTsWorker()
-      }
+      workerFactories: { editor: () => new MockEditorWorker() }
     })
 
     expect(config).toHaveBeenCalledWith({ monaco })
@@ -38,10 +28,6 @@ describe('configureMonacoForVite', () => {
     ).MonacoEnvironment
 
     expect(environment).toBeDefined()
-    expect(environment?.getWorker('', 'json')).toBeInstanceOf(MockJsonWorker)
-    expect(environment?.getWorker('', 'scss')).toBeInstanceOf(MockCssWorker)
-    expect(environment?.getWorker('', 'handlebars')).toBeInstanceOf(MockHtmlWorker)
-    expect(environment?.getWorker('', 'typescript')).toBeInstanceOf(MockTsWorker)
     expect(environment?.getWorker('', 'unknown')).toBeInstanceOf(MockEditorWorker)
   })
 })

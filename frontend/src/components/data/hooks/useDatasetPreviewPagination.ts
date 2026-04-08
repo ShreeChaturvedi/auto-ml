@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 
 import { getDatasetRows } from '@/lib/api/datasets';
 import { useDataStore } from '@/stores/dataStore';
+import { MAX_PREVIEW_ROWS } from '@/stores/data/fileSlice';
 import type { DataPreview, UploadedFile } from '@/types/file';
 import type { DataTableIncrementalLoad } from '../DataTable';
 
@@ -26,7 +27,7 @@ export function useDatasetPreviewPagination({
     file
     && preview
     && file.metadata?.datasetId
-    && preview.rows.length < preview.totalRows
+    && preview.rows.length < Math.min(preview.totalRows, MAX_PREVIEW_ROWS)
   );
 
   const loadMore = useCallback(async () => {
@@ -55,7 +56,7 @@ export function useDatasetPreviewPagination({
   }
 
   return {
-    hasMore: preview.rows.length < preview.totalRows,
+    hasMore: preview.rows.length < Math.min(preview.totalRows, MAX_PREVIEW_ROWS),
     isLoading: isLoadingMore,
     onReachEnd: loadMore
   };

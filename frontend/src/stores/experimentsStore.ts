@@ -16,10 +16,13 @@ import * as experimentsApi from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 
 const INSIGHT_STALE_TIME = 30_000;
+const MAX_CACHED_MODELS = 5;
 
 interface ExperimentsState {
   selectedModelId: string | null;
   comparisonModelIds: string[];
+  modelAccessOrder: string[];
+  cacheGeneration: number;
   evaluations: Record<string, EvaluationResult | null>;
   shapData: Record<string, ShapResult | null>;
   errorAnalysis: Record<string, ErrorAnalysisResult | null>;
@@ -64,6 +67,8 @@ type ExperimentsStateData = Pick<
   ExperimentsState,
   | 'selectedModelId'
   | 'comparisonModelIds'
+  | 'modelAccessOrder'
+  | 'cacheGeneration'
   | 'evaluations'
   | 'shapData'
   | 'errorAnalysis'
@@ -85,6 +90,8 @@ export function createInitialExperimentsState(): ExperimentsStateData {
   return {
     selectedModelId: null,
     comparisonModelIds: [],
+    modelAccessOrder: [],
+    cacheGeneration: 0,
     evaluations: {},
     shapData: {},
     errorAnalysis: {},
@@ -116,7 +123,53 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   ...createInitialExperimentsState(),
 
   selectModel: (modelId) => {
-    set({ selectedModelId: modelId });
+    if (modelId === null) {
+      set({ selectedModelId: null });
+      return;
+    }
+    set((state) => {
+      // Dedup + push to back (most recently used)
+      const order = [...state.modelAccessOrder.filter((id) => id !== modelId), modelId];
+
+      if (order.length <= MAX_CACHED_MODELS) {
+        return { selectedModelId: modelId, modelAccessOrder: order };
+      }
+
+      // Determine eviction candidates: oldest entries beyond limit, skip pinned comparison models
+      const pinned = new Set(state.comparisonModelIds);
+      const evictSet = new Set<string>();
+      let i = 0;
+      while (order.length - evictSet.size > MAX_CACHED_MODELS && i < order.length - 1) {
+        const candidate = order[i];
+        if (!pinned.has(candidate)) {
+          evictSet.add(candidate);
+        }
+        i++;
+      }
+
+      const pruned = order.filter((id) => !evictSet.has(id));
+
+      const nextEvaluations = { ...state.evaluations };
+      const nextShapData = { ...state.shapData };
+      const nextErrorAnalysis = { ...state.errorAnalysis };
+      const nextActiveDetailTab = { ...state.activeDetailTab };
+      for (const id of evictSet) {
+        delete nextEvaluations[id];
+        delete nextShapData[id];
+        delete nextErrorAnalysis[id];
+        delete nextActiveDetailTab[id];
+      }
+
+      return {
+        selectedModelId: modelId,
+        modelAccessOrder: pruned,
+        cacheGeneration: state.cacheGeneration + 1,
+        evaluations: nextEvaluations,
+        shapData: nextShapData,
+        errorAnalysis: nextErrorAnalysis,
+        activeDetailTab: nextActiveDetailTab,
+      };
+    });
   },
 
   toggleComparison: (modelId) => {
@@ -180,13 +233,16 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   fetchEvaluation: async (modelId) => {
     if (modelId in get().evaluations) return;
+    const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         evaluations: { ...state.evaluations, [modelId]: result },
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchEvaluation failed:', error);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         evaluations: { ...state.evaluations, [modelId]: null },
       }));
@@ -195,12 +251,15 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   fetchShap: async (modelId) => {
     if (modelId in get().shapData) return;
+    const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchShap(modelId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         shapData: { ...state.shapData, [modelId]: result },
       }));
     } catch {
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         shapData: { ...state.shapData, [modelId]: null },
       }));
@@ -209,13 +268,16 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   fetchErrorAnalysis: async (modelId) => {
     if (modelId in get().errorAnalysis) return;
+    const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
       const resolved = result?.available === false ? null : result;
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved },
       }));
     } catch {
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         errorAnalysis: { ...state.errorAnalysis, [modelId]: null },
       }));
@@ -327,6 +389,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
       shapData: clearModelCacheEntry(state.shapData, modelId),
       errorAnalysis: clearModelCacheEntry(state.errorAnalysis, modelId),
       activeDetailTab: clearModelCacheEntry(state.activeDetailTab, modelId),
+      modelAccessOrder: state.modelAccessOrder.filter((id) => id !== modelId),
     }));
   },
 

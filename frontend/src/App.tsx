@@ -10,32 +10,49 @@
  * - /login, /signup, /forgot-password, /reset-password : Auth flows
  */
 
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthLayout } from '@/components/auth/AuthLayout';
-import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
-import { GoogleOAuthCallback } from '@/components/auth/GoogleOAuthCallback';
-import { LoginForm } from '@/components/auth/LoginForm';
-import { ProfileSettings } from '@/components/auth/ProfileSettings';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
-import { SignupForm } from '@/components/auth/SignupForm';
-import { VerifyEmailPage } from '@/components/auth/VerifyEmailPage';
-import { VerifyEmailPendingPage } from '@/components/auth/VerifyEmailPendingPage';
-import { DocsPage } from '@/components/docs/DocsPage';
 import { useProjectStore } from '@/stores/projectStore';
 import { Button } from '@/components/ui/button';
-import { HomePage } from '@/pages/HomePage';
 import { ProjectRedirect, ProjectWorkspace } from '@/pages/ProjectWorkspace';
 import { useAuthBootstrap } from '@/hooks/useAuthBootstrap';
 import { useTokenRefreshTimer } from '@/hooks/useTokenRefreshTimer';
-import { initMonaco } from '@/lib/monaco/preloader';
 
-// Pre-load Monaco editor in the background to eliminate flash on code cells
-initMonaco().catch(console.error);
+const ForgotPasswordForm = lazy(() =>
+  import('@/components/auth/ForgotPasswordForm').then((m) => ({ default: m.ForgotPasswordForm }))
+);
+const GoogleOAuthCallback = lazy(() =>
+  import('@/components/auth/GoogleOAuthCallback').then((m) => ({ default: m.GoogleOAuthCallback }))
+);
+const LoginForm = lazy(() =>
+  import('@/components/auth/LoginForm').then((m) => ({ default: m.LoginForm }))
+);
+const ResetPasswordForm = lazy(() =>
+  import('@/components/auth/ResetPasswordForm').then((m) => ({ default: m.ResetPasswordForm }))
+);
+const SignupForm = lazy(() =>
+  import('@/components/auth/SignupForm').then((m) => ({ default: m.SignupForm }))
+);
+const VerifyEmailPage = lazy(() =>
+  import('@/components/auth/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage }))
+);
+const VerifyEmailPendingPage = lazy(() =>
+  import('@/components/auth/VerifyEmailPendingPage').then((m) => ({ default: m.VerifyEmailPendingPage }))
+);
+const DocsPage = lazy(() =>
+  import('@/components/docs/DocsPage').then((m) => ({ default: m.DocsPage }))
+);
+const ProfileSettings = lazy(() =>
+  import('@/components/auth/ProfileSettings').then((m) => ({ default: m.ProfileSettings }))
+);
+const HomePage = lazy(() =>
+  import('@/pages/HomePage').then((m) => ({ default: m.HomePage }))
+);
 
 function MainApp() {
   const isInitialized = useProjectStore((state) => state.isInitialized);
@@ -75,7 +92,7 @@ function MainApp() {
   } else {
     content = (
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<Suspense fallback={null}><HomePage /></Suspense>} />
         <Route path="/project/:projectId" element={<ProjectRedirect />} />
         <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />
       </Routes>
@@ -105,20 +122,20 @@ function App() {
         <Routes>
           {/* Auth routes share AuthLayout so background persists across navigation */}
           <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginForm />} />
-            <Route path="/signup" element={<SignupForm />} />
-            <Route path="/forgot-password" element={<ForgotPasswordForm />} />
-            <Route path="/reset-password" element={<ResetPasswordForm />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
-            <Route path="/verify-email/pending" element={<VerifyEmailPendingPage />} />
-            <Route path="/auth/google/callback" element={<GoogleOAuthCallback />} />
+            <Route path="/login" element={<Suspense fallback={null}><LoginForm /></Suspense>} />
+            <Route path="/signup" element={<Suspense fallback={null}><SignupForm /></Suspense>} />
+            <Route path="/forgot-password" element={<Suspense fallback={null}><ForgotPasswordForm /></Suspense>} />
+            <Route path="/reset-password" element={<Suspense fallback={null}><ResetPasswordForm /></Suspense>} />
+            <Route path="/verify-email" element={<Suspense fallback={null}><VerifyEmailPage /></Suspense>} />
+            <Route path="/verify-email/pending" element={<Suspense fallback={null}><VerifyEmailPendingPage /></Suspense>} />
+            <Route path="/auth/google/callback" element={<Suspense fallback={null}><GoogleOAuthCallback /></Suspense>} />
           </Route>
           {/* Profile is a dedicated full-page route outside AppShell */}
           <Route
             path="/profile"
             element={
               <ProtectedRoute>
-                <ProfileSettings />
+                <Suspense fallback={null}><ProfileSettings /></Suspense>
               </ProtectedRoute>
             }
           />
@@ -126,7 +143,7 @@ function App() {
             path="/docs"
             element={
               <ProtectedRoute>
-                <DocsPage />
+                <Suspense fallback={null}><DocsPage /></Suspense>
               </ProtectedRoute>
             }
           />

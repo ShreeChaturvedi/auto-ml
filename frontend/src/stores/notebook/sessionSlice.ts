@@ -13,10 +13,11 @@ import { setupWSHandlers } from './wsHandlers';
 import type { NotebookSlice, NotebookState } from './types';
 
 // ============================================================
-// WS listener cleanup handle (module-scoped)
+// WS listener cleanup handle — HMR-safe storage
 // ============================================================
 
-let wsListenersCleanup: (() => void) | null = null;
+const _hmr = (import.meta.hot?.data ?? {}) as { wsCleanup?: () => void };
+let wsListenersCleanup: (() => void) | null = _hmr.wsCleanup ?? null;
 
 // ============================================================
 // Session state helpers
@@ -129,6 +130,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
       // Set up WebSocket event handlers
       wsListenersCleanup = setupWSHandlers(wsClient, get, set);
+      _hmr.wsCleanup = wsListenersCleanup;
 
       await wsClient.connect();
       if (resolvedNotebookId) {
@@ -389,3 +391,14 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     });
   }
 });
+
+// ============================================================
+// HMR cleanup — run old WS handlers before module re-execution
+// ============================================================
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    wsListenersCleanup?.();
+    import.meta.hot!.data.wsCleanup = null;
+  });
+}

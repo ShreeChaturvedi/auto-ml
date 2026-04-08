@@ -136,6 +136,9 @@ export class EmailService {
           pass: env.smtpPassword
         }
       });
+      appLogger.info(`[EmailService] SMTP delivery enabled (${env.smtpHost}:${env.smtpPort}, from: ${env.smtpFrom})`);
+    } else {
+      appLogger.warn('[EmailService] SMTP not configured — emails will log to console only');
     }
   }
 

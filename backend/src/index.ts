@@ -6,6 +6,7 @@ import { hasDatabaseConfiguration, verifyDatabaseConnection } from './db.js';
 import { appLogger } from './logging/logger.js';
 import { initializeContainerManager, destroyAllContainers } from './services/containerManager.js';
 import { setDeploymentWSBroadcast, recoverDeployments, startHealthCheckLoop } from './services/deploymentManager.js';
+import { emailService } from './services/emailService.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
 import { initializeDeploymentWebSocket, broadcastDeploymentEvent, getDeploymentWSServer } from './services/websocket/deploymentWsServer.js';
@@ -112,6 +113,15 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
       appLogger.error('[db] Failed to verify Postgres connection', error);
       process.exitCode = 1;
     });
+
+    // Verify SMTP connection (non-blocking, doesn't prevent startup)
+    if (emailService.isConfigured()) {
+      void emailService.verifyConnection().then((ok) => {
+        if (!ok) {
+          appLogger.warn('[startup] SMTP connection check failed — check credentials');
+        }
+      });
+    }
   } catch (error) {
     appLogger.error('[server] Failed to start:', error);
     process.exit(1);

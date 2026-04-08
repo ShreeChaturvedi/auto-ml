@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo } from 'react';
-import { BarChart3 } from 'lucide-react';
+import { ChartEmptyIllustration } from '@/components/ui/illustrations';
 import { cn } from '@/lib/utils';
 import type { DistributionMode } from './edaConstants';
 import { PlotlyHistogram } from './PlotlyHistogram';
@@ -112,11 +112,11 @@ export function DistributionsPanel({
     return (
       <div
         className={cn(
-          'flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground',
+          'flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground empty-state-enter',
           className,
         )}
       >
-        <BarChart3 className="h-10 w-10 opacity-40" />
+        <ChartEmptyIllustration className="text-muted-foreground" />
         <p className="text-sm">No numeric or categorical columns to visualise.</p>
       </div>
     );

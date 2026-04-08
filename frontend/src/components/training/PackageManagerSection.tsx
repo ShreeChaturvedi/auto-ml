@@ -9,6 +9,7 @@ import { AnimatedPlaceholderInput } from '@/components/ui/animated-placeholder-i
 import { cn } from '@/lib/utils';
 import { type PackageInfo } from '@/lib/api/execution';
 import { Loader2, Package, RefreshCcw, Search } from 'lucide-react';
+import { ToolsEmptyIllustration } from '@/components/ui/illustrations';
 import { sanitizeDescription } from './packageUtils';
 
 const PACKAGE_PLACEHOLDERS = [
@@ -169,8 +170,8 @@ export function PackageManagerSection({
         <ScrollArea className="h-[200px] rounded-md border bg-muted/5">
           <div className="divide-y divide-border/50">
             {installedPackages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Package className="h-8 w-8 text-muted-foreground/40 mb-2" />
+              <div className="flex flex-col items-center justify-center py-8 text-center empty-state-enter">
+                <ToolsEmptyIllustration className="mb-2 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">
                   No packages installed yet
                 </p>

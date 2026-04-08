@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, AlertTriangle, RotateCcw, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
+import { AlertEmptyIllustration, DeployEmptyIllustration } from '@/components/ui/illustrations';
 import { LazyPlot, getPlotlyLayout, useIsDark, PLOTLY_CONFIG } from '@/components/data/eda/edaTheme';
 import { PlotSuspense } from '@/components/data/eda/PlotSuspense';
 import { Sparkline } from '@/components/experiments/charts/Sparkline';
@@ -304,7 +305,7 @@ export function MonitoringTab({ deployment }: Props) {
   if (statsError) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
-        <AlertTriangle className="h-8 w-8 text-destructive/60" />
+        <AlertEmptyIllustration className="text-destructive/60" />
         <p className="text-sm font-medium text-foreground">Failed to load monitoring data</p>
         <p className="text-xs text-muted-foreground">{statsError}</p>
         <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => void fetchStats()}>
@@ -343,9 +344,7 @@ export function MonitoringTab({ deployment }: Props) {
       {/* Empty state — time range selector stays above */}
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
-          <div className="h-8 w-8 text-muted-foreground/40">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
-          </div>
+          <DeployEmptyIllustration className="text-muted-foreground" />
           <p className="text-sm font-medium text-foreground">No monitoring data yet</p>
           <p className="text-xs text-muted-foreground">
             {timeRange === '24h'

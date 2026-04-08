@@ -2,7 +2,8 @@ import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { FeatureApprovalGate } from './FeatureApprovalGate';
 import { FeatureEngineeringFooter } from './FeatureEngineeringFooter';
-import { AlertTriangle, Beaker } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { ToolsEmptyIllustration } from '@/components/ui/illustrations';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   captureFeatureLeftPaneScrollTop,
@@ -247,8 +248,8 @@ export function FeatureEngineeringLeftPane({
       >
         {!renderProps.messages.some((m: ChatMessage) => m.type === 'user') ? (
           <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-              <Beaker className="h-8 w-8 text-muted-foreground" />
+            <CardContent className="flex flex-col items-center gap-3 py-10 text-center empty-state-enter">
+              <ToolsEmptyIllustration className="text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium">Feature Engineering is ready</p>
                 <p className="text-xs text-muted-foreground">

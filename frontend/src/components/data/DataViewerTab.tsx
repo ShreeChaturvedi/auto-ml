@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { DataEmptyIllustration } from '@/components/ui/illustrations';
 import { QueryPanel } from './QueryPanel';
 import { FileTabBar } from './FileTabBar';
 import { DataViewerContent } from './DataViewerContent';
@@ -163,9 +163,9 @@ export function DataViewerTab() {
 
   if (files.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
+      <div className="flex h-full items-center justify-center p-6 empty-state-enter">
         <div className="text-center space-y-4 max-w-md">
-          <FileText className="h-16 w-16 text-muted-foreground/50 mx-auto" />
+          <DataEmptyIllustration className="mx-auto text-muted-foreground" />
           <div className="space-y-2">
             <h3 className="text-lg font-semibold text-foreground">No data loaded</h3>
             <p className="text-sm text-muted-foreground">

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertEmptyIllustration } from '@/components/ui/illustrations';
 
 interface ChartErrorBoundaryProps {
   fallbackMessage?: string;
@@ -52,7 +52,7 @@ export class ChartErrorBoundary extends React.Component<
 
       return (
         <div className="bg-muted/40 border border-border/30 rounded-lg p-8 text-center flex flex-col items-center justify-center gap-3">
-          <AlertTriangle className="h-8 w-8 text-muted-foreground" />
+          <AlertEmptyIllustration className="text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{message}</p>
           {this.state.error && (
             <p className="text-xs text-muted-foreground/60 font-mono max-w-md truncate">

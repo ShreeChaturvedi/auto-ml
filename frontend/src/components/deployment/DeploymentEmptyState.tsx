@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Rocket, Crown, ArrowRight } from 'lucide-react';
+import { DeployEmptyIllustration } from '@/components/ui/illustrations';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -155,9 +156,7 @@ export function DeploymentEmptyState() {
     <div className="flex h-full flex-col items-center justify-start pt-10 px-6 pb-6 overflow-y-auto empty-state-enter">
       {/* Empty illustration */}
       <div className="mb-6 flex flex-col items-center gap-3">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/60">
-          <Rocket className="h-8 w-8 text-muted-foreground/40" />
-        </div>
+        <DeployEmptyIllustration className="text-muted-foreground" />
         <div className="text-center">
           <h3 className="text-sm font-semibold text-foreground">No active deployments</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">

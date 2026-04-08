@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Copy, Plus, Trash2, Key, Check, AlertTriangle, Loader2, AlertCircle } from 'lucide-react';
+import { DeployEmptyIllustration } from '@/components/ui/illustrations';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -353,8 +354,8 @@ function ApiKeysSection({ deployment }: { deployment: DeploymentRecord }) {
             {fetchError}
           </div>
         ) : activeKeys.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <Key className="h-8 w-8 text-muted-foreground/40" />
+          <div className="flex flex-col items-center gap-2 py-8 text-center empty-state-enter">
+            <DeployEmptyIllustration className="text-muted-foreground" />
             <p className="text-xs text-muted-foreground">No API keys yet. Generate one to start authenticating requests.</p>
           </div>
         ) : (

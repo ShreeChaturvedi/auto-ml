@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertCircle } from 'lucide-react';
+import { AlertEmptyIllustration } from '@/components/ui/illustrations';
 
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -210,9 +210,9 @@ export function UploadArea() {
 
   if (!activeProject) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
+      <div className="flex h-full items-center justify-center p-6 empty-state-enter">
         <div className="max-w-md space-y-3 text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground/50" />
+          <AlertEmptyIllustration className="mx-auto text-muted-foreground" />
           <div className="space-y-1">
             <h3 className="text-lg font-semibold text-foreground">No Active Project</h3>
             <p className="text-sm text-muted-foreground">

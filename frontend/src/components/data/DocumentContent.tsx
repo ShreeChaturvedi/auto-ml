@@ -4,7 +4,8 @@
  */
 
 import { lazy, Suspense } from 'react';
-import { AlertTriangle, Download, FileText, Loader2 } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
+import { AlertEmptyIllustration, DataEmptyIllustration } from '@/components/ui/illustrations';
 import { Markdown } from '@/components/ui/Markdown';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -55,9 +56,9 @@ export function DocumentContent({
       )}
 
       {status === 'error' && (
-        <div className="flex h-full items-center justify-center p-6">
+        <div className="flex h-full items-center justify-center p-6 empty-state-enter">
           <div className="max-w-md space-y-3 text-center">
-            <AlertTriangle className="mx-auto h-10 w-10 text-destructive/80" />
+            <AlertEmptyIllustration className="mx-auto text-destructive/80" />
             <p className="text-sm font-medium">Unable to load document</p>
             <p className="text-xs text-muted-foreground">{errorMessage}</p>
           </div>
@@ -87,9 +88,9 @@ export function DocumentContent({
       )}
 
       {status === 'ready' && isBinary && (
-        <div className="flex h-full items-center justify-center p-6">
+        <div className="flex h-full items-center justify-center p-6 empty-state-enter">
           <div className="max-w-md space-y-3 text-center">
-            <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
+            <DataEmptyIllustration className="mx-auto text-muted-foreground" />
             <p className="text-sm font-medium">Preview not available for this file type.</p>
             <p className="text-xs text-muted-foreground">
               Download the file to view it in your preferred application.

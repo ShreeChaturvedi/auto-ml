@@ -23,6 +23,7 @@ import { quoteSqlIdentifier } from './sqlIdentifiers';
 import { SqlPlaceholderOverlay } from './SqlPlaceholderOverlay';
 import { SqlEditorChips } from './SqlEditorChips';
 import { useSqlEditorIdle } from './useSqlEditorIdle';
+import { assignMonacoHiddenTextareaIdentity } from '@/lib/monaco/dom';
 
 import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
@@ -195,6 +196,8 @@ export function QuerySqlEditor({
       // Tab-to-accept: capture phase intercept, skips when Monaco suggest widget is open
       const domNode = editorInstance.getDomNode();
       if (domNode) {
+        assignMonacoHiddenTextareaIdentity(domNode, 'query-sql-editor-ime')
+
         const handler = (e: KeyboardEvent) => {
           if (e.key !== 'Tab' || e.shiftKey || !showPlaceholderRef.current || placeholdersRef.current.length === 0) return;
           // Don't intercept if Monaco's suggest widget is visible
@@ -213,7 +216,10 @@ export function QuerySqlEditor({
       // Focus/blur tracking
       focusSubRef.current?.dispose();
       blurSubRef.current?.dispose();
-      focusSubRef.current = editorInstance.onDidFocusEditorText(() => setFocused(true));
+      focusSubRef.current = editorInstance.onDidFocusEditorText(() => {
+        assignMonacoHiddenTextareaIdentity(editorInstance.getDomNode(), 'query-sql-editor-ime')
+        setFocused(true)
+      });
       blurSubRef.current = editorInstance.onDidBlurEditorText(() => setFocused(false));
 
       // Content left offset for placeholder alignment

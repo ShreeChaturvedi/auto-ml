@@ -26,6 +26,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const refreshToken = useAuthStore((state) => state.refreshToken);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const user = useAuthStore((state) => state.user);
   const location = useLocation();
   const [expired, setExpired] = useState(false);
   const [redirectNow, setRedirectNow] = useState(false);
@@ -79,6 +80,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         <p className="text-sm text-muted-foreground">Session expired — redirecting to login…</p>
       </div>
     );
+  }
+
+  // Email verification gate — redirect unverified users to pending page
+  if (isAuthenticated && user && !user.email_verified) {
+    return <Navigate to="/verify-email/pending" replace />;
   }
 
   return <>{children}</>;

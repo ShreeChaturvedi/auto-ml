@@ -22,6 +22,7 @@ interface AuthState {
   // Actions
   setUser: (user: SafeUser | null) => void;
   setTokens: (accessToken: string, refreshToken: string) => void;
+  setEmailVerified: (verified: boolean) => void;
   clearAuth: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -46,6 +47,11 @@ export const useAuthStore = createPersistedStore<AuthState>(
 
     setTokens: (accessToken, refreshToken) =>
       set({ accessToken, refreshToken }),
+
+    setEmailVerified: (verified) =>
+      set((state) => ({
+        user: state.user ? { ...state.user, email_verified: verified } : null
+      })),
 
     clearAuth: () =>
       set({

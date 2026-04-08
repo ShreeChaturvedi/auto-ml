@@ -23,6 +23,8 @@ import { ProfileSettings } from '@/components/auth/ProfileSettings';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
 import { SignupForm } from '@/components/auth/SignupForm';
+import { VerifyEmailPage } from '@/components/auth/VerifyEmailPage';
+import { VerifyEmailPendingPage } from '@/components/auth/VerifyEmailPendingPage';
 import { DocsPage } from '@/components/docs/DocsPage';
 import { useProjectStore } from '@/stores/projectStore';
 import { Button } from '@/components/ui/button';
@@ -107,6 +109,8 @@ function App() {
             <Route path="/signup" element={<SignupForm />} />
             <Route path="/forgot-password" element={<ForgotPasswordForm />} />
             <Route path="/reset-password" element={<ResetPasswordForm />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/verify-email/pending" element={<VerifyEmailPendingPage />} />
             <Route path="/auth/google/callback" element={<GoogleOAuthCallback />} />
           </Route>
           {/* Profile is a dedicated full-page route outside AppShell */}

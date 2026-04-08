@@ -56,11 +56,13 @@ export function LoginForm() {
     defaultValues: { rememberMe: false }
   });
 
+  const user = useAuthStore((state) => state.user);
+
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/');
+    if (isAuthenticated && user) {
+      navigate(user.email_verified ? '/' : '/verify-email/pending');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, user, navigate]);
 
   const onSubmit = async (data: LoginFormValues) => {
     setFormError(null);
@@ -71,7 +73,8 @@ export function LoginForm() {
       setUser(response.user);
       setTokens(response.accessToken, response.refreshToken);
       setButtonState('success');
-      setTimeout(() => navigate(from, { replace: true }), 500);
+      const dest = response.user.email_verified ? from : '/verify-email/pending';
+      setTimeout(() => navigate(dest, { replace: true }), 500);
     } catch {
       setFormError('Invalid email or password');
       setButtonState('idle');

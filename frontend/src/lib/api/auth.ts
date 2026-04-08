@@ -60,6 +60,28 @@ export async function updateProfile(payload: UpdateProfilePayload): Promise<{ us
   });
 }
 
+// ---------------------------------------------------------------------------
+// Email verification
+// ---------------------------------------------------------------------------
+
+export async function verifyEmail(token: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/auth/verify-email', {
+    method: 'POST',
+    body: { token }
+  });
+}
+
+export async function resendVerification(email?: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/auth/resend-verification', {
+    method: 'POST',
+    body: email ? { email } : {}
+  });
+}
+
+export async function getVerificationStatus(): Promise<{ emailVerified: boolean }> {
+  return apiRequest<{ emailVerified: boolean }>('/auth/verification-status');
+}
+
 /**
  * Initiate Google OAuth flow
  * Returns a URL to redirect the user to Google's consent screen

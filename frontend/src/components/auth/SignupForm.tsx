@@ -60,11 +60,13 @@ export function SignupForm() {
   const password = watch('password') || '';
   const confirmPassword = watch('confirmPassword') || '';
 
+  const user = useAuthStore((state) => state.user);
+
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/');
+    if (isAuthenticated && user) {
+      navigate(user.email_verified ? '/' : '/verify-email/pending');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, user, navigate]);
 
   const onSubmit = async (data: SignupFormValues) => {
     setFormError(null);
@@ -75,7 +77,7 @@ export function SignupForm() {
       setUser(response.user);
       setTokens(response.accessToken, response.refreshToken);
       setButtonState('success');
-      setTimeout(() => navigate('/'), 500);
+      setTimeout(() => navigate(response.user.email_verified ? '/' : '/verify-email/pending'), 500);
     } catch (error: unknown) {
       if (error instanceof Error && 'status' in error && (error as { status: number }).status === 409) {
         setFormError('Email already registered');

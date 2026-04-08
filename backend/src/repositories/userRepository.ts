@@ -212,4 +212,47 @@ export class UserRepository {
       [tokenHash]
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Email verification tokens
+  // ---------------------------------------------------------------------------
+
+  async storeEmailVerificationToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3)`,
+      [userId, tokenHash, expiresAt]
+    );
+  }
+
+  async findEmailVerificationToken(tokenHash: string): Promise<{ user_id: string; used: boolean; expires_at: Date } | null> {
+    const result = await this.pool.query(
+      'SELECT user_id, used, expires_at FROM email_verification_tokens WHERE token_hash = $1',
+      [tokenHash]
+    );
+    return result.rows[0] || null;
+  }
+
+  async markEmailVerificationTokenUsed(tokenHash: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE email_verification_tokens SET used = true WHERE token_hash = $1',
+      [tokenHash]
+    );
+  }
+
+  /** Returns the most recent token for rate-limiting resend requests. */
+  async findLatestEmailVerificationToken(userId: string): Promise<{ created_at: Date } | null> {
+    const result = await this.pool.query(
+      'SELECT created_at FROM email_verification_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [userId]
+    );
+    return result.rows[0] || null;
+  }
+
+  async updateEmail(userId: string, email: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE users SET email = $1, updated_at = NOW() WHERE user_id = $2',
+      [email.toLowerCase(), userId]
+    );
+  }
 }

@@ -21,12 +21,22 @@ let projectState: {
 };
 
 vi.mock('@/stores/projectStore', () => ({
-  useProjectStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      ...projectState,
-      updateProject: updateProjectMock,
-      completePhase: completePhaseMock
-    })
+  useProjectStore: Object.assign(
+    (selector: (state: unknown) => unknown) =>
+      selector({
+        ...projectState,
+        updateProject: updateProjectMock,
+        completePhase: completePhaseMock
+      }),
+    {
+      getState: () => ({
+        ...projectState,
+        activeProjectId: projectState.activeProjectId,
+        updateProject: updateProjectMock,
+        completePhase: completePhaseMock,
+      }),
+    }
+  ),
 }));
 
 vi.mock('@/stores/dataStore', () => ({

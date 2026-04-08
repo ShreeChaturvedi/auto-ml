@@ -7,6 +7,21 @@ import { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 
+/** Read `activePlanChatId` from a project's metadata. Returns null if absent/empty. */
+export function getActivePlanChatId(metadata: Record<string, unknown> | undefined): string | null {
+  const val = metadata?.activePlanChatId;
+  return typeof val === 'string' && val.length > 0 ? val : null;
+}
+
+/** Zustand selector: reactive `activePlanChatId` for a given project. */
+export function selectActivePlanChatId(projectId: string | null | undefined) {
+  return (s: { projects: Array<{ id: string; metadata?: unknown }> }): string | null => {
+    if (!projectId) return null;
+    const project = s.projects.find((p) => p.id === projectId);
+    return getActivePlanChatId(project?.metadata as Record<string, unknown> | undefined);
+  };
+}
+
 export interface ProjectPlan {
   id: string;
   name: string;

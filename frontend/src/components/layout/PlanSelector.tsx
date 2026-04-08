@@ -13,7 +13,7 @@ import {
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
-import { useProjectPlans } from '@/hooks/useProjectPlans';
+import { useProjectPlans, selectActivePlanChatId } from '@/hooks/useProjectPlans';
 import { cn } from '@/lib/utils';
 
 interface PlanSelectorProps {
@@ -44,12 +44,7 @@ export function PlanSelector({
   const isInitialized = usePlanChatStore((s) => s.isInitialized);
   const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, effectiveProjectId)));
 
-  // Read activePlanChatId from project metadata to know what's currently shown
-  const activePlanChatId = useProjectStore((s) => {
-    const project = s.projects.find((p) => p.id === effectiveProjectId);
-    const val = (project?.metadata as Record<string, unknown> | undefined)?.activePlanChatId;
-    return typeof val === 'string' && val.length > 0 ? val : null;
-  });
+  const activePlanChatId = useProjectStore(selectActivePlanChatId(effectiveProjectId));
 
   if (!isInitialized || !effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
     return null;

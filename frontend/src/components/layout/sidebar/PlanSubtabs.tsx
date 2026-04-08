@@ -8,7 +8,7 @@ import { ClipboardList, Download, MessageSquare, Pencil, Trash2 } from 'lucide-r
 import { useShallow } from 'zustand/react/shallow';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
-import { useProjectPlans } from '@/hooks/useProjectPlans';
+import { useProjectPlans, selectActivePlanChatId } from '@/hooks/useProjectPlans';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
 import { downloadMarkdownFile } from '@/lib/exportMarkdown';
@@ -31,12 +31,7 @@ export function PlanSubtabs({ projectId }: PlanSubtabsProps) {
   const deleteChat = usePlanChatStore((s) => s.deleteChat);
   const isOnUpload = location.pathname.endsWith('/upload');
 
-  // Read activePlanChatId from project metadata (not URL params — those are transient)
-  const activePlanChatId = useProjectStore((s) => {
-    const project = s.projects.find((p) => p.id === projectId);
-    const val = (project?.metadata as Record<string, unknown> | undefined)?.activePlanChatId;
-    return typeof val === 'string' && val.length > 0 ? val : null;
-  });
+  const activePlanChatId = useProjectStore(selectActivePlanChatId(projectId));
 
   const { requestDelete, confirmDialog } = useSidebarDeleteConfirm();
 

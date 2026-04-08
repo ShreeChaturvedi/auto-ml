@@ -16,7 +16,9 @@ vi.mock('@/hooks/useProjectPlans', () => ({
     handleCreateNewPlan: mockHandleCreateNewPlan,
     handleRenamePlan: mockHandleRenamePlan,
     handleDeletePlan: mockHandleDeletePlan,
-  })
+  }),
+  selectActivePlanChatId: () => () => null,
+  getActivePlanChatId: () => null,
 }));
 
 const readyFiles = [

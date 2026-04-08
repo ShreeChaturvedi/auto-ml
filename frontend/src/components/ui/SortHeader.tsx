@@ -1,5 +1,6 @@
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface SortHeaderProps<T extends string> {
@@ -19,33 +20,30 @@ interface SortHeaderProps<T extends string> {
 
 export function SortHeader<T extends string>({
   field, label, sortField, sortDir, onToggle, icon: Icon, align = 'left', className,
-  headerClassName = 'text-xs font-medium uppercase tracking-wider text-muted-foreground',
+  headerClassName = 'uppercase tracking-wider',
 }: SortHeaderProps<T>) {
   const active = sortField === field;
   const ariaSort = active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
+  const ArrowIcon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
 
   return (
     <th
       scope="col"
       aria-sort={ariaSort}
-      className={cn('px-3 py-2 text-xs font-medium text-muted-foreground', headerClassName, className)}
+      className={cn('px-4 text-left align-middle text-xs font-medium text-muted-foreground', headerClassName, className)}
     >
-      <button
-        type="button"
-        onClick={() => onToggle(field)}
-        className={cn(
-          'flex items-center gap-1 hover:text-foreground transition-colors',
-          align === 'right' && 'ml-auto flex-row-reverse',
-        )}
-      >
-        {Icon && <Icon className="h-3 w-3" />}
-        {label}
-        {active ? (
-          sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-        ) : (
-          <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
-        )}
-      </button>
+      <div className={cn('flex items-center gap-1', align === 'right' && 'justify-end')}>
+        {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 font-medium"
+          onClick={() => onToggle(field)}
+        >
+          {label}
+          <ArrowIcon className="ml-2 h-3 w-3 text-muted-foreground" />
+        </Button>
+      </div>
     </th>
   );
 }

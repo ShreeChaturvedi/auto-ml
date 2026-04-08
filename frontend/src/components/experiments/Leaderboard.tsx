@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useEffect } from 'react';
-import { CircleStar, ChevronRight, Tag, Hash } from 'lucide-react';
+import { CircleStar, ChevronRight, Type, Hash } from 'lucide-react';
 import Papa from 'papaparse';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -9,7 +9,7 @@ import { useExperimentsStore } from '@/stores/experimentsStore';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
 import { cn, downloadBlob } from '@/lib/utils';
 import { SortHeader } from '@/components/ui/SortHeader';
-import { LOWER_IS_BETTER } from './modelIcons';
+import { LOWER_IS_BETTER, METRIC_ICONS } from './modelIcons';
 import {
   filterModels,
   formatMetric,
@@ -82,6 +82,10 @@ function GhostRows() {
     </>
   );
 }
+
+/* ── Layout constants ──────────────────────────────────── */
+
+const TD = 'py-2.5 px-4';
 
 /* ── Leaderboard component ─────────────────────────────── */
 
@@ -171,6 +175,8 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
 
   useEffect(() => { onExportReady?.(handleExport); }, [onExportReady, handleExport]);
 
+  const sortProps = { sortField, sortDir: sortDirection, onToggle: handleSort, className: 'h-12' } as const;
+
   return (
     <div className="flex flex-col h-full">
       {/* Table */}
@@ -179,10 +185,10 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
           <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-20 border-b border-border/20">
             <tr>
               <th scope="col" className="w-8" />
-              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="py-3" icon={Tag} />
-              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} className="py-3" icon={Tag} />
+              <SortHeader field="name" label="Name" {...sortProps} icon={Type} />
+              <SortHeader field="algorithm" label="Algorithm" {...sortProps} icon={Type} />
               {metricCols.map(([label, key]) => (
-                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" className="py-3" icon={Hash} />
+                <SortHeader key={key} field={key} label={label} {...sortProps} align="right" icon={METRIC_ICONS[key] ?? Hash} />
               ))}
               <th scope="col" className="w-8" />
             </tr>
@@ -222,7 +228,7 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
                       className="h-3.5 w-3.5 group-hover:ring-1 group-hover:ring-muted-foreground/20 group-focus-within:ring-1 group-focus-within:ring-muted-foreground/20 transition-shadow"
                     />
                   </td>
-                  <td className="py-2.5 px-3 text-left font-semibold truncate max-w-[180px]">
+                  <td className={cn(TD, 'text-left font-semibold truncate max-w-[180px]')}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="truncate block">
@@ -239,7 +245,7 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
                       </TooltipContent>
                     </Tooltip>
                   </td>
-                  <td className="py-2.5 px-3 text-left text-muted-foreground truncate max-w-[130px]">
+                  <td className={cn(TD, 'text-left text-muted-foreground truncate max-w-[130px]')}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="truncate block">{model.algorithm}</span>
@@ -258,7 +264,7 @@ export function Leaderboard({ onExportReady }: LeaderboardProps) {
                       <td
                         key={key}
                         className={cn(
-                          'py-2.5 px-3 text-right tabular-nums font-medium text-foreground/80',
+                          TD, 'text-right font-mono tabular-nums font-medium text-foreground/80',
                           isBest && 'text-metric-positive bg-metric-positive/8 dark:bg-metric-positive/12 font-semibold',
                           isWorst && 'text-metric-negative dark:bg-metric-negative/10',
                         )}

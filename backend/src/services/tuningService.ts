@@ -16,6 +16,7 @@ import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
+import type { ColumnDataType, DatasetProfile } from '../types/dataset.js';
 import type { ModelTemplate, ModelTemplateParam } from '../types/model.js';
 import {
   copyArtifactsToPermanentStorage,
@@ -75,6 +76,47 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = appLogger.child({ service: 'tuningService' });
+
+function toModelFeatureType(dtype: ColumnDataType | undefined): 'float' | 'int' | 'str' {
+  switch (dtype) {
+    case 'float':
+      return 'float';
+    case 'integer':
+      return 'int';
+    default:
+      return 'str';
+  }
+}
+
+function deriveServingSchema(
+  dataset: DatasetProfile,
+  targetColumn: string,
+  summaryFeatureColumns?: string[],
+): {
+  featureColumns: string[];
+  featureTypes: Record<string, 'float' | 'int' | 'str'>;
+  sampleRequest?: Record<string, unknown>;
+} {
+  const datasetFeatureColumns = dataset.columns
+    .map((column) => column.name)
+    .filter((column) => column !== targetColumn);
+  const featureColumns = summaryFeatureColumns?.length ? summaryFeatureColumns : datasetFeatureColumns;
+  const datasetColumnsByName = new Map(dataset.columns.map((column) => [column.name, column]));
+  const featureTypes = Object.fromEntries(
+    featureColumns.map((column) => [column, toModelFeatureType(datasetColumnsByName.get(column)?.dtype)])
+  );
+
+  const sampleRow = dataset.sample.find((row) => featureColumns.every((column) => column in row)) ?? dataset.sample[0];
+  const sampleRequest = sampleRow
+    ? Object.fromEntries(
+        featureColumns
+          .filter((column) => column in sampleRow)
+          .map((column) => [column, sampleRow[column]])
+      )
+    : undefined;
+
+  return { featureColumns, featureTypes, sampleRequest };
+}
 
 /* ------------------------------------------------------------------ */
 /*  Script generation                                                  */
@@ -467,17 +509,7 @@ export async function runTuningStudy(
         param_importances: { params?: string[]; importances?: number[] };
         feature_columns?: string[];
       };
-
-      // Create new model ID and copy artifacts to permanent storage
-      const newModelId = `${modelId}-tuned-${Date.now()}`;
-      await copyArtifactsToPermanentStorage(newModelId, container, [
-        { workspace: `tuning/${modelId}/model.joblib`, permanent: 'model.joblib' },
-        { workspace: `tuning/${modelId}/tuning_summary.json`, permanent: 'tuning_summary.json' },
-      ]);
-
-      // Get artifact size for storage metadata
-      const storedModelPath = join(env.modelStorageDir, newModelId, 'model.joblib');
-      const artifactStat = await stat(storedModelPath);
+      const servingSchema = deriveServingSchema(dataset, targetColumn, summary.feature_columns);
 
       const dateTag = new Date().toISOString().slice(0, 10);
       const newRecord = await modelRepository.create({
@@ -493,15 +525,10 @@ export async function runTuningStudy(
         status: 'completed',
         trainingMs: result.executionMs,
         targetColumn,
-        featureColumns: summary.feature_columns ?? model.featureColumns,
-        featureTypes: model.featureTypes,
-        sampleRequest: model.sampleRequest,
+        featureColumns: servingSchema.featureColumns,
+        featureTypes: servingSchema.featureTypes,
+        sampleRequest: servingSchema.sampleRequest,
         sampleCount: model.sampleCount,
-        artifact: {
-          filename: 'model.joblib',
-          path: storedModelPath,
-          size: artifactStat.size,
-        },
         metadata: {
           tuning: {
             sourceModelId: modelId,
@@ -513,6 +540,35 @@ export async function runTuningStudy(
           },
         },
       });
+
+      try {
+        await copyArtifactsToPermanentStorage(newRecord.modelId, container, [
+          { workspace: `tuning/${modelId}/model.joblib`, permanent: 'model.joblib' },
+          { workspace: `tuning/${modelId}/tuning_summary.json`, permanent: 'tuning_summary.json' },
+        ]);
+
+        const storedModelPath = join(env.modelStorageDir, newRecord.modelId, 'model.joblib');
+        const artifactStat = await stat(storedModelPath);
+
+        await modelRepository.update(newRecord.modelId, (current) => ({
+          ...current,
+          artifact: {
+            filename: 'model.joblib',
+            path: storedModelPath,
+            size: artifactStat.size,
+          },
+        }));
+      } catch (artifactErr) {
+        await modelRepository.delete(newRecord.modelId).catch(() => undefined);
+        writeJsonLine(res, {
+          type: 'error',
+          message: artifactErr instanceof Error
+            ? artifactErr.message
+            : 'Failed to persist tuned model artifacts.',
+        });
+        res.end();
+        return;
+      }
 
       writeJsonLine(res, { type: 'done', resultModelId: newRecord.modelId });
 

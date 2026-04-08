@@ -6,8 +6,8 @@
  * proxy, with crash-safe DB persistence and periodic health checking.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
@@ -97,6 +97,98 @@ const pendingDeploys = new Map<string, Promise<DeploymentRecord>>();
 
 function deduplicationKey(modelId: string, projectId: string): string {
   return `${modelId}::${projectId}`;
+}
+
+async function resolveModelArtifactDir(
+  model: { artifact?: { path?: string; filename?: string } },
+  modelId: string,
+): Promise<string> {
+  const artifact = model.artifact;
+  const artifactPath = artifact?.path?.trim();
+  if (!artifactPath) {
+    throw new Error(`Model ${modelId} has no persisted artifact path`);
+  }
+
+  if (!isAbsolute(artifactPath)) {
+    throw new Error(`Model ${modelId} artifact path must be absolute`);
+  }
+
+  const resolvedStorageRoot = resolve(env.modelStorageDir);
+  const resolvedArtifactPath = resolve(artifactPath);
+  const artifactRelativePath = relative(resolvedStorageRoot, resolvedArtifactPath);
+  if (!artifactRelativePath || artifactRelativePath.startsWith('..') || isAbsolute(artifactRelativePath)) {
+    throw new Error(`Model ${modelId} artifact path must stay within deployment storage`);
+  }
+
+  const expectedFilename = artifact?.filename?.trim() || 'model.joblib';
+  if (expectedFilename !== 'model.joblib' || basename(resolvedArtifactPath) !== 'model.joblib') {
+    throw new Error(`Model ${modelId} artifact must be stored as model.joblib for deployment`);
+  }
+
+  const artifactStat = await stat(resolvedArtifactPath);
+  if (!artifactStat.isFile()) {
+    throw new Error(`Model ${modelId} artifact path is not a file`);
+  }
+
+  return dirname(resolvedArtifactPath);
+}
+
+function summarizeContainerLogs(stdout: string, stderr: string): string {
+  const lines = `${stdout}\n${stderr}`
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.slice(-8).join(' | ');
+}
+
+async function getContainerStartupFailure(containerId: string): Promise<string | null> {
+  try {
+    const { stdout } = await execDocker(['inspect', containerId, '--format', '{{json .State}}']);
+    const state = JSON.parse(stdout.trim()) as { Status?: string; ExitCode?: number };
+    const status = state.Status?.toLowerCase();
+    if (!status || status === 'running' || status === 'created' || status === 'restarting') {
+      return null;
+    }
+
+    let detail = '';
+    try {
+      const { stdout: logStdout, stderr: logStderr } = await execDocker(['logs', '--tail', '100', containerId]);
+      detail = summarizeContainerLogs(logStdout, logStderr);
+    } catch {
+      // Best effort only.
+    }
+
+    return detail
+      ? `Inference container exited with code ${state.ExitCode ?? 'unknown'}: ${detail}`
+      : `Inference container exited with code ${state.ExitCode ?? 'unknown'}`;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForDeploymentReadiness(port: number, containerId: string): Promise<void> {
+  const deadline = Date.now() + READINESS_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health/ready`, {
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+      });
+      if (res.ok) {
+        return;
+      }
+    } catch {
+      // Not ready yet.
+    }
+
+    const startupFailure = await getContainerStartupFailure(containerId);
+    if (startupFailure) {
+      throw new Error(startupFailure);
+    }
+
+    await new Promise((r) => setTimeout(r, READINESS_POLL_INTERVAL_MS));
+  }
+
+  throw new Error(`Deployment did not become ready within ${READINESS_TIMEOUT_MS}ms`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -219,6 +311,7 @@ async function deployModelInternal(
   if (!model.artifact?.path) {
     throw new Error('Model has no artifact — train the model before deploying');
   }
+  const modelArtifactDir = await resolveModelArtifactDir(model, modelId);
 
   // 3. Write 'creating' row to DB BEFORE anything else (crash safety)
   let record: DeploymentRecord = await repo.create({
@@ -242,7 +335,6 @@ async function deployModelInternal(
 
     // 7. docker run
     const containerName = `automl-serve-${deploymentId.slice(0, 8)}`;
-    const modelArtifactDir = join(env.modelStorageDir, modelId);
     const dockerArgs = buildInferenceDockerRunArgs({
       containerName,
       imageName,
@@ -282,34 +374,14 @@ async function deployModelInternal(
     broadcast(deploymentId, { type: 'status_change', deploymentId, status: 'starting' });
 
     // 11. Poll /health/ready
-    const deadline = Date.now() + READINESS_TIMEOUT_MS;
-    let ready = false;
-    while (Date.now() < deadline) {
-      try {
-        const res = await fetch(`http://127.0.0.1:${port}/health/ready`, {
-          signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-        });
-        if (res.ok) {
-          ready = true;
-          break;
-        }
-      } catch {
-        // Not ready yet
-      }
-      await new Promise((r) => setTimeout(r, READINESS_POLL_INTERVAL_MS));
-    }
+    await waitForDeploymentReadiness(port, containerId);
 
-    // 12/13. Promote or leave as 'starting' for health check loop
-    if (ready) {
-      const cacheEntry = deploymentCache.get(deploymentId);
-      if (cacheEntry) cacheEntry.status = 'healthy';
-      await updateDeploymentStatus(deploymentId, 'healthy');
-      record = { ...record, status: 'healthy' };
-      broadcast(deploymentId, { type: 'status_change', deploymentId, status: 'healthy' });
-      appLogger.info(`${LOG_TAG} Deployment ${deploymentId} is healthy on port ${port}`);
-    } else {
-      appLogger.warn(`${LOG_TAG} Deployment ${deploymentId} not ready within ${READINESS_TIMEOUT_MS}ms — health check loop will retry`);
-    }
+    const cacheEntry = deploymentCache.get(deploymentId);
+    if (cacheEntry) cacheEntry.status = 'healthy';
+    await updateDeploymentStatus(deploymentId, 'healthy');
+    record = { ...record, status: 'healthy' };
+    broadcast(deploymentId, { type: 'status_change', deploymentId, status: 'healthy' });
+    appLogger.info(`${LOG_TAG} Deployment ${deploymentId} is healthy on port ${port}`);
 
     return record;
   } catch (err) {
@@ -379,6 +451,7 @@ export async function startDeployment(deploymentId: string): Promise<void> {
 
   const model = await modelRepository.getById(record.modelId);
   if (!model) throw new Error(`Model not found: ${record.modelId}`);
+  const modelArtifactDir = await resolveModelArtifactDir(model, record.modelId);
 
   // Regenerate serve.py in case it was lost
   const deploymentDir = join(env.deploymentStorageDir, deploymentId);
@@ -392,7 +465,6 @@ export async function startDeployment(deploymentId: string): Promise<void> {
   try {
     const imageName = await ensureRuntimeImage('3.11');
     const containerName = `automl-serve-${deploymentId.slice(0, 8)}`;
-    const modelArtifactDir = join(env.modelStorageDir, record.modelId);
 
     const dockerArgs = buildInferenceDockerRunArgs({
       containerName,
@@ -424,28 +496,13 @@ export async function startDeployment(deploymentId: string): Promise<void> {
 
     broadcast(deploymentId, { type: 'status_change', deploymentId, status: 'starting' });
 
-    // Poll readiness
-    const deadline = Date.now() + READINESS_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      try {
-        const res = await fetch(`http://127.0.0.1:${port}/health/ready`, {
-          signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-        });
-        if (res.ok) {
-          const cacheEntry = deploymentCache.get(deploymentId);
-          if (cacheEntry) cacheEntry.status = 'healthy';
-          await updateDeploymentStatus(deploymentId, 'healthy');
-          broadcast(deploymentId, { type: 'status_change', deploymentId, status: 'healthy' });
-          appLogger.info(`${LOG_TAG} Restarted deployment ${deploymentId} on port ${port}`);
-          return;
-        }
-      } catch {
-        // Not ready yet
-      }
-      await new Promise((r) => setTimeout(r, READINESS_POLL_INTERVAL_MS));
-    }
+    await waitForDeploymentReadiness(port, containerId);
 
-    appLogger.warn(`${LOG_TAG} Restarted deployment ${deploymentId} not ready within timeout — health check loop will retry`);
+    const cacheEntry = deploymentCache.get(deploymentId);
+    if (cacheEntry) cacheEntry.status = 'healthy';
+    await updateDeploymentStatus(deploymentId, 'healthy');
+    broadcast(deploymentId, { type: 'status_change', deploymentId, status: 'healthy' });
+    appLogger.info(`${LOG_TAG} Restarted deployment ${deploymentId} on port ${port}`);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     deploymentCache.delete(deploymentId);

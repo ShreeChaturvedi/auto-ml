@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const hoisted = vi.hoisted(() => ({
   mockExecute: vi.fn(),
+  mockCopyArtifacts: vi.fn(),
   mockGetOrCreateContainer: vi.fn(),
   mockSyncWorkspaceDatasets: vi.fn(),
   mockModelGetById: vi.fn(),
   mockModelCreate: vi.fn(),
+  mockModelUpdate: vi.fn(),
   mockDatasetGetById: vi.fn(),
   mockGetModelTemplate: vi.fn(),
   mockDbQuery: vi.fn(),
@@ -14,7 +16,7 @@ const hoisted = vi.hoisted(() => ({
 
 vi.mock('../../utils/containerOrchestrator.js', () => ({
   orchestrateContainerExecution: hoisted.mockExecute,
-  copyArtifactsToPermanentStorage: vi.fn().mockResolvedValue(undefined),
+  copyArtifactsToPermanentStorage: hoisted.mockCopyArtifacts,
 }));
 
 vi.mock('../containerManager.js', () => ({
@@ -29,7 +31,8 @@ vi.mock('../../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
     getById: hoisted.mockModelGetById,
     create: hoisted.mockModelCreate,
-    update: vi.fn(),
+    update: hoisted.mockModelUpdate,
+    delete: vi.fn().mockResolvedValue(true),
   }),
 }));
 
@@ -77,10 +80,12 @@ import { buildTuningScript, deleteTuningStudiesByModelId, isNegatedScorer, runTu
 
 const {
   mockExecute,
+  mockCopyArtifacts,
   mockGetOrCreateContainer,
   mockSyncWorkspaceDatasets,
   mockModelGetById,
   mockModelCreate,
+  mockModelUpdate,
   mockDatasetGetById,
   mockGetModelTemplate,
   mockDbQuery,
@@ -223,6 +228,8 @@ const parseChunks = (r: { chunks: string[] }) => r.chunks.map(c => JSON.parse(c.
 beforeEach(() => {
   vi.clearAllMocks();
   mockSyncWorkspaceDatasets.mockResolvedValue({ links: [], collisions: [] });
+  mockCopyArtifacts.mockResolvedValue(undefined);
+  mockModelUpdate.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -485,7 +492,15 @@ describe('runTuningStudy', () => {
     datasetId: 'test-dataset',
     filename: 'data.csv',
     projectId: 'test-project',
-    columns: [{ name: 'feat1' }, { name: 'feat2' }, { name: 'target' }],
+    columns: [
+      { name: 'feat1', dtype: 'float' },
+      { name: 'feat2', dtype: 'string' },
+      { name: 'target', dtype: 'integer' },
+    ],
+    sample: [
+      { feat1: 1.5, feat2: 'north', target: 1 },
+      { feat1: 2.5, feat2: 'south', target: 0 },
+    ],
   };
 
   function setupRunMocks(model = makeModelRecord()) {
@@ -786,6 +801,103 @@ describe('runTuningStudy', () => {
     expect(createArg.metadata.tuning.sourceModelId).toBe('test-model-id');
     expect(createArg.metadata.tuning.nTrials).toBe(2);
     expect(createArg.metadata.tuning.metric).toBe('accuracy');
+    expect(createArg.featureTypes).toEqual({ feat1: 'float', feat2: 'str' });
+    expect(createArg.sampleRequest).toEqual({ feat1: 1.5, feat2: 'north' });
+  });
+
+  it('stores tuned artifacts under the created model id and updates the persisted artifact path', async () => {
+    const { model, container } = setupRunMocks(makeModelRecord({
+      modelId: 'source-model-id',
+      name: 'Ridge Regression',
+      templateId: 'ridge_regression',
+      taskType: 'regression',
+      algorithm: 'Ridge',
+      metrics: { r2: 0.8 },
+    }));
+    const res = makeMockRes();
+
+    mockGetModelTemplate.mockReturnValue(makeTemplate(RIDGE_OVERRIDES));
+
+    const { readFile: mockReadFile, stat: mockStat } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: { alpha: 0.5 },
+      best_value: 0.91,
+      best_trial_number: 4,
+      optimization_history: { trial_numbers: [0, 1], values: [0.85, 0.91], best_values: [0.85, 0.91] },
+      param_importances: { params: ['alpha'], importances: [1] },
+      feature_columns: ['age', 'income'],
+    }));
+    vi.mocked(mockStat).mockResolvedValue({ size: 80680 } as never);
+
+    mockModelCreate.mockResolvedValue({
+      ...model,
+      modelId: 'created-model-id',
+      name: 'Ridge Regression (tuned)',
+    });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container, executionResult: { status: 'success', stderr: '', executionMs: 5000 } };
+    });
+
+    await runTuningStudy('test-project', 'source-model-id', 2, 'r2', 600, res as never);
+
+    expect(mockCopyArtifacts).toHaveBeenCalledWith('created-model-id', container, [
+      { workspace: 'tuning/source-model-id/model.joblib', permanent: 'model.joblib' },
+      { workspace: 'tuning/source-model-id/tuning_summary.json', permanent: 'tuning_summary.json' },
+    ]);
+    expect(mockModelUpdate).toHaveBeenCalledWith(
+      'created-model-id',
+      expect.any(Function),
+    );
+
+    const updater = mockModelUpdate.mock.calls[0][1] as (current: Record<string, unknown>) => Record<string, unknown>;
+    const updated = updater({ ...model, modelId: 'created-model-id' });
+    expect(updated.artifact).toEqual({
+      filename: 'model.joblib',
+      path: '/tmp/test-model-storage/created-model-id/model.joblib',
+      size: 80680,
+    });
+  });
+
+  it('falls back to dataset feature columns when tuning summary omits feature_columns', async () => {
+    setupRunMocks(makeModelRecord({
+      modelId: 'source-model-id',
+      featureColumns: ['age', 'income'],
+      featureTypes: { age: 'float', income: 'float' },
+      sampleRequest: { age: 35, income: 55000 },
+    }));
+    const res = makeMockRes();
+
+    mockGetModelTemplate.mockReturnValue(makeTemplate(RIDGE_OVERRIDES));
+
+    const { readFile: mockReadFile } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: { alpha: 0.5 },
+      best_value: 0.91,
+      best_trial_number: 4,
+      optimization_history: { trial_numbers: [0, 1], values: [0.85, 0.91], best_values: [0.85, 0.91] },
+      param_importances: { params: ['alpha'], importances: [1] },
+    }));
+
+    mockModelCreate.mockResolvedValue({
+      ...makeModelRecord(),
+      modelId: 'created-model-id',
+    });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container: makeContainer(), executionResult: { status: 'success', stderr: '', executionMs: 5000 } };
+    });
+
+    await runTuningStudy('test-project', 'source-model-id', 2, 'r2', 600, res as never);
+
+    const createArg = mockModelCreate.mock.calls[0][0];
+    expect(createArg.featureColumns).toEqual(['feat1', 'feat2']);
+    expect(createArg.featureTypes).toEqual({ feat1: 'float', feat2: 'str' });
+    expect(createArg.sampleRequest).toEqual({ feat1: 1.5, feat2: 'north' });
   });
 
   it('writes error when response stream is already ended', async () => {

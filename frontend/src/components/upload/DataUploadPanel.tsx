@@ -184,7 +184,7 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
   }, [reducedMotion, isDragActive]);
 
   return (
-    <div className="h-full flex flex-col" data-testid="data-upload-panel">
+    <div className="flex-1 min-h-0 flex flex-col" data-testid="data-upload-panel">
       {/* Drop Zone + File List Container */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Drop Zone - Fills entire area when empty, compact when has files */}

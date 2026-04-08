@@ -258,7 +258,7 @@ export function UploadArea() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-hidden bg-background" data-testid="upload-area">
+    <div className="h-full overflow-hidden bg-background" data-testid="upload-area">
       {stage === 'upload' && (
         <UploadStage
           projectId={activeProject.id}

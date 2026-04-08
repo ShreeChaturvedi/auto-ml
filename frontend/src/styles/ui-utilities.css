@@ -102,6 +102,49 @@
   order: -1;
 }
 
+/* ── Shared entrance animations ──────────────────────────── */
+
+/* KPI / card staggered entrance */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-enter {
+  opacity: 0;
+  animation: card-enter 250ms ease-out both;
+}
+
+/* Empty state fade-in */
+@keyframes empty-state-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.empty-state-enter {
+  animation: empty-state-fade-in 400ms ease-out both;
+}
+
+/* Sparkline draw-on stroke animation */
+@keyframes sparkline-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.sparkline-draw {
+  animation: sparkline-draw 800ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-enter,
+  .empty-state-enter,
+  .sparkline-draw {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* Dialog focus states */
 @layer components {
   [role="dialog"] input:focus:not(:focus-visible),

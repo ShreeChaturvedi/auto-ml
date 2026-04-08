@@ -12,7 +12,7 @@
  *   not the full projects array.
  */
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, Plus } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
@@ -65,6 +65,14 @@ const LINE_STYLE_BASE = { left: '18.5px', top: '22px', bottom: '13px' } as const
 const LINE_STYLE_ACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'currentColor' };
 const LINE_STYLE_INACTIVE: React.CSSProperties = { ...LINE_STYLE_BASE, background: 'hsl(var(--muted-foreground) / 0.25)' };
 
+/** Min subtabs column height (px) to show the vertical rail; avoids empty-phase sliver. */
+const SUBTAB_RAIL_MIN_HEIGHT_PX = 1;
+
+function readSubtabColumnHeightPx(el: HTMLElement, entry?: ResizeObserverEntry): number {
+  const h = entry?.contentRect.height ?? el.getBoundingClientRect().height;
+  return Number.isFinite(h) ? h : 0;
+}
+
 /** Phases that show a "+" action button on hover */
 const PLUS_ACTION_PHASES = new Set<Phase>([
   'upload',
@@ -110,6 +118,38 @@ const PhaseItem = memo(function PhaseItem({
   const activeColorClass = isActive ? 'text-accent-text' : 'text-muted-foreground';
 
   const IconComponent = getLucideIcon(config.icon);
+
+  const subtabWrapRef = useRef<HTMLDivElement>(null);
+  const [subtabRailHeight, setSubtabRailHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = subtabWrapRef.current;
+    if (!el || !isExpandable || collapsed || !isExpanded) {
+      setSubtabRailHeight((prev) => (prev === 0 ? prev : 0));
+      return;
+    }
+    const applyHeight = (entry?: ResizeObserverEntry) => {
+      setSubtabRailHeight((prev) => {
+        const next = readSubtabColumnHeightPx(el, entry);
+        return prev === next ? prev : next;
+      });
+    };
+    applyHeight();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      applyHeight(entries[0]);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+    };
+  }, [isExpandable, collapsed, isExpanded, hasBeenExpanded, phase, projectId]);
+
+  const showSubtabRail =
+    isExpandable &&
+    !collapsed &&
+    isExpanded &&
+    subtabRailHeight > SUBTAB_RAIL_MIN_HEIGHT_PX;
 
   const phaseButton = (
     <div
@@ -185,7 +225,7 @@ const PhaseItem = memo(function PhaseItem({
         <span
           className={cn(
             'flex-1 text-sm truncate transition-opacity duration-300',
-            !isExpandable && 'pl-2',
+            !EXPANDABLE_PHASES.has(phase) && 'pl-2',
             collapsed && 'opacity-0',
             isShimmering && 'shimmer-text-once'
           )}
@@ -222,15 +262,12 @@ const PhaseItem = memo(function PhaseItem({
 
   return (
     <div className="relative">
-      {/* Vertical connector line — spans from phase icon/background through subtabs.
-          Positioned on the phase root so it isn't clipped by the subtabs overflow-hidden. */}
-      {isExpandable && !collapsed && (
+      {/* Vertical connector: absolute on phase root so subtabs overflow-hidden does not clip it. */}
+      {showSubtabRail && (
         <div
-          className={cn(
-            'absolute w-px transition-opacity duration-300',
-            isExpanded ? 'opacity-100' : 'opacity-0',
-            isActive && 'text-accent-text'
-          )}
+          data-testid="workflow-phase-connector"
+          data-phase={phase}
+          className={cn('absolute w-px transition-opacity duration-300', isActive && 'text-accent-text')}
           style={isActive ? LINE_STYLE_ACTIVE : LINE_STYLE_INACTIVE}
         />
       )}
@@ -245,12 +282,15 @@ const PhaseItem = memo(function PhaseItem({
             isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
           )}
         >
-          <div className={cn(
-            'min-h-0 overflow-hidden pl-4 transition-opacity motion-reduce:transition-none',
-            isExpanded
-              ? 'opacity-100 duration-200 delay-75 ease-in'
-              : 'opacity-0 duration-150 ease-out'
-          )}>
+          <div
+            ref={subtabWrapRef}
+            className={cn(
+              'min-h-0 overflow-hidden pl-4 transition-opacity motion-reduce:transition-none',
+              isExpanded
+                ? 'opacity-100 duration-200 delay-75 ease-in'
+                : 'opacity-0 duration-150 ease-out'
+            )}
+          >
             {hasBeenExpanded && phase === 'upload' && <PlanSubtabs projectId={projectId} />}
             {hasBeenExpanded && phase === 'data-viewer' && <FileSubtabs projectId={projectId} />}
             {hasBeenExpanded && isWorkbookPhase && (

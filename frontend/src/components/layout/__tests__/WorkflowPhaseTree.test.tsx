@@ -1,9 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WorkflowPhaseTree } from '../WorkflowPhaseTree';
+
+const fileSubtabsMock = vi.hoisted(() => ({ empty: false }));
 
 const projectState = {
   projects: [
@@ -48,7 +50,8 @@ vi.mock('../sidebar/PlanSubtabs', () => ({
 }));
 
 vi.mock('../sidebar/FileSubtabs', () => ({
-  FileSubtabs: () => <div data-testid="file-subtabs">file subtabs</div>
+  FileSubtabs: () =>
+    fileSubtabsMock.empty ? null : <div data-testid="file-subtabs">file subtabs</div>
 }));
 
 vi.mock('../sidebar/WorkbookSubtabs', () => ({
@@ -88,9 +91,58 @@ function isSubtabExpanded(testId: string): boolean {
   return grid?.getAttribute('data-expanded') === 'true';
 }
 
+let originalResizeObserver: typeof ResizeObserver;
+
+beforeAll(() => {
+  originalResizeObserver = globalThis.ResizeObserver;
+});
+
 describe('WorkflowPhaseTree', () => {
   beforeEach(() => {
     projectState.projects[0].currentPhase = 'upload';
+    projectState.projects[0].unlockedPhases = ['upload', 'data-viewer'];
+    projectState.isPhaseUnlocked = (projectId: string, phase: string) =>
+      projectId === 'p1' && ['upload', 'data-viewer'].includes(phase);
+    fileSubtabsMock.empty = false;
+
+    globalThis.ResizeObserver = class WorkflowPhaseTreeResizeObserver {
+      callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+
+      observe(element: Element) {
+        const h = element.children.length > 0 ? 48 : 0;
+        this.callback(
+          [
+            {
+              contentRect: {
+                height: h,
+                width: 0,
+                x: 0,
+                y: 0,
+                bottom: 0,
+                left: 0,
+                right: 0,
+                top: 0,
+                toJSON: () => ({})
+              },
+              target: element
+            } as ResizeObserverEntry
+          ],
+          this as unknown as ResizeObserver
+        );
+      }
+
+      disconnect() {}
+
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = originalResizeObserver;
   });
 
   it('expands the active phase subtabs on render', () => {
@@ -98,6 +150,38 @@ describe('WorkflowPhaseTree', () => {
     expect(isSubtabExpanded('plan-subtabs')).toBe(true);
     // data-viewer subtabs not mounted until that phase is first expanded
     expect(screen.queryByTestId('file-subtabs')).not.toBeInTheDocument();
+  });
+
+  it('does not add pl-2 to locked expandable phase labels (Explorer locked)', () => {
+    projectState.projects[0].unlockedPhases = ['upload'];
+    projectState.isPhaseUnlocked = (projectId: string, phase: string) =>
+      projectId === 'p1' && phase === 'upload';
+
+    renderTree();
+
+    const span = screen.getByTestId('workflow-phase-button-data-viewer').querySelector('span');
+    expect(span).toBeTruthy();
+    expect(span?.className).not.toMatch(/\bpl-2\b/);
+  });
+
+  it('renders vertical connector when expanded phase has subtabs content', async () => {
+    renderTree();
+    await waitFor(() => {
+      expect(screen.getByTestId('workflow-phase-connector')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('workflow-phase-connector')).toHaveAttribute('data-phase', 'upload');
+  });
+
+  it('hides vertical connector when Explorer subtabs render nothing', async () => {
+    const { getSidebarAccordionPref } = await import('@/lib/sidebarPrefs');
+    (getSidebarAccordionPref as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+    fileSubtabsMock.empty = true;
+    renderTree('/project/p1/data-viewer');
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('workflow-phase-connector')).not.toBeInTheDocument();
+    });
   });
 
   it('collapses previously active subtabs when navigation switches phases (accordion mode)', async () => {

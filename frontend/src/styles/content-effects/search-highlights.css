@@ -1,0 +1,14 @@
+/*
+ * PDF text layer search highlights.
+ * The text layer renders invisible text (color: transparent) over the canvas —
+ * marks must stay transparent to avoid ghosting while showing a background tint.
+ */
+.textLayer mark {
+  color: transparent;
+  background-color: rgb(253 224 71 / 0.4);
+  border-radius: 1px;
+}
+
+:is(.dark, [data-theme="dark"]) .textLayer mark {
+  background-color: rgb(234 179 8 / 0.25);
+}

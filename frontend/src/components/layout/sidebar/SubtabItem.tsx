@@ -18,6 +18,8 @@ interface SubtabItemProps {
   actionSlot?: React.ReactNode;
   /** Override icon color on hover/active (defaults to accent text) */
   iconColorClass?: string;
+  /** Small absolute-positioned dot on the icon corner (e.g. status indicator) */
+  indicatorDotClass?: string;
 }
 
 export function SubtabItem({
@@ -26,7 +28,8 @@ export function SubtabItem({
   isActive,
   onClick,
   actionSlot,
-  iconColorClass
+  iconColorClass,
+  indicatorDotClass
 }: SubtabItemProps) {
   const iconColor = iconColorClass
     ? iconColorClass
@@ -49,8 +52,16 @@ export function SubtabItem({
         !isActive && 'text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/50'
       )}
     >
-      <div className="shrink-0">
+      <div className="relative shrink-0">
         <Icon className={cn('h-3.5 w-3.5 transition-colors duration-200', iconColor)} />
+        {indicatorDotClass && (
+          <span
+            className={cn(
+              'absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full',
+              indicatorDotClass
+            )}
+          />
+        )}
       </div>
       <TooltipProvider delayDuration={300}>
         <Tooltip>

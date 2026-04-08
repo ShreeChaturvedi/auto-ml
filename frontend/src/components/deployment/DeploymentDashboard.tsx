@@ -181,10 +181,7 @@ export function DeploymentDashboard() {
           >
             <SelectTrigger className={compactToolbarSelectClass('w-[200px]')}>
               {selected ? (
-                <span className="flex items-center gap-2 min-w-0">
-                  <StatusDot status={selected.status} />
-                  <span className="truncate">{selected.name}</span>
-                </span>
+                <span className="truncate">{selected.name}</span>
               ) : (
                 <SelectValue placeholder="Select deployment" />
               )}

@@ -7,11 +7,11 @@ export function statusLabel(status: DeploymentStatus): string {
 
 /** Dot color class for a deployment status indicator. */
 export function statusDotColor(status: DeploymentStatus): string {
-  if (status === 'healthy') return 'bg-green-500';
-  if (['starting', 'creating', 'stopping'].includes(status)) return 'bg-amber-500';
+  if (status === 'healthy') return 'bg-green-500 dark:bg-green-400';
+  if (['starting', 'creating', 'stopping'].includes(status)) return 'bg-amber-500 dark:bg-amber-400';
   if (status === 'stopped') return 'bg-muted-foreground';
   // unhealthy + failed → red
-  return 'bg-red-500';
+  return 'bg-red-500 dark:bg-red-400';
 }
 
 /** Badge variant for a deployment status. */

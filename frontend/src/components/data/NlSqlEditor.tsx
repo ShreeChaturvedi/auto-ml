@@ -2,9 +2,12 @@
  * NlSqlEditor — three-phase SQL display for NL query generation.
  *
  * Phases:
- *  1. generating — shimmer container, no Monaco
+ *  1. generating — Monaco (empty, read-only) with shimmer overlay
  *  2. revealing  — char-by-char <pre> overlay on top of Monaco (single mount)
  *  3. reviewing  — <pre> fades to opacity-0, Monaco fully visible + editable
+ *
+ * Monaco is mounted across all non-idle phases so the editor chrome
+ * (line numbers, gutter) is always visible.
  */
 
 import {
@@ -140,14 +143,12 @@ function NlSqlEditor({
   useEffect(() => {
     if (phase !== 'reviewing') return;
 
-    // Sync scroll position from <pre> to Monaco
     const pre = preRef.current;
     const editor = monacoEditorRef.current;
     if (pre && editor) {
       editor.setScrollTop(pre.scrollTop);
     }
 
-    // Focus + cursor at end
     if (editor) {
       editor.focus();
       const model = editor.getModel();
@@ -179,99 +180,96 @@ function NlSqlEditor({
         className="relative overflow-hidden rounded-md border border-border"
         style={{ height: CONTAINER_HEIGHT }}
       >
-        {/* Phase 1: Shimmer */}
+        {/* Monaco — always mounted; read-only except during reviewing */}
+        <Suspense fallback={<div className="h-full w-full animate-pulse bg-primary/10" />}>
+          <LazyMonacoEditor
+            height={`${CONTAINER_HEIGHT}px`}
+            language="sql"
+            value={isGenerating ? '' : editedSql}
+            onChange={(value) => onSqlChange(value || '')}
+            onMount={handleMonacoMount}
+            theme={syntaxThemeId}
+            options={{
+              readOnly: !isReviewing,
+              domReadOnly: !isReviewing,
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              lineNumbersMinChars: 2,
+              glyphMargin: false,
+              folding: false,
+              lineDecorationsWidth: 8,
+              roundedSelection: false,
+              scrollBeyondLastLine: false,
+              scrollbar: { verticalScrollbarSize: 12 },
+              fontSize: 13,
+              fontFamily: MONO_FONT,
+              wordWrap: 'on',
+              automaticLayout: true,
+              padding: { top: 8, bottom: 8 },
+              cursorBlinking: 'smooth',
+              cursorSmoothCaretAnimation: 'on',
+            }}
+          />
+        </Suspense>
+
+        {/* Shimmer overlay during generating — sits on top of Monaco */}
         {isGenerating && (
           <div
-            className="nl-editor-shimmer h-full w-full bg-muted/30"
+            className="nl-editor-shimmer pointer-events-none absolute inset-0 z-[5]"
             aria-label="Generating SQL…"
           />
         )}
 
-        {/* Phases 2 & 3: single Monaco mount with <pre> overlay */}
+        {/* <pre> overlay during revealing — fades out when reviewing */}
         {(isRevealing || isReviewing) && (
-          <>
-            {/* Monaco — always mounted and visible; read-only during reveal */}
-            <Suspense fallback={<div className="h-full w-full animate-pulse bg-primary/10" />}>
-              <LazyMonacoEditor
-                height={`${CONTAINER_HEIGHT}px`}
-                language="sql"
-                value={editedSql}
-                onChange={(value) => onSqlChange(value || '')}
-                onMount={handleMonacoMount}
-                theme={syntaxThemeId}
-                options={{
-                  readOnly: isRevealing,
-                  domReadOnly: isRevealing,
-                  minimap: { enabled: false },
-                  lineNumbers: 'on',
-                  lineNumbersMinChars: 2,
-                  glyphMargin: false,
-                  folding: false,
-                  lineDecorationsWidth: 8,
-                  roundedSelection: false,
-                  scrollBeyondLastLine: false,
-                  scrollbar: { verticalScrollbarSize: 12 },
-                  fontSize: 13,
-                  fontFamily: MONO_FONT,
-                  wordWrap: 'on',
-                  automaticLayout: true,
-                  padding: { top: 8, bottom: 8 },
-                  cursorBlinking: 'smooth',
-                  cursorSmoothCaretAnimation: 'on',
-                }}
-              />
-            </Suspense>
-
-            {/* <pre> overlay — sits on top during reveal, fades out when reviewing */}
-            <pre
-              ref={preRef}
-              className={cn(
-                'absolute inset-0 z-[5] m-0 pointer-events-none whitespace-pre-wrap break-words bg-background',
-                'transition-opacity duration-200',
-                isReviewing ? 'opacity-0' : 'opacity-100'
-              )}
-              style={{
-                fontFamily: MONO_FONT,
-                fontSize: 13,
-                lineHeight: '18px',
-                fontFeatureSettings: '"liga" off, "calt" off',
-                paddingTop: 8,
-                paddingBottom: 8,
-                paddingLeft: contentLeftRef.current,
-                paddingRight: 12,
-                height: CONTAINER_HEIGHT,
-                overflowY: 'auto'
-              }}
-              aria-live="polite"
-              aria-label="Generated SQL (revealing)"
-            >
-              {isRevealing && (() => {
-                let charIdx = 0;
-                return tokens.map((token, ti) => {
-                  if (token.type === 'whitespace') {
-                    return <span key={`ws-${ti}`}>{token.text}</span>;
-                  }
-                  return Array.from(token.text).map((char, ci) => {
-                    const idx = charIdx++;
-                    const delay = idx * stagger;
-                    return (
-                      <span
-                        key={`t${ti}-c${ci}`}
-                        data-char-idx={idx}
-                        style={{
-                          '--sql-token-color': TOKEN_INLINE_COLORS[token.type],
-                          animation: `sql-placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                          animationDelay: `${delay}ms`,
-                        } as React.CSSProperties}
-                      >
-                        {char}
-                      </span>
-                    );
-                  });
+          <pre
+            ref={preRef}
+            className={cn(
+              'absolute inset-0 z-[5] m-0 pointer-events-none whitespace-pre-wrap break-words bg-background',
+              'transition-opacity duration-200',
+              isReviewing ? 'opacity-0' : 'opacity-100'
+            )}
+            style={{
+              fontFamily: MONO_FONT,
+              fontSize: 13,
+              lineHeight: '18px',
+              fontFeatureSettings: '"liga" off, "calt" off',
+              paddingTop: 8,
+              paddingBottom: 8,
+              paddingLeft: contentLeftRef.current,
+              paddingRight: 12,
+              height: CONTAINER_HEIGHT,
+              overflowY: 'auto'
+            }}
+            aria-live="polite"
+            aria-label="Generated SQL (revealing)"
+          >
+            {isRevealing && (() => {
+              let charIdx = 0;
+              return tokens.map((token, ti) => {
+                if (token.type === 'whitespace') {
+                  return <span key={`ws-${ti}`}>{token.text}</span>;
+                }
+                return Array.from(token.text).map((char, ci) => {
+                  const idx = charIdx++;
+                  const delay = idx * stagger;
+                  return (
+                    <span
+                      key={`t${ti}-c${ci}`}
+                      data-char-idx={idx}
+                      style={{
+                        '--sql-token-color': TOKEN_INLINE_COLORS[token.type],
+                        animation: `sql-placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
+                        animationDelay: `${delay}ms`,
+                      } as React.CSSProperties}
+                    >
+                      {char}
+                    </span>
+                  );
                 });
-              })()}
-            </pre>
-          </>
+              });
+            })()}
+          </pre>
         )}
       </div>
 

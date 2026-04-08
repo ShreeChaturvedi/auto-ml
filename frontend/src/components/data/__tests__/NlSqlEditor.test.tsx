@@ -51,12 +51,13 @@ describe('NlSqlEditor', () => {
     vi.useRealTimers();
   });
 
-  it('shows shimmer during generating phase', () => {
+  it('shows shimmer overlay on top of Monaco during generating phase', () => {
     const { container } = render(<NlSqlEditor {...baseProps} />);
 
     expect(container.querySelector('.nl-editor-shimmer')).toBeTruthy();
     expect(screen.getByLabelText(/generating sql/i)).toBeInTheDocument();
-    expect(screen.queryByTestId('mock-monaco')).not.toBeInTheDocument();
+    // Monaco is always mounted — shimmer overlays it
+    expect(screen.getByTestId('mock-monaco')).toBeInTheDocument();
   });
 
   it('shows char animation pre overlay during revealing phase', () => {

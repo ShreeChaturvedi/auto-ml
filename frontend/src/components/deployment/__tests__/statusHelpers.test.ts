@@ -18,21 +18,21 @@ describe('statusHelpers', () => {
 
   describe('statusDotColor', () => {
     it('returns green for healthy', () => {
-      expect(statusDotColor('healthy')).toBe('bg-green-500');
+      expect(statusDotColor('healthy')).toBe('bg-green-500 dark:bg-green-400');
     });
 
     it('returns amber for transitional states', () => {
-      expect(statusDotColor('starting')).toBe('bg-amber-500');
-      expect(statusDotColor('creating')).toBe('bg-amber-500');
-      expect(statusDotColor('stopping')).toBe('bg-amber-500');
+      expect(statusDotColor('starting')).toBe('bg-amber-500 dark:bg-amber-400');
+      expect(statusDotColor('creating')).toBe('bg-amber-500 dark:bg-amber-400');
+      expect(statusDotColor('stopping')).toBe('bg-amber-500 dark:bg-amber-400');
     });
 
     it('returns red for unhealthy (not amber)', () => {
-      expect(statusDotColor('unhealthy')).toBe('bg-red-500');
+      expect(statusDotColor('unhealthy')).toBe('bg-red-500 dark:bg-red-400');
     });
 
     it('returns red for failed', () => {
-      expect(statusDotColor('failed')).toBe('bg-red-500');
+      expect(statusDotColor('failed')).toBe('bg-red-500 dark:bg-red-400');
     });
 
     it('returns muted for stopped', () => {

@@ -110,23 +110,16 @@
 }
 
 .nl-editor-shimmer {
-  position: relative;
-}
-
-.nl-editor-shimmer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
   background: linear-gradient(
     120deg,
-    transparent 42%,
-    hsl(var(--foreground) / 0.035) 50%,
-    transparent 58%
+    transparent 30%,
+    hsl(var(--foreground) / 0.06) 44%,
+    hsl(var(--foreground) / 0.09) 50%,
+    hsl(var(--foreground) / 0.06) 56%,
+    transparent 70%
   );
   background-size: 200% 100%;
-  animation: nl-editor-shimmer-sweep 2.2s ease-in-out infinite;
+  animation: nl-editor-shimmer-sweep 3s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

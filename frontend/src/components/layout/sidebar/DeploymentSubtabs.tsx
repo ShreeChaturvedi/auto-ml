@@ -1,28 +1,18 @@
 /**
  * DeploymentSubtabs — renders deployed models under the Deployment phase.
- * Uses Rocket icon with status-based color via SubtabItem's iconColorClass.
+ * Uses theme-colored Rocket icon with a small status dot via SubtabItem's indicatorDotClass.
  */
 
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Rocket, Trash2, Square, Play } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useDeploymentStore } from '@/stores/deploymentStore';
-import type { DeploymentStatus } from '@/types/deployment';
+import { statusDotColor, PULSE_STATUSES } from '@/components/deployment/statusHelpers';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
-
-/** Status → icon color class mapping. undefined falls through to default SubtabItem behavior. */
-const DEPLOYMENT_ICON_COLOR: Record<DeploymentStatus, string | undefined> = {
-  creating:  'text-amber-500 dark:text-amber-400',
-  starting:  'text-amber-500 dark:text-amber-400',
-  healthy:   'text-green-500 dark:text-green-400',
-  unhealthy: 'text-red-500 dark:text-red-400',
-  stopping:  'text-amber-500 dark:text-amber-400',
-  stopped:   undefined,
-  failed:    'text-red-500 dark:text-red-400',
-};
 
 interface DeploymentSubtabsProps {
   projectId: string;
@@ -67,7 +57,10 @@ export function DeploymentSubtabs({ projectId, isActivePhase }: DeploymentSubtab
             <SubtabItem
               key={dep.deploymentId}
               icon={Rocket}
-              iconColorClass={DEPLOYMENT_ICON_COLOR[dep.status]}
+              indicatorDotClass={cn(
+                statusDotColor(dep.status),
+                PULSE_STATUSES.has(dep.status) && 'animate-pulse'
+              )}
               label={dep.name}
               isActive={isOnDeployment && dep.deploymentId === selectedDeploymentId}
               onClick={() => {

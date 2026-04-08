@@ -242,10 +242,10 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     >
       <div
         className={cn(
-          'transition-[flex,max-height,opacity] ease-out motion-reduce:transition-none',
+          'transition-[flex,height,opacity] ease-out motion-reduce:transition-none',
           isIdle
-            ? 'flex-1 max-h-none opacity-100 duration-300'
-            : 'flex-none max-h-[7.5rem] opacity-70 duration-300 pointer-events-none',
+            ? 'flex-1 h-auto opacity-100 duration-300'
+            : 'flex-none h-[7.5rem] opacity-70 duration-300 pointer-events-none',
           isExpanding && 'text-transparent',
         )}
       >

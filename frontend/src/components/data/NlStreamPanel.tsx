@@ -112,38 +112,42 @@ function NlStreamPanel({
     return () => observer.disconnect();
   }, [isExpanded, shouldKeepLive, refreshFollow]);
 
+  const hasBlocks = modelWorkBlocks.length > 0;
+
   return (
     <div
       className={cn(
-        'relative min-h-[2rem] overflow-hidden rounded-md border border-border/50',
+        'relative overflow-hidden rounded-md border border-border/50',
         className
       )}
       data-testid="nl-stream-panel"
     >
-      {/* Absolute overlay: spinner + collapse toggle */}
-      <div className="absolute top-1.5 right-2 z-[2] flex items-center gap-1">
-        {isStreaming && (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
-        )}
-        <button
-          type="button"
-          onClick={onToggleExpanded}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
-          aria-label={isExpanded ? 'Collapse transcript' : 'Expand transcript'}
-        >
-          {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-
-      {/* Collapsed done indicator — visible when transcript is collapsed after streaming */}
-      {!visualExpanded && !isStreaming && modelWorkBlocks.length > 0 && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5">
-          <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-          <span className="text-xs text-muted-foreground">Done</span>
+      {/* Collapsed state */}
+      {!visualExpanded && (
+        <div className="flex min-h-[2rem] items-center px-3">
+          {!isStreaming && hasBlocks && (
+            <div className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+              <span className="text-xs text-muted-foreground">Done</span>
+            </div>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            {isStreaming && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
+            )}
+            <button
+              type="button"
+              onClick={onToggleExpanded}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+              aria-label="Expand transcript"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Collapsible body */}
+      {/* Expanded state */}
       <div
         className={cn(
           'grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none',
@@ -154,13 +158,34 @@ function NlStreamPanel({
         aria-hidden={!visualExpanded}
       >
         <div className="overflow-hidden">
-          <div className="px-3 pt-1 pb-3">
+          {/* Spinner + collapse — top-right, same line as first header */}
+          <div className="absolute top-1.5 right-2 z-[3] flex items-center gap-1">
+            {isStreaming && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
+            )}
+            <button
+              type="button"
+              onClick={onToggleExpanded}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+              aria-label="Collapse transcript"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <div className="px-3 pb-3 pt-1">
             <div
               ref={viewportRef}
-              className="nl-model-work-stream max-h-[clamp(12rem,28vh,18rem)] overflow-y-auto scrollbar-hide"
+              className="nl-model-work-stream max-h-[clamp(12rem,28vh,18rem)] overflow-y-auto overflow-x-hidden scrollbar-hide"
               data-testid="nl-stream-viewport"
               onScroll={handleViewportScroll}
             >
+              {/* Scroll fade — sticky gradient, below headers (z-[0]) */}
+              <div
+                className="pointer-events-none sticky top-0 z-[0] -mb-8 h-8 bg-gradient-to-b from-background from-30% to-transparent"
+                aria-hidden="true"
+              />
+
               <div ref={viewportContentRef}>
                 {modelWorkBlocks.length === 0 && isStreaming && (
                   <p className="text-xs text-muted-foreground">Analyzing query…</p>
@@ -173,12 +198,8 @@ function NlStreamPanel({
                       key={block.blockId}
                       data-testid={`nl-stream-block-${block.blockId}`}
                     >
-                      {/* Sticky header with gradient fade below to mask scrolling content */}
                       <div
-                        className={cn(
-                          'sticky top-0 z-[1] flex items-center gap-1.5 bg-background py-1.5',
-                          "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-gradient-to-b after:from-background after:to-transparent after:content-['']"
-                        )}
+                        className="sticky top-0 z-[1] flex items-center gap-1.5 py-1.5 pr-14"
                         data-testid={`nl-stream-header-${block.blockId}`}
                       >
                         <Icon

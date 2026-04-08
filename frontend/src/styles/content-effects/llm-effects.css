@@ -110,6 +110,25 @@
   font-size: 0.84em;
 }
 
+/* Boost bloom animation for compact transcript — more visible at small font sizes */
+.nl-model-work-stream .llm-streamdown [data-sd-animate] {
+  animation-name: var(--sd-animation, sd-fadeIn), nl-work-bloom;
+  animation-duration: var(--sd-duration, 150ms), 320ms;
+  animation-timing-function: var(--sd-easing, ease), ease-out;
+  animation-fill-mode: both, both;
+}
+
+@keyframes nl-work-bloom {
+  0% {
+    text-shadow: 0 0 8px currentColor;
+    filter: brightness(1.35);
+  }
+  100% {
+    text-shadow: none;
+    filter: none;
+  }
+}
+
 .nl-model-work-viewport {
   --nl-work-fade-top: 0px;
   --nl-work-fade-bottom: 0px;

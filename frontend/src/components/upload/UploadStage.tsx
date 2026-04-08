@@ -36,7 +36,7 @@ export function UploadStage({ projectId, activePlanChatId, onPlanApproved, onFir
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const headings = useMemo(
     () => (currentPlan ? extractTocHeadings(currentPlan.content) : []),
-    [currentPlan?.content]
+    [currentPlan]
   );
   const scrollToHeading = useCallback((slug: string) => {
     scrollToRadixElement(scrollAreaRef.current, slug);

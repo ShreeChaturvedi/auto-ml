@@ -134,10 +134,18 @@
   animation: sparkline-draw 800ms ease-out forwards;
 }
 
+/* Normalized stroke draw-on (for pathLength="1" SVGs) */
+.stroke-draw-on {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: sparkline-draw 600ms var(--ease-out) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-enter,
   .empty-state-enter,
-  .sparkline-draw {
+  .sparkline-draw,
+  .stroke-draw-on {
     animation: none;
     opacity: 1;
     transform: none;

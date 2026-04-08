@@ -4,10 +4,10 @@
  */
 
 import { useState } from 'react';
-import { Plus, FolderOpen, PanelLeft, ChevronDown, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Plus, PanelLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { useProjectStore } from '@/stores/projectStore';
 import { ProjectItem } from './ProjectItem';
+import { ProjectsEmptyIllustration } from './ProjectsEmptyIllustration';
 import { ProjectDialog } from './ProjectDialog';
 import { cn } from '@/lib/utils';
 import {
@@ -115,17 +115,9 @@ export function ProjectList({ collapsed = false, onToggleCollapse }: ProjectList
                 <ProjectItem key={project.id} project={project} collapsed={collapsed} />
               ))
             ) : !collapsed ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <FolderOpen className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                <p className="text-xs text-muted-foreground mb-3">No projects yet</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setIsCreateDialogOpen(true)}
-                >
-                  <Plus className="h-3 w-3 mr-2" />
-                  Create Project
-                </Button>
+              <div className="flex flex-col items-center justify-center pt-6 pb-8 text-center empty-state-enter">
+                <ProjectsEmptyIllustration className="mb-2.5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No projects yet</p>
               </div>
             ) : null}
           </div>

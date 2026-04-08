@@ -178,4 +178,34 @@ describe('NlStreamPanel', () => {
 
     expect(header.querySelector('span.shimmer-text')).toBeFalsy();
   });
+
+  it('shows done indicator when collapsed after streaming', () => {
+    render(
+      <NlStreamPanel
+        modelWorkBlocks={[makeBlock({ status: 'completed' })]}
+        isStreaming={false}
+        isExpanded={false}
+        autoCollapsed={false}
+        onToggleExpanded={vi.fn()}
+        containerHeight={1000}
+      />
+    );
+
+    expect(screen.getByText('Done')).toBeInTheDocument();
+  });
+
+  it('does not show done indicator while still streaming', () => {
+    render(
+      <NlStreamPanel
+        modelWorkBlocks={[makeBlock({ status: 'streaming' })]}
+        isStreaming
+        isExpanded={false}
+        autoCollapsed={false}
+        onToggleExpanded={vi.fn()}
+        containerHeight={1000}
+      />
+    );
+
+    expect(screen.queryByText('Done')).not.toBeInTheDocument();
+  });
 });

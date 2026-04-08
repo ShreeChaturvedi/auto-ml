@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo } from 'react';
-import { Play, Keyboard, Quote } from 'lucide-react';
+import { Play, Keyboard, Quote, CornerDownRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useInsightTicker } from '@/components/ui/useInsightTicker';
@@ -34,6 +34,15 @@ export function SqlEditorChips({
   const prefersReducedMotion = usePrefersReducedMotion();
 
   const chips: SqlChip[] = useMemo(() => [
+    {
+      icon: CornerDownRight,
+      content: (
+        <span className="inline-flex items-center gap-1">
+          <Kbd>Tab</Kbd>
+          <span className="ml-0.5">to accept suggested query</span>
+        </span>
+      ),
+    },
     {
       icon: Play,
       content: (

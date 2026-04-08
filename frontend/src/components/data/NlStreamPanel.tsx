@@ -7,6 +7,7 @@
 import {
   AlertTriangle,
   Brain,
+  Check,
   ChevronDown,
   ChevronUp,
   FileCode2,
@@ -134,6 +135,14 @@ function NlStreamPanel({
         </button>
       </div>
 
+      {/* Collapsed done indicator — visible when transcript is collapsed after streaming */}
+      {!visualExpanded && !isStreaming && modelWorkBlocks.length > 0 && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5">
+          <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          <span className="text-xs text-muted-foreground">Done</span>
+        </div>
+      )}
+
       {/* Collapsible body */}
       <div
         className={cn(
@@ -164,9 +173,12 @@ function NlStreamPanel({
                       key={block.blockId}
                       data-testid={`nl-stream-block-${block.blockId}`}
                     >
-                      {/* Block header with kind icon + title */}
+                      {/* Sticky header with gradient fade below to mask scrolling content */}
                       <div
-                        className="sticky top-0 z-[1] flex items-center gap-1.5 py-1.5"
+                        className={cn(
+                          'sticky top-0 z-[1] flex items-center gap-1.5 bg-background py-1.5',
+                          "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-gradient-to-b after:from-background after:to-transparent after:content-['']"
+                        )}
                         data-testid={`nl-stream-header-${block.blockId}`}
                       >
                         <Icon
@@ -175,7 +187,7 @@ function NlStreamPanel({
                         />
                         <span
                           className={cn(
-                            'text-sm font-medium leading-none text-foreground/80',
+                            'text-sm font-medium text-foreground',
                             block.status === 'streaming' && 'shimmer-text'
                           )}
                         >

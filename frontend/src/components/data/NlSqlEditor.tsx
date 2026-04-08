@@ -210,6 +210,7 @@ function NlSqlEditor({
                   lineDecorationsWidth: 8,
                   roundedSelection: false,
                   scrollBeyondLastLine: false,
+                  scrollbar: { verticalScrollbarSize: 12 },
                   fontSize: 13,
                   fontFamily: MONO_FONT,
                   wordWrap: 'on',

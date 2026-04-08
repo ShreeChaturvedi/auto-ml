@@ -245,7 +245,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           'transition-[flex,max-height,opacity] ease-out motion-reduce:transition-none',
           isIdle
             ? 'flex-1 max-h-none opacity-100 duration-300'
-            : 'flex-none max-h-[6rem] opacity-70 duration-300 pointer-events-none',
+            : 'flex-none max-h-[7.5rem] opacity-70 duration-300 pointer-events-none',
           isExpanding && 'text-transparent',
         )}
       >

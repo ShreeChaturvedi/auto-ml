@@ -338,7 +338,7 @@ export function QuerySqlEditor({
             overviewRulerLanes: 0,
             overviewRulerBorder: false,
             hideCursorInOverviewRuler: true,
-            scrollbar: { vertical: 'hidden', horizontal: 'hidden', alwaysConsumeMouseWheel: false },
+            scrollbar: { vertical: 'hidden', horizontal: 'hidden', verticalScrollbarSize: 12, alwaysConsumeMouseWheel: false },
             readOnly: isExecuting,
             fontSize: 13,
             fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',

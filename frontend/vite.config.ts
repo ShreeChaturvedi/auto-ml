@@ -47,7 +47,10 @@ export default defineConfig({
   optimizeDeps: {
     // Keep CSP-sensitive packages out of Vite's prebundle cache so dev mode
     // always executes the patched sources instead of stale optimized chunks.
-    exclude: ['zod', '@hookform/resolvers', '@hookform/resolvers/zod', 'plotly.js', 'plotly.js/dist/plotly', 'react-plotly.js'],
+    // NOTE: plotly.js / react-plotly.js MUST remain prebundled — they ship
+    // CommonJS and rely on Vite's CJS→ESM transform; excluding them causes
+    // "exports is not defined" at runtime.
+    exclude: ['zod', '@hookform/resolvers', '@hookform/resolvers/zod'],
   },
   server: {},
   build: {

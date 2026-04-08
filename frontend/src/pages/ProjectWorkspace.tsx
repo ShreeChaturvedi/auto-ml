@@ -163,7 +163,11 @@ export function ProjectWorkspace() {
       return <ExperimentsDashboard />;
 
     case 'deployment':
-      return <DeploymentDashboard />;
+      return (
+        <PhaseErrorBoundary>
+          <DeploymentDashboard />
+        </PhaseErrorBoundary>
+      );
 
     case 'notebook':
       return <NotebookPage projectId={projectId!} />;

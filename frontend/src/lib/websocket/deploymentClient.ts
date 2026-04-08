@@ -55,10 +55,15 @@ export class DeploymentWSClient {
         } catch { /* ignore parse errors */ }
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event: CloseEvent) => {
         this._isConnecting = false;
         this._isConnected = false;
         this.stopPing();
+        // Server-initiated auth rejection (4401) should NOT trigger reconnect —
+        // the token is invalid and retrying with the same token is pointless.
+        if (event.code === 4401) {
+          this._intentionalClose = true;
+        }
         if (!this._intentionalClose) {
           this.maybeReconnect();
         }

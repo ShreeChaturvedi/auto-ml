@@ -1,4 +1,4 @@
-import { useRef, useCallback, forwardRef } from 'react';
+import { useRef, useCallback, forwardRef, useId } from 'react';
 import type { TextareaHTMLAttributes, KeyboardEvent } from 'react';
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -20,8 +20,9 @@ interface AnimatedPlaceholderTextareaProps
 const AnimatedPlaceholderTextarea = forwardRef<
   HTMLTextAreaElement,
   AnimatedPlaceholderTextareaProps
->(({ placeholders, interval = 3000, autoResize = false, onTabAccept, className, value, style, onFocus, onBlur, onKeyDown, disabled, readOnly, ...props }, ref) => {
+>(({ placeholders, interval = 3000, autoResize = false, onTabAccept, className, value, style, onFocus, onBlur, onKeyDown, disabled, readOnly, id, name, ...props }, ref) => {
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
+  const generatedId = useId();
 
   const {
     currentPlaceholder,
@@ -61,6 +62,8 @@ const AnimatedPlaceholderTextarea = forwardRef<
           if (typeof ref === 'function') ref(node);
           else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = node;
         }}
+        id={id ?? (name ? undefined : generatedId)}
+        name={name}
         value={value}
         disabled={disabled}
         readOnly={readOnly}

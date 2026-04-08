@@ -2,7 +2,7 @@
  * DocumentViewer - Displays PDF, Markdown, and text documents
  *
  * Features:
- * - PDF rendering via react-pdf with custom toolbar
+ * - PDF preview via embedded browser viewer with download/open controls
  * - Markdown rendering (rendered preview)
  * - Plain text display with monospace font
  */

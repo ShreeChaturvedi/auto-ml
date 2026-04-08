@@ -197,7 +197,7 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
             isDragActive && 'border-accent-fill bg-accent-bg'
           )}
         >
-          <input {...getInputProps()} />
+          <input {...getInputProps()} id="data-upload-input" name="uploadedFiles" />
 
           {/* Metallic shimmer band — hidden at rest, sweeps once on hover via WAAPI */}
           <div

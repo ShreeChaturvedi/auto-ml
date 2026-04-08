@@ -1,6 +1,5 @@
 import { createCodePlugin } from '@streamdown/code';
 import { createMathPlugin } from '@streamdown/math';
-import { createMermaidPlugin } from '@streamdown/mermaid';
 import type { PluginConfig, StreamdownProps } from 'streamdown';
 
 const streamdownMermaidConfig = {
@@ -12,12 +11,6 @@ const streamdownMermaidConfig = {
 const streamdownControls: NonNullable<StreamdownProps['controls']> = {
   table: true,
   code: true,
-  mermaid: {
-    copy: true,
-    download: true,
-    fullscreen: true,
-    panZoom: true,
-  },
 };
 
 const streamdownPlugins: PluginConfig = {
@@ -26,9 +19,6 @@ const streamdownPlugins: PluginConfig = {
   }),
   math: createMathPlugin({
     singleDollarTextMath: true,
-  }),
-  mermaid: createMermaidPlugin({
-    config: streamdownMermaidConfig,
   }),
 };
 
@@ -41,13 +31,12 @@ const streamdownAnimated: NonNullable<StreamdownProps['animated']> = {
 
 const streamdownSharedProps: Pick<
   StreamdownProps,
-  'animated' | 'controls' | 'parseIncompleteMarkdown' | 'plugins' | 'mermaid'
+  'animated' | 'controls' | 'parseIncompleteMarkdown' | 'plugins'
 > = {
   animated: streamdownAnimated,
   controls: streamdownControls,
   parseIncompleteMarkdown: true,
   plugins: streamdownPlugins,
-  mermaid: { config: streamdownMermaidConfig },
 };
 
 export {

@@ -231,6 +231,8 @@ export function LlmChatComposer({
           ) : (
             <InputGroupTextarea
               ref={textareaRef}
+              id="llm-chat-composer-input"
+              name="message"
               value={value}
               onChange={(event) => onValueChange(event.target.value)}
               onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void}
@@ -303,6 +305,8 @@ export function LlmChatComposer({
 
                   <input
                     ref={attachmentInputRef}
+                    id="llm-chat-attachment-input"
+                    name="chatAttachment"
                     type="file"
                     className="hidden"
                     accept={attachment.accept ?? '.pdf,.md,.txt'}

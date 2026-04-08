@@ -175,6 +175,8 @@ export function PlanViewerToolbar({
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
               <input
+                id="plan-search-input"
+                name="planSearch"
                 placeholder="Search plan..."
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}

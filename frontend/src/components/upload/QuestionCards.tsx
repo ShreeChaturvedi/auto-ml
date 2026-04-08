@@ -42,6 +42,8 @@ function OptionCard({
   questionId: string;
   onToggle: () => void;
 }) {
+  const optionId = `${questionId}-${inputType}-${optionLabel.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()}`;
+
   if (inputType === 'radio') {
     return (
       <button
@@ -65,6 +67,8 @@ function OptionCard({
       data-testid={`multi-option-${questionId}-${optionLabel}`}
     >
       <input
+        id={optionId}
+        name={questionId}
         type="checkbox"
         checked={isSelected}
         disabled={disabled}
@@ -299,6 +303,7 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
 
           {missingSelectableOptions ? (
             <Textarea
+              name={`${currentQuestion.id}-fallback`}
               value={typeof selected === 'string' ? selected : ''}
               onChange={(event) => {
                 setAnswers((prev) => ({ ...prev, [currentQuestion.id]: event.target.value }));
@@ -314,6 +319,7 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
           {currentQuestion.type === 'free_text' ? (
             <div className="space-y-2">
               <Textarea
+                name={currentQuestion.id}
                 value={typeof selected === 'string' ? selected : ''}
                 onChange={(event) => {
                   setAnswers((prev) => ({ ...prev, [currentQuestion.id]: event.target.value }));

@@ -230,6 +230,8 @@ export function ReportToolbar({
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
               <input
+                id="report-search-input"
+                name="reportSearch"
                 placeholder="Search report..."
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}

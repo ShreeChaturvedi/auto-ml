@@ -6,7 +6,7 @@ const INTENTIONAL_LAZY_CHUNK_WARNING_LIMIT_KB = 5000
 
 const VENDOR_CHUNK_RULES = [
   { name: 'monaco', patterns: ['@monaco-editor', 'monaco-editor'] },
-  { name: 'plotly', patterns: ['plotly.js-dist-min', 'react-plotly.js'] },
+  { name: 'plotly', patterns: ['plotly.js', 'react-plotly.js'] },
   { name: 'pdf', patterns: ['react-pdf', 'pdfjs-dist'] },
   { name: 'duckdb', patterns: ['@duckdb/duckdb-wasm'] },
   { name: 'cytoscape', patterns: ['cytoscape'] },
@@ -37,7 +37,6 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@', replacement: path.resolve(__dirname, './src') },
-      { find: 'plotly.js/dist/plotly', replacement: 'plotly.js-dist-min' },
       // Exact-match: swap Shiki's full bundle (~300+ grammars) for the web bundle (~57).
       // Uses regex with $ anchor so subpath imports like shiki/engine/javascript pass through.
       { find: /^shiki$/, replacement: 'shiki/bundle/web' },

@@ -50,38 +50,50 @@ const InputGroupAddon = React.forwardRef<
 InputGroupAddon.displayName = "InputGroupAddon"
 
 const InputGroupInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, ...props }, ref) => (
-    <input
-      ref={ref}
-      data-slot="input-group-control"
-      className={cn(
-        "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
-        "file:text-foreground selection:bg-primary selection:text-primary-foreground",
-        "flex h-9 w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3 py-1 text-base shadow-none outline-none transition-[color,box-shadow] focus-visible:ring-0",
-        "file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium",
-        "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-transparent",
-        className
-      )}
-      {...props}
-    />
-  )
+  ({ className, id, name, ...props }, ref) => {
+    const generatedId = React.useId()
+
+    return (
+      <input
+        ref={ref}
+        id={id ?? (name ? undefined : generatedId)}
+        name={name}
+        data-slot="input-group-control"
+        className={cn(
+          "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+          "file:text-foreground selection:bg-primary selection:text-primary-foreground",
+          "flex h-9 w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3 py-1 text-base shadow-none outline-none transition-[color,box-shadow] focus-visible:ring-0",
+          "file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium",
+          "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-transparent",
+          className
+        )}
+        {...props}
+      />
+    )
+  }
 )
 InputGroupInput.displayName = "InputGroupInput"
 
 const InputGroupTextarea = React.forwardRef<HTMLTextAreaElement, React.ComponentProps<"textarea">>(
-  ({ className, ...props }, ref) => (
-    <textarea
-      ref={ref}
-      data-slot="input-group-control"
-      className={cn(
-        "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
-        "flex min-h-16 w-full flex-1 resize-none rounded-none border-0 bg-transparent px-3 py-2.5 text-base shadow-none outline-none transition-[color,box-shadow] focus-visible:ring-0",
-        "disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-transparent",
-        className
-      )}
-      {...props}
-    />
-  )
+  ({ className, id, name, ...props }, ref) => {
+    const generatedId = React.useId()
+
+    return (
+      <textarea
+        ref={ref}
+        id={id ?? (name ? undefined : generatedId)}
+        name={name}
+        data-slot="input-group-control"
+        className={cn(
+          "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+          "flex min-h-16 w-full flex-1 resize-none rounded-none border-0 bg-transparent px-3 py-2.5 text-base shadow-none outline-none transition-[color,box-shadow] focus-visible:ring-0",
+          "disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-transparent",
+          className
+        )}
+        {...props}
+      />
+    )
+  }
 )
 InputGroupTextarea.displayName = "InputGroupTextarea"
 

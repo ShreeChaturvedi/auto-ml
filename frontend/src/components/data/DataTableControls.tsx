@@ -157,6 +157,8 @@ export function DataTableControls({
           </div>
           <input
             ref={searchInputRef}
+            id="data-table-search-input"
+            name="rowSearch"
             placeholder="Search rows..."
             value={globalFilter}
             onChange={(e) => onGlobalFilterChange(e.target.value)}

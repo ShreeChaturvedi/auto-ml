@@ -1,7 +1,8 @@
 import { lazy } from 'react'
+import { ensureMonacoBootstrap } from '@/lib/monaco/bootstrap'
 
 export const LazyMonacoEditor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
+  ensureMonacoBootstrap().then(() => import('@monaco-editor/react')).then((module) => ({
     default: module.default
   }))
 )

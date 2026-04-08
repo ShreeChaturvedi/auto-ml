@@ -208,6 +208,8 @@ export function PlaygroundTab({ deployment }: PlaygroundTabProps) {
           ) : (
             <div className="flex h-full flex-col gap-2">
               <textarea
+                id="playground-json-input"
+                name="playgroundJson"
                 className={cn(
                   'min-h-[200px] flex-1 resize-none rounded-md border bg-background p-3 font-mono text-xs',
                   'focus:outline-none focus:ring-1 focus:ring-ring',

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback } from 'react';
+import { forwardRef, useCallback, useId } from 'react';
 import type { InputHTMLAttributes, KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import {
@@ -32,10 +32,13 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       onKeyDown,
       disabled,
       readOnly,
+      id,
+      name,
       ...props
     },
     ref
   ) => {
+    const generatedId = useId();
     const {
       currentPlaceholder,
       nextPlaceholder,
@@ -71,6 +74,8 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       <div className="relative w-full">
         <input
           ref={ref}
+          id={id ?? (name ? undefined : generatedId)}
+          name={name}
           value={value}
           disabled={disabled}
           readOnly={readOnly}

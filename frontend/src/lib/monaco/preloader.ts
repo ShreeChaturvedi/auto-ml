@@ -8,6 +8,7 @@
 import type { Monaco } from '@monaco-editor/react';
 import type { SyntaxPalette } from '@/lib/color/syntaxPalette';
 import { STATIC_SYNTAX_PALETTE } from '@/lib/color/syntaxPalette';
+import { ensureMonacoBootstrap } from '@/lib/monaco/bootstrap'
 
 let monacoInstance: Monaco | null = null;
 let initPromise: Promise<Monaco> | null = null;
@@ -79,6 +80,7 @@ export async function initMonaco(): Promise<Monaco> {
   }
 
   initPromise = (async () => {
+    await ensureMonacoBootstrap()
     const { loader } = await import('@monaco-editor/react');
 
     // Load Monaco

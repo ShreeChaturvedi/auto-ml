@@ -13,6 +13,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { renameDataset } from '@/lib/api/datasets';
 import { resolveFileIcon } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
+import { SidebarSubtabSectionDivider } from './SidebarSubtabSectionDivider';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
@@ -103,9 +104,7 @@ export function FileSubtabs({ projectId }: FileSubtabsProps) {
       <div className="space-y-0.5">
         {dataFiles.map(renderFile)}
 
-        {dataFiles.length > 0 && contextFiles.length > 0 && (
-          <div className="my-1 mx-3 border-t border-border/50" />
-        )}
+        {dataFiles.length > 0 && contextFiles.length > 0 && <SidebarSubtabSectionDivider />}
 
         {contextFiles.map(renderFile)}
       </div>

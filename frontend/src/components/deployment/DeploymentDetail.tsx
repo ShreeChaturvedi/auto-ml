@@ -1,253 +1,157 @@
-import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { toast } from 'sonner';
+import { Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Copy, Pause, Play, MoreVertical, Trash2, ExternalLink } from 'lucide-react';
-import type { DeploymentRecord, DeploymentStatus } from '@/types/deployment';
-import { useDeploymentStore } from '@/stores/deploymentStore';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
-import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useModelStore } from '@/stores/modelStore';
+import { COMPACT_TOOLBAR_ICON_BUTTON_CLASS } from '@/components/agentic/toolbarStyles';
+import type { DeploymentRecord } from '@/types/deployment';
+import { statusLabel, statusDotColor, PULSE_STATUSES } from './statusHelpers';
+import { timeAgo } from './deploymentUtils';
 import { PlaygroundTab } from './tabs/PlaygroundTab';
 import { ApiTab } from './tabs/ApiTab';
 import { LogsTab } from './tabs/LogsTab';
 import { MonitoringTab } from './tabs/MonitoringTab';
-import { statusLabel, statusDotColor, statusBadgeVariant, PULSE_STATUSES } from './statusHelpers';
+import { cn } from '@/lib/utils';
 
-const TABS = ['overview', 'playground', 'api', 'logs', 'monitoring'] as const;
-type TabId = (typeof TABS)[number];
+type TabId = 'overview' | 'playground' | 'api' | 'logs' | 'monitoring';
 
-const TAB_LABELS: Record<TabId, string> = {
-  overview: 'Overview',
-  playground: 'Playground',
-  api: 'API',
-  logs: 'Logs',
-  monitoring: 'Monitoring',
-};
+interface Props {
+  deployment: DeploymentRecord;
+  activeTab: TabId;
+}
 
-// ---------------------------------------------------------------------------
-// Status dot component
-// ---------------------------------------------------------------------------
+/* ── Helpers ────────────────────────────────────────────────── */
 
-function StatusDot({ status }: { status: DeploymentStatus }) {
-  const color = statusDotColor(status);
-  const pulse = PULSE_STATUSES.has(status);
-
+function RelativeTime({ date, prefix }: { date: string; prefix?: string }) {
   return (
-    <span className="relative inline-flex h-2.5 w-2.5">
-      {pulse && (
-        <span
-          className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', color)}
-        />
-      )}
-      <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', color)} />
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-sm text-foreground cursor-default">
+          {prefix ? `${prefix} ` : ''}{timeAgo(date)}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{new Date(date).toLocaleString()}</TooltipContent>
+    </Tooltip>
   );
 }
 
-// ---------------------------------------------------------------------------
-// DeploymentDetail
-// ---------------------------------------------------------------------------
+/* ── Overview content ───────────────────────────────────────── */
 
-export function DeploymentDetail({ deployment }: { deployment: DeploymentRecord }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const { start, stop, remove } = useDeploymentStore();
-  const { colorClasses } = useProjectThemeColor();
+function OverviewContent({ deployment }: { deployment: DeploymentRecord }) {
+  const model = useModelStore(s => s.models.find(m => m.modelId === deployment.modelId));
+  const dotColor = statusDotColor(deployment.status);
+  const pulse = PULSE_STATUSES.has(deployment.status);
 
-  const activeTab = (searchParams.get('section') as TabId) || 'overview';
-  const setTab = (tab: string) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (tab === 'overview') next.delete('section');
-      else next.set('section', tab);
-      return next;
-    });
-  };
-
-  const isRunning = deployment.status === 'healthy' || deployment.status === 'starting';
-  const canStart = deployment.status === 'stopped' || deployment.status === 'failed';
-
-  const handleToggle = () => {
-    if (isRunning) stop(deployment.deploymentId);
-    else if (canStart) start(deployment.deploymentId);
-  };
-
-  const handleDelete = () => {
-    remove(deployment.deploymentId);
-    setDeleteOpen(false);
-  };
-
-  const handleCopy = () => {
-    if (deployment.endpointUrl) navigator.clipboard.writeText(deployment.endpointUrl);
+  const handleCopy = async () => {
+    if (!deployment.endpointUrl) return;
+    try {
+      await navigator.clipboard.writeText(deployment.endpointUrl);
+      toast.success('Copied endpoint URL');
+    } catch {
+      toast.error('Failed to copy');
+    }
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header bar */}
-      <div className="flex items-center gap-3 border-b px-5 py-3">
-        <StatusDot status={deployment.status} />
-        <h2 className={cn('text-base font-semibold truncate', colorClasses?.text)}>{deployment.name}</h2>
-        <Badge variant={statusBadgeVariant(deployment.status)} className="ml-1 text-xs capitalize">
-          {statusLabel(deployment.status)}
-        </Badge>
-
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant={isRunning ? 'outline' : 'default'} onClick={handleToggle} disabled={!isRunning && !canStart}>
-            {isRunning ? <Pause className="mr-1.5 h-3.5 w-3.5" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}
-            {isRunning ? 'Pause' : 'Start'}
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" className="h-8 w-8">
-                <MoreVertical className="h-4 w-4" />
-                <span className="sr-only">More actions</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => setDeleteOpen(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete deployment
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+    <div className="space-y-6">
+      {/* Hero status section */}
+      <div className="rounded-xl border bg-muted/30 p-5 space-y-3">
+        {/* Status row */}
+        <div className="flex items-center gap-2.5">
+          <span className="relative inline-flex h-3 w-3 shrink-0">
+            {pulse && <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', dotColor)} />}
+            <span className={cn('relative inline-flex h-3 w-3 rounded-full', dotColor)} />
+          </span>
+          <span className="text-sm font-medium capitalize">{statusLabel(deployment.status)}</span>
+          {deployment.status === 'healthy' && (
+            <span className="text-xs text-muted-foreground">
+              for {timeAgo(deployment.updatedAt)}
+            </span>
+          )}
+          {deployment.errorMessage && (
+            <span className="text-xs text-destructive ml-auto truncate max-w-[50%]">{deployment.errorMessage}</span>
+          )}
         </div>
+
+        {/* Endpoint URL */}
+        {deployment.endpointUrl ? (
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-background/60 border border-border/50 px-2.5 py-1.5 text-xs font-mono text-foreground">
+              {deployment.endpointUrl}
+            </code>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className={COMPACT_TOOLBAR_ICON_BUTTON_CLASS} onClick={() => void handleCopy()}>
+                  <Copy className="h-3.5 w-3.5" />
+                  <span className="sr-only">Copy endpoint URL</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Copy URL</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={deployment.endpointUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent h-7 w-7"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="sr-only">Open endpoint</span>
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>Open in browser</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">Endpoint not available yet</p>
+        )}
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setTab} className="flex flex-1 flex-col overflow-hidden">
-        <TabsList className="mx-5 mt-3 w-fit">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab} value={tab}>
-              {TAB_LABELS[tab]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      {/* Details section */}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+        <dt className="text-xs text-muted-foreground uppercase tracking-wider">Model</dt>
+        <dd className="text-sm text-foreground truncate">
+          {model ? model.name : deployment.modelId.slice(0, 12) + '…'}
+          {model?.algorithm && (
+            <span className="ml-1.5 text-xs text-muted-foreground">({model.algorithm})</span>
+          )}
+        </dd>
 
-        {/* Overview */}
-        <TabsContent value="overview" className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {/* Endpoint */}
-            <div className="rounded-lg border p-4">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Endpoint</p>
-              {deployment.endpointUrl ? (
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs font-mono">
-                    {deployment.endpointUrl}
-                  </code>
-                  <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleCopy}>
-                    <Copy className="h-3.5 w-3.5" />
-                    <span className="sr-only">Copy endpoint URL</span>
-                  </Button>
-                  <a
-                    href={deployment.endpointUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    <span className="sr-only">Open endpoint</span>
-                  </a>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">Not available</p>
-              )}
-            </div>
+        {model?.taskType && (
+          <>
+            <dt className="text-xs text-muted-foreground uppercase tracking-wider">Task Type</dt>
+            <dd className="text-sm text-foreground capitalize">{model.taskType}</dd>
+          </>
+        )}
 
-            {/* Model */}
-            <div className="rounded-lg border p-4">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Model</p>
-              <p className="text-sm font-medium truncate">{deployment.modelId}</p>
-            </div>
+        <dt className="text-xs text-muted-foreground uppercase tracking-wider">Created</dt>
+        <dd><RelativeTime date={deployment.createdAt} /></dd>
 
-            {/* Status */}
-            <div className="rounded-lg border p-4">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Status</p>
-              <div className="flex items-center gap-2">
-                <StatusDot status={deployment.status} />
-                <span className="text-sm font-medium capitalize">{statusLabel(deployment.status)}</span>
-              </div>
-              {deployment.errorMessage && (
-                <p className="mt-1 text-xs text-destructive">{deployment.errorMessage}</p>
-              )}
-            </div>
+        <dt className="text-xs text-muted-foreground uppercase tracking-wider">Last Updated</dt>
+        <dd><RelativeTime date={deployment.updatedAt} /></dd>
 
-            {/* Created */}
-            <div className="rounded-lg border p-4">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Created</p>
-              <p className="text-sm">{new Date(deployment.createdAt).toLocaleString()}</p>
-            </div>
+        {deployment.stoppedAt && (
+          <>
+            <dt className="text-xs text-muted-foreground uppercase tracking-wider">Stopped At</dt>
+            <dd><RelativeTime date={deployment.stoppedAt} /></dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
 
-            {/* Last updated */}
-            <div className="rounded-lg border p-4">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Last Updated</p>
-              <p className="text-sm">{new Date(deployment.updatedAt).toLocaleString()}</p>
-            </div>
+/* ── Main ───────────────────────────────────────────────────── */
 
-            {deployment.stoppedAt && (
-              <div className="rounded-lg border p-4">
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Stopped At</p>
-                <p className="text-sm">{new Date(deployment.stoppedAt).toLocaleString()}</p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="playground" className="flex-1 overflow-y-auto px-5 py-4">
-          <PlaygroundTab deployment={deployment} />
-        </TabsContent>
-
-        <TabsContent value="api" className="flex-1 overflow-y-auto px-5 py-4">
-          <ApiTab deployment={deployment} />
-        </TabsContent>
-
-        <TabsContent value="logs" className="flex-1 overflow-y-auto px-5 py-4">
-          <LogsTab deployment={deployment} />
-        </TabsContent>
-
-        <TabsContent value="monitoring" className="flex-1 overflow-y-auto px-5 py-4">
-          <MonitoringTab deployment={deployment} />
-        </TabsContent>
-      </Tabs>
-
-      {/* Delete confirmation dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete deployment</DialogTitle>
-            <DialogDescription>
-              This will permanently remove &quot;{deployment.name}&quot; and its associated resources.
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+export function DeploymentDetail({ deployment, activeTab }: Props) {
+  return (
+    <div className="flex-1 overflow-y-auto px-5 py-4">
+      {activeTab === 'overview' && <OverviewContent deployment={deployment} />}
+      {activeTab === 'playground' && <PlaygroundTab deployment={deployment} />}
+      {activeTab === 'api' && <ApiTab deployment={deployment} />}
+      {activeTab === 'logs' && <LogsTab deployment={deployment} />}
+      {activeTab === 'monitoring' && <MonitoringTab deployment={deployment} />}
     </div>
   );
 }

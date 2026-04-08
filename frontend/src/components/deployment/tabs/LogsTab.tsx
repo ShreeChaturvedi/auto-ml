@@ -1,21 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Check, X, ThumbsUp, ThumbsDown, ChevronDown, ChevronRight, RotateCcw, Loader2 } from 'lucide-react';
+import { SortHeader } from '@/components/ui/SortHeader';
+import { Check, X, ThumbsUp, ThumbsDown, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import type { DeploymentRecord, PredictionLog } from '@/types/deployment';
 import { getPredictionLogs, submitFeedback } from '@/lib/api/deployments';
+import { timeAgo } from '../deploymentUtils';
 import { cn } from '@/lib/utils';
 
-function timeAgo(date: string): string {
-  const ms = Date.now() - new Date(date).getTime();
-  if (ms < 60_000) return 'just now';
-  if (ms < 3600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86400_000) return `${Math.floor(ms / 3600_000)}h ago`;
-  return `${Math.floor(ms / 86400_000)}d ago`;
-}
+/* ── Helpers ────────────────────────────────────────────────── */
 
 function formatAbsolute(date: string): string {
   return new Date(date).toLocaleString();
@@ -43,6 +39,33 @@ const TIME_RANGE_OPTIONS = [
 ] as const;
 
 const PAGE_SIZE = 25;
+const TD = 'py-2.5 px-4';
+const TH_PLAIN = 'px-4 text-left align-middle text-xs font-medium text-muted-foreground';
+
+type SortField = 'createdAt' | 'latencyMs';
+
+/* ── Skeleton rows ──────────────────────────────────────────── */
+
+function LogGhostRows() {
+  return (
+    <>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <tr key={i} className="border-b border-border/10">
+          <td className={TD}><div className="h-3.5 w-3.5 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-3 w-14 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-4 w-16 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-3 w-10 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-3 w-32 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-3 w-12 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-3 w-14 rounded skeleton-shimmer" /></td>
+          <td className={TD}><div className="h-3 w-6 rounded skeleton-shimmer" /></td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+/* ── Component ──────────────────────────────────────────────── */
 
 interface Props {
   deployment: DeploymentRecord;
@@ -58,6 +81,8 @@ export function LogsTab({ deployment }: Props) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
   const [timeRange, setTimeRange] = useState<1 | 24 | 168>(24);
   const [feedbackState, setFeedbackState] = useState<Record<number, 'positive' | 'negative'>>({});
+  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchLogs = useCallback(async (offset = 0, replace = true) => {
     const isFirst = offset === 0;
@@ -81,6 +106,26 @@ export function LogsTab({ deployment }: Props) {
 
   useEffect(() => { void fetchLogs(0, true); }, [fetchLogs]);
 
+  /* ---- sorting (client-side on loaded page) ---- */
+  const sortedLogs = React.useMemo(() => {
+    const sorted = [...logs];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'createdAt') {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else {
+        cmp = (a.latencyMs ?? 0) - (b.latencyMs ?? 0);
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [logs, sortField, sortDir]);
+
+  const handleToggleSort = (field: SortField) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  };
+
   const handleFeedback = async (log: PredictionLog, value: 'positive' | 'negative') => {
     const current = feedbackState[log.id] ?? log.feedback;
     if (current === value) return;
@@ -89,7 +134,6 @@ export function LogsTab({ deployment }: Props) {
     try {
       await submitFeedback(deployment.deploymentId, log.id, value);
     } catch {
-      // Rollback optimistic update on failure
       setFeedbackState(prev => {
         const next = { ...prev };
         if (previous !== undefined) next[log.id] = previous;
@@ -145,137 +189,175 @@ export function LogsTab({ deployment }: Props) {
       </div>
 
       {/* Table */}
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm">Loading logs…</span>
-        </div>
-      ) : logs.length === 0 ? (
+      {!loading && logs.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
           <p className="text-sm font-medium text-foreground">No prediction logs yet</p>
           <p className="text-xs text-muted-foreground">Make your first prediction in the Playground to see it here.</p>
         </div>
       ) : (
         <div className="rounded-md border border-border overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-8" />
-                <TableHead className="text-xs">Timestamp</TableHead>
-                <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs">Latency</TableHead>
-                <TableHead className="text-xs">Input</TableHead>
-                <TableHead className="text-xs">Prediction</TableHead>
-                <TableHead className="text-xs">Feedback</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {logs.map(log => {
-                const isExpanded = expandedId === log.id;
-                const fb = feedbackState[log.id] ?? log.feedback;
-                return (
-                  <React.Fragment key={log.id}>
-                    <TableRow
-                      className="cursor-pointer hover:bg-muted/30 transition-colors"
-                      onClick={() => setExpandedId(isExpanded ? null : log.id)}
-                    >
-                      <TableCell className="text-muted-foreground w-8">
-                        {isExpanded
-                          ? <ChevronDown className="h-3.5 w-3.5" />
-                          : <ChevronRight className="h-3.5 w-3.5" />}
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="text-xs text-muted-foreground cursor-default">{timeAgo(log.createdAt)}</span>
-                          </TooltipTrigger>
-                          <TooltipContent>{formatAbsolute(log.createdAt)}</TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>
-                        {log.status === 'success' ? (
-                          <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 text-xs px-1.5 py-0">
-                            <Check className="h-3 w-3" /> Success
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="gap-1 text-red-600 border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 text-xs px-1.5 py-0">
-                            <X className="h-3 w-3" /> Error
-                          </Badge>
+          <ScrollArea className="max-h-[600px]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-20 border-b border-border/20">
+                <tr>
+                  <th scope="col" className={cn(TH_PLAIN, 'w-8')} />
+                  <SortHeader<SortField>
+                    field="createdAt"
+                    label="Timestamp"
+                    sortField={sortField}
+                    sortDir={sortDir}
+                    onToggle={handleToggleSort}
+                    headerClassName=""
+                  />
+                  <th scope="col" className={TH_PLAIN}>Status</th>
+                  <SortHeader<SortField>
+                    field="latencyMs"
+                    label="Latency"
+                    sortField={sortField}
+                    sortDir={sortDir}
+                    onToggle={handleToggleSort}
+                    headerClassName=""
+                  />
+                  <th scope="col" className={TH_PLAIN}>Input</th>
+                  <th scope="col" className={TH_PLAIN}>Prediction</th>
+                  <th scope="col" className={TH_PLAIN}>Feedback</th>
+                  <th scope="col" className={cn(TH_PLAIN, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <LogGhostRows />
+                ) : (
+                  sortedLogs.map(log => {
+                    const isExpanded = expandedId === log.id;
+                    const fb = feedbackState[log.id] ?? log.feedback;
+                    return (
+                      <React.Fragment key={log.id}>
+                        <tr
+                          tabIndex={0}
+                          className={cn(
+                            'group cursor-pointer transition-colors hover:bg-muted/30 border-b border-border/10',
+                            isExpanded && 'border-b-0',
+                          )}
+                          onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setExpandedId(isExpanded ? null : log.id);
+                            }
+                          }}
+                        >
+                          <td className={cn(TD, 'text-muted-foreground w-8')}>
+                            {isExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5" />
+                              : <ChevronRight className="h-3.5 w-3.5" />}
+                          </td>
+                          <td className={TD}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-xs text-muted-foreground cursor-default">{timeAgo(log.createdAt)}</span>
+                              </TooltipTrigger>
+                              <TooltipContent>{formatAbsolute(log.createdAt)}</TooltipContent>
+                            </Tooltip>
+                          </td>
+                          <td className={TD}>
+                            {log.status === 'success' ? (
+                              <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 text-xs px-1.5 py-0">
+                                <Check className="h-3 w-3" /> Success
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="gap-1 text-red-600 border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 text-xs px-1.5 py-0">
+                                <X className="h-3 w-3" /> Error
+                              </Badge>
+                            )}
+                          </td>
+                          <td className={cn(TD, 'text-xs tabular-nums')}>
+                            {log.latencyMs != null ? `${log.latencyMs}ms` : '—'}
+                          </td>
+                          <td className={cn(TD, 'text-xs text-muted-foreground max-w-[200px]')}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="block truncate cursor-default">{truncateFeatures(log.inputFeatures)}</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs break-all text-xs">
+                                {truncateFeatures(log.inputFeatures, 8)}
+                              </TooltipContent>
+                            </Tooltip>
+                          </td>
+                          <td className={cn(TD, 'text-xs font-mono')}>
+                            {log.status === 'success' ? formatPrediction(log.prediction) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className={TD} onClick={e => e.stopPropagation()}>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleFeedback(log, 'positive')}
+                                className={cn(
+                                  'p-1 rounded transition-colors hover:bg-muted',
+                                  fb === 'positive' ? 'text-emerald-500' : 'text-muted-foreground/40 hover:text-muted-foreground',
+                                )}
+                                aria-label="Thumbs up"
+                              >
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleFeedback(log, 'negative')}
+                                className={cn(
+                                  'p-1 rounded transition-colors hover:bg-muted',
+                                  fb === 'negative' ? 'text-red-500' : 'text-muted-foreground/40 hover:text-muted-foreground',
+                                )}
+                                aria-label="Thumbs down"
+                              >
+                                <ThumbsDown className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className={TD} onClick={e => e.stopPropagation()}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => handleReplay(log)}
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Replay in Playground</TooltipContent>
+                            </Tooltip>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`${log.id}-expanded`} className="bg-muted/20">
+                            <td colSpan={8} className="py-3 px-4">
+                              <div className="grid grid-cols-2 gap-4 text-xs">
+                                <div>
+                                  <p className="text-muted-foreground font-medium mb-1.5">Input</p>
+                                  <pre className="bg-background rounded border border-border p-2.5 overflow-auto max-h-48 text-[11px] leading-relaxed font-mono">
+                                    {JSON.stringify(log.inputFeatures, null, 2)}
+                                  </pre>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground font-medium mb-1.5">
+                                    {log.status === 'error' ? 'Error' : 'Output'}
+                                  </p>
+                                  <pre className="bg-background rounded border border-border p-2.5 overflow-auto max-h-48 text-[11px] leading-relaxed font-mono">
+                                    {log.status === 'error'
+                                      ? (log.errorMessage ?? 'Unknown error')
+                                      : JSON.stringify(log.prediction, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </TableCell>
-                      <TableCell className="text-xs tabular-nums">
-                        {log.latencyMs != null ? `${log.latencyMs}ms` : '—'}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                        {truncateFeatures(log.inputFeatures)}
-                      </TableCell>
-                      <TableCell className="text-xs font-mono">
-                        {log.status === 'success' ? formatPrediction(log.prediction) : <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell onClick={e => e.stopPropagation()}>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleFeedback(log, 'positive')}
-                            className={cn('p-1 rounded transition-colors hover:bg-muted', fb === 'positive' ? 'text-emerald-500' : 'text-muted-foreground/50 hover:text-muted-foreground')}
-                            aria-label="Thumbs up"
-                          >
-                            <ThumbsUp className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleFeedback(log, 'negative')}
-                            className={cn('p-1 rounded transition-colors hover:bg-muted', fb === 'negative' ? 'text-red-500' : 'text-muted-foreground/50 hover:text-muted-foreground')}
-                            aria-label="Thumbs down"
-                          >
-                            <ThumbsDown className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </TableCell>
-                      <TableCell onClick={e => e.stopPropagation()}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                              onClick={() => handleReplay(log)}
-                            >
-                              <RotateCcw className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Replay in Playground</TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                    {isExpanded && (
-                      <TableRow key={`${log.id}-expanded`} className="bg-muted/20 hover:bg-muted/20">
-                        <TableCell colSpan={8} className="py-3 px-4">
-                          <div className="grid grid-cols-2 gap-4 text-xs">
-                            <div>
-                              <p className="text-muted-foreground font-medium mb-1.5">Input</p>
-                              <pre className="bg-background rounded border border-border p-2.5 overflow-auto max-h-48 text-[11px] leading-relaxed font-mono">
-                                {JSON.stringify(log.inputFeatures, null, 2)}
-                              </pre>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground font-medium mb-1.5">
-                                {log.status === 'error' ? 'Error' : 'Output'}
-                              </p>
-                              <pre className="bg-background rounded border border-border p-2.5 overflow-auto max-h-48 text-[11px] leading-relaxed font-mono">
-                                {log.status === 'error'
-                                  ? (log.errorMessage ?? 'Unknown error')
-                                  : JSON.stringify(log.prediction, null, 2)}
-                              </pre>
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </ScrollArea>
         </div>
       )}
 
@@ -288,7 +370,7 @@ export function LogsTab({ deployment }: Props) {
             disabled={loadingMore}
             className="text-xs gap-2"
           >
-            {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {loadingMore && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />}
             Load more
           </Button>
         </div>

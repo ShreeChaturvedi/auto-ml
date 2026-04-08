@@ -15,6 +15,7 @@ interface DeploymentState {
   deploy: (modelId: string, projectId: string, name: string) => Promise<DeploymentRecord>;
   stop: (deploymentId: string) => Promise<void>;
   start: (deploymentId: string) => Promise<void>;
+  restart: (deploymentId: string) => Promise<void>;
   remove: (deploymentId: string) => Promise<void>;
   updateDeploymentStatus: (id: string, status: DeploymentStatus, errorMessage?: string) => void;
 }
@@ -58,28 +59,50 @@ export const useDeploymentStore = create<DeploymentState>((set, get) => ({
   },
 
   stop: async (deploymentId) => {
+    set({ error: null });
     try {
       const { deployment } = await api.stopDeployment(deploymentId);
       set(state => ({
         deployments: state.deployments.map(d => d.deploymentId === deploymentId ? deployment : d),
       }));
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : 'Stop failed' });
+      const msg = err instanceof Error ? err.message : 'Stop failed';
+      set({ error: msg });
+      throw err;
     }
   },
 
   start: async (deploymentId) => {
+    set({ error: null });
     try {
       const { deployment } = await api.startDeployment(deploymentId);
       set(state => ({
         deployments: state.deployments.map(d => d.deploymentId === deploymentId ? deployment : d),
       }));
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : 'Start failed' });
+      const msg = err instanceof Error ? err.message : 'Start failed';
+      set({ error: msg });
+      throw err;
+    }
+  },
+
+  restart: async (deploymentId) => {
+    set({ error: null });
+    try {
+      await api.stopDeployment(deploymentId);
+      const { deployment } = await api.startDeployment(deploymentId);
+      set(state => ({
+        deployments: state.deployments.map(d => d.deploymentId === deploymentId ? deployment : d),
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Restart failed';
+      set({ error: msg });
+      throw err;
     }
   },
 
   remove: async (deploymentId) => {
+    set({ error: null });
     try {
       await api.deleteDeployment(deploymentId);
       set(state => {
@@ -92,11 +115,16 @@ export const useDeploymentStore = create<DeploymentState>((set, get) => ({
         };
       });
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : 'Delete failed' });
+      const msg = err instanceof Error ? err.message : 'Delete failed';
+      set({ error: msg });
+      throw err;
     }
   },
 
   updateDeploymentStatus: (id, status, errorMessage) => {
+    const current = get().deployments.find(d => d.deploymentId === id);
+    // Skip no-op updates to avoid spurious re-renders from new object refs
+    if (current && current.status === status && current.errorMessage === errorMessage) return;
     set(state => ({
       deployments: state.deployments.map(d =>
         d.deploymentId === id ? { ...d, status, errorMessage } : d

@@ -152,7 +152,7 @@ export function DeploymentEmptyState() {
   const otherModels = deployableModels.filter(m => m.modelId !== championId);
 
   return (
-    <div className="flex h-full flex-col items-center justify-start pt-10 px-6 pb-6 overflow-y-auto">
+    <div className="flex h-full flex-col items-center justify-start pt-10 px-6 pb-6 overflow-y-auto empty-state-enter">
       {/* Empty illustration */}
       <div className="mb-6 flex flex-col items-center gap-3">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/60">

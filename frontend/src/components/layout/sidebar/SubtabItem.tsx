@@ -28,9 +28,9 @@ export function SubtabItem({
   actionSlot,
   iconColorClass
 }: SubtabItemProps) {
-  const iconColor = isActive
-    ? (iconColorClass ?? 'text-accent-text')
-    : 'text-muted-foreground group-hover:text-foreground';
+  const iconColor = iconColorClass
+    ? iconColorClass
+    : isActive ? 'text-accent-text' : 'text-muted-foreground group-hover:text-foreground';
 
   return (
     <div

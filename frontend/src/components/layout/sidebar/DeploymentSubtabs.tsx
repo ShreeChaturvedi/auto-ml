@@ -1,43 +1,27 @@
 /**
  * DeploymentSubtabs — renders deployed models under the Deployment phase.
- * Reuses SubtabItem for uniform sidebar spacing.
+ * Uses Rocket icon with status-based color via SubtabItem's iconColorClass.
  */
 
-import { type ComponentType, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Trash2, Square, Play } from 'lucide-react';
+import { Rocket, Trash2, Square, Play } from 'lucide-react';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useDeploymentStore } from '@/stores/deploymentStore';
 import type { DeploymentStatus } from '@/types/deployment';
-import { cn } from '@/lib/utils';
-import { statusDotColor, PULSE_STATUSES } from '@/components/deployment/statusHelpers';
 import { SubtabItem } from './SubtabItem';
 import { SidebarSubtabActionMenu } from './SidebarSubtabActionMenu';
 import { useSidebarDeleteConfirm } from './useSidebarDeleteConfirm';
 
-/** Static status-dot icon component per status (avoids new component type per render) */
-function StatusDotIcon({ status, className }: { status: DeploymentStatus; className?: string }) {
-  const dotColor = statusDotColor(status);
-  const pulse = PULSE_STATUSES.has(status);
-
-  return (
-    <span className={cn('relative inline-flex h-2 w-2', className)} aria-hidden="true">
-      {pulse && (
-        <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', dotColor)} />
-      )}
-      <span className={cn('relative inline-flex h-2 w-2 rounded-full', dotColor)} />
-    </span>
-  );
-}
-
-const STATUS_ICON_MAP: Record<DeploymentStatus, ComponentType<{ className?: string }>> = {
-  creating:  (props) => <StatusDotIcon status="creating" {...props} />,
-  starting:  (props) => <StatusDotIcon status="starting" {...props} />,
-  healthy:   (props) => <StatusDotIcon status="healthy" {...props} />,
-  unhealthy: (props) => <StatusDotIcon status="unhealthy" {...props} />,
-  stopping:  (props) => <StatusDotIcon status="stopping" {...props} />,
-  stopped:   (props) => <StatusDotIcon status="stopped" {...props} />,
-  failed:    (props) => <StatusDotIcon status="failed" {...props} />,
+/** Status → icon color class mapping. undefined falls through to default SubtabItem behavior. */
+const DEPLOYMENT_ICON_COLOR: Record<DeploymentStatus, string | undefined> = {
+  creating:  'text-amber-500 dark:text-amber-400',
+  starting:  'text-amber-500 dark:text-amber-400',
+  healthy:   'text-green-500 dark:text-green-400',
+  unhealthy: 'text-red-500 dark:text-red-400',
+  stopping:  'text-amber-500 dark:text-amber-400',
+  stopped:   undefined,
+  failed:    'text-red-500 dark:text-red-400',
 };
 
 interface DeploymentSubtabsProps {
@@ -82,7 +66,8 @@ export function DeploymentSubtabs({ projectId, isActivePhase }: DeploymentSubtab
           return (
             <SubtabItem
               key={dep.deploymentId}
-              icon={STATUS_ICON_MAP[dep.status]}
+              icon={Rocket}
+              iconColorClass={DEPLOYMENT_ICON_COLOR[dep.status]}
               label={dep.name}
               isActive={isOnDeployment && dep.deploymentId === selectedDeploymentId}
               onClick={() => {

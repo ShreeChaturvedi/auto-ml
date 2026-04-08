@@ -193,7 +193,7 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
           onMouseEnter={triggerShimmer}
           className={cn(
             'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-muted-foreground/50' : 'flex-1',
+            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border border-dashed border-muted-foreground/30 hover:border-muted-foreground/50' : 'flex-1',
             isDragActive && 'border-accent-fill bg-accent-bg'
           )}
         >

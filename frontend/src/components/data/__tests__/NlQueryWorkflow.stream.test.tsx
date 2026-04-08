@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useProjectStore } from '@/stores/projectStore';
 import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
@@ -22,45 +22,29 @@ describe('NlQueryWorkflow streaming behavior', () => {
     });
   });
 
-  it('consumes streamed phase events while generation is in progress', async () => {
-    const pending = new Promise<NlGenerationResult>(() => undefined);
-    const onGenerate = vi.fn(async (_query: string, onStreamEvent?: (event: NlQueryStreamEvent) => void) => {
-      onStreamEvent?.({
-        type: 'phase_started',
-        phaseId: 'planning',
-        summary: 'Planning started',
-        timestamp: new Date().toISOString()
-      });
-      onStreamEvent?.({
-        type: 'phase_progress',
-        phaseId: 'planning',
-        summary: 'Choosing candidate tables',
-        timestamp: new Date().toISOString()
-      });
-      return pending;
-    });
-    const handleRef = { current: null as NlQueryWorkflowHandle | null };
-
-    render(
-      <NlQueryWorkflow
-        {...buildProps({ onGenerate })}
-        ref={handleRef}
-      />
-    );
-
-    await triggerGenerate(handleRef);
-
-    const planningMatches = await screen.findAllByText(/choosing candidate tables/i);
-    expect(planningMatches.length).toBeGreaterThan(0);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('surfaces streamed phase_failed events for stream parse failures', async () => {
+  it('consumes streamed model work blocks while generation is in progress', async () => {
+    vi.useFakeTimers();
     const pending = new Promise<NlGenerationResult>(() => undefined);
     const onGenerate = vi.fn(async (_query: string, onStreamEvent?: (event: NlQueryStreamEvent) => void) => {
       onStreamEvent?.({
-        type: 'phase_failed',
-        phaseId: 'done',
-        summary: 'Failed to parse NL stream response.',
+        type: 'model_work_block_started',
+        blockId: 'plan-1',
+        kind: 'plan',
+        title: 'Query planning',
+        phaseId: 'planning',
+        timestamp: new Date().toISOString()
+      });
+      onStreamEvent?.({
+        type: 'model_work_delta',
+        blockId: 'plan-1',
+        kind: 'plan',
+        title: 'Query planning',
+        phaseId: 'planning',
+        delta: 'Choosing candidate tables',
         timestamp: new Date().toISOString()
       });
       return pending;
@@ -75,9 +59,51 @@ describe('NlQueryWorkflow streaming behavior', () => {
     );
 
     await triggerGenerate(handleRef);
+    await fastForwardReveal();
 
-    const parseFailureMatches = await screen.findAllByText(/failed to parse nl stream response/i);
-    expect(parseFailureMatches.length).toBeGreaterThan(0);
+    expect(screen.getByTestId('nl-stream-block-plan-1')).toHaveTextContent(
+      /choosing candidate tables/i
+    );
+  });
+
+  it('surfaces streamed model work blocks with failure content', async () => {
+    vi.useFakeTimers();
+    const pending = new Promise<NlGenerationResult>(() => undefined);
+    const onGenerate = vi.fn(async (_query: string, onStreamEvent?: (event: NlQueryStreamEvent) => void) => {
+      onStreamEvent?.({
+        type: 'model_work_block_started',
+        blockId: 'err-1',
+        kind: 'status',
+        title: 'Parse error',
+        phaseId: 'done',
+        timestamp: new Date().toISOString()
+      });
+      onStreamEvent?.({
+        type: 'model_work_delta',
+        blockId: 'err-1',
+        kind: 'status',
+        title: 'Parse error',
+        phaseId: 'done',
+        delta: 'Failed to parse NL stream response.',
+        timestamp: new Date().toISOString()
+      });
+      return pending;
+    });
+    const handleRef = { current: null as NlQueryWorkflowHandle | null };
+
+    render(
+      <NlQueryWorkflow
+        {...buildProps({ onGenerate })}
+        ref={handleRef}
+      />
+    );
+
+    await triggerGenerate(handleRef);
+    await fastForwardReveal();
+
+    expect(screen.getByTestId('nl-stream-block-err-1')).toHaveTextContent(
+      /failed to parse nl stream response/i
+    );
   });
 
   it('does not enter error state when in-flight generation is aborted via reject', async () => {
@@ -160,7 +186,7 @@ describe('NlQueryWorkflow streaming behavior', () => {
 
       await triggerGenerate(handleRef);
 
-      expect(screen.getByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /collapse transcript/i })).toBeInTheDocument();
     } finally {
       restoreResizeObserver();
     }
@@ -181,16 +207,16 @@ describe('NlQueryWorkflow streaming behavior', () => {
 
       await triggerGenerate(handleRef);
 
-      fireEvent.click(screen.getByRole('button', { name: /collapse model work panel/i }));
-      expect(screen.getByRole('button', { name: /expand model work panel/i })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /collapse transcript/i }));
+      expect(screen.getByRole('button', { name: /expand transcript/i })).toBeInTheDocument();
 
       handleRef.current?.reject();
       await vi.waitFor(() => {
-        expect(screen.queryByTestId('nl-work-plan-panel')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('nl-stream-panel')).not.toBeInTheDocument();
       });
       await triggerGenerate(handleRef);
 
-      expect(await screen.findByRole('button', { name: /collapse model work panel/i })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /collapse transcript/i })).toBeInTheDocument();
       expect(onGenerate).toHaveBeenCalledTimes(2);
     } finally {
       restoreResizeObserver();
@@ -232,7 +258,7 @@ describe('NlQueryWorkflow streaming behavior', () => {
     await triggerGenerate(handleRef);
     await fastForwardReveal();
 
-    expect(screen.getByTestId('nl-model-work-block-body-plan-1')).toHaveTextContent(
+    expect(screen.getByTestId('nl-stream-block-plan-1')).toHaveTextContent(
       /selecting candidate tables/i
     );
 

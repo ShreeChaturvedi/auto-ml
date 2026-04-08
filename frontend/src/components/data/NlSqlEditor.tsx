@@ -162,7 +162,7 @@ function NlSqlEditor({
     monacoEditorRef.current = editorInstance;
     monacoApiRef.current = monaco;
     monaco.editor.setTheme(syntaxThemeId);
-    assignMonacoHiddenTextareaIdentity(editorInstance.getDomNode(), 'nl-sql-editor-ime')
+    assignMonacoHiddenTextareaIdentity(editorInstance.getDomNode(), 'nl-sql-editor-ime');
 
     const layout = editorInstance.getLayoutInfo();
     contentLeftRef.current = layout.contentLeft || DEFAULT_CONTENT_LEFT;

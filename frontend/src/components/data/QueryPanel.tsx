@@ -14,7 +14,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, MessageSquare, Code2, PanelRight, CornerDownRight, Play, Pencil } from 'lucide-react';
+import { MessageSquare, Code2, PanelRight, CornerDownRight, Play, Pencil, Square, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
@@ -177,13 +177,49 @@ export function QueryPanel({
   ], [modKey]);
 
   const renderExecuteButton = () => {
-    // During NL reviewing phase, approve/reject controls are inline — hide ribbon button
-    if (mode === 'english' && nlPhase === 'reviewing') return null;
+    // During NL reviewing phase, show discard button instead
+    if (mode === 'english' && nlPhase === 'reviewing') {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => nlWorkflowRef.current?.reject()}
+              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Discard query</TooltipContent>
+        </Tooltip>
+      );
+    }
 
     const isSql = mode === 'sql';
+
+    // Stop button during NL generation
+    if (!isSql && isNlGenerating) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => nlWorkflowRef.current?.reject()}
+              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Stop generation</TooltipContent>
+        </Tooltip>
+      );
+    }
+
     const disabled = isSql
       ? isExecuting || !sqlQuery.trim()
-      : isNlGenerating || !englishQuery.trim();
+      : !englishQuery.trim();
     const onClick = isSql
       ? handleExecute
       : () => nlWorkflowRef.current?.triggerGenerate();
@@ -201,8 +237,6 @@ export function QueryPanel({
           >
             {isSql ? (
               <AnimatedExecuteIcon isExecuting={isExecuting} colorClassName={executeIconColorClass} />
-            ) : isNlGenerating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <AnimatedBrainIcon colorClassName={executeIconColorClass} />
             )}

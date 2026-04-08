@@ -18,8 +18,6 @@ import {
 } from 'react';
 import { cn } from '@/lib/utils';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
-import { tokenizeSql } from './sqlTokenize';
-import { useTypewriter } from './hooks/useTypewriter';
 import {
   applyNlModelWorkEvent,
   applyNlWorkPhaseEvent,
@@ -84,7 +82,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
   ref: Ref<NlQueryWorkflowHandle>
 ) {
   const [state, dispatch] = useReducer(nlReducer, initialNlState);
-  const [workPhases, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
+  const [, setWorkPhases] = useState<NlWorkPhaseState[]>(() => createInitialNlWorkPhases());
   const [modelWorkBlocks, setModelWorkBlocks] = useState<NlModelWorkBlockState[]>([]);
   const streamAbortRef = useRef<AbortController | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -96,21 +94,9 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
     onPhaseChange?.(phase);
   }, [phase, onPhaseChange]);
 
-  const resultTokens = useMemo(
-    () => (result?.sql ? tokenizeSql(result.sql) : []),
-    [result?.sql]
-  );
-
-  const { visibleTokenCount, isComplete: typewriterComplete } = useTypewriter(
-    resultTokens.length,
-    phase === 'revealing'
-  );
-
-  useEffect(() => {
-    if (typewriterComplete && phase === 'revealing') {
-      dispatch({ type: 'REVEAL_COMPLETE' });
-    }
-  }, [typewriterComplete, phase]);
+  const handleRevealComplete = useCallback(() => {
+    dispatch({ type: 'REVEAL_COMPLETE' });
+  }, []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -259,7 +245,7 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
           'transition-[flex,max-height,opacity] ease-out motion-reduce:transition-none',
           isIdle
             ? 'flex-1 max-h-none opacity-100 duration-300'
-            : 'flex-none max-h-[4.5rem] opacity-70 duration-300 pointer-events-none',
+            : 'flex-none max-h-[6rem] opacity-70 duration-300 pointer-events-none',
           isExpanding && 'text-transparent',
         )}
       >
@@ -293,10 +279,8 @@ const NlQueryWorkflow = forwardRef(function NlQueryWorkflow(
         onDismissError={() => dispatch({ type: 'DISMISS_ERROR' })}
         onApprove={handleApprove}
         onReject={handleReject}
-        workPhases={workPhases}
         modelWorkBlocks={modelWorkBlocks}
-        visibleTokenCount={visibleTokenCount}
-        isRevealComplete={phase === 'reviewing'}
+        onRevealComplete={handleRevealComplete}
         approveThemeClasses={approveThemeClasses}
         connectorColorClassName={connectorColorClassName}
         containerHeight={containerHeight}

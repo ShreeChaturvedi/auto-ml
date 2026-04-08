@@ -48,6 +48,7 @@ export function nlReducer(state: NlState, action: NlAction): NlState {
         editedSql: action.payload.sql,
       };
     case 'REVEAL_COMPLETE':
+      if (state.phase !== 'revealing') return state;
       return { ...state, phase: 'reviewing' };
     case 'SQL_EDIT':
       return { ...state, editedSql: action.payload };

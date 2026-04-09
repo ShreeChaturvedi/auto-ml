@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Plus, Square, Play, Loader2, MoreHorizontal, RotateCcw, Trash2,
-  LayoutDashboard, FlaskConical, Code, ScrollText, Activity,
+  LayoutDashboard, FlaskConical, Code, Logs, Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -39,7 +39,7 @@ const TAB_OPTIONS = [
   { value: 'overview',   ariaLabel: 'Overview',   icon: LayoutDashboard, tooltip: 'Overview' },
   { value: 'playground', ariaLabel: 'Playground',  icon: FlaskConical,    tooltip: 'Playground' },
   { value: 'api',        ariaLabel: 'API',         icon: Code,            tooltip: 'API' },
-  { value: 'logs',       ariaLabel: 'Logs',        icon: ScrollText,      tooltip: 'Logs' },
+  { value: 'logs',       ariaLabel: 'Logs',        icon: Logs,            tooltip: 'Logs' },
   { value: 'monitoring', ariaLabel: 'Monitoring',  icon: Activity,        tooltip: 'Monitoring' },
 ] as const satisfies readonly IconModeToggleOption<TabId>[];
 

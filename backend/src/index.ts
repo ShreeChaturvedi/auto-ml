@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import type { Socket } from 'node:net';
 
 import { createApp } from './app.js';
 import { env } from './config.js';
@@ -30,7 +31,7 @@ const app = createApp();
 server = createServer(app);
 
 // Initialize WebSocket server
-wsServer = initializeWebSocket(server);
+wsServer = initializeWebSocket();
 
 // Wire up WebSocket broadcasts to notebook services
 setWebSocketBroadcast(broadcastNotebookEvent);
@@ -38,7 +39,7 @@ setCellExecutionBroadcast(broadcastNotebookEvent);
 
 // Deployment services (requires Postgres)
 if (hasDatabaseConfiguration()) {
-  initializeDeploymentWebSocket(server);
+  initializeDeploymentWebSocket();
   setDeploymentWSBroadcast(broadcastDeploymentEvent);
 
   // Recover deployment state from DB and start health check loop
@@ -49,6 +50,23 @@ if (hasDatabaseConfiguration()) {
     appLogger.error('[server] Failed to recover deployments', err);
   });
 }
+
+server.on('upgrade', (req, socket, head) => {
+  const pathname = new URL(req.url ?? '', 'http://localhost').pathname;
+  const upgradeSocket = socket as Socket;
+
+  if (pathname === '/ws/notebook') {
+    wsServer?.handleUpgrade(req, upgradeSocket, head);
+    return;
+  }
+
+  if (pathname === '/ws/deployment' && hasDatabaseConfiguration()) {
+    getDeploymentWSServer()?.handleUpgrade(req, upgradeSocket, head);
+    return;
+  }
+
+  socket.destroy();
+});
 /**
  * Graceful shutdown handler - cleans up containers before exit
  */

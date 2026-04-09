@@ -160,6 +160,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
     wsListenersCleanup?.();
     wsListenersCleanup = null;
+    wsClient?.disconnect();
 
     set({
       currentProjectId: null,
@@ -170,7 +171,8 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       cellSummaries: [],
       lockedCells: new Map(),
       isConnected: false,
-      isConnecting: false
+      isConnecting: false,
+      wsClient: null
     });
   },
 

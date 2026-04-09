@@ -293,7 +293,7 @@ export function buildFeatureEngineeringRequest(params: {
     ? truncateText(projectPlan.trim(), MAX_FEATURE_PLAN_CHARS)
     : undefined;
   const basePrompt = trimmedProjectPlan
-    ? `${buildSystemPrompt()}\n\n## Project Plan (approved by user)\n${trimmedProjectPlan}\n\nFollow this plan closely. It represents the user's approved approach.`
+    ? `${buildSystemPrompt()}\n\n## Project Plan (approved by user)\n${trimmedProjectPlan}\n\nUse this plan as background project context. The current turn's explicit user request, selected dataset, and selected target are authoritative for this response.`
     : buildSystemPrompt();
   const systemPrompt = `${basePrompt}
 
@@ -337,6 +337,7 @@ OUTPUT ENVELOPE:
   const userContent = [
     `Goal: Generate a feature engineering plan and UI for dataset "${dataset.filename}".`,
     prompt ? `User intent: ${prompt}` : 'User intent: (not provided)',
+    'Current-turn priority: if the user provides a structured post-clean summary, a null/duplicate report, or explicit next actions, ground your proposals in those details before falling back to generic heuristics or older project goals.',
     `Target column: ${targetColumn ?? 'unspecified'}`,
     `Dataset summary: ${dataset.nRows} rows, ${dataset.nCols} columns.`,
     `Columns: ${dataset.columns.map((column) => `${column.name} (${column.dtype})`).join(', ')}`,

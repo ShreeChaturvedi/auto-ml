@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'http';
-import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'node:crypto';
+import type { Duplex } from 'node:stream';
 
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -9,6 +9,8 @@ import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
 import { authService } from '../../services/authService.js';
 import type { DeploymentRecord, DeploymentWSEvent } from '../../types/deployment.js';
+
+import { acceptWebSocketUpgrade } from './upgradeRouter.js';
 
 // ============================================================
 // Types
@@ -31,6 +33,8 @@ type DeploymentWSClientMessage =
 // WebSocket Server Class
 // ============================================================
 
+export const DEPLOYMENT_WS_PATH = '/ws/deployment';
+
 export class DeploymentWSServer {
   private wss: WebSocketServer;
   private clients: Map<string, WSClient> = new Map();
@@ -39,11 +43,11 @@ export class DeploymentWSServer {
   /** Optional callback to fetch the current snapshot for a deployment on subscribe. */
   private snapshotFetcher: ((deploymentId: string) => Promise<DeploymentRecord | null>) | null = null;
 
-  constructor(server: HttpServer) {
-    this.wss = new WebSocketServer({ server, path: '/ws/deployment' });
+  constructor() {
+    this.wss = new WebSocketServer({ noServer: true, path: DEPLOYMENT_WS_PATH });
     this.setupHandlers();
     this.startHeartbeat();
-    appLogger.info('[deployment-ws] WebSocket server initialized on /ws/deployment');
+    appLogger.info(`[deployment-ws] WebSocket server initialized on ${DEPLOYMENT_WS_PATH}`);
   }
 
   // ============================================================
@@ -58,6 +62,10 @@ export class DeploymentWSServer {
     this.wss.on('error', (error) => {
       appLogger.error('[deployment-ws] Server error:', error);
     });
+  }
+
+  public handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    acceptWebSocketUpgrade(this.wss, req, socket, head);
   }
 
   private handleConnection(ws: WebSocket, req: IncomingMessage): void {
@@ -282,13 +290,13 @@ export class DeploymentWSServer {
 
 let deploymentWsServer: DeploymentWSServer | null = null;
 
-export function initializeDeploymentWebSocket(server: HttpServer): DeploymentWSServer {
+export function initializeDeploymentWebSocket(): DeploymentWSServer {
   if (deploymentWsServer) {
     appLogger.warn('[deployment-ws] WebSocket server already initialized');
     return deploymentWsServer;
   }
 
-  deploymentWsServer = new DeploymentWSServer(server);
+  deploymentWsServer = new DeploymentWSServer();
   return deploymentWsServer;
 }
 

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'http';
-import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'node:crypto';
+import type { Duplex } from 'node:stream';
 
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -9,6 +9,8 @@ import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
 import { authService } from '../../services/authService.js';
 import type { WSClientMessage, WSServerMessage } from '../../types/notebook.js';
+
+import { acceptWebSocketUpgrade } from './upgradeRouter.js';
 
 // ============================================================
 // Types
@@ -26,21 +28,23 @@ interface WSClient {
 // WebSocket Server Class
 // ============================================================
 
+export const NOTEBOOK_WS_PATH = '/ws/notebook';
+
 export class NotebookWSServer {
   private wss: WebSocketServer;
   private clients: Map<string, WSClient> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
-  constructor(server: HttpServer) {
+  constructor() {
     this.wss = new WebSocketServer({
-      server,
-      path: '/ws/notebook'
+      noServer: true,
+      path: NOTEBOOK_WS_PATH
     });
 
     this.setupHandlers();
     this.startHeartbeat();
 
-    appLogger.info('[ws] WebSocket server initialized on /ws/notebook');
+    appLogger.info(`[ws] WebSocket server initialized on ${NOTEBOOK_WS_PATH}`);
   }
 
   // ============================================================
@@ -55,6 +59,10 @@ export class NotebookWSServer {
     this.wss.on('error', (error) => {
       appLogger.error('[ws] Server error:', error);
     });
+  }
+
+  public handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    acceptWebSocketUpgrade(this.wss, req, socket, head);
   }
 
   private handleConnection(ws: WebSocket, req: IncomingMessage): void {
@@ -286,13 +294,13 @@ export class NotebookWSServer {
 
 let wsServer: NotebookWSServer | null = null;
 
-export function initializeWebSocket(server: HttpServer): NotebookWSServer {
+export function initializeWebSocket(): NotebookWSServer {
   if (wsServer) {
     appLogger.warn('[ws] WebSocket server already initialized');
     return wsServer;
   }
 
-  wsServer = new NotebookWSServer(server);
+  wsServer = new NotebookWSServer();
   return wsServer;
 }
 

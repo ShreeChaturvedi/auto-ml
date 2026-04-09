@@ -9,8 +9,14 @@ import { setDeploymentWSBroadcast, recoverDeployments, startHealthCheckLoop } fr
 import { emailService } from './services/emailService.js';
 import { setWebSocketBroadcast as setCellExecutionBroadcast } from './services/notebook/cellExecutionService.js';
 import { setWebSocketBroadcast } from './services/notebook/notebookService.js';
-import { initializeDeploymentWebSocket, broadcastDeploymentEvent, getDeploymentWSServer } from './services/websocket/deploymentWsServer.js';
-import { initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
+import {
+  DEPLOYMENT_WS_PATH,
+  initializeDeploymentWebSocket,
+  broadcastDeploymentEvent,
+  getDeploymentWSServer
+} from './services/websocket/deploymentWsServer.js';
+import { attachWebSocketUpgradeRouter } from './services/websocket/upgradeRouter.js';
+import { NOTEBOOK_WS_PATH, initializeWebSocket, broadcastNotebookEvent } from './services/websocket/wsServer.js';
 import { handleStdinError } from './utils/stdinError.js';
 
 let isShuttingDown = false;
@@ -31,15 +37,26 @@ const app = createApp();
 server = createServer(app);
 
 // Initialize WebSocket server
-wsServer = initializeWebSocket(server);
+wsServer = initializeWebSocket();
 
 // Wire up WebSocket broadcasts to notebook services
 setWebSocketBroadcast(broadcastNotebookEvent);
 setCellExecutionBroadcast(broadcastNotebookEvent);
 
+const upgradeHandlers = [
+  {
+    path: NOTEBOOK_WS_PATH,
+    handleUpgrade: wsServer.handleUpgrade.bind(wsServer)
+  }
+];
+
 // Deployment services (requires Postgres)
 if (hasDatabaseConfiguration()) {
-  initializeDeploymentWebSocket(server);
+  const deploymentWsServer = initializeDeploymentWebSocket();
+  upgradeHandlers.push({
+    path: DEPLOYMENT_WS_PATH,
+    handleUpgrade: deploymentWsServer.handleUpgrade.bind(deploymentWsServer)
+  });
   setDeploymentWSBroadcast(broadcastDeploymentEvent);
 
   // Recover deployment state from DB and start health check loop
@@ -50,6 +67,8 @@ if (hasDatabaseConfiguration()) {
     appLogger.error('[server] Failed to recover deployments', err);
   });
 }
+
+attachWebSocketUpgradeRouter(server, upgradeHandlers);
 /**
  * Graceful shutdown handler - cleans up containers before exit
  */

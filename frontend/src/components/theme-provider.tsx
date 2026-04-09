@@ -6,7 +6,7 @@
  */
 
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useLayoutEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -18,15 +18,20 @@ interface ThemeProviderProps {
 
 interface ThemeProviderState {
   theme: Theme;
+  resolvedTheme: 'dark' | 'light';
   setTheme: (theme: Theme) => void;
 }
 
 const initialState: ThemeProviderState = {
   theme: 'system',
+  resolvedTheme: 'dark',
   setTheme: () => null
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+
+const getSystemTheme = (): 'dark' | 'light' =>
+  window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
 export function ThemeProvider({
   children,
@@ -37,29 +42,25 @@ export function ThemeProvider({
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
   );
+  const [systemTheme, setSystemTheme] = useState(getSystemTheme);
+  const resolvedTheme = theme === 'system' ? systemTheme : theme;
 
-  // useLayoutEffect ensures the CSS class is toggled BEFORE children render,
-  // so getComputedStyle() calls in chart components read the correct CSS variables.
-  // useEffect runs after paint, causing a flash of stale theme colors.
   useLayoutEffect(() => {
     const root = window.document.documentElement;
-
     root.classList.remove('light', 'dark');
+    root.classList.add(resolvedTheme);
+  }, [resolvedTheme]);
 
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light';
-
-      root.classList.add(systemTheme);
-      return;
-    }
-
-    root.classList.add(theme);
-  }, [theme]);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setSystemTheme(getSystemTheme());
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const value = {
     theme,
+    resolvedTheme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme);
       setTheme(theme);

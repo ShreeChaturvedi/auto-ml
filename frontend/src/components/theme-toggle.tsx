@@ -1,35 +1,37 @@
 /**
  * Theme Toggle Button
  *
- * Cycles between dark, light, and system themes.
- * Icon reflects the current stored theme preference.
+ * Flips between light and dark themes. Icon always reflects
+ * what the user actually sees (resolved theme), not the stored preference.
  */
 
-import { Moon, Sun, Monitor } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/components/theme-provider';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
 
-  const toggleTheme = () => {
-    // Cycle: dark → light → system → dark
-    if (theme === 'dark') setTheme('light');
-    else if (theme === 'light') setTheme('system');
-    else setTheme('dark');
-  };
+  const toggleTheme = () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
 
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       onClick={toggleTheme}
-      aria-label="Toggle theme"
+      aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
       className="grid place-items-center"
     >
-      {theme === 'light' && <Sun className="h-4 w-4" />}
-      {theme === 'dark' && <Moon className="h-4 w-4" />}
-      {theme === 'system' && <Monitor className="h-4 w-4" />}
+      <span
+        key={resolvedTheme}
+        className="animate-in spin-in-90 zoom-in-75 duration-200"
+      >
+        {resolvedTheme === 'light' ? (
+          <Sun className="h-4 w-4" />
+        ) : (
+          <Moon className="h-4 w-4" />
+        )}
+      </span>
     </Button>
   );
 }

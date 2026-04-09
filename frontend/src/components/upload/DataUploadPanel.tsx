@@ -6,18 +6,24 @@
  * - Compact drop zone when files exist
  * - Simple file rows without card borders
  * - Horizontal separators between files
+ * - Bulk selection & actions (delete, download)
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileStack } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
-import { DATA_FILE_TYPES } from '@/lib/fileUtils';
+import { DATA_FILE_TYPES, downloadFile } from '@/lib/fileUtils';
+import { deleteDataset } from '@/lib/api/datasets';
+import { deleteDocument } from '@/lib/api/documents';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 import { FileRow } from './FileRow';
+import { FileBulkActionBar } from './FileBulkActionBar';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import {
   createUploadedProjectFile,
@@ -60,15 +66,49 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'uploading' | 'uploaded' | 'error'>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const allFiles = useDataStore((state) => state.files);
 
-  // Filter files for this project using useMemo to avoid infinite loops
   const projectFiles = useMemo(
     () => allFiles.filter((file) => file.projectId === projectId),
     [allFiles, projectId]
   );
 
   const hasFiles = projectFiles.length > 0;
+
+  const selectableIds = useMemo(
+    () => new Set(
+      projectFiles
+        .filter(f => uploadStatus[f.id] !== 'uploading' && uploadStatus[f.id] !== 'error')
+        .map(f => f.id)
+    ),
+    [projectFiles, uploadStatus]
+  );
+  const hasSelection = selectedIds.size > 0;
+  const allSelected = selectableIds.size > 0 && [...selectableIds].every(id => selectedIds.has(id));
+  const someSelected = hasSelection && !allSelected;
+
+  const handleToggleSelect = useCallback((fileId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectableIds));
+    }
+  }, [allSelected, selectableIds]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   // Hydrate files from backend on mount
   useEffect(() => {
@@ -134,28 +174,91 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
     multiple: true
   });
 
+  // Helper to clean upload state for a list of file IDs
+  const clearUploadStateForIds = useCallback((ids: string[]) => {
+    setUploadStatus(prev => {
+      const next = { ...prev };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+    setUploadErrors(prev => {
+      const next = { ...prev };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+  }, []);
+
   const handleRemoveFile = async (fileId: string) => {
     try {
       await useDataStore.getState().deleteFile(fileId);
-      setUploadStatus((prev) => {
-        const next = { ...prev };
-        delete next[fileId];
-        return next;
-      });
-      setUploadErrors((prev) => {
-        const next = { ...prev };
-        delete next[fileId];
-        return next;
-      });
-
+      clearUploadStateForIds([fileId]);
+      toast.success('File deleted');
     } catch (error) {
       console.error('[DataUploadPanel] Failed to delete file:', error);
+      toast.error('Failed to delete file');
       setUploadErrors((prev) => ({
         ...prev,
         [fileId]: 'Failed to delete file from server'
       }));
     }
   };
+
+  // Bulk delete — single hydration pattern
+  const handleBulkDelete = useCallback(async () => {
+    setIsDeleting(true);
+    const files = projectFiles.filter(f => selectedIds.has(f.id));
+    const { markDeleted, removeFile, hydrateFromBackend } = useDataStore.getState();
+
+    // Mark all as deleted (race guard against concurrent hydrations)
+    for (const f of files) {
+      if (f.metadata?.datasetId) markDeleted(f.metadata.datasetId);
+      if (f.metadata?.documentId) markDeleted(f.metadata.documentId);
+    }
+
+    // API calls in parallel
+    const results = await Promise.allSettled(
+      files.map(async (f) => {
+        if (f.metadata?.datasetId) await deleteDataset(f.metadata.datasetId);
+        if (f.metadata?.documentId) await deleteDocument(f.metadata.documentId);
+      })
+    );
+
+    // Remove from local state
+    for (const f of files) removeFile(f.id);
+
+    // Single hydration + toast
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+    if (failed === 0) {
+      toast.success(`Deleted ${succeeded} file${succeeded !== 1 ? 's' : ''}`);
+    } else {
+      toast.error(`Deleted ${succeeded} of ${results.length}. ${failed} failed.`);
+    }
+
+    await hydrateFromBackend(projectId, { force: true });
+    clearUploadStateForIds(files.map(f => f.id));
+    clearSelection();
+    setIsDeleting(false);
+  }, [projectFiles, selectedIds, projectId, clearUploadStateForIds, clearSelection]);
+
+  // Bulk download — sequential to avoid browser blocking
+  const handleBulkDownload = useCallback(async () => {
+    setIsDownloading(true);
+    const files = projectFiles.filter(f => selectedIds.has(f.id));
+    let downloadCount = 0;
+    for (const file of files) {
+      try {
+        await downloadFile(file);
+        downloadCount++;
+        // Small delay between downloads so browser doesn't block them
+        if (files.length > 1) await new Promise(r => setTimeout(r, 100));
+      } catch (e) {
+        console.error(`Download failed: ${file.name}`, e);
+      }
+    }
+    toast.success(`Downloaded ${downloadCount} file${downloadCount !== 1 ? 's' : ''}`);
+    setIsDownloading(false);
+  }, [projectFiles, selectedIds]);
 
   // Count file types (single pass)
   const [dataFiles, contextFiles] = useMemo(() => {
@@ -230,20 +333,49 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
         {/* File List - Simple rows with separators */}
         {hasFiles && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 pb-4">
-            {/* Header with counts */}
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium">Uploaded Files</span>
-              <div className="flex items-center gap-2">
-                {dataFiles.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {dataFiles.length} data
-                  </Badge>
-                )}
-                {contextFiles.length > 0 && (
-                  <Badge variant="outline" className="text-xs">
-                    {contextFiles.length} context
-                  </Badge>
-                )}
+            {/* Header — swaps between normal and bulk toolbar */}
+            <div className="relative flex items-center mb-3 min-h-[28px]">
+              {/* Normal toolbar */}
+              <div className={cn(
+                'flex items-center justify-between w-full transition-opacity duration-150',
+                hasSelection ? 'opacity-0 pointer-events-none absolute inset-0 items-center' : 'opacity-100',
+              )}>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                    onCheckedChange={toggleAll}
+                    className="h-[18px] w-[18px] rounded-full"
+                    aria-label="Select all files"
+                  />
+                  <span className="text-sm font-medium">Uploaded Files</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {dataFiles.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {dataFiles.length} data
+                    </Badge>
+                  )}
+                  {contextFiles.length > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {contextFiles.length} context
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Bulk action toolbar */}
+              <div className={cn(
+                'flex items-center w-full transition-opacity duration-150',
+                hasSelection ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0 items-center',
+              )}>
+                <FileBulkActionBar
+                  selectedCount={selectedIds.size}
+                  onClearSelection={clearSelection}
+                  onBulkDelete={handleBulkDelete}
+                  onBulkDownload={handleBulkDownload}
+                  isDeleting={isDeleting}
+                  isDownloading={isDownloading}
+                />
               </div>
             </div>
 
@@ -256,6 +388,10 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
                   onRemove={handleRemoveFile}
                   status={uploadStatus[file.id]}
                   errorMessage={uploadErrors[file.id]}
+                  selectable={selectableIds.has(file.id)}
+                  selected={selectedIds.has(file.id)}
+                  selectionActive={hasSelection}
+                  onToggleSelect={handleToggleSelect}
                 />
               ))}
             </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trash2, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UploadedFile } from '@/types/file';
 import { resolveFileIcon, formatFileSize } from '@/lib/fileUtils';
@@ -12,27 +13,90 @@ interface FileRowProps {
   onRemove: (fileId: string) => void;
   status?: 'uploading' | 'uploaded' | 'error';
   errorMessage?: string;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (fileId: string) => void;
+  selectionActive?: boolean;
 }
 
-export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) {
+export function FileRow({
+  file,
+  onRemove,
+  status,
+  errorMessage,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+  selectionActive = false,
+}: FileRowProps) {
   const [showPreview, setShowPreview] = useState(false);
 
   const { Icon, colorClass } = resolveFileIcon(file.type);
   const isUploading = status === 'uploading';
   const isError = status === 'error';
+  const showCheckbox = selectable && selectionActive;
+
+  const handleRowClick = (e: React.MouseEvent) => {
+    if (!selectable) return;
+    // Don't toggle if user is selecting text
+    if (window.getSelection()?.toString()) return;
+    // Don't toggle if clicking an interactive element inside the row
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, [role="dialog"]')) return;
+    onToggleSelect?.(file.id);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!selectable) return;
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      onToggleSelect?.(file.id);
+    }
+  };
 
   return (
     <>
-      <div className="group flex items-center gap-3 py-1.5 px-1 rounded-md hover:bg-muted/50 border-b border-border/50 transition-colors">
-        {/* Icon / Spinner / Error — crossfade container */}
+      <div
+        className={cn(
+          'group flex items-center gap-3 py-1.5 px-1 rounded-md border-b border-border/50 transition-colors',
+          selectable && 'cursor-pointer hover:bg-muted/50',
+          !selectable && !selectionActive && 'hover:bg-muted/50',
+          selected && 'bg-muted/60',
+          selectionActive && !selectable && 'opacity-60',
+        )}
+        onClick={handleRowClick}
+        onKeyDown={handleKeyDown}
+        tabIndex={selectable ? 0 : undefined}
+        role={selectable ? 'option' : undefined}
+        aria-selected={selectable ? selected : undefined}
+      >
+        {/* Icon / Checkbox / Spinner / Error — crossfade container */}
         <div className={cn('relative flex-shrink-0 h-5 w-5', colorClass)}>
-          {/* File icon — visible when uploaded */}
           <Icon
             className={cn(
-              'h-5 w-5 absolute inset-0 transition-opacity duration-300',
-              isUploading || isError ? 'opacity-0 pointer-events-none' : 'opacity-100',
+              'h-5 w-5 absolute inset-0 transition-opacity duration-200',
+              (isUploading || isError || showCheckbox) && 'opacity-0 pointer-events-none',
+              selectable && !selectionActive && !isUploading && !isError
+                && 'group-hover:opacity-0 group-hover:pointer-events-none',
             )}
           />
+
+          {selectable && (
+            <div
+              className={cn(
+                'absolute inset-0 flex items-center justify-center transition-opacity duration-200 pointer-events-none',
+                showCheckbox ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              )}
+            >
+              <Checkbox
+                checked={selected}
+                className="h-[18px] w-[18px] rounded-full pointer-events-none"
+                tabIndex={-1}
+                aria-hidden
+              />
+            </div>
+          )}
+
           {/* Spinner — visible while uploading */}
           <Loader2
             className={cn(
@@ -66,44 +130,57 @@ export function FileRow({ file, onRemove, status, errorMessage }: FileRowProps) 
 
         {/* File size / Actions — actions overlay size on hover */}
         <div className="relative flex-shrink-0 flex items-center justify-end">
-          <span className="text-xs text-muted-foreground font-mono group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity">
+          <span className={cn(
+            'text-xs text-muted-foreground font-mono transition-opacity',
+            !selectionActive && 'group-hover:opacity-0 group-focus-within:opacity-0',
+          )}>
             {formatFileSize(file.size)}
           </span>
-          <div className="absolute inset-y-0 right-0 flex items-center gap-1 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 transition-opacity">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 hover:bg-primary/10 hover:text-primary"
-                  onClick={() => setShowPreview(true)}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  <span className="sr-only">Preview file</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p className="text-xs">Preview</p>
-              </TooltipContent>
-            </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => onRemove(file.id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span className="sr-only">Delete file</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p className="text-xs">Delete</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+          {/* Per-row actions — hidden when selection is active */}
+          {!selectionActive && (
+            <div className="absolute inset-y-0 right-0 flex items-center gap-1 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 transition-opacity">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 hover:bg-primary/10 hover:text-primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowPreview(true);
+                    }}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span className="sr-only">Preview file</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">Preview</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(file.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span className="sr-only">Delete file</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">Delete</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
         </div>
       </div>
 

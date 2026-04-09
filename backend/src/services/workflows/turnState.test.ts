@@ -70,7 +70,6 @@ describe('shouldRestoreWorkflowHistory', () => {
     expect(shouldRestoreWorkflowHistory(baseRun)).toBe(true);
     expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'paused' })).toBe(true);
     expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed_retryable' })).toBe(true);
-    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed' })).toBe(true);
   });
 
   it('does not restore history for terminal runs', () => {

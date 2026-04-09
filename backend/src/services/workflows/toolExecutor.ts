@@ -83,6 +83,35 @@ function getPauseDetails(results: ToolResult[]): {
   return getApprovalPauseDetails(results);
 }
 
+function getToolOutputRecord(result: ToolResult | null | undefined): Record<string, unknown> | null {
+  if (!result?.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return null;
+  }
+  return result.output as Record<string, unknown>;
+}
+
+function getLatestTrainingRunCellTimeout(
+  phase: WorkflowGraphState['turn']['phase'],
+  results: ToolResult[]
+): ToolResult | null {
+  if (phase !== 'training') {
+    return null;
+  }
+
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index];
+    if (result.tool !== 'run_cell') {
+      continue;
+    }
+    const output = getToolOutputRecord(result);
+    if ((output?.status as string | undefined)?.toLowerCase() === 'timeout') {
+      return result;
+    }
+  }
+
+  return null;
+}
+
 async function executeWorkflowToolCall(
   state: WorkflowGraphState,
   call: z.infer<typeof ToolCallSchema>,
@@ -571,6 +600,32 @@ export async function executeToolsNode(
     if (sink) {
       sink.emit(toolEvent);
     }
+  }
+
+  const timedOutTrainingRunCell = getLatestTrainingRunCellTimeout(state.turn.phase, nextResults);
+  if (timedOutTrainingRunCell) {
+    const timeoutOutput = getToolOutputRecord(timedOutTrainingRunCell);
+    const timeoutMs = typeof timeoutOutput?.executionMs === 'number'
+      ? timeoutOutput.executionMs
+      : undefined;
+    const timeoutMessage = typeof timeoutOutput?.error === 'string' && timeoutOutput.error.trim().length > 0
+      ? timeoutOutput.error
+      : `Training cell execution timed out${timeoutMs ? ` after ${timeoutMs}ms` : ''}.`;
+    return {
+      toolCallHistory: state.pendingToolCalls,
+      toolResultHistory: nextResults,
+      pendingToolCalls: [],
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      latestMessage: '',
+      iteration: state.iteration + 1,
+      pendingInputKind: null,
+      pauseReason: null,
+      nextStep: 'fail',
+      errorMessage: `${timeoutMessage} The kernel was interrupted to clear the stuck execution. Retry the training run or simplify the timed-out cell.`,
+      errorCode: 'TRAINING_RUN_CELL_TIMEOUT'
+    };
   }
 
   const featureFollowUpCalls = await buildFeatureNotebookFollowUp(

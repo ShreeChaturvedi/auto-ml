@@ -89,6 +89,12 @@ interface TrainingDraftMetadata {
   segments: TrainingCellDraft[];
 }
 
+interface TrainingDraftNotebookActivity {
+  notebookResults: import('../../../types/llm.js').ToolResult[];
+  runResults: import('../../../types/llm.js').ToolResult[];
+  writtenCellIds: string[];
+}
+
 // Training now runs in mode='text' for every stage and uses stage-specific
 // allowed tool sets. This keeps the flexible streaming behavior while
 // preventing late-stage regressions (e.g. re-proposing plans after failed
@@ -363,6 +369,9 @@ HARD RULES:
 - If you parse a column with pd.to_datetime() or otherwise create a datetime64 column, do NOT pass that raw datetime column into numeric imputation/scaling/model input. Convert it to numeric/ordinal first, derive date parts, or drop the raw datetime column before building numeric_features.
 - If date-derived numeric columns already exist (for example date_month/date_year), prefer those and exclude the raw DATE column from numeric preprocessing.
 - Do NOT write markdown cells, notebook narration, or plan summaries.
+- Use the configured hyperparameters exactly when they are provided in the request context.
+- If the model is a random forest regressor/classifier and hyperparameters are absent or incomplete, use a runtime-safe baseline for wide tabular data: n_estimators <= 100, max_depth <= 10, min_samples_leaf >= 2, max_features="sqrt", random_state=42. Do NOT use max_depth=None unless the user explicitly requested it.
+- For expensive tree ensembles on medium/large datasets, avoid full train-set predictions unless the user explicitly asked for train metrics. Test-set metrics are sufficient.
 - The FINAL executable cell must print:
   print("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))
 - Keep runtime lean. Prefer train/test split or light CV unless the request explicitly requires heavier evaluation.
@@ -382,6 +391,7 @@ HARD RULES:
 - Do NOT emit markdown or notebook narration.
 - Keep the cell focused on the failed stage and preserve the training workflow contract.
 - If the failure mentions datetime64, DTypePromotionError, or numeric imputation/scaling with dates, repair it by converting the raw datetime column to numeric/ordinal values, deriving date parts, or dropping the raw datetime column before numeric preprocessing. Do NOT send raw datetime columns into numeric_features.
+- If the failure mentions timeout or the model fit was too slow, simplify the cell by reducing tree-ensemble cost (fewer trees, bounded max_depth, larger min_samples_leaf, max_features="sqrt") and remove full train-set predictions unless the user explicitly asked for them.
 - If this is the final training/evaluation cell, it must still print:
   print("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))
 `;
@@ -404,6 +414,7 @@ async function buildTrainingCodeGenerationAction(
   const featureColumns = Array.isArray(experiment.featureColumns)
     ? experiment.featureColumns.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     : [];
+  const hyperparameters = asRecord(experiment.hyperparameters) ?? {};
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
   const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
   const lastRunCell = getLastToolResult(currentTurnResults, 'run_cell');
@@ -430,6 +441,9 @@ async function buildTrainingCodeGenerationAction(
       state.turn.targetColumn ? `Selected target column (authoritative): ${state.turn.targetColumn}` : null,
       `User request: ${state.turn.prompt ?? 'Continue the training workflow.'}`,
       `Configured experiment: ${asString(experiment.experimentName) ?? 'Unnamed experiment'}`,
+      Object.keys(hyperparameters).length > 0
+        ? `Configured hyperparameters (authoritative): ${JSON.stringify(hyperparameters)}`
+        : 'Configured hyperparameters: none provided — choose runtime-safe defaults for the selected model type.',
       `Failed segment title: ${failingSegment.title}`,
       `Failed segment index: ${failingSegmentIndex + 1} of ${latestDraft.segments.length}`,
       featureColumns.length > 0
@@ -487,6 +501,9 @@ async function buildTrainingCodeGenerationAction(
     `Configured experiment: ${asString(experiment.experimentName) ?? 'Unnamed experiment'}`,
     `Model type: ${asString(experiment.modelType) ?? 'unknown'}`,
     `Split strategy: ${asString(experiment.splitStrategy) ?? 'train_test'}`,
+    Object.keys(hyperparameters).length > 0
+      ? `Configured hyperparameters (authoritative): ${JSON.stringify(hyperparameters)}`
+      : 'Configured hyperparameters: none provided — choose runtime-safe defaults for the selected model type.',
     featureColumns.length > 0
       ? `Feature columns: ${featureColumns.join(', ')}`
       : 'Feature columns: use the selected dataset columns, excluding the target column.',
@@ -584,46 +601,86 @@ function extractLatestTrainingDraftMetadata(
   return null;
 }
 
-function extractCurrentTurnWriteCellIds(state: WorkflowGraphState): string[] {
+function extractTrainingDraftIdFromCall(call: WorkflowGraphState['toolCallHistory'][number] | undefined): string | null {
+  const metadata = asRecord(call?.args?.metadata);
+  const trainingDraft = asRecord(metadata?.trainingDraft);
+  return asString(trainingDraft?.draftId) ?? null;
+}
+
+function collectTrainingDraftNotebookActivity(
+  state: WorkflowGraphState,
+  draftId: string
+): TrainingDraftNotebookActivity {
   const cellIds: string[] = [];
   const seen = new Set<string>();
+  const notebookResults: import('../../../types/llm.js').ToolResult[] = [];
+  const runResults: import('../../../types/llm.js').ToolResult[] = [];
+  const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  for (const result of currentTurnResults) {
-    if (!['write_cell', 'edit_cell'].includes(result.tool) || result.error) {
+
+  for (let index = 0; index < currentTurnResults.length; index += 1) {
+    const call = currentTurnCalls[index];
+    const result = currentTurnResults[index];
+    if (!call || !result) {
       continue;
     }
-    const output = getOutputRecord(result);
-    if (!output) {
-      continue;
-    }
-    if (typeof output.cellId === 'string') {
-      if (!seen.has(output.cellId)) {
-        seen.add(output.cellId);
-        cellIds.push(output.cellId);
+
+    if (['write_cell', 'edit_cell', 'insert_cell'].includes(call.tool)) {
+      if (extractTrainingDraftIdFromCall(call) !== draftId) {
+        continue;
       }
-      continue;
-    }
-    const cell = asRecord(output.cell);
-    if (typeof cell?.cellId === 'string') {
-      if (!seen.has(cell.cellId)) {
+      notebookResults.push(result);
+      if (result.error) {
+        continue;
+      }
+      const output = getOutputRecord(result);
+      if (!output) {
+        continue;
+      }
+      if (typeof output.cellId === 'string') {
+        if (!seen.has(output.cellId)) {
+          seen.add(output.cellId);
+          cellIds.push(output.cellId);
+        }
+        continue;
+      }
+      const cell = asRecord(output.cell);
+      if (typeof cell?.cellId === 'string' && !seen.has(cell.cellId)) {
         seen.add(cell.cellId);
         cellIds.push(cell.cellId);
       }
+      continue;
     }
+
+    if (call.tool !== 'run_cell') {
+      continue;
+    }
+    const callArgs = asRecord(call.args);
+    const cellId = asString(callArgs?.cellId);
+    if (!cellId || !seen.has(cellId)) {
+      continue;
+    }
+    notebookResults.push(result);
+    runResults.push(result);
   }
-  return cellIds;
+
+  return {
+    notebookResults,
+    runResults,
+    writtenCellIds: cellIds
+  };
 }
 
-function extractCurrentTurnRunStatuses(state: WorkflowGraphState): Array<{ status?: string }> {
-  return state.toolResultHistory
-    .slice(state.turnStartToolCallCount)
-    .filter((result) => result.tool === 'run_cell')
-    .map((result) => {
-      const output = getOutputRecord(result);
-      return {
-        status: typeof output?.status === 'string' ? output.status : undefined
-      };
-    });
+function extractTrainingDraftRunStatuses(
+  state: WorkflowGraphState,
+  draftId: string
+): Array<{ status?: string }> {
+  return collectTrainingDraftNotebookActivity(state, draftId).runResults.map((result) => {
+    const output = getOutputRecord(result);
+    return {
+      status: typeof output?.status === 'string' ? output.status : undefined
+    };
+  });
 }
 
 async function buildTrainingWriteCodeAction(
@@ -634,22 +691,20 @@ async function buildTrainingWriteCodeAction(
     return [];
   }
 
-  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const lastNotebookResult = [...currentTurnResults].reverse().find((result) =>
-    ['write_cell', 'edit_cell', 'insert_cell', 'run_cell'].includes(result.tool)
-  ) ?? null;
+  const draftActivity = collectTrainingDraftNotebookActivity(state, draft.draftId);
+  const lastNotebookResult = draftActivity.notebookResults.at(-1) ?? null;
   if (isFailedToolResult(lastNotebookResult)) {
     return [];
   }
-  if (currentTurnResults.some(isCompletedTrainingRunCell)) {
+  if (draftActivity.runResults.some(isCompletedTrainingRunCell)) {
     return [];
   }
-  if (isFailedToolResult(getLastToolResult(currentTurnResults, 'run_cell'))) {
+  if (isFailedToolResult(draftActivity.runResults.at(-1) ?? null)) {
     return [];
   }
 
-  const writtenCellIds = extractCurrentTurnWriteCellIds(state);
-  const runStatuses = extractCurrentTurnRunStatuses(state);
+  const writtenCellIds = draftActivity.writtenCellIds;
+  const runStatuses = extractTrainingDraftRunStatuses(state, draft.draftId);
   if (writtenCellIds.length > runStatuses.length) {
     const nextCellId = writtenCellIds[runStatuses.length];
     const parsedRun = ToolCallSchema.safeParse({
@@ -733,6 +788,13 @@ function getLatestCompletedTrainingRunCell(
   return null;
 }
 
+function getLatestCompletedTrainingRunCellForDraft(
+  state: WorkflowGraphState,
+  draftId: string
+): import('../../../types/llm.js').ToolResult | null {
+  return getLatestCompletedTrainingRunCell(collectTrainingDraftNotebookActivity(state, draftId).runResults);
+}
+
 function getLastToolResult(
   toolResults: import('../../../types/llm.js').ToolResult[],
   toolName: string
@@ -814,13 +876,21 @@ async function buildTrainingExecuteAction(
     return [];
   }
 
-  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const existingExecute = getLastToolResultForExperiment(currentTurnResults, 'execute_training', experimentId);
+  const existingExecute = getLastToolResultForExperiment(
+    state.toolResultHistory.slice(state.turnStartToolCallCount),
+    'execute_training',
+    experimentId
+  );
   if (existingExecute) {
     return [];
   }
 
-  const completedRun = getLatestCompletedTrainingRunCell(currentTurnResults);
+  const draft = extractLatestTrainingDraftMetadata(state);
+  if (!draft) {
+    return [];
+  }
+
+  const completedRun = getLatestCompletedTrainingRunCellForDraft(state, draft.draftId);
   if (!completedRun) {
     return [];
   }
@@ -832,7 +902,7 @@ async function buildTrainingExecuteAction(
     return [];
   }
 
-  const cellIds = extractCurrentTurnWriteCellIds(state);
+  const cellIds = collectTrainingDraftNotebookActivity(state, draft.draftId).writtenCellIds;
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-auto-execute-training-${experimentId}`,
     tool: 'execute_training',

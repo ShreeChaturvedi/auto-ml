@@ -1,17 +1,26 @@
 import { cn } from '@/lib/utils';
-import { DotGrid, GrainFilter } from './shared';
+import { GrainFilter } from './shared';
 
-export function HomeEmptyIllustration({ className }: { className?: string }) {
+export function HomeEmptyIllustration({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
     <svg
       viewBox="0 0 120 90"
       fill="none"
       className={cn('h-20 w-auto', className)}
+      style={style}
       aria-hidden="true"
     >
+      <defs>
+        {/* Mask to ensure grain fill is perfectly bound to the organic leaf shapes without rectangular artifacts */}
+        <mask id="leaf-mask">
+          <path d="M 58 65 C 45 55, 30 45, 25 40 C 35 55, 50 62, 58 65 Z" fill="white" />
+          <path d="M 63 50 C 75 40, 90 30, 95 25 C 85 45, 75 50, 63 50 Z" fill="white" />
+          <path d="M 62 35 C 53 25, 45 20, 43 15 C 51 28, 58 33, 62 35 Z" fill="white" />
+          <path d="M 65 25 C 73 18, 78 15, 80 12 C 73 22, 68 24, 65 25 Z" fill="white" />
+        </mask>
+      </defs>
+
       <GrainFilter id="grain-home" seed={3} />
-      <DotGrid cx={88} cy={6} />
-      <DotGrid cx={12} cy={20} gap={6} />
 
       {/* Dashed baseline */}
       <line
@@ -21,88 +30,84 @@ export function HomeEmptyIllustration({ className }: { className?: string }) {
         style={{ animationDelay: '60ms' }}
       />
 
-      {/* Secondary Shoots */}
+      {/* Root hints - curved cleanly into the ground */}
       <path
-        d="M 42 84 Q 36 70 32 65"
-        stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.4}
+        d="M 60 84 C 55 86, 50 88, 48 88"
+        stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.3}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '100ms' }}
       />
       <path
-        d="M 78 84 Q 84 75 88 60"
-        stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.4}
+        d="M 60 84 C 65 87, 72 87, 75 87"
+        stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.3}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '120ms' }}
       />
 
-      {/* Main Stem */}
+      {/* Main Stem - Elegant S curve */}
       <path
-        d="M 60 84 Q 52 50 60 15"
+        d="M 60 84 C 55 60, 70 35, 60 15"
         stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" fill="none"
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '160ms' }}
       />
 
-      {/* Lower Left Leaf */}
+      {/* Leaf Fills with Grain (Using a single rect masked by the leaves) */}
+      <rect 
+        x={20} y={10} width={80} height={60} 
+        fill="currentColor" opacity={0.06} 
+        filter="url(#grain-home)" mask="url(#leaf-mask)" 
+      />
+
+      {/* Leaf 1 (Bottom Left) */}
       <path
-        d="M 56 60 C 40 45, 25 35, 25 25 C 35 40, 50 50, 56 60"
-        stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round"
-        fill="currentColor" fillOpacity={0.06} filter="url(#grain-home)"
+        d="M 58 65 C 45 55, 30 45, 25 40 C 35 55, 50 62, 58 65"
+        stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round" fill="none"
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '260ms' }}
       />
       <path
-        d="M 54 58 Q 40 40 28 28"
+        d="M 56 63 C 45 57, 35 48, 28 42"
         stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" opacity={0.5}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '340ms' }}
       />
 
-      {/* Middle Right Leaf */}
+      {/* Leaf 2 (Middle Right) */}
       <path
-        d="M 57 45 C 80 30, 95 20, 95 15 C 85 30, 70 40, 57 45"
-        stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round"
-        fill="currentColor" fillOpacity={0.05} filter="url(#grain-home)"
+        d="M 63 50 C 75 40, 90 30, 95 25 C 85 45, 75 50, 63 50"
+        stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round" fill="none"
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '320ms' }}
       />
       <path
-        d="M 59 43 Q 80 30 90 18"
+        d="M 65 48 C 75 42, 85 33, 91 28"
         stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" opacity={0.5}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '400ms' }}
       />
 
-      {/* Upper Left Leaf */}
+      {/* Leaf 3 (Top Left) */}
       <path
-        d="M 58 25 C 50 15, 40 10, 40 5 C 45 15, 55 20, 58 25"
-        stroke="currentColor" strokeWidth={1} strokeLinejoin="round"
-        fill="currentColor" fillOpacity={0.04} filter="url(#grain-home)"
+        d="M 62 35 C 53 25, 45 20, 43 15 C 51 28, 58 33, 62 35"
+        stroke="currentColor" strokeWidth={1} strokeLinejoin="round" fill="none"
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '380ms' }}
       />
       <path
-        d="M 56 23 Q 48 14 43 7"
+        d="M 60 33 C 53 27, 48 22, 45 17"
         stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" opacity={0.5}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '460ms' }}
       />
 
-      {/* Top Right Leaf / Bud */}
+      {/* Leaf 4 (Top Right) */}
       <path
-        d="M 59 18 C 65 10, 75 8, 75 5 C 70 12, 65 15, 59 18"
-        stroke="currentColor" strokeWidth={1} strokeLinejoin="round"
-        fill="currentColor" fillOpacity={0.04} filter="url(#grain-home)"
+        d="M 65 25 C 73 18, 78 15, 80 12 C 73 22, 68 24, 65 25"
+        stroke="currentColor" strokeWidth={1} strokeLinejoin="round" fill="none"
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '420ms' }}
       />
-
-      {/* Subtle organic atmosphere (pollen/spores) */}
-      <circle cx={40} cy={15} r={1.5} fill="currentColor" opacity={0.3} />
-      <circle cx={80} cy={35} r={1.5} fill="currentColor" opacity={0.2} />
-      <circle cx={30} cy={50} r={2} fill="currentColor" opacity={0.15} />
-      <circle cx={90} cy={55} r={1} fill="currentColor" opacity={0.25} />
-      <circle cx={50} cy={30} r={1} fill="currentColor" opacity={0.2} />
 
     </svg>
   );

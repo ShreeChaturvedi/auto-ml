@@ -247,6 +247,42 @@ describe('executeToolsNode', () => {
     );
   });
 
+  it('forwards the tool call rationale into the phase-specific tool context', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.runId = 'wf-feature-2';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-feature-rationale',
+      tool: 'propose_feature',
+      args: {
+        featureName: 'division_missing_flag',
+        method: 'missing_indicator',
+        sourceColumns: ['CF EE Division']
+      },
+      rationale: 'Flag rows where CF EE Division is blank or null.'
+    }];
+
+    await executeToolsNode(state, {
+      configurable: {
+        phaseConfig
+      }
+    } as never);
+
+    expect(executePhaseSpecificToolMock).toHaveBeenCalledWith(
+      'propose_feature',
+      expect.objectContaining({
+        runId: 'wf-feature-2',
+        datasetId: 'dataset-1'
+      }),
+      expect.objectContaining({
+        rationale: 'Flag rows where CF EE Division is blank or null.'
+      })
+    );
+  });
+
   it('fails with TOOL_CALL_LIMIT_EXCEEDED when a single tool exceeds MAX_SINGLE_TOOL_CALLS', async () => {
     const phaseConfig = createPhaseConfig();
     phaseConfig.isPhaseSpecificTool = vi.fn(() => true);
@@ -603,6 +639,93 @@ describe('executeToolsNode', () => {
         args: expect.objectContaining({
           cellType: 'code',
           content: 'df["signup_month"] = pd.to_datetime(df["signup_date"]).dt.month'
+        })
+      })
+    ]);
+  });
+
+  it('does not auto-insert another FE dataset load cell after one already succeeded in the current turn', async () => {
+    const phaseConfig = createFeaturePhaseConfig();
+    const state = createState();
+    state.turn.phase = 'feature_engineering';
+    state.run.phase = 'feature_engineering';
+    state.run.currentNode = 'continue_feature_pipeline';
+    state.pendingToolCalls = [{
+      id: 'wf-call-materialize-next',
+      tool: 'materialize_feature_code',
+      args: {
+        featureId: 'feat-date-month',
+        code: 'df["DATE_month"] = pd.to_datetime(df["DATE"]).dt.month'
+      }
+    }];
+    state.toolCallHistory = [
+      {
+        id: 'wf-call-load-cell',
+        tool: 'write_cell',
+        args: {
+          cellType: 'code',
+          metadata: {
+            phase: 'feature-engineering',
+            role: 'feature-lifecycle-load',
+            datasetId: 'dataset-1',
+            featureId: 'feat-division-missing'
+          }
+        }
+      },
+      {
+        id: 'wf-call-run-load',
+        tool: 'run_cell',
+        args: {
+          cellId: 'cell-load-1',
+          metadata: {
+            phase: 'feature-engineering',
+            role: 'feature-lifecycle-load',
+            datasetId: 'dataset-1',
+            featureId: 'feat-division-missing'
+          }
+        }
+      }
+    ];
+    state.toolResultHistory = [
+      {
+        id: 'wf-call-load-cell',
+        tool: 'write_cell',
+        output: {
+          cellId: 'cell-load-1'
+        }
+      },
+      {
+        id: 'wf-call-run-load',
+        tool: 'run_cell',
+        output: {
+          status: 'success',
+          cellId: 'cell-load-1'
+        }
+      }
+    ];
+    executePhaseSpecificToolMock.mockResolvedValue({
+      output: {
+        featureId: 'feat-date-month',
+        status: 'ok'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('execute_tools');
+    expect(result.pendingToolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          cellType: 'code',
+          content: 'df["DATE_month"] = pd.to_datetime(df["DATE"]).dt.month',
+          metadata: {
+            phase: 'feature-engineering',
+            featureId: 'feat-date-month',
+            source: 'feature-lifecycle'
+          }
         })
       })
     ]);

@@ -142,6 +142,19 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('result = {}');
   lines.push(`result["taskType"] = ${JSON.stringify(taskType)}`);
   lines.push('');
+  lines.push('# Resolve the fitted estimator step robustly');
+  lines.push('fitted_model = None');
+  lines.push('if hasattr(pipeline, "named_steps"):');
+  lines.push('    fitted_model = pipeline.named_steps.get("model")');
+  lines.push('    if fitted_model is None:');
+  lines.push('        fitted_model = pipeline.named_steps.get("regressor")');
+  lines.push('    if fitted_model is None:');
+  lines.push('        fitted_model = pipeline.named_steps.get("classifier")');
+  lines.push('if fitted_model is None and hasattr(pipeline, "steps") and len(pipeline.steps) > 0:');
+  lines.push('    fitted_model = pipeline.steps[-1][1]');
+  lines.push('if fitted_model is None:');
+  lines.push('    fitted_model = pipeline');
+  lines.push('');
 
   // ── Feature importance ──
   lines.push('# Feature importance');
@@ -154,7 +167,6 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('    ohe_feature_names = feature_columns');
   lines.push('');
   lines.push('# Model-based importance');
-  lines.push('fitted_model = pipeline.named_steps["model"]');
   lines.push('if hasattr(fitted_model, "feature_importances_"):');
   lines.push('    fi["model_based"] = {');
   lines.push('        "features": ohe_feature_names,');
@@ -254,19 +266,19 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('try:');
     lines.push('  if has_proba:');
     lines.push('    y_proba = pipeline.predict_proba(X_test)');
-    lines.push('    classes = [str(c) for c in pipeline.named_steps["model"].classes_]');
+    lines.push('    classes = [str(c) for c in fitted_model.classes_]');
     lines.push('    n_classes = len(classes)');
     lines.push('');
     lines.push('    # Binarize for multiclass curves');
     lines.push('    y_test_bin = None');
     lines.push('    if n_classes > 2:');
     lines.push('        from sklearn.preprocessing import label_binarize');
-    lines.push('        y_test_bin = label_binarize(y_test, classes=pipeline.named_steps["model"].classes_)');
+    lines.push('        y_test_bin = label_binarize(y_test, classes=fitted_model.classes_)');
     lines.push('');
     lines.push('    # ROC curves');
     lines.push('    roc_curves = {}');
     lines.push('    if n_classes == 2:');
-    lines.push('        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1], pos_label=pipeline.named_steps["model"].classes_[1])');
+    lines.push('        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1], pos_label=fitted_model.classes_[1])');
     lines.push('        roc_auc = float(auc(fpr, tpr))');
     lines.push('        roc_curves[classes[1]] = {"fpr": fpr.tolist(), "tpr": tpr.tolist(), "auc": roc_auc}');
     lines.push('    else:');
@@ -279,8 +291,8 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    # Precision-recall curves');
     lines.push('    pr_curves = {}');
     lines.push('    if n_classes == 2:');
-    lines.push('        prec, rec, _ = precision_recall_curve(y_test, y_proba[:, 1], pos_label=pipeline.named_steps["model"].classes_[1])');
-    lines.push('        ap = float(average_precision_score(y_test == pipeline.named_steps["model"].classes_[1], y_proba[:, 1]))');
+    lines.push('        prec, rec, _ = precision_recall_curve(y_test, y_proba[:, 1], pos_label=fitted_model.classes_[1])');
+    lines.push('        ap = float(average_precision_score(y_test == fitted_model.classes_[1], y_proba[:, 1]))');
     lines.push('        pr_curves[classes[1]] = {"precision": prec.tolist(), "recall": rec.tolist(), "ap": ap}');
     lines.push('    else:');
     lines.push('        for i, cls in enumerate(classes):');
@@ -292,7 +304,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    # Calibration curve (binary only)');
     lines.push('    if n_classes == 2:');
     lines.push('        from sklearn.calibration import calibration_curve as cal_curve');
-    lines.push('        prob_true, prob_pred = cal_curve(y_test == pipeline.named_steps["model"].classes_[1], y_proba[:, 1], n_bins=10)');
+    lines.push('        prob_true, prob_pred = cal_curve(y_test == fitted_model.classes_[1], y_proba[:, 1], n_bins=10)');
     lines.push('        result["calibration_curve"] = {');
     lines.push('            "prob_true": prob_true.tolist(),');
     lines.push('            "prob_pred": prob_pred.tolist(),');
@@ -362,7 +374,6 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('# SHAP computation (best-effort, failure does not block evaluation)');
   lines.push('try:');
   lines.push('    import shap');
-  lines.push('    fitted_model = pipeline.named_steps["model"]');
   lines.push('    X_shap = X_test.iloc[:1000] if len(X_test) > 1000 else X_test');
   lines.push('    X_shap_transformed = pipeline.named_steps["preprocessor"].transform(X_shap)');
   lines.push('    shap_feature_names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())');

@@ -35,6 +35,26 @@ import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workf
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 type TrainingProposalSelection = { title: string; selected: boolean };
 
+function extractPendingTrainingProposalTitle(message: Extract<ChatMessage, { type: 'tool_call' }>): string {
+  const output = message.result?.output;
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    const experimentName = (output as Record<string, unknown>).experimentName;
+    if (typeof experimentName === 'string' && experimentName.trim().length > 0) {
+      return experimentName;
+    }
+  }
+
+  const args = message.call.args;
+  if (typeof args?.experimentName === 'string' && args.experimentName.trim().length > 0) {
+    return args.experimentName;
+  }
+  if (typeof args?.modelName === 'string' && args.modelName.trim().length > 0) {
+    return args.modelName;
+  }
+
+  return 'Training Plan';
+}
+
 function isPendingTrainingProposal(message: ChatMessage): message is Extract<ChatMessage, { type: 'tool_call' }> {
   if (message.type !== 'tool_call' || message.call.tool !== 'propose_training_plan') {
     return false;
@@ -49,8 +69,8 @@ function isPendingTrainingProposal(message: ChatMessage): message is Extract<Cha
   return (output as Record<string, unknown>).status === 'awaiting_approval';
 }
 
-function collectActivePendingTrainingProposalIds(messages: ChatMessage[]): string[] {
-  const pendingIds: string[] = [];
+function collectActivePendingTrainingProposals(messages: ChatMessage[]): Array<{ id: string; title: string }> {
+  const pendingProposals: Array<{ id: string; title: string }> = [];
 
   // Only treat a trailing block of pending training proposals as active.
   // Older proposal cards from prior turns stay in history, but they should
@@ -61,13 +81,16 @@ function collectActivePendingTrainingProposalIds(messages: ChatMessage[]): strin
       continue;
     }
     if (isPendingTrainingProposal(message)) {
-      pendingIds.push(message.call.id);
+      pendingProposals.push({
+        id: message.call.id,
+        title: extractPendingTrainingProposalTitle(message)
+      });
       continue;
     }
     break;
   }
 
-  return pendingIds.reverse();
+  return pendingProposals.reverse();
 }
 
 interface TrainingConversationPaneProps {
@@ -115,10 +138,15 @@ function TrainingConversationPane({
     syncLlmCells(messages);
   }, [messages, syncLlmCells]);
 
-  const pendingProposalIds = useMemo(
-    () => collectActivePendingTrainingProposalIds(messages),
+  const pendingProposals = useMemo(
+    () => collectActivePendingTrainingProposals(messages),
     [messages]
   );
+  const pendingProposalIds = useMemo(
+    () => pendingProposals.map((proposal) => proposal.id),
+    [pendingProposals]
+  );
+  const pendingProposalCount = pendingProposalIds.length;
   const pendingProposalSignature = useMemo(
     () => [...pendingProposalIds].sort().join('|'),
     [pendingProposalIds]
@@ -128,17 +156,39 @@ function TrainingConversationPane({
     setProposalSelections((prev) => {
       let changed = prev.size !== pendingProposalIds.length;
       const next = new Map<string, TrainingProposalSelection>();
-      for (const proposalId of pendingProposalIds) {
-        const existing = prev.get(proposalId);
+      let hasSelectedModel = false;
+      for (const proposal of pendingProposals) {
+        const existing = prev.get(proposal.id);
         if (existing) {
-          next.set(proposalId, existing);
+          const shouldSelect = existing.selected && !hasSelectedModel;
+          if (existing.selected && hasSelectedModel) {
+            changed = true;
+          }
+          next.set(proposal.id, {
+            title: proposal.title,
+            selected: shouldSelect
+          });
+          if (shouldSelect) {
+            hasSelectedModel = true;
+          }
         } else {
           changed = true;
+          next.set(proposal.id, { title: proposal.title, selected: false });
         }
+      }
+
+      if (!hasSelectedModel && pendingProposalCount > 0) {
+        const firstProposalId = pendingProposals[0].id;
+        const firstProposal = next.get(firstProposalId);
+        next.set(firstProposalId, {
+          title: firstProposal?.title ?? pendingProposals[0].title,
+          selected: true
+        });
+        changed = true;
       }
       return changed ? next : prev;
     });
-  }, [pendingProposalIds, setProposalSelections]);
+  }, [pendingProposalCount, pendingProposalIds.length, pendingProposals, setProposalSelections]);
 
   const lastProposalSignatureRef = useRef<string>('');
   useEffect(() => {
@@ -160,23 +210,7 @@ function TrainingConversationPane({
   );
 
   return (
-    <div className="p-6 space-y-4 pb-28">
-      {error && <div className="text-sm text-red-500">{error}</div>}
-
-      <ChatMessageRenderer
-        messages={messages}
-        renderLifecycleCard={renderLifecycleCard}
-        activeTextMessageId={activeTextMessageId}
-        activeThinkingMessageId={activeThinkingMessageId}
-        hydratedMessageIds={hydratedMessageIds}
-        onEditMessage={onEditMessage}
-        onRevertToMessage={onRevertToMessage}
-        editingMessageId={editingMessageId}
-        turnDiffs={turnDiffs}
-        isGenerating={isGenerating}
-        onRetryWorkflow={onRetryWorkflow}
-      />
-
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
       {pendingProposalIds.length > 0 ? (
         <TrainingApprovalGate
           totalModels={pendingProposalIds.length}
@@ -184,15 +218,36 @@ function TrainingConversationPane({
           isGenerating={isGenerating && proposalsSubmitted}
           isSubmitted={proposalsSubmitted}
           onApply={() => {
-            if (selectedProposalEntries.length === 0) {
+            const selectedProposal = selectedProposalEntries[0];
+            const name = selectedProposal?.title;
+            if (!name) {
               return;
             }
-            const names = selectedProposalEntries.map((proposal) => proposal.title).join(', ');
             setProposalsSubmitted(true);
-            submitPromptRef.current?.(`Approved. Proceed with training the selected models: ${names}.`);
+            submitPromptRef.current?.(`Approved. Proceed with training the selected model: ${name}.`);
           }}
         />
       ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1 pb-28">
+        <div className="space-y-4">
+          {error && <div className="text-sm text-red-500">{error}</div>}
+
+          <ChatMessageRenderer
+            messages={messages}
+            renderLifecycleCard={renderLifecycleCard}
+            activeTextMessageId={activeTextMessageId}
+            activeThinkingMessageId={activeThinkingMessageId}
+            hydratedMessageIds={hydratedMessageIds}
+            onEditMessage={onEditMessage}
+            onRevertToMessage={onRevertToMessage}
+            editingMessageId={editingMessageId}
+            turnDiffs={turnDiffs}
+            isGenerating={isGenerating}
+            onRetryWorkflow={onRetryWorkflow}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -445,10 +500,21 @@ export function TrainingPanel() {
     onProposalToggle: (stepId, title, selected) => {
       setProposalSelections(prev => {
         const next = new Map(prev);
-        next.set(stepId, { title, selected });
+        if (selected) {
+          for (const [existingStepId, proposal] of next.entries()) {
+            next.set(existingStepId, {
+              ...proposal,
+              selected: existingStepId === stepId
+            });
+          }
+          next.set(stepId, { title, selected: true });
+          return next;
+        }
+        next.set(stepId, { title, selected: false });
         return next;
       });
     },
+    getProposalSelected: (stepId) => proposalSelections.get(stepId)?.selected ?? null,
   });
 
   /** Extends lifecycle cards with training-specific ui message rendering */
@@ -577,6 +643,7 @@ export function TrainingPanel() {
         storageKey={trainingStorageKey}
         notebookId={resolvedTrainingNotebookId ?? undefined}
         domainAdapter={trainingAdapter}
+        leftPaneScrollable={false}
         renderLeftPane={(renderProps) => {
           submitPromptRef.current = renderProps.submitPrompt;
           return (

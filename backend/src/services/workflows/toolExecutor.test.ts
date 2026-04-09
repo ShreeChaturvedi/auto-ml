@@ -9,9 +9,18 @@ import { executeToolsNode } from './toolExecutor.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
 const executePhaseSpecificToolMock = vi.fn();
+const { mockGetDatasetById } = vi.hoisted(() => ({
+  mockGetDatasetById: vi.fn()
+}));
 
 vi.mock('../mcp/mcpAdapter.js', () => ({
   executeMcpTool: vi.fn()
+}));
+
+vi.mock('../../repositories/datasetRepository.js', () => ({
+  createDatasetRepository: () => ({
+    getById: mockGetDatasetById
+  })
 }));
 
 function createPhaseConfig(): PhaseConfig {
@@ -68,6 +77,31 @@ function createFeaturePhaseConfig(): PhaseConfig {
     buildUserContext: vi.fn(() => []),
     resolveNextStage: vi.fn(() => null),
     isPhaseSpecificTool: vi.fn((toolName: string) => featureTools.has(toolName)),
+    executePhaseSpecificTool: executePhaseSpecificToolMock
+  };
+}
+
+function createTrainingPhaseConfig(): PhaseConfig {
+  return {
+    phase: 'training',
+    lifecycle: [],
+    classifyTurn: vi.fn(async () => 'action' as const),
+    getStageConfig: vi.fn(() => ({
+      name: 'write_code',
+      mode: 'text' as const,
+      allowedTools: [],
+      toolChoice: 'auto' as const,
+      requiresApproval: false,
+      allowAssistantMessage: true,
+      allowAskUser: true,
+      allowRenderUi: true,
+      allowPlanExit: false,
+      requireToolCall: false
+    })),
+    buildSystemPrompt: vi.fn(() => ''),
+    buildUserContext: vi.fn(() => []),
+    resolveNextStage: vi.fn(() => null),
+    isPhaseSpecificTool: vi.fn(() => false),
     executePhaseSpecificTool: executePhaseSpecificToolMock
   };
 }
@@ -136,6 +170,7 @@ describe('executeToolsNode', () => {
   beforeEach(() => {
     executePhaseSpecificToolMock.mockReset();
     vi.mocked(executeMcpTool).mockReset();
+    mockGetDatasetById.mockReset();
     executePhaseSpecificToolMock.mockResolvedValue({
       output: {
         runId: 'prep-1',
@@ -340,6 +375,93 @@ describe('executeToolsNode', () => {
 
     expect(result.nextStep).toBe('prepare');
     expect(result.errorCode).toBeNull();
+  });
+
+  it('does not treat repeated run_cell on the same cell as an identical-args stuck loop', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+
+    const identicalRunArgs = { cellId: 'cell-1' };
+    state.toolCallHistory = Array.from({ length: MAX_IDENTICAL_TOOL_CALLS }, (_, i) => ({
+      id: `run-call-${i}`,
+      tool: 'run_cell',
+      args: identicalRunArgs
+    }));
+    state.pendingToolCalls = [{
+      id: 'run-call-final',
+      tool: 'run_cell',
+      args: identicalRunArgs
+    }];
+
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        status: 'error',
+        stderr: 'NameError'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.errorCode).toBeNull();
+  });
+
+  it('rejects list_cells during training execution stages', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-list-cells',
+      tool: 'list_cells',
+      args: {}
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(vi.mocked(executeMcpTool)).not.toHaveBeenCalled();
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'list_cells',
+        error: expect.stringContaining('not allowed during training execution')
+      })
+    ]);
+  });
+
+  it('rejects markdown write_cell calls during training execution stages', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-markdown',
+      tool: 'write_cell',
+      args: {
+        cellType: 'markdown',
+        content: '## Training Plan'
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(vi.mocked(executeMcpTool)).not.toHaveBeenCalled();
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringContaining('Markdown cells are not allowed during training execution')
+      })
+    ]);
   });
 
   it('respects per-phase maxSingleToolCalls override', async () => {
@@ -571,6 +693,287 @@ describe('executeToolsNode', () => {
     const followUp = result.pendingToolCalls?.[0];
     expect(typeof followUp?.args?.stdout).toBe('string');
     expect((followUp?.args?.stdout as string).length).toBeGreaterThan(0);
+  });
+
+  it('auto-runs a newly written training cell before returning to the model', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-cell',
+      tool: 'write_cell',
+      args: {
+        title: 'Train subject area classifier',
+        content: 'print("train")'
+      }
+    }];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        cellId: 'training-cell-1'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('execute_tools');
+    expect(result.pendingToolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'run_cell',
+        args: { cellId: 'training-cell-1' }
+      })
+    ]);
+  });
+
+  it('does not auto-run explicit markdown training cells', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-markdown',
+      tool: 'write_cell',
+      args: {
+        title: 'Training plan',
+        cellType: 'markdown',
+        content: '## Training Plan'
+      }
+    }];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        cellId: 'training-cell-markdown'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.pendingToolCalls).toEqual([]);
+  });
+
+  it('rejects list_cells during training execution stages', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-list-training-cells',
+      tool: 'list_cells',
+      args: {}
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'list_cells',
+        error: expect.stringContaining('not allowed during training execution')
+      })
+    ]);
+  });
+
+  it('rejects markdown cell writes during training execution stages', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-markdown-hard-block',
+      tool: 'write_cell',
+      args: {
+        title: 'Training plan',
+        cellType: 'markdown',
+        content: '## Training Plan'
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringContaining('Markdown cells are not allowed during training execution')
+      })
+    ]);
+  });
+
+  it('rejects oversized training code cells during training execution stages', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-huge',
+      tool: 'write_cell',
+      args: {
+        title: 'All training at once',
+        cellType: 'code',
+        content: Array.from({ length: 140 }, (_, index) => `print(${index})`).join('\n')
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringContaining('Training code cell is too large')
+      })
+    ]);
+  });
+
+  it('rejects training code that references a dataset different from the selected dataset', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.turn.datasetId = 'dataset-1';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-wrong-dataset',
+      tool: 'write_cell',
+      args: {
+        title: 'Dataset prep',
+        cellType: 'code',
+        content: 'dataset_path = resolve_dataset_path("other.csv", "dataset-1")'
+      }
+    }];
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      filename: 'feature_v1.csv',
+      projectId: 'project-1'
+    } as never);
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringContaining('selected dataset for this turn is "feature_v1.csv"')
+      })
+    ]);
+  });
+
+  it('rejects training code that references a target different from the selected target', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.turn.targetColumn = 'usage_log1p';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-wrong-target',
+      tool: 'write_cell',
+      args: {
+        title: 'Dataset prep',
+        cellType: 'code',
+        content: 'target_col = "Subject Area"'
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringContaining('selected target column for this turn is "usage_log1p"')
+      })
+    ]);
+  });
+
+  it('rejects training edits that reference a target different from the selected target via direct y assignment', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.turn.targetColumn = 'usage_log1p';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-edit-training-wrong-target',
+      tool: 'edit_cell',
+      args: {
+        cellId: 'cell-1',
+        startLine: 10,
+        endLine: 10,
+        newContent: 'y = df["Subject Area"]'
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'edit_cell',
+        error: expect.stringContaining('selected target column for this turn is "usage_log1p"')
+      })
+    ]);
+  });
+
+  it('returns to prepare after a successful staged training run_cell so write_code owns the next segment', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-run-training-segment-1',
+      tool: 'run_cell',
+      args: {
+        cellId: 'cell-1',
+        metadata: {
+          trainingDraft: {
+            draftId: 'draft-1',
+            segmentIndex: 0,
+            segments: [
+              { title: 'Imports and Config', content: 'import json' },
+              { title: 'Dataset Prep', content: 'df = load_df()' },
+              { title: 'Fit', content: 'model.fit(X_train, y_train)' }
+            ]
+          }
+        }
+      }
+    }];
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        cellId: 'cell-1',
+        status: 'success',
+        stdout: 'segment ok'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.pendingToolCalls).toEqual([]);
   });
 
   it('still fails when per-phase override is exceeded', async () => {

@@ -39,7 +39,7 @@ export function SettingsNav({ activeTab }: { activeTab: string }) {
           variant="ghost"
           size="sm"
           className="gap-2"
-          onClick={() => navigate('/')}
+          onClick={() => navigate(-1)}
         >
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -76,7 +76,7 @@ export function SettingsNav({ activeTab }: { activeTab: string }) {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => navigate(`/settings/${tab.id}`)}
+                  onClick={() => navigate(`/settings/${tab.id}`, { replace: true })}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] cursor-pointer mx-2 transition-colors duration-150',
                     active

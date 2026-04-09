@@ -534,6 +534,34 @@ describe('executeToolsNode', () => {
     expect(result.errorMessage).toContain('kernel was interrupted');
   });
 
+  it('fails training turns immediately when run_cell hits an MCP request timeout', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-mcp-timeout',
+      tool: 'run_cell',
+      args: {
+        cellId: 'cell-timeout'
+      }
+    }];
+
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      error: 'MCP error -32001: Request timed out'
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('fail');
+    expect(result.errorCode).toBe('TRAINING_RUN_CELL_TIMEOUT');
+    expect(result.errorMessage).toContain('Request timed out');
+    expect(result.errorMessage).toContain('kernel was interrupted');
+  });
+
   it('respects per-phase maxSingleToolCalls override', async () => {
     const phaseConfig = createPhaseConfig();
     phaseConfig.isPhaseSpecificTool = vi.fn(() => true);

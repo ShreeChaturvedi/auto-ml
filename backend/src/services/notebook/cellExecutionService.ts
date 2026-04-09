@@ -11,15 +11,22 @@ import { resolveDatasetSyncMode, type DatasetSyncMode } from './datasetSyncMode.
 import { getDatasetPaths, copyDatasetsToWorkspace } from './datasetWorkspace.js';
 import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
 
-function shouldRetryMissingPreprocessingHelper(cellContent: string, errorMessage: string): boolean {
-  if (!cellContent.includes('load_preprocessing_dataset(') && !cellContent.includes('save_preprocessing_dataset(')) {
+function shouldRetryMissingKernelInitHelper(cellContent: string, errorMessage: string): boolean {
+  const referencesKernelHelper =
+    cellContent.includes('load_preprocessing_dataset(')
+    || cellContent.includes('save_preprocessing_dataset(')
+    || cellContent.includes('resolve_dataset_path(');
+
+  if (!referencesKernelHelper) {
     return false;
   }
 
   return /NameError: name 'load_preprocessing_dataset' is not defined/i.test(errorMessage)
     || /NameError: name 'save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /NameError: name 'resolve_dataset_path' is not defined/i.test(errorMessage)
     || /load_preprocessing_dataset' is not defined/i.test(errorMessage)
-    || /save_preprocessing_dataset' is not defined/i.test(errorMessage);
+    || /save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /resolve_dataset_path' is not defined/i.test(errorMessage);
 }
 
 export async function getOrEnsureContainer(projectId: string): Promise<Container> {
@@ -108,7 +115,7 @@ export async function executeCell(
       result = await runKernelExecution();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (!shouldRetryMissingPreprocessingHelper(cell.content, errorMessage)) {
+      if (!shouldRetryMissingKernelInitHelper(cell.content, errorMessage)) {
         throw error;
       }
 
@@ -116,7 +123,7 @@ export async function executeCell(
       result = await runKernelExecution();
     }
 
-    if (result.status === 'error' && shouldRetryMissingPreprocessingHelper(cell.content, result.error ?? result.stderr ?? '')) {
+    if (result.status === 'error' && shouldRetryMissingKernelInitHelper(cell.content, result.error ?? result.stderr ?? '')) {
       await kernelManager.restartKernel(container);
       result = await runKernelExecution();
     }

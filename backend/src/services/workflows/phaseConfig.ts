@@ -32,6 +32,7 @@ export interface RuntimeContext {
 export interface ToolContext {
   projectId: string;
   toolCallId: string | undefined;
+  rationale?: string;
   run: WorkflowRunState;
   args: Record<string, unknown>;
   turn: WorkflowTurnRequest;

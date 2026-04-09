@@ -331,10 +331,29 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     const action = config.deterministicAction;
     expect(action).toBeTypeOf('function');
 
-    const toolCalls = await action!(createTrainingState([
+    const state = createTrainingState([
       makeToolResult('write_cell', { output: { cellId: 'c-1' } }),
       makeRunCellSuccess()
-    ]));
+    ]);
+    state.toolCallHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [{ title: 'Cell 1', content: 'print("train")' }]
+            }
+          }
+        }
+      },
+      { id: 'run-1', tool: 'run_cell', args: { cellId: 'c-1' } }
+    ] as never;
+
+    const toolCalls = await action!(state);
 
     expect(toolCalls).toEqual([
       expect.objectContaining({
@@ -344,6 +363,103 @@ describe('trainingPhaseConfig.getStageConfig', () => {
           succeeded: true,
           cellIds: ['c-1'],
           metrics: expect.objectContaining({ rmse: 0.4321 })
+        })
+      })
+    ]);
+  });
+
+  it('builds execute_training from the latest draft instead of reusing a previous model completion in the same turn', async () => {
+    const config = trainingPhaseConfig.getStageConfig('execute_training');
+    const action = config.deterministicAction;
+    expect(action).toBeTypeOf('function');
+
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'old-cell' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":0.44}\nRMSE: 0.44',
+          stderr: '',
+          cellId: 'old-cell',
+          executionMs: 1100
+        }
+      }),
+      makeToolResult('register_model', {
+        output: { experimentId: 'exp-1', status: 'registered', modelId: 'model-1' }
+      }),
+      makeToolResult('write_cell', { output: { cellId: 'new-cell' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":0.61}\nRMSE: 0.61',
+          stderr: '',
+          cellId: 'new-cell',
+          executionMs: 900
+        }
+      })
+    ]);
+    state.turn.prompt = 'Approved. Proceed with training the selected model: lasso.';
+    state.run.metadata = {
+      experiments: {
+        'exp-1': {
+          experimentId: 'exp-1',
+          experimentName: 'ridge',
+          modelType: 'ridge_regression',
+          status: 'registered',
+          updatedAt: '2026-04-09T00:00:00.000Z'
+        },
+        'exp-2': {
+          experimentId: 'exp-2',
+          experimentName: 'lasso',
+          modelType: 'linear_regression',
+          status: 'proposed',
+          updatedAt: '2026-04-09T00:00:01.000Z'
+        }
+      }
+    };
+    state.toolCallHistory = [
+      {
+        id: 'write-old',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [{ title: 'Old', content: 'print("old")' }]
+            }
+          }
+        }
+      },
+      { id: 'run-old', tool: 'run_cell', args: { cellId: 'old-cell' } },
+      { id: 'register-old', tool: 'register_model', args: { experimentId: 'exp-1' } },
+      {
+        id: 'write-new',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-2',
+              experimentId: 'exp-2',
+              segmentIndex: 0,
+              segments: [{ title: 'New', content: 'print("new")' }]
+            }
+          }
+        }
+      },
+      { id: 'run-new', tool: 'run_cell', args: { cellId: 'new-cell' } }
+    ] as never;
+
+    const toolCalls = await action!(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_training',
+        args: expect.objectContaining({
+          experimentId: 'exp-2',
+          cellIds: ['new-cell'],
+          metrics: expect.objectContaining({ rmse: 0.61 })
         })
       })
     ]);
@@ -419,7 +535,7 @@ describe('trainingPhaseConfig.getStageConfig', () => {
         }
       })
     ]);
-    state.turn.prompt = 'Approved. Proceed with training the selected models: ridge, lasso.';
+    state.turn.prompt = 'Approved. Proceed with training the selected model: lasso.';
     (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments = {
       'exp-1': {
         experimentId: 'exp-1',
@@ -440,6 +556,26 @@ describe('trainingPhaseConfig.getStageConfig', () => {
         updatedAt: '2026-04-09T00:00:01.000Z'
       }
     };
+    state.toolCallHistory = [
+      { id: 'execute-1', tool: 'execute_training', args: { experimentId: 'exp-1' } },
+      { id: 'evaluate-1', tool: 'evaluate_results', args: { experimentId: 'exp-1' } },
+      { id: 'register-1', tool: 'register_model', args: { experimentId: 'exp-1' } },
+      {
+        id: 'write-2',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-2',
+              experimentId: 'exp-2',
+              segmentIndex: 0,
+              segments: [{ title: 'New', content: 'print("new")' }]
+            }
+          }
+        }
+      },
+      { id: 'run-2', tool: 'run_cell', args: { cellId: 'c-2' } }
+    ] as never;
 
     const executeAction = trainingPhaseConfig.getStageConfig('execute_training').deterministicAction!;
     const evaluateAction = trainingPhaseConfig.getStageConfig('evaluate_results').deterministicAction!;
@@ -559,6 +695,148 @@ describe('trainingPhaseConfig.getStageConfig', () => {
           metadata: expect.objectContaining({
             trainingDraft: expect.objectContaining({
               draftId: 'draft-1',
+              segmentIndex: 1
+            })
+          })
+        })
+      })
+    ]);
+  });
+
+  it('passes configured hyperparameters and runtime-safe random-forest guidance into code generation', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'Feature_v1.csv',
+      columns: [
+        { name: 'USER_NAME', dtype: 'string' },
+        { name: 'usage_count', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([]);
+    state.run.currentNode = 'generate_code';
+    state.turn.prompt = 'Train a random forest on Feature_v1.csv';
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'feature_v1_random_forest_usage_count',
+      modelType: 'random_forest_regressor',
+      splitStrategy: 'time_series',
+      featureColumns: ['USER_NAME'],
+      hyperparameters: {
+        n_estimators: 100,
+        max_depth: 10,
+        min_samples_leaf: 2,
+        max_features: 'sqrt',
+        random_state: 42
+      },
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const client = {
+      complete: vi.fn().mockResolvedValue([
+        '# Cell 1: Imports and Config',
+        'import json',
+        '# Cell 2: Dataset Prep',
+        'print("prep")'
+      ].join('\n'))
+    };
+
+    await action!(client as never, state);
+
+    expect(client.complete).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          content: expect.stringContaining('Do NOT use max_depth=None unless the user explicitly requested it')
+        }),
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Configured hyperparameters (authoritative): {"n_estimators":100,"max_depth":10,"min_samples_leaf":2,"max_features":"sqrt","random_state":42}')
+        })
+      ])
+    }));
+  });
+
+  it('writes the next segment for the active draft even when a previous model already completed in the same turn', async () => {
+    const action = trainingPhaseConfig.getStageConfig('write_code').deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'old-cell' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":0.44}\nRMSE: 0.44',
+          stderr: '',
+          cellId: 'old-cell',
+          executionMs: 1100
+        }
+      }),
+      makeToolResult('register_model', {
+        output: { experimentId: 'exp-1', status: 'registered', modelId: 'model-1' }
+      }),
+      makeToolResult('write_cell', { output: { cellId: 'new-cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: 'imports ready',
+          stderr: '',
+          cellId: 'new-cell-1',
+          executionMs: 90
+        }
+      })
+    ]);
+    state.toolCallHistory = [
+      {
+        id: 'write-old',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [{ title: 'Old', content: 'print("old")' }]
+            }
+          }
+        }
+      },
+      { id: 'run-old', tool: 'run_cell', args: { cellId: 'old-cell' } },
+      { id: 'register-old', tool: 'register_model', args: { experimentId: 'exp-1' } },
+      {
+        id: 'write-new',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-2',
+              experimentId: 'exp-2',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'import pandas as pd' },
+                { title: 'Prep', content: 'df = df.copy()' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-new', tool: 'run_cell', args: { cellId: 'new-cell-1' } }
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          title: 'Prep',
+          content: 'df = df.copy()',
+          metadata: expect.objectContaining({
+            trainingDraft: expect.objectContaining({
+              draftId: 'draft-2',
               segmentIndex: 1
             })
           })

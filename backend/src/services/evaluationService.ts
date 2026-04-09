@@ -397,8 +397,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
     const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
 
     // 6. Pre-compute workspace paths (same pattern as containerOrchestrator)
-    const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
-    const workspaceModelPath = join(workspacePath, 'models', modelId, 'model.joblib');
+    const workspaceModelPath = join('models', modelId, 'model.joblib');
     const testSize = resolveModelTestSize(model);
 
     // 7. Orchestrate container execution

@@ -6,7 +6,8 @@ import {
   getToolResultPauseReason,
   prepareRunForTurn,
   resolvePauseReason,
-  resolvePendingInputKind
+  resolvePendingInputKind,
+  shouldRestoreWorkflowHistory
 } from './turnState.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
@@ -47,6 +48,35 @@ describe('prepareRunForTurn', () => {
       lastFailureCode: undefined,
       lastFailureMessage: undefined
     });
+  });
+});
+
+describe('shouldRestoreWorkflowHistory', () => {
+  const baseRun: WorkflowRunState = {
+    runId: 'run-1',
+    threadId: 'thread-1',
+    projectId: 'project-1',
+    phase: 'training',
+    status: 'running',
+    currentNode: 'configure_experiment',
+    revision: 1,
+    retryBudget: 3,
+    repairAttemptCount: 0,
+    createdAt: '2026-04-09T00:00:00.000Z',
+    updatedAt: '2026-04-09T00:00:00.000Z'
+  };
+
+  it('restores history for resumable runs', () => {
+    expect(shouldRestoreWorkflowHistory(baseRun)).toBe(true);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'paused' })).toBe(true);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed_retryable' })).toBe(true);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed' })).toBe(true);
+  });
+
+  it('does not restore history for terminal runs', () => {
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'completed' })).toBe(false);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed_terminal' })).toBe(false);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'interrupted' })).toBe(false);
   });
 });
 

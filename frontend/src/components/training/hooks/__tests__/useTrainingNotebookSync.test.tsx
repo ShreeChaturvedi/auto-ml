@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -423,6 +424,68 @@ describe('useTrainingNotebookSync', () => {
     });
 
     expect(notebookApiMocks.createNotebook).not.toHaveBeenCalled();
+  });
+
+  it('keeps the notebook ready while a same-workbook binding rotates directly to a fresh notebook', async () => {
+    notebookApiMocks.notebooks = [
+      {
+        notebookId: 'training-nb-old',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      },
+      {
+        notebookId: 'training-nb-new',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      }
+    ];
+    const setWorkbookNotebookId = vi.fn();
+    const transitions: Array<{ notebookId: string | null; isReady: boolean }> = [];
+
+    const { result, rerender } = renderHook(
+      (props: { activeWorkbook: WorkbookEntry }) => {
+        const state = useTrainingNotebookSync({
+          projectId: 'project-1',
+          activeWorkbook: props.activeWorkbook,
+          setWorkbookNotebookId
+        });
+        const { notebookId, isReady } = state;
+
+        useEffect(() => {
+          transitions.push({ notebookId, isReady });
+        }, [isReady, notebookId]);
+
+        return state;
+      },
+      {
+        initialProps: {
+          activeWorkbook: makeWorkbook({
+            id: 'training-wb-1',
+            name: 'Workbook 1',
+            notebookId: 'training-nb-old'
+          })
+        }
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'training-nb-old', isReady: true });
+    });
+
+    transitions.length = 0;
+
+    rerender({
+      activeWorkbook: makeWorkbook({
+        id: 'training-wb-1',
+        name: 'Workbook 1',
+        notebookId: 'training-nb-new'
+      })
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'training-nb-new', isReady: true });
+    });
+
+    expect(transitions).toContainEqual({ notebookId: 'training-nb-new', isReady: true });
+    expect(transitions).not.toContainEqual({ notebookId: null, isReady: false });
   });
 
   it('clears state when projectId or activeWorkbook becomes undefined', async () => {

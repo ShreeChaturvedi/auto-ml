@@ -109,6 +109,13 @@ export function prepareRunForTurn(
   };
 }
 
+export function shouldRestoreWorkflowHistory(run: WorkflowRunState): boolean {
+  return run.status === 'running'
+    || run.status === 'paused'
+    || run.status === 'failed_retryable'
+    || run.status === 'failed';
+}
+
 export function resolveFailureStatus(errorCode: string | null): WorkflowRunState['status'] {
   if (
     errorCode === 'DATASET_NOT_FOUND'

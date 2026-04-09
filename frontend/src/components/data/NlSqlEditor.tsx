@@ -22,7 +22,7 @@ import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType } from 'monaco-editor';
 
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
-import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { assignMonacoHiddenTextareaIdentity } from '@/lib/monaco/dom';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { cn } from '@/lib/utils';
@@ -70,7 +70,7 @@ function NlSqlEditor({
   queryExecutionError,
   className
 }: NlSqlEditorProps) {
-  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
+  const globalEditorOpts = useEditorMonacoOptions();
   const monacoEditorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
   const monacoApiRef = useRef<Monaco | null>(null);
   const preRef = useRef<HTMLPreElement | null>(null);

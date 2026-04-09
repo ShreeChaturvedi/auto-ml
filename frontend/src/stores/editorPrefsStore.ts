@@ -6,12 +6,14 @@
  * validate inputs — clamping numbers, rejecting unknown enum values — so the
  * persisted store always holds canonical data regardless of how callers write.
  *
- * Use `getEditorMonacoOptions(state)` to produce a spread-ready options object
- * for any Monaco `IStandaloneCodeEditor` instance.
+ * Use `useEditorMonacoOptions()` to consume a spread-ready options object for
+ * any Monaco `IStandaloneCodeEditor` instance.
  */
 
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 
 const VALID_FONT_FAMILIES = ['Monaspace Neon', 'JetBrains Mono'] as const;
 const VALID_TAB_SIZES = [2, 4, 8] as const;
@@ -29,6 +31,11 @@ export interface EditorPrefsState {
   tabSize: TabSize;
   smoothCursor: boolean;
 }
+
+type EditorMonacoPrefState = Pick<
+  EditorPrefsState,
+  'fontSize' | 'fontFamily' | 'lineNumbers' | 'minimap' | 'wordWrap' | 'tabSize' | 'smoothCursor'
+>;
 
 interface EditorPrefsStore extends EditorPrefsState {
   setFontSize: (size: number) => void;
@@ -140,13 +147,25 @@ export const useEditorPrefsStore = create<EditorPrefsStore>()(
   )
 );
 
+function getEditorMonacoPrefState(state: EditorPrefsState): EditorMonacoPrefState {
+  return {
+    fontSize: state.fontSize,
+    fontFamily: state.fontFamily,
+    lineNumbers: state.lineNumbers,
+    minimap: state.minimap,
+    wordWrap: state.wordWrap,
+    tabSize: state.tabSize,
+    smoothCursor: state.smoothCursor,
+  };
+}
+
 /**
  * Returns a Monaco-compatible options object derived from the given editor
  * preferences state. Spread directly into a Monaco editor's `options` prop or
  * `updateOptions()` call.
  *
  * @example
- * const opts = useEditorPrefsStore(getEditorMonacoOptions);
+ * const opts = useEditorMonacoOptions();
  * <MonacoEditor options={opts} />
  */
 export function getEditorMonacoOptions(state: EditorPrefsState) {
@@ -160,4 +179,10 @@ export function getEditorMonacoOptions(state: EditorPrefsState) {
     cursorBlinking: state.smoothCursor ? 'smooth' as const : 'blink' as const,
     cursorSmoothCaretAnimation: state.smoothCursor ? 'on' as const : 'off' as const,
   };
+}
+
+export function useEditorMonacoOptions() {
+  const editorPrefs = useEditorPrefsStore(useShallow(getEditorMonacoPrefState));
+
+  return useMemo(() => getEditorMonacoOptions(editorPrefs), [editorPrefs]);
 }

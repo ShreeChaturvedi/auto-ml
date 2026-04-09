@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 import type { RichOutput } from '@/lib/api/execution';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { CodeCellOutput } from './CodeCellOutput';
 
@@ -54,7 +54,7 @@ export function CodeCell({
   isRunning,
   datasetFiles = []
 }: CodeCellProps) {
-  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
+  const globalEditorOpts = useEditorMonacoOptions();
   const [copied, copy] = useCopyToClipboard();
 
   const completionOptions = useMemo(

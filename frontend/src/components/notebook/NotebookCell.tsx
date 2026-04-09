@@ -34,7 +34,7 @@ import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useHighlightStore } from '@/stores/highlightStore';
-import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 
 interface NotebookCellComponentProps {
@@ -86,7 +86,7 @@ export function NotebookCellComponent({
   canMoveDown
 }: NotebookCellComponentProps) {
   const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
-  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
+  const globalEditorOpts = useEditorMonacoOptions();
 
   const completionOptions = useMemo(
     () => ({ projectId, cellId: cell.cellId }),

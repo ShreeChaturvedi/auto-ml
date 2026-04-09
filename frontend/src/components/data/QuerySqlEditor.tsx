@@ -24,7 +24,7 @@ import { SqlPlaceholderOverlay } from './SqlPlaceholderOverlay';
 import { SqlEditorChips } from './SqlEditorChips';
 import { useSqlEditorIdle } from './useSqlEditorIdle';
 import { assignMonacoHiddenTextareaIdentity } from '@/lib/monaco/dom';
-import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 
 import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
@@ -65,7 +65,7 @@ export function QuerySqlEditor({
   modKey,
   projectId,
 }: QuerySqlEditorProps) {
-  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
+  const globalEditorOpts = useEditorMonacoOptions();
   const monacoRef = useRef<Monaco | null>(null);
   const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const completionProviderRef = useRef<IDisposable | null>(null);

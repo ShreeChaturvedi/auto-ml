@@ -30,7 +30,7 @@ import 'katex/dist/katex.min.css';
 import { Markdown } from '@/components/ui/Markdown';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildHeadingComponents } from '@/lib/markdown/tocUtils';
-import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { CellMoveButtons } from './CellMoveButtons';
 import { MarkdownEmptyState } from './MarkdownEmptyState';
 import { useDebouncedSave } from './hooks/useDebouncedSave';
@@ -121,7 +121,7 @@ export function NotebookMarkdownCell({
   const { theme } = useTheme();
   const resolvedTheme = useResolvedEditorTheme(theme);
   const { syntaxThemeId } = useProjectThemeColor();
-  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
+  const globalEditorOpts = useEditorMonacoOptions();
 
   const [copied, copy] = useCopyToClipboard();
   const cellRef = useRef<HTMLDivElement>(null);

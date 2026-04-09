@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
@@ -49,6 +50,29 @@ export function setWebSocketBroadcast(fn: (notebookId: string, event: unknown) =
 function broadcast(notebookId: string, type: string, data: Record<string, unknown>): void {
   if (broadcastToNotebook) {
     broadcastToNotebook(notebookId, { type, ...data, timestamp: new Date().toISOString() });
+  }
+}
+
+async function recoverKernelAfterTimeout(container: Container, cellId: string): Promise<void> {
+  try {
+    await kernelManager.interruptKernel(container);
+    return;
+  } catch (interruptError) {
+    appLogger.warn(
+      `[cellExecutionService] Failed to interrupt kernel after timeout for cell ${cellId}: ${
+        interruptError instanceof Error ? interruptError.message : String(interruptError)
+      }`
+    );
+  }
+
+  try {
+    await kernelManager.restartKernel(container);
+  } catch (restartError) {
+    appLogger.warn(
+      `[cellExecutionService] Failed to restart kernel after timeout for cell ${cellId}: ${
+        restartError instanceof Error ? restartError.message : String(restartError)
+      }`
+    );
   }
 }
 
@@ -126,6 +150,10 @@ export async function executeCell(
     if (result.status === 'error' && shouldRetryMissingKernelInitHelper(cell.content, result.error ?? result.stderr ?? '')) {
       await kernelManager.restartKernel(container);
       result = await runKernelExecution();
+    }
+
+    if (result.status === 'timeout') {
+      await recoverKernelAfterTimeout(container, cellId);
     }
 
     // Calculate execution time

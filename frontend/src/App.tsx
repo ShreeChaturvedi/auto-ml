@@ -55,6 +55,9 @@ const SettingsPage = lazy(() =>
 const HomePage = lazy(() =>
   import('@/pages/HomePage').then((m) => ({ default: m.HomePage }))
 );
+const DevToolsShowcase = lazy(() =>
+  import('@/pages/DevToolsShowcase').then((m) => ({ default: m.DevToolsShowcase }))
+);
 
 function MainApp() {
   const isInitialized = useProjectStore((state) => state.isInitialized);
@@ -111,6 +114,22 @@ function MainApp() {
 function App() {
   const authReady = useAuthBootstrap();
   useTokenRefreshTimer();
+
+  // Dev-only route — bypasses auth bootstrap entirely, tree-shaken in production
+  if (import.meta.env.DEV && window.location.pathname === '/dev/tools') {
+    return (
+      <BrowserRouter>
+        <div className="min-h-screen w-full bg-background text-foreground">
+          <Suspense fallback={null}>
+            <Routes>
+              <Route path="/dev/tools" element={<DevToolsShowcase />} />
+            </Routes>
+          </Suspense>
+          <Toaster />
+        </div>
+      </BrowserRouter>
+    );
+  }
 
   if (!authReady) {
     return (

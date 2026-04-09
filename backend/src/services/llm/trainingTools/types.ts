@@ -99,6 +99,29 @@ export function resolveExperiment(
     return { experiment, experiments };
   }
 
+  const matchingByName = Object.values(experiments).filter((candidate) => {
+    const candidateName = typeof candidate?.experimentName === 'string'
+      ? candidate.experimentName.trim()
+      : '';
+    return candidateName.length > 0 && candidateName === experimentId;
+  });
+  if (matchingByName.length === 1) {
+    const resolved = matchingByName[0];
+    appLogger.warn(
+      '[resolveExperiment] LLM supplied experimentName where experimentId was required; recovering against unique experiment name',
+      {
+        suppliedExperimentId: experimentId,
+        resolvedExperimentId: resolved.experimentId
+      }
+    );
+    return { experiment: resolved, experiments };
+  }
+  if (matchingByName.length > 1) {
+    return {
+      error: `Experiment identifier "${experimentId}" matched multiple experiment names. Supply the exact experimentId instead.`
+    };
+  }
+
   if (isWorkflowThreadReference(experimentId)) {
     const configuredIds = Object.keys(experiments);
     if (configuredIds.length === 1) {

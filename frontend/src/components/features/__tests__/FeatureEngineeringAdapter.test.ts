@@ -16,7 +16,7 @@ const mockFeatureStore = vi.hoisted(() => ({
     method: string;
     sourceColumn: string;
     secondaryColumn?: string;
-    description?: string;
+    description: string;
     enabled: boolean;
     code?: string;
   }>,
@@ -234,6 +234,7 @@ describe('FeatureEngineeringAdapter', () => {
         featureName: 'signup_month',
         method: 'extract_month',
         sourceColumn: 'signup_date',
+        description: 'Extract the month component from signup_date to capture seasonal patterns',
         enabled: true
       },
       {
@@ -242,6 +243,7 @@ describe('FeatureEngineeringAdapter', () => {
         featureName: 'city_frequency',
         method: 'frequency_encode',
         sourceColumn: 'city',
+        description: 'Frequency-encode city to represent how common each city value is',
         enabled: true
       }
     ];
@@ -475,6 +477,7 @@ describe('FeatureEngineeringAdapter', () => {
         featureName: 'division_lag_7d',
         method: 'lag_transform',
         sourceColumn: 'CF EE Division',
+        description: 'Apply 7-day lag transform to CF EE Division for temporal feature extraction',
         enabled: true
       }
     ];
@@ -582,6 +585,7 @@ describe('FeatureEngineeringAdapter', () => {
         method: 'ratio',
         sourceColumn: 'CF EE Division',
         secondaryColumn: 'CF EE Department',
+        description: 'Compute each department\'s share of usage within its division via groupby ratio',
         enabled: true
       }
     ];

@@ -9,7 +9,7 @@
  * - Collapsed state support for sidebar
  */
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MoreVertical, Edit, Trash2 } from 'lucide-react';
 import {
@@ -52,6 +52,17 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const deleteProject = useProjectStore((state) => state.deleteProject);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+
+  const handleTooltipOpenChange = useCallback((open: boolean) => {
+    if (!open) { setTooltipOpen(false); return; }
+    // Always show tooltip when collapsed (icon-only); otherwise only when truncated
+    if (collapsed) { setTooltipOpen(true); return; }
+    const el = titleRef.current;
+    setTooltipOpen(!!el && el.scrollWidth > el.clientWidth);
+  }, [collapsed]);
 
   const isActive = activeProjectId === project.id;
   const colorClasses = resolveProjectColor(project.color, project.customColor);
@@ -101,11 +112,11 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
 
       {/* Project title - kept in DOM; fades out via opacity when collapsed to prevent layout jump */}
       <span
+        ref={titleRef}
         className={cn(
           'flex-1 truncate text-sm font-medium transition-opacity duration-300',
           collapsed ? 'opacity-0' : 'opacity-100'
         )}
-
       >
         {project.title}
       </span>
@@ -156,7 +167,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
 
   return (
     <>
-      <Tooltip>
+      <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
         <TooltipTrigger asChild>
           {itemContent}
         </TooltipTrigger>

@@ -50,7 +50,7 @@ export default defineConfig({
     // NOTE: plotly.js / react-plotly.js MUST remain prebundled — they ship
     // CommonJS and rely on Vite's CJS→ESM transform; excluding them causes
     // "exports is not defined" at runtime.
-    exclude: ['zod', '@hookform/resolvers', '@hookform/resolvers/zod'],
+    exclude: ['zod', '@hookform/resolvers', '@hookform/resolvers/zod', 'pdfjs-dist'],
   },
   server: {},
   build: {

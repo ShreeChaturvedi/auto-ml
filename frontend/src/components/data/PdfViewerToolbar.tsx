@@ -63,7 +63,7 @@ export function PdfViewerToolbar({
     });
 
     setPageInput(nextInput);
-    if (nextPage !== null) {
+    if (nextPage !== null && nextPage !== currentPage) {
       onPageChange(nextPage);
     }
   };

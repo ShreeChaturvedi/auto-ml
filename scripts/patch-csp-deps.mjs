@@ -66,6 +66,15 @@ const patches = [
       },
     ],
   },
+  {
+    file: 'frontend/node_modules/pdfjs-dist/build/pdf.mjs',
+    replacements: [
+      {
+        from: `function isEvalSupported() {\n  try {\n    new Function("");\n    return true;\n  } catch {\n    return false;\n  }\n}`,
+        to: `function isEvalSupported() {\n  return false;\n}`,
+      },
+    ],
+  },
 ];
 
 for (const patch of patches) {

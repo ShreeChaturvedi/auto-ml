@@ -2,6 +2,13 @@ export const PDF_ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 export const DEFAULT_PDF_SCALE = 1;
 export const PDF_PAGE_GAP = 8;
 
+/** US Letter dimensions in PDF points (1/72 inch) */
+export const PDF_DEFAULT_PAGE_WIDTH = 612;
+export const PDF_DEFAULT_PAGE_HEIGHT = 792;
+
+/** ISO A4 aspect ratio (~1.414:1), used for placeholder sizing before dimensions load */
+export const PDF_A4_ASPECT_RATIO = 1.414;
+
 export interface PageDimension {
   width: number;
   height: number;

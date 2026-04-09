@@ -1,51 +1,300 @@
-import { Download, ExternalLink } from 'lucide-react';
+/**
+ * PdfViewer — React-based PDF viewer with custom toolbar, continuous scroll,
+ * and IntersectionObserver-based virtualization.
+ *
+ * Uses react-pdf v10 (pdfjs-dist v5). Default-exported for React.lazy code-splitting.
+ */
 
-import { Button } from '@/components/ui/button';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Document, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+
+import { Loader2 } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/components/theme-provider';
+import { PdfViewerPageSlot } from './PdfViewerPageSlot';
+import { PdfViewerToolbar } from './PdfViewerToolbar';
+import {
+  clampPdfPage,
+  createInitialVisiblePdfPages,
+  DEFAULT_PDF_SCALE,
+  getNextPdfZoom,
+  getPdfDisplayScale,
+  getPreviousPdfZoom,
+  type PageDimension,
+} from './pdfViewerState';
+
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 interface PdfViewerProps {
+  /** Blob URL or remote URL pointing to the PDF */
   url: string;
+  /** File name used for the download action */
   fileName?: string;
   className?: string;
 }
 
 export default function PdfViewer({ url, fileName, className }: PdfViewerProps) {
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName ?? 'document.pdf';
-    link.rel = 'noopener';
-    link.click();
-  };
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
+  const [numPages, setNumPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [scale, setScale] = useState(DEFAULT_PDF_SCALE);
+  const [fitWidth, setFitWidth] = useState(true);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(() => new Set([1]));
+  const [pageDimensions, setPageDimensions] = useState<Map<number, PageDimension>>(
+    () => new Map(),
+  );
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const topVisibleRef = useRef(1);
+
+  // Reset all viewer state when the source PDF changes
+  useEffect(() => {
+    setNumPages(0);
+    setCurrentPage(1);
+    setScale(DEFAULT_PDF_SCALE);
+    setFitWidth(true);
+    setVisiblePages(new Set([1]));
+    setPageDimensions(new Map());
+    topVisibleRef.current = 1;
+  }, [url]);
+
+  const documentOptions = useMemo(
+    () => ({
+      cMapUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+      cMapPacked: true,
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const ro = new ResizeObserver((entries) => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const entry = entries[0];
+        if (entry) setContainerWidth(entry.contentRect.width);
+      });
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  }, []);
+
+  useEffect(() => {
+    if (!scrollRef.current) return;
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const intersecting = entries
+          .filter((e) => e.isIntersecting)
+          .map((e) => Number((e.target as HTMLElement).dataset.pageNumber))
+          .filter((n) => !Number.isNaN(n));
+
+        const nextTop = intersecting.length > 0
+          ? Math.min(...intersecting)
+          : topVisibleRef.current;
+
+        if (nextTop !== topVisibleRef.current) {
+          topVisibleRef.current = nextTop;
+          setCurrentPage(nextTop);
+        }
+
+        setVisiblePages((prev) => {
+          const next = new Set(prev);
+          let changed = false;
+
+          for (const entry of entries) {
+            const pageNum = Number(
+              (entry.target as HTMLElement).dataset.pageNumber,
+            );
+            if (Number.isNaN(pageNum)) continue;
+
+            if (entry.isIntersecting) {
+              if (!next.has(pageNum)) { next.add(pageNum); changed = true; }
+              if (pageNum > 1 && !next.has(pageNum - 1)) { next.add(pageNum - 1); changed = true; }
+              if (pageNum < numPages && !next.has(pageNum + 1)) { next.add(pageNum + 1); changed = true; }
+            } else {
+              // O(1) adjacency check instead of spreading the Set
+              const nearVisible =
+                next.has(pageNum - 1) || next.has(pageNum + 1);
+              if (!nearVisible && next.has(pageNum)) {
+                next.delete(pageNum);
+                changed = true;
+              }
+            }
+          }
+
+          return changed ? next : prev;
+        });
+      },
+      {
+        root: scrollRef.current,
+        rootMargin: '200px 0px',
+        threshold: 0.1,
+      },
+    );
+
+    // Re-observe any already-mounted page elements
+    pageRefs.current.forEach((el) => observerRef.current?.observe(el));
+
+    return () => observerRef.current?.disconnect();
+  }, [numPages]);
+
+  const handlePageRef = useCallback(
+    (pageNum: number, el: HTMLDivElement | null) => {
+      const prev = pageRefs.current.get(pageNum);
+      if (prev && observerRef.current) {
+        observerRef.current.unobserve(prev);
+      }
+      if (el) {
+        pageRefs.current.set(pageNum, el);
+        observerRef.current?.observe(el);
+      } else {
+        pageRefs.current.delete(pageNum);
+      }
+    },
+    [],
+  );
+
+  const handleDocumentLoadSuccess = useCallback(
+    ({ numPages: n }: { numPages: number }) => {
+      setNumPages(n);
+      setVisiblePages(createInitialVisiblePdfPages(n));
+    },
+    [],
+  );
+
+  const handlePageLoadSuccess = useCallback(
+    (page: { pageNumber: number; width: number; height: number }) => {
+      setPageDimensions((prev) => {
+        if (prev.has(page.pageNumber)) return prev;
+        const next = new Map(prev);
+        next.set(page.pageNumber, { width: page.width, height: page.height });
+        return next;
+      });
+    },
+    [],
+  );
+
+  const scrollToPage = useCallback((page: number) => {
+    const el = pageRefs.current.get(page);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  const handlePageChange = useCallback(
+    (page: number) => {
+      const clamped = clampPdfPage(page, numPages);
+      setCurrentPage(clamped);
+      scrollToPage(clamped);
+    },
+    [numPages, scrollToPage],
+  );
+
+  const handleZoomIn = useCallback(() => {
+    setFitWidth(false);
+    setScale((currentScale) => getNextPdfZoom(currentScale));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setFitWidth(false);
+    setScale((currentScale) => getPreviousPdfZoom(currentScale));
+  }, []);
+
+  const handleToggleFitWidth = useCallback(() => {
+    setFitWidth((f) => !f);
+  }, []);
+
+  const fitWidthValue = useMemo(
+    () => Math.max(containerWidth - 48, 200),
+    [containerWidth],
+  );
+
+  const displayScale = useMemo(() => {
+    return getPdfDisplayScale({
+      fitWidth,
+      scale,
+      pageDimensions,
+      fitWidthValue,
+    });
+  }, [fitWidth, scale, pageDimensions, fitWidthValue]);
 
   return (
     <div className={cn('flex flex-col', className)}>
-      <div className="flex h-12 shrink-0 items-center justify-end gap-1 border-b bg-background px-3">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={handleDownload}
-          aria-label="Download PDF"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
-          aria-label="Open PDF in new tab"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
-      <div className="min-h-0 flex-1 bg-muted/20">
-        <iframe
-          key={url}
-          src={url}
-          title={fileName ?? 'PDF preview'}
-          className="h-full w-full border-0"
+      {numPages > 0 && (
+        <PdfViewerToolbar
+          currentPage={currentPage}
+          numPages={numPages}
+          scale={displayScale}
+          fitWidth={fitWidth}
+          url={url}
+          fileName={fileName}
+          onPageChange={handlePageChange}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onToggleFitWidth={handleToggleFitWidth}
         />
+      )}
+
+      <div
+        ref={scrollRef}
+        className={cn(
+          'flex-1 overflow-auto',
+          isDark ? 'bg-[hsl(0,0%,7%)]' : 'bg-[hsl(210,20%,96%)]',
+        )}
+      >
+        <Document
+          file={url}
+          onLoadSuccess={handleDocumentLoadSuccess}
+          options={documentOptions}
+          loading={
+            <div className="flex h-full items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading PDF...
+            </div>
+          }
+          error={
+            <div className="flex h-full items-center justify-center py-12 text-sm text-destructive">
+              Failed to load PDF.
+            </div>
+          }
+        >
+          <div className="flex flex-col items-center py-4">
+            {Array.from({ length: numPages }, (_, i) => {
+              const pageNum = i + 1;
+              return (
+                <PdfViewerPageSlot
+                  key={pageNum}
+                  pageNum={pageNum}
+                  isVisible={visiblePages.has(pageNum)}
+                  fitWidth={fitWidth}
+                  fitWidthValue={fitWidthValue}
+                  scale={scale}
+                  dim={pageDimensions.get(pageNum)}
+                  onPageRef={handlePageRef}
+                  onPageLoadSuccess={handlePageLoadSuccess}
+                />
+              );
+            })}
+          </div>
+        </Document>
       </div>
     </div>
   );

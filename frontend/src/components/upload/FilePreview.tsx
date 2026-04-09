@@ -2,7 +2,7 @@
  * FilePreview - Modal for previewing uploaded files
  *
  * Supports:
- * - PDF preview (embedded browser viewer with download/open controls)
+ * - PDF preview (react-pdf with custom toolbar)
  * - Image preview (full-size with zoom)
  * - CSV preview (first few rows in table)
  * - JSON preview (formatted JSON)

@@ -117,6 +117,7 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
     const state = notebookStore();
     const cell = extractNotebookCell(result.output);
     const callCellId = typeof call.args?.cellId === 'string' ? call.args.cellId : undefined;
+    const output = asRecord(result.output);
 
     switch (call.tool) {
       case 'write_cell':
@@ -145,6 +146,26 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
         if (cell) {
           state.updateCellLocally(cell);
         } else if (callCellId) {
+          const existingCell = state.cells.find((entry) => entry.cellId === callCellId);
+          if (existingCell) {
+            const executionStatus = output?.status === 'success'
+              ? 'success'
+              : output?.status === 'running'
+                ? 'running'
+                : output?.status === 'idle'
+                  ? 'idle'
+                  : 'error';
+            state.updateCellLocally({
+              ...existingCell,
+              executionStatus,
+              executionDurationMs: typeof output?.executionMs === 'number'
+                ? output.executionMs as number
+                : existingCell.executionDurationMs,
+              executionOrder: typeof output?.executionOrder === 'number'
+                ? output.executionOrder as number
+                : existingCell.executionOrder,
+            });
+          }
           await state.loadCell(callCellId);
           return;
         }

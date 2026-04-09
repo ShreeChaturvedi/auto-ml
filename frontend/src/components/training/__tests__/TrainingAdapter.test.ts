@@ -12,7 +12,13 @@ vi.mock('@/lib/api/llm', () => ({
 describe('TrainingAdapter', () => {
   beforeEach(() => {
     useWorkflowSessionStore.setState({ sessions: {} });
-    useNotebookStore.setState({ activeNotebookId: null });
+    useNotebookStore.setState({
+      activeNotebookId: null,
+      loadCells: vi.fn(async () => undefined),
+      loadCell: vi.fn(async () => null),
+      updateCellLocally: vi.fn(),
+      removeCellLocally: vi.fn()
+    } as Partial<ReturnType<typeof useNotebookStore.getState>>);
     vi.mocked(streamWorkflowTurn).mockClear();
   });
 
@@ -56,6 +62,49 @@ describe('TrainingAdapter', () => {
       expect.any(Function),
       expect.any(AbortSignal)
     );
+  });
+
+  it('does not reuse completed workflow sessions for a fresh training prompt', async () => {
+    useWorkflowSessionStore.getState().updateSession('training-session', {
+      runId: 'training-run-completed',
+      threadId: 'training-thread-completed',
+      phase: 'training',
+      currentNode: 'register_model',
+      status: 'completed'
+    });
+
+    const adapter = createTrainingAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'usage_log1p',
+      featureSummary: undefined,
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'training-session'
+    });
+
+    await adapter.buildRequest(
+      'Train another baseline model.',
+      undefined,
+      undefined,
+      () => undefined,
+      new AbortController().signal,
+      {
+        model: 'gpt-5.4',
+        reasoningEffort: 'medium'
+      }
+    );
+
+    expect(streamWorkflowTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'training',
+        runId: undefined,
+        threadId: undefined
+      }),
+      expect.any(Function),
+      expect.any(AbortSignal)
+    );
+    expect(useWorkflowSessionStore.getState().getSession('training-session')).toBeUndefined();
   });
 
   it('prefers config.getNotebookId() over useNotebookStore.activeNotebookId', async () => {
@@ -176,5 +225,115 @@ describe('TrainingAdapter', () => {
       expect.any(Function),
       expect.any(AbortSignal)
     );
+  });
+
+  it('refreshes the full notebook after write_cell results', async () => {
+    const loadCells = vi.fn(async () => undefined);
+    useNotebookStore.setState({ loadCells } as Partial<ReturnType<typeof useNotebookStore.getState>>);
+
+    const adapter = createTrainingAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: undefined,
+      featureSummary: undefined,
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'training-session'
+    });
+
+    adapter.toolRegistry.write_cell.onResult?.(
+      {
+        id: 'tool-call-1',
+        tool: 'write_cell',
+        args: { content: 'print("hello")' }
+      },
+      {
+        id: 'tool-call-1',
+        tool: 'write_cell',
+        output: {
+          cellId: 'cell-1',
+          notebookId: 'notebook-1',
+          cellType: 'code',
+          content: 'print("hello")',
+          position: 0,
+          metadata: {},
+          executionCount: 0,
+          executionStatus: 'idle',
+          isDirty: false,
+          output: [],
+          outputRefs: [],
+          createdAt: '2026-04-08T00:00:00.000Z',
+          updatedAt: '2026-04-08T00:00:00.000Z'
+        }
+      }
+    );
+
+    await Promise.resolve();
+
+    expect(loadCells).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the executed cell after run_cell results', async () => {
+    const loadCell = vi.fn(async () => null);
+    useNotebookStore.setState({ loadCell } as Partial<ReturnType<typeof useNotebookStore.getState>>);
+
+    const adapter = createTrainingAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: undefined,
+      featureSummary: undefined,
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'training-session'
+    });
+
+    adapter.toolRegistry.run_cell.onResult?.(
+      {
+        id: 'tool-call-2',
+        tool: 'run_cell',
+        args: { cellId: 'cell-9' }
+      },
+      {
+        id: 'tool-call-2',
+        tool: 'run_cell',
+        output: {
+          status: 'success',
+          cellId: 'cell-9'
+        }
+      }
+    );
+
+    await Promise.resolve();
+
+    expect(loadCell).toHaveBeenCalledWith('cell-9');
+  });
+
+  it('does not claim raw-column training when the selected dataset is already derived', () => {
+    const adapter = createTrainingAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: undefined,
+      featureSummary: undefined,
+      datasetFiles: [{
+        id: 'file-1',
+        name: 'feature_v1.csv',
+        type: 'csv',
+        size: 100,
+        uploadedAt: new Date(),
+        projectId: 'project-1',
+        metadata: {
+          datasetId: 'dataset-1',
+          derivedFrom: 'dataset-raw'
+        }
+      }],
+      documentFiles: [],
+      sessionKey: 'training-session'
+    });
+
+    const tips = adapter.tipsProvider?.([], false) ?? [];
+    const contents = tips.map((tip) => tip.content);
+
+    expect(contents).toContain('Using a derived dataset — features may already be materialized in the table');
+    expect(contents).not.toContain('No feature pipeline — model trains on raw columns');
   });
 });

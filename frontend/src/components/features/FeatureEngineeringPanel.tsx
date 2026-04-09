@@ -13,6 +13,7 @@ import { FeatureUiItemRenderer } from './FeatureUiItemRenderer';
 import {
   hasUiItems,
 } from './featureEngineeringUtils';
+import { buildFeatureIntentPrompt } from './featurePrompt';
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
 import { useFeatureUrlSync } from './hooks/useFeatureUrlSync';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
@@ -120,7 +121,14 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
   const adapter = useMemo(() => {
     const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
-    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+    const sessionKey = buildWorkflowSessionKey(
+      projectId,
+      [
+        storageKey,
+        selectedDatasetFile?.metadata?.datasetId ?? 'none',
+        targetColumn ?? 'no-target'
+      ].join(':')
+    );
     return createFeatureEngineeringAdapter({
       projectId,
       datasetId: selectedDatasetFile?.metadata?.datasetId,
@@ -149,6 +157,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     selectedDatasetFile,
     targetColumn
   ]);
+
+  const prepareFeaturePrompt = useCallback(async (prompt: string): Promise<string> => (
+    buildFeatureIntentPrompt(prompt, {
+      datasetLabel: selectedDatasetFile?.name,
+      targetColumn
+    })
+  ), [selectedDatasetFile?.name, targetColumn]);
 
   const baseRenderLifecycleCard = useLifecycleCards();
 
@@ -207,6 +222,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
         composerPlaceholders={composerPlaceholders}
         storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
         sessionVersion={chatSessionVersion}
+        beforeSubmit={prepareFeaturePrompt}
         domainAdapter={adapter}
         renderLeftPane={(renderProps) => (
           <FeatureEngineeringLeftPane

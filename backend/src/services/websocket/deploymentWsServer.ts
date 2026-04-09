@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'http';
-import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'node:crypto';
+import type { Socket } from 'node:net';
 
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -39,8 +39,11 @@ export class DeploymentWSServer {
   /** Optional callback to fetch the current snapshot for a deployment on subscribe. */
   private snapshotFetcher: ((deploymentId: string) => Promise<DeploymentRecord | null>) | null = null;
 
-  constructor(server: HttpServer) {
-    this.wss = new WebSocketServer({ server, path: '/ws/deployment' });
+  constructor() {
+    this.wss = new WebSocketServer({
+      noServer: true,
+      perMessageDeflate: false
+    });
     this.setupHandlers();
     this.startHeartbeat();
     appLogger.info('[deployment-ws] WebSocket server initialized on /ws/deployment');
@@ -57,6 +60,12 @@ export class DeploymentWSServer {
 
     this.wss.on('error', (error) => {
       appLogger.error('[deployment-ws] Server error:', error);
+    });
+  }
+
+  public handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss.emit('connection', ws, req);
     });
   }
 
@@ -130,7 +139,7 @@ export class DeploymentWSServer {
 
         case 'ping':
           client.lastPing = new Date();
-          try { client.ws.send(JSON.stringify({ type: 'pong' })); } catch { /* ignore */ }
+          try { client.ws.send(JSON.stringify({ type: 'pong' }), { compress: false }); } catch { /* ignore */ }
           break;
 
         default:
@@ -138,7 +147,7 @@ export class DeploymentWSServer {
       }
     } catch (error) {
       appLogger.error(`[deployment-ws] Failed to parse message from ${clientId}:`, error);
-      try { client.ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' })); } catch { /* ignore */ }
+      try { client.ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }), { compress: false }); } catch { /* ignore */ }
     }
   }
 
@@ -169,7 +178,7 @@ export class DeploymentWSServer {
         const deployment = await this.snapshotFetcher(deploymentId);
         if (deployment && client.ws.readyState === WebSocket.OPEN) {
           const event: DeploymentWSEvent = { type: 'deployment_snapshot', deployment };
-          client.ws.send(JSON.stringify(event));
+          client.ws.send(JSON.stringify(event), { compress: false });
         }
       } catch (err) {
         appLogger.error(`[deployment-ws] Failed to fetch snapshot for deployment ${deploymentId}:`, err);
@@ -205,7 +214,7 @@ export class DeploymentWSServer {
     for (const [, client] of this.clients) {
       if (client.subscribedDeployments.has(deploymentId) && client.ws.readyState === WebSocket.OPEN) {
         try {
-          client.ws.send(JSON.stringify(event));
+          client.ws.send(JSON.stringify(event), { compress: false });
           count++;
         } catch { /* ignore send errors for individual clients */ }
       }
@@ -282,13 +291,13 @@ export class DeploymentWSServer {
 
 let deploymentWsServer: DeploymentWSServer | null = null;
 
-export function initializeDeploymentWebSocket(server: HttpServer): DeploymentWSServer {
+export function initializeDeploymentWebSocket(): DeploymentWSServer {
   if (deploymentWsServer) {
     appLogger.warn('[deployment-ws] WebSocket server already initialized');
     return deploymentWsServer;
   }
 
-  deploymentWsServer = new DeploymentWSServer(server);
+  deploymentWsServer = new DeploymentWSServer();
   return deploymentWsServer;
 }
 

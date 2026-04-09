@@ -158,16 +158,19 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
     if (wsClient && notebook) {
       wsClient.unsubscribe(notebook.notebookId);
+      wsClient.disconnect();
     }
 
     wsListenersCleanup?.();
     wsListenersCleanup = null;
+    delete _hmr.wsCleanup;
 
     set({
       currentProjectId: null,
       notebooks: [],
       activeNotebookId: null,
       notebook: null,
+      wsClient: null,
       cells: [],
       cellSummaries: [],
       lockedCells: new Map(),

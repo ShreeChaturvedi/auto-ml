@@ -291,6 +291,7 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     if (current.reportContent?.isLoading) return;
     if (current.reportFetchedAt && Date.now() - current.reportFetchedAt < INSIGHT_STALE_TIME) return;
 
+    const gen = get().cacheGeneration;
     set({
       reportContent: { text: '', isLoading: true },
       reportModelHash: hash,
@@ -305,10 +306,12 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
         context: { models: models.map((model) => ({ modelId: model.modelId })) },
       });
       await accumulateTokenStream(response, (accumulated) => {
+        if (get().cacheGeneration !== gen) return;
         latestText = accumulated;
         if (!rafId) {
           rafId = requestAnimationFrame(() => {
             rafId = 0;
+            if (get().cacheGeneration !== gen) return;
             set((state) => ({
               reportContent: state.reportContent
                 ? { ...state.reportContent, text: latestText }
@@ -318,17 +321,22 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
         }
       });
       if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         reportContent: state.reportContent ? { text: latestText, isLoading: false } : null,
       }));
     } catch {
       if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set({ reportContent: null });
     }
   },
 
   fetchCompareNarrative: async (projectId, modelIds, models) => {
+    const gen = get().cacheGeneration;
     set({ compareNarrative: { text: '', isLoading: true } });
+    let rafId = 0;
+    let latestText = '';
     try {
       const modelsContext = models
         .filter((model) => modelIds.includes(model.modelId))
@@ -344,18 +352,30 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
         context: { modelIds, models: modelsContext },
       });
       await accumulateTokenStream(response, (accumulated) => {
-        set((state) => ({
-          compareNarrative: state.compareNarrative
-            ? { ...state.compareNarrative, text: accumulated }
-            : null,
-        }));
+        if (get().cacheGeneration !== gen) return;
+        latestText = accumulated;
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = 0;
+            if (get().cacheGeneration !== gen) return;
+            set((state) => ({
+              compareNarrative: state.compareNarrative
+                ? { ...state.compareNarrative, text: latestText }
+                : null,
+            }));
+          });
+        }
       });
+      if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         compareNarrative: state.compareNarrative
           ? { ...state.compareNarrative, isLoading: false }
           : null,
       }));
     } catch {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set({ compareNarrative: null });
     }
   },

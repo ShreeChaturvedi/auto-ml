@@ -38,7 +38,9 @@ export function createLocalNumberPref(key: string, defaultValue: number) {
   return {
     get(): number {
       if (typeof localStorage === 'undefined') return defaultValue;
-      const parsed = Number(localStorage.getItem(key));
+      const raw = localStorage.getItem(key);
+      if (raw === null) return defaultValue;
+      const parsed = Number(raw);
       return isNaN(parsed) ? defaultValue : parsed;
     },
     set(v: number): void { write(String(v)); },

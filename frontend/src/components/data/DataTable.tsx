@@ -12,7 +12,7 @@ import {
   type SortingState
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   TableBody,
   TableCell,
@@ -25,9 +25,11 @@ import { Eye, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DataPreview } from '@/types/file';
 import { MAX_PREVIEW_ROWS } from '@/stores/data/fileSlice';
-import { EDAPanel, type EdaTab } from './eda/EDAPanel';
-import { EDAToolbar } from './eda/EDAToolbar';
+import type { EdaTab } from './eda/EDAPanel';
 import type { DistributionMode, CorrViewMode } from './eda/edaConstants';
+
+const EDAPanel = lazy(() => import('./eda/EDAPanel').then(m => ({ default: m.EDAPanel })));
+const EDAToolbar = lazy(() => import('./eda/EDAToolbar').then(m => ({ default: m.EDAToolbar })));
 import type { InsightAction } from './eda/edaInsights';
 import { DataTableControls } from './DataTableControls';
 import type { QueryInfo } from './QueryInfoDialog';
@@ -338,6 +340,7 @@ export function DataTable({
         controlsPortalTarget={controlsPortalTarget}
       />
       {hasEda && edaView === 'eda' ? (
+        <Suspense fallback={<div className="flex-1 min-h-0 animate-pulse bg-muted/50" />}>
         <div className="flex-1 min-h-0 overflow-auto">
           <EDAToolbar
             eda={eda!}
@@ -370,6 +373,7 @@ export function DataTable({
             />
           )}
         </div>
+        </Suspense>
       ) : (
         tableView
       )}

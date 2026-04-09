@@ -9,6 +9,15 @@ import {
   selectHasAiLockedCells
 } from '../notebookStore';
 
+const notebookWsClientMock = vi.hoisted(() => ({
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  subscribe: vi.fn(),
+  unsubscribe: vi.fn(),
+  isConnected: false,
+  on: vi.fn(() => vi.fn())
+}));
+
 // ============================================================
 // Mocks
 // ============================================================
@@ -35,18 +44,14 @@ vi.mock('../../lib/api/notebooks', () => ({
 }));
 
 vi.mock('../../lib/websocket/notebookClient', () => ({
-  getNotebookWSClient: vi.fn(() => ({
-    connect: vi.fn(),
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
-    isConnected: false,
-    on: vi.fn(() => vi.fn())
-  }))
+  getNotebookWSClient: vi.fn(() => notebookWsClientMock)
 }));
 
 // Import the mocked modules so we can control return values
 import * as notebooksApi from '../../lib/api/notebooks';
 
+const listNotebooksMock = vi.mocked(notebooksApi.listNotebooks);
+const listCellsMock = vi.mocked(notebooksApi.listCells);
 const runCellMock = vi.mocked(notebooksApi.runCell);
 const getCellMock = vi.mocked(notebooksApi.getCell);
 
@@ -93,11 +98,40 @@ describe('notebookStore', () => {
   beforeEach(() => {
     useNotebookStore.getState().reset();
     vi.clearAllMocks();
+    notebookWsClientMock.isConnected = false;
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
+  });
+
+  // ==========================================================
+  // Session lifecycle
+  // ==========================================================
+  describe('disconnect', () => {
+    it('closes the websocket client when leaving a notebook-backed phase', async () => {
+      listNotebooksMock.mockResolvedValue([
+        {
+          notebookId: 'nb-1',
+          projectId: 'proj-1',
+          name: 'Notebook 1',
+          metadata: {},
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z'
+        }
+      ]);
+      listCellsMock.mockResolvedValue([]);
+      notebookWsClientMock.isConnected = true;
+
+      await useNotebookStore.getState().initializeNotebook('proj-1');
+      useNotebookStore.getState().disconnect();
+
+      expect(notebookWsClientMock.unsubscribe).toHaveBeenCalledWith('nb-1');
+      expect(notebookWsClientMock.disconnect).toHaveBeenCalledTimes(1);
+      expect(useNotebookStore.getState().wsClient).toBeNull();
+      expect(useNotebookStore.getState().isConnected).toBe(false);
+    });
   });
 
   // ==========================================================

@@ -49,16 +49,26 @@ async function resolveWorkspaceArtifactPath(projectId: string, artifactPath: str
   // `{executionWorkspaceDir}/{projectId}/{sessionId}/`. Files written by
   // run_cell land inside the session directory, not at the project root.
   // Search session subdirectories for the artifact.
-  const filename = artifactPath.split('/').pop()!;
+  const normalizedRelativePath = artifactPath.replace(/^\.\/+/, '');
+  const filename = normalizedRelativePath.split('/').pop()!;
   try {
     const entries = await readdir(workspaceRoot, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'datasets') continue;
-      const candidate = join(workspaceRoot, entry.name, filename);
+      const sessionRoot = join(workspaceRoot, entry.name);
+      const candidateWithRelativePath = join(sessionRoot, normalizedRelativePath);
       try {
-        await stat(candidate);
-        return candidate;
+        await stat(candidateWithRelativePath);
+        return candidateWithRelativePath;
       } catch { /* not in this session dir */ }
+
+      if (normalizedRelativePath !== filename) {
+        const candidateWithFilename = join(sessionRoot, filename);
+        try {
+          await stat(candidateWithFilename);
+          return candidateWithFilename;
+        } catch { /* not in this session dir */ }
+      }
     }
   } catch { /* workspace root doesn't exist or can't be read */ }
 
@@ -97,10 +107,95 @@ async function persistArtifactToPermanentStorage(
 }
 
 /** Best-effort task type inference from experiment metadata. */
-function inferTaskType(experiment: Record<string, unknown>): ModelTaskType {
-  const modelType = String(experiment.modelType ?? experiment.registeredModelType ?? '').toLowerCase();
-  if (/cluster|kmeans|dbscan/.test(modelType)) return 'clustering';
-  if (/regress|svr|ridge|lasso|elastic/.test(modelType)) return 'regression';
+function normalizeMetricsRecord(metrics: unknown): Record<string, number> {
+  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) {
+    return {};
+  }
+
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(metrics as Record<string, unknown>)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      normalized[key] = value;
+      continue;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+      if (Number.isFinite(parsed)) {
+        normalized[key] = parsed;
+      }
+    }
+  }
+  return normalized;
+}
+
+function resolveRegistrationMetrics(
+  explicitMetrics: unknown,
+  experiment: Record<string, unknown>
+): Record<string, number> {
+  const direct = normalizeMetricsRecord(explicitMetrics);
+  if (Object.keys(direct).length > 0) {
+    return direct;
+  }
+
+  const evaluated = normalizeMetricsRecord(experiment.evaluationMetrics);
+  if (Object.keys(evaluated).length > 0) {
+    return evaluated;
+  }
+
+  return normalizeMetricsRecord(experiment.trainingMetrics);
+}
+
+function detectTaskTypeFromMetrics(metrics: Record<string, number>): ModelTaskType | undefined {
+  const keys = new Set(Object.keys(metrics).map((key) => key.toLowerCase()));
+  if (keys.has('silhouette') || keys.has('davies_bouldin') || keys.has('calinski_harabasz')) {
+    return 'clustering';
+  }
+  if (
+    keys.has('accuracy')
+    || keys.has('precision')
+    || keys.has('recall')
+    || keys.has('f1')
+    || keys.has('roc_auc')
+    || keys.has('auc')
+  ) {
+    return 'classification';
+  }
+  if (
+    keys.has('rmse')
+    || keys.has('mae')
+    || keys.has('mse')
+    || keys.has('r2')
+    || keys.has('mape')
+  ) {
+    return 'regression';
+  }
+  return undefined;
+}
+
+/** Best-effort task type inference from experiment metadata + metrics. */
+function inferTaskType(
+  experiment: Record<string, unknown>,
+  explicitModelType: string | undefined,
+  metrics: Record<string, number>
+): ModelTaskType {
+  const modelType = String(
+    explicitModelType
+    ?? experiment.modelType
+    ?? experiment.registeredModelType
+    ?? ''
+  ).toLowerCase();
+
+  // Classification checks come before regression so model types like
+  // "logistic_regression" are not misclassified as regression.
+  if (/classif|classifier|logistic|svc|svm|naive_bayes|knn/.test(modelType)) return 'classification';
+  if (/cluster|kmeans|dbscan|hierarch|gmm|gaussian_mixture|birch/.test(modelType)) return 'clustering';
+  if (/regress|regressor|svr|ridge|lasso|elastic/.test(modelType)) return 'regression';
+
+  const inferredFromMetrics = detectTaskTypeFromMetrics(metrics);
+  if (inferredFromMetrics) {
+    return inferredFromMetrics;
+  }
+
   // If a target column is set, it's supervised; default to classification.
   return 'classification';
 }
@@ -114,25 +209,26 @@ export const registerModel: TrainingToolHandler = async (
   if ('error' in resolved) return resolved;
   const { experiment } = resolved;
 
-  experiment.status = 'registered';
-  experiment.registeredModelName = args.modelName;
-  experiment.registeredModelType = args.modelType;
-  experiment.registeredMetrics = args.metrics;
-  experiment.registeredHyperparameters = args.hyperparameters;
-  experiment.artifactPath = args.artifactPath;
-  experiment.tags = args.tags;
-  experiment.updatedAt = nowIso();
-
   // Persist to model repository so the model appears in the Experiments leaderboard
-  const metricsRecord = (args.metrics && typeof args.metrics === 'object'
-    ? args.metrics
-    : {}) as Record<string, number>;
+  const metricsRecord = resolveRegistrationMetrics(args.metrics, experiment);
+  if (Object.keys(metricsRecord).length === 0) {
+    return {
+      error: 'register_model requires non-empty numeric metrics. Call evaluate_results with real metrics (accuracy/F1 or RMSE/MAE/R2) and then retry register_model.'
+    };
+  }
+
   const hyperparameters = (args.hyperparameters && typeof args.hyperparameters === 'object'
     ? args.hyperparameters
     : {}) as Record<string, unknown>;
   const modelName = typeof args.modelName === 'string' ? args.modelName : 'Untitled Model';
   const modelType = typeof args.modelType === 'string' ? args.modelType : 'unknown';
-  const taskType = inferTaskType(experiment);
+  const taskType = inferTaskType(experiment, modelType, metricsRecord);
+  const artifactPath = typeof args.artifactPath === 'string' ? args.artifactPath.trim() : '';
+  if (!artifactPath) {
+    return {
+      error: 'register_model requires artifactPath. Save the trained model first (e.g. joblib.dump(model, "model.joblib")) and pass artifactPath: "model.joblib".'
+    };
+  }
 
   // Resolve & copy the artifact BEFORE creating the model record. If the LLM
   // supplied a missing or unsafe path we return an error to the tool caller
@@ -145,18 +241,16 @@ export const registerModel: TrainingToolHandler = async (
   // hallucinated as the artifact path, with `size: 0`. That's why
   // backend/storage/models/metadata.json has been empty (no evaluations ever
   // populated) even on projects where register_model was called.
-  let resolvedSourcePath: string | undefined;
-  if (typeof args.artifactPath === 'string') {
-    try {
-      resolvedSourcePath = await resolveWorkspaceArtifactPath(projectId, args.artifactPath);
-      await stat(resolvedSourcePath);
-    } catch (err) {
-      return {
-        error: `register_model could not locate the model artifact: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      };
-    }
+  let resolvedSourcePath: string;
+  try {
+    resolvedSourcePath = await resolveWorkspaceArtifactPath(projectId, artifactPath);
+    await stat(resolvedSourcePath);
+  } catch (err) {
+    return {
+      error: `register_model could not locate the model artifact: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    };
   }
 
   let artifact: ModelArtifact | undefined;
@@ -189,35 +283,41 @@ export const registerModel: TrainingToolHandler = async (
 
     // Now that we have a modelId, copy the sandbox artifact into its
     // permanent home and update the record with the real path + file size.
-    if (resolvedSourcePath) {
-      try {
-        artifact = await persistArtifactToPermanentStorage(resolvedSourcePath, record.modelId);
-        const resolvedArtifact = artifact;
-        await modelRepository.update(record.modelId, (current) => ({
-          ...current,
-          artifact: resolvedArtifact
-        }));
-        experiment.artifactPath = artifact.path;
-      } catch (copyErr) {
-        appLogger.error('[registerModel] Failed to persist artifact to permanent storage', {
-          modelId: record.modelId,
-          sourcePath: resolvedSourcePath,
-          error: copyErr
-        });
-        // Roll back the bare model record so we don't leave dangling rows
-        // pointing at a non-existent artifact. runEvaluation would fail
-        // on the stale path and the user would see a confusing model in
-        // the Experiments tab that cannot be inspected.
-        await modelRepository.delete(record.modelId).catch(() => undefined);
-        return {
-          error: `register_model created the model record but failed to copy the artifact: ${
-            copyErr instanceof Error ? copyErr.message : String(copyErr)
-          }`
-        };
-      }
+    try {
+      artifact = await persistArtifactToPermanentStorage(resolvedSourcePath, record.modelId);
+      const resolvedArtifact = artifact;
+      await modelRepository.update(record.modelId, (current) => ({
+        ...current,
+        artifact: resolvedArtifact
+      }));
+      experiment.artifactPath = artifact.path;
+    } catch (copyErr) {
+      appLogger.error('[registerModel] Failed to persist artifact to permanent storage', {
+        modelId: record.modelId,
+        sourcePath: resolvedSourcePath,
+        error: copyErr
+      });
+      // Roll back the bare model record so we don't leave dangling rows
+      // pointing at a non-existent artifact. runEvaluation would fail
+      // on the stale path and the user would see a confusing model in
+      // the Experiments tab that cannot be inspected.
+      await modelRepository.delete(record.modelId).catch(() => undefined);
+      return {
+        error: `register_model created the model record but failed to copy the artifact: ${
+          copyErr instanceof Error ? copyErr.message : String(copyErr)
+        }`
+      };
     }
 
     experiment.persistedModelId = record.modelId;
+    experiment.status = 'registered';
+    experiment.registeredModelName = modelName;
+    experiment.registeredModelType = modelType;
+    experiment.registeredHyperparameters = hyperparameters;
+    experiment.registeredMetrics = metricsRecord;
+    experiment.artifactPath = artifact.path;
+    experiment.tags = args.tags;
+    experiment.updatedAt = nowIso();
 
     // Fire-and-forget evaluation so the model gets eval metrics like the direct API path.
     // Failures are recorded on the model row via evaluationError column so the
@@ -244,7 +344,7 @@ export const registerModel: TrainingToolHandler = async (
       modelType,
       taskType,
       status: 'registered',
-      metrics: args.metrics,
+      metrics: metricsRecord,
       tags: args.tags ?? [],
       artifactPath: artifact?.path,
       artifactSize: artifact?.size,

@@ -215,6 +215,22 @@ describe('buildEvaluationScript', () => {
     // Memory safety: subsample to 1000
     expect(script).toContain('1000');
   });
+
+  it('resolves the fitted estimator from model, regressor, classifier, or the final pipeline step', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m4/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m4',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('fitted_model = pipeline.named_steps.get("model")');
+    expect(script).toContain('fitted_model = pipeline.named_steps.get("regressor")');
+    expect(script).toContain('fitted_model = pipeline.named_steps.get("classifier")');
+    expect(script).toContain('fitted_model = pipeline.steps[-1][1]');
+  });
 });
 
 describe('runEvaluation', () => {

@@ -141,11 +141,37 @@
   animation: sparkline-draw 600ms var(--ease-out) forwards;
 }
 
+/* Draw on, hold, then draw off from the trailing end */
+@keyframes stroke-on-off {
+  0% {
+    stroke-dashoffset: 1;
+    animation-timing-function: ease-out;
+  }
+  15% {
+    stroke-dashoffset: 0;
+    animation-timing-function: linear;
+  }
+  70% {
+    stroke-dashoffset: 0;
+    animation-timing-function: ease-in;
+  }
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+
+.stroke-draw-on-off {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: stroke-on-off 4.5s forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-enter,
   .empty-state-enter,
   .sparkline-draw,
-  .stroke-draw-on {
+  .stroke-draw-on,
+  .stroke-draw-on-off {
     animation: none;
     opacity: 1;
     transform: none;

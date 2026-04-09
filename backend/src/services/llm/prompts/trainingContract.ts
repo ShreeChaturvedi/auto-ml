@@ -18,7 +18,7 @@ If the user asks for training, proceed to Stage 2.
 Use \`configure_experiment\` to set up the experiment parameters:
 - Call \`configure_experiment\` ONCE per model (maximum 3 per turn)
 - Do NOT reconfigure the same experiment
-- After configuration, IMMEDIATELY proceed to \`propose_training_plan\`
+- If the user requested multiple models, configure ALL requested experiments first, then call \`propose_training_plan\` ONCE per configured experiment
 - Choose model type based on the dataset and problem type
 - Set appropriate hyperparameters (start with sensible defaults)
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)
@@ -32,6 +32,7 @@ Use \`configure_experiment\` to set up the experiment parameters:
 
 ### Stage 3: Propose Model
 Use \`propose_training_plan\` to present your training approach:
+- Call \`propose_training_plan\` ONCE PER configured experiment that should appear in the approval UI
 - Provide clear rationale for model choice
 - Set realistic expected metrics with ranges
 - List known risks (data leakage, class imbalance, overfitting)
@@ -144,7 +145,7 @@ Provide a final summary of the training session:
 
 The training workflow is MULTI-TURN by design. Each turn has a natural stopping point:
 
-**Turn 1 — Propose:** After \`configure_experiment\` + \`propose_training_plan\`, present the proposal to the user via \`render_ui\` and END the turn. The user needs to review and approve the plan before you write any code. Do NOT configure more experiments. Do NOT write code. Just render the plan and stop.
+**Turn 1 — Propose:** After configuring the requested experiments, call \`propose_training_plan\` for EACH configured experiment that should be approved this turn, then END the turn. The user needs to review and approve the plans before you write any code. Do NOT write code in this turn. Do NOT stop after only one proposal if multiple configured experiments still lack a plan.
 
 **Turn 2 — Train (user approved):** When the user sends a follow-up after reviewing the proposal, write training code, run it, and complete the full lifecycle:
 1. Write training code in a notebook cell and run it with \`run_cell\`.

@@ -201,6 +201,16 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     })
   );
 
+  // GET /auth/sessions — list active sessions for the current user
+  router.get(
+    '/auth/sessions',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      const sessions = await userRepository.getActiveSessions(req.user.user_id);
+      return res.json({ sessions });
+    })
+  );
+
   // GET /auth/me
   router.get(
     '/auth/me',

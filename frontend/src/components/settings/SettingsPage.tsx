@@ -1,7 +1,7 @@
 /**
  * SettingsPage — Root shell for the Cursor-style settings experience.
  *
- * Two-panel layout: a 240 px left sidebar (`SettingsNav`) and a
+ * Two-panel layout: a w-72 (288 px) left sidebar (`SettingsNav`) and a
  * scrollable content area that renders the active tab. Reads the
  * current tab from the `:tab` URL param and redirects to `general`
  * when the value is missing or invalid.
@@ -115,8 +115,8 @@ export function SettingsPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-10 py-10">
-          <h1 className="text-xl font-semibold tracking-tight">{currentTab.label}</h1>
-          <p className="text-sm text-muted-foreground mt-1 mb-8">
+          <h1 className="text-base font-semibold tracking-tight">{currentTab.label}</h1>
+          <p className="text-xs text-muted-foreground mt-1 mb-8">
             {TAB_DESCRIPTIONS[activeTab]}
           </p>
 

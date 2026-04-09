@@ -1,18 +1,18 @@
 /**
- * ProfileTab — Profile, security, and danger-zone settings.
+ * ProfileTab — Profile, security, and sessions settings.
  *
  * Three sections:
  *   1. Profile Information — name + email, server-persisted
  *   2. Security — change password, server-persisted
- *   3. Danger Zone — sign out all devices
+ *   3. Sessions — active sessions list + sign out all devices
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertTriangle, Lock, User } from 'lucide-react';
+import { Lock, User, Shield, Monitor, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { SettingsSection } from '@/components/settings/SettingsSection';
@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuthStore } from '@/stores/authStore';
-import { updateProfile } from '@/lib/api/auth';
+import { updateProfile, getActiveSessions, type ActiveSession } from '@/lib/api/auth';
 import { apiRequest } from '@/lib/api/client';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,32 @@ const passwordSchema = z
 
 type ProfileInfoValues = z.infer<typeof profileInfoSchema>;
 type PasswordValues = z.infer<typeof passwordSchema>;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function parseUserAgent(ua: string | null): string {
+  if (!ua) return 'Unknown device';
+  if (ua.includes('Firefox')) return 'Firefox';
+  if (ua.includes('Edg/')) return 'Edge';
+  if (ua.includes('Chrome')) return 'Chrome';
+  if (ua.includes('Safari')) return 'Safari';
+  return 'Unknown browser';
+}
+
+function formatSessionDate(iso: string): string {
+  const d = new Date(iso);
+  const diffMs = Date.now() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return d.toLocaleDateString();
+}
 
 // ---------------------------------------------------------------------------
 // ProfileTab
@@ -137,6 +163,18 @@ export function ProfileTab() {
     }
   };
 
+  // Sessions
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState(false);
+
+  useEffect(() => {
+    getActiveSessions()
+      .then(setSessions)
+      .catch(() => setSessionsError(true))
+      .finally(() => setSessionsLoading(false));
+  }, []);
+
   // Revoke all sessions
   const [showRevokeDialog, setShowRevokeDialog] = useState(false);
   const [revoking, setRevoking] = useState(false);
@@ -197,7 +235,7 @@ export function ProfileTab() {
             </SettingsRow>
 
             {profileError && (
-              <p className="px-5 pb-4 text-sm text-destructive">{profileError}</p>
+              <p className="px-5 pb-4 text-xs text-destructive">{profileError}</p>
             )}
 
             <div className="px-5 pb-5 pt-1">
@@ -219,7 +257,7 @@ export function ProfileTab() {
           <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)}>
             <div className="px-5 py-4 space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="currentPassword" className="text-sm font-medium">
+                <Label htmlFor="currentPassword" className="text-[13px] font-medium">
                   Current Password
                 </Label>
                 <Input
@@ -237,7 +275,7 @@ export function ProfileTab() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="newPassword" className="text-sm font-medium">
+                <Label htmlFor="newPassword" className="text-[13px] font-medium">
                   New Password
                 </Label>
                 <Input
@@ -258,7 +296,7 @@ export function ProfileTab() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-sm font-medium">
+                <Label htmlFor="confirmPassword" className="text-[13px] font-medium">
                   Confirm Password
                 </Label>
                 <Input
@@ -276,7 +314,7 @@ export function ProfileTab() {
               </div>
 
               {passwordError && (
-                <p className="text-sm text-destructive">{passwordError}</p>
+                <p className="text-xs text-destructive">{passwordError}</p>
               )}
 
               <div className="flex items-center gap-4">
@@ -286,7 +324,7 @@ export function ProfileTab() {
                   loadingText="Changing..."
                 />
                 {passwordState === 'success' && (
-                  <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
                     Password changed. Redirecting to login...
                   </p>
                 )}
@@ -297,22 +335,48 @@ export function ProfileTab() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Section 3: Danger Zone                                               */}
+      {/* Section 3: Sessions                                                  */}
       {/* ------------------------------------------------------------------ */}
       <div>
-        <SettingsSection icon={AlertTriangle} title="Danger Zone">
-          <SettingsRow
-            label="Sign out all devices"
-            description="Revoke all active sessions. You will need to sign in again on every device."
-          >
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setShowRevokeDialog(true)}
-            >
+        <SettingsSection icon={Shield} title="Sessions">
+          {sessionsLoading ? (
+            <div className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading sessions...
+            </div>
+          ) : sessionsError ? (
+            <p className="px-5 py-4 text-sm text-muted-foreground">
+              Could not load active sessions.
+            </p>
+          ) : sessions.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-muted-foreground">
+              No active sessions found.
+            </p>
+          ) : (
+            sessions.map((session) => (
+              <div key={session.token_id} className="flex items-center justify-between px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <Monitor className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-[13px] font-medium">{parseUserAgent(session.user_agent)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {session.ip_address ?? 'Unknown IP'} · {formatSessionDate(session.created_at)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border/50">
+            <div>
+              <p className="text-[13px] font-medium text-destructive">Sign out all devices</p>
+              <p className="text-xs text-muted-foreground">Revoke all active sessions across every device</p>
+            </div>
+            <Button variant="destructive" size="sm" onClick={() => setShowRevokeDialog(true)}>
               Sign out all
             </Button>
-          </SettingsRow>
+          </div>
         </SettingsSection>
       </div>
 

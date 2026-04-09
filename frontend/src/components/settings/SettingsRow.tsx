@@ -22,7 +22,7 @@ export function SettingsRow({ label, description, children, htmlFor, slider }: S
   return (
     <div className="flex items-center justify-between px-5 py-4">
       <div className="min-w-0 mr-4">
-        <label htmlFor={htmlFor} className="text-sm font-medium">
+        <label htmlFor={htmlFor} className="text-[13px] font-medium">
           {label}
         </label>
         {description && (

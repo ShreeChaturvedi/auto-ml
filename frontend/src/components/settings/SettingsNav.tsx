@@ -1,5 +1,5 @@
 /**
- * SettingsNav — Left sidebar for the settings page (240 px).
+ * SettingsNav — Left sidebar for the settings page (w-72 / 288 px).
  *
  * Renders a back button, the current user's avatar block,
  * and grouped navigation items that link to `/settings/{id}`.
@@ -32,17 +32,14 @@ export function SettingsNav({ activeTab }: { activeTab: string }) {
   const user = useAuthStore((s) => s.user);
 
   return (
-    <nav className="w-[240px] shrink-0 border-r border-border bg-card h-full flex flex-col">
+    <nav className="w-72 shrink-0 border-r border-border bg-card h-full flex flex-col">
       {/* Back button */}
       <div className="px-4 py-3">
         <Button
           variant="ghost"
           size="sm"
           className="gap-2"
-          onClick={() => {
-            if (window.history.length > 1) navigate(-1);
-            else navigate('/');
-          }}
+          onClick={() => navigate('/')}
         >
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -59,7 +56,7 @@ export function SettingsNav({ activeTab }: { activeTab: string }) {
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{user.name}</p>
+              <p className="truncate text-[13px] font-medium">{user.name}</p>
               <p className="truncate text-xs text-muted-foreground">{user.email}</p>
             </div>
           </div>
@@ -81,7 +78,7 @@ export function SettingsNav({ activeTab }: { activeTab: string }) {
                   type="button"
                   onClick={() => navigate(`/settings/${tab.id}`)}
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm cursor-pointer mx-2 transition-colors duration-150',
+                    'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] cursor-pointer mx-2 transition-colors duration-150',
                     active
                       ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:bg-muted/50',

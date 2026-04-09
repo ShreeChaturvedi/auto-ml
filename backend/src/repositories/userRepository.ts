@@ -179,6 +179,25 @@ export class UserRepository {
   }
 
   /**
+   * List active (non-revoked, non-expired) sessions for a user
+   */
+  async getActiveSessions(userId: string): Promise<Array<{
+    token_id: string;
+    ip_address: string | null;
+    user_agent: string | null;
+    created_at: Date;
+  }>> {
+    const result = await this.pool.query(
+      `SELECT token_id, ip_address, user_agent, created_at
+       FROM refresh_tokens
+       WHERE user_id = $1 AND revoked = false AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+    return result.rows;
+  }
+
+  /**
    * Store a password reset token in the database
    * Token is hashed (SHA-256) before storage for security
    */

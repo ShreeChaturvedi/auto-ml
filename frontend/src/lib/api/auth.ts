@@ -102,3 +102,15 @@ export async function googleCallback(code: string): Promise<AuthResponse> {
     body: { code }
   });
 }
+
+export interface ActiveSession {
+  token_id: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
+export async function getActiveSessions(): Promise<ActiveSession[]> {
+  const res = await apiRequest<{ sessions: ActiveSession[] }>('/auth/sessions');
+  return res.sessions;
+}

@@ -265,7 +265,7 @@ export function shouldAllowFeatureProposeTool(prompt: string | undefined): boole
 function extractTrainingDraftSegmentCount(
   toolCalls: WorkflowGraphState['toolCallHistory'],
   turnStartToolCallCount: number
-): number {
+): { draftId: string; segmentCount: number } | null {
   const currentTurnCalls = toolCalls.slice(turnStartToolCallCount);
   for (let index = currentTurnCalls.length - 1; index >= 0; index -= 1) {
     const call = currentTurnCalls[index];
@@ -278,37 +278,100 @@ function extractTrainingDraftSegmentCount(
     if (!rawSegments || rawSegments.length === 0) {
       continue;
     }
-    return rawSegments.length;
+    const draftId = asString(trainingDraft?.draftId);
+    if (!draftId) {
+      continue;
+    }
+    return {
+      draftId,
+      segmentCount: rawSegments.length
+    };
   }
-  return 0;
+  return null;
+}
+
+function extractTrainingDraftActivity(
+  state: WorkflowGraphState,
+  draftId: string
+): { successfulWriteCount: number; runResults: WorkflowGraphState['toolResultHistory'] } {
+  const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const draftCellIds = new Set<string>();
+  let successfulWriteCount = 0;
+  const runResults: WorkflowGraphState['toolResultHistory'] = [];
+
+  for (let index = 0; index < currentTurnResults.length; index += 1) {
+    const call = currentTurnCalls[index];
+    const result = currentTurnResults[index];
+    if (!call || !result) {
+      continue;
+    }
+
+    if (['write_cell', 'edit_cell', 'insert_cell'].includes(call.tool)) {
+      const metadata = asRecord(call.args?.metadata);
+      const trainingDraft = asRecord(metadata?.trainingDraft);
+      if (asString(trainingDraft?.draftId) !== draftId) {
+        continue;
+      }
+      if (result.error) {
+        continue;
+      }
+      if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+        continue;
+      }
+      const output = result.output as Record<string, unknown>;
+      const cell = asRecord(output.cell);
+      const cellId = typeof output.cellId === 'string'
+        ? output.cellId
+        : typeof cell?.cellId === 'string'
+          ? cell.cellId
+          : null;
+      if (!cellId || draftCellIds.has(cellId)) {
+        continue;
+      }
+      draftCellIds.add(cellId);
+      successfulWriteCount += 1;
+      continue;
+    }
+
+    if (call.tool !== 'run_cell') {
+      continue;
+    }
+    const callArgs = asRecord(call.args);
+    const cellId = asString(callArgs?.cellId);
+    if (!cellId || !draftCellIds.has(cellId)) {
+      continue;
+    }
+    runResults.push(result);
+  }
+
+  return { successfulWriteCount, runResults };
+}
+
+function scopeTrainingResultsToActiveExecutionWindow(
+  currentTurnResults: WorkflowGraphState['toolResultHistory']
+): WorkflowGraphState['toolResultHistory'] {
+  for (let index = currentTurnResults.length - 1; index >= 0; index -= 1) {
+    const result = currentTurnResults[index];
+    if (result.tool !== 'register_model' || result.error) {
+      continue;
+    }
+    return currentTurnResults.slice(index);
+  }
+  return currentTurnResults;
 }
 
 function hasExhaustedTrainingDraftWithoutCompletion(state: WorkflowGraphState): boolean {
-  const segmentCount = extractTrainingDraftSegmentCount(state.toolCallHistory, state.turnStartToolCallCount);
-  if (segmentCount === 0) {
+  const draftSummary = extractTrainingDraftSegmentCount(state.toolCallHistory, state.turnStartToolCallCount);
+  if (!draftSummary || draftSummary.segmentCount === 0) {
     return false;
   }
 
-  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const successfulWriteCount = currentTurnResults.filter((result) => {
-    if (!['write_cell', 'edit_cell', 'insert_cell'].includes(result.tool) || result.error) {
-      return false;
-    }
-    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
-      return false;
-    }
-    const output = result.output as Record<string, unknown>;
-    if (typeof output.cellId === 'string' && output.cellId.trim()) {
-      return true;
-    }
-    const cell = asRecord(output.cell);
-    return typeof cell?.cellId === 'string' && cell.cellId.trim().length > 0;
-  }).length;
-  if (successfulWriteCount < segmentCount) {
+  const { successfulWriteCount, runResults } = extractTrainingDraftActivity(state, draftSummary.draftId);
+  if (successfulWriteCount < draftSummary.segmentCount) {
     return false;
   }
 
-  const runResults = currentTurnResults.filter((result) => result.tool === 'run_cell');
   const hasCompletedMarker = runResults.some((result) => {
     if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
       return false;
@@ -333,7 +396,8 @@ export function resolveTrainingLifecycleNode(
   const lifecycleStageNames = new Set((trainingPhase?.lifecycle ?? []).map((stage) => stage.name));
   const currentNode = state.run.currentNode;
   const currentNodeIsValid = typeof currentNode === 'string' && lifecycleStageNames.has(currentNode);
-  const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
+  const stageScopedResults = scopeTrainingResultsToActiveExecutionWindow(currentTurnResults);
+  const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, stageScopedResults);
   const hasConfiguredExperimentsAwaitingProposal = (() => {
     const experiments = asRecord(state.run.metadata?.experiments);
     if (!experiments) {

@@ -194,6 +194,29 @@ describe('configureExperiment — Feature Engineering pipeline handoff', () => {
     const experimentId = Object.keys(experiments)[0];
     expect(experiments[experimentId].featureColumns).toBeUndefined();
   });
+
+  it('rejects configure_experiment when the selected targetColumn conflicts with the tool args', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {}
+    });
+
+    const run = buildRun();
+    const result = await configureExperiment({
+      ...buildCtx(run, {
+        experimentName: 'Mismatch target test',
+        modelType: 'ridge',
+        splitStrategy: 'train_test',
+        targetColumn: 'Subject Area'
+      }),
+      turn: {
+        ...buildTurn(),
+        targetColumn: 'usage_log1p'
+      }
+    });
+
+    expect(result.error).toContain('Selected target column is "usage_log1p"');
+  });
 });
 
 describe('training tools — propose_training_plan recovers from planner threadId leak', () => {

@@ -176,8 +176,7 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
 
     // 4. Compute paths
     const storagePredictionsPath = join(env.modelStorageDir, modelId, 'predictions.parquet');
-    const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
-    const workspacePredPath = join(workspacePath, 'eval', modelId, 'predictions.parquet');
+    const workspacePredPath = join('eval', modelId, 'predictions.parquet');
 
     // 5-8. Orchestrate container execution
     const { container, executionResult } = await orchestrateContainerExecution({

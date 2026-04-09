@@ -45,7 +45,7 @@ async function loadEnabledFeatureNames(projectId: string): Promise<string[]> {
 export const configureExperiment: TrainingToolHandler = async (
   ctx: TrainingToolContext
 ): Promise<TrainingToolResult> => {
-  const { args, run, projectId } = ctx;
+  const { args, run, projectId, turn } = ctx;
 
   const existingExperiments = Object.keys((run.metadata?.experiments as Record<string, unknown>) ?? {});
   if (existingExperiments.length >= MAX_EXPERIMENTS_PER_TURN) {
@@ -63,6 +63,17 @@ export const configureExperiment: TrainingToolHandler = async (
   const modelType = (typeof args.modelType === 'string' ? args.modelType : null) ?? 'unknown';
   const splitStrategy = (typeof args.splitStrategy === 'string' ? args.splitStrategy : null) ?? 'train_test';
   const now = nowIso();
+  const requestedTargetColumn = typeof args.targetColumn === 'string' ? args.targetColumn.trim() : undefined;
+  const selectedTargetColumn = typeof turn.targetColumn === 'string' && turn.targetColumn.trim().length > 0
+    ? turn.targetColumn.trim()
+    : undefined;
+  const effectiveTargetColumn = selectedTargetColumn ?? requestedTargetColumn;
+
+  if (selectedTargetColumn && requestedTargetColumn && selectedTargetColumn !== requestedTargetColumn) {
+    return {
+      error: `Selected target column is "${selectedTargetColumn}" but configure_experiment requested "${requestedTargetColumn}". Change the target dropdown or retry with the selected target.`
+    };
+  }
 
   // Enforce the Feature Engineering pipeline handoff. If the project has
   // enabled engineered features and the LLM didn't explicitly supply
@@ -94,9 +105,10 @@ export const configureExperiment: TrainingToolHandler = async (
     hyperparameters: (args.hyperparameters && typeof args.hyperparameters === 'object' ? args.hyperparameters : {}) as Record<string, unknown>,
     splitStrategy,
     splitRatio: typeof args.splitRatio === 'number' ? args.splitRatio : 0.8,
-    targetColumn: typeof args.targetColumn === 'string' ? args.targetColumn : undefined,
+    targetColumn: effectiveTargetColumn,
     featureColumns,
     randomSeed: typeof args.randomSeed === 'number' ? args.randomSeed : undefined,
+    datasetId: turn.datasetId,
     createdAt: now,
     updatedAt: now
   };
@@ -109,13 +121,14 @@ export const configureExperiment: TrainingToolHandler = async (
       experimentName,
       modelType,
       splitStrategy,
+      targetColumn: effectiveTargetColumn,
       featureColumns,
       status: 'configured',
       message: `Experiment "${experimentName}" configured with ${modelType} model and ${splitStrategy} split strategy${
         featureColumns && featureColumns.length > 0
           ? ` across ${featureColumns.length} feature column${featureColumns.length === 1 ? '' : 's'}`
           : ''
-      }.`
+      }${effectiveTargetColumn ? ` targeting ${effectiveTargetColumn}` : ''}.`
     }
   };
 };

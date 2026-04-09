@@ -385,8 +385,8 @@ export function ProfileTab() {
                       <div className="flex items-center gap-2">
                         <p className="text-[13px] font-medium">{browser} on {os}</p>
                         {session.current && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
                             This device
                           </span>
                         )}

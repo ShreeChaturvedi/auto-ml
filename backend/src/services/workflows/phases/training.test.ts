@@ -256,10 +256,10 @@ describe('trainingPhaseConfig.resolveNextStage', () => {
       ])).toBe('write_code');
     });
 
-    it('advances register_model → summarize only on registration success', () => {
+    it('advances register_model → generate_code after registration success so additional approved experiments can continue', () => {
       expect(resolve('register_model', [
         makeRegisterModelSuccess()
-      ])).toBe('summarize');
+      ])).toBe('generate_code');
     });
   });
 });
@@ -392,6 +392,101 @@ describe('trainingPhaseConfig.getStageConfig', () => {
           modelType: 'ridge_regression',
           artifactPath: 'model.joblib',
           metrics: expect.objectContaining({ rmse: 0.42 })
+        })
+      })
+    ]);
+  });
+
+  it('auto-builds execute/evaluate/register for the next approved experiment after one model is already registered in the same turn', async () => {
+    const state = createTrainingState([
+      makeToolResult('execute_training', {
+        output: { experimentId: 'exp-1', status: 'training', metrics: { rmse: 0.43 } }
+      }),
+      makeToolResult('evaluate_results', {
+        output: { experimentId: 'exp-1', status: 'evaluated', metrics: { rmse: 0.42 } }
+      }),
+      makeToolResult('register_model', {
+        output: { experimentId: 'exp-1', status: 'registered', modelId: 'model-1' }
+      }),
+      makeToolResult('write_cell', { output: { cellId: 'c-2' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":0.55}\nRMSE: 0.55',
+          stderr: '',
+          cellId: 'c-2',
+          executionMs: 900
+        }
+      })
+    ]);
+    state.turn.prompt = 'Approved. Proceed with training the selected models: ridge, lasso.';
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments = {
+      'exp-1': {
+        experimentId: 'exp-1',
+        experimentName: 'ridge',
+        modelType: 'ridge_regression',
+        splitStrategy: 'time_series',
+        status: 'registered',
+        evaluationMetrics: { rmse: 0.42 },
+        artifactPath: 'model.joblib',
+        updatedAt: '2026-04-09T00:00:00.000Z'
+      },
+      'exp-2': {
+        experimentId: 'exp-2',
+        experimentName: 'lasso',
+        modelType: 'linear_regression',
+        splitStrategy: 'time_series',
+        status: 'proposed',
+        updatedAt: '2026-04-09T00:00:01.000Z'
+      }
+    };
+
+    const executeAction = trainingPhaseConfig.getStageConfig('execute_training').deterministicAction!;
+    const evaluateAction = trainingPhaseConfig.getStageConfig('evaluate_results').deterministicAction!;
+    const registerAction = trainingPhaseConfig.getStageConfig('register_model').deterministicAction!;
+
+    const executeCalls = await executeAction(state);
+    expect(executeCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_training',
+        args: expect.objectContaining({
+          experimentId: 'exp-2',
+          succeeded: true,
+          metrics: expect.objectContaining({ rmse: 0.55 })
+        })
+      })
+    ]);
+
+    state.toolResultHistory.push(makeToolResult('execute_training', {
+      output: { experimentId: 'exp-2', status: 'training', metrics: { rmse: 0.55 } }
+    }));
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-2'].trainingMetrics = { rmse: 0.55 };
+
+    const evaluateCalls = await evaluateAction(state);
+    expect(evaluateCalls).toEqual([
+      expect.objectContaining({
+        tool: 'evaluate_results',
+        args: expect.objectContaining({
+          experimentId: 'exp-2',
+          metrics: expect.objectContaining({ rmse: 0.55 })
+        })
+      })
+    ]);
+
+    state.toolResultHistory.push(makeToolResult('evaluate_results', {
+      output: { experimentId: 'exp-2', status: 'evaluated', metrics: { rmse: 0.54 } }
+    }));
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-2'].evaluationMetrics = { rmse: 0.54 };
+
+    const registerCalls = await registerAction(state);
+    expect(registerCalls).toEqual([
+      expect.objectContaining({
+        tool: 'register_model',
+        args: expect.objectContaining({
+          experimentId: 'exp-2',
+          modelName: 'lasso',
+          modelType: 'linear_regression',
+          metrics: expect.objectContaining({ rmse: 0.54 })
         })
       })
     ]);

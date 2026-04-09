@@ -8,6 +8,8 @@ import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
 import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
 import { Target, TrendingUp, Layers, AlertTriangle, FileText, Bug, GitCompare } from 'lucide-react';
 import type { ChatMessage } from '@/types/llmUi';
+import type { NotebookCell } from '@/types/notebook';
+import type { ToolCall, ToolResult } from '@/types/llmUi';
 
 export interface TrainingAdapterConfig {
   projectId: string;
@@ -39,6 +41,8 @@ function buildTrainingTips(
   const tips: ContextualTip[] = [];
 
   const datasetFile = datasetFiles.find((f) => f.metadata?.datasetId === config.datasetId);
+  const isDerivedDataset = Boolean(datasetFile?.metadata?.derivedFrom)
+    || /^feature(?:[_-]|$)/i.test(datasetFile?.name ?? '');
   const profile = datasetFile?.metadata?.datasetProfile;
   const targetDtype = config.targetColumn && profile
     ? profile.dtypes[config.targetColumn]
@@ -56,6 +60,8 @@ function buildTrainingTips(
     const countMatch = config.featureSummary.match(/^(\d+)\s+enabled\s+feature/);
     const featureCount = countMatch ? parseInt(countMatch[1], 10) : 1;
     tips.push({ id: 'tip-features', icon: Layers, content: `${featureCount} engineered feature${featureCount === 1 ? '' : 's'} in your pipeline` });
+  } else if (isDerivedDataset) {
+    tips.push({ id: 'tip-derived-dataset', icon: Layers, content: 'Using a derived dataset — features may already be materialized in the table' });
   } else {
     tips.push({ id: 'tip-no-features', icon: AlertTriangle, content: 'No feature pipeline — model trains on raw columns' });
   }
@@ -82,8 +88,105 @@ function buildTrainingTips(
 
 function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
   const store = () => useModelStore.getState();
+  const notebookStore = () => useNotebookStore.getState();
+
+  const asRecord = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+
+  const extractNotebookCell = (value: unknown): NotebookCell | null => {
+    const record = asRecord(value);
+    if (!record) {
+      return null;
+    }
+
+    if (typeof record.cellId === 'string' && typeof record.notebookId === 'string') {
+      return record as unknown as NotebookCell;
+    }
+
+    const nestedCell = asRecord(record.cell);
+    if (nestedCell && typeof nestedCell.cellId === 'string' && typeof nestedCell.notebookId === 'string') {
+      return nestedCell as unknown as NotebookCell;
+    }
+
+    return null;
+  };
+
+  const syncNotebookToolResult = async (call: ToolCall, result: ToolResult): Promise<void> => {
+    const state = notebookStore();
+    const cell = extractNotebookCell(result.output);
+    const callCellId = typeof call.args?.cellId === 'string' ? call.args.cellId : undefined;
+
+    switch (call.tool) {
+      case 'write_cell':
+      case 'insert_cell':
+      case 'edit_cell': {
+        if (cell) {
+          state.updateCellLocally(cell);
+        } else if (callCellId) {
+          await state.loadCell(callCellId);
+          return;
+        }
+        await state.loadCells();
+        break;
+      }
+      case 'delete_cell': {
+        if (callCellId) {
+          state.removeCellLocally(callCellId);
+        }
+        await state.loadCells();
+        break;
+      }
+      case 'reorder_cells':
+        await state.loadCells();
+        break;
+      case 'run_cell': {
+        if (cell) {
+          state.updateCellLocally(cell);
+        } else if (callCellId) {
+          await state.loadCell(callCellId);
+          return;
+        }
+        await state.loadCells();
+        break;
+      }
+      default:
+        break;
+    }
+  };
 
   return {
+    write_cell: {
+      onResult: (call, result) => {
+        void syncNotebookToolResult(call, result);
+      }
+    },
+    edit_cell: {
+      onResult: (call, result) => {
+        void syncNotebookToolResult(call, result);
+      }
+    },
+    insert_cell: {
+      onResult: (call, result) => {
+        void syncNotebookToolResult(call, result);
+      }
+    },
+    delete_cell: {
+      onResult: (call, result) => {
+        void syncNotebookToolResult(call, result);
+      }
+    },
+    reorder_cells: {
+      onResult: (call, result) => {
+        void syncNotebookToolResult(call, result);
+      }
+    },
+    run_cell: {
+      onResult: (call, result) => {
+        void syncNotebookToolResult(call, result);
+      }
+    },
     configure_experiment: {
       onCall: (call) => {
         const args = call.args as Record<string, unknown> | undefined;
@@ -173,7 +276,18 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
   return {
     buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) return;
-      const session = useWorkflowSessionStore.getState().sessions[config.sessionKey];
+      const workflowSessionStore = useWorkflowSessionStore.getState();
+      const session = workflowSessionStore.sessions[config.sessionKey];
+      const resumableStatuses = new Set(['running', 'paused']);
+      const canResumeSession = Boolean(
+        session?.runId
+        && session?.threadId
+        && session.state?.status
+        && resumableStatuses.has(session.state.status)
+      );
+      if (session && !canResumeSession) {
+        workflowSessionStore.clearSession(config.sessionKey);
+      }
       // Prefer the caller-supplied getter (wired to useTrainingNotebookSync).
       // Fall back to the global active notebook for backward compatibility;
       // TrainingPanel always provides getNotebookId in practice.
@@ -184,8 +298,8 @@ export function createTrainingAdapter(config: TrainingAdapterConfig): DomainAdap
           projectId: config.projectId,
           phase: 'training',
           datasetId: config.datasetId,
-          runId: session?.runId,
-          threadId: session?.threadId,
+          runId: canResumeSession ? session?.runId : undefined,
+          threadId: canResumeSession ? session?.threadId : undefined,
           notebookId: resolvedNotebookId ?? undefined,
           targetColumn: config.targetColumn,
           prompt,

@@ -430,13 +430,14 @@ describe('TrainingPanel', () => {
 
     renderPanel();
 
-    const applyButton = await screen.findByRole('button', { name: /Apply 2 Selected/i });
-    expect(screen.getByText(/2 of 2 models selected/i)).toBeInTheDocument();
+    const applyButton = await screen.findByRole('button', { name: /Train Selected Model/i });
+    expect(screen.getByText(/1 of 2 models selected/i)).toBeInTheDocument();
+    expect(screen.getByText(/Only 1 model can be trained at a time/i)).toBeInTheDocument();
 
     fireEvent.click(applyButton);
 
     expect(mockState.submitPromptMock).toHaveBeenCalledWith(
-      'Approved. Proceed with training the selected models: Random Forest, XGBoost.'
+      'Approved. Proceed with training the selected model: Random Forest.'
     );
     expect(await screen.findByRole('button', { name: /Applied/i })).toBeDisabled();
 
@@ -445,7 +446,7 @@ describe('TrainingPanel', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /Applied/i })).not.toBeInTheDocument();
     });
-    expect(screen.queryByText(/2 of 2 models selected/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1 of 2 models selected/i)).not.toBeInTheDocument();
   });
 
   it('hides the approval gate when pending proposal messages are stale and later training tools already ran', async () => {
@@ -491,6 +492,6 @@ describe('TrainingPanel', () => {
     });
 
     expect(screen.queryByText(/Approve Model Training/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Apply 1 Selected/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Train Selected Model/i })).not.toBeInTheDocument();
   });
 });

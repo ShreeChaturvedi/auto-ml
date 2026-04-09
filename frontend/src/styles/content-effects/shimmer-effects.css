@@ -33,9 +33,43 @@
   }
 }
 
+/* Low-saturation rainbow cycle — muted hues drift through text.
+   Uses only background-* longhands to avoid the `background` shorthand
+   resetting background-clip back to border-box. */
+.text-gradient-cycle {
+  background-image: linear-gradient(
+    90deg in oklch longer hue,
+    oklch(0.52 0.09 0),
+    oklch(0.52 0.09 120),
+    oklch(0.52 0.09 240),
+    oklch(0.52 0.09 360)
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-drift 8s linear infinite;
+}
+
+.dark .text-gradient-cycle {
+  background-image: linear-gradient(
+    90deg in oklch longer hue,
+    oklch(0.75 0.06 0),
+    oklch(0.75 0.06 120),
+    oklch(0.75 0.06 240),
+    oklch(0.75 0.06 360)
+  );
+}
+
+@keyframes gradient-drift {
+  from { background-position: 0% 0; }
+  to { background-position: 300% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .shimmer-text,
-  .shimmer-text-once {
+  .shimmer-text-once,
+  .text-gradient-cycle {
     animation: none;
   }
 }

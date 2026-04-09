@@ -9,7 +9,7 @@ export function HomeEmptyIllustration({ className }: { className?: string }) {
       className={cn('h-20 w-auto', className)}
       aria-hidden="true"
     >
-      <GrainFilter id="grain-home" seed={2} />
+      <GrainFilter id="grain-home" seed={3} />
       <DotGrid cx={88} cy={6} />
       <DotGrid cx={12} cy={20} gap={6} />
 
@@ -21,141 +21,89 @@ export function HomeEmptyIllustration({ className }: { className?: string }) {
         style={{ animationDelay: '60ms' }}
       />
 
-      {/* Root Network */}
+      {/* Secondary Shoots */}
       <path
-        d="M 38 84 C 45 80, 50 82, 55 84"
-        stroke="currentColor" strokeWidth={1} strokeLinecap="round" fill="none" opacity={0.7}
+        d="M 42 84 Q 36 70 32 65"
+        stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.4}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '100ms' }}
       />
       <path
-        d="M 82 84 C 75 80, 70 82, 65 84"
-        stroke="currentColor" strokeWidth={1} strokeLinecap="round" fill="none" opacity={0.7}
+        d="M 78 84 Q 84 75 88 60"
+        stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.4}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '120ms' }}
       />
 
-      {/* Main Trunk Splitting (Organic Curves) */}
+      {/* Main Stem */}
       <path
-        d="M 55 84 C 55 60, 40 45, 35 25"
+        d="M 60 84 Q 52 50 60 15"
         stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" fill="none"
         pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '200ms' }}
-      />
-      <path
-        d="M 65 84 C 65 55, 80 40, 85 20"
-        stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" fill="none"
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '240ms' }}
-      />
-      
-      {/* Inner twist (DNA/braid feel) */}
-      <path
-        d="M 60 84 C 60 65, 52 55, 60 35 C 65 25, 60 15, 60 15"
-        stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" fill="none" opacity={0.8}
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '280ms' }}
+        style={{ animationDelay: '160ms' }}
       />
 
-      {/* Cross-branching wisps */}
+      {/* Lower Left Leaf */}
       <path
-        d="M 45 53 Q 55 45 60 48"
-        stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" fill="none" opacity={0.4}
+        d="M 56 60 C 40 45, 25 35, 25 25 C 35 40, 50 50, 56 60"
+        stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round"
+        fill="currentColor" fillOpacity={0.06} filter="url(#grain-home)"
         pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '350ms' }}
+        style={{ animationDelay: '260ms' }}
       />
       <path
-        d="M 72 45 Q 65 35 60 35"
-        stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" fill="none" opacity={0.4}
+        d="M 54 58 Q 40 40 28 28"
+        stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" opacity={0.5}
         pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '380ms' }}
+        style={{ animationDelay: '340ms' }}
       />
 
-      {/* Left Node - Project Document */}
-      <rect x={20} y={9} width={28} height={32} rx={4} fill="currentColor" opacity={0.03} filter="url(#grain-home)" />
-      <rect
-        x={20} y={9} width={28} height={32} rx={4}
-        stroke="currentColor" strokeWidth={1}
+      {/* Middle Right Leaf */}
+      <path
+        d="M 57 45 C 80 30, 95 20, 95 15 C 85 30, 70 40, 57 45"
+        stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round"
+        fill="currentColor" fillOpacity={0.05} filter="url(#grain-home)"
+        pathLength={1} className="stroke-draw-on"
+        style={{ animationDelay: '320ms' }}
+      />
+      <path
+        d="M 59 43 Q 80 30 90 18"
+        stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" opacity={0.5}
         pathLength={1} className="stroke-draw-on"
         style={{ animationDelay: '400ms' }}
       />
-      <rect
-        x={24} y={14} width={20} height={12} rx={2}
-        stroke="currentColor" strokeWidth={0.8} opacity={0.4} fill="none"
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '450ms' }}
-      />
-      <line x1={24} y1={31} x2={36} y2={31} stroke="currentColor" strokeWidth={1} strokeLinecap="round" pathLength={1} className="stroke-draw-on" style={{ animationDelay: '480ms' }} />
-      <line x1={24} y1={35} x2={44} y2={35} stroke="currentColor" strokeWidth={1} strokeLinecap="round" opacity={0.5} pathLength={1} className="stroke-draw-on" style={{ animationDelay: '520ms' }} />
 
-      {/* Right Node - Abstract Diamond */}
-      <g transform="rotate(45 85 20)">
-        <rect x={73} y={8} width={24} height={24} rx={4} fill="currentColor" opacity={0.04} filter="url(#grain-home)" />
-        <rect
-          x={73} y={8} width={24} height={24} rx={4}
-          stroke="currentColor" strokeWidth={1.2}
-          pathLength={1} className="stroke-draw-on"
-          style={{ animationDelay: '460ms' }}
-        />
-        <rect
-          x={78} y={13} width={14} height={14} rx={2}
-          stroke="currentColor" strokeWidth={0.8} opacity={0.5} fill="none"
-          pathLength={1} className="stroke-draw-on"
-          style={{ animationDelay: '520ms' }}
-        />
-        <circle cx={85} cy={20} r={2.5} fill="currentColor" opacity={0.3} />
-      </g>
-
-      {/* Center Node - Circular Portal */}
-      <circle cx={60} cy={15} r={12} fill="currentColor" opacity={0.03} filter="url(#grain-home)" />
-      <circle
-        cx={60} cy={15} r={12}
-        stroke="currentColor" strokeWidth={1}
+      {/* Upper Left Leaf */}
+      <path
+        d="M 58 25 C 50 15, 40 10, 40 5 C 45 15, 55 20, 58 25"
+        stroke="currentColor" strokeWidth={1} strokeLinejoin="round"
+        fill="currentColor" fillOpacity={0.04} filter="url(#grain-home)"
         pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '500ms' }}
-      />
-      <circle
-        cx={60} cy={15} r={8}
-        stroke="currentColor" strokeWidth={0.8} strokeDasharray="2 3" opacity={0.6} fill="none"
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '550ms' }}
+        style={{ animationDelay: '380ms' }}
       />
       <path
-        d="M 60 11 L 60 19 M 56 15 L 64 15"
-        stroke="currentColor" strokeWidth={1} strokeLinecap="round" fill="none"
+        d="M 56 23 Q 48 14 43 7"
+        stroke="currentColor" strokeWidth={0.8} strokeLinecap="round" opacity={0.5}
         pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '600ms' }}
-      />
-      
-      {/* Orbiting element & Network lines */}
-      <circle cx={72} cy={7} r={1.5} fill="currentColor" opacity={0.5} />
-      <path
-        d="M 72 7 Q 68 3 60 3"
-        stroke="currentColor" strokeWidth={0.8} fill="none" opacity={0.4} strokeDasharray="1 2"
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '650ms' }}
-      />
-      <path
-        d="M 48 25 Q 55 20 60 15"
-        stroke="currentColor" strokeWidth={0.6} fill="none" strokeDasharray="2 4" opacity={0.4}
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '700ms' }}
-      />
-      <path
-        d="M 70 20 Q 65 25 60 35"
-        stroke="currentColor" strokeWidth={0.6} fill="none" strokeDasharray="2 4" opacity={0.3}
-        pathLength={1} className="stroke-draw-on"
-        style={{ animationDelay: '720ms' }}
+        style={{ animationDelay: '460ms' }}
       />
 
-      {/* Floating Particles */}
-      <circle cx={18} cy={45} r={1.5} fill="currentColor" opacity={0.2} />
-      <circle cx={25} cy={60} r={1} fill="currentColor" opacity={0.15} />
-      <circle cx={95} cy={35} r={1.2} fill="currentColor" opacity={0.25} />
-      <circle cx={88} cy={55} r={1.5} fill="currentColor" opacity={0.1} />
-      <circle cx={42} cy={20} r={1} fill="currentColor" opacity={0.2} />
-      <path d="M 10 30 L 12 30 M 11 29 L 11 31" stroke="currentColor" strokeWidth={0.8} opacity={0.3} strokeLinecap="round" />
-      <path d="M 80 10 L 82 10 M 81 9 L 81 11" stroke="currentColor" strokeWidth={0.8} opacity={0.4} strokeLinecap="round" />
+      {/* Top Right Leaf / Bud */}
+      <path
+        d="M 59 18 C 65 10, 75 8, 75 5 C 70 12, 65 15, 59 18"
+        stroke="currentColor" strokeWidth={1} strokeLinejoin="round"
+        fill="currentColor" fillOpacity={0.04} filter="url(#grain-home)"
+        pathLength={1} className="stroke-draw-on"
+        style={{ animationDelay: '420ms' }}
+      />
+
+      {/* Subtle organic atmosphere (pollen/spores) */}
+      <circle cx={40} cy={15} r={1.5} fill="currentColor" opacity={0.3} />
+      <circle cx={80} cy={35} r={1.5} fill="currentColor" opacity={0.2} />
+      <circle cx={30} cy={50} r={2} fill="currentColor" opacity={0.15} />
+      <circle cx={90} cy={55} r={1} fill="currentColor" opacity={0.25} />
+      <circle cx={50} cy={30} r={1} fill="currentColor" opacity={0.2} />
+
     </svg>
   );
 }

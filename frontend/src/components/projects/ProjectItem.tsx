@@ -105,7 +105,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
           'flex-1 truncate text-sm font-medium transition-opacity duration-300',
           collapsed ? 'opacity-0' : 'opacity-100'
         )}
-        title={project.title}
+
       >
         {project.title}
       </span>
@@ -156,18 +156,14 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
 
   return (
     <>
-      {collapsed ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {itemContent}
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <p>{project.title}</p>
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        itemContent
-      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {itemContent}
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>{project.title}</p>
+        </TooltipContent>
+      </Tooltip>
 
       <ProjectDialog
         open={isEditDialogOpen}

@@ -12,7 +12,7 @@
   .font-display {
     font-family: 'Instrument Serif', Georgia, serif;
     font-weight: 400;
-    letter-spacing: -0.02em;
+    letter-spacing: 0em;
   }
 
   /* Scroll shadow indicators */

@@ -7,7 +7,6 @@ import {
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle
 } from '@/components/ui/empty';
 import { ShootingStars } from '@/components/ui/shooting-stars';
@@ -86,9 +85,7 @@ export function HomePage() {
 
         <Empty className="flex-1">
           <EmptyHeader>
-            <EmptyMedia variant="icon" className="rounded-lg empty-state-enter" style={{ animationDelay: '100ms' }}>
-              <HomeEmptyIllustration />
-            </EmptyMedia>
+            <HomeEmptyIllustration className="h-28 w-auto text-muted-foreground empty-state-enter" style={{ animationDelay: '100ms' }} />
             <EmptyTitle className="font-display text-2xl empty-state-enter" style={{ animationDelay: '200ms' }}>
               {projects.length === 0 ? 'No Projects Yet' : 'No Project Selected'}
             </EmptyTitle>

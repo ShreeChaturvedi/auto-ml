@@ -210,9 +210,15 @@ export const useProjectStore = createPersistedStore<ProjectState>(
             lastSyncedProjectMetadata.set(project.id, JSON.stringify(toPhaseMetadata(project)));
           });
           const currentActive = get().activeProjectId;
+          // Only auto-select the first project when not at root — prevents
+          // the sidebar from briefly flashing a project's workflow tree on
+          // the homepage before HomePage's useEffect can clear it.
+          const autoSelect = window.location.pathname === '/'
+            ? null
+            : normalized[0]?.id ?? null;
           set({
             projects: normalized,
-            activeProjectId: currentActive ?? normalized[0]?.id ?? null,
+            activeProjectId: currentActive ?? autoSelect,
             isInitialized: true,
             isLoading: false,
             error: undefined
@@ -485,6 +491,13 @@ export const useProjectStore = createPersistedStore<ProjectState>(
       const state = persistedState as ProjectState | undefined;
       if (!state) return { projects: [], activeProjectId: null, isInitialized: false, isLoading: false };
       return state;
+    },
+    merge: (persisted, current) => {
+      const merged = { ...current, ...(persisted as Partial<ProjectState>) };
+      // At root path, discard persisted activeProjectId to prevent the sidebar
+      // from briefly flashing the last-opened project before HomePage clears it.
+      if (window.location.pathname === '/') merged.activeProjectId = null;
+      return merged;
     },
     fullName: 'automl-projects-storage'
   }

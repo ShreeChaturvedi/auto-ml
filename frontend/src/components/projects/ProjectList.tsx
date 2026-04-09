@@ -111,8 +111,10 @@ export function ProjectList({ collapsed = false, onToggleCollapse }: ProjectList
                 Loading...
               </div>
             ) : projects.length > 0 ? (
-              projects.map((project) => (
-                <ProjectItem key={project.id} project={project} collapsed={collapsed} />
+              projects.map((project, index) => (
+                <div key={project.id} className="empty-state-enter" style={{ animationDelay: `${index * 50}ms` }}>
+                  <ProjectItem project={project} collapsed={collapsed} />
+                </div>
               ))
             ) : !collapsed ? (
               <div className="flex flex-col items-center justify-center pt-6 pb-8 text-center empty-state-enter">

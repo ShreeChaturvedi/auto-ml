@@ -325,6 +325,38 @@ describe('runEvaluation', () => {
     expect(artifactWorkspaces).toContain('eval/test-model-id/shap.json');
   });
 
+  it('copies the model artifact into a workspace-relative models directory before evaluation', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { filesToCopy: Array<{ permanentPath: string; workspacePath: string }> };
+      expect(cfg.filesToCopy).toEqual([
+        {
+          permanentPath: model.artifact!.path,
+          workspacePath: 'models/test-model-id/model.joblib'
+        }
+      ]);
+      return {
+        container,
+        executionResult: {
+          status: 'success',
+          stderr: '',
+          executionMs: 5000,
+        },
+      };
+    });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
+
+    await runEvaluation('test-model-id');
+
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
+  });
+
   it('reuses the stored model test size when building the evaluation script', async () => {
     const model = makeModelRecord({ metadata: { testSize: 0.3 } });
     const container = makeContainer();

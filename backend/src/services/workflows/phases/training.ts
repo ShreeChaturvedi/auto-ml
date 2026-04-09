@@ -707,7 +707,7 @@ function parseTrainCompleteMetrics(stdout: string): Record<string, unknown> | nu
   }
   try {
     const parsed = JSON.parse(candidate) as unknown;
-    return asRecord(parsed);
+    return asRecord(parsed) ?? null;
   } catch {
     return null;
   }

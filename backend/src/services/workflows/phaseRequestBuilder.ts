@@ -6,7 +6,7 @@ import {
   loadRagSnippets
 } from '../../routes/llm/shared.js';
 import type { DatasetProfile } from '../../types/dataset.js';
-import { asRecord } from '../../utils/typeCoercion.js';
+import { asRecord, asString } from '../../utils/typeCoercion.js';
 import { FEATURE_METHODS } from '../featureEngineering.js';
 import type { FeatureSpec } from '../featureEngineering.js';
 import { createLlmClient } from '../llm/llmClient.js';
@@ -21,6 +21,7 @@ import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
 import { getPhaseConfig } from './phaseConfig.js';
+import { hasPendingApprovedTrainingExperiments } from './trainingExperimentSelection.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
@@ -333,8 +334,21 @@ export function resolveTrainingLifecycleNode(
   const currentNode = state.run.currentNode;
   const currentNodeIsValid = typeof currentNode === 'string' && lifecycleStageNames.has(currentNode);
   const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
+  const hasConfiguredExperimentsAwaitingProposal = (() => {
+    const experiments = asRecord(state.run.metadata?.experiments);
+    if (!experiments) {
+      return false;
+    }
+    return Object.values(experiments).some((value) => {
+      const experiment = asRecord(value);
+      return asString(experiment?.status) === 'configured';
+    });
+  })();
   const inferResumeStageFromHistory = (): string => {
     const fullResults = state.toolResultHistory;
+    if (hasConfiguredExperimentsAwaitingProposal) {
+      return 'propose_model';
+    }
     for (let index = fullResults.length - 1; index >= 0; index -= 1) {
       const result = fullResults[index];
       if (result.tool === 'register_model') {
@@ -401,6 +415,9 @@ export function resolveTrainingLifecycleNode(
     // Resumed training turns (typically after approval pause) must continue
     // from the next lifecycle stage, not restart configuration.
     if (startingStatus === 'paused') {
+      if (hasConfiguredExperimentsAwaitingProposal) {
+        return 'propose_model';
+      }
       if (typeof nextStage === 'string' && lifecycleStageNames.has(nextStage)) {
         return nextStage;
       }
@@ -410,6 +427,9 @@ export function resolveTrainingLifecycleNode(
       return inferResumeStageFromHistory();
     }
     if (startingStatus === 'failed_retryable' || startingStatus === 'failed') {
+      if (hasConfiguredExperimentsAwaitingProposal) {
+        return 'propose_model';
+      }
       const inferredStage = inferResumeStageFromHistory();
       if (typeof inferredStage === 'string' && lifecycleStageNames.has(inferredStage)) {
         return inferredStage;
@@ -759,6 +779,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
                 // guard doesn't block them with a "needs secondary column" error.
                 ...(secondaryColumn ? { secondaryColumn } : {}),
                 featureName: (out.featureName as string) ?? 'unnamed',
+                description: (out.rationale as string) ?? (out.message as string) ?? '',
                 method: (out.method as string) ?? 'custom',
                 params: (out.params && typeof out.params === 'object' && !Array.isArray(out.params)
                   ? out.params as Record<string, unknown>
@@ -883,7 +904,11 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
   const lastTrainingLifecycleTool = [...currentTurnResults].reverse().find(
     (r) => TRAINING_LIFECYCLE_TOOLS_LIST.includes(r.tool)
   );
-  if (lastTrainingLifecycleTool?.tool === 'register_model' && !lastTrainingLifecycleTool.error) {
+  if (
+    lastTrainingLifecycleTool?.tool === 'register_model'
+    && !lastTrainingLifecycleTool.error
+    && !hasPendingApprovedTrainingExperiments(state.run, turn.prompt)
+  ) {
     return {
       nextStep: 'complete',
       request: null,

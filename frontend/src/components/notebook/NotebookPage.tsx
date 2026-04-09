@@ -19,12 +19,10 @@ interface NotebookPageProps {
 export function NotebookPage({ projectId }: NotebookPageProps) {
   const editorRef = useRef<NotebookEditorHandle>(null);
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
-  const disconnect = useNotebookStore((s) => s.disconnect);
 
   useEffect(() => {
     void initializeNotebook(projectId);
-    return () => disconnect();
-  }, [projectId, initializeNotebook, disconnect]);
+  }, [projectId, initializeNotebook]);
 
   const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
   const notebookHeadings = useNotebookHeadings();

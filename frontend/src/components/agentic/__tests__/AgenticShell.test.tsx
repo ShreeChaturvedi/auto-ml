@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
 import type { DomainAdapter } from '@/types/agentic';
@@ -7,6 +7,11 @@ import type { DomainAdapter } from '@/types/agentic';
 const loopMocks = vi.hoisted(() => ({
   runLoop: vi.fn(),
   editAndResend: vi.fn()
+}));
+
+const notebookStoreMocks = vi.hoisted(() => ({
+  initializeNotebook: vi.fn(),
+  disconnect: vi.fn()
 }));
 
 // Mock the entire child component tree to isolate hook-level re-render behavior
@@ -114,8 +119,8 @@ vi.mock('@/hooks/useProjectThemeColor', () => ({
 vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
-      initializeNotebook: vi.fn(),
-      disconnect: vi.fn(),
+      initializeNotebook: notebookStoreMocks.initializeNotebook,
+      disconnect: notebookStoreMocks.disconnect,
       activeNotebookId: null
     })
 }));
@@ -128,6 +133,13 @@ vi.mock('@/stores/dataStore', () => ({
 import { AgenticShell } from '../AgenticShell';
 
 describe('AgenticShell smoke test', () => {
+  beforeEach(() => {
+    loopMocks.runLoop.mockReset();
+    loopMocks.editAndResend.mockReset();
+    notebookStoreMocks.initializeNotebook.mockReset();
+    notebookStoreMocks.disconnect.mockReset();
+  });
+
   it('mounts without "Maximum update depth exceeded" error', () => {
     const domainAdapter: DomainAdapter = {
       buildRequest: vi.fn(async () => undefined),
@@ -169,8 +181,6 @@ describe('AgenticShell smoke test', () => {
   });
 
   it('passes submitPrompt to the left pane render props', async () => {
-    loopMocks.runLoop.mockReset();
-
     const domainAdapter: DomainAdapter = {
       buildRequest: vi.fn(async () => undefined),
       toolRegistry: {},
@@ -207,5 +217,43 @@ describe('AgenticShell smoke test', () => {
         'Generate notebook steps'
       );
     });
+  });
+
+  it('does not disconnect the notebook store when notebook ownership props change or the shell unmounts', () => {
+    const domainAdapter: DomainAdapter = {
+      buildRequest: vi.fn(async () => undefined),
+      toolRegistry: {},
+      toolUiRegistry: {},
+      tipsProvider: () => [],
+      preserveToolHistoryBetweenPrompts: true
+    };
+
+    const { rerender, unmount } = render(
+      <AgenticShell
+        projectId="test-project"
+        domainAdapter={domainAdapter}
+        storageKey="ownership-no-disconnect"
+        notebookId="nb-1"
+      />
+    );
+
+    expect(notebookStoreMocks.initializeNotebook).toHaveBeenCalledWith('test-project', 'nb-1');
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
+
+    rerender(
+      <AgenticShell
+        projectId="test-project"
+        domainAdapter={domainAdapter}
+        storageKey="ownership-no-disconnect"
+        notebookId="nb-2"
+      />
+    );
+
+    expect(notebookStoreMocks.initializeNotebook).toHaveBeenLastCalledWith('test-project', 'nb-2');
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
   });
 });

@@ -130,7 +130,6 @@ export function AgenticShell({
   });
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
-  const disconnectNotebook = useNotebookStore((s) => s.disconnect);
 
   // Track the latest truthy notebookId in a ref so that when it transitions
   // from a value to null/undefined (disconnect cleanup), we don't re-trigger
@@ -142,11 +141,10 @@ export function AgenticShell({
 
   useEffect(() => {
     if (projectId) initializeNotebook(projectId, stableNotebookIdRef.current ?? undefined);
-    return () => disconnectNotebook();
     // Only re-run when projectId changes or when requestedNotebookId becomes
     // a NEW truthy value. Transitions to null/undefined are ignored.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, requestedNotebookId || '', initializeNotebook, disconnectNotebook]);
+  }, [projectId, requestedNotebookId || '', initializeNotebook]);
 
   const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
 

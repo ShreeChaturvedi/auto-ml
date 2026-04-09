@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useProjectStore } from '@/stores/projectStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
 import { isAuxiliaryPhase } from '@/types/phase';
 import type { Phase } from '@/types/phase';
@@ -14,6 +15,29 @@ const TrainingPanel = lazy(() => import('@/components/training/TrainingPanel').t
 const ExperimentsDashboard = lazy(() => import('@/components/experiments/ExperimentsDashboard').then(m => ({ default: m.ExperimentsDashboard })));
 const DeploymentDashboard = lazy(() => import('@/components/deployment/DeploymentDashboard').then(m => ({ default: m.DeploymentDashboard })));
 const NotebookPage = lazy(() => import('@/components/notebook/NotebookPage').then(m => ({ default: m.NotebookPage })));
+
+const NOTEBOOK_SESSION_PHASES = new Set<Phase>([
+  'preprocessing',
+  'feature-engineering',
+  'training',
+  'notebook'
+]);
+
+function shouldPreserveNotebookSession(
+  projectId: string,
+  phase: Phase,
+  isPhaseUnlocked: (projectId: string, phase: Phase) => boolean
+): boolean {
+  if ((phase as string) === 'processing') {
+    return true;
+  }
+
+  if (!isAuxiliaryPhase(phase) && !isPhaseUnlocked(projectId, phase)) {
+    return true;
+  }
+
+  return NOTEBOOK_SESSION_PHASES.has(phase);
+}
 
 // ---------------------------------------------------------------------------
 // Phase-level ErrorBoundary — prevents a single phase crash from white-screening
@@ -84,6 +108,7 @@ export function ProjectWorkspace() {
   const isPhaseUnlocked = useProjectStore((state) => state.isPhaseUnlocked);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const isInitialized = useProjectStore((state) => state.isInitialized);
+  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
 
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
 
@@ -103,6 +128,20 @@ export function ProjectWorkspace() {
       setCurrentPhase(project.id, phase as Phase);
     }
   }, [isInitialized, project, phase, setCurrentPhase]);
+
+  useEffect(() => {
+    if (!project || !phase) {
+      return;
+    }
+
+    if (!shouldPreserveNotebookSession(project.id, phase as Phase, isPhaseUnlocked)) {
+      disconnectNotebook();
+    }
+  }, [disconnectNotebook, isPhaseUnlocked, phase, project]);
+
+  useEffect(() => () => {
+    disconnectNotebook();
+  }, [disconnectNotebook]);
 
   if (!isInitialized) {
     return (

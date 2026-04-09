@@ -86,7 +86,7 @@ export async function runRepairPipeline(
       label: 'nl2sql_repair',
       schema: REPAIR_SCHEMA,
       normalize: normalizeRepairOutput,
-      maxOutputTokens: 900,
+      maxOutputTokens: 2048,
       reasoningEffort: defaultReasoningEffort,
       systemPrompt: 'You are a senior SQL debugger. Return valid JSON only.',
       userPrompt: buildRepairPrompt({

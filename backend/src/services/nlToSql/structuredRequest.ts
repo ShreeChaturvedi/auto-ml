@@ -14,6 +14,11 @@ import type {
   NlProviderInfo
 } from './types.js';
 
+export function isTruncatedOutput(raw: string): boolean {
+  const trimmed = raw.trimEnd();
+  return trimmed.length > 0 && trimmed.startsWith('{') && !trimmed.endsWith('}');
+}
+
 export function isTimeoutLikeError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === 'AbortError') {
     return true;
@@ -181,7 +186,7 @@ export async function requestStructuredJson<T extends z.ZodTypeAny>(params: {
       );
     } catch (error) {
       lastError = toStructuredRequestError(params.label, error);
-      if (isTimeoutLikeError(lastError)) {
+      if (isTimeoutLikeError(lastError) || isTruncatedOutput(previousRaw)) {
         break;
       }
     }

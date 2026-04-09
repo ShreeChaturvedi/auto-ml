@@ -16,6 +16,15 @@ export class OpenAiClient implements LlmClient {
   private client: OpenAI;
   private model: string;
 
+  private logIfIncomplete(response: Responses.Response): void {
+    if (response.status === 'incomplete') {
+      appLogger.warn('[OpenAiClient] Response marked incomplete by provider', {
+        reason: response.incomplete_details?.reason ?? 'unknown',
+        model: this.model
+      });
+    }
+  }
+
   constructor(options: OpenAiClientOptions) {
     this.client = new OpenAI({
       apiKey: options.apiKey,
@@ -37,6 +46,7 @@ export class OpenAiClient implements LlmClient {
       reasoningEffort: request.reasoningEffort ?? null
     });
     const response = await this.client.responses.create(buildOpenAiCreateBody(request, this.model));
+    this.logIfIncomplete(response);
     return extractResponseText(response);
   }
 
@@ -84,6 +94,7 @@ export class OpenAiClient implements LlmClient {
     });
 
     const response = await stream.finalResponse();
+    this.logIfIncomplete(response);
 
     emitToolCalls(response, handlers, streamedToolItemIds);
 

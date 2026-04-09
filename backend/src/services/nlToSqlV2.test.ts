@@ -472,6 +472,44 @@ describe('nlToSqlV2 service', () => {
     expect(result.explanation.assumptions.some((entry) => entry.includes('compact fallback'))).toBe(true);
   });
 
+  it('breaks immediately on truncated JSON without retrying, then falls back to compact', async () => {
+    const repo = createDatasetRepository([buildDataset()]);
+    const truncatedJson = '{"sql": "SELECT id, name FROM student_data LIMIT 25", "rationale": "List';
+    const client = createClientFromResponses([
+      JSON.stringify({
+        intentSummary: 'List users',
+        selectedTables: ['student_data'],
+        joinPlan: [],
+        filters: [],
+        aggregations: [],
+        assumptions: [],
+        confidence: 0.9
+      }),
+      truncatedJson,
+      JSON.stringify({
+        sql: 'SELECT id, name FROM student_data LIMIT 25',
+        rationale: 'List users.',
+        assumptions: ['No filters requested.'],
+        confidence: 0.74
+      })
+    ]);
+
+    const service = createNl2SqlService({
+      datasetRepository: repo,
+      getClient: () => client
+    });
+
+    const result = await service.generateSqlFromNaturalLanguageV2({
+      projectId: 'project-1',
+      nlQuery: 'list users'
+    });
+
+    expect(result.sql.toLowerCase()).toContain('select id, name from student_data');
+    expect(result.explanation.validationNotes.some((note) => note.includes('compact fallback'))).toBe(true);
+    // Pass 1 (1 call) + Pass 2 (1 call, no retry due to truncation) + Compact fallback (1 call) = 3
+    expect((client.complete as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
+  });
+
   it('fails when rich and compact passes both time out', async () => {
     const repo = createDatasetRepository([
       buildDataset({

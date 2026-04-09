@@ -20,15 +20,19 @@ export function parseApprovedTrainingExperimentNames(prompt: string | undefined)
     return [];
   }
 
-  const match = prompt.match(/approved\.\s*proceed with training the selected models:\s*(.+?)(?:\.\s*$|$)/i);
+  const match = prompt.match(/approved\.\s*proceed with training the selected model[s]?:\s*(.+?)(?:\.\s*$|$)/i);
   if (!match?.[1]) {
     return [];
   }
 
-  return match[1]
+  const approvedNames = match[1]
     .split(/\s*,\s*/)
     .map((value) => value.trim())
     .filter(Boolean);
+
+  // Training executions are intentionally single-model per approval cycle.
+  // Additional proposed models stay available for a later follow-up turn.
+  return approvedNames.slice(0, 1);
 }
 
 export function getApprovedTrainingExperiments(

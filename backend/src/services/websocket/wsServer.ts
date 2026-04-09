@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'http';
-import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'node:crypto';
+import type { Socket } from 'node:net';
 
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -31,10 +31,10 @@ export class NotebookWSServer {
   private clients: Map<string, WSClient> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
-  constructor(server: HttpServer) {
+  constructor() {
     this.wss = new WebSocketServer({
-      server,
-      path: '/ws/notebook'
+      noServer: true,
+      perMessageDeflate: false
     });
 
     this.setupHandlers();
@@ -54,6 +54,12 @@ export class NotebookWSServer {
 
     this.wss.on('error', (error) => {
       appLogger.error('[ws] Server error:', error);
+    });
+  }
+
+  public handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss.emit('connection', ws, req);
     });
   }
 
@@ -214,7 +220,7 @@ export class NotebookWSServer {
 
     if (client.ws.readyState === WebSocket.OPEN) {
       try {
-        client.ws.send(JSON.stringify(event));
+        client.ws.send(JSON.stringify(event), { compress: false });
       } catch (error) {
         appLogger.error(`[ws] Failed to send to client ${clientId}:`, error);
       }
@@ -286,13 +292,13 @@ export class NotebookWSServer {
 
 let wsServer: NotebookWSServer | null = null;
 
-export function initializeWebSocket(server: HttpServer): NotebookWSServer {
+export function initializeWebSocket(): NotebookWSServer {
   if (wsServer) {
     appLogger.warn('[ws] WebSocket server already initialized');
     return wsServer;
   }
 
-  wsServer = new NotebookWSServer(server);
+  wsServer = new NotebookWSServer();
   return wsServer;
 }
 

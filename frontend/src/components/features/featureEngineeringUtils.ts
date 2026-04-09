@@ -103,3 +103,28 @@ export function buildSuggestionDefaults(item: FeatureSuggestionItem): Record<str
     ...controlDefaults
   };
 }
+
+export function isPlaceholderFeatureDescription(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length === 0 || normalized === 'feature proposed — awaiting user review';
+}
+
+export function resolveFeatureDescription(
+  description: unknown,
+  rationale: unknown,
+  fallback = ''
+): string {
+  if (typeof description === 'string' && !isPlaceholderFeatureDescription(description)) {
+    return description;
+  }
+
+  if (typeof rationale === 'string' && rationale.trim().length > 0) {
+    return rationale;
+  }
+
+  return fallback;
+}

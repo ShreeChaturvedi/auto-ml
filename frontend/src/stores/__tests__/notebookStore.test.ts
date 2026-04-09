@@ -9,6 +9,14 @@ import {
   selectHasAiLockedCells
 } from '../notebookStore';
 
+const wsClientMocks = vi.hoisted(() => ({
+  connect: vi.fn(),
+  subscribe: vi.fn(),
+  unsubscribe: vi.fn(),
+  disconnect: vi.fn(),
+  on: vi.fn(() => vi.fn())
+}));
+
 // ============================================================
 // Mocks
 // ============================================================
@@ -36,11 +44,12 @@ vi.mock('../../lib/api/notebooks', () => ({
 
 vi.mock('../../lib/websocket/notebookClient', () => ({
   getNotebookWSClient: vi.fn(() => ({
-    connect: vi.fn(),
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
+    connect: wsClientMocks.connect,
+    subscribe: wsClientMocks.subscribe,
+    unsubscribe: wsClientMocks.unsubscribe,
+    disconnect: wsClientMocks.disconnect,
     isConnected: false,
-    on: vi.fn(() => vi.fn())
+    on: wsClientMocks.on
   }))
 }));
 
@@ -274,6 +283,29 @@ describe('notebookStore', () => {
       expect(posMap['a']).toBe(0);
       expect(posMap['c']).toBe(1);
       expect(posMap['b']).toBe(2);
+    });
+  });
+
+  describe('disconnect', () => {
+    it('closes the active websocket client and clears it from store state', () => {
+      useNotebookStore.setState({
+        notebook: { notebookId: 'nb-1' } as never,
+        wsClient: {
+          unsubscribe: wsClientMocks.unsubscribe,
+          disconnect: wsClientMocks.disconnect
+        } as never,
+        currentProjectId: 'project-1',
+        activeNotebookId: 'nb-1',
+        isConnected: true,
+      });
+
+      useNotebookStore.getState().disconnect();
+
+      expect(wsClientMocks.unsubscribe).toHaveBeenCalledWith('nb-1');
+      expect(wsClientMocks.disconnect).toHaveBeenCalledTimes(1);
+      expect(useNotebookStore.getState().wsClient).toBeNull();
+      expect(useNotebookStore.getState().activeNotebookId).toBeNull();
+      expect(useNotebookStore.getState().isConnected).toBe(false);
     });
   });
 

@@ -181,7 +181,38 @@ describe('buildTrainingRequest', () => {
     });
 
     const userMessage = request.messages.find((message) => message.role === 'user');
-    expect(userMessage?.content).toContain('Call propose_training_plan NOW');
+    expect(userMessage?.content).toContain('configured experiments still need training plans');
+    expect(userMessage?.content).toContain('Call propose_training_plan ONCE PER remaining configured experiment');
     expect(userMessage?.content).toContain('Do NOT continue with advisory text only');
+  });
+
+  it('forces remaining proposals when multiple configured experiments exist but only one has a plan', () => {
+    const request = buildTrainingRequest({
+      dataset,
+      prompt: 'propose 3 models for me to train feature_v1.csv',
+      currentNode: 'propose_model',
+      toolResults: [
+        {
+          tool: 'configure_experiment',
+          output: { experimentId: 'exp-1', experimentName: 'Feature_v1 Random Forest Regressor', status: 'configured' }
+        },
+        {
+          tool: 'configure_experiment',
+          output: { experimentId: 'exp-2', experimentName: 'Feature_v1 Ridge Regression', status: 'configured' }
+        },
+        {
+          tool: 'configure_experiment',
+          output: { experimentId: 'exp-3', experimentName: 'Feature_v1 Linear Regression', status: 'configured' }
+        },
+        {
+          tool: 'propose_training_plan',
+          output: { experimentId: 'exp-1', status: 'awaiting_approval' }
+        }
+      ]
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('2 configured experiments still need training plans');
+    expect(userMessage?.content).toContain('Call propose_training_plan ONCE PER remaining configured experiment');
   });
 });

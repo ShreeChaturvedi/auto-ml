@@ -152,6 +152,8 @@ export const proposeTrainingPlan: TrainingToolHandler = async (
   return {
     output: {
       experimentId: experiment.experimentId,
+      experimentName: experiment.experimentName as string,
+      modelType: experiment.modelType as string,
       // 'awaiting_approval' triggers the existing pause mechanism in
       // toolExecutor.ts via getApprovalPauseDetails/getToolResultPauseReason.
       // The turn ends here — user sees the proposal via StepProposalCard

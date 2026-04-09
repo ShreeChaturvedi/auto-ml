@@ -211,19 +211,37 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
         let stdout: string | undefined;
         let stderr: string | undefined;
         let duration: number | undefined;
+        let failedByOutput = false;
 
         if (output && typeof output === 'object') {
           const out = output as Record<string, unknown>;
+          const outputStatus = typeof out.status === 'string' ? out.status.toLowerCase() : undefined;
+          if (outputStatus && outputStatus !== 'success' && outputStatus !== 'training') {
+            failedByOutput = true;
+          }
+          if (out.succeeded === false) {
+            failedByOutput = true;
+          }
           stdout = typeof out.stdout === 'string' ? out.stdout : undefined;
-          stderr = typeof out.stderr === 'string' ? out.stderr : undefined;
-          duration = typeof out.duration === 'number' ? out.duration : undefined;
+          stderr = typeof out.stderr === 'string'
+            ? out.stderr
+            : typeof out.errorMessage === 'string'
+              ? out.errorMessage
+              : undefined;
+          duration = typeof out.duration === 'number'
+            ? out.duration
+            : typeof out.executionMs === 'number'
+              ? out.executionMs
+              : typeof out.trainingDurationMs === 'number'
+                ? out.trainingDurationMs
+                : undefined;
         } else if (typeof output === 'string') {
           stdout = output;
         }
 
         return createElement(ExecutionCard, {
           key: message.id,
-          status: isRunning ? 'running' : failed ? 'failed' : 'success',
+          status: isRunning ? 'running' : (failed || failedByOutput) ? 'failed' : 'success',
           stdout,
           stderr,
           duration,

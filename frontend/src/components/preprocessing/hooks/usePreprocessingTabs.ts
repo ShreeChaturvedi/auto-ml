@@ -44,6 +44,7 @@ export interface UsePreprocessingTabsResult {
   handleNewTab: () => string | null;
   /** Adopt a workbook created externally (e.g. by the sidebar via workbookRegistryStore). */
   adoptTab: (id: string, name: string) => void;
+  deleteTabById: (tabId: string) => string | undefined;
   handleDeleteTab: () => string | null;
   openRenameTabDialog: () => void;
   handleRenameTab: () => void;
@@ -189,6 +190,7 @@ export function usePreprocessingTabs({
   const {
     handleNewTab,
     adoptTab,
+    deleteTabById,
     handleDeleteTab,
     openRenameTabDialog,
     handleRenameTab,
@@ -216,6 +218,12 @@ export function usePreprocessingTabs({
     ensureNotebookForTab,
     onNeedsDatasetSelection
   });
+
+  useEffect(() => {
+    if (!tabsReady) return;
+    useWorkbookRegistryStore.getState().setDeleteHandler('preprocessing', deleteTabById);
+    return () => useWorkbookRegistryStore.getState().setDeleteHandler('preprocessing', null);
+  }, [deleteTabById, tabsReady]);
 
   // ---- Apply initial tab/notebook from URL search params ------------------
 
@@ -280,6 +288,7 @@ export function usePreprocessingTabs({
     handleTabSwitch,
     handleNewTab,
     adoptTab,
+    deleteTabById,
     handleDeleteTab,
     openRenameTabDialog,
     handleRenameTab,

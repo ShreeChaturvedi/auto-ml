@@ -103,6 +103,9 @@ function getLatestTrainingRunCellTimeout(
     if (result.tool !== 'run_cell') {
       continue;
     }
+    if (typeof result.error === 'string' && /request timed out/i.test(result.error)) {
+      return result;
+    }
     const output = getToolOutputRecord(result);
     if ((output?.status as string | undefined)?.toLowerCase() === 'timeout') {
       return result;
@@ -660,8 +663,10 @@ export async function executeToolsNode(
     const timeoutMs = typeof timeoutOutput?.executionMs === 'number'
       ? timeoutOutput.executionMs
       : undefined;
-    const timeoutMessage = typeof timeoutOutput?.error === 'string' && timeoutOutput.error.trim().length > 0
-      ? timeoutOutput.error
+    const timeoutMessage = typeof timedOutTrainingRunCell.error === 'string' && timedOutTrainingRunCell.error.trim().length > 0
+      ? timedOutTrainingRunCell.error
+      : typeof timeoutOutput?.error === 'string' && timeoutOutput.error.trim().length > 0
+        ? timeoutOutput.error
       : `Training cell execution timed out${timeoutMs ? ` after ${timeoutMs}ms` : ''}.`;
     return {
       toolCallHistory: state.pendingToolCalls,

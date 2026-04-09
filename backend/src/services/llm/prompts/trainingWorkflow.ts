@@ -48,48 +48,76 @@ function formatFeatureContext(specs: FeatureSpec[]): string {
  */
 function buildTrainingContinuationDirective(
   toolResults: ToolResult[] | undefined,
-  toolCallHistory?: LlmToolCallHistory[]
+  currentNode?: string,
+  toolCallHistory?: LlmToolCallHistory[],
+  toolResultHistory?: LlmToolResultHistory[]
 ): string | undefined {
+  const currentTurnResults = toolResults ?? [];
+  const priorCalls = toolCallHistory ?? [];
+  const priorResults = toolResultHistory ?? [];
+  const fullHistoryToolNames = new Set([
+    ...priorCalls.map((call) => call.name),
+    ...priorResults.map((result) => result.name)
+  ]);
+
   // Check if a previous turn already configured + proposed an experiment.
   // If so, this is a CONTINUATION (user approved the plan). Proceed to code.
-  const priorHistory = toolCallHistory ?? [];
-  const hasPriorConfigure = priorHistory.some((h) => h.name === 'configure_experiment');
-  const hasPriorPropose = priorHistory.some((h) => h.name === 'propose_training_plan');
+  const hasPriorConfigure = fullHistoryToolNames.has('configure_experiment');
+  const hasPriorPropose = fullHistoryToolNames.has('propose_training_plan');
 
-  if (!toolResults?.length && hasPriorConfigure && hasPriorPropose) {
-    return 'ACTION REQUIRED: The user approved the training plan from the previous turn. Write the training code in a notebook cell using resolve_dataset_path() to load the data, then run it with run_cell. Do NOT call configure_experiment or propose_training_plan again — they were already completed.';
+  const isApprovedContinuationStage = currentNode === 'generate_code'
+    || currentNode === 'write_code'
+    || currentNode === 'execute_training'
+    || currentNode === 'evaluate_results'
+    || currentNode === 'register_model';
+
+  if (!currentTurnResults.length && hasPriorConfigure && hasPriorPropose && isApprovedContinuationStage) {
+    return 'ACTION REQUIRED: The user approved the training plan from the previous turn. Write the executable training code as 2-4 SMALL notebook cells with `cellType: "code"` using resolve_dataset_path() to load the data. Keep cells separated by purpose: imports/config, dataset prep, model fit/evaluation, artifact save. Run each code cell after writing it. The FINAL training/evaluation cell must print `__TRAIN_COMPLETE__|{json.dumps(final_metrics)}`. Do NOT write markdown plan/summary cells. Do NOT call list_cells or read_cell. Do NOT call configure_experiment or propose_training_plan again — they were already completed.';
   }
 
-  if (!toolResults?.length) {
+  if (!currentTurnResults.length) {
     return 'ACTION REQUIRED: Start by calling configure_experiment for each model the user wants (up to 3 per turn). If the user asks for multiple models, call configure_experiment multiple times BEFORE calling propose_training_plan. Do NOT call list_cells, read_cell, write_cell, or any notebook tools yet — configure experiments first.';
   }
 
   // Find the most relevant training lifecycle signals
-  const lastRunCell = [...(toolResults ?? [])].reverse().find((r) => r.tool === 'run_cell');
+  const lastRunCell = [...currentTurnResults].reverse().find((r) => r.tool === 'run_cell');
   const hasSuccessfulRunCell = lastRunCell && !lastRunCell.error &&
     lastRunCell.output && typeof lastRunCell.output === 'object' && !Array.isArray(lastRunCell.output) &&
     (lastRunCell.output as Record<string, unknown>).status === 'success';
 
-  const lastExecuteTraining = [...(toolResults ?? [])].reverse().find((r) => r.tool === 'execute_training');
+  const lastExecuteTraining = [...currentTurnResults].reverse().find((r) => r.tool === 'execute_training');
   const hasSuccessfulExecute = lastExecuteTraining && !lastExecuteTraining.error &&
     lastExecuteTraining.output && typeof lastExecuteTraining.output === 'object' && !Array.isArray(lastExecuteTraining.output) &&
     (lastExecuteTraining.output as Record<string, unknown>).status === 'training';
 
-  const lastEvalResults = [...(toolResults ?? [])].reverse().find((r) => r.tool === 'evaluate_results');
+  const lastEvalResults = [...currentTurnResults].reverse().find((r) => r.tool === 'evaluate_results');
   const hasEvalResults = lastEvalResults && !lastEvalResults.error;
 
-  const lastRegisterModel = [...(toolResults ?? [])].reverse().find((r) => r.tool === 'register_model');
+  const lastRegisterModel = [...currentTurnResults].reverse().find((r) => r.tool === 'register_model');
   const hasRegistered = lastRegisterModel && !lastRegisterModel.error &&
     lastRegisterModel.output && typeof lastRegisterModel.output === 'object' && !Array.isArray(lastRegisterModel.output) &&
     (lastRegisterModel.output as Record<string, unknown>).modelId;
 
   // Find experimentId from configure_experiment results
   let experimentId: string | undefined;
-  for (const r of toolResults) {
+  for (const r of currentTurnResults) {
     if (r.tool === 'configure_experiment' && !r.error &&
         r.output && typeof r.output === 'object' && !Array.isArray(r.output)) {
       const id = (r.output as Record<string, unknown>).experimentId;
       if (typeof id === 'string') experimentId = id;
+    }
+  }
+  if (!experimentId) {
+    for (let index = priorResults.length - 1; index >= 0; index -= 1) {
+      const result = priorResults[index];
+      if (result.name !== 'configure_experiment') {
+        continue;
+      }
+      const id = result.response?.experimentId;
+      if (typeof id === 'string' && id.trim()) {
+        experimentId = id;
+        break;
+      }
     }
   }
 
@@ -100,6 +128,97 @@ function buildTrainingContinuationDirective(
     // failure mode where toolChoice='any' + render_ui directive produced
     // empty LLM output with gpt-5.4.
     return undefined;
+  }
+
+  const lastLifecycleFailure = [...currentTurnResults].reverse().find((result) => {
+    if (!['configure_experiment', 'propose_training_plan', 'execute_training', 'evaluate_results', 'register_model', 'compare_models'].includes(result.tool)) {
+      return false;
+    }
+    if (typeof result.error === 'string' && result.error.trim()) {
+      return true;
+    }
+    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      return false;
+    }
+    const output = result.output as Record<string, unknown>;
+    return typeof output.error === 'string' && output.error.trim().length > 0;
+  });
+  const lifecycleFailureMessage = (() => {
+    if (!lastLifecycleFailure) {
+      return '';
+    }
+    if (typeof lastLifecycleFailure.error === 'string' && lastLifecycleFailure.error.trim()) {
+      return lastLifecycleFailure.error.toLowerCase();
+    }
+    if (lastLifecycleFailure.output && typeof lastLifecycleFailure.output === 'object' && !Array.isArray(lastLifecycleFailure.output)) {
+      const output = lastLifecycleFailure.output as Record<string, unknown>;
+      if (typeof output.error === 'string' && output.error.trim()) {
+        return output.error.toLowerCase();
+      }
+    }
+    return '';
+  })();
+
+  if (lifecycleFailureMessage.includes('experiment') && lifecycleFailureMessage.includes('not found')) {
+    return 'ACTION REQUIRED: The previous tool call used the wrong experiment identifier. Call configure_experiment now for this request if it has not been configured in this turn. After configure_experiment succeeds, call propose_training_plan and stop for approval. Do NOT compare models or validate results yet.';
+  }
+
+  if (lifecycleFailureMessage.includes('evaluate_results requires non-empty numeric metrics') && experimentId) {
+    return `ACTION REQUIRED: Call evaluate_results now with experimentId="${experimentId}". Use the numeric metrics already produced by training (RMSE/MAE/R2 or accuracy/F1) instead of comparing models. Do NOT call compare_models unless multiple experiments were actually evaluated.`;
+  }
+
+  const lastNotebookFailure = [...currentTurnResults].reverse().find((result) => {
+    if (!['write_cell', 'insert_cell', 'edit_cell', 'run_cell'].includes(result.tool)) {
+      return false;
+    }
+    if (typeof result.error === 'string' && result.error.trim()) {
+      return true;
+    }
+    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      return false;
+    }
+    const output = result.output as Record<string, unknown>;
+    return typeof output.error === 'string' && output.error.trim().length > 0;
+  });
+  const notebookFailureMessage = (() => {
+    if (!lastNotebookFailure) {
+      return '';
+    }
+    if (typeof lastNotebookFailure.error === 'string' && lastNotebookFailure.error.trim()) {
+      return lastNotebookFailure.error.toLowerCase();
+    }
+    if (lastNotebookFailure.output && typeof lastNotebookFailure.output === 'object' && !Array.isArray(lastNotebookFailure.output)) {
+      const output = lastNotebookFailure.output as Record<string, unknown>;
+      if (typeof output.error === 'string' && output.error.trim()) {
+        return output.error.toLowerCase();
+      }
+    }
+    return '';
+  })();
+
+  if (notebookFailureMessage.includes('markdown cells are not allowed')) {
+    return 'ACTION REQUIRED: Repair the notebook by writing ONLY executable code cells. Write the NEXT cell as a SMALL code cell for one step only (imports/config first, then dataset prep, then model fit/evaluation, then artifact save). Do NOT write markdown or summaries. Do NOT call list_cells or read_cell.';
+  }
+
+  if (notebookFailureMessage.includes('too large') || notebookFailureMessage.includes('too long')) {
+    return 'ACTION REQUIRED: The previous training cell was too large. Split the workflow into SMALL code cells. Write ONLY the next code cell for a single step, not the entire training script. Start with imports/config or dataset prep. Do NOT write markdown. Do NOT call list_cells or read_cell.';
+  }
+
+  if (
+    notebookFailureMessage.includes('dtypepromotionerror')
+    || (notebookFailureMessage.includes('datetime64') && notebookFailureMessage.includes('promoted'))
+    || (notebookFailureMessage.includes('datetime64') && notebookFailureMessage.includes('median'))
+    || (notebookFailureMessage.includes('datetime') && notebookFailureMessage.includes('imputer'))
+  ) {
+    return 'ACTION REQUIRED: Repair the failed code cell so raw datetime columns never enter numeric preprocessing. If you parsed DATE with pd.to_datetime(), either convert it to numeric/ordinal values, derive date parts, or drop the raw datetime column before building numeric_features. Prefer existing numeric date features like date_month/date_year when they are already available. Rewrite only the next SMALL code cell needed for that repair, then continue the staged training workflow.';
+  }
+
+  if (notebookFailureMessage.includes('selected dataset')) {
+    return 'ACTION REQUIRED: Rewrite the next code cell using the UI-selected dataset from the context block. Use resolve_dataset_path() with the selected dataset filename/datasetId exactly as provided. Do NOT use a different dataset name from the prompt text.';
+  }
+
+  if (notebookFailureMessage.includes('selected target column')) {
+    return 'ACTION REQUIRED: Rewrite the next code cell using the UI-selected target column from the context block. The selected target is authoritative for this turn, even if the prompt text mentioned another target.';
   }
 
   if (hasEvalResults && experimentId) {
@@ -122,13 +241,20 @@ function buildTrainingContinuationDirective(
     return 'ACTION REQUIRED: Training code ran successfully but no experiment is configured. Call configure_experiment first, then execute_training.';
   }
 
-  const hasConfigured = toolResults.some(
+  const hasConfigured = currentTurnResults.some(
     (r) => r.tool === 'configure_experiment' && !r.error
+  );
+  const hasProposed = currentTurnResults.some(
+    (r) => r.tool === 'propose_training_plan' && !r.error
   );
   // NOTE: No directive needed after proposal. propose_training_plan returns
   // status='awaiting_approval' which triggers the existing pause mechanism
   // in toolExecutor.ts. The turn ends deterministically — no LLM call needed.
   // The user sees the proposal via StepProposalCard and sends a follow-up.
+
+  if (currentNode === 'propose_model' && hasConfigured && !hasProposed) {
+    return 'ACTION REQUIRED: One or more experiments are already configured in this turn. Call propose_training_plan NOW for a configured experiment and stop for approval. Do NOT write training code yet. Do NOT continue with advisory text only.';
+  }
 
   if (hasConfigured) {
     // Return undefined so toolChoice stays at 'auto' (not 'any'). This lets
@@ -141,9 +267,12 @@ function buildTrainingContinuationDirective(
 
   // Fallback: no lifecycle tools have been called yet (LLM has been
   // calling notebook tools without starting the lifecycle). Redirect it.
-  const hasAnyLifecycleTool = toolResults.some(
+  const hasAnyLifecycleTool = currentTurnResults.some(
     (r) => ['configure_experiment', 'propose_training_plan', 'execute_training', 'evaluate_results', 'register_model'].includes(r.tool)
   );
+  if (!hasAnyLifecycleTool && hasPriorConfigure && hasPriorPropose) {
+    return 'ACTION REQUIRED: A training experiment is already configured and approved. Continue the multi-cell notebook workflow. If you have not yet written the next executable code cell, write it now with `cellType: "code"`. If the next code cell is already written, call run_cell on it now. Only the FINAL training/evaluation cell should print `__TRAIN_COMPLETE__|{json.dumps(final_metrics)}`. Do NOT write markdown plan/summary cells. Do NOT call list_cells or read_cell. Do NOT call configure_experiment again.';
+  }
   if (!hasAnyLifecycleTool) {
     return 'ACTION REQUIRED: No training experiment is configured yet. Call configure_experiment first to set up the experiment parameters before writing any more code. Do NOT call read_cell or list_cells.';
   }
@@ -160,6 +289,7 @@ export function buildTrainingRequest(params: {
   toolResults?: ToolResult[];
   featureSummary?: string;
   featureSpecs?: FeatureSpec[];
+  currentNode?: string;
   toolCallHistory?: LlmToolCallHistory[];
   toolResultHistory?: LlmToolResultHistory[];
   toolDefinitions?: LlmToolDefinition[];
@@ -174,6 +304,7 @@ export function buildTrainingRequest(params: {
     toolResults,
     featureSummary,
     featureSpecs,
+    currentNode,
     toolCallHistory,
     toolResultHistory,
     toolDefinitions,
@@ -186,8 +317,10 @@ export function buildTrainingRequest(params: {
 
   // Build context block that is INFORMATIONAL, not instructional
   const contextParts = [
+    '[Selected workflow controls: the dataset and target listed below come from the Training tab controls for this turn.]',
     `[Context - Available dataset: "${dataset.filename}" (${dataset.nRows} rows, ${dataset.nCols} columns)]`,
     targetColumn ? `[Target column: ${targetColumn}]` : null,
+    `[Selected training controls: dataset "${dataset.filename}"${targetColumn ? ` and target "${targetColumn}"` : ''}.]`,
     `[Columns: ${dataset.columns.map((column) => `${column.name} (${column.dtype})`).join(', ')}]`,
     `[Dataset access: use resolve_dataset_path("${dataset.filename}", "${dataset.datasetId}") when writing Python code. This returns the correct filesystem path inside the execution sandbox. Do NOT use pd.read_csv with a guessed path — the sandbox path is not /mnt/data or /workspace.]`,
     featureSpecs?.length
@@ -206,13 +339,18 @@ export function buildTrainingRequest(params: {
   // as FE's buildContinuationDirective in featureWorkflow.ts). This tells
   // the LLM explicitly which lifecycle tool to call next, preventing it
   // from defaulting to read_cell/list_cells loops.
-  const continuationDirective = buildTrainingContinuationDirective(toolResults, toolCallHistory);
+  const continuationDirective = buildTrainingContinuationDirective(
+    toolResults,
+    currentNode,
+    toolCallHistory,
+    toolResultHistory
+  );
 
   // User prompt is the PRIMARY content
   const userContent = [
-    prompt ?? 'Continue the training workflow.',
-    '',
     contextParts.join('\n'),
+    '',
+    prompt ?? 'Continue the training workflow.',
     continuationDirective ? `\nCONTINUATION: ${continuationDirective}` : null
   ].filter(Boolean).join('\n');
 

@@ -129,7 +129,6 @@ export function HomePage() {
                   d={flourishPath}
                   stroke="currentColor"
                   strokeWidth={1.5}
-                  strokeLinecap="round"
                   fill="none"
                   pathLength={1}
                   className="stroke-draw-on-off"

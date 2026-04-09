@@ -155,8 +155,13 @@
     stroke-dashoffset: 0;
     animation-timing-function: ease-in;
   }
+  99.9% {
+    stroke-dashoffset: -1;
+    opacity: 1;
+  }
   100% {
     stroke-dashoffset: -1;
+    opacity: 0;
   }
 }
 

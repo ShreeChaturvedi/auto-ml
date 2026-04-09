@@ -266,6 +266,40 @@ describe('runErrorAnalysis', () => {
     expect(result!.error_tree.error_rate).toBe(0.25);
   });
 
+  it('copies predictions into a workspace-relative eval directory before running analysis', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+
+    mockGetById.mockResolvedValue(model);
+    mockDatasetGetById.mockResolvedValue({
+      datasetId: 'test-dataset',
+      columns: [{ name: 'feature1' }, { name: 'feature2' }, { name: 'target' }],
+    });
+    mockResolveAndHealTargetColumn.mockResolvedValue('target');
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { filesToCopy: Array<{ permanentPath: string; workspacePath: string }> };
+      expect(cfg.filesToCopy).toEqual([
+        {
+          permanentPath: '/tmp/test-model-storage/test-model-id/predictions.parquet',
+          workspacePath: 'eval/test-model-id/predictions.parquet',
+        },
+      ]);
+      return {
+        container,
+        executionResult: {
+          status: 'success',
+          stderr: '',
+          executionMs: 2000,
+        },
+      };
+    });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
+
+    await runErrorAnalysis('test-model-id');
+
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
+  });
+
   it('returns null when model not found', async () => {
     mockGetById.mockResolvedValue(undefined);
 

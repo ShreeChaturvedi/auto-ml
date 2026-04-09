@@ -19,6 +19,33 @@ import { buildSystemPrompt } from './system.js';
 
 const MAX_FEATURE_DISPLAY = 20;
 
+function extractTurnExperimentCoverage(toolResults: ToolResult[]): {
+  configuredExperimentIds: Set<string>;
+  proposedExperimentIds: Set<string>;
+} {
+  const configuredExperimentIds = new Set<string>();
+  const proposedExperimentIds = new Set<string>();
+
+  for (const result of toolResults) {
+    if (result.error || !result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      continue;
+    }
+    const output = result.output as Record<string, unknown>;
+    const experimentId = typeof output.experimentId === 'string' ? output.experimentId : undefined;
+    if (!experimentId) {
+      continue;
+    }
+    if (result.tool === 'configure_experiment') {
+      configuredExperimentIds.add(experimentId);
+    }
+    if (result.tool === 'propose_training_plan') {
+      proposedExperimentIds.add(experimentId);
+    }
+  }
+
+  return { configuredExperimentIds, proposedExperimentIds };
+}
+
 function formatFeatureContext(specs: FeatureSpec[]): string {
   const display = specs.slice(0, MAX_FEATURE_DISPLAY);
   const lines = display.map((f) => {
@@ -55,6 +82,12 @@ function buildTrainingContinuationDirective(
   const currentTurnResults = toolResults ?? [];
   const priorCalls = toolCallHistory ?? [];
   const priorResults = toolResultHistory ?? [];
+  const { configuredExperimentIds, proposedExperimentIds } = extractTurnExperimentCoverage(currentTurnResults);
+  const hasConfigured = configuredExperimentIds.size > 0;
+  const hasProposed = proposedExperimentIds.size > 0;
+  const unproposedExperimentCount = [...configuredExperimentIds].filter(
+    (experimentId) => !proposedExperimentIds.has(experimentId)
+  ).length;
   const fullHistoryToolNames = new Set([
     ...priorCalls.map((call) => call.name),
     ...priorResults.map((result) => result.name)
@@ -76,7 +109,7 @@ function buildTrainingContinuationDirective(
   }
 
   if (!currentTurnResults.length) {
-    return 'ACTION REQUIRED: Start by calling configure_experiment for each model the user wants (up to 3 per turn). If the user asks for multiple models, call configure_experiment multiple times BEFORE calling propose_training_plan. Do NOT call list_cells, read_cell, write_cell, or any notebook tools yet — configure experiments first.';
+    return 'ACTION REQUIRED: Start by calling configure_experiment for each model the user wants (up to 3 per turn). If the user asks for multiple models, call configure_experiment for ALL requested models first, then call propose_training_plan ONCE PER configured experiment before stopping for approval. Do NOT call list_cells, read_cell, write_cell, or any notebook tools yet — complete experiment configuration/proposal first.';
   }
 
   // Find the most relevant training lifecycle signals
@@ -241,22 +274,18 @@ function buildTrainingContinuationDirective(
     return 'ACTION REQUIRED: Training code ran successfully but no experiment is configured. Call configure_experiment first, then execute_training.';
   }
 
-  const hasConfigured = currentTurnResults.some(
-    (r) => r.tool === 'configure_experiment' && !r.error
-  );
-  const hasProposed = currentTurnResults.some(
-    (r) => r.tool === 'propose_training_plan' && !r.error
-  );
   // NOTE: No directive needed after proposal. propose_training_plan returns
   // status='awaiting_approval' which triggers the existing pause mechanism
   // in toolExecutor.ts. The turn ends deterministically — no LLM call needed.
   // The user sees the proposal via StepProposalCard and sends a follow-up.
 
-  if (currentNode === 'propose_model' && hasConfigured && !hasProposed) {
-    return 'ACTION REQUIRED: One or more experiments are already configured in this turn. Call propose_training_plan NOW for a configured experiment and stop for approval. Do NOT write training code yet. Do NOT continue with advisory text only.';
+  if (currentNode === 'propose_model' && hasConfigured && unproposedExperimentCount > 0) {
+    return unproposedExperimentCount === 1
+      ? 'ACTION REQUIRED: One configured experiment still needs a training plan in this turn. Call propose_training_plan NOW for that remaining configured experiment and then stop for approval. Do NOT write training code yet. Do NOT continue with advisory text only.'
+      : `ACTION REQUIRED: ${unproposedExperimentCount} configured experiments still need training plans in this turn. Call propose_training_plan ONCE PER remaining configured experiment before stopping for approval. Do NOT write training code yet. Do NOT continue with advisory text only.`;
   }
 
-  if (hasConfigured) {
+  if (hasConfigured && !hasProposed) {
     // Return undefined so toolChoice stays at 'auto' (not 'any'). This lets
     // the LLM follow the user's intent — if they asked for 3 models, the LLM
     // can call configure_experiment multiple times before proposing. A

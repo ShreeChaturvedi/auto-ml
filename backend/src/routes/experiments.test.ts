@@ -6,13 +6,15 @@ import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { EvaluationResult, ShapResult } from '../types/experiments.js';
 
 // Mock fs/promises and repositories at the module level
-const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRequestStructuredJson, mockListModels, mockGetProjectRepository } = vi.hoisted(() => ({
+const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRunEvaluation, mockRequestStructuredJson, mockListModels, mockGetModelById, mockGetProjectRepository } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
   mockRunTuningStudy: vi.fn(),
   mockCreateLlmClient: vi.fn(),
   mockRunErrorAnalysis: vi.fn(),
+  mockRunEvaluation: vi.fn(),
   mockRequestStructuredJson: vi.fn(),
   mockListModels: vi.fn(),
+  mockGetModelById: vi.fn(),
   mockGetProjectRepository: vi.fn(() => ({
     getById: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Test Project', userId: null }),
     getByIdAndUser: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Test Project', userId: 'user-1' }),
@@ -35,12 +37,16 @@ vi.mock('../services/errorAttributionService.js', () => ({
   runErrorAnalysis: mockRunErrorAnalysis,
 }));
 
+vi.mock('../services/evaluationService.js', () => ({
+  runEvaluation: mockRunEvaluation,
+}));
+
 vi.mock('../services/nlToSql/structuredRequest.js', () => ({
   requestStructuredJson: mockRequestStructuredJson,
 }));
 
 vi.mock('../services/modelTraining.js', () => ({
-  getModelById: vi.fn(),
+  getModelById: mockGetModelById,
   listModels: mockListModels,
 }));
 
@@ -101,6 +107,7 @@ function createTestApp() {
 describeRouteSuite('experiments routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetModelById.mockResolvedValue(null);
   });
 
   it('GET /experiments/:modelId/evaluation returns 200 with EvaluationResult when file exists', async () => {
@@ -147,6 +154,28 @@ describeRouteSuite('experiments routes', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe('SHAP data not found');
+  });
+
+  it('POST /experiments/:modelId/evaluation/retry reruns evaluation and returns updated status', async () => {
+    mockGetModelById
+      .mockResolvedValueOnce({
+        modelId: 'model-abc',
+        projectId: 'project-1',
+        evaluationStatus: 'failed',
+      })
+      .mockResolvedValueOnce({
+        modelId: 'model-abc',
+        projectId: 'project-1',
+        evaluationStatus: 'ready',
+      });
+    mockRunEvaluation.mockResolvedValue(undefined);
+
+    const app = createTestApp();
+    const response = await request(app).post('/api/experiments/model-abc/evaluation/retry');
+
+    expect(response.status).toBe(200);
+    expect(mockRunEvaluation).toHaveBeenCalledWith('model-abc');
+    expect(response.body).toEqual({ ok: true, evaluationStatus: 'ready' });
   });
 
   it('POST /experiments/:projectId/tune returns 400 when modelId is missing', async () => {

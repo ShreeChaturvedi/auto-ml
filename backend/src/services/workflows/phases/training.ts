@@ -20,6 +20,7 @@ import type {
   ToolResult
 } from '../phaseConfig.js';
 import { registerPhaseConfig } from '../phaseConfig.js';
+import { selectTrainingExecutionExperiment } from '../trainingExperimentSelection.js';
 
 // ---------------------------------------------------------------------------
 // Training PhaseConfig
@@ -185,6 +186,13 @@ function extractExperimentRecord(
   }
 
   const activeExperimentId = state ? extractLatestExperimentIdFromHistory(state) : null;
+  if (state) {
+    const selected = selectTrainingExecutionExperiment(run, state, activeExperimentId);
+    if (selected) {
+      return selected;
+    }
+  }
+
   if (activeExperimentId) {
     const exact = asRecord(experiments[activeExperimentId]);
     if (exact) {
@@ -737,6 +745,24 @@ function getLastToolResult(
   return null;
 }
 
+function getLastToolResultForExperiment(
+  toolResults: import('../../../types/llm.js').ToolResult[],
+  toolName: string,
+  experimentId: string
+): import('../../../types/llm.js').ToolResult | null {
+  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
+    const result = toolResults[index];
+    if (result?.tool !== toolName) {
+      continue;
+    }
+    const output = getOutputRecord(result);
+    if (asString(output?.experimentId) === experimentId) {
+      return result;
+    }
+  }
+  return null;
+}
+
 function getOutputRecord(result: import('../../../types/llm.js').ToolResult | null): Record<string, unknown> | null {
   if (!result?.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
     return null;
@@ -789,7 +815,7 @@ async function buildTrainingExecuteAction(
   }
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const existingExecute = getLastToolResult(currentTurnResults, 'execute_training');
+  const existingExecute = getLastToolResultForExperiment(currentTurnResults, 'execute_training', experimentId);
   if (existingExecute) {
     return [];
   }
@@ -831,12 +857,12 @@ async function buildTrainingEvaluateAction(
   }
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const existingEvaluate = getLastToolResult(currentTurnResults, 'evaluate_results');
+  const existingEvaluate = getLastToolResultForExperiment(currentTurnResults, 'evaluate_results', experimentId);
   if (existingEvaluate) {
     return [];
   }
 
-  const executeResult = getLastToolResult(currentTurnResults, 'execute_training');
+  const executeResult = getLastToolResultForExperiment(currentTurnResults, 'execute_training', experimentId);
   if (!executeResult || isFailedToolResult(executeResult)) {
     return [];
   }
@@ -868,7 +894,7 @@ async function buildTrainingRegisterAction(
   }
 
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
-  const existingRegister = getLastToolResult(currentTurnResults, 'register_model');
+  const existingRegister = getLastToolResultForExperiment(currentTurnResults, 'register_model', experimentId);
   if (existingRegister) {
     return [];
   }
@@ -962,7 +988,7 @@ function resolveNextTrainingStage(
     }
     const output = getOutputRecord(lastRegister);
     if (typeof output?.modelId === 'string' && output.modelId.trim().length > 0) {
-      return 'summarize';
+      return 'generate_code';
     }
     return current;
   }

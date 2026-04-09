@@ -141,11 +141,13 @@ function isSuccessfulExecutionOutputStatus(status: string | undefined): boolean 
  */
 interface UseLifecycleCardsOptions {
   onProposalToggle?: (stepId: string, title: string, selected: boolean) => void;
+  getProposalSelected?: (stepId: string) => boolean | null | undefined;
 }
 
 export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message: ChatMessage) => ReactNode | null {
   const { projectId } = useParams<{ projectId: string }>();
   const onProposalToggle = options?.onProposalToggle;
+  const getProposalSelected = options?.getProposalSelected;
 
   return useCallback((message: ChatMessage): ReactNode | null => {
     if (message.type !== 'tool_call') return null;
@@ -186,6 +188,7 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
           rationale: call.rationale,
           phase: detectPhase(call.tool),
           status: proposalStatus,
+          selectedOverride: getProposalSelected?.(call.id),
           onToggleSelect: onProposalToggle
             ? (selected: boolean) => onProposalToggle(call.id, title, selected)
             : undefined,
@@ -326,5 +329,5 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
       default:
         return null;
     }
-  }, [onProposalToggle, projectId]);
+  }, [getProposalSelected, onProposalToggle, projectId]);
 }

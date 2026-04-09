@@ -225,6 +225,65 @@ describe('registerModel', () => {
     expect(experiments['exp-1'].persistedModelId).toBe('model-uuid-1');
   });
 
+  it('classifies logistic_regression as classification (not regression)', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'LogReg Baseline',
+      modelType: 'logistic_regression',
+      metrics: { accuracy: 0.89, f1: 0.84 },
+      artifactPath: 'model.joblib'
+    }));
+
+    expect(result.error).toBeUndefined();
+    const createArg = mockCreate.mock.calls[0][0];
+    expect(createArg.taskType).toBe('classification');
+  });
+
+  it('falls back to evaluate_results metrics when register_model receives an empty metrics object', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const run = buildRun();
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    experiments['exp-1'].evaluationMetrics = { accuracy: 0.91, f1: 0.87 };
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'RF Baseline',
+      modelType: 'random_forest',
+      metrics: {},
+      artifactPath: 'model.joblib'
+    }, run));
+
+    expect(result.error).toBeUndefined();
+    const createArg = mockCreate.mock.calls[0][0];
+    expect(createArg.metrics).toEqual({ accuracy: 0.91, f1: 0.87 });
+  });
+
+  it('coerces numeric-string metrics from evaluate_results fallback', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const run = buildRun();
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    experiments['exp-1'].evaluationMetrics = { accuracy: '0.91', macro_f1: '0.87' };
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'RF Baseline',
+      modelType: 'random_forest',
+      metrics: {},
+      artifactPath: 'model.joblib'
+    }, run));
+
+    expect(result.error).toBeUndefined();
+    const createArg = mockCreate.mock.calls[0][0];
+    expect(createArg.metrics).toEqual({ accuracy: 0.91, macro_f1: 0.87 });
+  });
+
   it('returns error when experimentId is missing', async () => {
     const result = await registerModel(buildCtx({
       modelName: 'RF',
@@ -244,17 +303,24 @@ describe('registerModel', () => {
     // landed in Postgres. The new contract is: DB failures bubble up as
     // tool errors so the LLM can tell the user exactly what went wrong.
     mockCreate.mockRejectedValue(new Error('DB write failed'));
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
 
-    const result = await registerModel(buildCtx({
+    const ctx = buildCtx({
       experimentId: 'exp-1',
       modelName: 'RF',
       modelType: 'random_forest',
-      metrics: { accuracy: 0.9 }
-    }));
+      metrics: { accuracy: 0.9 },
+      artifactPath: 'model.joblib'
+    });
+    const result = await registerModel(ctx);
 
     expect(result.error).toBeDefined();
     expect(result.error).toContain('DB write failed');
     expect(result.output).toBeUndefined();
+    const experiments = ctx.run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    expect(experiments['exp-1'].status).toBe('evaluated');
+    expect(experiments['exp-1'].registeredMetrics).toBeUndefined();
   });
 
   it('returns an error and does not create the record when artifactPath points at a missing file', async () => {
@@ -313,15 +379,11 @@ describe('registerModel', () => {
     }));
 
     expect(result.error).toBeDefined();
-    expect(result.error).toContain('empty');
+    expect(result.error).toContain('requires artifactPath');
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('does not require artifactPath (backwards compatibility when no model file exists)', async () => {
-    // Edge case: some experiments may register results without a saved
-    // model artifact (e.g., clustering runs that only persist cluster
-    // assignments). The handler still persists the record with no
-    // artifact field and no permanent-storage copy.
+  it('requires artifactPath so Experiments always receives a persisted model artifact', async () => {
     const result = await registerModel(buildCtx({
       experimentId: 'exp-1',
       modelName: 'KMeans Clusters',
@@ -329,9 +391,42 @@ describe('registerModel', () => {
       metrics: { silhouette: 0.42 }
     }));
 
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain('requires artifactPath');
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('resolves artifacts saved inside session-scoped subdirectories', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'session-123', 'artifacts', 'model.joblib');
+    await mkdir(join(workspaceDir, 'project-1', 'session-123', 'artifacts'), { recursive: true });
+    await writeFile(sourcePath, Buffer.from('session-scope'));
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'RF Baseline',
+      modelType: 'random_forest',
+      metrics: { accuracy: 0.9 },
+      artifactPath: 'artifacts/model.joblib'
+    }));
+
     expect(result.error).toBeUndefined();
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    const record = repoStore.get('model-uuid-1')!;
-    expect(record.artifact).toBeUndefined();
+  });
+
+  it('errors when no numeric metrics are available from register_model or evaluation state', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'RF Baseline',
+      modelType: 'random_forest',
+      metrics: {},
+      artifactPath: 'model.joblib'
+    }));
+
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain('requires non-empty numeric metrics');
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

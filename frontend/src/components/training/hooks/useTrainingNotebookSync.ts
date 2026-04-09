@@ -158,8 +158,15 @@ export function useTrainingNotebookSync({
           resolvedNotebookIdRef.current = null;
           if (resetCurrentWorkbook) {
             setNotebookId(null);
+            setIsReady(false);
+          } else if (workbookNotebookId) {
+            // Direct notebook rotation for the same workbook is expected
+            // during reset/create flows. Keep the shell mounted against the
+            // new notebook id while we validate the new binding in the
+            // background instead of dropping back to "preparing...".
+            setNotebookId(workbookNotebookId);
+            setIsReady(true);
           }
-          setIsReady(false);
         } else {
           return;
         }

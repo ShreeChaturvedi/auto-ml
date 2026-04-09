@@ -105,6 +105,34 @@ describe('resolveExperiment', () => {
     expect(result.error).toContain('Call configure_experiment first');
   });
 
+  it('recovers when the LLM passes a unique experimentName instead of experimentId', () => {
+    const experiments = {
+      'exp-1': makeExperiment('exp-1', 'ridge_usage_log1p_feature_v1')
+    };
+    const result = resolveExperiment(buildRun(experiments), {
+      experimentId: 'ridge_usage_log1p_feature_v1'
+    });
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.experiment.experimentId).toBe('exp-1');
+    expect(result.experiment.experimentName).toBe('ridge_usage_log1p_feature_v1');
+  });
+
+  it('errors when an experimentName matches more than one configured experiment', () => {
+    const experiments = {
+      'exp-1': makeExperiment('exp-1', 'duplicate-name'),
+      'exp-2': makeExperiment('exp-2', 'duplicate-name')
+    };
+    const result = resolveExperiment(buildRun(experiments), {
+      experimentId: 'duplicate-name'
+    });
+
+    expect('error' in result).toBe(true);
+    if (!('error' in result)) return;
+    expect(result.error).toContain('matched multiple experiment names');
+  });
+
   describe('lenient threadId-leak recovery', () => {
     it('auto-resolves a thread-shaped experimentId when exactly one experiment is configured', () => {
       // This is the live sprint10 Training bug shape: planner leaked the

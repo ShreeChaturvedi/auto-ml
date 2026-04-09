@@ -27,6 +27,40 @@ const logger = appLogger.child({ service: 'evaluationService' });
 
 const EVALUATION_TIMEOUT_MS = 300_000; // 5 minutes
 
+function sanitizeEvaluationErrorMessage(message: string): string {
+  const tracebackIndex = message.indexOf('Traceback');
+  const trimmed = (tracebackIndex >= 0 ? message.slice(tracebackIndex) : message).trim();
+  const lines = trimmed.split('\n');
+  let omittedFutureWarnings = 0;
+
+  const filtered = lines.filter((line) => {
+    const normalized = line.trim();
+    const isFutureWarning =
+      normalized.includes('FutureWarning:') ||
+      normalized.includes('Series.view is deprecated');
+    if (isFutureWarning) {
+      omittedFutureWarnings += 1;
+      return false;
+    }
+    if (
+      omittedFutureWarnings > 0 && (
+        normalized.startsWith('ordinal =') ||
+        normalized.startsWith('Use ``astype``') ||
+        normalized.includes('deprecated and will be removed')
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const cleaned = filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (omittedFutureWarnings > 0 && cleaned) {
+    return `${cleaned}\n\n[${omittedFutureWarnings} FutureWarning lines omitted]`;
+  }
+  return cleaned || trimmed || message;
+}
+
 interface BuildEvaluationScriptOptions {
   modelPath: string;
   datasetPath: string;
@@ -72,6 +106,13 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
 
   // ── Output dir ──
   lines.push(...buildOutputDirSetup(outputDir));
+
+  // ── Compatibility helpers for serialized sklearn FunctionTransformer callables ──
+  lines.push('def date_to_ordinal(X_col):');
+  lines.push('    s = pd.Series(X_col.squeeze() if hasattr(X_col, "squeeze") else X_col)');
+  lines.push('    dt = pd.to_datetime(s, errors="coerce")');
+  lines.push('    return pd.DataFrame({"DATE_ordinal": dt.map(lambda x: x.toordinal() if pd.notna(x) else np.nan)})');
+  lines.push('');
 
   // ── Load pipeline ──
   lines.push(`pipeline = joblib.load(${JSON.stringify(modelPath)})`);
@@ -278,7 +319,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('');
   }
 
-  // ── Save predictions parquet (includes features for error analysis) ──
+  // ── Save predictions artifact (includes features for error analysis) ──
   lines.push('# Save predictions — include features so error analysis can build an error tree');
   lines.push('pred_df = X_test.reset_index(drop=True)');
   lines.push('pred_df["y_true"] = y_test.values');
@@ -294,7 +335,13 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('residuals = (pred_df["y_true"] - pred_df["y_pred"]).abs()');
     lines.push('pred_df["is_correct"] = residuals <= residuals.std()');
   }
-  lines.push('pred_df.to_parquet(os.path.join(output_dir, "predictions.parquet"), index=False)');
+  lines.push('predictions_filename = "predictions.parquet"');
+  lines.push('try:');
+  lines.push('    pred_df.to_parquet(os.path.join(output_dir, predictions_filename), index=False)');
+  lines.push('except ImportError:');
+  lines.push('    predictions_filename = "predictions.csv"');
+  lines.push('    pred_df.to_csv(os.path.join(output_dir, predictions_filename), index=False)');
+  lines.push('result["predictionsArtifact"] = predictions_filename');
   lines.push('');
 
   // ── Timing ──
@@ -444,6 +491,11 @@ export async function runEvaluation(modelId: string): Promise<void> {
         permanent: 'predictions.parquet',
         optional: true,
       },
+      {
+        workspace: `eval/${modelId}/predictions.csv`,
+        permanent: 'predictions.csv',
+        optional: true,
+      },
     ]);
 
     // 10. Set evaluationStatus = 'ready'
@@ -451,11 +503,14 @@ export async function runEvaluation(modelId: string): Promise<void> {
       ...current,
       evaluationStatus: 'ready' as const,
       evaluationComputedAt: new Date().toISOString(),
+      evaluationError: undefined,
     }));
 
     logger.info('Evaluation completed successfully', { modelId });
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorMessage = sanitizeEvaluationErrorMessage(
+      err instanceof Error ? err.message : String(err),
+    );
     logger.error('Evaluation failed', { modelId, error: errorMessage });
 
     // Set evaluationStatus = 'failed'

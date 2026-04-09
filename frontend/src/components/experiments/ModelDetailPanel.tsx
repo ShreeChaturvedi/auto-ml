@@ -48,6 +48,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const evaluation = useExperimentsStore((s) => modelId ? s.evaluations[modelId] : undefined);
   const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
   const retryEvaluation = useExperimentsStore((s) => s.retryEvaluation);
+  const refreshModels = useModelStore((s) => s.refreshModels);
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
 
@@ -79,6 +80,11 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   }
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
+  useEffect(() => {
+    if (modelId && model?.evaluationStatus === 'ready' && evaluation === null) {
+      void fetchEvaluation(modelId, true);
+    }
+  }, [evaluation, fetchEvaluation, model?.evaluationStatus, modelId]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
 
   if (!model || !modelId) return null;
@@ -157,7 +163,12 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
                       variant="ghost"
                       size="icon"
                       className={iconBtnCls}
-                      onClick={() => { void retryEvaluation(modelId); }}
+                      onClick={() => {
+                        void (async () => {
+                          await retryEvaluation(modelId);
+                          await refreshModels(model.projectId);
+                        })();
+                      }}
                     >
                       <RefreshCcw className="h-3.5 w-3.5" />
                     </Button>

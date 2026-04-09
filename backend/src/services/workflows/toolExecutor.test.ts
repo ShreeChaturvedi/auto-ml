@@ -464,6 +464,40 @@ describe('executeToolsNode', () => {
     ]);
   });
 
+  it('fails training turns immediately when run_cell times out', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-timeout',
+      tool: 'run_cell',
+      args: {
+        cellId: 'cell-timeout'
+      }
+    }];
+
+    vi.mocked(executeMcpTool).mockResolvedValue({
+      output: {
+        status: 'timeout',
+        stdout: '',
+        stderr: '',
+        executionMs: 30000,
+        error: 'Execution timed out after 30000ms'
+      }
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('fail');
+    expect(result.errorCode).toBe('TRAINING_RUN_CELL_TIMEOUT');
+    expect(result.errorMessage).toContain('Execution timed out after 30000ms');
+    expect(result.errorMessage).toContain('kernel was interrupted');
+  });
+
   it('respects per-phase maxSingleToolCalls override', async () => {
     const phaseConfig = createPhaseConfig();
     phaseConfig.isPhaseSpecificTool = vi.fn(() => true);

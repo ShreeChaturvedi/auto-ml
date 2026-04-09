@@ -14,6 +14,7 @@ import type { ToolContext as PhaseToolContext, ToolResult } from '../../workflow
 export interface FeatureToolContext {
   projectId: string;
   toolCallId: string | undefined;
+  rationale?: string;
   args: Record<string, unknown>;
   datasetId?: string;
   /** Raw turn prompt — used by handlers to detect implementation mode
@@ -49,6 +50,7 @@ export function toFeatureToolContext(ctx: PhaseToolContext): FeatureToolContext 
   return {
     projectId: ctx.projectId,
     toolCallId: ctx.toolCallId,
+    rationale: ctx.rationale,
     args: ctx.args,
     datasetId: ctx.turn.datasetId,
     prompt: ctx.turn.prompt

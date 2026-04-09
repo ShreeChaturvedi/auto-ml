@@ -467,7 +467,15 @@ export async function invokeModelNode(
   }
 
   const { sink } = extractConfigurable(config);
+  const { phaseConfig } = extractConfigurable(config);
   const contract = resolveWorkflowNodeContract(state);
+  const scopedRequest = state.request
+    ? {
+        ...state.request,
+        tools: contract.allowedTools.length > 0 ? contract.allowedTools : state.request.tools
+      }
+    : state.request;
+  const scopedState = scopedRequest ? { ...state, request: scopedRequest } : state;
   const modelOverride = state.turn.model && state.turn.model !== 'auto' ? state.turn.model : undefined;
   const client = createLlmClient(
     modelOverride,
@@ -491,6 +499,25 @@ export async function invokeModelNode(
         errorCode: null
       };
     }
+
+    const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+    const nextStage = phaseConfig?.resolveNextStage?.(stageConfig.name, currentTurnResults);
+    if (typeof nextStage === 'string' && nextStage !== stageConfig.name) {
+      return {
+        nextStep: 'prepare',
+        run: {
+          ...state.run,
+          currentNode: nextStage
+        },
+        latestMessage: '',
+        askUserPayload: null,
+        planExitPayload: null,
+        uiPayload: null,
+        errorMessage: null,
+        errorCode: null
+      };
+    }
+
     return {
       nextStep: 'fail',
       errorMessage: `Deterministic action for stage "${stageConfig.name}" produced no tool calls.`,
@@ -520,8 +547,8 @@ export async function invokeModelNode(
   }
 
   if (contract.mode === 'action') {
-    return planWorkflowAction(client, state, contract);
+    return planWorkflowAction(client, scopedState, contract);
   }
 
-  return streamWorkflowText(client, state, sink);
+  return streamWorkflowText(client, scopedState, sink);
 }

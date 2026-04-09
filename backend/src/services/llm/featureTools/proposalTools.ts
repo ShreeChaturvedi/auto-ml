@@ -106,6 +106,9 @@ function promptHasSelectedFeatureIds(prompt: string | undefined): boolean {
 
 export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext) => {
   const { args } = ctx;
+  const rationale = typeof args.rationale === 'string' && args.rationale.trim().length > 0
+    ? args.rationale
+    : ctx.rationale;
 
   // Hard-reject propose_feature in implementation mode. When the user clicks
   // "Generate Notebook Steps" the prompt contains "Selected feature IDs to
@@ -156,7 +159,7 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
     featureId,
     featureName: args.featureName,
     method: args.method,
-    rationale: args.rationale,
+    rationale,
     impact: args.impact ?? 'medium',
     sourceColumns: args.sourceColumns ?? [],
     runId: ctx.run?.runId
@@ -171,7 +174,7 @@ export const proposeFeature: FeatureToolHandler = async (ctx: FeatureToolContext
     featureId,
     name: (args.featureName as string) ?? featureId,
     method: (args.method as string) ?? 'unknown',
-    rationale: args.rationale as string | undefined,
+    rationale,
     sourceColumns,
     impact: (args.impact as string) ?? 'medium',
     status: 'proposed',

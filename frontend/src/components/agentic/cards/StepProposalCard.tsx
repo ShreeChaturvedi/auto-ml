@@ -34,6 +34,7 @@ export interface StepProposalCardProps {
   phase: string;
   status: 'pending' | 'proposed' | 'accepted' | 'rejected' | 'modified';
   onToggleSelect?: (selected: boolean) => void;
+  selectedOverride?: boolean | null;
 }
 
 export function StepProposalCard({
@@ -43,6 +44,7 @@ export function StepProposalCard({
   phase,
   status,
   onToggleSelect,
+  selectedOverride,
 }: StepProposalCardProps) {
   const [rationaleExpanded, setRationaleExpanded] = useState(false);
   // Auto-select pending proposals so the "Apply" button is immediately visible.
@@ -51,11 +53,25 @@ export function StepProposalCard({
 
   // Notify parent of auto-selection on mount
   useEffect(() => {
+    if (typeof selectedOverride === 'boolean') {
+      setSelected(selectedOverride);
+      return;
+    }
+    if (selectedOverride === null) {
+      setSelected(null);
+      return;
+    }
+  }, [selectedOverride]);
+
+  useEffect(() => {
+    if (typeof selectedOverride !== 'undefined') {
+      return;
+    }
     if (status === 'pending' && onToggleSelect) {
       onToggleSelect(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedOverride]);
 
   // Determine effective display status
   const effectiveStatus = selected === true

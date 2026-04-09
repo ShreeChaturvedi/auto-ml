@@ -84,7 +84,6 @@ function classifyTool(toolName: string): CardType | null {
     return 'commit';
   }
 
-  if (toolName === 'configure_experiment') return 'proposal';
   if (toolName === 'compare_models') return 'validation';
   if (toolName === 'checkpoint_feature_pipeline') return 'commit';
 
@@ -120,6 +119,15 @@ function detectPhase(toolName: string): string {
     return 'feature_engineering';
   }
   return 'preprocessing';
+}
+
+function isSuccessfulExecutionOutputStatus(status: string | undefined): boolean {
+  if (!status) {
+    return true;
+  }
+
+  const normalized = status.toLowerCase();
+  return normalized === 'success' || normalized === 'training' || normalized === 'ok';
 }
 
 /**
@@ -216,7 +224,7 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
         if (output && typeof output === 'object') {
           const out = output as Record<string, unknown>;
           const outputStatus = typeof out.status === 'string' ? out.status.toLowerCase() : undefined;
-          if (outputStatus && outputStatus !== 'success' && outputStatus !== 'training') {
+          if (!isSuccessfulExecutionOutputStatus(outputStatus)) {
             failedByOutput = true;
           }
           if (out.succeeded === false) {

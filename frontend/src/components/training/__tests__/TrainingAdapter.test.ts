@@ -275,7 +275,27 @@ describe('TrainingAdapter', () => {
 
   it('refreshes the executed cell after run_cell results', async () => {
     const loadCell = vi.fn(async () => null);
-    useNotebookStore.setState({ loadCell } as Partial<ReturnType<typeof useNotebookStore.getState>>);
+    const updateCellLocally = vi.fn();
+    useNotebookStore.setState({
+      loadCell,
+      updateCellLocally,
+      cells: [{
+        cellId: 'cell-9',
+        notebookId: 'notebook-1',
+        cellType: 'code',
+        content: 'print("hi")',
+        position: 0,
+        metadata: {},
+        executionOrder: 1,
+        executionStatus: 'idle',
+        executionDurationMs: null,
+        isDirty: false,
+        output: [],
+        outputRefs: [],
+        createdAt: '2026-04-08T00:00:00.000Z',
+        updatedAt: '2026-04-08T00:00:00.000Z'
+      }]
+    } as Partial<ReturnType<typeof useNotebookStore.getState>>);
 
     const adapter = createTrainingAdapter({
       projectId: 'project-1',
@@ -298,13 +318,21 @@ describe('TrainingAdapter', () => {
         tool: 'run_cell',
         output: {
           status: 'success',
-          cellId: 'cell-9'
+          cellId: 'cell-9',
+          executionMs: 1234,
+          executionOrder: 2
         }
       }
     );
 
     await Promise.resolve();
 
+    expect(updateCellLocally).toHaveBeenCalledWith(expect.objectContaining({
+      cellId: 'cell-9',
+      executionStatus: 'success',
+      executionDurationMs: 1234,
+      executionOrder: 2
+    }));
     expect(loadCell).toHaveBeenCalledWith('cell-9');
   });
 

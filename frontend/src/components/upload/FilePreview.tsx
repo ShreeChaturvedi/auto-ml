@@ -58,30 +58,32 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
         .then((data) => {
           setRowInfo({ shown: data.sample.length, total: data.rowCount });
           setPreviewContent(
-            <div className="rounded-lg border overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted">
-                  <tr>
-                    {data.columns.map((header, i) => (
-                      <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.sample.map((row, i) => (
-                    <tr key={i} className="border-t">
-                      {data.columns.map((header, j) => (
-                        <td key={j} className="px-3 py-2 font-mono text-xs">
-                          {String(row[header] ?? '')}
-                        </td>
+            <ScrollArea className="min-h-0 flex-1 rounded-lg border">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted sticky top-0 z-10">
+                    <tr>
+                      {data.columns.map((header, i) => (
+                        <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                          {header}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {data.sample.map((row, i) => (
+                      <tr key={i} className="border-t">
+                        {data.columns.map((header, j) => (
+                          <td key={j} className="px-3 py-2 font-mono text-xs">
+                            {String(row[header] ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </ScrollArea>
           );
           setIsLoading(false);
         })
@@ -209,30 +211,32 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
             setRowInfo({ shown: rows.length, total: rows.length });
 
             setPreviewContent(
-              <div className="rounded-lg border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      {headers.map((header, i) => (
-                        <th key={i} className="px-4 py-2 text-left font-medium">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, i) => (
-                      <tr key={i} className="border-t">
-                        {headers.map((header, j) => (
-                          <td key={j} className="px-4 py-2">
-                            {String(row[header] || '')}
-                          </td>
+              <ScrollArea className="min-h-0 flex-1 rounded-lg border">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted sticky top-0 z-10">
+                      <tr>
+                        {headers.map((header, i) => (
+                          <th key={i} className="px-4 py-2 text-left font-medium">
+                            {header}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => (
+                        <tr key={i} className="border-t">
+                          {headers.map((header, j) => (
+                            <td key={j} className="px-4 py-2">
+                              {String(row[header] || '')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ScrollArea>
             );
             setIsLoading(false);
           },
@@ -324,7 +328,7 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 min-w-0">
             <div className={cn('flex-shrink-0', colorClass)}>

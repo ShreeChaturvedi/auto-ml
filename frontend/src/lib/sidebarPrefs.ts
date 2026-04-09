@@ -6,3 +6,10 @@ const pref = createLocalBoolPref('automl-sidebar-accordion', false);
 export const getSidebarAccordionPref = pref.get;
 export const setSidebarAccordionPref = pref.set;
 export const subscribeSidebarAccordionPref = pref.subscribe;
+
+const collapsedPref = createLocalBoolPref('automl-sidebar-collapsed', false);
+
+/** Whether sidebar starts collapsed. Default: false. */
+export const getSidebarCollapsedPref = collapsedPref.get;
+export const setSidebarCollapsedPref = collapsedPref.set;
+export const subscribeSidebarCollapsedPref = collapsedPref.subscribe;

@@ -92,7 +92,7 @@ export function UserProfile({ collapsed = false }: UserProfileProps) {
         <DropdownMenuItem
           onSelect={(event) => {
             event.preventDefault();
-            navigate('/profile');
+            navigate('/settings/profile');
           }}
         >
           <User className="h-4 w-4" />
@@ -101,7 +101,7 @@ export function UserProfile({ collapsed = false }: UserProfileProps) {
         <DropdownMenuItem
           onSelect={(event) => {
             event.preventDefault();
-            navigate('/profile');
+            navigate('/settings/general');
           }}
         >
           <Settings className="h-4 w-4" />

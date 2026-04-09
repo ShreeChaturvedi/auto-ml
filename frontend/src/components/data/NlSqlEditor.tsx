@@ -22,6 +22,7 @@ import type { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType } from 'monaco-editor';
 
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { assignMonacoHiddenTextareaIdentity } from '@/lib/monaco/dom';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { cn } from '@/lib/utils';
@@ -69,6 +70,7 @@ function NlSqlEditor({
   queryExecutionError,
   className
 }: NlSqlEditorProps) {
+  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
   const monacoEditorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
   const monacoApiRef = useRef<Monaco | null>(null);
   const preRef = useRef<HTMLPreElement | null>(null);
@@ -190,10 +192,9 @@ function NlSqlEditor({
             onMount={handleMonacoMount}
             theme={syntaxThemeId}
             options={{
+              ...globalEditorOpts,
               readOnly: !isReviewing,
               domReadOnly: !isReviewing,
-              minimap: { enabled: false },
-              lineNumbers: 'on',
               lineNumbersMinChars: 2,
               glyphMargin: false,
               folding: false,
@@ -201,13 +202,8 @@ function NlSqlEditor({
               roundedSelection: false,
               scrollBeyondLastLine: false,
               scrollbar: { verticalScrollbarSize: 12 },
-              fontSize: 13,
-              fontFamily: MONO_FONT,
-              wordWrap: 'on',
               automaticLayout: true,
               padding: { top: 8, bottom: 8 },
-              cursorBlinking: 'smooth',
-              cursorSmoothCaretAnimation: 'on',
             }}
           />
         </Suspense>

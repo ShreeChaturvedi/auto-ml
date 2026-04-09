@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import type { RichOutput } from '@/lib/api/execution';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { CodeCellOutput } from './CodeCellOutput';
 
@@ -53,6 +54,7 @@ export function CodeCell({
   isRunning,
   datasetFiles = []
 }: CodeCellProps) {
+  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
   const [copied, copy] = useCopyToClipboard();
 
   const completionOptions = useMemo(
@@ -211,17 +213,13 @@ export function CodeCell({
             theme={syntaxThemeId}
             onMount={handleEditorMount}
             options={{
+              ...globalEditorOpts,
               fixedOverflowWidgets: true,
-              minimap: { enabled: false },
-              lineNumbers: 'on',
               lineNumbersMinChars: 3,
               glyphMargin: false,
               folding: false,
               lineDecorationsWidth: 8,
               scrollBeyondLastLine: false,
-              fontSize: 12,
-              fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
-              wordWrap: 'on',
               automaticLayout: true,
               padding: { top: 6, bottom: 6 },
               renderLineHighlight: 'none',

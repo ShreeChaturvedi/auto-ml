@@ -11,7 +11,7 @@ import { Lock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordStrength } from './PasswordStrength';
-import { SaveButton, type ButtonState } from './ProfileSettings';
+import { SaveButton, type ButtonState } from '@/components/settings/SaveButton';
 import { useAuthStore } from '@/stores/authStore';
 import { updateProfile } from '@/lib/api/auth';
 

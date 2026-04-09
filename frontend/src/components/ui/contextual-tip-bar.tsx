@@ -1,8 +1,9 @@
-import { type CSSProperties, type ReactNode, useMemo } from 'react';
+import { type CSSProperties, type ReactNode, useMemo, useSyncExternalStore } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useInsightTicker } from '@/components/ui/useInsightTicker';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { getShowTipsPref, subscribeShowTipsPref } from '@/lib/generalPrefs';
 
 export interface ContextualTip {
   id: string;
@@ -39,6 +40,7 @@ interface TipTickerProps {
 }
 
 export function TipTicker({ tips, interval = 4000, className, rowClassName }: TipTickerProps) {
+  const showTips = useSyncExternalStore(subscribeShowTipsPref, getShowTipsPref);
   const prefersReducedMotion = usePrefersReducedMotion();
 
   const textLengths = useMemo(
@@ -54,7 +56,7 @@ export function TipTicker({ tips, interval = 4000, className, rowClassName }: Ti
     incomingTransition,
   } = useInsightTicker(tips.length, prefersReducedMotion ? 0 : interval, textLengths);
 
-  if (tips.length === 0) return null;
+  if (!showTips || tips.length === 0) return null;
 
   return (
     <div className={cn('relative overflow-hidden', className)}>

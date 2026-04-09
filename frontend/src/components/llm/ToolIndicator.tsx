@@ -23,6 +23,7 @@ interface ToolIndicatorProps {
     toolCalls: ToolCall[];
     results: ToolResult[];
     isRunning: boolean;
+    defaultCollapsed?: boolean;
 }
 
 export type ToolStatus = 'pending' | 'running' | 'done' | 'error';
@@ -125,7 +126,10 @@ export function ToolIndicator({
     toolCalls,
     results,
     isRunning,
+    defaultCollapsed = false,
 }: ToolIndicatorProps) {
+    const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
     // Get project theme color
     const { activeProjectId, projects } = useProjectStore();
     const activeProject = projects.find((project) => project.id === activeProjectId);
@@ -154,6 +158,26 @@ export function ToolIndicator({
     }, [toolCalls, results, isRunning]);
 
     if (displayItems.length === 0) return null;
+
+    if (collapsed) {
+        const doneCount = displayItems.filter(d => d.status === 'done').length;
+        const label = displayItems.length === 1
+            ? displayItems[0].label
+            : `${displayItems.length} tool calls`;
+        return (
+            <button
+                type="button"
+                onClick={() => setCollapsed(false)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+            >
+                <span className="opacity-60">▸</span>
+                <span>{label}</span>
+                {doneCount === displayItems.length && (
+                    <span className="text-[10px] opacity-50">✓</span>
+                )}
+            </button>
+        );
+    }
 
     return (
         <div className="space-y-1 max-w-2xl">

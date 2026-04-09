@@ -7,7 +7,7 @@
  * Supports savepoint-based edit/revert via optional props.
  */
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw, XCircle } from 'lucide-react';
 import { ThinkingBlock } from '@/components/training/ThinkingBlock';
 import { ToolIndicator } from '@/components/llm/ToolIndicator';
@@ -20,6 +20,7 @@ import { resolveErrorDisplay } from '@/lib/errorMessages';
 import type { ChatMessage } from '@/types/llmUi';
 import type { SavepointDiff } from '@/types/savepoint';
 import { cn } from '@/lib/utils';
+import { getToolVisibilityPref, subscribeToolVisibilityPref } from '@/lib/generalPrefs';
 
 export interface ChatMessageRendererProps {
   messages: ChatMessage[];
@@ -59,6 +60,8 @@ export function ChatMessageRenderer({
   isGenerating,
   onRetryWorkflow,
 }: ChatMessageRendererProps) {
+  const toolVisibility = useSyncExternalStore(subscribeToolVisibilityPref, getToolVisibilityPref);
+
   // Find the index of the editing message for dimming
   const editingIndex = useMemo(() => {
     if (!editingMessageId) return -1;
@@ -146,6 +149,9 @@ export function ChatMessageRenderer({
 
         // ── tool_call ────────────────────────────────────────────────────
         if (msg.type === 'tool_call') {
+          // 'hidden': skip tool_call messages entirely
+          if (toolVisibility === 'hidden') return null;
+
           // Try lifecycle card rendering first
           const lifecycleCard = renderLifecycleCard?.(msg);
           if (lifecycleCard != null) {
@@ -159,6 +165,7 @@ export function ChatMessageRenderer({
                 toolCalls={[msg.call]}
                 results={msg.result ? [msg.result] : []}
                 isRunning={!msg.result}
+                defaultCollapsed={toolVisibility === 'collapsed'}
               />
             </div>
           );

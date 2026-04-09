@@ -12,13 +12,14 @@
 import { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { cn } from '@/lib/utils';
+import { getSidebarCollapsedPref, setSidebarCollapsedPref } from '@/lib/sidebarPrefs';
 
 interface AppShellProps {
   children: React.ReactNode;
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSidebarCollapsedPref());
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -31,7 +32,11 @@ export function AppShell({ children }: AppShellProps) {
       >
         <Sidebar
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onToggleCollapse={() => {
+            const next = !sidebarCollapsed;
+            setSidebarCollapsed(next);
+            setSidebarCollapsedPref(next);
+          }}
         />
       </div>
 

@@ -190,6 +190,17 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     })
   );
 
+  // POST /auth/revoke-all-sessions — revoke all sessions for the current user
+  router.post(
+    '/auth/revoke-all-sessions',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      await userRepository.revokeAllUserTokens(req.user.user_id);
+      appLogger.info(`[auth] all sessions revoked for ${req.user.email}`);
+      return res.json({ message: 'All sessions revoked' });
+    })
+  );
+
   // GET /auth/me
   router.get(
     '/auth/me',

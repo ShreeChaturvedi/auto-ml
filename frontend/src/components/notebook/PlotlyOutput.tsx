@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { LazyPlot, PlotSuspense } from '@/components/data/eda/edaTheme';
+import { getChartHeightPref, subscribeChartHeightPref } from '@/lib/executionPrefs';
 
 interface PlotlyOutputProps {
   data: unknown;
@@ -12,10 +13,11 @@ interface PlotlyFigure {
 
 export function PlotlyOutput({ data }: PlotlyOutputProps) {
   const figure = data as PlotlyFigure | null;
+  const chartHeight = useSyncExternalStore(subscribeChartHeightPref, getChartHeightPref);
 
   const layout = useMemo(
-    () => ({ ...figure?.layout, autosize: true, height: 360 }),
-    [figure?.layout]
+    () => ({ ...figure?.layout, autosize: true, height: chartHeight }),
+    [figure?.layout, chartHeight]
   );
 
   if (!data || typeof data !== 'object') {
@@ -23,7 +25,7 @@ export function PlotlyOutput({ data }: PlotlyOutputProps) {
   }
 
   return (
-    <PlotSuspense height={360}>
+    <PlotSuspense height={chartHeight}>
       <LazyPlot
         data={figure!.data}
         layout={layout}

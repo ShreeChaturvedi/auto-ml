@@ -24,6 +24,7 @@ import { SqlPlaceholderOverlay } from './SqlPlaceholderOverlay';
 import { SqlEditorChips } from './SqlEditorChips';
 import { useSqlEditorIdle } from './useSqlEditorIdle';
 import { assignMonacoHiddenTextareaIdentity } from '@/lib/monaco/dom';
+import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
 
 import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
@@ -64,6 +65,7 @@ export function QuerySqlEditor({
   modKey,
   projectId,
 }: QuerySqlEditorProps) {
+  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
   const monacoRef = useRef<Monaco | null>(null);
   const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const completionProviderRef = useRef<IDisposable | null>(null);
@@ -327,8 +329,7 @@ export function QuerySqlEditor({
           onMount={handleMount}
           theme={monacoTheme}
           options={{
-            minimap: { enabled: false },
-            lineNumbers: 'on',
+            ...globalEditorOpts,
             lineNumbersMinChars: 2,
             glyphMargin: false,
             folding: false,
@@ -340,9 +341,6 @@ export function QuerySqlEditor({
             hideCursorInOverviewRuler: true,
             scrollbar: { vertical: 'hidden', horizontal: 'hidden', verticalScrollbarSize: 12, alwaysConsumeMouseWheel: false },
             readOnly: isExecuting,
-            fontSize: 13,
-            fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
-            wordWrap: 'on',
             automaticLayout: true,
             quickSuggestions: true,
             suggestOnTriggerCharacters: true,
@@ -355,8 +353,6 @@ export function QuerySqlEditor({
               filterGraceful: true,
               localityBonus: true
             },
-            cursorBlinking: 'smooth',
-            cursorSmoothCaretAnimation: 'on'
           }}
         />
       </Suspense>

@@ -30,6 +30,7 @@ import 'katex/dist/katex.min.css';
 import { Markdown } from '@/components/ui/Markdown';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildHeadingComponents } from '@/lib/markdown/tocUtils';
+import { useEditorPrefsStore, getEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { CellMoveButtons } from './CellMoveButtons';
 import { MarkdownEmptyState } from './MarkdownEmptyState';
 import { useDebouncedSave } from './hooks/useDebouncedSave';
@@ -55,11 +56,9 @@ function isEffectivelyEmpty(content: string): boolean {
   return /^#{1,6}\s*$|^[-*>]\s*$|^\d+\.\s*$/.test(trimmed);
 }
 
-const MARKDOWN_EDITOR_OPTIONS = {
-  minimap: { enabled: false },
+const MARKDOWN_EDITOR_OVERRIDES = {
   scrollBeyondLastLine: false,
-  fontSize: 13,
-  fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
+  // Markdown-specific: hide line numbers and gutter decorations
   lineNumbers: 'off' as const,
   glyphMargin: false,
   folding: false,
@@ -70,7 +69,6 @@ const MARKDOWN_EDITOR_OPTIONS = {
   scrollbar: { vertical: 'hidden' as const, horizontal: 'hidden' as const, alwaysConsumeMouseWheel: false },
   automaticLayout: true,
   padding: { top: 8, bottom: 8 },
-  wordWrap: 'on' as const,
 };
 
 const NOTEBOOK_MARKDOWN_BODY_COMPONENTS: Partial<Components> = {
@@ -123,6 +121,7 @@ export function NotebookMarkdownCell({
   const { theme } = useTheme();
   const resolvedTheme = useResolvedEditorTheme(theme);
   const { syntaxThemeId } = useProjectThemeColor();
+  const globalEditorOpts = useEditorPrefsStore(getEditorMonacoOptions);
 
   const [copied, copy] = useCopyToClipboard();
   const cellRef = useRef<HTMLDivElement>(null);
@@ -311,7 +310,7 @@ export function NotebookMarkdownCell({
                     editor.focus();
                   }
                 }}
-                options={{ ...MARKDOWN_EDITOR_OPTIONS, readOnly: isLocked }}
+                options={{ ...globalEditorOpts, ...MARKDOWN_EDITOR_OVERRIDES, readOnly: isLocked }}
                 theme={syntaxThemeId}
                 beforeMount={async () => {
                   await initMonaco();

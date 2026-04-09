@@ -5,14 +5,16 @@
  * - / : Home page (project selection)
  * - /project/:id : Redirects to current phase
  * - /project/:id/:phase : Project workspace with phase content
- * - /profile : User profile settings
+ * - /settings/:tab : Settings page (general, ai-models, editor, data, execution, profile)
+ * - /settings : Redirects to /settings/general
+ * - /profile : Redirects to /settings/profile
  * - /docs : Documentation page
  * - /login, /signup, /forgot-password, /reset-password : Auth flows
  */
 
 import { lazy, Suspense, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthLayout } from '@/components/auth/AuthLayout';
@@ -47,8 +49,8 @@ const VerifyEmailPendingPage = lazy(() =>
 const DocsPage = lazy(() =>
   import('@/components/docs/DocsPage').then((m) => ({ default: m.DocsPage }))
 );
-const ProfileSettings = lazy(() =>
-  import('@/components/auth/ProfileSettings').then((m) => ({ default: m.ProfileSettings }))
+const SettingsPage = lazy(() =>
+  import('@/components/settings/SettingsPage').then((m) => ({ default: m.SettingsPage }))
 );
 const HomePage = lazy(() =>
   import('@/pages/HomePage').then((m) => ({ default: m.HomePage }))
@@ -91,11 +93,13 @@ function MainApp() {
     );
   } else {
     content = (
-      <Routes>
-        <Route path="/" element={<Suspense fallback={null}><HomePage /></Suspense>} />
-        <Route path="/project/:projectId" element={<ProjectRedirect />} />
-        <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />
-      </Routes>
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/project/:projectId" element={<ProjectRedirect />} />
+          <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -119,33 +123,28 @@ function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen w-full bg-background text-foreground">
+        <Suspense fallback={null}>
         <Routes>
           {/* Auth routes share AuthLayout so background persists across navigation */}
           <Route element={<AuthLayout />}>
-            <Route path="/login" element={<Suspense fallback={null}><LoginForm /></Suspense>} />
-            <Route path="/signup" element={<Suspense fallback={null}><SignupForm /></Suspense>} />
-            <Route path="/forgot-password" element={<Suspense fallback={null}><ForgotPasswordForm /></Suspense>} />
-            <Route path="/reset-password" element={<Suspense fallback={null}><ResetPasswordForm /></Suspense>} />
-            <Route path="/verify-email" element={<Suspense fallback={null}><VerifyEmailPage /></Suspense>} />
-            <Route path="/verify-email/pending" element={<Suspense fallback={null}><VerifyEmailPendingPage /></Suspense>} />
-            <Route path="/auth/google/callback" element={<Suspense fallback={null}><GoogleOAuthCallback /></Suspense>} />
+            <Route path="/login" element={<LoginForm />} />
+            <Route path="/signup" element={<SignupForm />} />
+            <Route path="/forgot-password" element={<ForgotPasswordForm />} />
+            <Route path="/reset-password" element={<ResetPasswordForm />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/verify-email/pending" element={<VerifyEmailPendingPage />} />
+            <Route path="/auth/google/callback" element={<GoogleOAuthCallback />} />
           </Route>
-          {/* Profile is a dedicated full-page route outside AppShell */}
+          {/* Settings is a full-page route outside AppShell */}
           <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={null}><ProfileSettings /></Suspense>
-              </ProtectedRoute>
-            }
+            path="/settings/:tab"
+            element={<ProtectedRoute><SettingsPage /></ProtectedRoute>}
           />
+          <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
+          <Route path="/profile" element={<Navigate to="/settings/profile" replace />} />
           <Route
             path="/docs"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={null}><DocsPage /></Suspense>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><DocsPage /></ProtectedRoute>}
           />
           <Route
             path="/*"
@@ -156,6 +155,7 @@ function App() {
             }
           />
         </Routes>
+        </Suspense>
         <Toaster />
       </div>
     </BrowserRouter>

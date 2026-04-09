@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuthStore } from '@/stores/authStore';
-import { updateProfile, getActiveSessions, type ActiveSession } from '@/lib/api/auth';
+import { updateProfile, getActiveSessions, revokeSession, type ActiveSession } from '@/lib/api/auth';
 import { apiRequest } from '@/lib/api/client';
 
 // ---------------------------------------------------------------------------
@@ -65,13 +65,24 @@ type PasswordValues = z.infer<typeof passwordSchema>;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseUserAgent(ua: string | null): string {
-  if (!ua) return 'Unknown device';
-  if (ua.includes('Firefox')) return 'Firefox';
-  if (ua.includes('Edg/')) return 'Edge';
-  if (ua.includes('Chrome')) return 'Chrome';
-  if (ua.includes('Safari')) return 'Safari';
-  return 'Unknown browser';
+function parseUserAgent(ua: string | null): { browser: string; os: string } {
+  if (!ua) return { browser: 'Unknown browser', os: 'Unknown OS' };
+
+  let browser = 'Unknown browser';
+  if (ua.includes('Firefox/')) browser = 'Firefox';
+  else if (ua.includes('Edg/')) browser = 'Edge';
+  else if (ua.includes('OPR/') || ua.includes('Opera/')) browser = 'Opera';
+  else if (ua.includes('Chrome/')) browser = 'Chrome';
+  else if (ua.includes('Safari/')) browser = 'Safari';
+
+  let os = 'Unknown OS';
+  if (ua.includes('Windows')) os = 'Windows';
+  else if (ua.includes('Mac OS X') || ua.includes('Macintosh')) os = 'macOS';
+  else if (ua.includes('Linux')) os = 'Linux';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+
+  return { browser, os };
 }
 
 function formatSessionDate(iso: string): string {
@@ -96,6 +107,7 @@ export function ProfileTab() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
 
   // Profile form state
   const [profileState, setProfileState] = useState<ButtonState>('idle');
@@ -169,11 +181,11 @@ export function ProfileTab() {
   const [sessionsError, setSessionsError] = useState(false);
 
   useEffect(() => {
-    getActiveSessions()
+    getActiveSessions(refreshToken)
       .then(setSessions)
       .catch(() => setSessionsError(true))
       .finally(() => setSessionsLoading(false));
-  }, []);
+  }, [refreshToken]);
 
   // Revoke all sessions
   const [showRevokeDialog, setShowRevokeDialog] = useState(false);
@@ -190,6 +202,16 @@ export function ProfileTab() {
     } finally {
       setRevoking(false);
       setShowRevokeDialog(false);
+    }
+  };
+
+  const handleRevokeSession = async (tokenId: string) => {
+    try {
+      await revokeSession(tokenId);
+      setSessions((prev) => prev.filter((s) => s.token_id !== tokenId));
+      toast.success('Session revoked');
+    } catch {
+      toast.error('Failed to revoke session');
     }
   };
 
@@ -353,19 +375,40 @@ export function ProfileTab() {
               No active sessions found.
             </p>
           ) : (
-            sessions.map((session) => (
-              <div key={session.token_id} className="flex items-center justify-between px-5 py-3">
-                <div className="flex items-center gap-3">
-                  <Monitor className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-[13px] font-medium">{parseUserAgent(session.user_agent)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {session.ip_address ?? 'Unknown IP'} · {formatSessionDate(session.created_at)}
-                    </p>
+            sessions.map((session) => {
+              const { browser, os } = parseUserAgent(session.user_agent);
+              return (
+                <div key={session.token_id} className="flex items-center justify-between px-5 py-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Monitor className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[13px] font-medium">{browser} on {os}</p>
+                        {session.current && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            This device
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {session.ip_address ?? 'Unknown IP'} · {formatSessionDate(session.created_at)}
+                      </p>
+                    </div>
                   </div>
+                  {!session.current && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground hover:text-destructive shrink-0"
+                      onClick={() => handleRevokeSession(session.token_id)}
+                    >
+                      Revoke
+                    </Button>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
 
           <div className="flex items-center justify-between px-5 py-3 border-t border-border/50">

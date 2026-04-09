@@ -108,9 +108,18 @@ export interface ActiveSession {
   ip_address: string | null;
   user_agent: string | null;
   created_at: string;
+  current: boolean;
 }
 
-export async function getActiveSessions(): Promise<ActiveSession[]> {
-  const res = await apiRequest<{ sessions: ActiveSession[] }>('/auth/sessions');
+export async function getActiveSessions(refreshToken: string | null): Promise<ActiveSession[]> {
+  const headers: Record<string, string> = {};
+  if (refreshToken) {
+    headers['x-refresh-token'] = refreshToken;
+  }
+  const res = await apiRequest<{ sessions: ActiveSession[] }>('/auth/sessions', { headers });
   return res.sessions;
+}
+
+export async function revokeSession(tokenId: string): Promise<void> {
+  await apiRequest(`/auth/sessions/${tokenId}`, { method: 'DELETE' });
 }

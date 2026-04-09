@@ -179,16 +179,29 @@ export class UserRepository {
   }
 
   /**
+   * Revoke a single session by token_id, scoped to user for security
+   */
+  async revokeSessionById(tokenId: string, userId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'UPDATE refresh_tokens SET revoked = true WHERE token_id = $1 AND user_id = $2 AND revoked = false',
+      [tokenId, userId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
    * List active (non-revoked, non-expired) sessions for a user
+   * Includes token_hash for current-session identification (stripped before response)
    */
   async getActiveSessions(userId: string): Promise<Array<{
     token_id: string;
+    token_hash: string;
     ip_address: string | null;
     user_agent: string | null;
     created_at: Date;
   }>> {
     const result = await this.pool.query(
-      `SELECT token_id, ip_address, user_agent, created_at
+      `SELECT token_id, token_hash, ip_address, user_agent, created_at
        FROM refresh_tokens
        WHERE user_id = $1 AND revoked = false AND expires_at > NOW()
        ORDER BY created_at DESC`,

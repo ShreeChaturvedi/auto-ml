@@ -201,13 +201,39 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     })
   );
 
-  // GET /auth/sessions — list active sessions for the current user
+  // GET /auth/sessions — list active sessions, flag the current one
   router.get(
     '/auth/sessions',
     requireAuth,
     asyncHandler(async (req: AuthenticatedRequest, res) => {
       const sessions = await userRepository.getActiveSessions(req.user.user_id);
-      return res.json({ sessions });
+
+      const currentRefreshToken = req.get('x-refresh-token');
+      const currentHash = currentRefreshToken
+        ? authService.hashRefreshToken(currentRefreshToken)
+        : null;
+
+      const result = sessions.map(({ token_hash, ...rest }) => ({
+        ...rest,
+        current: currentHash === token_hash,
+      }));
+
+      return res.json({ sessions: result });
+    })
+  );
+
+  // DELETE /auth/sessions/:tokenId — revoke a single session
+  router.delete(
+    '/auth/sessions/:tokenId',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      const { tokenId } = req.params;
+      const revoked = await userRepository.revokeSessionById(tokenId, req.user.user_id);
+      if (!revoked) {
+        return res.status(404).json({ error: 'Session not found or already revoked' });
+      }
+      appLogger.info(`[auth] session ${tokenId} revoked for ${req.user.email}`);
+      return res.json({ message: 'Session revoked' });
     })
   );
 

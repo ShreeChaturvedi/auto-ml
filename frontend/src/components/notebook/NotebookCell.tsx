@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useHighlightStore } from '@/stores/highlightStore';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
+import { formatDuration } from '@/components/experiments/utils';
 
 interface NotebookCellComponentProps {
   cell: NotebookCell;
@@ -55,13 +56,6 @@ interface NotebookCellComponentProps {
   onMoveDown?: () => void;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
-}
-
-function formatExecutionTime(ms: number): string {
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.round((ms % 60000) / 1000);
-  return `${minutes}m ${seconds}s`;
 }
 
 export function NotebookCellComponent({
@@ -231,7 +225,7 @@ export function NotebookCellComponent({
                 {/* Execution time — subtle, formatted */}
                 {!isRunning && cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
                   <span className="text-xs text-muted-foreground/60">
-                    · {formatExecutionTime(cell.executionDurationMs)}
+                    · {formatDuration(cell.executionDurationMs)}
                   </span>
                 )}
 

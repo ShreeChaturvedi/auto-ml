@@ -204,6 +204,7 @@ async function executeWorkflowToolCall(
       {
         projectId: state.turn.projectId,
         toolCallId: call.id,
+        rationale: call.rationale,
         run: state.run,
         args: enrichedArgs,
         turn: state.turn
@@ -293,6 +294,57 @@ function extractLatestRunCellContext(results: ToolResult[]): {
   return null;
 }
 
+function getToolCallMetadataRecord(call: z.infer<typeof ToolCallSchema> | null | undefined): Record<string, unknown> | null {
+  if (!call?.args?.metadata || typeof call.args.metadata !== 'object' || Array.isArray(call.args.metadata)) {
+    return null;
+  }
+  return call.args.metadata as Record<string, unknown>;
+}
+
+function didRunCellSucceed(result: ToolResult | null | undefined): boolean {
+  if (!result || result.tool !== 'run_cell' || result.error) {
+    return false;
+  }
+
+  const output = getToolOutputRecord(result);
+  const status = typeof output?.status === 'string' ? output.status.toLowerCase() : undefined;
+  return status === undefined || status === 'success' || status === 'ok';
+}
+
+function hasSuccessfulFeatureLifecycleLoadInCurrentTurn(
+  state: WorkflowGraphState,
+  executedCalls: z.infer<typeof ToolCallSchema>[],
+  executedResults: ToolResult[]
+): boolean {
+  const currentTurnCalls = [
+    ...state.toolCallHistory.slice(state.turnStartToolCallCount),
+    ...executedCalls
+  ];
+  const currentTurnResults = [
+    ...state.toolResultHistory.slice(state.turnStartToolCallCount),
+    ...executedResults
+  ];
+
+  const pairCount = Math.min(currentTurnCalls.length, currentTurnResults.length);
+  for (let index = pairCount - 1; index >= 0; index -= 1) {
+    const call = currentTurnCalls[index];
+    const result = currentTurnResults[index];
+    if (call?.tool !== 'run_cell' || !didRunCellSucceed(result)) {
+      continue;
+    }
+
+    const metadata = getToolCallMetadataRecord(call);
+    if (
+      metadata?.role === 'feature-lifecycle-load'
+      && (!state.turn.datasetId || metadata.datasetId === state.turn.datasetId)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function extractLatestMaterializedFeatureId(results: ToolResult[]): string | undefined {
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index];
@@ -366,7 +418,7 @@ async function buildFeatureNotebookFollowUp(
         } catch {
           dataset = undefined;
         }
-        if (dataset) {
+        if (dataset && !hasSuccessfulFeatureLifecycleLoadInCurrentTurn(state, executedCalls, executedResults)) {
           const loadParsed = ToolCallSchema.safeParse({
             id: `wf-call-auto-load-feature-dataset-${featureId}`,
             tool: 'write_cell',

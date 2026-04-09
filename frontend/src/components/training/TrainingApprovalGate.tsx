@@ -19,7 +19,7 @@ export function TrainingApprovalGate({
 }: TrainingApprovalGateProps) {
   const hasSelections = selectedModels > 0;
   const canApply = hasSelections && !isGenerating && !isSubmitted;
-  const modelLabel = totalModels === 1 ? 'model' : 'models';
+  const isSingleModelFlow = totalModels <= 1;
 
   return (
     <div className="space-y-4 pb-4">
@@ -35,11 +35,15 @@ export function TrainingApprovalGate({
             <p className="text-xs text-muted-foreground">
               {isSubmitted
                 ? isGenerating
-                  ? 'Working through the approved model set now.'
-                  : 'The selected models were applied to this training run.'
+                  ? 'Training the selected model now. After it registers, continue in this chat to launch the next proposed model.'
+                  : 'The selected model was applied to this training run. After it registers, continue in this chat to launch the next proposed model.'
                 : hasSelections
-                  ? `${selectedModels} of ${totalModels} ${modelLabel} selected. Apply these choices to continue training.`
-                  : `Select one or more proposed ${modelLabel} above to continue training.`}
+                  ? isSingleModelFlow
+                    ? '1 of 1 model selected. Apply this choice to continue training.'
+                    : `${selectedModels} of ${totalModels} models selected. Only 1 model can be trained at a time. Apply one choice now, then continue in this chat after that model is registered to launch the next one.`
+                  : isSingleModelFlow
+                    ? 'Select the proposed model above to continue training.'
+                    : 'Select exactly 1 proposed model above. Only 1 model can be trained at a time, and you can continue in this chat after it is registered.'}
             </p>
           </div>
           <div className="shrink-0">
@@ -52,7 +56,7 @@ export function TrainingApprovalGate({
               ) : isSubmitted ? (
                 'Applied'
               ) : (
-                `Apply ${selectedModels} Selected`
+                selectedModels === 1 ? 'Train Selected Model' : `Train ${selectedModels} Selected`
               )}
             </Button>
           </div>

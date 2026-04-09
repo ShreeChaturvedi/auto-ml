@@ -408,7 +408,24 @@ describe('resolveTrainingLifecycleNode', () => {
               }
             }
           }
-        }
+        },
+        { id: 'call-2', tool: 'run_cell', args: { cellId: 'cell-1' } },
+        {
+          id: 'call-3',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-1',
+                segments: [
+                  { title: 'Cell 1', content: 'print("one")' },
+                  { title: 'Cell 2', content: 'print("two")' }
+                ]
+              }
+            }
+          }
+        },
+        { id: 'call-4', tool: 'run_cell', args: { cellId: 'cell-2' } }
       ],
       toolResultHistory: [
         { id: 'write-1', tool: 'write_cell', output: { cellId: 'cell-1' } },
@@ -420,6 +437,88 @@ describe('resolveTrainingLifecycleNode', () => {
     });
 
     expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('generate_code');
+  });
+
+  it('ignores a previously registered model completion when resolving the next write_code stage', () => {
+    const state = createState({
+      iteration: 1,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training the selected models: ridge, lasso.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        currentNode: 'write_code'
+      },
+      toolCallHistory: [
+        {
+          id: 'write-1',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-1',
+                segments: [{ title: 'Cell 1', content: 'print("one")' }]
+              }
+            }
+          }
+        },
+        { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } },
+        { id: 'register-1', tool: 'register_model', args: { experimentId: 'exp-1' } },
+        {
+          id: 'write-2',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-2',
+                segments: [
+                  { title: 'Cell 1', content: 'print("two")' },
+                  { title: 'Cell 2', content: 'print("three")' }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      toolResultHistory: [
+        { id: 'write-1', tool: 'write_cell', output: { cellId: 'cell-1' } },
+        { id: 'run-1', tool: 'run_cell', output: { status: 'success', stdout: '__TRAIN_COMPLETE__|{"rmse":0.5}' } },
+        { id: 'register-1', tool: 'register_model', output: { experimentId: 'exp-1', modelId: 'model-1', status: 'registered' } },
+        { id: 'write-2', tool: 'write_cell', output: { cellId: 'cell-2' } }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('write_code');
+  });
+
+  it('ignores a previous model execute_training result when the next approved model has not executed yet', () => {
+    const state = createState({
+      iteration: 1,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training the selected models: ridge, lasso.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        currentNode: 'execute_training'
+      },
+      toolResultHistory: [
+        { id: 'execute-1', tool: 'execute_training', output: { experimentId: 'exp-1', status: 'training', metrics: { rmse: 0.5 } } },
+        { id: 'evaluate-1', tool: 'evaluate_results', output: { experimentId: 'exp-1', status: 'evaluated', metrics: { rmse: 0.49 } } },
+        { id: 'register-1', tool: 'register_model', output: { experimentId: 'exp-1', modelId: 'model-1', status: 'registered' } }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('execute_training');
   });
 
   it('resumes from register_model after a successful evaluation result', () => {

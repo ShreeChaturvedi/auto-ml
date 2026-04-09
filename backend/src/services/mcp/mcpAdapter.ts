@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { env } from '../../config.js';
 import type { LlmToolDefinition } from '../llm/llmClient.js';
 import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
 
@@ -109,8 +110,15 @@ export async function executeMcpTool(
 
     // MCP tools expect projectId as part of args
     const fullArgs = { projectId, ...args };
+    const requestOptions = toolName === 'run_cell'
+      ? { timeout: env.executionTimeoutMs + 10_000 }
+      : undefined;
 
-    const result = await client.callTool({ name: toolName, arguments: fullArgs });
+    const result = await client.callTool(
+      { name: toolName, arguments: fullArgs },
+      undefined,
+      requestOptions
+    );
 
     await client.close();
     await server.close();

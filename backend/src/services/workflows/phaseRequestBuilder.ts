@@ -5,6 +5,8 @@ import {
   listProjectDocuments,
   loadRagSnippets
 } from '../../routes/llm/shared.js';
+import type { DatasetProfile } from '../../types/dataset.js';
+import { asRecord } from '../../utils/typeCoercion.js';
 import { FEATURE_METHODS } from '../featureEngineering.js';
 import type { FeatureSpec } from '../featureEngineering.js';
 import { createLlmClient } from '../llm/llmClient.js';
@@ -22,6 +24,149 @@ import { getPhaseConfig } from './phaseConfig.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
+
+export interface TrainingSelectionMismatch {
+  message: string;
+  requestedDatasetFilename?: string;
+  requestedTargetColumn?: string;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function uniqueNonEmpty(values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim().toLowerCase())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+function buildDatasetAliases(filename: string): string[] {
+  const trimmed = filename.trim();
+  const extensionIndex = trimmed.lastIndexOf('.');
+  const stem = extensionIndex > 0 ? trimmed.slice(0, extensionIndex) : trimmed;
+  return uniqueNonEmpty([trimmed, stem]);
+}
+
+function promptContainsAlias(prompt: string, alias: string): boolean {
+  if (alias.includes('.')) {
+    return prompt.includes(alias);
+  }
+  const boundaryPattern = new RegExp(`(^|[^a-z0-9_])${escapeRegExp(alias)}([^a-z0-9_]|$)`, 'i');
+  return boundaryPattern.test(prompt);
+}
+
+function detectPromptDatasetReference(
+  prompt: string | undefined,
+  datasets: DatasetProfile[],
+  selectedDatasetFilename: string
+): string | undefined {
+  if (!prompt?.trim()) {
+    return undefined;
+  }
+
+  const normalizedPrompt = prompt.toLowerCase();
+  const selectedAliases = new Set(buildDatasetAliases(selectedDatasetFilename));
+  const candidates = datasets
+    .filter((dataset) => dataset.filename !== selectedDatasetFilename)
+    .map((dataset) => ({
+      filename: dataset.filename,
+      aliases: buildDatasetAliases(dataset.filename)
+    }))
+    .sort((left, right) => right.filename.length - left.filename.length);
+
+  for (const candidate of candidates) {
+    const hasPromptMatch = candidate.aliases.some((alias) => promptContainsAlias(normalizedPrompt, alias));
+    if (!hasPromptMatch) {
+      continue;
+    }
+    const aliasesOverlapSelection = candidate.aliases.some((alias) => selectedAliases.has(alias));
+    if (!aliasesOverlapSelection) {
+      return candidate.filename;
+    }
+  }
+
+  return undefined;
+}
+
+function detectPromptTargetReference(
+  prompt: string | undefined,
+  dataset: DatasetProfile,
+  selectedTargetColumn: string | undefined
+): string | undefined {
+  if (!prompt?.trim() || !selectedTargetColumn?.trim()) {
+    return undefined;
+  }
+
+  const candidates = dataset.columns
+    .map((column) => column.name)
+    .filter((columnName) => columnName.trim() && columnName !== selectedTargetColumn)
+    .sort((left, right) => right.length - left.length);
+
+  for (const candidate of candidates) {
+    const escaped = escapeRegExp(candidate);
+    const patterns = [
+      new RegExp(`\\bpredict(?:ing)?\\s+\`?${escaped}\`?(?=\\s+(?:from|using|with|on|in)\\b|\\b)`, 'i'),
+      new RegExp(`\\btarget(?:\\s+column)?\\s*(?:is|=|:)\\s*\`?${escaped}\`?\\b`, 'i'),
+      new RegExp(`\\bresponse(?:\\s+column)?\\s*(?:is|=|:)\\s*\`?${escaped}\`?\\b`, 'i'),
+      new RegExp(`\\blabel(?:\\s+column)?\\s*(?:is|=|:)\\s*\`?${escaped}\`?\\b`, 'i'),
+      new RegExp(`\\boutcome(?:\\s+column)?\\s*(?:is|=|:)\\s*\`?${escaped}\`?\\b`, 'i')
+    ];
+    if (patterns.some((pattern) => pattern.test(prompt))) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+export function detectTrainingSelectionMismatch(params: {
+  prompt?: string;
+  dataset: DatasetProfile;
+  selectedTargetColumn?: string;
+  availableDatasets: DatasetProfile[];
+}): TrainingSelectionMismatch | null {
+  const {
+    prompt,
+    dataset,
+    selectedTargetColumn,
+    availableDatasets
+  } = params;
+
+  const requestedDatasetFilename = detectPromptDatasetReference(prompt, availableDatasets, dataset.filename);
+  const requestedTargetColumn = detectPromptTargetReference(prompt, dataset, selectedTargetColumn);
+
+  if (!requestedDatasetFilename && !requestedTargetColumn) {
+    return null;
+  }
+
+  const mismatchParts: string[] = [];
+  if (requestedDatasetFilename && requestedDatasetFilename !== dataset.filename) {
+    mismatchParts.push(
+      `prompt references dataset "${requestedDatasetFilename}", but the Training tab dataset is "${dataset.filename}"`
+    );
+  }
+  if (requestedTargetColumn && selectedTargetColumn && requestedTargetColumn !== selectedTargetColumn) {
+    mismatchParts.push(
+      `prompt requests target "${requestedTargetColumn}", but the Training tab target is "${selectedTargetColumn}"`
+    );
+  }
+
+  if (mismatchParts.length === 0) {
+    return null;
+  }
+
+  return {
+    requestedDatasetFilename,
+    requestedTargetColumn,
+    message: `Training prompt and selected controls do not match: ${mismatchParts.join('; ')}. Align the dataset/target dropdowns or adjust the prompt, then retry.`
+  };
+}
+
 function extractSelectedFeatureIds(prompt: string | undefined): string[] {
   if (!prompt) {
     return [];
@@ -114,6 +259,183 @@ export function selectFeatureRequestToolResults(
 
 export function shouldAllowFeatureProposeTool(prompt: string | undefined): boolean {
   return extractSelectedFeatureIds(prompt).length === 0;
+}
+
+function extractTrainingDraftSegmentCount(
+  toolCalls: WorkflowGraphState['toolCallHistory'],
+  turnStartToolCallCount: number
+): number {
+  const currentTurnCalls = toolCalls.slice(turnStartToolCallCount);
+  for (let index = currentTurnCalls.length - 1; index >= 0; index -= 1) {
+    const call = currentTurnCalls[index];
+    if (!['write_cell', 'edit_cell', 'insert_cell'].includes(call.tool)) {
+      continue;
+    }
+    const metadata = asRecord(call.args?.metadata);
+    const trainingDraft = asRecord(metadata?.trainingDraft);
+    const rawSegments = Array.isArray(trainingDraft?.segments) ? trainingDraft.segments : null;
+    if (!rawSegments || rawSegments.length === 0) {
+      continue;
+    }
+    return rawSegments.length;
+  }
+  return 0;
+}
+
+function hasExhaustedTrainingDraftWithoutCompletion(state: WorkflowGraphState): boolean {
+  const segmentCount = extractTrainingDraftSegmentCount(state.toolCallHistory, state.turnStartToolCallCount);
+  if (segmentCount === 0) {
+    return false;
+  }
+
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const successfulWriteCount = currentTurnResults.filter((result) => {
+    if (!['write_cell', 'edit_cell', 'insert_cell'].includes(result.tool) || result.error) {
+      return false;
+    }
+    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      return false;
+    }
+    const output = result.output as Record<string, unknown>;
+    if (typeof output.cellId === 'string' && output.cellId.trim()) {
+      return true;
+    }
+    const cell = asRecord(output.cell);
+    return typeof cell?.cellId === 'string' && cell.cellId.trim().length > 0;
+  }).length;
+  if (successfulWriteCount < segmentCount) {
+    return false;
+  }
+
+  const runResults = currentTurnResults.filter((result) => result.tool === 'run_cell');
+  const hasCompletedMarker = runResults.some((result) => {
+    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      return false;
+    }
+    const output = result.output as Record<string, unknown>;
+    return output.status === 'success'
+      && typeof output.stdout === 'string'
+      && output.stdout.includes('__TRAIN_COMPLETE__|');
+  });
+  if (hasCompletedMarker) {
+    return false;
+  }
+
+  return runResults.length >= successfulWriteCount;
+}
+
+export function resolveTrainingLifecycleNode(
+  state: WorkflowGraphState,
+  currentTurnResults: WorkflowGraphState['toolResultHistory']
+): string {
+  const trainingPhase = getPhaseConfig('training');
+  const lifecycleStageNames = new Set((trainingPhase?.lifecycle ?? []).map((stage) => stage.name));
+  const currentNode = state.run.currentNode;
+  const currentNodeIsValid = typeof currentNode === 'string' && lifecycleStageNames.has(currentNode);
+  const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
+  const inferResumeStageFromHistory = (): string => {
+    const fullResults = state.toolResultHistory;
+    for (let index = fullResults.length - 1; index >= 0; index -= 1) {
+      const result = fullResults[index];
+      if (result.tool === 'register_model') {
+        if (result.error) {
+          continue;
+        }
+        return 'register_model';
+      }
+      if (result.tool === 'evaluate_results') {
+        if (result.error) {
+          return 'evaluate_results';
+        }
+        return 'register_model';
+      }
+      if (result.tool === 'execute_training') {
+        if (result.error) {
+          return 'generate_code';
+        }
+        if (result.output && typeof result.output === 'object' && !Array.isArray(result.output)) {
+          const record = result.output as Record<string, unknown>;
+          const status = typeof record.status === 'string' ? record.status.toLowerCase() : '';
+          if (status === 'failed' || status === 'error' || status === 'timeout') {
+            return 'generate_code';
+          }
+        }
+        return 'evaluate_results';
+      }
+      if (result.tool === 'run_cell') {
+        if (result.error) {
+          return 'generate_code';
+        }
+        const output = result.output;
+        if (output && typeof output === 'object' && !Array.isArray(output)) {
+          const record = output as Record<string, unknown>;
+          if (record.status === 'failed' || record.status === 'error' || record.status === 'timeout') {
+            return 'generate_code';
+          }
+          if (record.status === 'success' && typeof record.stdout === 'string' && record.stdout.includes('__TRAIN_COMPLETE__|')) {
+            return 'execute_training';
+          }
+        }
+      }
+      if (result.tool === 'propose_training_plan') {
+        if (result.error) {
+          return 'propose_model';
+        }
+        return 'generate_code';
+      }
+      if (result.tool === 'configure_experiment') {
+        if (result.error) {
+          continue;
+        }
+        return 'propose_model';
+      }
+    }
+    return 'configure_experiment';
+  };
+
+  if (state.iteration === 0) {
+    const startingStatus = typeof state.run.metadata?.workflowTurnStartStatus === 'string'
+      ? state.run.metadata.workflowTurnStartStatus
+      : state.run.status;
+
+    // Resumed training turns (typically after approval pause) must continue
+    // from the next lifecycle stage, not restart configuration.
+    if (startingStatus === 'paused') {
+      if (typeof nextStage === 'string' && lifecycleStageNames.has(nextStage)) {
+        return nextStage;
+      }
+      if (currentNodeIsValid) {
+        return currentNode;
+      }
+      return inferResumeStageFromHistory();
+    }
+    if (startingStatus === 'failed_retryable' || startingStatus === 'failed') {
+      const inferredStage = inferResumeStageFromHistory();
+      if (typeof inferredStage === 'string' && lifecycleStageNames.has(inferredStage)) {
+        return inferredStage;
+      }
+      if (typeof nextStage === 'string' && lifecycleStageNames.has(nextStage)) {
+        return nextStage;
+      }
+      if (currentNodeIsValid) {
+        return currentNode;
+      }
+      return 'generate_code';
+    }
+    return 'configure_experiment';
+  }
+
+  if (hasExhaustedTrainingDraftWithoutCompletion(state)) {
+    return 'generate_code';
+  }
+
+  if (typeof nextStage === 'string' && lifecycleStageNames.has(nextStage)) {
+    return nextStage;
+  }
+  if (currentNodeIsValid) {
+    return currentNode;
+  }
+  return inferResumeStageFromHistory();
 }
 
 export function shouldAllowFeatureCheckpointTool(
@@ -527,6 +849,26 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         )
       : []
   );
+  const projectDatasets = await datasetRepository.listByProject(turn.projectId);
+  const selectionMismatch = detectTrainingSelectionMismatch({
+    prompt: turn.prompt,
+    dataset,
+    selectedTargetColumn: turn.targetColumn,
+    availableDatasets: projectDatasets
+  });
+  if (selectionMismatch) {
+    return {
+      nextStep: 'fail',
+      errorMessage: selectionMismatch.message,
+      errorCode: 'TRAINING_SELECTION_MISMATCH',
+      run: {
+        ...state.run,
+        currentNode: 'configure_experiment',
+        activeDatasetId: turn.datasetId,
+        activeNotebookId: turn.notebookId
+      }
+    };
+  }
 
   // Resolve the current training lifecycle stage so that stage-based tool
   // filtering in the PhaseConfig can restrict which tools the LLM may call.
@@ -554,14 +896,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     };
   }
 
-  let trainingNode: string;
-  if (state.iteration === 0) {
-    trainingNode = 'configure_experiment';
-  } else {
-    const trainingPhase = getPhaseConfig('training');
-    const nextStage = trainingPhase?.resolveNextStage(state.run.currentNode, currentTurnResults);
-    trainingNode = nextStage ?? state.run.currentNode;
-  }
+  const trainingNode = resolveTrainingLifecycleNode(state, currentTurnResults);
 
   return {
     nextStep: 'invoke_model',
@@ -574,6 +909,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       toolResults: currentTurnResults,
       featureSummary: turn.featureSummary,
       featureSpecs,
+      currentNode: trainingNode,
       toolCallHistory,
       toolResultHistory,
       // Use LLM_TRAINING_LIFECYCLE_TOOLS which merges the 6 training lifecycle

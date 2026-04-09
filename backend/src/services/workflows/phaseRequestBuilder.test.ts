@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { WorkflowGraphState } from './graphState.js';
 import {
   MAX_FE_HISTORY_PAIRS,
+  detectTrainingSelectionMismatch,
+  resolveTrainingLifecycleNode,
   selectFeatureRequestToolResults,
   shouldAllowFeatureCheckpointTool,
   shouldAllowFeatureProposeTool,
@@ -10,6 +12,7 @@ import {
   shouldRestrictFeatureToolsToProposalMode,
   trimFeatureEngineeringHistory
 } from './phaseRequestBuilder.js';
+import './phases/training.js';
 
 function createState(overrides: Partial<WorkflowGraphState> = {}): WorkflowGraphState {
   return {
@@ -187,6 +190,236 @@ describe('shouldAllowFeatureProposeTool', () => {
 
   it('allows propose_feature when no selected IDs are present', () => {
     expect(shouldAllowFeatureProposeTool('Suggest useful features for this dataset.')).toBe(true);
+  });
+});
+
+describe('resolveTrainingLifecycleNode', () => {
+  it('continues from next stage on paused training runs instead of restarting configure_experiment', () => {
+    const state = createState({
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'propose_model',
+        metadata: { workflowTurnStartStatus: 'paused' }
+      },
+      toolResultHistory: [],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('generate_code');
+  });
+
+  it('starts fresh training turns at configure_experiment when not resuming a paused run', () => {
+    const state = createState({
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'train a model',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'running',
+        currentNode: 'propose_model',
+        metadata: { workflowTurnStartStatus: 'running' }
+      },
+      toolResultHistory: [],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('configure_experiment');
+  });
+
+  it('resumes failed retryable training runs at generate_code when the last run_cell failed', () => {
+    const state = createState({
+      iteration: 0,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Retry the training workflow.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'running',
+        currentNode: 'bootstrap_context',
+        metadata: { workflowTurnStartStatus: 'failed_retryable' }
+      },
+      toolResultHistory: [
+        {
+          id: 'tool-1',
+          tool: 'run_cell',
+          output: { status: 'error', stderr: 'NameError: X_train is not defined' }
+        }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('generate_code');
+  });
+
+  it('does not resume failed retryable turns at stale write_code when the previous turn already failed there', () => {
+    const state = createState({
+      iteration: 0,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Retry the failed training run.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'failed_retryable',
+        currentNode: 'write_code',
+        metadata: { workflowTurnStartStatus: 'failed_retryable' }
+      },
+      toolResultHistory: [
+        {
+          id: 'write-1',
+          tool: 'write_cell',
+          output: { cellId: 'cell-1' }
+        },
+        {
+          id: 'run-1',
+          tool: 'run_cell',
+          output: { status: 'error', stderr: 'ValueError: stratify failed' }
+        }
+      ],
+      turnStartToolCallCount: 2
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('generate_code');
+  });
+
+  it('routes exhausted training drafts without completion markers back to generate_code', () => {
+    const state = createState({
+      iteration: 1,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Continue training.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        currentNode: 'write_code'
+      },
+      toolCallHistory: [
+        {
+          id: 'call-1',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-1',
+                segments: [
+                  { title: 'Cell 1', content: 'print("one")' },
+                  { title: 'Cell 2', content: 'print("two")' }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      toolResultHistory: [
+        { id: 'write-1', tool: 'write_cell', output: { cellId: 'cell-1' } },
+        { id: 'run-1', tool: 'run_cell', output: { status: 'success', stdout: 'step 1 ok' } },
+        { id: 'write-2', tool: 'write_cell', output: { cellId: 'cell-2' } },
+        { id: 'run-2', tool: 'run_cell', output: { status: 'success', stdout: 'step 2 ok' } }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('generate_code');
+  });
+
+  it('resumes from register_model after a successful evaluation result', () => {
+    const state = createState({
+      iteration: 0,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Continue the training workflow.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'failed_retryable',
+        currentNode: 'bootstrap_context',
+        metadata: { workflowTurnStartStatus: 'failed_retryable' }
+      },
+      toolResultHistory: [
+        {
+          id: 'eval-1',
+          tool: 'evaluate_results',
+          output: { status: 'evaluated', metrics: { rmse: 0.4 } }
+        }
+      ],
+      turnStartToolCallCount: 1
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('register_model');
+  });
+});
+
+describe('detectTrainingSelectionMismatch', () => {
+  const featureDataset = {
+    datasetId: 'feature-ds',
+    filename: 'feature_v1.csv',
+    projectId: 'project-1',
+    fileType: 'csv' as const,
+    size: 100,
+    nRows: 10,
+    nCols: 3,
+    columns: [
+      { name: 'Subject Area', dtype: 'string', nullCount: 0 },
+      { name: 'usage_log1p', dtype: 'float', nullCount: 0 },
+      { name: 'feature_v1', dtype: 'float', nullCount: 0 }
+    ],
+    sample: [],
+    createdAt: '2026-04-01T00:00:00.000Z',
+    updatedAt: '2026-04-01T00:00:00.000Z'
+  };
+  const rawDataset = {
+    ...featureDataset,
+    datasetId: 'raw-ds',
+    filename: 'tableau_usage_field_summary_with_dept.csv'
+  };
+
+  it('detects when the prompt requests a different target than the selected target', () => {
+    const mismatch = detectTrainingSelectionMismatch({
+      prompt: 'Tune regularization while predicting usage_log1p from feature_v1.',
+      dataset: featureDataset,
+      selectedTargetColumn: 'Subject Area',
+      availableDatasets: [featureDataset, rawDataset]
+    });
+
+    expect(mismatch?.message).toContain('prompt requests target "usage_log1p"');
+    expect(mismatch?.message).toContain('Training tab target is "Subject Area"');
+  });
+
+  it('detects when the prompt references a different dataset than the selected dataset', () => {
+    const mismatch = detectTrainingSelectionMismatch({
+      prompt: 'Tune regularization while predicting usage_log1p from feature_v1.',
+      dataset: rawDataset,
+      selectedTargetColumn: 'usage_log1p',
+      availableDatasets: [featureDataset, rawDataset]
+    });
+
+    expect(mismatch?.message).toContain('prompt references dataset "feature_v1.csv"');
+    expect(mismatch?.message).toContain('Training tab dataset is "tableau_usage_field_summary_with_dept.csv"');
   });
 });
 

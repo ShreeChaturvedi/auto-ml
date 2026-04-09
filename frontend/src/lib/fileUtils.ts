@@ -1,7 +1,9 @@
 import type { ComponentType } from 'react';
 import { File } from 'lucide-react';
 import { CsvIcon, XlsIcon, PdfIcon, DocIcon, MarkdownIcon, JsnIcon, TxtIcon } from '@/components/data/CsvIcon';
-import type { FileType } from '@/types/file';
+import type { FileType, UploadedFile } from '@/types/file';
+import { downloadDataset } from '@/lib/api/datasets';
+import { downloadDocument } from '@/lib/api/documents';
 
 /** Icon component for each file type. */
 export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
@@ -78,6 +80,25 @@ export const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 };
+
+/** Download a single file (dataset or document) via the appropriate API. */
+export async function downloadFile(file: UploadedFile): Promise<void> {
+  const { datasetId, documentId } = file.metadata ?? {};
+  let blob: Blob;
+  if (datasetId) {
+    blob = new Blob([await downloadDataset(datasetId)]);
+  } else if (documentId) {
+    blob = await downloadDocument(documentId);
+  } else return;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 /** Determine file type from File object. */
 export const getFileType = (file: File): FileType => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { X, GitCompareArrows, Download, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
 
@@ -29,23 +30,7 @@ export function BulkActionBar({ onExportSelected }: BulkActionBarProps) {
   const canCompare = count >= 2;
   const guidance = count === 1 ? 'select 1 more to compare' : null;
 
-  // Esc key to clear selection
-  useEffect(() => {
-    if (!hasSelection) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const active = document.activeElement;
-      if (
-        active instanceof HTMLInputElement ||
-        active instanceof HTMLTextAreaElement ||
-        (active as HTMLElement)?.isContentEditable
-      ) return;
-      if (document.querySelector('[data-state="open"][role="dialog"]')) return;
-      clearComparison();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [hasSelection, clearComparison]);
+  useEscapeKey(hasSelection, clearComparison);
 
   const handleDelete = useCallback(async () => {
     const ids = useExperimentsStore.getState().comparisonModelIds;

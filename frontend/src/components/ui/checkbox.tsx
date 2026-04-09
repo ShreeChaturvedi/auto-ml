@@ -1,13 +1,13 @@
 import * as React from "react"
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox"
-import { Check } from "lucide-react"
+import { Check, Minus } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
 const Checkbox = React.forwardRef<
   React.ElementRef<typeof CheckboxPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
->(({ className, id, name, ...props }, ref) => {
+>(({ className, id, name, checked, ...props }, ref) => {
   const generatedId = React.useId()
 
   return (
@@ -15,8 +15,9 @@ const Checkbox = React.forwardRef<
       ref={ref}
       id={id ?? (name ? undefined : generatedId)}
       name={name}
+      checked={checked}
       className={cn(
-        "peer h-4 w-4 shrink-0 rounded-sm border border-neutral-600 ring-offset-background hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-neutral-600 data-[state=checked]:text-white",
+        "peer h-4 w-4 shrink-0 rounded-sm border border-neutral-600 ring-offset-background hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-neutral-600 data-[state=checked]:text-white data-[state=indeterminate]:bg-neutral-600 data-[state=indeterminate]:text-white",
         className
       )}
       {...props}
@@ -24,7 +25,9 @@ const Checkbox = React.forwardRef<
       <CheckboxPrimitive.Indicator
         className={cn("flex items-center justify-center text-current")}
       >
-        <Check className="h-4 w-4" />
+        {checked === 'indeterminate'
+          ? <Minus className="h-4 w-4" />
+          : <Check className="h-4 w-4" />}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )

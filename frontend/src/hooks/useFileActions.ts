@@ -9,9 +9,9 @@ import { toast } from 'sonner';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { phaseConfig } from '@/types/phase';
-import { deleteDataset, downloadDataset } from '@/lib/api/datasets';
-import { deleteDocument, downloadDocument } from '@/lib/api/documents';
-import { DATA_FILE_TYPES } from '@/lib/fileUtils';
+import { deleteDataset } from '@/lib/api/datasets';
+import { deleteDocument } from '@/lib/api/documents';
+import { DATA_FILE_TYPES, downloadFile } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
 
 export interface UseFileActionsReturn {
@@ -102,24 +102,7 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
 
   const handleDownloadFile = useCallback(async (file: UploadedFile) => {
     try {
-      const { datasetId, documentId } = file.metadata ?? {};
-      let blob: Blob;
-      if (datasetId) {
-        blob = new Blob([await downloadDataset(datasetId)]);
-      } else if (documentId) {
-        blob = await downloadDocument(documentId);
-      } else {
-        console.error('No dataset or document ID found for download');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadFile(file);
     } catch (error) {
       console.error('Failed to download file:', error);
     }

@@ -42,7 +42,8 @@ const mockState = vi.hoisted(() => ({
 
   // agentic shell
   messages: [] as Array<unknown>,
-  submitPromptMock: vi.fn()
+  submitPromptMock: vi.fn(),
+  trainingAdapterArgs: [] as Array<Record<string, unknown>>
 }));
 
 // Mock AgenticShell so we can observe what notebookId it receives and skip
@@ -204,6 +205,13 @@ vi.mock('@/lib/features/codeGenerator', () => ({
   generateFeatureEngineeringCode: () => '# generated'
 }));
 
+vi.mock('../TrainingAdapter', () => ({
+  createTrainingAdapter: (args: Record<string, unknown>) => {
+    mockState.trainingAdapterArgs.push(args);
+    return {};
+  }
+}));
+
 // Toolbar/model-card children don't matter for isolation assertions.
 vi.mock('../TrainingToolbar', () => ({
   TrainingToolbarLeft: ({ onReset }: { onReset: () => void }) => (
@@ -266,6 +274,7 @@ describe('TrainingPanel', () => {
     mockState.setWorkbooksMock.mockReset();
     mockState.submitPromptMock.mockReset();
     mockState.messages = [];
+    mockState.trainingAdapterArgs = [];
 
     mockState.listNotebooksMock.mockReset();
     mockState.listNotebooksMock.mockImplementation(async () => mockState.notebooksInApi);
@@ -313,6 +322,18 @@ describe('TrainingPanel', () => {
     expect(screen.queryByText(/Feature Pipeline Approval Required/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Approve a Feature Engineering pipeline/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open Feature Engineering/i })).not.toBeInTheDocument();
+  });
+
+  it('uses a no-target training workflow session key until the user selects a target', async () => {
+    renderPanel();
+
+    await waitFor(() => {
+      expect(mockState.trainingAdapterArgs.length).toBeGreaterThan(0);
+    });
+
+    const lastArgs = mockState.trainingAdapterArgs.at(-1);
+    expect(lastArgs?.sessionKey).toContain(':ds-1:no-target');
+    expect(lastArgs?.targetColumn).toBeUndefined();
   });
 
   it('creates a training-scoped notebook and does NOT touch the pre-existing FE notebook', async () => {
@@ -425,5 +446,51 @@ describe('TrainingPanel', () => {
       expect(screen.queryByRole('button', { name: /Applied/i })).not.toBeInTheDocument();
     });
     expect(screen.queryByText(/2 of 2 models selected/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the approval gate when pending proposal messages are stale and later training tools already ran', async () => {
+    mockState.messages = [
+      {
+        id: 'proposal-message-1',
+        type: 'tool_call',
+        call: {
+          id: 'proposal-call-1',
+          tool: 'propose_training_plan',
+          args: { modelName: 'Logistic Regression' }
+        },
+        result: {
+          id: 'proposal-call-1',
+          tool: 'propose_training_plan',
+          output: { status: 'awaiting_approval' }
+        }
+      },
+      {
+        id: 'register-message-1',
+        type: 'tool_call',
+        call: {
+          id: 'register-call-1',
+          tool: 'register_model',
+          args: { modelName: 'Logistic Regression' }
+        },
+        result: {
+          id: 'register-call-1',
+          tool: 'register_model',
+          output: {
+            status: 'registered',
+            modelId: 'model-1',
+            metrics: { accuracy: 0.9 }
+          }
+        }
+      }
+    ];
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('training-notebook-id')).toHaveTextContent('new-training-nb');
+    });
+
+    expect(screen.queryByText(/Approve Model Training/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Apply 1 Selected/i })).not.toBeInTheDocument();
   });
 });

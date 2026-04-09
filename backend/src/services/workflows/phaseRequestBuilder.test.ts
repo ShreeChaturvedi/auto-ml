@@ -238,6 +238,42 @@ describe('resolveTrainingLifecycleNode', () => {
     expect(resolveTrainingLifecycleNode(state, [])).toBe('configure_experiment');
   });
 
+  it('stays in propose_model when configured experiments still lack plans on a paused run', () => {
+    const state = createState({
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approve the model plans.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'propose_model',
+        metadata: {
+          workflowTurnStartStatus: 'paused',
+          experiments: {
+            'exp-1': {
+              experimentId: 'exp-1',
+              experimentName: 'rf',
+              status: 'proposed'
+            },
+            'exp-2': {
+              experimentId: 'exp-2',
+              experimentName: 'ridge',
+              status: 'configured'
+            }
+          }
+        }
+      },
+      toolResultHistory: [],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('propose_model');
+  });
+
   it('resumes failed retryable training runs at generate_code when the last run_cell failed', () => {
     const state = createState({
       iteration: 0,
@@ -259,6 +295,48 @@ describe('resolveTrainingLifecycleNode', () => {
           id: 'tool-1',
           tool: 'run_cell',
           output: { status: 'error', stderr: 'NameError: X_train is not defined' }
+        }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('generate_code');
+  });
+
+  it('does not terminate the turn after one register_model when more approved experiments remain', () => {
+    const state = createState({
+      iteration: 1,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training the selected models: ridge, lasso.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'running',
+        currentNode: 'register_model',
+        metadata: {
+          experiments: {
+            'exp-1': {
+              experimentId: 'exp-1',
+              experimentName: 'ridge',
+              status: 'registered'
+            },
+            'exp-2': {
+              experimentId: 'exp-2',
+              experimentName: 'lasso',
+              status: 'proposed'
+            }
+          }
+        }
+      },
+      toolResultHistory: [
+        {
+          id: 'register-1',
+          tool: 'register_model',
+          output: { experimentId: 'exp-1', modelId: 'model-1', status: 'registered' }
         }
       ],
       turnStartToolCallCount: 0

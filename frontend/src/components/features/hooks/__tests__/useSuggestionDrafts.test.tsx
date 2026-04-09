@@ -54,9 +54,42 @@ describe('useSuggestionDrafts', () => {
       projectId: 'project-1',
       sourceColumn: 'presentation_table',
       featureName: 'presentation_table_binary',
+      description: 'Binary encoding can compact a high-cardinality categorical field.',
       method: 'binary_encode',
       category: 'encoding',
       enabled: true
+    }));
+  });
+
+  it('replaces placeholder feature descriptions with the proposal rationale when enabling a suggestion', () => {
+    const setPanelError = vi.fn();
+    const item: FeatureSuggestionItem = {
+      type: 'feature_suggestion',
+      id: 'feat-missing-flag',
+      feature: {
+        sourceColumn: 'CF EE Division',
+        featureName: 'CF_EE_Division_missing_flag',
+        description: 'Feature proposed — awaiting user review',
+        method: 'missing_indicator',
+        params: {}
+      },
+      rationale: 'Flag rows where CF EE Division is blank so downstream models can learn missingness as signal.',
+      impact: 'high'
+    };
+
+    const { result } = renderHook(() => useSuggestionDrafts({
+      projectId: 'project-1',
+      featureById: new Map(),
+      setPanelError
+    }));
+
+    act(() => {
+      result.current.toggleSuggestion(item, true);
+    });
+
+    expect(upsertFeatureMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'feat-missing-flag',
+      description: 'Flag rows where CF EE Division is blank so downstream models can learn missingness as signal.'
     }));
   });
 

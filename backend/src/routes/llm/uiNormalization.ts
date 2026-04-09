@@ -7,6 +7,22 @@ const FEATURE_METHODS_SET = new Set<string>(FEATURE_METHODS);
 
 const FEATURE_ENGINEERING_FALLBACK_MESSAGE =
   'The model response was incomplete, so I generated a safe fallback feature-engineering summary.';
+const FEATURE_PROPOSAL_PLACEHOLDER = 'feature proposed — awaiting user review';
+
+function resolveFeatureDescription(description: unknown, rationale: unknown): string {
+  if (typeof description === 'string') {
+    const normalized = description.trim().toLowerCase();
+    if (normalized.length > 0 && normalized !== FEATURE_PROPOSAL_PLACEHOLDER) {
+      return description;
+    }
+  }
+
+  if (typeof rationale === 'string' && rationale.trim().length > 0) {
+    return rationale;
+  }
+
+  return '';
+}
 
 export function buildFeatureEngineeringFallbackEnvelope(
   reason: 'empty_render_ui' | 'empty_response' | 'blank_text'
@@ -143,9 +159,7 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
               ? featureObjectRecord.secondaryColumn
               : undefined,
             featureName: featureTitle,
-            description: typeof featureObjectRecord.description === 'string'
-              ? featureObjectRecord.description
-              : rationale,
+            description: resolveFeatureDescription(featureObjectRecord.description, rationale),
             method: validMethod,
             params: featureObjectRecord.params && typeof featureObjectRecord.params === 'object'
               ? featureObjectRecord.params as Record<string, unknown>

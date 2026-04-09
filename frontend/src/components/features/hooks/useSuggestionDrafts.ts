@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import {
   buildSuggestionDefaults,
+  resolveFeatureDescription,
   type FeatureSuggestionItem
 } from '../featureEngineeringUtils';
 import { useFeatureStore } from '@/stores/featureStore';
@@ -93,7 +94,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
         sourceColumn: item.feature.sourceColumn,
         secondaryColumn: item.feature.secondaryColumn,
         featureName: item.feature.featureName,
-        description: item.feature.description ?? item.rationale,
+        description: resolveFeatureDescription(item.feature.description, item.rationale),
         method,
         category,
         params: draft.params,

@@ -1,5 +1,5 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import { getOrCreateContainer } from '../services/containerManager.js';
 import { syncWorkspaceDatasets } from '../services/executionWorkspace.js';
@@ -73,9 +73,13 @@ export async function orchestrateContainerExecution(
 
   // Step 3: Copy input files
   for (const file of config.filesToCopy) {
+    if (isAbsolute(file.workspacePath)) {
+      throw new Error(`workspacePath must be relative to the container workspace, received absolute path: ${file.workspacePath}`);
+    }
     const workspaceDir = join(container.workspacePath, file.workspacePath, '..');
+    const destinationPath = join(container.workspacePath, file.workspacePath);
     await mkdir(workspaceDir, { recursive: true });
-    await copyFile(file.permanentPath, file.workspacePath);
+    await copyFile(file.permanentPath, destinationPath);
   }
 
   // Step 4: Build and execute script

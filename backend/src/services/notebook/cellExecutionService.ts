@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
@@ -11,15 +12,22 @@ import { resolveDatasetSyncMode, type DatasetSyncMode } from './datasetSyncMode.
 import { getDatasetPaths, copyDatasetsToWorkspace } from './datasetWorkspace.js';
 import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
 
-function shouldRetryMissingPreprocessingHelper(cellContent: string, errorMessage: string): boolean {
-  if (!cellContent.includes('load_preprocessing_dataset(') && !cellContent.includes('save_preprocessing_dataset(')) {
+function shouldRetryMissingKernelInitHelper(cellContent: string, errorMessage: string): boolean {
+  const referencesKernelHelper =
+    cellContent.includes('load_preprocessing_dataset(')
+    || cellContent.includes('save_preprocessing_dataset(')
+    || cellContent.includes('resolve_dataset_path(');
+
+  if (!referencesKernelHelper) {
     return false;
   }
 
   return /NameError: name 'load_preprocessing_dataset' is not defined/i.test(errorMessage)
     || /NameError: name 'save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /NameError: name 'resolve_dataset_path' is not defined/i.test(errorMessage)
     || /load_preprocessing_dataset' is not defined/i.test(errorMessage)
-    || /save_preprocessing_dataset' is not defined/i.test(errorMessage);
+    || /save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /resolve_dataset_path' is not defined/i.test(errorMessage);
 }
 
 export async function getOrEnsureContainer(projectId: string): Promise<Container> {
@@ -42,6 +50,29 @@ export function setWebSocketBroadcast(fn: (notebookId: string, event: unknown) =
 function broadcast(notebookId: string, type: string, data: Record<string, unknown>): void {
   if (broadcastToNotebook) {
     broadcastToNotebook(notebookId, { type, ...data, timestamp: new Date().toISOString() });
+  }
+}
+
+async function recoverKernelAfterTimeout(container: Container, cellId: string): Promise<void> {
+  try {
+    await kernelManager.interruptKernel(container);
+    return;
+  } catch (interruptError) {
+    appLogger.warn(
+      `[cellExecutionService] Failed to interrupt kernel after timeout for cell ${cellId}: ${
+        interruptError instanceof Error ? interruptError.message : String(interruptError)
+      }`
+    );
+  }
+
+  try {
+    await kernelManager.restartKernel(container);
+  } catch (restartError) {
+    appLogger.warn(
+      `[cellExecutionService] Failed to restart kernel after timeout for cell ${cellId}: ${
+        restartError instanceof Error ? restartError.message : String(restartError)
+      }`
+    );
   }
 }
 
@@ -108,7 +139,7 @@ export async function executeCell(
       result = await runKernelExecution();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (!shouldRetryMissingPreprocessingHelper(cell.content, errorMessage)) {
+      if (!shouldRetryMissingKernelInitHelper(cell.content, errorMessage)) {
         throw error;
       }
 
@@ -116,9 +147,13 @@ export async function executeCell(
       result = await runKernelExecution();
     }
 
-    if (result.status === 'error' && shouldRetryMissingPreprocessingHelper(cell.content, result.error ?? result.stderr ?? '')) {
+    if (result.status === 'error' && shouldRetryMissingKernelInitHelper(cell.content, result.error ?? result.stderr ?? '')) {
       await kernelManager.restartKernel(container);
       result = await runKernelExecution();
+    }
+
+    if (result.status === 'timeout') {
+      await recoverKernelAfterTimeout(container, cellId);
     }
 
     // Calculate execution time

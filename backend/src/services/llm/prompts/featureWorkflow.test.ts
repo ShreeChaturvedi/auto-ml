@@ -352,4 +352,21 @@ describe('buildFeatureEngineeringRequest', () => {
     expect(systemMessage?.content).toContain('You MUST use the feature engineering lifecycle tools');
     expect(systemMessage?.content).toContain('ALL Python code MUST be authored via write_cell into notebook cells');
   });
+
+  it('treats the project plan as background context and prioritizes the current turn', () => {
+    const request = buildFeatureEngineeringRequest({
+      dataset,
+      prompt: 'Use the post-clean summary and focus on missing department labels.',
+      projectPlan: 'Forecast usage_count with generic frequency and log features.',
+      toolResults: [],
+      featureMethods: ['extract_month', 'frequency_encode', 'log1p_transform']
+    });
+
+    const systemMessage = request.messages.find((message) => message.role === 'system');
+    const userMessage = request.messages.find((message) => message.role === 'user');
+
+    expect(systemMessage?.content).toContain('Use this plan as background project context.');
+    expect(systemMessage?.content).toContain('The current turn\'s explicit user request, selected dataset, and selected target are authoritative');
+    expect(userMessage?.content).toContain('Current-turn priority: if the user provides a structured post-clean summary');
+  });
 });

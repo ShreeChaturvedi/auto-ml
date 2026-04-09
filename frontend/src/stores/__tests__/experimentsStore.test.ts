@@ -4,12 +4,14 @@ import {
   fetchEvaluation as apiFetchEvaluation,
   fetchShap as apiFetchShap,
   fetchErrorAnalysis as apiFetchErrorAnalysis,
+  retryEvaluation as apiRetryEvaluation,
 } from '../../lib/api/experiments';
 import type { EvaluationResult } from '../../types/experiments';
 import { createInitialExperimentsState, useExperimentsStore } from '../experimentsStore';
 
 vi.mock('../../lib/api/experiments', () => ({
   fetchEvaluation: vi.fn(),
+  retryEvaluation: vi.fn(),
   fetchShap: vi.fn(),
   fetchErrorAnalysis: vi.fn(),
   fetchInsights: vi.fn(),
@@ -20,6 +22,7 @@ const toastWarning = vi.hoisted(() => vi.fn());
 vi.mock('sonner', () => ({ toast: { warning: toastWarning } }));
 
 const fetchEvaluationMock = vi.mocked(apiFetchEvaluation);
+const retryEvaluationMock = vi.mocked(apiRetryEvaluation);
 const fetchShapMock = vi.mocked(apiFetchShap);
 const fetchErrorAnalysisMock = vi.mocked(apiFetchErrorAnalysis);
 
@@ -122,6 +125,18 @@ describe('experimentsStore', () => {
     expect(fetchEvaluationMock).toHaveBeenCalledTimes(1);
   });
 
+  it('fetchEvaluation(true) bypasses cached null and refetches', async () => {
+    fetchEvaluationMock.mockRejectedValueOnce(new Error('404'));
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
+
+    fetchEvaluationMock.mockResolvedValueOnce(MOCK_EVALUATION);
+    await useExperimentsStore.getState().fetchEvaluation('model-1', true);
+
+    expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
+    expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+  });
+
   it('fetchEvaluation() sets null on API failure instead of leaving undefined', async () => {
     fetchEvaluationMock.mockRejectedValue(new Error('404'));
 
@@ -193,9 +208,11 @@ describe('experimentsStore', () => {
     await useExperimentsStore.getState().fetchEvaluation('model-1');
     expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
 
+    retryEvaluationMock.mockResolvedValueOnce({ ok: true, evaluationStatus: 'ready' });
     fetchEvaluationMock.mockResolvedValueOnce(MOCK_EVALUATION);
     await useExperimentsStore.getState().retryEvaluation('model-1');
 
+    expect(retryEvaluationMock).toHaveBeenCalledWith('model-1');
     expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
     expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
   });

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -53,7 +54,11 @@ export function buildErrorAnalysisScript(options: BuildErrorAnalysisScriptOption
   lines.push(...buildOutputDirSetup(outputDir));
 
   // ── Load predictions ──
-  lines.push(`pred_df = pd.read_parquet(${JSON.stringify(predictionsPath)})`);
+  if (predictionsPath.endsWith('.csv')) {
+    lines.push(`pred_df = pd.read_csv(${JSON.stringify(predictionsPath)})`);
+  } else {
+    lines.push(`pred_df = pd.read_parquet(${JSON.stringify(predictionsPath)})`);
+  }
   lines.push(`target_column = ${JSON.stringify(targetColumn)}`);
   lines.push(`task_type = ${JSON.stringify(taskType)}`);
   lines.push('');
@@ -175,9 +180,12 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
     const resolvedTargetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
 
     // 4. Compute paths
-    const storagePredictionsPath = join(env.modelStorageDir, modelId, 'predictions.parquet');
-    const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
-    const workspacePredPath = join(workspacePath, 'eval', modelId, 'predictions.parquet');
+    const storagePredictionsParquetPath = join(env.modelStorageDir, modelId, 'predictions.parquet');
+    const storagePredictionsCsvPath = join(env.modelStorageDir, modelId, 'predictions.csv');
+    const useCsvPredictions = !existsSync(storagePredictionsParquetPath) && existsSync(storagePredictionsCsvPath);
+    const storagePredictionsPath = useCsvPredictions ? storagePredictionsCsvPath : storagePredictionsParquetPath;
+    const workspacePredFilename = useCsvPredictions ? 'predictions.csv' : 'predictions.parquet';
+    const workspacePredPath = join('eval', modelId, workspacePredFilename);
 
     // 5-8. Orchestrate container execution
     const { container, executionResult } = await orchestrateContainerExecution({
@@ -185,7 +193,7 @@ export async function runErrorAnalysis(modelId: string): Promise<ErrorAnalysisRe
       pythonVersion: '3.11',
       scriptBuilder: () =>
         buildErrorAnalysisScript({
-          predictionsPath: `/workspace/eval/${modelId}/predictions.parquet`,
+          predictionsPath: `/workspace/eval/${modelId}/${workspacePredFilename}`,
           outputDir: `/workspace/error-analysis/${modelId}`,
           targetColumn: resolvedTargetColumn,
           taskType: model.taskType as 'classification' | 'regression',

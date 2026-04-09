@@ -213,7 +213,7 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
         },
         artifactPath: {
           type: 'string',
-          description: 'Path to the serialized model artifact, if saved.'
+          description: 'Relative path to the serialized model artifact (for example "model.joblib").'
         },
         tags: {
           type: 'array',
@@ -221,7 +221,7 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
           description: 'Optional tags for categorizing the model (e.g. "baseline", "tuned", "production").'
         }
       },
-      required: ['experimentId', 'modelName', 'modelType', 'metrics']
+      required: ['experimentId', 'modelName', 'modelType', 'metrics', 'artifactPath']
     }
   },
   {

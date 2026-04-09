@@ -155,11 +155,14 @@ describe('buildEvaluationScript', () => {
 
     // Must contain general evaluation code
     expect(script).toContain('joblib.load');
+    expect(script).toContain('def date_to_ordinal(X_col):');
     expect(script).toContain('pd.read_csv');
     expect(script).toContain('permutation_importance');
     expect(script).toContain('learning_curve');
     expect(script).toContain('cross_val_score');
     expect(script).toContain('predictions.parquet');
+    expect(script).toContain('predictions.csv');
+    expect(script).toContain('result["predictionsArtifact"] = predictions_filename');
     expect(script).toContain('evaluation.json');
 
     // Must NOT contain regression-specific code
@@ -211,6 +214,22 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('shap.json');
     // Memory safety: subsample to 1000
     expect(script).toContain('1000');
+  });
+
+  it('resolves the fitted estimator from model, regressor, classifier, or the final pipeline step', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m4/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m4',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('fitted_model = pipeline.named_steps.get("model")');
+    expect(script).toContain('fitted_model = pipeline.named_steps.get("regressor")');
+    expect(script).toContain('fitted_model = pipeline.named_steps.get("classifier")');
+    expect(script).toContain('fitted_model = pipeline.steps[-1][1]');
   });
 });
 
@@ -284,6 +303,34 @@ describe('runEvaluation', () => {
     expect(secondResult.evaluationError).toContain('CUDA out of memory');
   });
 
+  it('strips warning spam from persisted evaluation errors', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'error',
+        stderr: '<cell>:45: FutureWarning: Series.view is deprecated\\nordinal = (dt.view("int64") / 1e9 / 86400).astype(float)\\nTraceback (most recent call last):\\nImportError: Unable to find a usable engine',
+        error: 'Execution failed',
+        executionMs: 1000,
+      },
+    });
+
+    await runEvaluation('test-model-id');
+
+    const failedResult = mockUpdate.mock.calls[1][1](model);
+    expect(failedResult.evaluationStatus).toBe('failed');
+    expect(failedResult.evaluationError).toContain('Traceback');
+    expect(failedResult.evaluationError).toContain('ImportError');
+    expect(failedResult.evaluationError).not.toContain('Series.view is deprecated');
+    expect(failedResult.evaluationError).not.toContain('ordinal =');
+  });
+
   it('copies artifacts to modelStorageDir on success', async () => {
     const model = makeModelRecord();
     const container = makeContainer();
@@ -318,11 +365,44 @@ describe('runEvaluation', () => {
     expect(modelId).toBe('test-model-id');
     expect(copyContainer).toBe(container);
 
-    // Should have artifact entries for evaluation.json, predictions.parquet, and shap.json
+    // Should have artifact entries for evaluation.json, predictions parquet/csv, and shap.json
     const artifactWorkspaces = artifacts.map((a: Record<string, unknown>) => a.workspace);
     expect(artifactWorkspaces).toContain('eval/test-model-id/evaluation.json');
     expect(artifactWorkspaces).toContain('eval/test-model-id/predictions.parquet');
+    expect(artifactWorkspaces).toContain('eval/test-model-id/predictions.csv');
     expect(artifactWorkspaces).toContain('eval/test-model-id/shap.json');
+  });
+
+  it('copies the model artifact into a workspace-relative models directory before evaluation', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { filesToCopy: Array<{ permanentPath: string; workspacePath: string }> };
+      expect(cfg.filesToCopy).toEqual([
+        {
+          permanentPath: model.artifact!.path,
+          workspacePath: 'models/test-model-id/model.joblib'
+        }
+      ]);
+      return {
+        container,
+        executionResult: {
+          status: 'success',
+          stderr: '',
+          executionMs: 5000,
+        },
+      };
+    });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
+
+    await runEvaluation('test-model-id');
+
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
   });
 
   it('reuses the stored model test size when building the evaluation script', async () => {

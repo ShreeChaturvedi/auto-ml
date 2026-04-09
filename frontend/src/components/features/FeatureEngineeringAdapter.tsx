@@ -12,6 +12,7 @@ import type { NotebookPhaseMetadata } from '@/types/notebook';
 import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
 import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
 import { Target, TrendingUp, Calendar, FileText, Bug, GitPullRequest } from 'lucide-react';
+import { resolveFeatureDescription } from './featureEngineeringUtils';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
@@ -162,7 +163,11 @@ function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistr
               sourceColumn: existingFeature?.sourceColumn ?? sourceColumns?.[0] ?? existingStep?.name ?? '',
               ...(secondaryColumn ? { secondaryColumn } : {}),
               featureName: existingFeature?.featureName ?? existingStep?.name ?? featureName,
-              description: (call.args?.rationale ?? output?.rationale ?? existingFeature?.description ?? '') as string,
+              description: resolveFeatureDescription(
+                existingFeature?.description,
+                call.args?.rationale ?? output?.rationale,
+                ''
+              ),
               method: (existingFeature?.method ?? existingStep?.method ?? method ?? 'custom') as FeatureMethod,
               category: (existingFeature?.category ?? 'numeric_transform') as FeatureCategory,
               params: existingFeature?.params ?? {},

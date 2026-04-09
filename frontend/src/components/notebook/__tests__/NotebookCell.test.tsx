@@ -109,7 +109,7 @@ describe('NotebookCellComponent', () => {
     );
 
     expect(screen.getByText('[3]')).toBeInTheDocument();
-    expect(screen.getByText('· 0.1s')).toBeInTheDocument();
+    expect(screen.getByText('· 120ms')).toBeInTheDocument();
     expect(screen.queryByText('Success')).not.toBeInTheDocument();
 
     const dirtyCell = createCell({

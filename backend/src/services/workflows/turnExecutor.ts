@@ -22,7 +22,8 @@ import {
   prepareRunForTurn,
   resolveFailureStatus,
   resolvePauseReason,
-  resolvePendingInputKind
+  resolvePendingInputKind,
+  shouldRestoreWorkflowHistory
 } from './turnState.js';
 import type { WorkflowTurnRequest } from './types.js';
 
@@ -35,7 +36,9 @@ export async function executeWorkflowTurn(
   const existing = turn.runId ? await repository.getRun(turn.runId) : undefined;
   const persistedRun = existing?.run ?? await repository.createRun(buildInitialRun(turn));
   const run = prepareRunForTurn(persistedRun, turn);
-  const history = loadWorkflowHistory(run.metadata);
+  const history = shouldRestoreWorkflowHistory(persistedRun)
+    ? loadWorkflowHistory(run.metadata)
+    : { toolCalls: [], toolResults: [] };
 
   sink.emit(buildWorkflowStateEvent(run, buildPhaseContext(turn)));
   await appendRunEvent(repository, run, 'workflow_turn_started', {

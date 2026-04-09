@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import './phases/featureEngineering.js';
+import './phases/training.js';
 
 import type { LlmRequest, LlmStreamHandlers } from '../llm/llmClient.js';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { invokeModelNode } from './modelTurnCollector.js';
+import { getPhaseConfig } from './phaseConfig.js';
 
 const {
   createLlmClientMock,
@@ -218,6 +220,45 @@ describe('invokeModelNode', () => {
     expect(result).toMatchObject({
       latestMessage: 'Answer only.',
       nextStep: 'complete'
+    });
+  });
+
+  it('re-enters prepare when a deterministic training stage has become stale after a failed notebook step', async () => {
+    const state = createBaseState();
+    state.turn.phase = 'training';
+    state.turn.prompt = 'Retry the failed training step.';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.request = {
+      messages: [{ role: 'user', content: 'Retry the failed training step.' }],
+      tools: []
+    };
+    state.toolResultHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        error: 'Markdown cells are not allowed during training execution.'
+      }
+    ];
+    state.controllerSummary = null;
+
+    const trainingPhase = getPhaseConfig('training');
+    expect(trainingPhase).toBeDefined();
+
+    const result = await invokeModelNode(
+      state,
+      {
+        configurable: { phaseConfig: trainingPhase }
+      } as never
+    );
+
+    expect(result).toMatchObject({
+      nextStep: 'prepare',
+      run: expect.objectContaining({
+        currentNode: 'generate_code'
+      }),
+      errorMessage: null,
+      errorCode: null
     });
   });
 

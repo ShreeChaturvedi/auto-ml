@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useNotebookStore } from '@/stores/notebookStore';
+import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { buildWorkbookTabsStateKey } from '../../storagePersistence';
 import { usePreprocessingTabs } from '../usePreprocessingTabs';
@@ -26,6 +27,12 @@ describe('usePreprocessingTabs', () => {
     reconcileTabNotebookMappingsMock.mockResolvedValue(undefined);
     useNotebookStore.getState().reset();
     useWorkflowSessionStore.setState({ sessions: {} });
+    useWorkbookRegistryStore.setState({
+      preprocessing: [],
+      'feature-engineering': [],
+      training: [],
+      deleteHandlers: {}
+    });
     usePreprocessingStore.setState({
       activeProjectId: 'proj-1',
       tables: [
@@ -55,6 +62,12 @@ describe('usePreprocessingTabs', () => {
     localStorage.clear();
     useNotebookStore.getState().reset();
     useWorkflowSessionStore.setState({ sessions: {} });
+    useWorkbookRegistryStore.setState({
+      preprocessing: [],
+      'feature-engineering': [],
+      training: [],
+      deleteHandlers: {}
+    });
   });
 
   it('creates a new workbook without copying the previous workbook snapshot state', async () => {
@@ -168,6 +181,60 @@ describe('usePreprocessingTabs', () => {
     });
 
     await waitFor(() => expect(fallbackTabId).toBe('tab-1'));
+    await waitFor(() => expect(result.current.activeTabId).toBe('tab-1'));
+    await waitFor(() => expect(deleteNotebookMock).toHaveBeenCalledWith('nb-2'));
+  });
+
+  it('registers a sidebar delete handler that removes the targeted inactive workbook', async () => {
+    const deleteNotebookMock = vi.fn(async () => true);
+    useNotebookStore.setState({
+      ...useNotebookStore.getState(),
+      deleteNotebook: deleteNotebookMock
+    });
+
+    localStorage.setItem(
+      buildWorkbookTabsStateKey('proj-1'),
+      JSON.stringify({
+        activeTabId: 'tab-1',
+        tabs: [
+          {
+            id: 'tab-1',
+            name: 'Workbook 1',
+            storageVersion: 0,
+            notebookId: 'nb-1',
+            selectedDatasetId: 'dataset-1'
+          },
+          {
+            id: 'tab-2',
+            name: 'Workbook 2',
+            storageVersion: 0,
+            notebookId: 'nb-2',
+            selectedDatasetId: 'dataset-1'
+          }
+        ]
+      })
+    );
+
+    const { result } = renderHook(() =>
+      usePreprocessingTabs({
+        projectId: 'proj-1',
+        onNeedsDatasetSelection: vi.fn()
+      })
+    );
+
+    await waitFor(() => expect(result.current.tabsReady).toBe(true));
+    await waitFor(() => expect(result.current.activeTabId).toBe('tab-1'));
+    await waitFor(() => {
+      expect(useWorkbookRegistryStore.getState().deleteHandlers.preprocessing).toBeTypeOf('function');
+    });
+
+    let nextActiveId: string | undefined;
+    act(() => {
+      nextActiveId = useWorkbookRegistryStore.getState().deleteHandlers.preprocessing?.('tab-2');
+    });
+
+    await waitFor(() => expect(nextActiveId).toBe('tab-1'));
+    await waitFor(() => expect(result.current.tabs.map((tab) => tab.id)).toEqual(['tab-1']));
     await waitFor(() => expect(result.current.activeTabId).toBe('tab-1'));
     await waitFor(() => expect(deleteNotebookMock).toHaveBeenCalledWith('nb-2'));
   });

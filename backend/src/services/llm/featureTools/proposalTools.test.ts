@@ -199,6 +199,45 @@ describe('proposalTools', () => {
     }));
   });
 
+  it('uses the tool call rationale when args.rationale is absent', async () => {
+    const save = vi.fn(async () => undefined);
+    const run = {
+      runId: 'feature-run-2',
+      projectId: 'project-1',
+      features: {},
+      createdAt: new Date('2026-03-23T00:00:00.000Z').toISOString(),
+      updatedAt: new Date('2026-03-23T00:00:00.000Z').toISOString()
+    };
+
+    const result = await proposeFeature({
+      projectId: 'project-1',
+      toolCallId: 'tool-4',
+      rationale: 'Flag rows where CF EE Division is missing so downstream modeling can preserve missingness as signal.',
+      args: {
+        featureId: 'feat-3',
+        featureName: 'division_missing_flag',
+        method: 'missing_indicator',
+        sourceColumns: ['CF EE Division']
+      },
+      run,
+      runRepository: {
+        save,
+        getById: vi.fn(),
+        listByProjectId: vi.fn(),
+        getOrCreate: vi.fn()
+      }
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.output).toEqual(expect.objectContaining({
+      featureId: 'feat-3',
+      rationale: 'Flag rows where CF EE Division is missing so downstream modeling can preserve missingness as signal.'
+    }));
+    expect(run.features['feat-3']).toEqual(expect.objectContaining({
+      rationale: 'Flag rows where CF EE Division is missing so downstream modeling can preserve missingness as signal.'
+    }));
+  });
+
   describe('materializeFeatureCode content guards', () => {
     const baseRun = () => ({
       runId: 'feature-run-1',

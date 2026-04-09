@@ -84,7 +84,6 @@ function classifyTool(toolName: string): CardType | null {
     return 'commit';
   }
 
-  if (toolName === 'configure_experiment') return 'proposal';
   if (toolName === 'compare_models') return 'validation';
   if (toolName === 'checkpoint_feature_pipeline') return 'commit';
 
@@ -120,6 +119,15 @@ function detectPhase(toolName: string): string {
     return 'feature_engineering';
   }
   return 'preprocessing';
+}
+
+function isSuccessfulExecutionOutputStatus(status: string | undefined): boolean {
+  if (!status) {
+    return true;
+  }
+
+  const normalized = status.toLowerCase();
+  return normalized === 'success' || normalized === 'training' || normalized === 'ok';
 }
 
 /**
@@ -211,19 +219,37 @@ export function useLifecycleCards(options?: UseLifecycleCardsOptions): (message:
         let stdout: string | undefined;
         let stderr: string | undefined;
         let duration: number | undefined;
+        let failedByOutput = false;
 
         if (output && typeof output === 'object') {
           const out = output as Record<string, unknown>;
+          const outputStatus = typeof out.status === 'string' ? out.status.toLowerCase() : undefined;
+          if (!isSuccessfulExecutionOutputStatus(outputStatus)) {
+            failedByOutput = true;
+          }
+          if (out.succeeded === false) {
+            failedByOutput = true;
+          }
           stdout = typeof out.stdout === 'string' ? out.stdout : undefined;
-          stderr = typeof out.stderr === 'string' ? out.stderr : undefined;
-          duration = typeof out.duration === 'number' ? out.duration : undefined;
+          stderr = typeof out.stderr === 'string'
+            ? out.stderr
+            : typeof out.errorMessage === 'string'
+              ? out.errorMessage
+              : undefined;
+          duration = typeof out.duration === 'number'
+            ? out.duration
+            : typeof out.executionMs === 'number'
+              ? out.executionMs
+              : typeof out.trainingDurationMs === 'number'
+                ? out.trainingDurationMs
+                : undefined;
         } else if (typeof output === 'string') {
           stdout = output;
         }
 
         return createElement(ExecutionCard, {
           key: message.id,
-          status: isRunning ? 'running' : failed ? 'failed' : 'success',
+          status: isRunning ? 'running' : (failed || failedByOutput) ? 'failed' : 'success',
           stdout,
           stderr,
           duration,

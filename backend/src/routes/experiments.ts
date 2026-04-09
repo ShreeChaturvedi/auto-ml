@@ -10,6 +10,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireProjectOwnership, verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
+import { runEvaluation } from '../services/evaluationService.js';
 import { validateEvaluationForErrorAnalysis } from '../services/evaluationStatusValidator.js';
 import {
   buildModelSummaries,
@@ -95,6 +96,32 @@ export function createExperimentsRouter(): Router {
     } else {
       res.status(404).json({ error: 'SHAP data not found' });
     }
+  }));
+
+  router.post('/:modelId/evaluation/retry', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { modelId } = req.params;
+    const model = await getModelById(modelId);
+
+    if (!model) {
+      res.status(404).json({ error: 'Model not found' });
+      return;
+    }
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Model not found' });
+        return;
+      }
+    }
+
+    await runEvaluation(modelId);
+    const updatedModel = await getModelById(modelId);
+
+    res.json({
+      ok: true,
+      evaluationStatus: updatedModel?.evaluationStatus ?? model.evaluationStatus ?? 'pending',
+    });
   }));
 
   // POST /experiments/:projectId/tune — Optuna hyperparameter optimization (NDJSON stream)

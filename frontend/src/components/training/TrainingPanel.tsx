@@ -49,6 +49,27 @@ function isPendingTrainingProposal(message: ChatMessage): message is Extract<Cha
   return (output as Record<string, unknown>).status === 'awaiting_approval';
 }
 
+function collectActivePendingTrainingProposalIds(messages: ChatMessage[]): string[] {
+  const pendingIds: string[] = [];
+
+  // Only treat a trailing block of pending training proposals as active.
+  // Older proposal cards from prior turns stay in history, but they should
+  // not keep the global approval gate visible after training continues.
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.type !== 'tool_call') {
+      continue;
+    }
+    if (isPendingTrainingProposal(message)) {
+      pendingIds.push(message.call.id);
+      continue;
+    }
+    break;
+  }
+
+  return pendingIds.reverse();
+}
+
 interface TrainingConversationPaneProps {
   messages: ChatMessage[];
   error: string | null;
@@ -95,7 +116,7 @@ function TrainingConversationPane({
   }, [messages, syncLlmCells]);
 
   const pendingProposalIds = useMemo(
-    () => messages.filter(isPendingTrainingProposal).map((message) => message.call.id),
+    () => collectActivePendingTrainingProposalIds(messages),
     [messages]
   );
   const pendingProposalSignature = useMemo(
@@ -294,8 +315,8 @@ export function TrainingPanel() {
   useEffect(() => {
     const selected = trainingDatasetOptions.find((dataset) => dataset.datasetId === trainingDatasetId);
     if (!selected) return;
-    if (!trainingTargetColumn || !selected.columns.includes(trainingTargetColumn)) {
-      setTrainingTargetColumn(selected.columns[0]);
+    if (trainingTargetColumn && !selected.columns.includes(trainingTargetColumn)) {
+      setTrainingTargetColumn(undefined);
     }
   }, [trainingDatasetOptions, trainingDatasetId, trainingTargetColumn]);
 
@@ -494,18 +515,30 @@ export function TrainingPanel() {
   }, [handleRunCell]);
 
   const trainingStorageKey = buildTrainingStorageKey(activeTrainingWorkbookId);
+  const trainingSessionKey = useMemo(
+    () => buildWorkflowSessionKey(
+      projectId ?? 'training',
+      [
+        trainingStorageKey,
+        selectedTrainingFile?.metadata?.datasetId ?? 'none',
+        trainingTargetColumn ?? 'no-target'
+      ].join(':')
+    ),
+    [
+      projectId,
+      selectedTrainingFile?.metadata?.datasetId,
+      trainingStorageKey,
+      trainingTargetColumn
+    ]
+  );
 
   // Wrap handleResetWorkbook to also clear the workflow session store so
   // the stale runId/threadId (pointing at the old run with the deleted
   // notebook's activeNotebookId) cannot survive into the next prompt.
   const handleResetWithSessionClear = useCallback(() => {
-    const sessionKey = buildWorkflowSessionKey(
-      projectId ?? 'training',
-      `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
-    );
-    useWorkflowSessionStore.getState().clearSession(sessionKey);
+    useWorkflowSessionStore.getState().clearSession(trainingSessionKey);
     handleResetWorkbook();
-  }, [handleResetWorkbook, projectId, trainingStorageKey, selectedTrainingFile?.metadata?.datasetId]);
+  }, [handleResetWorkbook, trainingSessionKey]);
 
   const trainingAdapter = useMemo(() => createTrainingAdapter({
     projectId: projectId ?? '',
@@ -514,10 +547,7 @@ export function TrainingPanel() {
     featureSummary: buildFeatureSummary(),
     datasetFiles,
     documentFiles,
-    sessionKey: buildWorkflowSessionKey(
-      projectId ?? 'training',
-      `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
-    ),
+    sessionKey: trainingSessionKey,
     // Ref-backed getter keeps adapter identity stable across notebook
     // resolution updates — avoids cascading useAgenticLoop resets.
     getNotebookId: getTrainingNotebookId
@@ -527,7 +557,7 @@ export function TrainingPanel() {
     documentFiles,
     projectId,
     selectedTrainingFile?.metadata?.datasetId,
-    trainingStorageKey,
+    trainingSessionKey,
     trainingTargetColumn,
     getTrainingNotebookId
   ]);

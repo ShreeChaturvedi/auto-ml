@@ -86,7 +86,9 @@ const mockState = vi.hoisted(() => ({
   submitPromptMock: vi.fn(),
   messages: [] as unknown[],
   featureSteps: {} as Record<string, { status: string }>,
-  currentStage: null as string | null
+  currentStage: null as string | null,
+  latestAdapterConfig: null as Record<string, unknown> | null,
+  latestBeforeSubmit: null as ((prompt: string) => Promise<string | null>) | null
 }));
 
 vi.mock('@/components/agentic/AgenticShell', () => ({
@@ -97,7 +99,8 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
     toolbarRight,
     chatMetaSlot,
     domainLockReason,
-    notebookId
+    notebookId,
+    beforeSubmit
   }: {
     LeftPaneComponent?: React.ComponentType<{ messages: unknown[]; isGenerating: boolean; error: string | null; submitPrompt?: (prompt: string) => void }>;
     renderLeftPane?: (props: { messages: unknown[]; isGenerating: boolean; error: string | null; submitPrompt?: (prompt: string) => void }) => React.ReactNode;
@@ -106,8 +109,10 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
     chatMetaSlot?: React.ReactNode;
     domainLockReason?: string;
     notebookId?: string | null;
+    beforeSubmit?: (prompt: string) => Promise<string | null>;
   }) => (
     <div>
+      <div data-testid="has-before-submit">{beforeSubmit ? 'yes' : 'no'}</div>
       <div data-testid="toolbar-left">{toolbarLeft}</div>
       <div data-testid="toolbar-right">{toolbarRight}</div>
       <div data-testid="chat-meta">{chatMetaSlot}</div>
@@ -120,6 +125,21 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
           : null}
     </div>
   )
+}));
+
+vi.mock('../FeatureEngineeringAdapter', () => ({
+  createFeatureEngineeringAdapter: (config: Record<string, unknown>) => {
+    mockState.latestAdapterConfig = config;
+    return {
+      buildRequest: vi.fn(),
+      onWorkflowStateUpdate: vi.fn(),
+      onWorkflowArtifactUpdate: vi.fn(),
+      onRevert: vi.fn(),
+      preserveToolHistoryBetweenPrompts: true,
+      toolRegistry: {},
+      toolUiRegistry: {}
+    };
+  }
 }));
 
 vi.mock('@/stores/dataStore', () => ({
@@ -283,6 +303,8 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.messages = [];
     mockState.featureSteps = {};
     mockState.currentStage = null;
+    mockState.latestAdapterConfig = null;
+    mockState.latestBeforeSubmit = null;
     mockState.createNotebookApiMock.mockResolvedValue({
       notebookId: 'fe-notebook-1',
       projectId: 'p1',
@@ -329,6 +351,19 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('notebook-id')).toHaveTextContent('fe-notebook-1');
+    });
+  });
+
+  it('uses a dataset and target scoped FE session key and wires a prompt preprocessor', async () => {
+    renderPanel();
+
+    await waitFor(() => {
+      expect(mockState.latestAdapterConfig).toMatchObject({
+        datasetId: 'dataset-1',
+        targetColumn: undefined,
+        sessionKey: 'p1:feature-engineering-messages-v3-v1:dataset-1:no-target'
+      });
+      expect(screen.getByTestId('has-before-submit')).toHaveTextContent('yes');
     });
   });
 

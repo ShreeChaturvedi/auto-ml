@@ -63,11 +63,15 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn().mockResolvedValue('{"error_tree": {"node_id": 0, "error_rate": 0.25, "sample_count": 100, "error_count": 25}}'),
 }));
 
+const fsHoisted = vi.hoisted(() => ({
+  mockExistsSync: vi.fn().mockReturnValue(true),
+}));
+
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return {
     ...actual,
-    existsSync: vi.fn().mockReturnValue(true),
+    existsSync: fsHoisted.mockExistsSync,
     mkdirSync: vi.fn(),
   };
 });
@@ -135,6 +139,8 @@ function makeContainer() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fsHoisted.mockExistsSync.mockReset();
+  fsHoisted.mockExistsSync.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -235,6 +241,19 @@ describe('buildErrorAnalysisScript', () => {
     expect(script).toContain('"/workspace/error-analysis/m5"');
     expect(script).toContain('"species"');
   });
+
+  it('reads csv predictions when parquet is unavailable', () => {
+    const script = buildErrorAnalysisScript({
+      predictionsPath: '/workspace/eval/m6/predictions.csv',
+      outputDir: '/workspace/error-analysis/m6',
+      targetColumn: 'target',
+      taskType: 'regression',
+    });
+
+    expect(script).toContain('pd.read_csv');
+    expect(script).not.toContain('pd.read_parquet');
+    expect(script).toContain('"/workspace/eval/m6/predictions.csv"');
+  });
 });
 
 describe('runErrorAnalysis', () => {
@@ -264,6 +283,76 @@ describe('runErrorAnalysis', () => {
     expect(result!.error_tree).toBeDefined();
     expect(result!.error_tree.node_id).toBe(0);
     expect(result!.error_tree.error_rate).toBe(0.25);
+  });
+
+  it('copies predictions into a workspace-relative eval directory before running analysis', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+
+    mockGetById.mockResolvedValue(model);
+    mockDatasetGetById.mockResolvedValue({
+      datasetId: 'test-dataset',
+      columns: [{ name: 'feature1' }, { name: 'feature2' }, { name: 'target' }],
+    });
+    mockResolveAndHealTargetColumn.mockResolvedValue('target');
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { filesToCopy: Array<{ permanentPath: string; workspacePath: string }> };
+      expect(cfg.filesToCopy).toEqual([
+        {
+          permanentPath: '/tmp/test-model-storage/test-model-id/predictions.parquet',
+          workspacePath: 'eval/test-model-id/predictions.parquet',
+        },
+      ]);
+      return {
+        container,
+        executionResult: {
+          status: 'success',
+          stderr: '',
+          executionMs: 2000,
+        },
+      };
+    });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
+
+    await runErrorAnalysis('test-model-id');
+
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to csv predictions when parquet is not present in storage', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+
+    fsHoisted.mockExistsSync.mockImplementation((path: string) => path.endsWith('predictions.csv'));
+    mockGetById.mockResolvedValue(model);
+    mockDatasetGetById.mockResolvedValue({
+      datasetId: 'test-dataset',
+      columns: [{ name: 'feature1' }, { name: 'feature2' }, { name: 'target' }],
+    });
+    mockResolveAndHealTargetColumn.mockResolvedValue('target');
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { filesToCopy: Array<{ permanentPath: string; workspacePath: string }>; scriptBuilder: () => string };
+      expect(cfg.filesToCopy).toEqual([
+        {
+          permanentPath: '/tmp/test-model-storage/test-model-id/predictions.csv',
+          workspacePath: 'eval/test-model-id/predictions.csv',
+        },
+      ]);
+      expect(cfg.scriptBuilder()).toContain('pd.read_csv("/workspace/eval/test-model-id/predictions.csv")');
+      return {
+        container,
+        executionResult: {
+          status: 'success',
+          stderr: '',
+          executionMs: 2000,
+        },
+      };
+    });
+    mockCopyArtifactsToPermanentStorage.mockResolvedValue(undefined);
+
+    await runErrorAnalysis('test-model-id');
+
+    expect(mockOrchestrateContainerExecution).toHaveBeenCalledTimes(1);
   });
 
   it('returns null when model not found', async () => {

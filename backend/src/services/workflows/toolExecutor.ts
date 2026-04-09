@@ -16,7 +16,28 @@ import { getApprovalPauseDetails } from './turnState.js';
 import type { WorkflowPendingInputKind } from './types.js';
 
 const MAX_TOOL_RESULT_CHARS = 50_000;
+const MAX_TRAINING_CODE_CELL_LINES = 100;
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+
+function extractTrainingDatasetFilename(content: string): string | undefined {
+  const match = content.match(/resolve_dataset_path\(\s*["']([^"']+)["']/);
+  return match?.[1];
+}
+
+function extractTrainingTargetColumn(content: string): string | undefined {
+  const patterns = [
+    /\btarget_col(?:umn)?\s*=\s*["']([^"']+)["']/i,
+    /\bTARGET_COL(?:UMN)?\s*=\s*["']([^"']+)["']/i,
+    /\b(?:y|target|labels?)\s*=\s*[A-Za-z_][A-Za-z0-9_]*\[\s*["']([^"']+)["']\s*\]/i
+  ];
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return undefined;
+}
 
 function truncateToolResult(result: ToolResult): ToolResult {
   if (result.output === undefined || result.output === null) return result;
@@ -62,11 +83,103 @@ function getPauseDetails(results: ToolResult[]): {
   return getApprovalPauseDetails(results);
 }
 
+function getToolOutputRecord(result: ToolResult | null | undefined): Record<string, unknown> | null {
+  if (!result?.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+    return null;
+  }
+  return result.output as Record<string, unknown>;
+}
+
+function getLatestTrainingRunCellTimeout(
+  phase: WorkflowGraphState['turn']['phase'],
+  results: ToolResult[]
+): ToolResult | null {
+  if (phase !== 'training') {
+    return null;
+  }
+
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index];
+    if (result.tool !== 'run_cell') {
+      continue;
+    }
+    const output = getToolOutputRecord(result);
+    if ((output?.status as string | undefined)?.toLowerCase() === 'timeout') {
+      return result;
+    }
+  }
+
+  return null;
+}
+
 async function executeWorkflowToolCall(
   state: WorkflowGraphState,
   call: z.infer<typeof ToolCallSchema>,
   phaseConfig: PhaseConfig | undefined
 ): Promise<ToolResult> {
+  const trainingExecutionStages = new Set(['generate_code', 'write_code', 'execute_training', 'evaluate_results', 'register_model']);
+  const isTrainingExecutionStage = state.turn.phase === 'training'
+    && trainingExecutionStages.has(state.run.currentNode);
+  if (isTrainingExecutionStage && (call.tool === 'list_cells' || call.tool === 'read_cell')) {
+    return {
+      id: call.id,
+      tool: call.tool,
+      error: `Tool "${call.tool}" is not allowed during training execution. Use the known cell ids from recent tool results and continue with code/edit/run instead.`
+    };
+  }
+
+  if (isTrainingExecutionStage && (call.tool === 'write_cell' || call.tool === 'insert_cell' || call.tool === 'edit_cell')) {
+    const requestedCellType = typeof call.args?.cellType === 'string'
+      ? call.args.cellType
+      : 'code';
+    if ((call.tool === 'write_cell' || call.tool === 'insert_cell') && requestedCellType === 'markdown') {
+      return {
+        id: call.id,
+        tool: call.tool,
+        error: 'Markdown cells are not allowed during training execution. Write executable code cells only.'
+      };
+    }
+
+    const content = call.tool === 'edit_cell'
+      ? (typeof call.args?.newContent === 'string' ? call.args.newContent : '')
+      : (typeof call.args?.content === 'string' ? call.args.content : '');
+    const lineCount = content ? content.split(/\r?\n/).length : 0;
+    if (lineCount > MAX_TRAINING_CODE_CELL_LINES) {
+      return {
+        id: call.id,
+        tool: call.tool,
+        error: `Training code cell is too large (${lineCount} lines). Split training into smaller code cells by step: imports/config, dataset prep, model fit/evaluation, artifact save.`
+      };
+    }
+
+    if (state.turn.datasetId && content.includes('resolve_dataset_path(')) {
+      const selectedDataset = await datasetRepository.getById(state.turn.datasetId);
+      const requestedDatasetFilename = extractTrainingDatasetFilename(content);
+      if (
+        selectedDataset
+        && requestedDatasetFilename
+        && requestedDatasetFilename !== selectedDataset.filename
+      ) {
+        return {
+          id: call.id,
+          tool: call.tool,
+          error: `Training code references dataset "${requestedDatasetFilename}", but the selected dataset for this turn is "${selectedDataset.filename}". Use the selected dataset in resolve_dataset_path().`
+        };
+      }
+    }
+
+    if (state.turn.targetColumn) {
+      const requestedTargetColumn = extractTrainingTargetColumn(content);
+      if (requestedTargetColumn && requestedTargetColumn !== state.turn.targetColumn) {
+        return {
+          id: call.id,
+          tool: call.tool,
+          error: `Training code references target column "${requestedTargetColumn}", but the selected target column for this turn is "${state.turn.targetColumn}". Use the selected target column.`
+        };
+      }
+    }
+  }
+
   const approvalSource = resolveApprovalSource(state, call.tool);
   const enrichedArgs: Record<string, unknown> = {
     ...(call.args ?? {}),
@@ -91,6 +204,7 @@ async function executeWorkflowToolCall(
       {
         projectId: state.turn.projectId,
         toolCallId: call.id,
+        rationale: call.rationale,
         run: state.run,
         args: enrichedArgs,
         turn: state.turn
@@ -180,6 +294,57 @@ function extractLatestRunCellContext(results: ToolResult[]): {
   return null;
 }
 
+function getToolCallMetadataRecord(call: z.infer<typeof ToolCallSchema> | null | undefined): Record<string, unknown> | null {
+  if (!call?.args?.metadata || typeof call.args.metadata !== 'object' || Array.isArray(call.args.metadata)) {
+    return null;
+  }
+  return call.args.metadata as Record<string, unknown>;
+}
+
+function didRunCellSucceed(result: ToolResult | null | undefined): boolean {
+  if (!result || result.tool !== 'run_cell' || result.error) {
+    return false;
+  }
+
+  const output = getToolOutputRecord(result);
+  const status = typeof output?.status === 'string' ? output.status.toLowerCase() : undefined;
+  return status === undefined || status === 'success' || status === 'ok';
+}
+
+function hasSuccessfulFeatureLifecycleLoadInCurrentTurn(
+  state: WorkflowGraphState,
+  executedCalls: z.infer<typeof ToolCallSchema>[],
+  executedResults: ToolResult[]
+): boolean {
+  const currentTurnCalls = [
+    ...state.toolCallHistory.slice(state.turnStartToolCallCount),
+    ...executedCalls
+  ];
+  const currentTurnResults = [
+    ...state.toolResultHistory.slice(state.turnStartToolCallCount),
+    ...executedResults
+  ];
+
+  const pairCount = Math.min(currentTurnCalls.length, currentTurnResults.length);
+  for (let index = pairCount - 1; index >= 0; index -= 1) {
+    const call = currentTurnCalls[index];
+    const result = currentTurnResults[index];
+    if (call?.tool !== 'run_cell' || !didRunCellSucceed(result)) {
+      continue;
+    }
+
+    const metadata = getToolCallMetadataRecord(call);
+    if (
+      metadata?.role === 'feature-lifecycle-load'
+      && (!state.turn.datasetId || metadata.datasetId === state.turn.datasetId)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function extractLatestMaterializedFeatureId(results: ToolResult[]): string | undefined {
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index];
@@ -253,7 +418,7 @@ async function buildFeatureNotebookFollowUp(
         } catch {
           dataset = undefined;
         }
-        if (dataset) {
+        if (dataset && !hasSuccessfulFeatureLifecycleLoadInCurrentTurn(state, executedCalls, executedResults)) {
           const loadParsed = ToolCallSchema.safeParse({
             id: `wf-call-auto-load-feature-dataset-${featureId}`,
             tool: 'write_cell',
@@ -405,6 +570,59 @@ async function buildFeatureNotebookFollowUp(
   return null;
 }
 
+async function buildTrainingNotebookFollowUp(
+  state: WorkflowGraphState,
+  executedCalls: z.infer<typeof ToolCallSchema>[],
+  executedResults: ToolResult[]
+): Promise<z.infer<typeof ToolCallSchema>[] | null> {
+  if (state.turn.phase !== 'training') {
+    return null;
+  }
+
+  const latestCall = executedCalls.at(-1);
+  const latestResult = executedResults.at(-1);
+  if (!latestCall || !latestResult) {
+    return null;
+  }
+
+  const latestCallMetadata = latestCall.args?.metadata;
+  const metadataRecord = latestCallMetadata && typeof latestCallMetadata === 'object' && !Array.isArray(latestCallMetadata)
+    ? latestCallMetadata as Record<string, unknown>
+    : null;
+  const declaredCellType = typeof latestCall.args?.cellType === 'string'
+    ? latestCall.args.cellType
+    : 'code';
+  const isRunnableWrite = latestCall.tool === 'write_cell'
+    && declaredCellType !== 'markdown'
+    && latestResult.error == null;
+  const isEditCell = latestCall.tool === 'edit_cell'
+    && latestResult.error == null;
+
+  if (!isRunnableWrite && !isEditCell) {
+    return null;
+  }
+
+  const cellId = isEditCell
+    ? (typeof latestCall.args?.cellId === 'string' ? latestCall.args.cellId : undefined)
+    : extractLatestCellId([latestResult]);
+  if (!cellId) {
+    return null;
+  }
+
+  const parsed = ToolCallSchema.safeParse({
+    id: `wf-call-auto-run-training-${cellId}`,
+    tool: 'run_cell',
+    args: {
+      cellId,
+      ...(metadataRecord ? { metadata: metadataRecord } : {})
+    },
+    rationale: isEditCell
+      ? 'Re-execute the edited training cell before continuing the training workflow.'
+      : 'Execute the training code cell immediately after writing it so the workflow can continue to execute_training.'
+  });
+  return parsed.success ? [parsed.data] : null;
+}
+
 export async function executeToolsNode(
   state: WorkflowGraphState,
   config?: RunnableConfig
@@ -436,16 +654,54 @@ export async function executeToolsNode(
     }
   }
 
+  const timedOutTrainingRunCell = getLatestTrainingRunCellTimeout(state.turn.phase, nextResults);
+  if (timedOutTrainingRunCell) {
+    const timeoutOutput = getToolOutputRecord(timedOutTrainingRunCell);
+    const timeoutMs = typeof timeoutOutput?.executionMs === 'number'
+      ? timeoutOutput.executionMs
+      : undefined;
+    const timeoutMessage = typeof timeoutOutput?.error === 'string' && timeoutOutput.error.trim().length > 0
+      ? timeoutOutput.error
+      : `Training cell execution timed out${timeoutMs ? ` after ${timeoutMs}ms` : ''}.`;
+    return {
+      toolCallHistory: state.pendingToolCalls,
+      toolResultHistory: nextResults,
+      pendingToolCalls: [],
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      latestMessage: '',
+      iteration: state.iteration + 1,
+      pendingInputKind: null,
+      pauseReason: null,
+      nextStep: 'fail',
+      errorMessage: `${timeoutMessage} The kernel was interrupted to clear the stuck execution. Retry the training run or simplify the timed-out cell.`,
+      errorCode: 'TRAINING_RUN_CELL_TIMEOUT'
+    };
+  }
+
   const featureFollowUpCalls = await buildFeatureNotebookFollowUp(
     state,
     state.pendingToolCalls,
     nextResults
   );
-  if (featureFollowUpCalls && featureFollowUpCalls.length > 0) {
+  const trainingFollowUpCalls = featureFollowUpCalls && featureFollowUpCalls.length > 0
+    ? null
+    : await buildTrainingNotebookFollowUp(
+      state,
+      state.pendingToolCalls,
+      nextResults
+    );
+  const notebookFollowUpCalls = featureFollowUpCalls && featureFollowUpCalls.length > 0
+    ? featureFollowUpCalls
+    : trainingFollowUpCalls && trainingFollowUpCalls.length > 0
+      ? trainingFollowUpCalls
+      : null;
+  if (notebookFollowUpCalls && notebookFollowUpCalls.length > 0) {
     return {
       toolCallHistory: state.pendingToolCalls,
       toolResultHistory: nextResults,
-      pendingToolCalls: featureFollowUpCalls,
+      pendingToolCalls: notebookFollowUpCalls,
       askUserPayload: null,
       planExitPayload: null,
       uiPayload: null,
@@ -489,8 +745,13 @@ export async function executeToolsNode(
   for (const call of allToolCalls) {
     toolCallCounts.set(call.tool, (toolCallCounts.get(call.tool) ?? 0) + 1);
 
-    const argsKey = `${call.tool}::${JSON.stringify(call.args ?? {})}`;
-    identicalCallCounts.set(argsKey, (identicalCallCounts.get(argsKey) ?? 0) + 1);
+    // Re-running the same cell after edits is a normal notebook workflow,
+    // especially for training/debugging loops. Do not treat identical
+    // run_cell(cellId=...) calls as inherently stuck.
+    if (call.tool !== 'run_cell') {
+      const argsKey = `${call.tool}::${JSON.stringify(call.args ?? {})}`;
+      identicalCallCounts.set(argsKey, (identicalCallCounts.get(argsKey) ?? 0) + 1);
+    }
   }
 
   // Check for identical (stuck) loops first — these are always a bug.

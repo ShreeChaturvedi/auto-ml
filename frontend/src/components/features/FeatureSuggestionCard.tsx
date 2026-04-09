@@ -10,7 +10,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { FeatureSuggestionItem } from './featureEngineeringUtils';
 import {
   buildSuggestionDefaults,
-  captureFeatureLeftPaneScrollTop
+  captureFeatureLeftPaneScrollTop,
+  resolveFeatureDescription
 } from './featureEngineeringUtils';
 import type { SuggestionDraft } from './hooks/useFeaturePipelineState';
 
@@ -34,6 +35,7 @@ export function FeatureSuggestionCard({
     enabled: false,
     params: buildSuggestionDefaults(item)
   };
+  const featureDescription = resolveFeatureDescription(item.feature.description, item.rationale);
 
   const getScrollContainerState = (target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) return;
@@ -120,7 +122,7 @@ export function FeatureSuggestionCard({
 
         {detailsExpanded ? (
           <div className="space-y-1 rounded border border-border/60 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground">
-            <p>{item.rationale}</p>
+            <p>{featureDescription}</p>
             <p>
               Source column: <span className="font-medium text-foreground">{item.feature.sourceColumn}</span>
             </p>

@@ -138,15 +138,35 @@ export function useTrainingNotebookSync({
       const workbookChanged = activeWorkbookIdRef.current !== workbookId;
       activeWorkbookIdRef.current = workbookId;
 
+      const bindingChangedForCurrentWorkbook =
+        !workbookChanged
+        && resolvedNotebookIdRef.current !== null
+        && workbookNotebookId !== resolvedNotebookIdRef.current;
+      const resetCurrentWorkbook =
+        bindingChangedForCurrentWorkbook
+        && workbookNotebookId === null;
+
       if (workbookChanged) {
         setIsReady(false);
       } else if (resolvedNotebookIdRef.current) {
-        // Same workbook, already resolved — but if the binding was cleared
-        // (e.g. handleReset set notebookId to null), invalidate the cached
-        // resolution so we fall through and create a fresh notebook.
-        if (workbookNotebookId === null) {
+        // Same workbook, already resolved — but if the workbook binding was
+        // cleared or rotated to a new notebook id, invalidate the cached
+        // resolution so we reconcile against the new source of truth.
+        // For true reset (`old -> null`), clear the exposed notebook id
+        // immediately so callers never remount against the stale notebook.
+        if (bindingChangedForCurrentWorkbook) {
           resolvedNotebookIdRef.current = null;
-          setIsReady(false);
+          if (resetCurrentWorkbook) {
+            setNotebookId(null);
+            setIsReady(false);
+          } else if (workbookNotebookId) {
+            // Direct notebook rotation for the same workbook is expected
+            // during reset/create flows. Keep the shell mounted against the
+            // new notebook id while we validate the new binding in the
+            // background instead of dropping back to "preparing...".
+            setNotebookId(workbookNotebookId);
+            setIsReady(true);
+          }
         } else {
           return;
         }
@@ -189,7 +209,7 @@ export function useTrainingNotebookSync({
             // Step 3 — adopt an existing training notebook whose metadata
             // already matches this workbook's tabId (survives reloads and
             // localStorage wipes). Never adopts notebooks from other phases.
-            if (!nextId) {
+            if (!nextId && !resetCurrentWorkbook) {
               const matching = notebooks.find((entry) =>
                 matchesTrainingWorkbookNotebook(entry, workbookId)
               );

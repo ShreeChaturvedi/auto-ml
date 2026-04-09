@@ -7,7 +7,6 @@ import type { PreprocessingWorkbook } from '../preprocessingTabUtils';
 import {
   createAdoptedTab,
   createNewTab,
-  deleteActiveTab,
   invalidateActiveTabSessionState,
   renameTab,
   resetActiveTabState
@@ -38,6 +37,7 @@ interface UseTabCrudOptions {
 interface UseTabCrudResult {
   handleNewTab: () => string | null;
   adoptTab: (id: string, name: string) => void;
+  deleteTabById: (tabId: string) => string | undefined;
   handleDeleteTab: () => string | null;
   openRenameTabDialog: () => void;
   handleRenameTab: () => void;
@@ -101,21 +101,38 @@ export function useTabCrud({
     activateTab(newTab);
   }, [activateTab, handleTabSwitch, saveActiveSnapshot, tabsRef, updateTabs]);
 
-  const handleDeleteTab = useCallback(() => {
-    const { deletedTab, fallbackTab, nextTabs } = deleteActiveTab(tabsRef.current, activeTabIdRef.current);
-    if (!deletedTab || !fallbackTab) {
-      return null;
+  const deleteTabById = useCallback((tabId: string) => {
+    const currentTabs = tabsRef.current;
+    const deletedTab = currentTabs.find((tab) => tab.id === tabId) ?? null;
+    if (!deletedTab || currentTabs.length <= 1) {
+      return undefined;
+    }
+
+    const isActiveTab = activeTabIdRef.current === tabId;
+    const deletedTabIndex = currentTabs.findIndex((tab) => tab.id === tabId);
+    const fallbackTab = isActiveTab
+      ? (currentTabs[deletedTabIndex - 1] ?? currentTabs[deletedTabIndex + 1] ?? null)
+      : (currentTabs.find((tab) => tab.id === activeTabIdRef.current) ?? null);
+    if (!fallbackTab) {
+      return undefined;
     }
 
     if (projectId) {
       localStorage.removeItem(buildScopedTabStorageKey(deletedTab.id));
     }
 
+    const nextTabs = currentTabs.filter((tab) => tab.id !== tabId);
     updateTabs(() => nextTabs);
-    activateTab(fallbackTab);
+
+    if (isActiveTab) {
+      activateTab(fallbackTab);
+    }
 
     void (async () => {
-      const fallbackNotebookId = await ensureNotebookForTab(fallbackTab);
+      let fallbackNotebookId: string | null = fallbackTab.notebookId;
+      if (isActiveTab) {
+        fallbackNotebookId = await ensureNotebookForTab(fallbackTab);
+      }
       if (deletedTab.notebookId && deletedTab.notebookId !== fallbackNotebookId) {
         await deleteNotebook(deletedTab.notebookId);
       }
@@ -132,6 +149,14 @@ export function useTabCrud({
     tabsRef,
     updateTabs
   ]);
+
+  const handleDeleteTab = useCallback(() => {
+    const nextActiveTabId = deleteTabById(activeTabIdRef.current);
+    if (!nextActiveTabId) {
+      return null;
+    }
+    return nextActiveTabId;
+  }, [activeTabIdRef, deleteTabById]);
 
   const openRenameTabDialog = useCallback(() => {
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
@@ -227,6 +252,7 @@ export function useTabCrud({
   return {
     handleNewTab,
     adoptTab,
+    deleteTabById,
     handleDeleteTab,
     openRenameTabDialog,
     handleRenameTab,

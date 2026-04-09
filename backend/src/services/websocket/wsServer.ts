@@ -38,7 +38,8 @@ export class NotebookWSServer {
   constructor() {
     this.wss = new WebSocketServer({
       noServer: true,
-      path: NOTEBOOK_WS_PATH
+      path: NOTEBOOK_WS_PATH,
+      perMessageDeflate: false
     });
 
     this.setupHandlers();
@@ -222,7 +223,7 @@ export class NotebookWSServer {
 
     if (client.ws.readyState === WebSocket.OPEN) {
       try {
-        client.ws.send(JSON.stringify(event));
+        client.ws.send(JSON.stringify(event), { compress: false });
       } catch (error) {
         appLogger.error(`[ws] Failed to send to client ${clientId}:`, error);
       }

@@ -290,4 +290,14 @@ describe('useFeaturePipelineState', () => {
     expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
     expect(mockState.setFeatureRunIdMock).toHaveBeenLastCalledWith('feat-123');
   });
+
+  it('does not auto-select the first dataset column as the FE target', async () => {
+    const { result } = renderHook(() => useFeaturePipelineState('p1'));
+
+    await waitFor(() => {
+      expect(result.current.selectedDataset).toBe('dataset-1');
+    });
+
+    expect(result.current.targetColumn).toBeUndefined();
+  });
 });

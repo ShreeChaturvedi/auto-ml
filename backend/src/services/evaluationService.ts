@@ -27,6 +27,40 @@ const logger = appLogger.child({ service: 'evaluationService' });
 
 const EVALUATION_TIMEOUT_MS = 300_000; // 5 minutes
 
+function sanitizeEvaluationErrorMessage(message: string): string {
+  const tracebackIndex = message.indexOf('Traceback');
+  const trimmed = (tracebackIndex >= 0 ? message.slice(tracebackIndex) : message).trim();
+  const lines = trimmed.split('\n');
+  let omittedFutureWarnings = 0;
+
+  const filtered = lines.filter((line) => {
+    const normalized = line.trim();
+    const isFutureWarning =
+      normalized.includes('FutureWarning:') ||
+      normalized.includes('Series.view is deprecated');
+    if (isFutureWarning) {
+      omittedFutureWarnings += 1;
+      return false;
+    }
+    if (
+      omittedFutureWarnings > 0 && (
+        normalized.startsWith('ordinal =') ||
+        normalized.startsWith('Use ``astype``') ||
+        normalized.includes('deprecated and will be removed')
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const cleaned = filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (omittedFutureWarnings > 0 && cleaned) {
+    return `${cleaned}\n\n[${omittedFutureWarnings} FutureWarning lines omitted]`;
+  }
+  return cleaned || trimmed || message;
+}
+
 interface BuildEvaluationScriptOptions {
   modelPath: string;
   datasetPath: string;
@@ -73,6 +107,13 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   // ── Output dir ──
   lines.push(...buildOutputDirSetup(outputDir));
 
+  // ── Compatibility helpers for serialized sklearn FunctionTransformer callables ──
+  lines.push('def date_to_ordinal(X_col):');
+  lines.push('    s = pd.Series(X_col.squeeze() if hasattr(X_col, "squeeze") else X_col)');
+  lines.push('    dt = pd.to_datetime(s, errors="coerce")');
+  lines.push('    return pd.DataFrame({"DATE_ordinal": dt.map(lambda x: x.toordinal() if pd.notna(x) else np.nan)})');
+  lines.push('');
+
   // ── Load pipeline ──
   lines.push(`pipeline = joblib.load(${JSON.stringify(modelPath)})`);
   lines.push('');
@@ -101,6 +142,19 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('result = {}');
   lines.push(`result["taskType"] = ${JSON.stringify(taskType)}`);
   lines.push('');
+  lines.push('# Resolve the fitted estimator step robustly');
+  lines.push('fitted_model = None');
+  lines.push('if hasattr(pipeline, "named_steps"):');
+  lines.push('    fitted_model = pipeline.named_steps.get("model")');
+  lines.push('    if fitted_model is None:');
+  lines.push('        fitted_model = pipeline.named_steps.get("regressor")');
+  lines.push('    if fitted_model is None:');
+  lines.push('        fitted_model = pipeline.named_steps.get("classifier")');
+  lines.push('if fitted_model is None and hasattr(pipeline, "steps") and len(pipeline.steps) > 0:');
+  lines.push('    fitted_model = pipeline.steps[-1][1]');
+  lines.push('if fitted_model is None:');
+  lines.push('    fitted_model = pipeline');
+  lines.push('');
 
   // ── Feature importance ──
   lines.push('# Feature importance');
@@ -113,7 +167,6 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('    ohe_feature_names = feature_columns');
   lines.push('');
   lines.push('# Model-based importance');
-  lines.push('fitted_model = pipeline.named_steps["model"]');
   lines.push('if hasattr(fitted_model, "feature_importances_"):');
   lines.push('    fi["model_based"] = {');
   lines.push('        "features": ohe_feature_names,');
@@ -213,19 +266,19 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('try:');
     lines.push('  if has_proba:');
     lines.push('    y_proba = pipeline.predict_proba(X_test)');
-    lines.push('    classes = [str(c) for c in pipeline.named_steps["model"].classes_]');
+    lines.push('    classes = [str(c) for c in fitted_model.classes_]');
     lines.push('    n_classes = len(classes)');
     lines.push('');
     lines.push('    # Binarize for multiclass curves');
     lines.push('    y_test_bin = None');
     lines.push('    if n_classes > 2:');
     lines.push('        from sklearn.preprocessing import label_binarize');
-    lines.push('        y_test_bin = label_binarize(y_test, classes=pipeline.named_steps["model"].classes_)');
+    lines.push('        y_test_bin = label_binarize(y_test, classes=fitted_model.classes_)');
     lines.push('');
     lines.push('    # ROC curves');
     lines.push('    roc_curves = {}');
     lines.push('    if n_classes == 2:');
-    lines.push('        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1], pos_label=pipeline.named_steps["model"].classes_[1])');
+    lines.push('        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1], pos_label=fitted_model.classes_[1])');
     lines.push('        roc_auc = float(auc(fpr, tpr))');
     lines.push('        roc_curves[classes[1]] = {"fpr": fpr.tolist(), "tpr": tpr.tolist(), "auc": roc_auc}');
     lines.push('    else:');
@@ -238,8 +291,8 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    # Precision-recall curves');
     lines.push('    pr_curves = {}');
     lines.push('    if n_classes == 2:');
-    lines.push('        prec, rec, _ = precision_recall_curve(y_test, y_proba[:, 1], pos_label=pipeline.named_steps["model"].classes_[1])');
-    lines.push('        ap = float(average_precision_score(y_test == pipeline.named_steps["model"].classes_[1], y_proba[:, 1]))');
+    lines.push('        prec, rec, _ = precision_recall_curve(y_test, y_proba[:, 1], pos_label=fitted_model.classes_[1])');
+    lines.push('        ap = float(average_precision_score(y_test == fitted_model.classes_[1], y_proba[:, 1]))');
     lines.push('        pr_curves[classes[1]] = {"precision": prec.tolist(), "recall": rec.tolist(), "ap": ap}');
     lines.push('    else:');
     lines.push('        for i, cls in enumerate(classes):');
@@ -251,7 +304,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    # Calibration curve (binary only)');
     lines.push('    if n_classes == 2:');
     lines.push('        from sklearn.calibration import calibration_curve as cal_curve');
-    lines.push('        prob_true, prob_pred = cal_curve(y_test == pipeline.named_steps["model"].classes_[1], y_proba[:, 1], n_bins=10)');
+    lines.push('        prob_true, prob_pred = cal_curve(y_test == fitted_model.classes_[1], y_proba[:, 1], n_bins=10)');
     lines.push('        result["calibration_curve"] = {');
     lines.push('            "prob_true": prob_true.tolist(),');
     lines.push('            "prob_pred": prob_pred.tolist(),');
@@ -278,7 +331,7 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('');
   }
 
-  // ── Save predictions parquet (includes features for error analysis) ──
+  // ── Save predictions artifact (includes features for error analysis) ──
   lines.push('# Save predictions — include features so error analysis can build an error tree');
   lines.push('pred_df = X_test.reset_index(drop=True)');
   lines.push('pred_df["y_true"] = y_test.values');
@@ -294,7 +347,13 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('residuals = (pred_df["y_true"] - pred_df["y_pred"]).abs()');
     lines.push('pred_df["is_correct"] = residuals <= residuals.std()');
   }
-  lines.push('pred_df.to_parquet(os.path.join(output_dir, "predictions.parquet"), index=False)');
+  lines.push('predictions_filename = "predictions.parquet"');
+  lines.push('try:');
+  lines.push('    pred_df.to_parquet(os.path.join(output_dir, predictions_filename), index=False)');
+  lines.push('except ImportError:');
+  lines.push('    predictions_filename = "predictions.csv"');
+  lines.push('    pred_df.to_csv(os.path.join(output_dir, predictions_filename), index=False)');
+  lines.push('result["predictionsArtifact"] = predictions_filename');
   lines.push('');
 
   // ── Timing ──
@@ -315,7 +374,6 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('# SHAP computation (best-effort, failure does not block evaluation)');
   lines.push('try:');
   lines.push('    import shap');
-  lines.push('    fitted_model = pipeline.named_steps["model"]');
   lines.push('    X_shap = X_test.iloc[:1000] if len(X_test) > 1000 else X_test');
   lines.push('    X_shap_transformed = pipeline.named_steps["preprocessor"].transform(X_shap)');
   lines.push('    shap_feature_names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())');
@@ -397,8 +455,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
     const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
 
     // 6. Pre-compute workspace paths (same pattern as containerOrchestrator)
-    const workspacePath = join(env.executionWorkspaceDir, model.projectId, 'model-runtime');
-    const workspaceModelPath = join(workspacePath, 'models', modelId, 'model.joblib');
+    const workspaceModelPath = join('models', modelId, 'model.joblib');
     const testSize = resolveModelTestSize(model);
 
     // 7. Orchestrate container execution
@@ -445,6 +502,11 @@ export async function runEvaluation(modelId: string): Promise<void> {
         permanent: 'predictions.parquet',
         optional: true,
       },
+      {
+        workspace: `eval/${modelId}/predictions.csv`,
+        permanent: 'predictions.csv',
+        optional: true,
+      },
     ]);
 
     // 10. Set evaluationStatus = 'ready'
@@ -452,11 +514,14 @@ export async function runEvaluation(modelId: string): Promise<void> {
       ...current,
       evaluationStatus: 'ready' as const,
       evaluationComputedAt: new Date().toISOString(),
+      evaluationError: undefined,
     }));
 
     logger.info('Evaluation completed successfully', { modelId });
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorMessage = sanitizeEvaluationErrorMessage(
+      err instanceof Error ? err.message : String(err),
+    );
     logger.error('Evaluation failed', { modelId, error: errorMessage });
 
     // Set evaluationStatus = 'failed'

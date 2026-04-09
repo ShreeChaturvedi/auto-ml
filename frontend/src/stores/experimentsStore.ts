@@ -42,7 +42,7 @@ interface ExperimentsState {
   toggleComparison: (modelId: string) => void;
   clearComparison: () => void;
   setExperimentView: (view: ExperimentView) => void;
-  fetchEvaluation: (modelId: string) => Promise<void>;
+  fetchEvaluation: (modelId: string, force?: boolean) => Promise<void>;
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
   fetchReport: (projectId: string, models: ModelRecord[]) => Promise<void>;
@@ -231,8 +231,8 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     set({ experimentView: view });
   },
 
-  fetchEvaluation: async (modelId) => {
-    if (modelId in get().evaluations) return;
+  fetchEvaluation: async (modelId, force = false) => {
+    if (!force && modelId in get().evaluations) return;
     const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
@@ -415,7 +415,8 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
 
   retryEvaluation: async (modelId) => {
     get().purgeModelCache(modelId);
-    await get().fetchEvaluation(modelId);
+    await experimentsApi.retryEvaluation(modelId);
+    await get().fetchEvaluation(modelId, true);
   },
 
   invalidateReport: () => {

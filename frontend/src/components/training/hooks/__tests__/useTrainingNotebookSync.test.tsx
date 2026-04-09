@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -297,6 +298,194 @@ describe('useTrainingNotebookSync', () => {
     expect(notebookApiMocks.createNotebook).toHaveBeenCalledTimes(2);
     expect(setWorkbookNotebookId).toHaveBeenCalledWith('training-wb-1', 'created-training-nb-1');
     expect(setWorkbookNotebookId).toHaveBeenCalledWith('training-wb-2', 'created-training-nb-2');
+  });
+
+  it('treats a same-workbook notebook reset as a forced rotation instead of re-adopting the previous notebook', async () => {
+    notebookApiMocks.notebooks = [
+      {
+        notebookId: 'bound-training-nb',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      }
+    ];
+    const setWorkbookNotebookId = vi.fn();
+    type CreatedNotebook = {
+      notebookId: string;
+      name: string;
+      metadata: Record<string, unknown>;
+    };
+    let resolveCreatedNotebook: ((value: CreatedNotebook) => void) | undefined;
+
+    (notebookApiMocks.createNotebook as ReturnType<typeof vi.fn>).mockImplementation(
+      async () =>
+        await new Promise<CreatedNotebook>((resolve) => {
+          resolveCreatedNotebook = resolve;
+        })
+    );
+
+    const { result, rerender } = renderHook(
+      (props: { activeWorkbook: WorkbookEntry }) => useTrainingNotebookSync({
+        projectId: 'project-1',
+        activeWorkbook: props.activeWorkbook,
+        setWorkbookNotebookId
+      }),
+      {
+        initialProps: {
+          activeWorkbook: makeWorkbook({
+            id: 'training-wb-1',
+            name: 'Workbook 1',
+            notebookId: 'bound-training-nb'
+          })
+        }
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'bound-training-nb', isReady: true });
+    });
+
+    rerender({
+      activeWorkbook: makeWorkbook({
+        id: 'training-wb-1',
+        name: 'Workbook 1',
+        notebookId: null
+      })
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: null, isReady: false });
+    });
+
+    expect(notebookApiMocks.createNotebook).toHaveBeenCalledTimes(1);
+
+    if (!resolveCreatedNotebook) {
+      throw new Error('Expected createNotebook resolver to be assigned');
+    }
+    resolveCreatedNotebook({
+      notebookId: 'created-after-reset',
+      name: 'Workbook 1',
+      metadata: {
+        phase: 'training',
+        tabId: 'training-wb-1',
+        tabName: 'Workbook 1'
+      }
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'created-after-reset', isReady: true });
+    });
+
+    expect(setWorkbookNotebookId).toHaveBeenCalledWith('training-wb-1', 'created-after-reset');
+  });
+
+  it('reconciles a same-workbook notebookId change when reset rotates directly to a fresh notebook', async () => {
+    notebookApiMocks.notebooks = [
+      {
+        notebookId: 'training-nb-old',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      },
+      {
+        notebookId: 'training-nb-new',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      }
+    ];
+    const setWorkbookNotebookId = vi.fn();
+
+    const { result, rerender } = renderHook(
+      (props: { activeWorkbook: WorkbookEntry }) => useTrainingNotebookSync({
+        projectId: 'project-1',
+        activeWorkbook: props.activeWorkbook,
+        setWorkbookNotebookId
+      }),
+      {
+        initialProps: {
+          activeWorkbook: makeWorkbook({
+            id: 'training-wb-1',
+            name: 'Workbook 1',
+            notebookId: 'training-nb-old'
+          })
+        }
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'training-nb-old', isReady: true });
+    });
+
+    rerender({
+      activeWorkbook: makeWorkbook({
+        id: 'training-wb-1',
+        name: 'Workbook 1',
+        notebookId: 'training-nb-new'
+      })
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'training-nb-new', isReady: true });
+    });
+
+    expect(notebookApiMocks.createNotebook).not.toHaveBeenCalled();
+  });
+
+  it('keeps the notebook ready while a same-workbook binding rotates directly to a fresh notebook', async () => {
+    notebookApiMocks.notebooks = [
+      {
+        notebookId: 'training-nb-old',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      },
+      {
+        notebookId: 'training-nb-new',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      }
+    ];
+    const setWorkbookNotebookId = vi.fn();
+    const transitions: Array<{ notebookId: string | null; isReady: boolean }> = [];
+
+    const { result, rerender } = renderHook(
+      (props: { activeWorkbook: WorkbookEntry }) => {
+        const state = useTrainingNotebookSync({
+          projectId: 'project-1',
+          activeWorkbook: props.activeWorkbook,
+          setWorkbookNotebookId
+        });
+        const { notebookId, isReady } = state;
+
+        useEffect(() => {
+          transitions.push({ notebookId, isReady });
+        }, [isReady, notebookId]);
+
+        return state;
+      },
+      {
+        initialProps: {
+          activeWorkbook: makeWorkbook({
+            id: 'training-wb-1',
+            name: 'Workbook 1',
+            notebookId: 'training-nb-old'
+          })
+        }
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'training-nb-old', isReady: true });
+    });
+
+    transitions.length = 0;
+
+    rerender({
+      activeWorkbook: makeWorkbook({
+        id: 'training-wb-1',
+        name: 'Workbook 1',
+        notebookId: 'training-nb-new'
+      })
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'training-nb-new', isReady: true });
+    });
+
+    expect(transitions).toContainEqual({ notebookId: 'training-nb-new', isReady: true });
+    expect(transitions).not.toContainEqual({ notebookId: null, isReady: false });
   });
 
   it('clears state when projectId or activeWorkbook becomes undefined', async () => {

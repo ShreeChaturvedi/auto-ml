@@ -401,8 +401,8 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     const columns = selectedDatasetFile.metadata?.columns ?? [];
     if (columns.length === 0) return;
 
-    if (!targetColumn || !columns.includes(targetColumn)) {
-      setTargetColumn(columns[0]);
+    if (targetColumn && !columns.includes(targetColumn)) {
+      setTargetColumn(undefined);
     }
   }, [selectedDatasetFile, targetColumn]);
 

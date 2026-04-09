@@ -16,6 +16,7 @@ const mockFeatureStore = vi.hoisted(() => ({
     method: string;
     sourceColumn: string;
     secondaryColumn?: string;
+    description?: string;
     enabled: boolean;
     code?: string;
   }>,
@@ -613,6 +614,55 @@ describe('FeatureEngineeringAdapter', () => {
         id: 'feat-ratio',
         code: "df['department_usage_share'] = df.groupby('CF EE Division')['usage_count'].transform(lambda x: x / x.sum())",
         secondaryColumn: 'CF EE Department'
+      })
+    );
+  });
+
+  it('replaces placeholder feature descriptions with the register rationale', () => {
+    mockFeatureStore.features = [
+      {
+        id: 'feat-division-missing',
+        projectId: 'project-1',
+        featureName: 'CF_EE_Division_missing_flag',
+        method: 'missing_indicator',
+        sourceColumn: 'CF EE Division',
+        description: 'Feature proposed — awaiting user review',
+        enabled: true
+      }
+    ];
+
+    const adapter = createFeatureEngineeringAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: 'churn',
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'feature-session'
+    });
+
+    adapter.toolRegistry.register_feature.onResult?.(
+      {
+        id: 'call-register-5',
+        tool: 'register_feature',
+        args: {
+          featureId: 'feat-division-missing',
+          rationale: 'Create a binary feature that marks rows where CF EE Division is missing or blank.'
+        }
+      },
+      {
+        id: 'call-register-5',
+        tool: 'register_feature',
+        output: {
+          featureId: 'feat-division-missing',
+          status: 'ok'
+        }
+      }
+    );
+
+    expect(mockFeatureStore.upsertFeature).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'feat-division-missing',
+        description: 'Create a binary feature that marks rows where CF EE Division is missing or blank.'
       })
     );
   });

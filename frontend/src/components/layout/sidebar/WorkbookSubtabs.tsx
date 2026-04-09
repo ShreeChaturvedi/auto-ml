@@ -66,7 +66,7 @@ export function WorkbookSubtabs({
       if (activeWorkbookId === workbookId) navigateToPhase(nextActiveId);
       return;
     }
-    // Fallback for phases without a registered handler (preprocessing, training)
+    // Fallback for phases without a registered handler.
     removeWorkbook(phase, workbookId);
     if (activeWorkbookId === workbookId) navigateToPhase();
   };

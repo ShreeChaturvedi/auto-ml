@@ -165,6 +165,21 @@ export class FileModelRepository implements ModelRepository {
 
 export class PgModelRepository implements ModelRepository {
   private readonly table = 'models';
+  private columnCache: Promise<Set<string>> | null = null;
+
+  private async getColumns(): Promise<Set<string>> {
+    if (!this.columnCache) {
+      this.columnCache = (async () => {
+        const pool = getDbPool();
+        const result = await pool.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+          [this.table]
+        );
+        return new Set(result.rows.map((row) => String(row.column_name)));
+      })();
+    }
+    return this.columnCache;
+  }
 
   private mapRowToModel(row: Record<string, unknown>): ModelRecord {
     const record: ModelRecord = {
@@ -226,30 +241,45 @@ export class PgModelRepository implements ModelRepository {
   async create(input: Omit<ModelRecord, 'modelId' | 'createdAt' | 'updatedAt'>): Promise<ModelRecord> {
     const pool = getDbPool();
     const id = randomUUID();
+    const columns = await this.getColumns();
+
+    const insertColumns = [
+      'model_id', 'project_id', 'dataset_id', 'name', 'template_id', 'task_type',
+      'library', 'algorithm', 'parameters', 'metrics', 'status',
+      'version', 'training_ms', 'target_column', 'feature_columns', 'sample_count',
+      'artifact', 'error', 'metadata', 'evaluation_status', 'evaluation_computed_at', 'evaluation_error'
+    ];
+    const insertValues: unknown[] = [
+      id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
+      input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
+      input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, toJsonb(input.featureColumns), input.sampleCount ?? null,
+      input.artifact ?? null, input.error ?? null, input.metadata ?? null,
+      input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null
+    ];
+
+    if (columns.has('feature_types')) {
+      insertColumns.push('feature_types');
+      insertValues.push(toJsonb(input.featureTypes ?? null));
+    }
+    if (columns.has('sample_request')) {
+      insertColumns.push('sample_request');
+      insertValues.push(toJsonb(input.sampleRequest ?? null));
+    }
+
+    const placeholders = insertColumns.map((column, index) => {
+      if (column === 'version') {
+        return `COALESCE($${index + 1}, (SELECT COALESCE(MAX(version), 0) + 1 FROM ${this.table} WHERE project_id = $2))`;
+      }
+      return `$${index + 1}`;
+    });
 
     const result = await pool.query(
       `INSERT INTO ${this.table} (
-        model_id, project_id, dataset_id, name, template_id, task_type,
-        library, algorithm, parameters, metrics, status,
-        version, training_ms, target_column, feature_columns, sample_count,
-        artifact, error, metadata, evaluation_status, evaluation_computed_at, evaluation_error,
-        feature_types, sample_request
+        ${insertColumns.join(', ')}
       ) VALUES (
-        $1, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $11,
-        COALESCE($12, (SELECT COALESCE(MAX(version), 0) + 1 FROM ${this.table} WHERE project_id = $2)),
-        $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22,
-        $23, $24
+        ${placeholders.join(', ')}
       ) RETURNING *`,
-      [
-        id, input.projectId, input.datasetId, input.name, input.templateId, input.taskType,
-        input.library, input.algorithm, input.parameters ?? {}, input.metrics ?? {}, input.status,
-        input.version ?? null, input.trainingMs ?? null, input.targetColumn ?? null, toJsonb(input.featureColumns), input.sampleCount ?? null,
-        input.artifact ?? null, input.error ?? null, input.metadata ?? null,
-        input.evaluationStatus ?? null, input.evaluationComputedAt ?? null, input.evaluationError ?? null,
-        toJsonb(input.featureTypes ?? null), toJsonb(input.sampleRequest ?? null)
-      ]
+      insertValues
     );
     return this.mapRowToModel(result.rows[0]);
   }
@@ -263,25 +293,40 @@ export class PgModelRepository implements ModelRepository {
 
     const updated = updater(current);
     const pool = getDbPool();
+    const columns = await this.getColumns();
+
+    const updateColumns = [
+      'project_id', 'dataset_id', 'name', 'template_id', 'task_type',
+      'library', 'algorithm', 'parameters', 'metrics', 'status',
+      'version', 'training_ms', 'target_column', 'feature_columns', 'sample_count',
+      'artifact', 'error', 'metadata',
+      'evaluation_status', 'evaluation_computed_at', 'evaluation_error'
+    ];
+    const updateValues: unknown[] = [
+      updated.projectId, updated.datasetId, updated.name, updated.templateId, updated.taskType,
+      updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
+      updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, toJsonb(updated.featureColumns), updated.sampleCount ?? null,
+      updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
+      updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null
+    ];
+
+    if (columns.has('feature_types')) {
+      updateColumns.push('feature_types');
+      updateValues.push(toJsonb(updated.featureTypes ?? null));
+    }
+    if (columns.has('sample_request')) {
+      updateColumns.push('sample_request');
+      updateValues.push(toJsonb(updated.sampleRequest ?? null));
+    }
+
+    const assignments = updateColumns.map((column, index) => `${column} = $${index + 2}`);
     const result = await pool.query(
       `UPDATE ${this.table} SET
-        project_id = $2, dataset_id = $3, name = $4, template_id = $5, task_type = $6,
-        library = $7, algorithm = $8, parameters = $9, metrics = $10, status = $11,
-        version = $12, training_ms = $13, target_column = $14, feature_columns = $15, sample_count = $16,
-        artifact = $17, error = $18, metadata = $19,
-        evaluation_status = $20, evaluation_computed_at = $21, evaluation_error = $22,
-        feature_types = $23, sample_request = $24,
+        ${assignments.join(', ')},
         updated_at = NOW()
       WHERE model_id = $1
       RETURNING *`,
-      [
-        modelId, updated.projectId, updated.datasetId, updated.name, updated.templateId, updated.taskType,
-        updated.library, updated.algorithm, updated.parameters ?? {}, updated.metrics ?? {}, updated.status,
-        updated.version ?? null, updated.trainingMs ?? null, updated.targetColumn ?? null, toJsonb(updated.featureColumns), updated.sampleCount ?? null,
-        updated.artifact ?? null, updated.error ?? null, updated.metadata ?? null,
-        updated.evaluationStatus ?? null, updated.evaluationComputedAt ?? null, updated.evaluationError ?? null,
-        toJsonb(updated.featureTypes ?? null), toJsonb(updated.sampleRequest ?? null)
-      ]
+      [modelId, ...updateValues]
     );
 
     if (result.rowCount === 0) return undefined;

@@ -69,6 +69,7 @@ if (hasDatabaseConfiguration()) {
 }
 
 attachWebSocketUpgradeRouter(server, upgradeHandlers);
+
 /**
  * Graceful shutdown handler - cleans up containers before exit
  */

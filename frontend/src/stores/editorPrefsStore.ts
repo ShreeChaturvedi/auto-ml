@@ -168,7 +168,7 @@ function getEditorMonacoPrefState(state: EditorPrefsState): EditorMonacoPrefStat
  * const opts = useEditorMonacoOptions();
  * <MonacoEditor options={opts} />
  */
-export function getEditorMonacoOptions(state: EditorPrefsState) {
+export function getEditorMonacoOptions(state: EditorMonacoPrefState) {
   return {
     fontSize: state.fontSize,
     fontFamily: `'${state.fontFamily}', monospace`,

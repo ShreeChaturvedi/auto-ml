@@ -311,6 +311,29 @@ describe('notebookStore', () => {
     });
   });
 
+  describe('disconnect', () => {
+    it('closes the active websocket client and clears it from store state', () => {
+      useNotebookStore.setState({
+        notebook: { notebookId: 'nb-1' } as never,
+        wsClient: {
+          unsubscribe: notebookWsClientMock.unsubscribe,
+          disconnect: notebookWsClientMock.disconnect
+        } as never,
+        currentProjectId: 'project-1',
+        activeNotebookId: 'nb-1',
+        isConnected: true,
+      });
+
+      useNotebookStore.getState().disconnect();
+
+      expect(notebookWsClientMock.unsubscribe).toHaveBeenCalledWith('nb-1');
+      expect(notebookWsClientMock.disconnect).toHaveBeenCalledTimes(1);
+      expect(useNotebookStore.getState().wsClient).toBeNull();
+      expect(useNotebookStore.getState().activeNotebookId).toBeNull();
+      expect(useNotebookStore.getState().isConnected).toBe(false);
+    });
+  });
+
   describe('removeCellLocally', () => {
     it('removes a cell and adjusts positions of cells after it', () => {
       const cellA = makeCellFixture({ cellId: 'a', position: 0 });

@@ -11,6 +11,12 @@ export async function fetchEvaluation(modelId: string): Promise<EvaluationResult
   return apiRequest<EvaluationResult>(`/experiments/${modelId}/evaluation`);
 }
 
+export async function retryEvaluation(modelId: string): Promise<{ ok: boolean; evaluationStatus: string }> {
+  return apiRequest<{ ok: boolean; evaluationStatus: string }>(`/experiments/${modelId}/evaluation/retry`, {
+    method: 'POST',
+  });
+}
+
 export async function fetchShap(modelId: string): Promise<ShapResult> {
   return apiRequest<ShapResult>(`/experiments/${modelId}/shap`);
 }

@@ -1,89 +1,153 @@
+/*
+ * Chat deep-dive visual (spec §4.5 deep-dive 1). Hosts the real
+ * `<LlmChatComposer readOnly>` + `<ToolIndicator>` island plus a CSS-only
+ * cursor sprite and a scripted send-button pulse. The outer `.cursor-outline`
+ * frame lives on `DeepDive.astro`'s wrapper, so this root intentionally has
+ * no border / background — it's just the content area.
+ */
+
 .root {
+  position: relative;
   padding: 32px;
-  height: 100%;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  position: relative;
+  justify-content: center;
+  gap: 24px;
+  /* Stacking context so the absolutely-positioned cursor sprite layers
+   * above the composer without leaking outside the frame. */
+  isolation: isolate;
 }
 
-.toolRows {
+/* ---------------------------------------------------------------------------
+ * Voice button (static mock — no audio dependencies)
+ * ------------------------------------------------------------------------- */
+.voiceButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  width: 36px;
+  border-radius: 9999px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+  flex-shrink: 0;
+  transition:
+    background-color 180ms var(--ease-out-quart),
+    color 180ms var(--ease-out-quart),
+    transform 180ms var(--ease-out-quart);
+}
+.voiceButton:focus { outline: none; }
+.voiceIcon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Click-pulse: brief brightness + scale bump when the cursor "clicks". */
+.voiceButtonClicked {
+  background: hsl(0 0% 100% / 0.08);
+  color: var(--text);
+  transform: scale(0.94);
+}
+
+/* ---------------------------------------------------------------------------
+ * Send-button pulse — targets the real composer's aria-labeled send button
+ * via a descendant selector so we don't have to fork the component. The
+ * keyframe runs once when `.rootSendPulse` is applied, then the class is
+ * removed as the phase advances to `tools-streaming`.
+ * ------------------------------------------------------------------------- */
+.rootSendPulse :global(button[aria-label='Send message']) {
+  animation: send-pulse 520ms var(--ease-out-quart);
+}
+
+@keyframes send-pulse {
+  0%   { transform: scale(1);    filter: brightness(1); }
+  35%  { transform: scale(1.14); filter: brightness(1.25); }
+  100% { transform: scale(1);    filter: brightness(1); }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tool-call strip — wraps the real `<ToolIndicator>` and fades it in on
+ * IO-enter's `tools-streaming` phase. The inner ToolIndicator handles all
+ * per-row rendering (shimmer on running, icon on done).
+ * ------------------------------------------------------------------------- */
+.toolsStrip {
   background: var(--surface-1);
   border: 0.8px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateY(6px);
-  transition: opacity var(--dur-med) var(--ease-out-quart),
-              transform var(--dur-med) var(--ease-out-quart);
-}
-.toolRowsVisible { opacity: 1; transform: translateY(0); }
-
-.toolRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-top: 0.8px solid var(--border);
-  font-size: 13px;
-  opacity: 0;
-  transform: translateX(-4px);
-  animation: tool-row-in 400ms var(--ease-out-quart) forwards;
-}
-.toolRow:first-child { border-top: 0; }
-.toolRowCheck {
-  color: rgba(139, 92, 246, 0.9);
-  flex-shrink: 0;
-}
-.toolRowLabel { color: var(--text); flex: 1; }
-.toolRowHint {
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 11px;
-  color: var(--text-muted);
+  padding: 6px 4px;
+  animation: tools-strip-in 520ms var(--ease-out-quart);
 }
 
-@keyframes tool-row-in {
-  to { opacity: 1; transform: translateX(0); }
+@keyframes tools-strip-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------------------------------------------------------------------------
+ * Cursor sprite
+ * The sprite is rendered with an absolute (left, top) driven from the real
+ * voice button's bounding rect (see `cursorTarget` in ChatDeepDive.tsx).
+ * The CSS here is responsible for:
+ *   • hiding it pre-glide
+ *   • transitioning left/top for the glide
+ *   • a click-pulse scale + fade on `cursorSpriteClick`
+ * ------------------------------------------------------------------------- */
 .cursorSprite {
   position: absolute;
-  bottom: 42px;
-  left: 140px;
-  width: 14px;
-  height: 14px;
+  /* Default offscreen origin — overridden by inline left/top on glide. */
+  left: 16px;
+  top: 100%;
+  width: 16px;
+  height: 16px;
   color: var(--text);
   pointer-events: none;
-  will-change: transform, opacity;
-  transition: transform 600ms var(--ease-out-quart),
-              opacity 200ms var(--ease-out-quart);
+  z-index: 10;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center;
+  will-change: left, top, transform, opacity;
+  transition:
+    left 800ms var(--ease-out-expo),
+    top 800ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-quart),
+    opacity 260ms var(--ease-out-quart);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
 }
 
-/* t=0 — sprite enters from lower-left, fully transparent. */
+/* t=0 — invisible, parked at the default offscreen origin. */
 .cursorSpriteStart {
-  transform: translate(-120px, 80px) scale(1);
   opacity: 0;
 }
 
-/* t=200ms — sprite glides into place over the voice-input button. */
+/* t≈2000ms — fully visible, glide target set via inline left/top. */
 .cursorSpriteGlided {
-  transform: translate(0, 0) scale(1);
   opacity: 1;
 }
 
-/* t=800ms — brief click pulse then fade out. */
+/* t≈2800ms — click pulse then fade. */
 .cursorSpriteClick {
-  transform: translate(0, 0) scale(0.82);
   opacity: 0;
-  transition: transform 180ms var(--ease-out-quart),
-              opacity 260ms var(--ease-out-quart);
+  transform: translate(-50%, -50%) scale(0.82);
 }
 
+/* ---------------------------------------------------------------------------
+ * Reduced motion — the scripted timeline is skipped in TSX (state jumps to
+ * `done`), so we only need to freeze any CSS-driven animation + transition.
+ * ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .cursorSprite,
   .cursorSpriteStart,
   .cursorSpriteGlided,
   .cursorSpriteClick {
     transition: none;
+    animation: none;
+  }
+  .toolsStrip {
+    animation: none;
+  }
+  .rootSendPulse :global(button[aria-label='Send message']) {
+    animation: none;
   }
 }

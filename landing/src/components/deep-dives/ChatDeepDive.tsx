@@ -1,14 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LlmChatComposer } from '@frontend/components/llm/LlmChatComposer';
+import { ToolIndicator } from '@frontend/components/llm/ToolIndicator';
+import type { MentionInputHandle } from '@frontend/components/llm/MentionInput';
 import type {
   AssistantModelOption,
   ReasoningEffort,
   ReasoningEffortOption,
 } from '@frontend/components/llm/modelOptions';
-import { Check, MousePointer2 } from 'lucide-react';
+import type { ToolCall, ToolResult } from '@frontend/types/llmUi';
+import { Mic, MousePointer2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './ChatDeepDive.module.css';
+
+// -----------------------------------------------------------------------------
+// Static demo fixtures
+// -----------------------------------------------------------------------------
 
 const DYNAMIC_PLACEHOLDERS = [
   'Describe your goal…',
@@ -19,15 +26,48 @@ const DYNAMIC_PLACEHOLDERS = [
 const SCRIPTED_TRANSCRIPTION =
   'train a churn model and tell me which features matter';
 
-const TOOL_CALLS = [
-  { id: 't1', label: 'Read dataset',       hint: 'customers.csv · 2,530 rows' },
-  { id: 't2', label: 'Profile columns',    hint: '14 columns · 4 issues found' },
-  { id: 't3', label: 'Propose transforms', hint: '5 imputations + 1 drop' },
-  { id: 't4', label: 'Create plan',        hint: '5-step training plan ready' },
+const TYPING_INTERVAL_MS = 25;
+
+/**
+ * Four real ToolCalls mapped to the spec's label sequence. These reuse the
+ * canonical `getToolLabel` tense-based rendering from ToolDisplayHelpers so
+ * the strip reads as real streaming tool-call rows ("Reading dataset
+ * profile" → "Read dataset profile for customers.csv") rather than mock
+ * HTML. Args/output shapes match what the real tool-display helpers expect
+ * so `getResultHint` can surface the row/col hint on completion.
+ */
+const TOOL_CALL_FIXTURES: ToolCall[] = [
+  { id: 'tc-read',    tool: 'get_dataset_sample',         args: { limit: 50 } },
+  { id: 'tc-profile', tool: 'get_dataset_profile',        args: {} },
+  { id: 'tc-propose', tool: 'propose_transformation_step', args: { title: 'column transforms' } },
+  { id: 'tc-plan',    tool: 'propose_transformation_step', args: { title: 'training plan' } },
 ];
 
-// Minimal demo fixtures matching the real frontend types. These are never
-// actually interactive — the composer is mounted in readOnly mode.
+const TOOL_RESULT_FIXTURES: Record<string, ToolResult> = {
+  'tc-read': {
+    id: 'tc-read',
+    tool: 'get_dataset_sample',
+    output: { filename: 'customers.csv', sample: Array.from({ length: 50 }) },
+  },
+  'tc-profile': {
+    id: 'tc-profile',
+    tool: 'get_dataset_profile',
+    output: { filename: 'customers.csv', nRows: 2530, nCols: 14 },
+  },
+  'tc-propose': {
+    id: 'tc-propose',
+    tool: 'propose_transformation_step',
+    output: { stepId: 'step-01' },
+  },
+  'tc-plan': {
+    id: 'tc-plan',
+    tool: 'propose_transformation_step',
+    output: { stepId: 'step-plan' },
+  },
+};
+
+// Minimal model + reasoning fixtures mirroring the real frontend types.
+// These are never actually interactive — the composer is in `readOnly` mode.
 const MODEL_OPTIONS: readonly AssistantModelOption[] = [
   {
     value: 'gpt-5.4',
@@ -39,14 +79,6 @@ const MODEL_OPTIONS: readonly AssistantModelOption[] = [
     defaultReasoningEffort: 'high',
     featured: true,
   },
-  {
-    value: 'claude-4.5',
-    label: 'Claude 4.5',
-    kind: 'base',
-    description: 'Anthropic flagship, strong at long-context reasoning.',
-    supportedReasoningEfforts: ['low', 'medium', 'high'],
-    defaultReasoningEffort: 'medium',
-  },
 ];
 
 const REASONING_OPTIONS: readonly ReasoningEffortOption[] = [
@@ -56,113 +88,227 @@ const REASONING_OPTIONS: readonly ReasoningEffortOption[] = [
 ];
 
 const NOOP = () => {};
+const EMPTY_MENTIONS = new Set<string>();
+const EMPTY_MENTION_TYPES = new Map<string, string>();
+
+// -----------------------------------------------------------------------------
+// Timeline
+// -----------------------------------------------------------------------------
 
 /**
- * Phases of the scripted deep-dive animation. They run in order:
- *   idle → cursor-glide → cursor-click → typing → tools → done
- * Under reduced motion the component mounts directly at `done`.
+ * Scripted phases played in sequence after IO-enter. The timing matches
+ * the spec §4.5 micro-sequence:
+ *   t=0     idle             — placeholder cycles (MentionInput's real
+ *                               `useAnimatedPlaceholder` animation)
+ *   t=2000  cursor-glide     — CSS cursor sprite glides to voice button
+ *   t=2800  cursor-click     — click pulse on voice button
+ *   t=3000  typing           — character-by-character mock transcription
+ *   t≈4350  send-pulse       — send button pulses once
+ *   t≈4800  tools-streaming  — ToolIndicator fades in with running tools
+ *   t=6000+ tools-completing — tools mark done one-by-one (500ms apart)
+ *   t≈8000  done             — final steady state
  */
 type Phase =
   | 'idle'
   | 'cursor-glide'
   | 'cursor-click'
   | 'typing'
-  | 'tools'
+  | 'send-pulse'
+  | 'tools-streaming'
   | 'done';
 
-const TYPING_INTERVAL_MS = 45;
-
 function ChatDeepDiveVisual() {
-  // Reactive hook so toggling OS reduced-motion mid-session is respected.
   const reduced = usePrefersReducedMotion();
+
+  // Timeline / scripted-sequence state.
   const [phase, setPhase] = useState<Phase>(() => (reduced ? 'done' : 'idle'));
   const [typedValue, setTypedValue] = useState<string>(() =>
     reduced ? SCRIPTED_TRANSCRIPTION : '',
   );
+  // Number of tool calls whose result has been "completed" — grows from 0 → 4
+  // as each row flips from running to done after the strip appears.
+  const [completedCount, setCompletedCount] = useState<number>(() =>
+    reduced ? TOOL_CALL_FIXTURES.length : 0,
+  );
 
-  // Drive discrete phase transitions via setTimeout. The typing interval is
-  // scoped to the typing phase so a single cleanup clears everything on
-  // unmount or when reduced-motion toggles. All state transitions are
-  // deferred (setTimeout) to avoid synchronous setState inside the effect.
+  // Cursor-sprite target position (pixels, relative to .root) — computed
+  // lazily from the real voice-button DOM node so the sprite actually lands
+  // on the button regardless of composer layout changes.
+  const [cursorTarget, setCursorTarget] = useState<{ x: number; y: number } | null>(null);
+
+  // Refs
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const voiceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mentionInputRef = useRef<MentionInputHandle | null>(null);
+  const hasPlayedRef = useRef<boolean>(false);
+
+  // Compute cursor target from the rendered voice button's bounding rect.
+  // Runs once the refs are attached and again on window resize so the glide
+  // end-point tracks the real button.
   useEffect(() => {
+    if (reduced) return;
+    const computeTarget = () => {
+      const root = rootRef.current;
+      const button = voiceButtonRef.current;
+      if (!root || !button) return;
+      const rootRect = root.getBoundingClientRect();
+      const btnRect = button.getBoundingClientRect();
+      setCursorTarget({
+        x: btnRect.left - rootRect.left + btnRect.width / 2,
+        y: btnRect.top - rootRect.top + btnRect.height / 2,
+      });
+    };
+    computeTarget();
+    // Recompute after a tick in case the composer's async measurements
+    // (ResizeObserver, MentionInput hydration) shift the layout.
+    const t = setTimeout(computeTarget, 50);
+    window.addEventListener('resize', computeTarget);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', computeTarget);
+    };
+  }, [reduced]);
+
+  // IntersectionObserver: play the scripted timeline once when the
+  // component first enters the viewport. Scrolling away + back does NOT
+  // replay — `hasPlayedRef` latches it.
+  useEffect(() => {
+    if (reduced) return;
+    const root = rootRef.current;
+
     const timers: ReturnType<typeof setTimeout>[] = [];
     let typingInterval: ReturnType<typeof setInterval> | null = null;
 
-    if (reduced) {
-      // Jump to the final frame on the next tick (deferred to avoid a
-      // synchronous setState cascade inside the effect body).
+    const runTimeline = () => {
+      // t=2000ms   cursor begins gliding toward voice button
+      timers.push(setTimeout(() => setPhase('cursor-glide'), 2000));
+      // t=2800ms   cursor "clicks" the voice button
+      timers.push(setTimeout(() => setPhase('cursor-click'), 2800));
+      // t=3000ms   character-by-character transcription begins
       timers.push(
         setTimeout(() => {
-          setPhase('done');
-          setTypedValue(SCRIPTED_TRANSCRIPTION);
-        }, 0),
+          setPhase('typing');
+          let i = 0;
+          typingInterval = setInterval(() => {
+            i += 1;
+            setTypedValue(SCRIPTED_TRANSCRIPTION.slice(0, i));
+            if (i >= SCRIPTED_TRANSCRIPTION.length && typingInterval) {
+              clearInterval(typingInterval);
+              typingInterval = null;
+              // t≈4350ms   send button pulses once
+              timers.push(setTimeout(() => setPhase('send-pulse'), 0));
+              // t≈4800ms   tool strip fades in, all 4 running
+              timers.push(setTimeout(() => setPhase('tools-streaming'), 450));
+              // t=6000ms+  mark each tool done 500ms apart
+              for (let k = 0; k < TOOL_CALL_FIXTURES.length; k += 1) {
+                timers.push(
+                  setTimeout(
+                    () => setCompletedCount((c) => Math.max(c, k + 1)),
+                    1200 + k * 500,
+                  ),
+                );
+              }
+              // t≈8000ms   final steady state
+              timers.push(
+                setTimeout(
+                  () => setPhase('done'),
+                  1200 + TOOL_CALL_FIXTURES.length * 500 + 200,
+                ),
+              );
+            }
+          }, TYPING_INTERVAL_MS);
+        }, 3000),
       );
+    };
+
+    if (!root || typeof IntersectionObserver === 'undefined') {
+      // Fallback (SSR-less tests, older jsdom): play immediately.
+      if (!hasPlayedRef.current) {
+        hasPlayedRef.current = true;
+        runTimeline();
+      }
       return () => {
         for (const t of timers) clearTimeout(t);
+        if (typingInterval) clearInterval(typingInterval);
       };
     }
 
-    // Re-seed idle on the next tick so the sprite mounts at `.cursorSpriteStart`
-    // (invisible, off-screen). If reduced-motion flipped off mid-session the
-    // initial useState seed may be stale.
-    timers.push(
-      setTimeout(() => {
-        setPhase('idle');
-        setTypedValue('');
-      }, 0),
-    );
-    // t=200ms   cursor enters and begins gliding toward voice button
-    timers.push(setTimeout(() => setPhase('cursor-glide'), 200));
-    // t=800ms   cursor "clicks" the voice button (scale pulse + fade)
-    timers.push(setTimeout(() => setPhase('cursor-click'), 800));
-    // t=900ms   transcription typing begins
-    timers.push(
-      setTimeout(() => {
-        setPhase('typing');
-        let i = 0;
-        typingInterval = setInterval(() => {
-          i += 1;
-          setTypedValue(SCRIPTED_TRANSCRIPTION.slice(0, i));
-          if (i >= SCRIPTED_TRANSCRIPTION.length && typingInterval) {
-            clearInterval(typingInterval);
-            typingInterval = null;
-            // Short beat, then tool rows cascade in.
-            timers.push(setTimeout(() => setPhase('tools'), 500));
-            timers.push(setTimeout(() => setPhase('done'), 1500));
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !hasPlayedRef.current) {
+            hasPlayedRef.current = true;
+            runTimeline();
+            io.disconnect();
+            break;
           }
-        }, TYPING_INTERVAL_MS);
-      }, 900),
+        }
+      },
+      { threshold: 0.35 },
     );
+    io.observe(root);
 
     return () => {
+      io.disconnect();
       for (const t of timers) clearTimeout(t);
       if (typingInterval) clearInterval(typingInterval);
     };
   }, [reduced]);
 
-  // Derive visible state from the single phase discriminator. The sprite is
-  // mounted during idle (invisible, pre-glide) so the CSS transition from
-  // `cursorSpriteStart` → `cursorSpriteGlided` actually animates the
-  // transform instead of snapping to the final frame.
+  // -------------------------------------------------------------------------
+  // Derived render state
+  // -------------------------------------------------------------------------
+
+  const composerValue =
+    phase === 'typing'
+      ? typedValue
+      : phase === 'send-pulse' ||
+          phase === 'tools-streaming' ||
+          phase === 'done'
+        ? SCRIPTED_TRANSCRIPTION
+        : '';
+
+  // Tool strip visible from the streaming phase onward.
+  const toolsVisible = phase === 'tools-streaming' || phase === 'done';
+  // `isRunning` stays true while any call is still in flight so pending rows
+  // get the shimmer + spinner treatment from ToolIndicator.
+  const isRunning = completedCount < TOOL_CALL_FIXTURES.length;
+  // Slice of tool calls whose results are currently attached — each flips
+  // running → done independently via the `completedCount` counter.
+  const visibleResults: ToolResult[] = TOOL_CALL_FIXTURES.slice(0, completedCount).map(
+    (call) => TOOL_RESULT_FIXTURES[call.id],
+  );
+
+  // Render the cursor sprite until the click pulse finishes.
   const renderCursor =
     !reduced &&
     (phase === 'idle' ||
       phase === 'cursor-glide' ||
       phase === 'cursor-click');
-  const toolsVisible = phase === 'tools' || phase === 'done';
-  const value =
-    phase === 'typing'
-      ? typedValue
-      : phase === 'tools' || phase === 'done'
-        ? SCRIPTED_TRANSCRIPTION
-        : '';
+
+  const cursorStyle: React.CSSProperties =
+    phase === 'cursor-glide' || phase === 'cursor-click'
+      ? cursorTarget
+        ? { left: `${cursorTarget.x}px`, top: `${cursorTarget.y}px` }
+        : {}
+      : {};
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
 
   return (
-    <div className={styles.root}>
+    <div
+      ref={rootRef}
+      className={cn(
+        styles.root,
+        phase === 'send-pulse' && styles.rootSendPulse,
+      )}
+    >
       <LlmChatComposer
         readOnly
         chatInput={{
-          value,
+          value: composerValue,
           onValueChange: NOOP,
           onKeyDown: NOOP,
           placeholder: 'Describe your goal…',
@@ -182,7 +328,45 @@ function ChatDeepDiveVisual() {
           onReasoningEffortChange: NOOP,
           reasoningOptions: REASONING_OPTIONS,
         }}
+        slots={{
+          // Wiring a mentionSlot enables the real animated placeholder
+          // cycling inside MentionInput (reuses `useAnimatedPlaceholder`).
+          mentionSlot: {
+            dropdown: null,
+            inputRef: mentionInputRef,
+            mentionNames: EMPTY_MENTIONS,
+            mentionTypes: EMPTY_MENTION_TYPES,
+            onValueChange: NOOP,
+          },
+          // Static mock voice button — the cursor sprite targets this
+          // real DOM node via `voiceButtonRef` so its glide end-point
+          // always aligns with the rendered button.
+          voiceSlot: (
+            <button
+              ref={voiceButtonRef}
+              type="button"
+              aria-label="Voice input (demo)"
+              tabIndex={-1}
+              className={cn(
+                styles.voiceButton,
+                phase === 'cursor-click' && styles.voiceButtonClicked,
+              )}
+            >
+              <Mic className={styles.voiceIcon} aria-hidden="true" />
+            </button>
+          ),
+        }}
       />
+
+      {toolsVisible && (
+        <div className={styles.toolsStrip} aria-live="polite">
+          <ToolIndicator
+            toolCalls={TOOL_CALL_FIXTURES}
+            results={visibleResults}
+            isRunning={isRunning}
+          />
+        </div>
+      )}
 
       {renderCursor && (
         <MousePointer2
@@ -192,42 +376,22 @@ function ChatDeepDiveVisual() {
             phase === 'cursor-glide' && styles.cursorSpriteGlided,
             phase === 'cursor-click' && styles.cursorSpriteClick,
           )}
+          style={cursorStyle}
           aria-hidden="true"
-          size={14}
+          size={16}
         />
       )}
-
-      <div
-        className={cn(styles.toolRows, toolsVisible && styles.toolRowsVisible)}
-        aria-live="polite"
-      >
-        {TOOL_CALLS.map((t, i) => (
-          <div
-            key={t.id}
-            className={styles.toolRow}
-            style={{ animationDelay: `${i * 150}ms` }}
-          >
-            <Check
-              size={13}
-              className={styles.toolRowCheck}
-              aria-hidden="true"
-            />
-            <span className={styles.toolRowLabel}>{t.label}</span>
-            <span className={styles.toolRowHint}>{t.hint}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
 /**
  * Deep-dive 1 — CHAT visual. Mounts the real frontend `<LlmChatComposer
- * readOnly>` as a live island inside a scripted IO-enter sequence (cursor
- * glide → mock transcription → tool-call reveal). The shared `<DeepDive>`
- * chrome (eyebrow, headline, body, kbd hint) is composed around this by
- * `FeaturesSection.astro` — this component renders only the right-hand
- * visual content.
+ * readOnly>` + `<ToolIndicator>` as a live island inside a scripted
+ * IO-enter sequence (cursor glide → mock transcription → send pulse →
+ * tool-call reveal). The shared `<DeepDive>` chrome (eyebrow, headline,
+ * body, kbd hint) is composed around this by `FeaturesSection.astro` —
+ * this component renders only the right-hand visual content.
  */
 export default function ChatDeepDive() {
   return <ChatDeepDiveVisual />;

@@ -4,13 +4,14 @@ import { usePreviewStore } from '@/preview/previewStore';
 import { mockModels, type ModelFixture } from '@/preview/fixtures/experiments';
 import styles from './ExperimentsView.module.css';
 
+const SORTED_MODELS: ModelFixture[] = [...mockModels].sort((a, b) => b.f1 - a.f1);
+
 export function ExperimentsView() {
   const selectedId = usePreviewStore((s) => s.experiments.selectedModelId);
   const selectModel = usePreviewStore((s) => s.selectExperimentModel);
 
-  const sorted = [...mockModels].sort((a, b) => b.f1 - a.f1);
-  const activeModel: ModelFixture | null =
-    sorted.find((m) => m.id === selectedId) ?? sorted[0];
+  const activeModel: ModelFixture =
+    SORTED_MODELS.find((m) => m.id === selectedId) ?? SORTED_MODELS[0];
 
   return (
     <div className={styles.root}>
@@ -29,10 +30,10 @@ export function ExperimentsView() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((m, i) => (
+            {SORTED_MODELS.map((m, i) => (
               <tr
                 key={m.id}
-                className={cn(m.id === (activeModel?.id ?? sorted[0].id) && styles.selected)}
+                className={cn(m.id === activeModel.id && styles.selected)}
                 onClick={() => selectModel(m.id)}
               >
                 <td className={styles.rankCell}>{i + 1}</td>

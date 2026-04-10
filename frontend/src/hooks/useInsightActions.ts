@@ -5,7 +5,8 @@
  *  - filter:     generates SQL and executes it as a new query artifact
  *  - query:      populates the SQL editor with a diagnostic query (no execution)
  *  - preprocess: navigates to preprocessing with insight search params
- *  - notebook:   navigates to notebook phase with pending insight context for LLM code generation
+ *  - notebook:   creates a standalone notebook seeded with the insight context,
+ *                navigates to the data viewer, and opens it as a notebook tab
  */
 
 import { useCallback } from 'react';
@@ -13,7 +14,9 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { InsightAction } from '@/components/data/eda/edaInsights';
 import { useInsightNavigationStore } from '@/stores/insightNavigationStore';
+import { useDataStore } from '@/stores/dataStore';
 import type { InsightCodegenContext } from '@/lib/api/insightCodegen';
+import { createNotebook as createNotebookApi } from '@/lib/api/notebooks';
 import { generateFilterSql, generateQuerySql } from '@/lib/sql/insightSql';
 
 interface UseInsightActionsParams {
@@ -44,7 +47,7 @@ export function useInsightActions({
   );
 
   const handleInsightAction = useCallback(
-    (action: InsightAction) => {
+    async (action: InsightAction) => {
       if (!tableName) {
         toast.error('No table available for this action');
         return;
@@ -97,8 +100,26 @@ export function useInsightActions({
             datasetSchema: datasetSchema ?? [],
             tableName,
           };
+
+          // Seed the context before the notebook mounts so NotebookEditor
+          // picks it up on first render.
           setPendingInsightContext(insightContext);
-          navigate(`/project/${projectId}/notebook`);
+
+          try {
+            const label = `EDA: ${action.columns.join(', ')} (${action.issueType})`;
+            const notebook = await createNotebookApi(projectId, {
+              name: label.slice(0, 120),
+              kind: 'standalone',
+            });
+
+            // Navigate to the data viewer and open the new notebook as a tab.
+            navigate(`/project/${projectId}/data-viewer`);
+            useDataStore.getState().openNotebookTab(notebook.notebookId);
+          } catch (err) {
+            console.error('[useInsightActions] Failed to create standalone notebook:', err);
+            toast.error('Failed to open insight in notebook');
+            useInsightNavigationStore.getState().clearPendingContext();
+          }
           break;
         }
       }

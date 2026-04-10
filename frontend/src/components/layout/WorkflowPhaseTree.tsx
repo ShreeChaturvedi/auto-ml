@@ -21,7 +21,7 @@ import { usePlanChatStore } from '@/stores/planChatStore';
 import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookRegistryStore';
 import { createWorkbookId, nextWorkbookName } from '@/components/preprocessing/preprocessingTabUtils';
 import type { Phase } from '@/types/phase';
-import { isAuxiliaryPhase, phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
+import { phaseConfig, WORKFLOW_PHASES } from '@/types/phase';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import { getLucideIcon } from '@/lib/icons';
@@ -30,6 +30,7 @@ import { SeedModelDialog } from '@/components/experiments/SeedModelDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { PlanSubtabs } from './sidebar/PlanSubtabs';
 import { FileSubtabs } from './sidebar/FileSubtabs';
+import { NotebookSubtabs } from './sidebar/NotebookSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
 import { ModelSubtabs } from './sidebar/ModelSubtabs';
 import { DeploymentSubtabs } from './sidebar/DeploymentSubtabs';
@@ -292,7 +293,12 @@ const PhaseItem = memo(function PhaseItem({
             )}
           >
             {hasBeenExpanded && phase === 'upload' && <PlanSubtabs projectId={projectId} />}
-            {hasBeenExpanded && phase === 'data-viewer' && <FileSubtabs projectId={projectId} />}
+            {hasBeenExpanded && phase === 'data-viewer' && (
+              <>
+                <FileSubtabs projectId={projectId} />
+                <NotebookSubtabs projectId={projectId} />
+              </>
+            )}
             {hasBeenExpanded && isWorkbookPhase && (
               <WorkbookSubtabs
                 projectId={projectId}
@@ -346,9 +352,7 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
     && Object.prototype.hasOwnProperty.call(phaseConfig, routePhaseParam)
       ? routePhaseParam as Phase
       : null;
-  const activePhase = routePhase && !isAuxiliaryPhase(routePhase)
-    ? routePhase
-    : currentPhase;
+  const activePhase = routePhase ?? currentPhase;
 
   // Initialize plan chat store when project changes
   useEffect(() => {

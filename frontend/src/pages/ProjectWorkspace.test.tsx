@@ -63,10 +63,6 @@ vi.mock('@/components/deployment/DeploymentDashboard', () => ({
   DeploymentDashboard: () => <div>Deployment</div>
 }));
 
-vi.mock('@/components/notebook/NotebookPage', () => ({
-  NotebookPage: () => <div>Notebook</div>
-}));
-
 import { ProjectWorkspace } from './ProjectWorkspace';
 
 describe('ProjectWorkspace notebook session ownership', () => {

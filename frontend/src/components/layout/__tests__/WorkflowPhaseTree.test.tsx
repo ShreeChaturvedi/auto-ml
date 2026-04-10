@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { WorkflowPhaseTree } from '../WorkflowPhaseTree';
 
 const fileSubtabsMock = vi.hoisted(() => ({ empty: false }));
+const notebookSubtabsMock = vi.hoisted(() => ({ empty: false }));
 
 const projectState = {
   projects: [
@@ -52,6 +53,11 @@ vi.mock('../sidebar/PlanSubtabs', () => ({
 vi.mock('../sidebar/FileSubtabs', () => ({
   FileSubtabs: () =>
     fileSubtabsMock.empty ? null : <div data-testid="file-subtabs">file subtabs</div>
+}));
+
+vi.mock('../sidebar/NotebookSubtabs', () => ({
+  NotebookSubtabs: () =>
+    notebookSubtabsMock.empty ? null : <div data-testid="notebook-subtabs">notebook subtabs</div>
 }));
 
 vi.mock('../sidebar/WorkbookSubtabs', () => ({
@@ -104,6 +110,7 @@ describe('WorkflowPhaseTree', () => {
     projectState.isPhaseUnlocked = (projectId: string, phase: string) =>
       projectId === 'p1' && ['upload', 'data-viewer'].includes(phase);
     fileSubtabsMock.empty = false;
+    notebookSubtabsMock.empty = false;
 
     globalThis.ResizeObserver = class WorkflowPhaseTreeResizeObserver {
       callback: ResizeObserverCallback;
@@ -177,6 +184,7 @@ describe('WorkflowPhaseTree', () => {
     (getSidebarAccordionPref as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
     fileSubtabsMock.empty = true;
+    notebookSubtabsMock.empty = true;
     renderTree('/project/p1/data-viewer');
 
     await waitFor(() => {

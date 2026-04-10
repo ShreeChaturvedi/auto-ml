@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
-import { isAuxiliaryPhase } from '@/types/phase';
 import type { Phase } from '@/types/phase';
 
 const UploadArea = lazy(() => import('@/components/upload/UploadArea').then(m => ({ default: m.UploadArea })));
@@ -14,13 +13,11 @@ const FeatureEngineeringPanel = lazy(() => import('@/components/features/Feature
 const TrainingPanel = lazy(() => import('@/components/training/TrainingPanel').then(m => ({ default: m.TrainingPanel })));
 const ExperimentsDashboard = lazy(() => import('@/components/experiments/ExperimentsDashboard').then(m => ({ default: m.ExperimentsDashboard })));
 const DeploymentDashboard = lazy(() => import('@/components/deployment/DeploymentDashboard').then(m => ({ default: m.DeploymentDashboard })));
-const NotebookPage = lazy(() => import('@/components/notebook/NotebookPage').then(m => ({ default: m.NotebookPage })));
 
-const NOTEBOOK_SESSION_PHASES = new Set<Phase>([
+const PHASE_BACKED_NOTEBOOK_PHASES = new Set<Phase>([
   'preprocessing',
   'feature-engineering',
-  'training',
-  'notebook'
+  'training'
 ]);
 
 function shouldPreserveNotebookSession(
@@ -32,11 +29,11 @@ function shouldPreserveNotebookSession(
     return true;
   }
 
-  if (!isAuxiliaryPhase(phase) && !isPhaseUnlocked(projectId, phase)) {
+  if (!isPhaseUnlocked(projectId, phase)) {
     return true;
   }
 
-  return NOTEBOOK_SESSION_PHASES.has(phase);
+  return PHASE_BACKED_NOTEBOOK_PHASES.has(phase);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,8 +119,6 @@ export function ProjectWorkspace() {
 
   useEffect(() => {
     if (!isInitialized || !project || !phase) return;
-    // Auxiliary phases (e.g. notebook) aren't persisted as the user's current workflow phase.
-    if (isAuxiliaryPhase(phase as Phase)) return;
     if (project.currentPhase !== phase) {
       setCurrentPhase(project.id, phase as Phase);
     }
@@ -161,8 +156,7 @@ export function ProjectWorkspace() {
     return <Navigate to={`/project/${project.id}/${project.currentPhase || 'upload'}`} replace />;
   }
 
-  // Auxiliary phases (e.g. notebook) bypass the unlock check
-  if (!isAuxiliaryPhase(phase as Phase) && !isPhaseUnlocked(project.id, phase as Phase)) {
+  if (!isPhaseUnlocked(project.id, phase as Phase)) {
     // Redirect to current phase if locked
     return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
   }
@@ -233,15 +227,6 @@ export function ProjectWorkspace() {
         <PhaseErrorBoundary>
           <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
             <DeploymentDashboard />
-          </Suspense>
-        </PhaseErrorBoundary>
-      );
-
-    case 'notebook':
-      return (
-        <PhaseErrorBoundary>
-          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
-            <NotebookPage projectId={projectId!} />
           </Suspense>
         </PhaseErrorBoundary>
       );

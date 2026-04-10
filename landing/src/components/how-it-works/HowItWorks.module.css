@@ -96,6 +96,7 @@
 .scene {
   position: absolute;
   inset: 0;
+  margin: 0;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity var(--dur-med) var(--ease-out-quart),
@@ -105,6 +106,13 @@
   gap: 14px;
 }
 .sceneActive { opacity: 1; transform: translateY(0); }
+
+/* Suspense placeholder while a lazy diorama chunk loads. Sized to match
+   the typical diorama height so the layout doesn't jump. */
+.sceneFallback {
+  width: 100%;
+  min-height: 320px;
+}
 
 .sceneCounter {
   font-family: 'Geist Mono Variable', monospace;
@@ -134,17 +142,15 @@
   list-style: none;
 }
 .fallbackItem { display: grid; grid-template-columns: 120px 1fr; gap: 32px; }
+.fallbackFigure {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
+}
 .fallbackCode {
   font-family: 'Geist Mono Variable', monospace;
   font-size: 12px;
   color: var(--text-dim);
   text-transform: uppercase;
-}
-.fallbackHeadline {
-  font-family: 'Inter Variable', sans-serif;
-  font-size: 32px;
-  font-weight: 510;
-  letter-spacing: -0.022em;
-  line-height: 1.1;
-  margin: 0 0 24px;
 }

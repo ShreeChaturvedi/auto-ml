@@ -1,17 +1,38 @@
-import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, type ComponentType } from 'react';
 import { cn } from '@/lib/cn';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
-import { PHASE_SCENES, type PhaseScene } from './scenes';
-import { IngestDiorama } from './dioramas/IngestDiorama';
-import { ExploreDiorama } from './dioramas/ExploreDiorama';
-import { PreprocessDiorama } from './dioramas/PreprocessDiorama';
-import { EngineerDiorama } from './dioramas/EngineerDiorama';
-import { TrainDiorama } from './dioramas/TrainDiorama';
-import { ExperimentsDiorama } from './dioramas/ExperimentsDiorama';
-import { DeployDiorama } from './dioramas/DeployDiorama';
+import { PHASE_SCENES, type PhaseScene as PhaseSceneData } from './scenes';
 import styles from './HowItWorks.module.css';
 
-const DIORAMA_MAP: Record<PhaseScene['dioramaId'], ComponentType> = {
+// Lazy-load the 7 diorama components so their JS (and Recharts pulled in by
+// Train/Deploy) is only fetched when the user actually scrolls into this
+// section. IntersectionObserver inside each diorama already gates ambient
+// intervals, so eager-rendered dioramas off-screen are idle — this change
+// further ensures the bytes themselves don't ship in the initial HowItWorks
+// chunk.
+const IngestDiorama = lazy(() =>
+  import('./dioramas/IngestDiorama').then((m) => ({ default: m.IngestDiorama })),
+);
+const ExploreDiorama = lazy(() =>
+  import('./dioramas/ExploreDiorama').then((m) => ({ default: m.ExploreDiorama })),
+);
+const PreprocessDiorama = lazy(() =>
+  import('./dioramas/PreprocessDiorama').then((m) => ({ default: m.PreprocessDiorama })),
+);
+const EngineerDiorama = lazy(() =>
+  import('./dioramas/EngineerDiorama').then((m) => ({ default: m.EngineerDiorama })),
+);
+const TrainDiorama = lazy(() =>
+  import('./dioramas/TrainDiorama').then((m) => ({ default: m.TrainDiorama })),
+);
+const ExperimentsDiorama = lazy(() =>
+  import('./dioramas/ExperimentsDiorama').then((m) => ({ default: m.ExperimentsDiorama })),
+);
+const DeployDiorama = lazy(() =>
+  import('./dioramas/DeployDiorama').then((m) => ({ default: m.DeployDiorama })),
+);
+
+const DIORAMA_MAP: Record<PhaseSceneData['dioramaId'], ComponentType> = {
   ingest:      IngestDiorama,
   explore:     ExploreDiorama,
   preprocess:  PreprocessDiorama,
@@ -21,10 +42,39 @@ const DIORAMA_MAP: Record<PhaseScene['dioramaId'], ComponentType> = {
   deploy:      DeployDiorama,
 };
 
+interface PhaseSceneProps {
+  scene: PhaseSceneData;
+}
+
+// File-local shared scene markup. Both the reduced-motion static list and
+// the pinned scrollytelling grid render this so the per-scene DOM is
+// identical (counter + headline + diorama).
+function PhaseScene({ scene }: PhaseSceneProps) {
+  const Diorama = DIORAMA_MAP[scene.dioramaId];
+  return (
+    <>
+      <div className={styles.sceneCounter}>
+        {String(scene.index).padStart(2, '0')} /{' '}
+        {String(scene.total).padStart(2, '0')}
+      </div>
+      <h3 className={styles.sceneHeadline}>
+        <span className={styles.sceneHeadlineBright}>{scene.headlineBright}</span>
+        <span className={styles.sceneHeadlineMuted}>{scene.headlineMuted}</span>
+      </h3>
+      <div className={styles.sceneDiorama}>
+        <Suspense fallback={<div className={styles.sceneFallback} aria-hidden />}>
+          <Diorama />
+        </Suspense>
+      </div>
+    </>
+  );
+}
+
 export default function HowItWorks() {
   const reducedMotion = usePrefersReducedMotion();
   const pinRef = useRef<HTMLDivElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const prevIdxRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -57,7 +107,13 @@ export default function HowItWorks() {
             PHASE_SCENES.length - 1,
             Math.floor(progress * PHASE_SCENES.length),
           );
-          setActiveIndex(idx);
+          // Short-circuit: onUpdate fires every scroll frame. React will
+          // bail out of identical setState calls, but the closure + diff
+          // are still wasteful at scroll rate. A ref compare is free.
+          if (idx !== prevIdxRef.current) {
+            prevIdxRef.current = idx;
+            setActiveIndex(idx);
+          }
           if (progressBarRef.current) {
             progressBarRef.current.style.transform = `scaleX(${progress})`;
           }
@@ -72,8 +128,8 @@ export default function HowItWorks() {
   }, [reducedMotion]);
 
   // Reduced-motion fallback: render as a static vertical stack.
-  // Every scene (counter + headline + diorama) is fully present in the DOM
-  // and keyboard/screen-reader accessible.
+  // Every scene is fully present in the DOM and keyboard/screen-reader
+  // accessible.
   if (reducedMotion) {
     return (
       <section id="how-it-works" aria-labelledby="how-it-works-heading">
@@ -87,27 +143,14 @@ export default function HowItWorks() {
           </h2>
         </div>
         <ol className={styles.fallbackList}>
-          {PHASE_SCENES.map((scene) => {
-            const Diorama = DIORAMA_MAP[scene.dioramaId];
-            return (
-              <li key={scene.code} className={styles.fallbackItem}>
-                <span className={styles.fallbackCode}>{scene.code}</span>
-                <figure style={{ margin: 0 }}>
-                  <h3 className={styles.fallbackHeadline}>
-                    <span className={styles.sceneHeadlineBright}>
-                      {scene.headlineBright}
-                    </span>
-                    <span className={styles.sceneHeadlineMuted}>
-                      {scene.headlineMuted}
-                    </span>
-                  </h3>
-                  <div className={styles.sceneDiorama}>
-                    <Diorama />
-                  </div>
-                </figure>
-              </li>
-            );
-          })}
+          {PHASE_SCENES.map((scene) => (
+            <li key={scene.code} className={styles.fallbackItem}>
+              <span className={styles.fallbackCode}>{scene.code}</span>
+              <figure className={styles.fallbackFigure}>
+                <PhaseScene scene={scene} />
+              </figure>
+            </li>
+          ))}
         </ol>
       </section>
     );
@@ -142,7 +185,10 @@ export default function HowItWorks() {
                       styles.tocItem,
                       activeIndex === i && styles.tocItemActive,
                     )}
-                    onClick={() => setActiveIndex(i)}
+                    onClick={() => {
+                      prevIdxRef.current = i;
+                      setActiveIndex(i);
+                    }}
                   >
                     {scene.code}
                   </button>
@@ -162,36 +208,18 @@ export default function HowItWorks() {
           </nav>
 
           <div className={styles.sceneWrap}>
-            {PHASE_SCENES.map((scene, i) => {
-              const Diorama = DIORAMA_MAP[scene.dioramaId];
-              return (
-                <figure
-                  key={scene.code}
-                  className={cn(
-                    styles.scene,
-                    activeIndex === i && styles.sceneActive,
-                  )}
-                  aria-hidden={activeIndex !== i}
-                  style={{ margin: 0 }}
-                >
-                  <div className={styles.sceneCounter}>
-                    {String(scene.index).padStart(2, '0')} /{' '}
-                    {String(scene.total).padStart(2, '0')}
-                  </div>
-                  <h3 className={styles.sceneHeadline}>
-                    <span className={styles.sceneHeadlineBright}>
-                      {scene.headlineBright}
-                    </span>
-                    <span className={styles.sceneHeadlineMuted}>
-                      {scene.headlineMuted}
-                    </span>
-                  </h3>
-                  <div className={styles.sceneDiorama}>
-                    <Diorama />
-                  </div>
-                </figure>
-              );
-            })}
+            {PHASE_SCENES.map((scene, i) => (
+              <figure
+                key={scene.code}
+                className={cn(
+                  styles.scene,
+                  activeIndex === i && styles.sceneActive,
+                )}
+                aria-hidden={activeIndex !== i}
+              >
+                <PhaseScene scene={scene} />
+              </figure>
+            ))}
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@
 @import './theme.css';
 @import './motion-policy.css';
 @import './grain.css';
+@import './cursor-outline.css';
 
 @tailwind base;
 @tailwind components;

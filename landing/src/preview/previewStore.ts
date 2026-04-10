@@ -58,7 +58,9 @@ export const usePreviewStore = create<PreviewStore>((set) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   dataViewer: {
-    activeFileTabId: 'customers_csv',
+    // Per spec §5.6 the SQL result tab is the active file on load so the
+    // joined Q2 churn result is visible beside the query panel.
+    activeFileTabId: 'sql_q2_churn',
     queryResult: initialQueryResult,
   },
   setDataViewerFileTab: (id) =>

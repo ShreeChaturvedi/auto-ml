@@ -22,15 +22,12 @@ interface DeploymentState {
 }
 
 interface PreviewStore {
-  // Identity (read-only in practice)
   fakeUser: FakeUser;
   fakeProject: FakeProject;
 
-  // Tab navigation
   activeTab: WorkflowPhase;
   setActiveTab: (tab: WorkflowPhase) => void;
 
-  // Per-tab interaction state
   dataViewer: DataViewerState;
   setDataViewerFileTab: (id: string) => void;
 

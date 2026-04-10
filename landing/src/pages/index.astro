@@ -5,6 +5,10 @@ import Hero from '@/components/Hero.astro';
 import AppPreviewFrame from '@/components/AppPreviewFrame.tsx';
 import HowItWorks from '@/components/how-it-works/HowItWorks.tsx';
 import FeaturesSection from '@/components/FeaturesSection.astro';
+import MetaCardRow from '@/components/MetaCardRow.astro';
+import IntegrationsMarquee from '@/components/IntegrationsMarquee.astro';
+import FooterCta from '@/components/FooterCta.astro';
+import Footer from '@/components/Footer.astro';
 ---
 
 <Root>
@@ -14,5 +18,9 @@ import FeaturesSection from '@/components/FeaturesSection.astro';
     <AppPreviewFrame client:visible />
     <HowItWorks client:visible />
     <FeaturesSection />
+    <MetaCardRow />
+    <IntegrationsMarquee />
+    <FooterCta />
   </main>
+  <Footer />
 </Root>

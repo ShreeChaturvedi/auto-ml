@@ -35,7 +35,7 @@ const backgrounds = {
 const foregrounds = {
   "--text": "#F7F8F8",
   "--text-muted": "#8A8F98",
-  "--text-dim": "#62666D",
+  "--text-dim": "#828794",
 } as const;
 
 const AA_BODY = 4.5;
@@ -43,32 +43,8 @@ const AA_BODY = 4.5;
 type FgKey = keyof typeof foregrounds;
 type BgKey = keyof typeof backgrounds;
 
-// Per spec section 2.4, `--text-dim` is footnoted as "4.6:1 on --bg (used only
-// for small labels)". Empirically the hex value #62666D lands at 3.43:1 on
-// --bg and degrades further on elevated surfaces. The token is scoped to
-// decorative footnotes/counters that are not required to meet AA body text.
-//
-// We pin the real measured ratios as a regression floor so that any darkening
-// of --text-dim fails the suite, while documenting the AA shortfall explicitly
-// rather than silently passing. --text and --text-muted must always clear AA
-// body on every surface.
-const DIM_FLOORS: Record<BgKey, number> = {
-  "--bg": 3.43,
-  "--surface-0": 3.3,
-  "--surface-1": 3.12,
-  "--surface-2": 2.98,
-};
-
-function thresholdFor(fg: FgKey, bg: BgKey): number {
-  if (fg === "--text-dim") {
-    return DIM_FLOORS[bg];
-  }
-  return AA_BODY;
-}
-
 describe("WCAG AA contrast: token matrix", () => {
-  const table: Array<{ fg: FgKey; bg: BgKey; r: number; threshold: number }> =
-    [];
+  const table: Array<{ fg: FgKey; bg: BgKey; r: number }> = [];
 
   for (const fg of Object.keys(foregrounds) as FgKey[]) {
     for (const bg of Object.keys(backgrounds) as BgKey[]) {
@@ -76,7 +52,6 @@ describe("WCAG AA contrast: token matrix", () => {
         fg,
         bg,
         r: ratio(foregrounds[fg], backgrounds[bg]),
-        threshold: thresholdFor(fg, bg),
       });
     }
   }
@@ -85,8 +60,8 @@ describe("WCAG AA contrast: token matrix", () => {
   // under the test; this makes regressions easy to reason about.
   it("prints the computed matrix for audit", () => {
     const rows = table.map(
-      ({ fg, bg, r, threshold }) =>
-        `${fg.padEnd(13)} on ${bg.padEnd(12)} = ${r.toFixed(2)}:1  (>= ${threshold.toFixed(1)})`,
+      ({ fg, bg, r }) =>
+        `${fg.padEnd(13)} on ${bg.padEnd(12)} = ${r.toFixed(2)}:1  (>= ${AA_BODY.toFixed(1)})`,
     );
     console.log(["contrast matrix:", ...rows].join("\n"));
     expect(rows.length).toBe(
@@ -97,13 +72,8 @@ describe("WCAG AA contrast: token matrix", () => {
   for (const fg of Object.keys(foregrounds) as FgKey[]) {
     for (const bg of Object.keys(backgrounds) as BgKey[]) {
       const r = ratio(foregrounds[fg], backgrounds[bg]);
-      const threshold = thresholdFor(fg, bg);
-      const label =
-        fg === "--text-dim"
-          ? `${fg} on ${bg} holds its regression floor (>= ${threshold.toFixed(2)}:1, AA body 4.5:1 not met by spec token)`
-          : `${fg} on ${bg} meets AA body (>= 4.5:1)`;
-      it(label, () => {
-        expect(r).toBeGreaterThanOrEqual(threshold);
+      it(`${fg} on ${bg} meets AA body (>= 4.5:1)`, () => {
+        expect(r).toBeGreaterThanOrEqual(AA_BODY);
       });
     }
   }

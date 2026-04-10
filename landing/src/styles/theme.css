@@ -18,7 +18,7 @@
   /* Text */
   --text:       #F7F8F8;
   --text-muted: #8A8F98;
-  --text-dim:   #62666D;
+  --text-dim:   #828794;
 
   /* Motion — easing tokens (single source of truth) */
   --ease-out-quart:      cubic-bezier(0.165, 0.84, 0.44, 1);

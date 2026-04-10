@@ -847,13 +847,14 @@ All text-on-surface pairs meet WCAG 2.2 AA:
 
 | Pair | Ratio | Level |
 |---|---|---|
-| `--text` on `--bg` | 17.9 : 1 | AAA |
-| `--text-muted` on `--bg` | 7.9 : 1 | AAA |
-| `--text-dim` on `--bg` | 4.6 : 1 | AA (body text) |
-| `--text` on `--surface-0` | 17.4 : 1 | AAA |
-| `--text-muted` on `--surface-0` | 7.7 : 1 | AAA |
+| `--text` on `--bg` | 18.6 : 1 | AAA |
+| `--text-muted` on `--bg` | 6.1 : 1 | AA (body text) |
+| `--text-dim` on `--bg` | 5.5 : 1 | AA (body text) |
+| `--text` on `--surface-2` | 15.6 : 1 | AAA |
+| `--text-muted` on `--surface-2` | 5.3 : 1 | AA (body text) |
+| `--text-dim` on `--surface-2` | 4.8 : 1 | AA (body text) |
 
-`--text-dim` is only used for small dimmed labels (kbd badges, copyright).
+All three text tokens clear WCAG AA body (≥ 4.5:1) on every surface in the palette. `--text-dim` is reserved for small labels (kbd badges, counters, table headers, chart ticks) where the `--text-muted` → `--text-dim` step preserves hierarchy without sacrificing legibility.
 
 ### 6.2 Semantic HTML
 

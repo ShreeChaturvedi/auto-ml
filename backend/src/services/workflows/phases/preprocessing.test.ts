@@ -445,6 +445,141 @@ describe('preprocessingPhaseConfig', () => {
     readCellSpy.mockRestore();
   });
 
+  it('marks preprocessing execution as failed when any bound cell errors, even if the last cell succeeds', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-record-partial-failure',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-1',
+      derivedDatasetIds: [],
+      steps: {
+        'step-5': {
+          stepId: 'step-5',
+          title: 'Clean data',
+          intentType: 'data_cleaning',
+          status: 'pending',
+          toolCallId: 'tool-call-5',
+          code: '# Cell 1\nprint("a")\n# Cell 2\nprint("b")\n# Cell 3\nprint("c")',
+          codeHash: 'hash-5',
+          version: 2,
+          cellIds: ['cell-1', 'cell-2', 'cell-3'],
+          requiresApproval: false,
+          lastExecuteSucceeded: false,
+          lastValidateSucceeded: false,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        }
+      },
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const state = {
+      turn: {
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        datasetId: 'dataset-1',
+        notebookId: 'notebook-1',
+        prompt: undefined
+      },
+      run: {
+        runId: 'workflow-run-5',
+        threadId: 'workflow-thread-5',
+        projectId: 'project-1',
+        phase: 'preprocessing',
+        status: 'running',
+        currentNode: 'record_execution',
+        revision: 1,
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        activeDatasetId: 'dataset-1',
+        activeNotebookId: 'notebook-1',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z'
+      },
+      request: null,
+      latestMessage: '',
+      pendingToolCalls: [],
+      toolCallHistory: [],
+      toolResultHistory: [
+        {
+          id: 'write-result-1',
+          tool: 'write_cell',
+          output: { cellId: 'cell-1' }
+        },
+        {
+          id: 'write-result-2',
+          tool: 'write_cell',
+          output: { cellId: 'cell-2' }
+        },
+        {
+          id: 'write-result-3',
+          tool: 'write_cell',
+          output: { cellId: 'cell-3' }
+        },
+        {
+          id: 'run-result-1',
+          tool: 'run_cell',
+          output: {
+            cellId: 'cell-1',
+            status: 'success',
+            stdout: 'phase 1'
+          }
+        },
+        {
+          id: 'run-result-2',
+          tool: 'run_cell',
+          output: {
+            cellId: 'cell-2',
+            status: 'error',
+            stderr: 'NameError'
+          }
+        },
+        {
+          id: 'run-result-3',
+          tool: 'run_cell',
+          output: {
+            cellId: 'cell-3',
+            status: 'success',
+            stdout: 'phase 3'
+          }
+        }
+      ],
+      turnStartToolCallCount: 0,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      controllerSummary: {
+        runId: 'prep-run-record-partial-failure',
+        activeStepId: 'step-5',
+        currentNode: 'record_execution'
+      },
+      iteration: 0,
+      nextStep: 'invoke_model',
+      pendingInputKind: null,
+      pauseReason: null,
+      errorMessage: null,
+      errorCode: null
+    } as WorkflowGraphState;
+
+    const stageConfig = preprocessingPhaseConfig.getStageConfig('record_execution');
+    const toolCalls = await stageConfig.deterministicAction?.(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'execute_transformation_step',
+        args: expect.objectContaining({
+          runId: 'prep-run-record-partial-failure',
+          stepId: 'step-5',
+          succeeded: false,
+          stderr: 'NameError'
+        })
+      })
+    ]);
+  });
+
   it('infers successful execution from executed notebook cells even when executionStatus is missing', async () => {
     const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
     await runRepository.save({

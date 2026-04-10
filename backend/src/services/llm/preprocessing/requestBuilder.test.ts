@@ -51,7 +51,7 @@ describe('buildPreprocessingActionRequest', () => {
         {
           id: 'tool-result-1',
           tool: 'execute_transformation_step',
-          output: { status: 'running' }
+          output: { status: 'success' }
         }
       ]
     }, summary);

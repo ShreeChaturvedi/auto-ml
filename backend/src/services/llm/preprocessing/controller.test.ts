@@ -116,7 +116,7 @@ describe('resolvePreprocessingControllerTurn', () => {
     expect(decision.request.messages[1]?.content).toContain('Run ID: (none)');
   });
 
-  it('routes executed steps to validation with validate-only tools', async () => {
+  it('routes successful executed steps to validation with validate-only tools', async () => {
     const client = createClient({
       turnMode: 'action_required',
       rationale: 'unused'
@@ -128,7 +128,7 @@ describe('resolvePreprocessingControllerTurn', () => {
         output: {
           runId: 'prep-run-1',
           stepId: 'step-1',
-          status: 'running'
+          status: 'success'
         }
       }
     ];

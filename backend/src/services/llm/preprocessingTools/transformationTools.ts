@@ -228,9 +228,11 @@ export const executeTransformationStep: ToolHandler = async (ctx: ToolContext) =
   });
   await runRepository.save(run);
 
+  const status = succeeded ? 'success' : 'failed';
   return ok(run.runId, {
     stepId: step.stepId,
-    status: step.status,
+    status,
+    succeeded,
     stdout: args.stdout,
     stderr: args.stderr,
     cellBindings,

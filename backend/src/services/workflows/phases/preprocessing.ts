@@ -164,6 +164,13 @@ function aggregateRunOutputs(runCells: RunCellResultContext[]): { stdout: string
   };
 }
 
+function didRunCellsEncounterError(runCells: RunCellResultContext[]): boolean {
+  return runCells.some((entry) => {
+    const normalizedStatus = entry.status?.toLowerCase();
+    return normalizedStatus === 'error' || normalizedStatus === 'failed' || Boolean(entry.error);
+  });
+}
+
 function summarizeNotebookCellOutputs(outputs: Array<{ type: string; content: string }>): { stdout: string; stderr: string } {
   const stdout = outputs
     .filter((output) => output.type !== 'error')
@@ -504,13 +511,15 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
     }
   }
 
-  const succeeded = latestRunCell?.status === 'success'
+  const latestStatus = latestRunCell?.status?.toLowerCase();
+  const latestSucceeded = latestStatus === 'success'
     || (
       latestRunCell != null
-      && latestRunCell.status == null
+      && latestStatus == null
       && !latestRunCell.error
       && !stderr.trim()
     );
+  const succeeded = latestSucceeded && !didRunCellsEncounterError(runCells);
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,

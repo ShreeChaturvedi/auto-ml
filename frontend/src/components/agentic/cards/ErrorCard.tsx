@@ -1,14 +1,21 @@
 /**
- * ErrorCard - Displays errors and warnings with severity grading.
+ * ErrorCard — two render branches:
  *
- * Amber styling for warnings, red for errors. Includes an expandable
- * traceback section and an optional retry button.
+ * 1. `severity="warning"` → inline amber strip (NOT a card). Square
+ *    edges (no `rounded-*`) explicitly distinguish it from the card
+ *    flavour so the visual distinction between "real card" and
+ *    "inline alert" is immediate.
+ * 2. `severity="error"` → `ToolCardShell variant="error"` with an
+ *    icon-only retry button in the header actions slot (top-right)
+ *    and a collapsible traceback in the body.
  */
 
-import { useState } from 'react';
-import { AlertTriangle, XCircle, ChevronDown, ChevronRight, RotateCw } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { AlertTriangle, XCircle, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
 
 export interface ErrorCardProps {
   message: string;
@@ -17,83 +24,58 @@ export interface ErrorCardProps {
   onRetry?: () => void;
 }
 
-const SEVERITY_CONFIG = {
-  warning: {
-    border: 'border-amber-300 dark:border-amber-700/50',
-    bg: 'bg-amber-50 dark:bg-amber-950/20',
-    text: 'text-amber-900 dark:text-amber-200',
-    icon: AlertTriangle,
-    iconClass: 'text-amber-500',
-  },
-  error: {
-    border: 'border-destructive/40',
-    bg: 'bg-destructive/5',
-    text: 'text-destructive',
-    icon: XCircle,
-    iconClass: 'text-destructive',
-  },
-};
-
 export function ErrorCard({ message, severity, traceback, onRetry }: ErrorCardProps) {
-  const [traceExpanded, setTraceExpanded] = useState(false);
-  const config = SEVERITY_CONFIG[severity];
-  const Icon = config.icon;
+  if (severity === 'warning') {
+    return (
+      <div
+        role="alert"
+        className="flex items-start gap-2 border-l-2 border-l-amber-400/70 bg-amber-500/5 px-3 py-1.5"
+      >
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="flex-1 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+          {message}
+        </p>
+      </div>
+    );
+  }
+
+  const retryButton = onRetry ? (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry();
+            }}
+            aria-label="Retry"
+          >
+            <RotateCw className="h-3 w-3" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Retry</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : null;
 
   return (
-    <div
-      className={cn(
-        'rounded-md border p-3 shadow-sm dark:shadow-none',
-        config.border,
-        config.bg,
-      )}
+    <ToolCardShell
+      icon={XCircle}
+      iconClassName="text-metric-negative"
+      title={message}
+      variant="error"
+      actions={retryButton}
+      expandable={!!traceback}
     >
-      {/* Header */}
-      <div className="flex items-start gap-2">
-        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', config.iconClass)} />
-        <p className={cn('flex-1 text-sm leading-relaxed', config.text)}>{message}</p>
-      </div>
-
-      {/* Expandable traceback */}
       {traceback && (
-        <div className="mt-2 ml-6">
-          <button
-            type="button"
-            onClick={() => setTraceExpanded(!traceExpanded)}
-            className={cn(
-              'flex items-center gap-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm',
-              config.text,
-              'opacity-70 hover:opacity-100',
-            )}
-          >
-            {traceExpanded ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-            Traceback
-          </button>
-          {traceExpanded && (
-            <pre className="mt-1 max-h-[200px] overflow-auto rounded border border-muted/50 bg-muted/30 p-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-              {traceback}
-            </pre>
-          )}
-        </div>
+        <pre className="max-h-[200px] overflow-auto bg-destructive/5 p-3 text-[11px] font-mono leading-relaxed text-metric-negative whitespace-pre-wrap">
+          {traceback}
+        </pre>
       )}
-
-      {/* Retry button */}
-      {onRetry && (
-        <div className="mt-3 ml-6">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            onClick={onRetry}
-          >
-            <RotateCw className="mr-1 h-3 w-3" />
-            Retry
-          </Button>
-        </div>
-      )}
-    </div>
+    </ToolCardShell>
   );
 }

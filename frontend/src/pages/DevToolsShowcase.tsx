@@ -5,6 +5,7 @@
  * with realistic mock data. Navigate to /dev/tools (dev server only).
  */
 
+import { FlaskConical, RotateCw, Sparkles } from 'lucide-react';
 import { StepProposalCard } from '@/components/agentic/cards/StepProposalCard';
 import { CodeGenerationCard } from '@/components/agentic/cards/CodeGenerationCard';
 import { ExecutionCard } from '@/components/agentic/cards/ExecutionCard';
@@ -24,6 +25,16 @@ import {
   PreprocessingActionResult,
   ListPackagesResult,
 } from '@/components/llm/toolRenderers/index';
+import {
+  StatusPill,
+  type StatusKind,
+  ToolCardShell,
+  CodeBlock,
+  Ring,
+  PercentRing,
+  ProposalActionButton,
+} from '@/components/llm/shared';
+import { Button } from '@/components/ui/button';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { Badge } from '@/components/ui/badge';
 
@@ -77,6 +88,52 @@ function tr(id: string, tool: ToolResult['tool'], output?: unknown, error?: stri
   return { id, tool, output, error };
 }
 
+const ALL_STATUSES: readonly StatusKind[] = [
+  'accepted',
+  'success',
+  'rejected',
+  'failed',
+  'running',
+  'pending',
+  'awaiting',
+  'selected',
+  'skipped',
+  'warning',
+  'info',
+  'neutral',
+] as const;
+
+const SHORT_PY = `import pandas as pd
+df = pd.read_csv("data.csv")
+print(df.shape)
+print(df.head())
+print(df.dtypes)`;
+
+const LONG_PY = `import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+
+# Load and inspect
+df = pd.read_csv("/data/companies_2024.csv")
+print(f"Loaded {len(df)} rows, {len(df.columns)} columns")
+
+# Drop columns with >60% missing values
+null_ratios = df.isnull().mean()
+cols_to_drop = null_ratios[null_ratios > 0.6].index.tolist()
+df = df.drop(columns=cols_to_drop)
+print(f"Dropped {len(cols_to_drop)} high-null columns")
+
+# Impute remaining numeric nulls with median
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+imputer = SimpleImputer(strategy="median")
+df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+
+# Standard-scale numeric features
+scaler = StandardScaler()
+df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+print(f"Final shape: {df.shape}")`;
+
 // ─── Page ───────────────────────────────────────────────────────
 
 export function DevToolsShowcase() {
@@ -89,6 +146,113 @@ export function DevToolsShowcase() {
             Preprocessing components at chat-pane width with realistic mock data.
           </p>
         </div>
+
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/* SHARED PRIMITIVES                                      */}
+        {/* ═══════════════════════════════════════════════════════ */}
+
+        <Section title="Shared Primitives">
+          {/* StatusPill — xs */}
+          <Specimen name="StatusPill" variant="xs (default)">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {ALL_STATUSES.map((s) => (
+                <StatusPill key={s} status={s} />
+              ))}
+            </div>
+          </Specimen>
+
+          {/* StatusPill — sm */}
+          <Specimen name="StatusPill" variant="sm">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {ALL_STATUSES.map((s) => (
+                <StatusPill key={s} status={s} size="sm" />
+              ))}
+            </div>
+          </Specimen>
+
+          {/* ToolCardShell — expandable default */}
+          <Specimen name="ToolCardShell" variant="expandable (hover for chevron)">
+            <ToolCardShell
+              icon={FlaskConical}
+              title="Sample experiment"
+              subtitle="3 metrics tracked"
+              status="success"
+              expandable
+              defaultExpanded
+            >
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                Body content lives here. Hover the header to swap the icon for a
+                chevron; click to collapse.
+              </p>
+            </ToolCardShell>
+          </Specimen>
+
+          {/* ToolCardShell — error variant + retry action */}
+          <Specimen name="ToolCardShell" variant="error variant + retry action">
+            <ToolCardShell
+              icon={Sparkles}
+              iconClassName="text-metric-negative"
+              title="Something broke"
+              subtitle="exit code 1"
+              status="failed"
+              variant="error"
+              actions={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                  aria-label="Retry"
+                >
+                  <RotateCw className="h-3 w-3" />
+                </Button>
+              }
+            >
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                Error body. The shell adds a destructive border and tinted background.
+              </p>
+            </ToolCardShell>
+          </Specimen>
+
+          {/* PercentRing — sweep */}
+          <Specimen name="PercentRing" variant="value sweep 0 → 1">
+            <div className="flex items-center gap-4">
+              {[0, 0.25, 0.5, 0.75, 1].map((v) => (
+                <div key={v} className="flex flex-col items-center gap-1">
+                  <PercentRing value={v} size={28} />
+                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground">
+                    {Math.round(v * 100)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Specimen>
+
+          {/* Ring — currentColor override */}
+          <Specimen name="Ring" variant="currentColor override (negative tint)">
+            <Ring value={0.6} className="text-metric-negative" />
+          </Specimen>
+
+          {/* ProposalActionButton — all 4 states */}
+          <Specimen name="ProposalActionButton" variant="accept / reject × idle / selected">
+            <div className="flex flex-wrap items-center gap-2">
+              <ProposalActionButton variant="accept" />
+              <ProposalActionButton variant="accept" selected />
+              <ProposalActionButton variant="reject" />
+              <ProposalActionButton variant="reject" selected label="Skip" />
+            </div>
+          </Specimen>
+
+          {/* CodeBlock — short */}
+          <Specimen name="CodeBlock" variant="short snippet (maxHeight=200)">
+            <CodeBlock code={SHORT_PY} language="python" maxHeight={200} />
+          </Specimen>
+
+          {/* CodeBlock — long with scroll containment */}
+          <Specimen name="CodeBlock" variant="long snippet (maxHeight=400, scrolls)">
+            <CodeBlock code={LONG_PY} language="python" maxHeight={400} />
+          </Specimen>
+        </Section>
 
         {/* ═══════════════════════════════════════════════════════ */}
         {/* LIFECYCLE CARDS                                        */}
@@ -179,7 +343,7 @@ print(f"Scaled {len(numeric_cols)} numeric columns")`}
           {/* ExecutionCard */}
           <Specimen
             name="ExecutionCard"
-            variant="running"
+            variant="running (shimmer title, spinner, no bottom bar)"
             tools={['execute_transformation_step', 'run_cell']}
           >
             <ExecutionCard status="running" />
@@ -201,7 +365,7 @@ Null ratio reduced from 0.34 to 0.08`}
 
           <Specimen
             name="ExecutionCard"
-            variant="failed (with stderr)"
+            variant="failed (with stderr, error border)"
             tools={['run_cell']}
           >
             <ExecutionCard
@@ -268,14 +432,33 @@ Checkpoint: chk_a1b2c3`}
           </Specimen>
 
           {/* ErrorCard */}
-          <Specimen name="ErrorCard" variant="warning" tools={['execute_transformation_step']}>
+          <Specimen
+            name="ErrorCard"
+            variant="warning (inline amber strip, square edges, no chrome)"
+            tools={['execute_transformation_step']}
+          >
             <ErrorCard
               severity="warning"
               message="Column 'zip_code' was cast to string but contains numeric-only values. Consider keeping as numeric if used for distance calculations."
             />
           </Specimen>
 
-          <Specimen name="ErrorCard" variant="error" tools={['run_cell']}>
+          <Specimen
+            name="ErrorCard"
+            variant="warning (short message)"
+            tools={['execute_transformation_step']}
+          >
+            <ErrorCard
+              severity="warning"
+              message="Schema drift detected: 2 columns renamed."
+            />
+          </Specimen>
+
+          <Specimen
+            name="ErrorCard"
+            variant="error (icon-only retry in top-right, expandable traceback)"
+            tools={['run_cell']}
+          >
             <ErrorCard
               severity="error"
               message="Cell execution failed with MemoryError"
@@ -289,7 +472,7 @@ MemoryError: Unable to allocate 4.2 GiB for array`}
             />
           </Specimen>
 
-          {/* ApprovalCard */}
+          {/* ApprovalCard — DO NOT TOUCH (deferred) */}
           <Specimen name="ApprovalCard" variant="pending">
             <ApprovalCard
               stepId="step-4"
@@ -421,39 +604,7 @@ MemoryError: Unable to allocate 4.2 GiB for array`}
             />
           </Specimen>
 
-          {/* PreprocessingActionResult - execution variant */}
-          <Specimen
-            name="PreprocessingActionResult"
-            variant="execution variant"
-            tools={['execute_transformation_step']}
-          >
-            <PreprocessingActionResult
-              call={tc('pa-1', 'execute_transformation_step', {
-                stepId: 'step-1',
-                title: 'Drop high-null columns',
-              })}
-              output={{
-                step: {
-                  title: 'Drop high-null columns',
-                  stepId: 'step-1',
-                  intentType: 'column_removal',
-                  status: 'applied',
-                  rationale: 'Removing columns with >60% missing values to reduce noise.',
-                  requiresApproval: false,
-                  lastExecuteSucceeded: true,
-                  validation: {
-                    rowCountBefore: 12847,
-                    rowCountAfter: 12847,
-                    schemaDrift: false,
-                    notes: 'Row count preserved. 3 columns removed.',
-                  },
-                },
-                succeeded: true,
-              }}
-            />
-          </Specimen>
-
-          {/* PreprocessingActionResult - checkpoint variant */}
+          {/* PreprocessingActionResult - checkpoint variant (only remaining variant) */}
           <Specimen
             name="PreprocessingActionResult"
             variant="checkpoint variant"

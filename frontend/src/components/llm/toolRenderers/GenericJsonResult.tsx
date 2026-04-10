@@ -15,7 +15,7 @@ export function GenericJsonResult({ output }: { output: unknown }) {
   }
 
   return (
-    <pre className="text-[10px] font-mono whitespace-pre-wrap text-muted-foreground">
+    <pre className="text-[10px] font-mono whitespace-pre-wrap text-muted-foreground max-h-[240px] overflow-y-auto">
       {text}
     </pre>
   );

@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
+import { SimpleToolContent } from '@/components/llm/shared/SimpleToolContent';
 import { useProjectStore } from '@/stores/projectStore';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { getToolIcon, getToolLabel, getResultHint } from './ToolDisplayHelpers';
@@ -36,19 +37,15 @@ interface ToolDisplay {
     hasDropdown: boolean;
 }
 
-const ACCENT_COLOR_ENTRY = { fill: 'bg-accent-fill', text: 'text-accent-text', border: 'border-accent-border' } as const;
-
 const TOOL_TONE_INTERACTION_CLASSES = 'transition-opacity duration-200 motion-reduce:transition-none group-hover:opacity-100 group-focus-visible:opacity-100';
 const TOOL_TONE_FADE_CLASSES = 'opacity-75';
 
 // Single tool row component
 function ToolRow({
     display,
-    projectColorEntry,
     projectColorClass
 }: {
     display: ToolDisplay;
-    projectColorEntry?: { fill?: string; text?: string; border?: string };
     projectColorClass?: string;
 }) {
     const [expanded, setExpanded] = useState(false);
@@ -114,9 +111,9 @@ function ToolRow({
 
             {/* Expandable content — rendered by ToolResultRenderer */}
             {expanded && showDropdown && (
-                <div className="ml-6 mt-1.5 p-3 bg-muted/30 rounded-md border border-border/30 max-h-[300px] overflow-y-auto">
-                    <ToolResultRenderer call={call} result={result!} projectColorEntry={projectColorEntry} />
-                </div>
+                <SimpleToolContent maxHeight={300}>
+                    <ToolResultRenderer call={call} result={result!} />
+                </SimpleToolContent>
             )}
         </div>
     );
@@ -133,12 +130,15 @@ export function ToolIndicator({
     // Get project theme color
     const { activeProjectId, projects } = useProjectStore();
     const activeProject = projects.find((project) => project.id === activeProjectId);
-    const projectColorEntry = activeProject ? ACCENT_COLOR_ENTRY : undefined;
     const projectColorClass = activeProject ? 'text-accent-text' : undefined;
 
     const displayItems = useMemo<ToolDisplay[]>(() => {
+        // Pre-index results by call id so the per-row lookup is O(1).
+        const byId = new Map<string, ToolResult>();
+        for (const r of results) byId.set(r.id, r);
+
         return toolCalls.map((call) => {
-            const result = results.find((r) => r.id === call.id);
+            const result = byId.get(call.id);
             let status: ToolStatus = 'pending';
 
             if (result) {
@@ -185,7 +185,6 @@ export function ToolIndicator({
                 <ToolRow
                     key={display.call.id}
                     display={display}
-                    projectColorEntry={projectColorEntry}
                     projectColorClass={projectColorClass}
                 />
             ))}

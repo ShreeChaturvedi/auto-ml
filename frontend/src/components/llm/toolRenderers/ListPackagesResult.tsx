@@ -6,7 +6,7 @@ export function ListPackagesResult({ output }: { output: unknown }) {
     return (
       <div className="flex flex-wrap gap-1">
         {pkgs.slice(0, 30).map((pkg, i) => (
-          <Badge key={i} variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+          <Badge key={i} variant="outline" className="text-[10px] font-mono px-2 py-0.5 rounded-full border-border/70 bg-muted/30 text-muted-foreground">
             {pkg}
           </Badge>
         ))}

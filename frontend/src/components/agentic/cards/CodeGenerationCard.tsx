@@ -1,15 +1,17 @@
 /**
- * CodeGenerationCard - Displays generated code with syntax highlighting.
+ * CodeGenerationCard — generated / materialized code with Monaco highlighting.
  *
- * Provides expand/collapse toggle and a copy-to-clipboard button.
- * Uses a <pre><code> block with a CSS class for optional syntax highlighting.
+ * Chrome is owned by `ToolCardShell` (no custom border, no custom header
+ * background). The language label is removed; only a `{n} lines` line-count
+ * indicator remains. Copy is a ghost icon button in the shell's `actions` slot.
  */
 
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Code2, Copy, Check } from 'lucide-react';
+import { useMemo } from 'react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { Button } from '@/components/ui/button';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
+import { CodeBlock } from '@/components/llm/shared/CodeBlock';
 
 export interface CodeGenerationCardProps {
   code: string;
@@ -20,63 +22,46 @@ export interface CodeGenerationCardProps {
 export function CodeGenerationCard({
   code,
   language = 'python',
-  expanded: initialExpanded = false,
+  expanded = false,
 }: CodeGenerationCardProps) {
-  const [expanded, setExpanded] = useState(initialExpanded);
   const [copied, copy] = useCopyToClipboard();
+  const lineCount = useMemo(() => code.split('\n').length, [code]);
 
-  const lineCount = code.split('\n').length;
-  const preview = code.split('\n').slice(0, 3).join('\n');
+  const subtitle = (
+    <span className="text-muted-foreground/80">
+      <span className="font-mono tabular-nums">{lineCount}</span> line{lineCount === 1 ? '' : 's'}
+    </span>
+  );
+
+  const copyButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      className="h-5 w-5"
+      onClick={() => void copy(code)}
+      aria-label={copied ? 'Copied' : 'Copy code'}
+      title={copied ? 'Copied' : 'Copy code'}
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-metric-positive" />
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
+    </Button>
+  );
 
   return (
-    <div className="rounded-md border bg-card shadow-sm dark:shadow-none overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-1.5">
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
-        >
-          {expanded ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-          <span className="font-medium">Generated code</span>
-          <span className="text-[10px] font-mono text-muted-foreground/60">
-            {language} &middot; {lineCount} lines
-          </span>
-        </button>
-
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="h-5 w-5"
-          onClick={() => void copy(code)}
-          title="Copy code"
-        >
-          {copied ? (
-            <Check className="h-3 w-3 text-emerald-500" />
-          ) : (
-            <Copy className="h-3 w-3" />
-          )}
-        </Button>
-      </div>
-
-      {/* Code block */}
-      <div
-        className={cn(
-          'overflow-hidden transition-[max-height] duration-200',
-          expanded ? 'max-h-[500px]' : 'max-h-[4.5rem]',
-        )}
-      >
-        <pre className="overflow-auto p-3 text-xs leading-relaxed">
-          <code className={`language-${language}`}>
-            {expanded ? code : preview + (lineCount > 3 ? '\n...' : '')}
-          </code>
-        </pre>
-      </div>
-    </div>
+    <ToolCardShell
+      icon={Code2}
+      iconClassName="text-muted-foreground"
+      title="Generated code"
+      subtitle={subtitle}
+      actions={copyButton}
+      expandable
+      defaultExpanded={expanded}
+    >
+      <CodeBlock code={code} language={language} maxHeight={500} />
+    </ToolCardShell>
   );
 }

@@ -1,7 +1,6 @@
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import { FileText } from 'lucide-react';
-import { scorePercent, scoreColor } from './shared';
+import { PercentRing } from '@/components/llm/shared/Ring';
+import { resolveFileIconByFilename } from '@/lib/fileUtils';
+import { scorePercent } from './shared';
 
 export interface SearchHit {
   chunkId?: string;
@@ -12,23 +11,7 @@ export interface SearchHit {
   span?: { start: number; end: number };
 }
 
-/** Badge border/text classes themed to project color, with opacity tiers by score */
-function scoreBadgeClasses(pct: number, projectText?: string, projectBorder?: string): string {
-  if (projectText && projectBorder) {
-    const opacity = pct >= 70 ? '' : pct >= 40 ? 'opacity-70' : 'opacity-45';
-    return cn(projectBorder, projectText, opacity);
-  }
-  if (pct >= 70) return 'border-emerald-500/40 text-emerald-600';
-  if (pct >= 40) return 'border-amber-500/40 text-amber-600';
-  return 'border-rose-400/40 text-rose-500';
-}
-
-export function SearchDocumentsResult({ items, projectFill, projectText, projectBorder }: {
-  items: SearchHit[];
-  projectFill?: string;
-  projectText?: string;
-  projectBorder?: string;
-}) {
+export function SearchDocumentsResult({ items }: { items: SearchHit[] }) {
   if (items.length === 0) {
     return <p className="text-xs text-muted-foreground italic">No matching documents found.</p>;
   }
@@ -40,34 +23,21 @@ export function SearchDocumentsResult({ items, projectFill, projectText, project
       </p>
       {items.map((hit, i) => {
         const pct = scorePercent(hit.score ?? 0);
+        const { Icon, colorClass } = resolveFileIconByFilename(hit.filename);
         return (
-          <div
-            key={hit.chunkId ?? i}
-            className="rounded-md border border-border/60 bg-card/50 p-2.5 space-y-1.5"
-          >
+          <div key={hit.chunkId ?? i} className="space-y-1.5">
             {/* Header row: filename + score */}
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground truncate">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${colorClass}`} />
                 {hit.filename ?? 'unknown'}
               </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  'text-[10px] font-mono tabular-nums px-1.5 py-0',
-                  scoreBadgeClasses(pct, projectText, projectBorder)
-                )}
-              >
-                {pct}%
-              </Badge>
-            </div>
-
-            {/* Score bar */}
-            <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-              <div
-                className={cn('h-full rounded-full transition-[width] duration-300', scoreColor(hit.score ?? 0, projectFill))}
-                style={{ width: `${pct}%` }}
-              />
+              <span className="inline-flex items-center gap-1">
+                <PercentRing value={hit.score ?? 0} size={18} />
+                <span className="text-[10px] font-mono tabular-nums text-muted-foreground">
+                  {pct}%
+                </span>
+              </span>
             </div>
 
             {/* Snippet */}

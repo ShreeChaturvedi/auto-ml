@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import { File, Rows3, Columns3 } from 'lucide-react';
+import { resolveFileIconByFilename } from '@/lib/fileUtils';
 import { formatNumber, truncate, dtypeInfo } from './shared';
+import { DimensionPill } from './sharedComponents';
 
 export interface ProfileColumn {
   name: string;
@@ -27,27 +27,19 @@ export interface DatasetProfileOutput {
 
 export function DatasetProfileResult({ data }: { data: DatasetProfileOutput }) {
   const columns = data.columns ?? [];
+  const { Icon, colorClass } = resolveFileIconByFilename(data.filename, data.fileType);
   return (
     <div className="space-y-3">
-      {/* Summary badges */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Summary header */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(data.nRows != null || data.nCols != null) && (
+          <DimensionPill rows={data.nRows} cols={data.nCols} />
+        )}
         {data.filename && (
-          <Badge variant="outline" className="text-[10px] gap-1">
-            <File className="h-3 w-3" />
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground truncate">
+            <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${colorClass}`} />
             {data.filename}
-          </Badge>
-        )}
-        {data.nRows != null && (
-          <Badge variant="outline" className="text-[10px] gap-1 font-mono tabular-nums">
-            <Rows3 className="h-3 w-3" />
-            {data.nRows.toLocaleString()} rows
-          </Badge>
-        )}
-        {data.nCols != null && (
-          <Badge variant="outline" className="text-[10px] gap-1 font-mono tabular-nums">
-            <Columns3 className="h-3 w-3" />
-            {data.nCols} cols
-          </Badge>
+          </span>
         )}
         {data.fileType && (
           <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-mono">
@@ -85,22 +77,19 @@ export function DatasetProfileResult({ data }: { data: DatasetProfileOutput }) {
                         {info.label}
                       </span>
                     </td>
-                    <td className={cn(
-                      'py-1 pr-3 text-right font-mono tabular-nums',
-                      col.nullCount > 0 ? 'text-amber-600' : 'text-muted-foreground'
-                    )}>
+                    <td className="py-1 pr-3 text-right tabular-nums text-muted-foreground">
                       {col.nullCount.toLocaleString()}
                     </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                    <td className="py-1 pr-3 text-right tabular-nums text-muted-foreground">
                       {col.uniqueCount != null ? col.uniqueCount.toLocaleString() : '–'}
                     </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                    <td className="py-1 pr-3 text-right tabular-nums text-muted-foreground">
                       {col.min != null ? formatNumber(col.min) : '–'}
                     </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums text-muted-foreground">
+                    <td className="py-1 pr-3 text-right tabular-nums text-muted-foreground">
                       {col.max != null ? formatNumber(col.max) : '–'}
                     </td>
-                    <td className="py-1 text-right font-mono tabular-nums text-muted-foreground">
+                    <td className="py-1 text-right tabular-nums text-muted-foreground">
                       {col.mean != null ? formatNumber(col.mean) : '–'}
                     </td>
                   </tr>

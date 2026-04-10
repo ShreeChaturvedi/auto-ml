@@ -1,6 +1,8 @@
 import { Settings2 } from 'lucide-react';
 import { asRecord, asString } from '@/lib/typeCoercion';
-import { DetailGrid, StatusBadge, type DetailField } from './sharedComponents';
+import { StatusPill } from '@/components/llm/shared/StatusPill';
+import { normalizeStatus } from './shared';
+import { DetailGrid, type DetailField } from './sharedComponents';
 
 export interface ConfigureExperimentOutput {
   experimentId: string;
@@ -29,7 +31,7 @@ export function ConfigureExperimentResult({ output }: { output: unknown }) {
       <div className="flex items-center gap-1.5">
         <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-medium text-foreground">{name}</span>
-        {status && <StatusBadge status={status} className="ml-auto" />}
+        {status && <StatusPill status={normalizeStatus(status)} label={status} className="ml-auto" />}
       </div>
       <DetailGrid fields={fields} />
     </div>

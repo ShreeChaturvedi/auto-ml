@@ -26,6 +26,7 @@ import {
   PreprocessingActionResult,
   ListPackagesResult,
   GenericJsonResult,
+  ConfigureExperimentResult,
 } from './toolRenderers/index';
 import type {
   SearchHit,
@@ -69,6 +70,7 @@ export const EXPANDABLE_TOOLS = new Set([
   'read_cell',
   'edit_cell',
   'list_packages',
+  'configure_experiment',
   // Feature engineering lifecycle tools
   'propose_feature',
   'materialize_feature_code',
@@ -83,10 +85,9 @@ export const EXPANDABLE_TOOLS = new Set([
 interface ToolResultRendererProps {
   call: ToolCall;
   result: ToolResult;
-  projectColorEntry?: { fill?: string; text?: string; border?: string };
 }
 
-export function ToolResultRenderer({ call, result, projectColorEntry }: ToolResultRendererProps) {
+export function ToolResultRenderer({ call, result }: ToolResultRendererProps) {
   const output = result.output;
   if (output == null) return null;
 
@@ -101,7 +102,7 @@ export function ToolResultRenderer({ call, result, projectColorEntry }: ToolResu
       : Array.isArray((output as { items?: unknown }).items)
         ? ((output as { items: SearchHit[] }).items)
         : [];
-    return <SearchDocumentsResult items={items} projectFill={projectColorEntry?.fill} projectText={projectColorEntry?.text} projectBorder={projectColorEntry?.border} />;
+    return <SearchDocumentsResult items={items} />;
   }
 
   if (tool === 'get_dataset_profile') {
@@ -145,6 +146,14 @@ export function ToolResultRenderer({ call, result, projectColorEntry }: ToolResu
 
   if (tool === 'list_packages') {
     return <ListPackagesResult output={output} />;
+  }
+
+  // The only true dispatcher gap — every other tool renderer is either
+  // intercepted upstream by `useLifecycleCards.ts` or wired into a dispatch
+  // case above. `configure_experiment` has no lifecycle classifier, so
+  // without this case it would fall through to `GenericJsonResult`.
+  if (tool === 'configure_experiment') {
+    return <ConfigureExperimentResult output={output} />;
   }
 
   return <GenericJsonResult output={output} />;

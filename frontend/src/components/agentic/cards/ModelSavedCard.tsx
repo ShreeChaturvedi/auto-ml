@@ -1,35 +1,31 @@
 /**
- * ModelSavedCard - Training chat card shown when register_model succeeds.
+ * ModelSavedCard — surfaced when `register_model` succeeds in the
+ * training chat. Bridges to the Experiments module's rich detail panel
+ * via an "Open in Experiments" CTA.
  *
- * Bridges the Training phase to the existing Experiments module. Instead of
- * rebuilding confusion-matrix / learning-curve / feature-importance charts
- * inside Training, we link to `ModelDetailPanel` which already renders all
- * of them via PlotsTab + InterpretabilityTab + the 15+ Plotly chart
- * components under `frontend/src/components/experiments/charts/`.
+ * Task type is conveyed by a class-tinted `StatusPill` (neutral tone with
+ * a className override) so `StatusPill`'s tone union doesn't grow for
+ * classification / regression / clustering identity.
  *
- * Rendered by useLifecycleCards when a `register_model` tool result arrives
- * with `status: 'registered'` and a populated `modelId`. Supersedes the
- * generic CommitBadge for this specific tool.
- *
- * Clustering models are handled specially: the background evaluation service
- * at `evaluationService.ts:377-379` skips clustering, so a clustering model's
- * ModelDetailPanel would show a permanently-pending evaluation state. For
- * those models the "Open details" button is disabled with a tooltip.
+ * Clustering models skip the Experiments evaluation pipeline entirely
+ * (see `evaluationService.ts:377-379`), so the CTA is disabled for
+ * them with an explanatory tooltip.
  */
 
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, ExternalLink } from 'lucide-react';
+import { ArrowRight, ExternalLink, Sparkles, Target, TrendingUp, Shapes } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Pill } from '@/components/ui/pill';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger
+  TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
+import { StatusPill } from '@/components/llm/shared/StatusPill';
 
 export interface ModelSavedCardProps {
   projectId: string;
@@ -41,10 +37,16 @@ export interface ModelSavedCardProps {
   artifactSize?: number;
 }
 
-const TASK_TONES: Record<string, string> = {
-  classification: 'bg-sky-500/10 text-sky-700 border-sky-500/30 dark:text-sky-300',
-  regression: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30 dark:text-emerald-300',
-  clustering: 'bg-violet-500/10 text-violet-700 border-violet-500/30 dark:text-violet-300'
+const TASK_ICON: Record<string, LucideIcon> = {
+  classification: Target,
+  regression: TrendingUp,
+  clustering: Shapes,
+};
+
+const TASK_TINT: Record<string, string> = {
+  classification: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  regression: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  clustering: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300',
 };
 
 function formatBytes(size: number | undefined): string | null {
@@ -56,16 +58,15 @@ function formatBytes(size: number | undefined): string | null {
 
 /**
  * Returns the top-N metrics as {key, value} pairs, ordered by the task-type
- * convention (accuracy/f1 first for classification, RMSE/R² first for
- * regression) so the primary metric sits on the left.
+ * convention so the primary metric sits on the left.
  */
 function prioritizeMetrics(
   metrics: Record<string, number> | undefined,
-  taskType: string
+  taskType: string,
 ): Array<{ key: string; value: number }> {
   if (!metrics) return [];
   const entries = Object.entries(metrics).filter(
-    ([, v]) => typeof v === 'number' && Number.isFinite(v)
+    ([, v]) => typeof v === 'number' && Number.isFinite(v),
   ) as Array<[string, number]>;
   if (entries.length === 0) return [];
 
@@ -103,16 +104,14 @@ export function ModelSavedCard({
   modelType,
   taskType,
   metrics,
-  artifactSize
+  artifactSize,
 }: ModelSavedCardProps) {
   const navigate = useNavigate();
   const primaryMetrics = prioritizeMetrics(metrics, taskType);
   const sizeLabel = formatBytes(artifactSize);
-  const toneClass = TASK_TONES[taskType] ?? 'bg-muted text-muted-foreground border-border';
+  const TaskIcon = TASK_ICON[taskType] ?? Target;
+  const taskTint = TASK_TINT[taskType] ?? 'border-border/70 bg-muted/30 text-muted-foreground';
 
-  // Clustering models skip the Experiments evaluation pipeline entirely
-  // (see evaluationService.ts:377-379), so ModelDetailPanel would show a
-  // permanently-pending state. Disable the CTA for them.
   const canOpenDetails = Boolean(modelId) && taskType !== 'clustering';
   const disabledReason = !modelId
     ? 'Model was saved but the backend did not return a model id.'
@@ -125,25 +124,27 @@ export function ModelSavedCard({
     navigate(`/project/${projectId}/experiments?model=${modelId}`);
   };
 
+  // Task-type pill uses `StatusPill status="neutral"` with a class override
+  // so we get the shared pill chrome without growing StatusPill's tone
+  // union by N task-specific colours.
+  const taskPill = (
+    <StatusPill
+      status="neutral"
+      icon={TaskIcon}
+      label={taskType}
+      className={`${taskTint} capitalize`}
+    />
+  );
+
   return (
-    <Card className="border border-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/15">
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-            <CardTitle className="text-sm font-semibold truncate">
-              Model saved: {modelName}
-            </CardTitle>
-          </div>
-          <Badge
-            variant="outline"
-            className={cn('shrink-0 text-[10px] capitalize', toneClass)}
-          >
-            {taskType}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 text-xs">
+    <ToolCardShell
+      icon={Sparkles}
+      iconClassName="text-metric-positive"
+      title="Model saved"
+      subtitle={modelName}
+      actions={taskPill}
+    >
+      <div className="space-y-3 px-3 py-2">
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className="font-mono">{modelType}</span>
           {sizeLabel && (
@@ -157,13 +158,20 @@ export function ModelSavedCard({
         {primaryMetrics.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {primaryMetrics.map(({ key, value }) => (
-              <Badge
+              // Pill renders `{children}` as a single text node, so the
+              // `ModelSavedCard.test.tsx` regex matcher (`/rmse: 0\.4321/`)
+              // still hits. The pill is font-mono — the key is an identifier
+              // (rmse/auc/etc.), so mono is appropriate — a documented
+              // exception to the "no mono outside pills" rule.
+              <Pill
                 key={key}
-                variant="secondary"
-                className="text-[10px] font-mono gap-1"
+                shape="pill"
+                size="xs"
+                tone="info"
+                className="font-mono"
               >
-                {key}: {formatMetricValue(value)}
-              </Badge>
+                {`${key}: ${formatMetricValue(value)}`}
+              </Pill>
             ))}
           </div>
         )}
@@ -195,7 +203,7 @@ export function ModelSavedCard({
             </Tooltip>
           </TooltipProvider>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </ToolCardShell>
   );
 }

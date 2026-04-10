@@ -100,29 +100,39 @@ export async function downloadFile(file: UploadedFile): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-/** Determine file type from File object. */
-export const getFileType = (file: File): FileType => {
-  const extension = file.name.split('.').pop()?.toLowerCase();
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'text', 'log', 'html', 'htm', 'xml', 'yml', 'yaml', 'rtf',
+]);
 
-  if (extension === 'csv') return 'csv';
-  if (extension === 'json') return 'json';
-  if (extension === 'xlsx' || extension === 'xls') return 'excel';
-  if (extension === 'pdf') return 'pdf';
-  if (extension === 'md') return 'markdown';
-  if (extension === 'docx' || extension === 'doc') return 'word';
-  if (
-    extension === 'txt'
-    || extension === 'text'
-    || extension === 'log'
-    || extension === 'html'
-    || extension === 'htm'
-    || extension === 'xml'
-    || extension === 'yml'
-    || extension === 'yaml'
-    || extension === 'rtf'
-  ) {
-    return 'text';
-  }
-
+/**
+ * Derive a FileType from a plain filename string (no DOM File object).
+ * Shared by upload flows, renderers, and tool-result cards so the
+ * `.split('.').pop()` extension check lives in one place.
+ */
+export function fileTypeFromFilename(filename: string | undefined | null): FileType {
+  if (!filename) return 'other';
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'csv') return 'csv';
+  if (ext === 'json') return 'json';
+  if (ext === 'xlsx' || ext === 'xls') return 'excel';
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'md' || ext === 'markdown') return 'markdown';
+  if (ext === 'docx' || ext === 'doc') return 'word';
+  if (TEXT_EXTENSIONS.has(ext)) return 'text';
   return 'other';
-};
+}
+
+/**
+ * Resolve {Icon, colorClass} from a filename string, with an optional
+ * explicit type override (for cases where the filename extension lies).
+ */
+export function resolveFileIconByFilename(
+  filename?: string | null,
+  explicitType?: FileType | string,
+): { Icon: ComponentType<{ className?: string }>; colorClass: string } {
+  const ft = explicitType ?? fileTypeFromFilename(filename);
+  return resolveFileIcon(ft);
+}
+
+/** Determine file type from File object. */
+export const getFileType = (file: File): FileType => fileTypeFromFilename(file.name);

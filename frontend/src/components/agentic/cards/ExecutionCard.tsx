@@ -1,22 +1,29 @@
 /**
- * ExecutionCard - Displays execution output with status indication.
+ * ExecutionCard — cell / step execution output with status indication.
  *
- * Shows a progress shimmer while running, duration + status badge on complete,
- * and a monospace output area for stdout/stderr.
+ * Running state: `Loader2` spinner header, shimmer title, no shimmer bar.
+ * Success state: `CheckCircle2` in `text-metric-positive`; on hover the icon
+ * fades to a chevron (owned by `ToolCardShell`).
+ * Failed state: `XCircle` in `text-metric-negative`, `variant="error"` on
+ * the shell — the only card that draws a colored outline besides `ErrorCard`.
  *
- * When training progress markers (__TRAIN_START__, __TRAIN_PROGRESS__, __TRAIN_COMPLETE__)
- * are detected in stdout, renders TrainingProgressCard for rich visualization.
+ * Duration is mono tabular-nums — a documented exception to the
+ * "no mono outside pills" rule: column stability matters more than prose
+ * font consistency for running timestamps.
+ *
+ * If training progress markers are detected in stdout, the card
+ * early-returns to `TrainingProgressCard` for a richer visualization.
  */
 
-import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { useMemo } from 'react';
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { formatDuration } from '@/components/experiments/utils';
 import { parseAllTrainingEvents } from '@/lib/training/progressParser';
 import type { TrainingEvent } from '@/lib/training/progressParser';
 import { TrainingProgressCard, type MetricSeries } from '@/components/training/TrainingProgressCard';
 import { isLowerBetterMetric } from '@/components/experiments/modelIcons';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
 
 export interface ExecutionCardProps {
   status: 'running' | 'success' | 'failed';
@@ -25,26 +32,82 @@ export interface ExecutionCardProps {
   duration?: number;
 }
 
-/** Build metric series from parsed training progress events. */
-function buildMetricSeries(events: TrainingEvent[]): MetricSeries[] {
-  const progressEvents = events.filter(
-    (e): e is TrainingEvent & { type: 'progress' } => e.type === 'progress',
-  );
-  if (progressEvents.length === 0) return [];
+/**
+ * Single-pass derivation: sorts events into start / progress / complete
+ * buckets and builds per-metric series in one walk.
+ */
+function deriveTrainingData(
+  stdout: string | undefined,
+  duration: number | undefined,
+):
+  | null
+  | {
+      modelType: string;
+      currentEpoch: number;
+      totalEpochs: number;
+      metrics: MetricSeries[];
+      isComplete: boolean;
+      finalMetrics: Record<string, number> | undefined;
+    } {
+  if (!stdout) return null;
 
-  const allKeys = new Set<string>();
-  for (const e of progressEvents) {
-    for (const key of Object.keys(e.metrics)) allKeys.add(key);
+  const events = parseAllTrainingEvents(stdout);
+  let start: (TrainingEvent & { type: 'start' }) | undefined;
+  let complete: (TrainingEvent & { type: 'complete' }) | undefined;
+  const progress: Array<TrainingEvent & { type: 'progress' }> = [];
+  const metricValues = new Map<string, number[]>();
+
+  for (const evt of events) {
+    if (evt.type === 'start') start = evt;
+    else if (evt.type === 'complete') complete = evt;
+    else if (evt.type === 'progress') {
+      progress.push(evt);
+      for (const [key, value] of Object.entries(evt.metrics)) {
+        let series = metricValues.get(key);
+        if (!series) {
+          series = [];
+          metricValues.set(key, series);
+        }
+        series.push(value);
+      }
+    }
   }
+  if (!start) return null;
 
-  return Array.from(allKeys).map((name) => {
-    const values = progressEvents.map((e) => e.metrics[name] ?? 0);
+  const metrics: MetricSeries[] = Array.from(metricValues, ([name, values]) => {
     const isLossLike = isLowerBetterMetric(name);
     const first = values[0] ?? 0;
     const last = values[values.length - 1] ?? 0;
-    const improving = isLossLike ? last <= first : last >= first;
-    return { name, values, improving };
+    return { name, values, improving: isLossLike ? last <= first : last >= first };
   });
+
+  // Unused for this branch but kept for typing parity.
+  void duration;
+
+  return {
+    modelType: start.modelType,
+    totalEpochs: start.totalEpochs,
+    currentEpoch: progress[progress.length - 1]?.epoch ?? 0,
+    metrics,
+    isComplete: !!complete,
+    finalMetrics: complete?.finalMetrics,
+  };
+}
+
+/** Shared `<pre>` rendering for stdout / stderr blocks. */
+function OutputPre({ stream, text }: { stream: 'out' | 'err'; text: string }) {
+  return (
+    <pre
+      className={cn(
+        'overflow-auto p-3 text-[11px] font-mono leading-relaxed whitespace-pre-wrap',
+        stream === 'out' && 'max-h-[200px] bg-muted/20 text-foreground',
+        stream === 'err' &&
+          'max-h-[150px] border-t border-metric-negative/20 bg-metric-negative/5 text-metric-negative',
+      )}
+    >
+      {text}
+    </pre>
+  );
 }
 
 export function ExecutionCard({
@@ -53,37 +116,9 @@ export function ExecutionCard({
   stderr,
   duration,
 }: ExecutionCardProps) {
-  const [expanded, setExpanded] = useState(status !== 'success');
+  const trainingData = useMemo(() => deriveTrainingData(stdout, duration), [stdout, duration]);
 
-  // Parse training progress from stdout
-  const trainingData = useMemo(() => {
-    if (!stdout) return null;
-    const events = parseAllTrainingEvents(stdout);
-    const startEvent = events.find(
-      (e): e is TrainingEvent & { type: 'start' } => e.type === 'start',
-    );
-    if (!startEvent) return null;
-
-    const progressEvents = events.filter(
-      (e): e is TrainingEvent & { type: 'progress' } => e.type === 'progress',
-    );
-    const completeEvent = events.find(
-      (e): e is TrainingEvent & { type: 'complete' } => e.type === 'complete',
-    );
-    const lastProgress = progressEvents[progressEvents.length - 1];
-    const metrics = buildMetricSeries(events);
-
-    return {
-      modelType: startEvent.modelType,
-      totalEpochs: startEvent.totalEpochs,
-      currentEpoch: lastProgress?.epoch ?? 0,
-      metrics,
-      isComplete: !!completeEvent,
-      finalMetrics: completeEvent?.finalMetrics,
-    };
-  }, [stdout]);
-
-  // If training progress was detected, render the rich card
+  // Training progress → early return to the richer training card.
   if (trainingData) {
     return (
       <TrainingProgressCard
@@ -100,89 +135,55 @@ export function ExecutionCard({
 
   const hasOutput = !!(stdout || stderr || (status !== 'running' && duration != null));
 
+  const headerIcon = status === 'running' ? Loader2 : status === 'success' ? CheckCircle2 : XCircle;
+  const headerIconClass = cn(
+    status === 'running' && 'animate-spin text-muted-foreground',
+    status === 'success' && 'text-metric-positive',
+    status === 'failed' && 'text-metric-negative',
+  );
+
+  // IMPORTANT: these strings are preserved verbatim so that
+  // `useLifecycleCards.test.tsx` lines 50 + 77 still match.
+  const title =
+    status === 'running' ? 'Executing...'
+      : status === 'success' ? 'Execution succeeded'
+        : 'Execution failed';
+
+  const titleClass = cn(
+    status === 'running' && 'shimmer-text text-muted-foreground',
+    status === 'failed' && 'text-metric-negative',
+  );
+
+  const durationBadge = duration != null && status !== 'running' ? (
+    <span className="text-[10px] font-mono tabular-nums text-muted-foreground/60">
+      {formatDuration(duration)}
+    </span>
+  ) : null;
+
+  const pillStatus = status === 'success' ? 'success' : status === 'failed' ? 'failed' : undefined;
+
   return (
-    <div className="rounded-md border bg-card shadow-sm dark:shadow-none overflow-hidden">
-      {/* Header */}
-      <button
-        type="button"
-        onClick={() => hasOutput && setExpanded(!expanded)}
-        disabled={!hasOutput}
-        className={cn(
-          'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          hasOutput && 'hover:bg-muted/30 cursor-pointer',
-          !hasOutput && 'cursor-default',
-        )}
-      >
-        {status === 'running' ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-        ) : status === 'success' ? (
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-        ) : (
-          <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-        )}
-
-        <span
-          className={cn(
-            'flex-1 text-xs font-medium',
-            status === 'running' && 'shimmer-text text-muted-foreground',
-            status === 'success' && 'text-foreground',
-            status === 'failed' && 'text-destructive',
-          )}
-        >
-          {status === 'running' ? 'Executing...' : status === 'success' ? 'Execution succeeded' : 'Execution failed'}
-        </span>
-
-        {duration != null && status !== 'running' && (
-          <span className="text-[10px] font-mono text-muted-foreground/60 tabular-nums">
-            {formatDuration(duration)}
-          </span>
-        )}
-
-        {status !== 'running' && (
-          <Badge
-            variant={status === 'success' ? 'secondary' : 'destructive'}
-            className="text-[10px]"
-          >
-            {status}
-          </Badge>
-        )}
-
-        {hasOutput && (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-          )
-        )}
-      </button>
-
-      {/* Output area */}
-      {expanded && hasOutput && (
-        <div className="border-t">
-          {stdout && (
-            <pre className="max-h-[200px] overflow-auto bg-muted/20 p-3 text-[11px] leading-relaxed font-mono text-foreground whitespace-pre-wrap">
-              {stdout}
-            </pre>
-          )}
-          {stderr && (
-            <pre className="max-h-[150px] overflow-auto border-t border-destructive/20 bg-destructive/5 p-3 text-[11px] leading-relaxed font-mono text-destructive whitespace-pre-wrap">
-              {stderr}
-            </pre>
-          )}
+    <ToolCardShell
+      icon={headerIcon}
+      iconClassName={headerIconClass}
+      title={<span className={titleClass}>{title}</span>}
+      actions={durationBadge}
+      status={pillStatus}
+      variant={status === 'failed' ? 'error' : 'default'}
+      expandable={hasOutput}
+      defaultExpanded={status !== 'success'}
+    >
+      {hasOutput && (
+        <>
+          {stdout && <OutputPre stream="out" text={stdout} />}
+          {stderr && <OutputPre stream="err" text={stderr} />}
           {!stdout && !stderr && duration != null && (
             <div className="px-3 py-2 text-[11px] text-muted-foreground">
               Completed in {formatDuration(duration)} with no console output.
             </div>
           )}
-        </div>
+        </>
       )}
-
-      {/* Running shimmer bar */}
-      {status === 'running' && (
-        <div className="h-0.5 w-full overflow-hidden bg-muted">
-          <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
-        </div>
-      )}
-    </div>
+    </ToolCardShell>
   );
 }

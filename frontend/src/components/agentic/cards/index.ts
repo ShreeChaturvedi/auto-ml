@@ -5,3 +5,4 @@ export { ValidationCard, type ValidationCardProps, type ValidationMetric } from 
 export { ApprovalCard, type ApprovalCardProps } from './ApprovalCard';
 export { CommitBadge, type CommitBadgeProps } from './CommitBadge';
 export { ErrorCard, type ErrorCardProps } from './ErrorCard';
+export { ModelSavedCard, type ModelSavedCardProps } from './ModelSavedCard';

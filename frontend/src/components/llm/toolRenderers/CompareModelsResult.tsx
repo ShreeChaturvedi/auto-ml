@@ -1,8 +1,9 @@
-import { cn } from '@/lib/utils';
 import { asRecord, asString, asNumber } from '@/lib/typeCoercion';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, AlertTriangle, Crown } from 'lucide-react';
-import { DetailGrid, StatusBadge, type DetailField } from './sharedComponents';
+import { StatusPill } from '@/components/llm/shared/StatusPill';
+import { normalizeStatus } from './shared';
+import { DetailGrid, type DetailField } from './sharedComponents';
 
 interface ModelComparison {
   rank: number;
@@ -17,25 +18,6 @@ export interface CompareModelsOutput {
   comparison: ModelComparison[];
   missingExperiments: string[];
   bestExperiment: string;
-}
-
-const RANK_DOT_COLORS: Record<number, string> = {
-  1: 'bg-amber-400',
-  2: 'bg-zinc-400',
-  3: 'bg-amber-700 dark:bg-amber-600',
-};
-
-function RankCell({ rank }: { rank: number }) {
-  const dotColor = RANK_DOT_COLORS[rank];
-
-  return (
-    <span className="flex items-center gap-1.5">
-      {dotColor
-        ? <span className={cn('h-1.5 w-1.5 rounded-full', dotColor)} />
-        : <span className="h-1.5 w-1.5" />}
-      <span className="text-muted-foreground">#{rank}</span>
-    </span>
-  );
 }
 
 function parseComparison(raw: unknown): ModelComparison[] {
@@ -78,7 +60,7 @@ export function CompareModelsResult({ output }: { output: unknown }) {
           {model.experimentName}
         </div>
         <DetailGrid fields={fields} />
-        <StatusBadge status={model.status} />
+        <StatusPill status={normalizeStatus(model.status)} label={model.status} />
       </div>
     );
   }
@@ -108,15 +90,9 @@ export function CompareModelsResult({ output }: { output: unknown }) {
             {comparison.map((model) => {
               const isBest = model.experimentName === bestExperiment;
               return (
-                <tr
-                  key={model.rank}
-                  className={cn(
-                    'border-b border-border/20 last:border-0',
-                    isBest && 'bg-emerald-500/5',
-                  )}
-                >
+                <tr key={model.rank} className="border-b border-border/20 last:border-0">
                   <td className="py-1.5 pr-3">
-                    <RankCell rank={model.rank} />
+                    <span className="text-muted-foreground tabular-nums">#{model.rank}</span>
                   </td>
                   <td className="py-1.5 pr-3 text-foreground font-medium">
                     <span className="flex items-center gap-1.5">
@@ -125,11 +101,11 @@ export function CompareModelsResult({ output }: { output: unknown }) {
                     </span>
                   </td>
                   <td className="py-1.5 pr-3 text-muted-foreground">{model.modelType}</td>
-                  <td className="py-1.5 pr-3 text-right font-mono tabular-nums text-foreground">
+                  <td className="py-1.5 pr-3 text-right tabular-nums text-foreground">
                     {model.primaryMetricValue.toFixed(4)}
                   </td>
                   <td className="py-1.5">
-                    <StatusBadge status={model.status} className="px-1.5 py-0" />
+                    <StatusPill status={normalizeStatus(model.status)} label={model.status} />
                   </td>
                 </tr>
               );
@@ -139,7 +115,7 @@ export function CompareModelsResult({ output }: { output: unknown }) {
       </div>
 
       {missingExperiments.length > 0 && (
-        <div className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+        <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
           <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
           <span>Missing: {missingExperiments.join(', ')}</span>
         </div>

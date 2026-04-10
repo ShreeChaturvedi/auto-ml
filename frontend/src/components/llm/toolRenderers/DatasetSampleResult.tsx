@@ -41,7 +41,7 @@ export function DatasetSampleResult({ data }: { data: DatasetSampleOutput }) {
             {sample.slice(0, 5).map((row, i) => (
               <tr key={i} className="border-b border-border/20 last:border-0">
                 {displayCols.map((col) => (
-                  <td key={col} className="py-1 pr-2 font-mono text-muted-foreground whitespace-nowrap max-w-[120px] truncate">
+                  <td key={col} className="py-1 pr-2 text-muted-foreground whitespace-nowrap max-w-[120px] truncate">
                     {row[col] == null ? <span className="text-muted-foreground/40 italic">null</span> : String(row[col])}
                   </td>
                 ))}

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500" fill="none">
+  <rect x="12" y="12" width="776" height="476" rx="10" stroke="rgba(255,255,255,0.1)" stroke-width="1" stroke-dasharray="6 6"/>
+  <text x="400" y="258" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-family="monospace" font-size="14" letter-spacing="2">GEMINI · OPTIMIZATION</text>
+  <text x="400" y="282" text-anchor="middle" fill="rgba(255,255,255,0.2)" font-family="monospace" font-size="11">Issue #312</text>
+</svg>

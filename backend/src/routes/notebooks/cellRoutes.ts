@@ -6,11 +6,13 @@ import { z } from 'zod';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../../repositories/projectRepository.js';
+import type { ProjectRepository } from '../../repositories/projectRepository.js';
 import * as kernelManager from '../../services/kernelManager.js';
 import { executeCell, getOrEnsureContainer } from '../../services/notebook/cellExecutionService.js';
+import { processNotebookExports } from '../../services/notebook/datasetExportService.js';
 import * as notebookService from '../../services/notebook/notebookService.js';
 import type { AuthRequest } from '../../types/auth.js';
-import type { CellType } from '../../types/notebook.js';
+import type { CellType, Notebook } from '../../types/notebook.js';
 
 import { handleSuggestCell } from './insightCodegen.js';
 
@@ -34,6 +36,86 @@ const reorderCellsSchema = z.object({
   cellIds: z.array(z.string()).min(1)
 });
 
+/**
+ * Load a cell by ID, returning null instead of throwing when missing so
+ * routes can uniformly reply with 404. `readCell` throws on not-found which
+ * is not what we want for ownership gatekeeping.
+ */
+async function tryReadCell(cellId: string) {
+  try {
+    return await notebookService.readCell(cellId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify the authenticated user owns the project a notebook belongs to.
+ * When `req.user` is absent (no-DB mode) or the request passes ownership,
+ * resolves with the notebook; otherwise writes a 404 response and returns
+ * null so the caller can early-return. Callers pass `expectedProjectId`
+ * when the request body claims a project that must match the notebook.
+ */
+async function verifyNotebookOwnership(
+  req: AuthRequest,
+  res: Response,
+  projectRepository: ProjectRepository,
+  notebookId: string,
+  expectedProjectId?: string
+): Promise<Notebook | null> {
+  const notebook = await notebookService.getNotebook(notebookId);
+  if (!notebook) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+
+  if (expectedProjectId && notebook.projectId !== expectedProjectId) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+
+  if (req.user) {
+    const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
+    if (!project) {
+      res.status(404).json({ error: 'Not found' });
+      return null;
+    }
+  }
+
+  return notebook;
+}
+
+/**
+ * Resolve a cellId to its notebook, enforcing ownership on the containing
+ * project. Returns `null` when the cell or notebook is missing, or the
+ * authenticated user does not have access — the response has already been
+ * written in that case.
+ */
+async function verifyCellOwnership(
+  req: AuthRequest,
+  res: Response,
+  projectRepository: ProjectRepository,
+  cellId: string,
+  expectedProjectId?: string
+): Promise<{ cell: Awaited<ReturnType<typeof notebookService.readCell>>; notebook: Notebook } | null> {
+  const cell = await tryReadCell(cellId);
+  if (!cell) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+
+  const notebook = await verifyNotebookOwnership(
+    req,
+    res,
+    projectRepository,
+    cell.notebookId,
+    expectedProjectId
+  );
+  if (!notebook) return null;
+
+  return { cell, notebook };
+}
+
 export function createCellRoutes(): Router {
   const router = Router();
   const projectRepository = getProjectRepository();
@@ -48,19 +130,8 @@ export function createCellRoutes(): Router {
    */
   router.post('/notebooks/:notebookId/cells/suggest', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { notebookId } = req.params;
-
-    if (req.user) {
-      const notebook = await notebookService.getNotebook(notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const notebook = await verifyNotebookOwnership(req, res, projectRepository, notebookId);
+    if (!notebook) return;
 
     return handleSuggestCell(req, res);
   }));
@@ -75,19 +146,8 @@ export function createCellRoutes(): Router {
    */
   router.get('/notebooks/:notebookId/cells', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { notebookId } = req.params;
-
-    if (req.user) {
-      const notebook = await notebookService.getNotebook(notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const notebook = await verifyNotebookOwnership(req, res, projectRepository, notebookId);
+    if (!notebook) return;
 
     const cells = await notebookService.listCells(notebookId);
     res.json(cells);
@@ -103,19 +163,8 @@ export function createCellRoutes(): Router {
    */
   router.post('/notebooks/:notebookId/cells', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { notebookId } = req.params;
-
-    if (req.user) {
-      const notebook = await notebookService.getNotebook(notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const notebook = await verifyNotebookOwnership(req, res, projectRepository, notebookId);
+    if (!notebook) return;
 
     const parsed = createCellSchema.safeParse(req.body);
 
@@ -155,22 +204,10 @@ export function createCellRoutes(): Router {
    */
   router.get('/cells/:cellId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { cellId } = req.params;
-    const cell = await notebookService.readCell(cellId);
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId);
+    if (!resolved) return;
 
-    if (req.user) {
-      const notebook = await notebookService.getNotebook(cell.notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
-
-    res.json(cell);
+    res.json(resolved.cell);
   }));
 
   /**
@@ -179,22 +216,8 @@ export function createCellRoutes(): Router {
    */
   router.patch('/cells/:cellId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { cellId } = req.params;
-
-    // Get existing cell to get notebookId
-    const existing = await notebookService.readCell(cellId);
-
-    if (req.user) {
-      const notebook = await notebookService.getNotebook(existing.notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId);
+    if (!resolved) return;
 
     const parsed = updateCellSchema.safeParse(req.body);
 
@@ -207,6 +230,7 @@ export function createCellRoutes(): Router {
     }
 
     const { content, title } = parsed.data;
+    const existing = resolved.cell;
 
     const cell = await notebookService.writeCell(existing.notebookId, {
       cellId,
@@ -223,20 +247,8 @@ export function createCellRoutes(): Router {
    */
   router.delete('/cells/:cellId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { cellId } = req.params;
-
-    if (req.user) {
-      const cell = await notebookService.readCell(cellId);
-      const notebook = await notebookService.getNotebook(cell.notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId);
+    if (!resolved) return;
 
     await notebookService.deleteCell(cellId);
     res.status(204).send();
@@ -263,16 +275,15 @@ export function createCellRoutes(): Router {
     }
 
     const { projectId } = parsed.data;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId, projectId);
+    if (!resolved) return;
 
     const result = await executeCell(cellId, projectId);
+    const exportedDatasets = await processNotebookExports(resolved.notebook, projectId);
+    if (exportedDatasets.length > 0) {
+      res.json({ ...result, exportedDatasets });
+      return;
+    }
     res.json(result);
   }));
 
@@ -281,6 +292,7 @@ export function createCellRoutes(): Router {
    * Interrupt a running cell's kernel execution.
    */
   router.post('/cells/:cellId/interrupt', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { cellId } = req.params;
     const parsed = runCellSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
@@ -288,14 +300,8 @@ export function createCellRoutes(): Router {
     }
 
     const { projectId } = parsed.data;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId, projectId);
+    if (!resolved) return;
 
     const container = await getOrEnsureContainer(projectId);
     await kernelManager.interruptKernel(container);
@@ -312,19 +318,8 @@ export function createCellRoutes(): Router {
    */
   router.post('/notebooks/:notebookId/reorder', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { notebookId } = req.params;
-
-    if (req.user) {
-      const notebook = await notebookService.getNotebook(notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const notebook = await verifyNotebookOwnership(req, res, projectRepository, notebookId);
+    if (!notebook) return;
 
     const parsed = reorderCellsSchema.safeParse(req.body);
 
@@ -365,19 +360,8 @@ export function createCellRoutes(): Router {
       return;
     }
 
-    if (req.user) {
-      const cell = await notebookService.readCell(cellId);
-      const notebook = await notebookService.getNotebook(cell.notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId);
+    if (!resolved) return;
 
     const filePath = notebookService.getOutputPath(cellId, filename);
 
@@ -420,20 +404,8 @@ export function createCellRoutes(): Router {
    */
   router.get('/cells/:cellId/lock', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { cellId } = req.params;
-
-    if (req.user) {
-      const cell = await notebookService.readCell(cellId);
-      const notebook = await notebookService.getNotebook(cell.notebookId);
-      if (!notebook) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      const project = await verifyProjectOwnership(notebook.projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-    }
+    const resolved = await verifyCellOwnership(req, res, projectRepository, cellId);
+    if (!resolved) return;
 
     const lock = await notebookService.isLocked(cellId);
     res.json(lock);

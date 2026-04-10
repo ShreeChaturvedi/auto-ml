@@ -1,6 +1,6 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 
 import { authService } from '../authService.js';
@@ -11,6 +11,34 @@ import {
 } from './deploymentWsServer.js';
 import { attachWebSocketUpgradeRouter } from './upgradeRouter.js';
 import { NOTEBOOK_WS_PATH, NotebookWSServer } from './wsServer.js';
+
+// The subscribe handshake now enforces project ownership via the notebook
+// repository. Tests here exercise connection routing, not DB access, so we
+// stub the lookups to a known-good notebook and short-circuit ownership.
+vi.mock('../notebook/notebookCrudService.js', () => ({
+  getNotebook: vi.fn(async (notebookId: string) => ({
+    notebookId,
+    projectId: 'ws-test-project',
+    name: 'Test Notebook',
+    kind: 'phase' as const,
+    metadata: {},
+    createdAt: new Date(),
+    updatedAt: new Date()
+  }))
+}));
+
+vi.mock('../../middleware/resourceOwnership.js', () => ({
+  verifyProjectOwnership: vi.fn(async () => ({
+    projectId: 'ws-test-project',
+    userId: 'ws-test-user',
+    name: 'ws-test-project'
+  }))
+}));
+
+vi.mock('../../repositories/projectRepository.js', () => ({
+  getProjectRepository: vi.fn(() => ({})),
+  createProjectRepository: vi.fn(() => ({}))
+}));
 
 const TEST_TIMEOUT_MS = 1500;
 

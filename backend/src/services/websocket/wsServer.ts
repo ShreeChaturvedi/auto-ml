@@ -7,7 +7,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { env } from '../../config.js';
 import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
+import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
+import { getProjectRepository } from '../../repositories/projectRepository.js';
 import { authService } from '../../services/authService.js';
+import { getNotebook } from '../../services/notebook/notebookCrudService.js';
 import type { WSClientMessage, WSServerMessage } from '../../types/notebook.js';
 
 import { acceptWebSocketUpgrade } from './upgradeRouter.js';
@@ -127,7 +130,10 @@ export class NotebookWSServer {
 
       switch (data.type) {
         case 'subscribe':
-          this.subscribeToNotebook(clientId, data.notebookId);
+          // Ownership verification is async; fire-and-forget the promise so
+          // we don't block the JSON parse path. Errors surface via the WS
+          // error channel inside the helper.
+          void this.authorizeAndSubscribe(clientId, data.notebookId);
           break;
 
         case 'unsubscribe':
@@ -147,6 +153,59 @@ export class NotebookWSServer {
       this.sendToClient(clientId, {
         type: 'error',
         message: 'Invalid message format'
+      });
+    }
+  }
+
+  /**
+   * Verify the connected user owns the project backing this notebook before
+   * adding the subscription. In database-disabled dev mode we bypass the
+   * check entirely — notebook/project repositories require the DB pool, so
+   * there's no source of truth to compare against.
+   */
+  private async authorizeAndSubscribe(clientId: string, notebookId: string): Promise<void> {
+    const client = this.clients.get(clientId);
+    if (!client) return;
+
+    // Without a database, the notebook/project repositories can't be queried
+    // (they throw). Dev + test environments rely on this fallthrough path,
+    // which matches the route-level `if (req.user)` pattern used elsewhere.
+    if (!hasDatabaseConfiguration()) {
+      this.subscribeToNotebook(clientId, notebookId);
+      return;
+    }
+
+    try {
+      const notebook = await getNotebook(notebookId);
+      if (!notebook) {
+        this.sendToClient(clientId, {
+          type: 'error',
+          message: `Notebook not found: ${notebookId}`
+        });
+        return;
+      }
+
+      if (client.userId) {
+        const project = await verifyProjectOwnership(
+          notebook.projectId,
+          client.userId,
+          getProjectRepository()
+        );
+        if (!project) {
+          this.sendToClient(clientId, {
+            type: 'error',
+            message: `Not authorized to subscribe to notebook: ${notebookId}`
+          });
+          return;
+        }
+      }
+
+      this.subscribeToNotebook(clientId, notebookId);
+    } catch (error) {
+      appLogger.error(`[ws] Subscribe authorization failed for ${clientId}:`, error);
+      this.sendToClient(clientId, {
+        type: 'error',
+        message: 'Subscribe authorization failed'
       });
     }
   }

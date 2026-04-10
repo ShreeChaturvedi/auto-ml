@@ -8,15 +8,21 @@ import * as kernelManager from '../../services/kernelManager.js';
 import { getOrEnsureContainer } from '../../services/notebook/cellExecutionService.js';
 import * as notebookService from '../../services/notebook/notebookService.js';
 import type { AuthRequest } from '../../types/auth.js';
+import { NotebookKindSchema } from '../../types/notebook.js';
 
 const createNotebookSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  kind: NotebookKindSchema.optional()
 });
 
 const updateNotebookSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   metadata: z.record(z.string(), z.unknown()).optional()
+});
+
+const listNotebooksQuerySchema = z.object({
+  kind: NotebookKindSchema.optional()
 });
 
 export function createNotebookRoutes(): Router {
@@ -42,7 +48,15 @@ export function createNotebookRoutes(): Router {
       }
     }
 
-    const notebooks = await notebookService.listProjectNotebooks(projectId);
+    const parsedQuery = listNotebooksQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Invalid query parameters', details: parsedQuery.error.issues });
+      return;
+    }
+
+    const notebooks = await notebookService.listProjectNotebooks(projectId, {
+      kind: parsedQuery.data.kind
+    });
     res.json(notebooks);
   }));
 
@@ -70,7 +84,11 @@ export function createNotebookRoutes(): Router {
       return;
     }
 
-    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name, parsed.data.metadata);
+    const notebook = await notebookService.createProjectNotebook(projectId, {
+      name: parsed.data.name,
+      metadata: parsed.data.metadata,
+      kind: parsed.data.kind
+    });
     res.status(201).json(notebook);
   }));
 
@@ -124,25 +142,6 @@ export function createNotebookRoutes(): Router {
 
     const result = await notebookService.deleteProjectNotebook(projectId, notebookId);
     res.json(result);
-  }));
-
-  /**
-   * GET /api/projects/:projectId/notebook
-   * Get or create the notebook for a project.
-   */
-  router.get('/projects/:projectId/notebook', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { projectId } = req.params;
-
-    if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
-      if (!project) {
-        res.status(404).json({ error: 'Project not found' });
-        return;
-      }
-    }
-
-    const notebook = await notebookService.ensureNotebook(projectId);
-    res.json(notebook);
   }));
 
   // ============================================================

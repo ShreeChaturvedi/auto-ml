@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
+import { getSavepoint } from '../../repositories/notebook/index.js';
 import { getProjectRepository } from '../../repositories/projectRepository.js';
 import * as notebookService from '../../services/notebook/notebookService.js';
 import * as savepointService from '../../services/notebook/savepointService.js';
@@ -42,6 +43,25 @@ export function createSavepointRoutes(): Router {
     return true;
   }
 
+  /**
+   * Ensure the savepoint belongs to the notebook in the URL. Prevents a
+   * caller from using a savepointId from notebook A to operate inside a
+   * URL that claims notebook B, which would otherwise bypass the notebook
+   * access check.
+   */
+  async function verifySavepointBelongsToNotebook(
+    res: Response,
+    savepointId: string,
+    notebookId: string
+  ): Promise<boolean> {
+    const savepoint = await getSavepoint(savepointId);
+    if (!savepoint || savepoint.notebook_id !== notebookId) {
+      res.status(404).json({ error: 'Not found' });
+      return false;
+    }
+    return true;
+  }
+
   router.post('/notebooks/:notebookId/savepoints', asyncHandler(async (req: AuthRequest, res: Response) => {
     const notebookId = parseUuidParam(req.params.notebookId, 'notebookId', res);
     if (!notebookId) return;
@@ -66,6 +86,7 @@ export function createSavepointRoutes(): Router {
     if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const savepointId = parseUuidParam(req.params.savepointId, 'savepointId', res);
     if (!savepointId) return;
+    if (!await verifySavepointBelongsToNotebook(res, savepointId, notebookId)) return;
     const diff = await savepointService.computeDiff(savepointId);
     res.json(diff);
   }));
@@ -76,6 +97,7 @@ export function createSavepointRoutes(): Router {
     if (!await verifyNotebookAccess(req, res, notebookId)) return;
     const savepointId = parseUuidParam(req.params.savepointId, 'savepointId', res);
     if (!savepointId) return;
+    if (!await verifySavepointBelongsToNotebook(res, savepointId, notebookId)) return;
     const result = await savepointService.restoreSavepoint(savepointId);
     res.json(result);
   }));

@@ -77,10 +77,15 @@ export function PreviewShell() {
     //   t=700  topbar fades in
     //   t=1000 main content lifts + fades in
     //   t=1400 interactive glow (handled downstream via CSS)
+    // fill: 'both' clamps each element to its first keyframe immediately on
+    // animation start AND holds the final keyframe once the animation ends.
+    // This is critical: preview.css ships the elements at opacity:0 for the
+    // initial render (prevents hydration pop-in), and 'both' guarantees the
+    // WAAPI takes over that 0→1 fade even before the delay window elapses.
     const baseOptions: KeyframeAnimationOptions = {
       duration: 500,
       easing: 'cubic-bezier(0.165, 0.84, 0.44, 1)', // ease-out-quart
-      fill: 'forwards',
+      fill: 'both',
     };
 
     root.animate(

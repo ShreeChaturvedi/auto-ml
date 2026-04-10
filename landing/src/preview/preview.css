@@ -8,6 +8,13 @@
   background: var(--surface-1);
   color: var(--text);
   font-family: 'Inter Variable', sans-serif;
+
+  /* Initial hidden state for the staged WAAPI entry animation (spec §4.3).
+   * WAAPI runs in PreviewShell.tsx with fill: 'both', which clamps these
+   * elements to their first keyframe (opacity 0) as soon as the animation
+   * starts. Rendering opacity:0 in CSS ensures there is no pop-in flash
+   * during hydration or between first paint and the effect running. */
+  opacity: 0;
 }
 
 /* Sidebar */
@@ -21,6 +28,9 @@
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
+  /* Staged entry: hidden + offset until WAAPI drives it in (spec §4.3) */
+  opacity: 0;
+  transform: translateX(-8px);
 }
 
 .preview-sidebar-project {
@@ -141,6 +151,8 @@
   padding: 0 20px;
   background: var(--surface-0);
   border-bottom: 0.8px solid var(--border);
+  /* Staged entry: hidden until WAAPI drives it in (spec §4.3) */
+  opacity: 0;
 }
 .preview-topbar-phase {
   font-size: 13px;
@@ -186,6 +198,22 @@
   overflow: auto;
   background: var(--surface-1);
   position: relative;
+  /* Staged entry: hidden + offset until WAAPI drives it in (spec §4.3) */
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+/* Reduced-motion: skip the staged entry entirely, force final visible state.
+ * Overrides the initial hidden values above so reduced-motion users see the
+ * full preview instantly (spec §2.6). */
+@media (prefers-reduced-motion: reduce) {
+  .preview-root,
+  .preview-sidebar,
+  .preview-topbar,
+  .preview-content {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 .preview-placeholder {

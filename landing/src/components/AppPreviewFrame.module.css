@@ -6,10 +6,22 @@
   padding: 0 32px;
 }
 
-.frame {
+/* Ring wrapper owns the cursor-outline class + ref. It must NOT clip its
+ * overflow so the ::before ring (inset: -24px) and the outer glow PNG
+ * (inset: -160px) can bleed beyond the frame's visible edge. It matches the
+ * frame's dimensions and border-radius so the cursor-outline ring aligns
+ * visually with the rectangle the user sees. */
+.ringWrapper {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 10;
+  border-radius: 12px;
+  /* No overflow:hidden — intentional. */
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
   background: var(--surface-0);
   border: 0.8px solid var(--border-strong);
   border-radius: 12px;
@@ -17,7 +29,8 @@
   isolation: isolate;
 }
 
-/* Pre-blurred outer glow PNG (deferred to Gemini). */
+/* Pre-blurred outer glow PNG (deferred to Gemini). Lives in .ringWrapper so
+ * its -160px halo is never clipped by the frame. */
 .glow {
   position: absolute;
   inset: -160px;

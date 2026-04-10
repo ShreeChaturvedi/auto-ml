@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -7,6 +7,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { NotebookCellOutput } from '@frontend/components/notebook/NotebookCellOutput';
+import { TooltipProvider } from '@frontend/components/ui/tooltip';
+import type { RichOutput } from '@frontend/lib/api/execution';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './NotebookDeepDive.module.css';
 
@@ -43,32 +46,41 @@ const CODE_HIGHLIGHTED_HTML =
   '<span class="line"><span style="color:#E1E4E8">summary</span></span>' +
   '</code></pre>';
 
-// Pre-seeded describe() summary rendered as a simple inline <table>. We used
-// to pipe this through the real frontend `NotebookCellOutput`, but that
-// transitively static-imports `PlotlyOutput` (react-plotly, ~4.9 MB) and
-// `ShadowHtml` (mermaid, ~490 KB) via `CellOutputRenderer`. The deep-dive
-// only ever shows this one 6-row table so we render it directly and keep
-// those chunks out of the landing bundle.
-const DESCRIBE_COLUMNS = [
-  'stat',
-  'mrr_usd',
-  'avg_session_minutes',
-  'api_calls',
-] as const;
-
-type DescribeColumn = (typeof DESCRIBE_COLUMNS)[number];
-
-const DESCRIBE_ROWS: ReadonlyArray<Readonly<Record<DescribeColumn, string>>> = [
-  { stat: 'count', mrr_usd: '2,530',  avg_session_minutes: '2,280', api_calls: '2,530'   },
-  { stat: 'mean',  mrr_usd: '2,142',  avg_session_minutes: '18.4',  api_calls: '12,004'  },
-  { stat: 'std',   mrr_usd: '1,854',  avg_session_minutes: '12.7',  api_calls: '28,312'  },
-  { stat: 'min',   mrr_usd: '0',      avg_session_minutes: '0.3',   api_calls: '0'       },
-  { stat: '50%',   mrr_usd: '1,620',  avg_session_minutes: '15.2',  api_calls: '3,412'   },
-  { stat: 'max',   mrr_usd: '24,180', avg_session_minutes: '84.1',  api_calls: '892,448' },
+// Pre-seeded describe() summary as a `RichOutput[]` fed straight to the real
+// `<NotebookCellOutput>` island — spec §4.5 explicitly requires the real
+// component here, not a hand-rolled <table>. The `type: 'table'` branch of
+// `CellOutputRenderer` handles this entirely with plain DOM; the only heavy
+// dependency in the renderer tree (`LazyPlot` → `react-plotly.js`, ~4.9 MB)
+// is a `React.lazy(() => import(...))` dynamic import that is ONLY resolved
+// when a `type: 'chart'` output is actually mounted. Because this deep-dive
+// never passes a chart output to NotebookCellOutput, Vite emits the plotly
+// chunk but never fetches it at runtime — verified post-build by confirming
+// NotebookDeepDive's emitted chunk only references `react-plotly.*.js`
+// through `__vite__mapDeps` (dynamic-import dep table), never statically.
+const DESCRIBE_OUTPUTS: RichOutput[] = [
+  {
+    type: 'table',
+    content: 'describe() summary · 3 numeric columns',
+    data: {
+      columns: ['stat', 'mrr_usd', 'avg_session_minutes', 'api_calls'],
+      rows: [
+        { stat: 'count', mrr_usd: '2,530',  avg_session_minutes: '2,280', api_calls: '2,530'   },
+        { stat: 'mean',  mrr_usd: '2,142',  avg_session_minutes: '18.4',  api_calls: '12,004'  },
+        { stat: 'std',   mrr_usd: '1,854',  avg_session_minutes: '12.7',  api_calls: '28,312'  },
+        { stat: 'min',   mrr_usd: '0',      avg_session_minutes: '0.3',   api_calls: '0'       },
+        { stat: '50%',   mrr_usd: '1,620',  avg_session_minutes: '15.2',  api_calls: '3,412'   },
+        { stat: 'max',   mrr_usd: '24,180', avg_session_minutes: '84.1',  api_calls: '892,448' },
+      ],
+    },
+  },
 ];
 
 // Hand-binned mrr_usd histogram (right-skewed: long tail of high-value
-// accounts). Rendered with Recharts per section 4.5 of the spec.
+// accounts). Rendered as a standalone Recharts <BarChart> in its own cell
+// rather than routed through <NotebookCellOutput> via a `type: 'chart'`
+// RichOutput — that path mounts PlotlyOutput, which triggers the lazy
+// react-plotly.js chunk (~4.9 MB). Recharts is already in the landing
+// bundle for other deep-dives, so this histogram costs zero extra bytes.
 const HISTOGRAM = [
   { bucket: '$0–500',   count: 280 },
   { bucket: '$500–1k',  count: 540 },
@@ -82,28 +94,56 @@ const HISTOGRAM = [
 type Phase = 'idle' | 'running' | 'done';
 
 function NotebookDeepDiveVisual() {
-  // Reactive hook — also seeds the initial phase so we never call setState
-  // synchronously inside the effect below.
+  // Reactive hook — also seeds the initial phase so reduced-motion users
+  // land on the final state without any transitions.
   const reduced = usePrefersReducedMotion();
   const [phase, setPhase] = useState<Phase>(() => (reduced ? 'done' : 'idle'));
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (reduced) {
       return;
     }
+    const node = rootRef.current;
+    if (!node) {
+      return;
+    }
 
-    // IO-enter → 600ms idle, 1.2s running indicator, then output reveal.
-    const startTimer = window.setTimeout(() => setPhase('running'), 600);
-    const doneTimer  = window.setTimeout(() => setPhase('done'),    1800);
+    let startTimer = 0;
+    let doneTimer = 0;
+    let fired = false;
+
+    // Scripted sequence kicks off the first time the frame enters the
+    // viewport: short idle → 1.2s "running" blink → output reveal. Uses
+    // IntersectionObserver per spec §4.5 so the animation lines up with
+    // the reader's scroll position instead of hydration timing.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !fired) {
+            fired = true;
+            startTimer = window.setTimeout(() => setPhase('running'), 200);
+            doneTimer = window.setTimeout(() => setPhase('done'), 1400);
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(node);
+
     return () => {
+      observer.disconnect();
       window.clearTimeout(startTimer);
       window.clearTimeout(doneTimer);
     };
   }, [reduced]);
 
   return (
-    <div className={styles.root}>
-      {/* Top cell — code + running indicator + inline output once done. */}
+    <div className={styles.root} ref={rootRef}>
+      {/* Top cell — code + running indicator + the real frontend
+       * <NotebookCellOutput> island once the scripted run finishes. */}
       <div className={`${styles.cell} group`}>
         <div className={styles.cellHeader}>
           <span>In [1]</span>
@@ -126,33 +166,24 @@ function NotebookDeepDiveVisual() {
 
         {phase === 'done' && (
           <div className={styles.outputHost}>
-            <table className={styles.describeTable}>
-              <thead>
-                <tr>
-                  {DESCRIBE_COLUMNS.map((col) => (
-                    <th key={col}>{col}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {DESCRIBE_ROWS.map((row) => (
-                  <tr key={row.stat}>
-                    {DESCRIBE_COLUMNS.map((col) => (
-                      <td key={col}>{row[col]}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* Real <NotebookCellOutput> from frontend/src/. Wrapped in a
+             * TooltipProvider so its Radix copy/collapse tooltips have the
+             * ancestor they need (the rest of the landing page does not
+             * provide one). */}
+            <TooltipProvider delayDuration={150}>
+              <NotebookCellOutput outputs={DESCRIBE_OUTPUTS} />
+            </TooltipProvider>
           </div>
         )}
       </div>
 
-      {/* Bottom cell — Recharts histogram of mrr_usd (right-skewed). */}
+      {/* Bottom cell — standalone Recharts histogram of mrr_usd
+       * (right-skewed). See HISTOGRAM comment for why this does NOT go
+       * through NotebookCellOutput. */}
       {phase === 'done' && (
         <div className={styles.cell}>
           <div className={styles.cellHeader}>
-            <span>Out [1]</span>
+            <span>Out [2]</span>
             <span className={styles.cellHeaderBadge}>chart</span>
           </div>
           <div className={styles.outputCell}>
@@ -210,12 +241,17 @@ function NotebookDeepDiveVisual() {
  * The top cell is a static 8-line Python snippet whose Shiki-highlighted
  * HTML is baked into the source (see `CODE_HIGHLIGHTED_HTML` for why we
  * bypass `streamdown` here), followed by a 1.2s "running" blink on
- * IO-enter and then a pre-seeded `describe()` summary rendered as a plain
- * inline `<table>`. The table used to go through the real frontend
- * `NotebookCellOutput`, but that statically pulls in Plotly + Mermaid via
- * `CellOutputRenderer` — so we inline it here and save ~5 MB of JS from
- * the landing bundle. The bottom cell is a Recharts `<BarChart>` showing a
- * hand-binned, right-skewed `mrr_usd` distribution.
+ * IO-enter and then the real frontend `<NotebookCellOutput>` rendering a
+ * `type: 'table'` `RichOutput` with the describe() summary stats — the
+ * actual leaf component from `frontend/src/`, not a re-implementation.
+ *
+ * The bottom cell is a standalone Recharts `<BarChart>` histogram of
+ * `mrr_usd`. It lives outside NotebookCellOutput on purpose: routing it
+ * through a `type: 'chart'` RichOutput would mount PlotlyOutput and
+ * trigger the `React.lazy(() => import('react-plotly.js'))` chunk
+ * (~4.9 MB), which would dwarf the entire landing bundle. As long as we
+ * never pass a chart RichOutput through NotebookCellOutput, Vite emits
+ * the plotly chunk but never fetches it at runtime.
  */
 export default function NotebookDeepDive() {
   return <NotebookDeepDiveVisual />;

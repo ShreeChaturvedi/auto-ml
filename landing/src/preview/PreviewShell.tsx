@@ -1,16 +1,38 @@
 import './preview.css';
+import type { WorkflowPhase } from './types';
 import { PreviewSidebar } from './PreviewSidebar';
 import { PreviewTopbar } from './PreviewTopbar';
 import { usePreviewStore } from './previewStore';
+import { UploadView } from './tabs/UploadView';
+import { DataViewerView } from './tabs/DataViewerView';
+import { PreprocessingView } from './tabs/PreprocessingView';
+import { FeatureEngineeringView } from './tabs/FeatureEngineeringView';
+import { TrainingView } from './tabs/TrainingView';
+import { ExperimentsView } from './tabs/ExperimentsView';
+import { DeploymentView } from './tabs/DeploymentView';
 
-// Per-tab view components will be added in Phase 6.
-// For now, render a placeholder so the shell compiles.
-const PlaceholderView = ({ phase }: { phase: string }) => (
-  <div className="preview-placeholder" role="status">
-    <p className="preview-placeholder-label">{phase.toUpperCase()}</p>
-    <p className="preview-placeholder-text">Tab view scaffolding…</p>
-  </div>
-);
+function renderActiveView(activeTab: WorkflowPhase) {
+  switch (activeTab) {
+    case 'upload':
+      return <UploadView />;
+    case 'data-viewer':
+      return <DataViewerView />;
+    case 'preprocessing':
+      return <PreprocessingView />;
+    case 'feature-engineering':
+      return <FeatureEngineeringView />;
+    case 'training':
+      return <TrainingView />;
+    case 'experiments':
+      return <ExperimentsView />;
+    case 'deployment':
+      return <DeploymentView />;
+    default: {
+      const _exhaustive: never = activeTab;
+      return _exhaustive;
+    }
+  }
+}
 
 export function PreviewShell() {
   const activeTab = usePreviewStore((s) => s.activeTab);
@@ -25,7 +47,7 @@ export function PreviewShell() {
         role="tabpanel"
         aria-labelledby={`preview-tab-${activeTab}`}
       >
-        <PlaceholderView phase={activeTab} />
+        {renderActiveView(activeTab)}
       </main>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Star } from 'lucide-react';
 import styles from './Diorama.module.css';
 
@@ -10,15 +10,35 @@ const MODELS = [
 ];
 
 export function TrainDiorama() {
-  // Ambient sparkline-like breath
+  // Ambient sparkline-like breath — gated behind an IntersectionObserver so
+  // the 5 Hz re-render only burns frames while the diorama is on-screen.
+  const frameRef = useRef<HTMLDivElement>(null);
+  // Default to `true` in environments without IntersectionObserver (SSR,
+  // jsdom) so tests and non-IO browsers still animate rather than freeze.
+  const [visible, setVisible] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  );
   const [tick, setTick] = useState(0);
+
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 200);
-    return () => clearInterval(id);
+    const el = frameRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => setVisible(entry?.isIntersecting ?? false),
+      { threshold: 0.1 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!visible) return;
+    const id = setInterval(() => setTick((t) => t + 1), 200);
+    return () => clearInterval(id);
+  }, [visible]);
+
   return (
-    <div className={styles.frame}>
+    <div ref={frameRef} className={styles.frame}>
       <div className={styles.label}>5.0 TRAIN — 4 classifiers in parallel</div>
       <div style={{ marginTop: 12, background: 'var(--surface-1)', border: '0.8px solid var(--border)', borderRadius: 8 }}>
         {MODELS.map((m, i) => {

@@ -1,0 +1,26 @@
+/* Reduced-motion fallbacks. Single source of truth. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Freeze marquees at 50% position */
+  .marquee-row {
+    animation: none !important;
+    transform: translateX(-25%) !important;
+  }
+
+  /* Disable cursor-outline glow; show a static 1px border instead */
+  .cursor-outline::before {
+    display: none !important;
+  }
+  .cursor-outline {
+    outline: 1px solid var(--border);
+  }
+}

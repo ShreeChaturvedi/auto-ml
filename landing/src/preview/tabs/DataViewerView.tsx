@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { FileText, FileCode, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { usePreviewStore } from '@/preview/previewStore';
@@ -8,6 +9,8 @@ import {
   mockSqlResultRows,
 } from '@/preview/fixtures/query';
 import styles from './DataViewerView.module.css';
+
+const PdfViewer = lazy(() => import('@frontend/components/data/PdfViewer'));
 
 const ICONS = {
   csv: FileSpreadsheet,
@@ -48,13 +51,15 @@ export function DataViewerView() {
       <div className={styles.body}>
         <div className={styles.mainPanel}>
           {showPdf ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
-              <div style={{ textAlign: 'center' }}>
-                <FileText size={32} aria-hidden="true" style={{ opacity: 0.4 }} />
-                <p style={{ marginTop: 12 }}>novacraft_business_context.pdf</p>
-                <p style={{ fontSize: 11, color: 'var(--text-dim)' }}>PDF preview — wired in Task 41</p>
-              </div>
-            </div>
+            <Suspense
+              fallback={
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
+                  Loading PDF…
+                </div>
+              }
+            >
+              <PdfViewer url="/assets/novacraft_business_context.pdf" fileName="novacraft_business_context.pdf" />
+            </Suspense>
           ) : (
             <table className={styles.table}>
               <thead>

@@ -130,3 +130,52 @@
   transition: background var(--dur-fast);
 }
 .preview-sidebar-new-project:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+
+/* Topbar */
+.preview-topbar {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--surface-0);
+  border-bottom: 0.8px solid var(--border);
+}
+.preview-topbar-phase {
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--text);
+}
+.preview-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-topbar-icon {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.preview-topbar-icon:hover { background: rgba(255, 255, 255, 0.04); color: var(--text); }
+.preview-topbar-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4a4a4a, #2a2a2a);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 510;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0.8px solid var(--border-strong);
+}

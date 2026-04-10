@@ -3,6 +3,7 @@ import Root from '@/layouts/Root.astro';
 import Nav from '@/components/Nav.astro';
 import Hero from '@/components/Hero.astro';
 import AppPreviewFrame from '@/components/AppPreviewFrame.tsx';
+import HowItWorks from '@/components/how-it-works/HowItWorks.tsx';
 ---
 
 <Root>
@@ -10,5 +11,6 @@ import AppPreviewFrame from '@/components/AppPreviewFrame.tsx';
   <main>
     <Hero />
     <AppPreviewFrame client:visible />
+    <HowItWorks client:visible />
   </main>
 </Root>

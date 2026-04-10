@@ -1,7 +1,9 @@
 import { Check, FileText } from 'lucide-react';
 import { mockPlan } from '@/preview/fixtures/plan';
 import { ComputeAnimation } from '@frontend/components/upload/ComputeAnimation';
+import { QuestionCards } from '@frontend/components/upload/QuestionCards';
 import type { ProcessingResult } from '@frontend/types/processing';
+import type { AskUserQuestion } from '@frontend/types/llmUi';
 import styles from './UploadView.module.css';
 
 const DEMO_FILES: Array<{ name: string; type: string }> = [
@@ -26,6 +28,43 @@ const DEMO_RESULTS: ProcessingResult[] = [
     icon: 'alert-triangle',
     label: '4 data-quality issues',
     detail: 'nulls · duplicates · outliers',
+  },
+];
+
+const PLAN_QUESTIONS: AskUserQuestion[] = [
+  {
+    id: 'q1',
+    header: 'Target',
+    question: "What's your target variable?",
+    type: 'single_select',
+    options: [
+      { label: 'is_active', description: 'Customer churn (classification)' },
+      { label: 'mrr_usd', description: 'Recurring revenue (regression)' },
+      { label: 'escalated', description: 'Ticket escalation (classification)' },
+    ],
+  },
+  {
+    id: 'q2',
+    header: 'Task',
+    question: 'Which modeling task?',
+    type: 'single_select',
+    options: [
+      { label: 'Classification', description: 'Predict a category' },
+      { label: 'Regression', description: 'Predict a number' },
+      { label: 'Clustering', description: 'Find groups' },
+      { label: 'Time-series', description: 'Forecast over time' },
+    ],
+  },
+  {
+    id: 'q3',
+    header: 'Compute',
+    question: 'How much compute?',
+    type: 'single_select',
+    options: [
+      { label: 'Quick (5 min)', description: 'Fast iteration' },
+      { label: 'Standard (15 min)', description: 'Balanced' },
+      { label: 'Deep (1h)', description: 'Thorough search' },
+    ],
   },
 ];
 
@@ -64,6 +103,14 @@ export function UploadView() {
           </div>
         ))}
       </div>
+
+      <QuestionCards
+        questions={PLAN_QUESTIONS}
+        onSubmit={() => {
+          /* no-op in demo mode */
+        }}
+        disabled={false}
+      />
     </div>
   );
 }

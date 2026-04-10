@@ -616,7 +616,6 @@ a reproducible result.
 **Brand column (left):**
 - Wordmark (Inter 16px, weight 590, white)
 - Tagline (Inter 13px muted): `Agentic machine learning, from raw CSV to deployed model.`
-- Attribution (Geist Mono 12px dim): `CSE 449 Senior Design · 2026` (verify with user whether to include a specific school name — the GitLab host is `gitlab.csi.miamioh.edu`, but the CLAUDE.md reference is `CSE449`; erring on the neutral side until confirmed)
 - Social row: GitLab · X · LinkedIn (16px stroke icons, muted → white on hover)
 
 **Link column 1 — Product:**

@@ -66,3 +66,22 @@ test:
       - backend/node_modules/
       - frontend/node_modules/
     policy: pull
+
+landing:build:
+  stage: build
+  script:
+    - npm --prefix landing ci
+    - npm --prefix landing run build
+    - npm --prefix landing run test
+    - npm --prefix landing run lint
+  cache:
+    key:
+      files:
+        - landing/package-lock.json
+    paths:
+      - landing/node_modules/
+    policy: pull-push
+  artifacts:
+    paths:
+      - landing/dist/
+    expire_in: 1 week

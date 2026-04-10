@@ -2,11 +2,13 @@
 import Root from '@/layouts/Root.astro';
 import Nav from '@/components/Nav.astro';
 import Hero from '@/components/Hero.astro';
+import AppPreviewFrame from '@/components/AppPreviewFrame.tsx';
 ---
 
 <Root>
   <Nav />
   <main>
     <Hero />
+    <AppPreviewFrame client:visible />
   </main>
 </Root>

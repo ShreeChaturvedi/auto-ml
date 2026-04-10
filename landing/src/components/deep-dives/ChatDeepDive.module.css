@@ -1,0 +1,58 @@
+.root {
+  padding: 32px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+.toolRows {
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--dur-med) var(--ease-out-quart),
+              transform var(--dur-med) var(--ease-out-quart);
+}
+.toolRowsVisible { opacity: 1; transform: translateY(0); }
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 0.8px solid var(--border);
+  font-size: 13px;
+  opacity: 0;
+  transform: translateX(-4px);
+  animation: tool-row-in 400ms var(--ease-out-quart) forwards;
+}
+.toolRow:first-child { border-top: 0; }
+.toolRowCheck {
+  color: rgba(139, 92, 246, 0.9);
+  flex-shrink: 0;
+}
+.toolRowLabel { color: var(--text); flex: 1; }
+.toolRowHint {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@keyframes tool-row-in {
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.cursorSprite {
+  position: absolute;
+  bottom: 42px;
+  left: 140px;
+  width: 14px;
+  height: 14px;
+  color: var(--text);
+  pointer-events: none;
+  transition: transform 600ms var(--ease-out-quart), opacity 200ms;
+}

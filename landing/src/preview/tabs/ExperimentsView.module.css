@@ -1,0 +1,92 @@
+.root {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.leaderboard {
+  padding: 24px 28px;
+  overflow: auto;
+}
+.leaderboardTitle {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 16px;
+}
+.table { width: 100%; border-collapse: collapse; }
+.table th {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 0.8px solid var(--border);
+}
+.table td {
+  padding: 12px;
+  border-bottom: 0.8px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.table tr.selected td { background: rgba(139, 92, 246, 0.08); }
+.rankCell { font-family: 'Geist Mono Variable', monospace; color: var(--text-muted); }
+.champion { color: rgba(139, 92, 246, 1); margin-left: 4px; }
+
+.detail {
+  border-left: 0.8px solid var(--border);
+  background: var(--surface-0);
+  padding: 24px;
+  overflow: auto;
+}
+.detailTitle {
+  font-size: 15px;
+  font-weight: 590;
+  margin: 0 0 4px;
+}
+.detailSubtitle {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0 0 20px;
+}
+.metricsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.metric {
+  padding: 12px;
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 6px;
+}
+.metricLabel {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.metricValue {
+  font-size: 20px;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.featureBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.featureBarName { width: 130px; color: var(--text-muted); font-family: 'Geist Mono Variable', monospace; font-size: 11px; }
+.featureBarTrack { flex: 1; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.featureBarFill { height: 100%; background: rgba(247, 248, 248, 0.8); border-radius: 3px; }
+.featureBarValue { width: 40px; text-align: right; color: var(--text-muted); font-family: 'Geist Mono Variable', monospace; font-size: 11px; }

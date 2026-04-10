@@ -16,6 +16,7 @@ export function rowToNotebook(row: NotebookRow): Notebook {
     notebookId: row.notebook_id,
     projectId: row.project_id,
     name: row.name,
+    kind: row.kind ?? 'phase',
     metadata: row.metadata ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at

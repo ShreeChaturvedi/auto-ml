@@ -62,6 +62,7 @@ describe('notebookService barrel exports', () => {
       notebookId: 'nb-1',
       projectId: 'p-1',
       name: 'Updated',
+      kind: 'phase' as const,
       metadata: { phase: 'preprocessing', tabId: 't1' },
       createdAt,
       updatedAt: createdAt
@@ -84,6 +85,7 @@ describe('notebookService barrel exports', () => {
       notebookId: 'nb-2',
       projectId: 'p-1',
       name: 'Renamed',
+      kind: 'phase' as const,
       metadata: { phase: 'training' },
       createdAt,
       updatedAt: createdAt

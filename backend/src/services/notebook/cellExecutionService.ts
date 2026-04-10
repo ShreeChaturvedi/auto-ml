@@ -89,6 +89,18 @@ export async function executeCell(
     throw new Error(`Cell not found: ${cellId}`);
   }
 
+  // Defense-in-depth: verify the cell's notebook belongs to this project.
+  // Route/handler auth should already enforce this, but without this check an
+  // LLM tool handler bug could cause execution of a cell from another project
+  // or a user-owned standalone notebook against the wrong container.
+  const notebook = await repo.getNotebook(cell.notebookId);
+  if (!notebook) {
+    throw new Error(`Notebook not found for cell ${cellId}`);
+  }
+  if (notebook.projectId !== projectId) {
+    throw new Error(`Cell ${cellId} does not belong to project ${projectId}`);
+  }
+
   // Only code cells can be executed
   if (cell.cellType !== 'code') {
     throw new Error(`Cannot execute ${cell.cellType} cell`);

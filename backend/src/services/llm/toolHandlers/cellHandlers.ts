@@ -4,20 +4,51 @@
 
 import { hasDatabaseConfiguration } from '../../../db.js';
 import type { ToolCall } from '../../../types/llm.js';
-import type { CellType } from '../../../types/notebook.js';
+import type { Cell, CellType, Notebook } from '../../../types/notebook.js';
 import { executeCell } from '../../notebook/cellExecutionService.js';
 import type { DatasetSyncMode } from '../../notebook/datasetSyncMode.js';
 import * as notebookService from '../../notebook/notebookService.js';
 
+/**
+ * Load the cell and verify it belongs to a phase notebook owned by the given
+ * project. Protects against LLM-supplied cellIds that reference cells in
+ * other projects or in user-owned standalone scratch notebooks.
+ */
+async function resolveAndValidateCell(
+  projectId: string,
+  cellId: string
+): Promise<{ cell: Cell; notebook: Notebook }> {
+  const cell = await notebookService.readCell(cellId);
+  if (!cell) {
+    throw new Error(`Cell ${cellId} not found`);
+  }
+  const notebook = await notebookService.getNotebook(cell.notebookId);
+  if (!notebook) {
+    throw new Error(`Notebook ${cell.notebookId} not found`);
+  }
+  if (notebook.projectId !== projectId) {
+    throw new Error(`Cell ${cellId} belongs to a different project`);
+  }
+  if (notebook.kind !== 'phase') {
+    throw new Error('LLM tools cannot operate on standalone notebooks');
+  }
+  return { cell, notebook };
+}
+
 async function resolveNotebookId(projectId: string, args: ToolCall['args']): Promise<string> {
   const requestedNotebookId = typeof args?.notebookId === 'string' ? args.notebookId : '';
   if (!requestedNotebookId) {
+    // Always resolve to a phase notebook when unspecified. Standalone notebooks
+    // are user-owned exploration scratch spaces and must never receive LLM
+    // tool output implicitly.
     const notebook = await notebookService.ensureNotebook(projectId);
     return notebook.notebookId;
   }
 
-  const projectNotebooks = await notebookService.listProjectNotebooks(projectId);
-  const notebookExists = projectNotebooks.some((notebook) => notebook.notebookId === requestedNotebookId);
+  // Restrict LLM tool dispatch to phase notebooks only. Standalone notebooks
+  // cannot receive LLM cell writes even when referenced by ID.
+  const phaseNotebooks = await notebookService.listProjectNotebooks(projectId, { kind: 'phase' });
+  const notebookExists = phaseNotebooks.some((notebook) => notebook.notebookId === requestedNotebookId);
   if (!notebookExists) {
     throw new Error(`Notebook ${requestedNotebookId} not found in project`);
   }
@@ -34,7 +65,7 @@ export async function listCells(projectId: string, args: ToolCall['args']) {
   return { notebookId, cells };
 }
 
-export async function readCell(args: ToolCall['args']) {
+export async function readCell(projectId: string, args: ToolCall['args']) {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Notebook operations require database configuration.');
   }
@@ -42,7 +73,7 @@ export async function readCell(args: ToolCall['args']) {
   if (!cellId) {
     throw new Error('cellId is required');
   }
-  const cell = await notebookService.readCell(cellId);
+  const { cell } = await resolveAndValidateCell(projectId, cellId);
   return cell;
 }
 
@@ -68,7 +99,7 @@ export async function writeCell(projectId: string, args: ToolCall['args']) {
   return cell;
 }
 
-export async function editCell(args: ToolCall['args']) {
+export async function editCell(projectId: string, args: ToolCall['args']) {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Notebook operations require database configuration.');
   }
@@ -85,6 +116,8 @@ export async function editCell(args: ToolCall['args']) {
   if (startLine < 1 || endLine < 1) {
     throw new Error('startLine and endLine must be positive (1-indexed)');
   }
+
+  await resolveAndValidateCell(projectId, cellId);
 
   const result = await notebookService.editCell(cellId, {
     startLine,
@@ -104,6 +137,8 @@ export async function runCell(projectId: string, args: ToolCall['args']) {
   if (!cellId) {
     throw new Error('cellId is required');
   }
+
+  await resolveAndValidateCell(projectId, cellId);
 
   const parsedMetadata = parseCellMetadataArg(args?.metadata);
   const datasetSyncMode = extractDatasetSyncMode(parsedMetadata);
@@ -181,19 +216,9 @@ export async function deleteCell(projectId: string, args: ToolCall['args']) {
     );
   }
 
-  // Resolve the active notebook and verify the cell actually belongs to it
-  // before deleting. Without this scope check, the LLM could delete cells in
-  // a sibling notebook by passing a valid-but-wrong UUID.
-  const notebookId = await resolveNotebookId(projectId, args);
-  const cell = await notebookService.readCell(cellId);
-  if (!cell) {
-    throw new Error(`Cell ${cellId} not found in project`);
-  }
-  if (cell.notebookId !== notebookId) {
-    throw new Error(
-      `Cell ${cellId} belongs to notebook ${cell.notebookId}, not the active notebook ${notebookId}. Refusing to delete cross-notebook.`
-    );
-  }
+  // resolveAndValidateCell confirms the cell exists, belongs to this project,
+  // and lives in a phase notebook (never a user-owned standalone notebook).
+  await resolveAndValidateCell(projectId, cellId);
 
   await notebookService.deleteCell(cellId);
   return { success: true, cellId };

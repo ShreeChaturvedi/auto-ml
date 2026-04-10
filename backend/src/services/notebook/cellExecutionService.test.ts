@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   getCellMock,
+  getNotebookMock,
   lockCellMock,
   updateCellMock,
   markCellExecutedMock,
@@ -15,6 +16,7 @@ const {
   restartKernelMock
 } = vi.hoisted(() => ({
   getCellMock: vi.fn(),
+  getNotebookMock: vi.fn(),
   lockCellMock: vi.fn(),
   updateCellMock: vi.fn(),
   markCellExecutedMock: vi.fn(),
@@ -30,6 +32,7 @@ const {
 
 vi.mock('../../repositories/notebookRepository.js', () => ({
   getCell: getCellMock,
+  getNotebook: getNotebookMock,
   lockCell: lockCellMock,
   updateCell: updateCellMock,
   markCellExecuted: markCellExecutedMock,
@@ -68,6 +71,15 @@ describe('executeCell', () => {
       cellType: 'code',
       content: 'import pandas as pd',
       metadata: {}
+    });
+    getNotebookMock.mockResolvedValue({
+      notebookId: 'notebook-1',
+      projectId: 'project-1',
+      name: 'Notebook 1',
+      kind: 'phase',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
     lockCellMock.mockResolvedValue(true);
     updateCellMock.mockResolvedValue(undefined);

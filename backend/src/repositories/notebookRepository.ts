@@ -4,7 +4,6 @@
  */
 export {
   // Notebook CRUD
-  ensureNotebook,
   listNotebooksByProject,
   createNotebook,
   getNotebook,

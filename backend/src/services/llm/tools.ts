@@ -40,9 +40,9 @@ const toolHandlers = new Map<string, ToolHandler>([
 
   // Cell tools
   ['list_cells', (projectId, args) => listCells(projectId, args)],
-  ['read_cell', (_projectId, args) => readCell(args)],
+  ['read_cell', (projectId, args) => readCell(projectId, args)],
   ['write_cell', (projectId, args) => writeCell(projectId, args)],
-  ['edit_cell', (_projectId, args) => editCell(args)],
+  ['edit_cell', (projectId, args) => editCell(projectId, args)],
   ['run_cell', (projectId, args) => runCell(projectId, args)],
   ['delete_cell', (projectId, args) => deleteCell(projectId, args)],
   ['reorder_cells', (projectId, args) => reorderCells(projectId, args)],

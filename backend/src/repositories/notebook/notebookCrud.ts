@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getDbPool, hasDatabaseConfiguration } from '../../db.js';
-import type { Notebook, NotebookRow } from '../../types/notebook.js';
+import type { Notebook, NotebookKind, NotebookRow } from '../../types/notebook.js';
 
 import { rowToNotebook } from './helpers.js';
 
@@ -9,36 +9,40 @@ import { rowToNotebook } from './helpers.js';
 // Notebook Operations
 // ============================================================
 
-/**
- * Get or create a notebook for a project.
- */
-export async function ensureNotebook(projectId: string): Promise<Notebook> {
-  if (!hasDatabaseConfiguration()) {
-    throw new Error('Database configuration required for notebook operations');
-  }
+export interface CreateNotebookOptions {
+  name?: string;
+  metadata?: Record<string, unknown>;
+  kind?: NotebookKind;
+}
 
-  const existing = await listNotebooksByProject(projectId);
-  if (existing.length > 0) {
-    return existing[0];
-  }
-
-  return createNotebook(projectId);
+export interface ListNotebooksOptions {
+  kind?: NotebookKind;
 }
 
 /**
- * List all notebooks for a project.
+ * List notebooks for a project, optionally filtered by kind.
  */
-export async function listNotebooksByProject(projectId: string): Promise<Notebook[]> {
+export async function listNotebooksByProject(
+  projectId: string,
+  options: ListNotebooksOptions = {}
+): Promise<Notebook[]> {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Database configuration required for notebook operations');
   }
 
   const pool = getDbPool();
+  if (options.kind) {
+    const result = await pool.query<NotebookRow>(
+      `SELECT * FROM notebooks WHERE project_id = $1 AND kind = $2 ORDER BY created_at ASC`,
+      [projectId, options.kind]
+    );
+    return result.rows.map(rowToNotebook);
+  }
+
   const result = await pool.query<NotebookRow>(
     `SELECT * FROM notebooks WHERE project_id = $1 ORDER BY created_at ASC`,
     [projectId]
   );
-
   return result.rows.map(rowToNotebook);
 }
 
@@ -47,8 +51,7 @@ export async function listNotebooksByProject(projectId: string): Promise<Noteboo
  */
 export async function createNotebook(
   projectId: string,
-  name?: string,
-  metadata?: Record<string, unknown>
+  options: CreateNotebookOptions = {}
 ): Promise<Notebook> {
   if (!hasDatabaseConfiguration()) {
     throw new Error('Database configuration required for notebook operations');
@@ -56,23 +59,24 @@ export async function createNotebook(
 
   const pool = getDbPool();
   const notebookId = randomUUID();
-  const trimmedName = name?.trim();
+  const kind: NotebookKind = options.kind ?? 'phase';
+  const trimmedName = options.name?.trim();
   let notebookName = trimmedName;
 
   if (!notebookName) {
     const countResult = await pool.query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM notebooks WHERE project_id = $1`,
-      [projectId]
+      `SELECT COUNT(*) AS count FROM notebooks WHERE project_id = $1 AND kind = $2`,
+      [projectId, kind]
     );
     const sequence = Number(countResult.rows[0]?.count ?? '0') + 1;
-    notebookName = `Notebook ${sequence}`;
+    notebookName = kind === 'standalone' ? `Untitled ${sequence}` : `Notebook ${sequence}`;
   }
 
   const result = await pool.query<NotebookRow>(
-    `INSERT INTO notebooks (notebook_id, project_id, name, metadata)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO notebooks (notebook_id, project_id, name, kind, metadata)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [notebookId, projectId, notebookName, metadata ?? {}]
+    [notebookId, projectId, notebookName, kind, options.metadata ?? {}]
   );
 
   return rowToNotebook(result.rows[0]);

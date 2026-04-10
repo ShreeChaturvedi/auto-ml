@@ -6,7 +6,6 @@ import type {
   ReasoningEffortOption,
 } from '@frontend/components/llm/modelOptions';
 import { Check, MousePointer2 } from 'lucide-react';
-import DeepDive from '@/components/DeepDive';
 import { cn } from '@/lib/cn';
 import styles from './ChatDeepDive.module.css';
 
@@ -165,24 +164,13 @@ function ChatDeepDiveVisual() {
 }
 
 /**
- * Deep-dive 1 — CHAT. Wraps the shared {@link DeepDive} frame with the CHAT
- * copy from section 4.5 of the landing-page spec and mounts the real
- * frontend `<LlmChatComposer readOnly>` inside as a live island. A scripted
- * IO-enter sequence (cursor glide → mock transcription → tool-call reveal)
- * demonstrates the chat experience without any backend wiring.
+ * Deep-dive 1 — CHAT visual. Mounts the real frontend `<LlmChatComposer
+ * readOnly>` as a live island inside a scripted IO-enter sequence (cursor
+ * glide → mock transcription → tool-call reveal). The shared `<DeepDive>`
+ * chrome (eyebrow, headline, body, kbd hint) is composed around this by
+ * `FeaturesSection.astro` — this component renders only the right-hand
+ * visual content.
  */
 export default function ChatDeepDive() {
-  return (
-    <DeepDive
-      id="chat"
-      eyebrow="01 — CHAT"
-      headlineBright="Talk to your data like a colleague."
-      headlineMuted="Voice, text, or keyboard — the agent understands."
-      body="Ask in plain English. Watch tool calls stream in real time as the agent reads your tables, proposes transformations, and explains its reasoning."
-      kbdLabel="to open chat in any tab"
-      kbdBadge="⌘K"
-    >
-      <ChatDeepDiveVisual />
-    </DeepDive>
-  );
+  return <ChatDeepDiveVisual />;
 }

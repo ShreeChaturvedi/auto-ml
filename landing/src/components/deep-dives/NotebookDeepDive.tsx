@@ -12,7 +12,6 @@ import { TooltipProvider } from '@frontend/components/ui/tooltip';
 import { NotebookCellOutput } from '@frontend/components/notebook/NotebookCellOutput';
 import type { RichOutput } from '@frontend/lib/api/execution';
 
-import DeepDive from '@/components/DeepDive';
 import styles from './NotebookDeepDive.module.css';
 
 // Static 8-line Python cell using real NovaCraft columns. Rendered through
@@ -171,9 +170,10 @@ function NotebookDeepDiveVisual() {
 }
 
 /**
- * Deep-dive 3 — NOTEBOOK. Wraps the shared {@link DeepDive} frame with the
- * NOTEBOOK copy from section 4.5 of the landing-page spec and mounts a
- * minimal two-cell notebook preview inside.
+ * Deep-dive 3 — NOTEBOOK visual. A minimal two-cell notebook preview. The
+ * shared `<DeepDive>` chrome (eyebrow, headline, body, kbd hint) is composed
+ * around this by `FeaturesSection.astro` — this component renders only the
+ * left-hand visual content.
  *
  * The top cell is a static 8-line Python snippet highlighted via `streamdown`
  * (not Monaco), followed by a 1.2s "running" blink on IO-enter and then the
@@ -183,17 +183,5 @@ function NotebookDeepDiveVisual() {
  * `mrr_usd` distribution.
  */
 export default function NotebookDeepDive() {
-  return (
-    <DeepDive
-      id="notebook"
-      eyebrow="03 — NOTEBOOK"
-      headlineBright="A real notebook, not a pipeline."
-      headlineMuted="Pandas, sklearn, Plotly — every cell editable."
-      body="Every preprocessing step, feature transform, and model fit lands as a Jupyter cell with real sklearn and pandas code. Edit a line, re-run the cell, or drop in your own — the kernel is yours."
-      kbdLabel="to run"
-      kbdBadge="shift+enter"
-    >
-      <NotebookDeepDiveVisual />
-    </DeepDive>
-  );
+  return <NotebookDeepDiveVisual />;
 }

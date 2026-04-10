@@ -57,52 +57,105 @@ const REASONING_OPTIONS: readonly ReasoningEffortOption[] = [
 
 const NOOP = () => {};
 
+/**
+ * Phases of the scripted deep-dive animation. They run in order:
+ *   idle → cursor-glide → cursor-click → typing → tools → done
+ * Under reduced motion the component mounts directly at `done`.
+ */
+type Phase =
+  | 'idle'
+  | 'cursor-glide'
+  | 'cursor-click'
+  | 'typing'
+  | 'tools'
+  | 'done';
+
+const TYPING_INTERVAL_MS = 45;
+
 function ChatDeepDiveVisual() {
   // Reactive hook so toggling OS reduced-motion mid-session is respected.
-  // State is seeded to the final frame when reduced motion is set at mount
-  // so we never call setState synchronously inside the effect below.
   const reduced = usePrefersReducedMotion();
-  const [value, setValue] = useState(() =>
+  const [phase, setPhase] = useState<Phase>(() => (reduced ? 'done' : 'idle'));
+  const [typedValue, setTypedValue] = useState<string>(() =>
     reduced ? SCRIPTED_TRANSCRIPTION : '',
   );
-  const [showCursor, setShowCursor] = useState(false);
-  const [toolsVisible, setToolsVisible] = useState(() => reduced);
 
+  // Drive discrete phase transitions via setTimeout. The typing interval is
+  // scoped to the typing phase so a single cleanup clears everything on
+  // unmount or when reduced-motion toggles. All state transitions are
+  // deferred (setTimeout) to avoid synchronous setState inside the effect.
   useEffect(() => {
-    // Scripted sequence — kicks off shortly after mount. Honors reduced
-    // motion by skipping the typing animation entirely (state was already
-    // seeded to the final frame at mount time via lazy initializers).
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let typingInterval: ReturnType<typeof setInterval> | null = null;
+
     if (reduced) {
-      return;
+      // Jump to the final frame on the next tick (deferred to avoid a
+      // synchronous setState cascade inside the effect body).
+      timers.push(
+        setTimeout(() => {
+          setPhase('done');
+          setTypedValue(SCRIPTED_TRANSCRIPTION);
+        }, 0),
+      );
+      return () => {
+        for (const t of timers) clearTimeout(t);
+      };
     }
 
-    let typingInterval: ReturnType<typeof setInterval> | null = null;
-    let finalTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const cursorTimer = setTimeout(() => {
-      setShowCursor(true);
-    }, 800);
-
-    const typingTimer = setTimeout(() => {
-      let i = 0;
-      typingInterval = setInterval(() => {
-        if (i >= SCRIPTED_TRANSCRIPTION.length) {
-          if (typingInterval) clearInterval(typingInterval);
-          finalTimer = setTimeout(() => setToolsVisible(true), 500);
-          return;
-        }
-        i += 1;
-        setValue(SCRIPTED_TRANSCRIPTION.slice(0, i));
-      }, 45);
-    }, 1800);
+    // Re-seed idle on the next tick so the sprite mounts at `.cursorSpriteStart`
+    // (invisible, off-screen). If reduced-motion flipped off mid-session the
+    // initial useState seed may be stale.
+    timers.push(
+      setTimeout(() => {
+        setPhase('idle');
+        setTypedValue('');
+      }, 0),
+    );
+    // t=200ms   cursor enters and begins gliding toward voice button
+    timers.push(setTimeout(() => setPhase('cursor-glide'), 200));
+    // t=800ms   cursor "clicks" the voice button (scale pulse + fade)
+    timers.push(setTimeout(() => setPhase('cursor-click'), 800));
+    // t=900ms   transcription typing begins
+    timers.push(
+      setTimeout(() => {
+        setPhase('typing');
+        let i = 0;
+        typingInterval = setInterval(() => {
+          i += 1;
+          setTypedValue(SCRIPTED_TRANSCRIPTION.slice(0, i));
+          if (i >= SCRIPTED_TRANSCRIPTION.length && typingInterval) {
+            clearInterval(typingInterval);
+            typingInterval = null;
+            // Short beat, then tool rows cascade in.
+            timers.push(setTimeout(() => setPhase('tools'), 500));
+            timers.push(setTimeout(() => setPhase('done'), 1500));
+          }
+        }, TYPING_INTERVAL_MS);
+      }, 900),
+    );
 
     return () => {
-      clearTimeout(cursorTimer);
-      clearTimeout(typingTimer);
+      for (const t of timers) clearTimeout(t);
       if (typingInterval) clearInterval(typingInterval);
-      if (finalTimer) clearTimeout(finalTimer);
     };
   }, [reduced]);
+
+  // Derive visible state from the single phase discriminator. The sprite is
+  // mounted during idle (invisible, pre-glide) so the CSS transition from
+  // `cursorSpriteStart` → `cursorSpriteGlided` actually animates the
+  // transform instead of snapping to the final frame.
+  const renderCursor =
+    !reduced &&
+    (phase === 'idle' ||
+      phase === 'cursor-glide' ||
+      phase === 'cursor-click');
+  const toolsVisible = phase === 'tools' || phase === 'done';
+  const value =
+    phase === 'typing'
+      ? typedValue
+      : phase === 'tools' || phase === 'done'
+        ? SCRIPTED_TRANSCRIPTION
+        : '';
 
   return (
     <div className={styles.root}>
@@ -110,7 +163,7 @@ function ChatDeepDiveVisual() {
         readOnly
         chatInput={{
           value,
-          onValueChange: setValue,
+          onValueChange: NOOP,
           onKeyDown: NOOP,
           placeholder: 'Describe your goal…',
           placeholders: DYNAMIC_PLACEHOLDERS,
@@ -131,9 +184,14 @@ function ChatDeepDiveVisual() {
         }}
       />
 
-      {showCursor && (
+      {renderCursor && (
         <MousePointer2
-          className={styles.cursorSprite}
+          className={cn(
+            styles.cursorSprite,
+            phase === 'idle' && styles.cursorSpriteStart,
+            phase === 'cursor-glide' && styles.cursorSpriteGlided,
+            phase === 'cursor-click' && styles.cursorSpriteClick,
+          )}
           aria-hidden="true"
           size={14}
         />

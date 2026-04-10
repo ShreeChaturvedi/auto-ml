@@ -54,5 +54,36 @@
   height: 14px;
   color: var(--text);
   pointer-events: none;
-  transition: transform 600ms var(--ease-out-quart), opacity 200ms;
+  will-change: transform, opacity;
+  transition: transform 600ms var(--ease-out-quart),
+              opacity 200ms var(--ease-out-quart);
+}
+
+/* t=0 — sprite enters from lower-left, fully transparent. */
+.cursorSpriteStart {
+  transform: translate(-120px, 80px) scale(1);
+  opacity: 0;
+}
+
+/* t=200ms — sprite glides into place over the voice-input button. */
+.cursorSpriteGlided {
+  transform: translate(0, 0) scale(1);
+  opacity: 1;
+}
+
+/* t=800ms — brief click pulse then fade out. */
+.cursorSpriteClick {
+  transform: translate(0, 0) scale(0.82);
+  opacity: 0;
+  transition: transform 180ms var(--ease-out-quart),
+              opacity 260ms var(--ease-out-quart);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursorSprite,
+  .cursorSpriteStart,
+  .cursorSpriteGlided,
+  .cursorSpriteClick {
+    transition: none;
+  }
 }

@@ -200,3 +200,124 @@ export const featureEngineeringChatTurns: FeatureEngineeringChatTurn[] = [
       "Done. Added 4 plan_tier one-hots, 2 temporal features (`days_since_signup`, `signup_quarter`), and 1 ratio feature (`revenue_per_call`). The frame is now (2,500 × 38) — ready for training.",
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Preprocessing tab — real leaf components.
+//
+// These turns feed the rebuilt <PreprocessingView>. Each assistant turn may
+// include one or more tool calls paired by id with tool results. The chat log
+// renders user/assistant bubbles directly and hands off the tool strip to the
+// real frontend `<ToolIndicator>` so users see the exact tool-chrome they'd
+// see inside the live app (icon, status tense, expandable dropdowns).
+// ---------------------------------------------------------------------------
+
+export interface PreprocessingChatTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  /** Optional assistant prose rendered as a bubble above the tool strip. */
+  text?: string;
+  /** Tool calls and their completed results. Rendered via <ToolIndicator>. */
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+}
+
+export const preprocessingChatTurns: PreprocessingChatTurn[] = [
+  {
+    id: 'u1',
+    role: 'user',
+    text: "The customers table has a few issues — some missing MRR, sketchy signup dates, a couple of API-call outliers blowing out p99. Can you fix them without dropping rows?",
+  },
+  {
+    id: 'a1',
+    role: 'assistant',
+    text: "Let me profile the table first so I know exactly what we're dealing with, then I'll read the existing preprocessing cell before editing.",
+    toolCalls: [
+      {
+        id: 'call_profile_1',
+        tool: 'get_dataset_profile',
+        args: { datasetId: 'customers' },
+      },
+      {
+        id: 'call_read_1',
+        tool: 'read_cell',
+        args: { cellId: 'cell_preprocess_1' },
+      },
+    ],
+    toolResults: [
+      {
+        id: 'call_profile_1',
+        tool: 'get_dataset_profile',
+        output: {
+          datasetId: 'customers',
+          filename: 'customers.csv',
+          fileType: 'csv',
+          nRows: 2530,
+          nCols: 14,
+          columns: [
+            { name: 'customer_id',         dtype: 'int64',    nullCount: 0,   uniqueCount: 2530 },
+            { name: 'mrr_usd',             dtype: 'float64',  nullCount: 147, uniqueCount: 1932, min: 0,   max: 24180,  mean: 2142.4 },
+            { name: 'signup_dt',           dtype: 'object',   nullCount: 12,  uniqueCount: 2210 },
+            { name: 'api_calls',           dtype: 'int64',    nullCount: 0,   uniqueCount: 2498, min: 0,   max: 892448, mean: 12004.7 },
+            { name: 'avg_session_minutes', dtype: 'float64',  nullCount: 250, uniqueCount: 1871, min: 0.3, max: 84.1,   mean: 18.4 },
+            { name: 'plan_tier',           dtype: 'category', nullCount: 0,   uniqueCount: 4 },
+            { name: 'is_active',           dtype: 'bool',     nullCount: 0,   uniqueCount: 2 },
+          ],
+        },
+      },
+      {
+        id: 'call_read_1',
+        tool: 'read_cell',
+        output: {
+          cellId: 'cell_preprocess_1',
+          title: 'Preprocessing — customers.csv',
+          cellType: 'code',
+          content:
+            "import pandas as pd\n\ndf = pd.read_csv('customers.csv')\ndf.head()",
+        },
+      },
+    ],
+  },
+  {
+    id: 'a2',
+    role: 'assistant',
+    text: "Found it: 147 missing `mrr_usd` (5.8%), 12 unparsed `signup_dt` strings, and the top 0.5% of `api_calls` are sitting above 350k. I'll impute MRR with the column median, coerce dates with `pd.to_datetime(..., errors='coerce')`, and Winsorize `api_calls` at the 99.5th percentile. Editing the cell now.",
+    toolCalls: [
+      {
+        id: 'call_edit_1',
+        tool: 'edit_cell',
+        args: {
+          cellId: 'cell_preprocess_1',
+          startLine: 4,
+          endLine: 4,
+          newContent:
+            "df['mrr_usd'] = df['mrr_usd'].fillna(df['mrr_usd'].median())\ndf['signup_dt'] = pd.to_datetime(df['signup_dt'], errors='coerce')\ndf = df[df['api_calls'] < df['api_calls'].quantile(0.995)]",
+        },
+      },
+    ],
+    toolResults: [
+      {
+        id: 'call_edit_1',
+        tool: 'edit_cell',
+        output: {
+          oldContent: "df.head()",
+          newContent:
+            "df['mrr_usd'] = df['mrr_usd'].fillna(df['mrr_usd'].median())\ndf['signup_dt'] = pd.to_datetime(df['signup_dt'], errors='coerce')\ndf = df[df['api_calls'] < df['api_calls'].quantile(0.995)]\ndf.head()",
+          diff: {
+            linesRemoved: ["df.head()"],
+            linesAdded: [
+              "df['mrr_usd'] = df['mrr_usd'].fillna(df['mrr_usd'].median())",
+              "df['signup_dt'] = pd.to_datetime(df['signup_dt'], errors='coerce')",
+              "df = df[df['api_calls'] < df['api_calls'].quantile(0.995)]",
+              "df.head()",
+            ],
+          },
+        },
+      },
+    ],
+  },
+  {
+    id: 'a3',
+    role: 'assistant',
+    text: "Done. All 147 MRR nulls filled, dates parsed (zero coerced to NaT), and 13 outlier rows trimmed above the 99.5th percentile. The notebook cell on the right has the updated source and the new `df.head()` output — reversible via the savepoint I just wrote.",
+  },
+];

@@ -325,3 +325,148 @@ df[['annual_revenue_usd', 'api_calls', 'revenue_per_call']].describe().round(2).
     ],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Preprocessing tab — real frontend `<NotebookCellOutput>` cells.
+//
+// Code source ships as a pre-baked Shiki `github-dark` HTML string so we
+// don't pull streamdown (~450 KB) or Monaco (~2 MB) into the landing bundle
+// for a handful of read-only cells. Outputs use the real `RichOutput` shape
+// so the rebuilt `<PreprocessingView>` can hand them straight to the real
+// `<NotebookCellOutput>` leaf component.
+//
+// Bundle-size rule: NEVER emit `type: 'chart'` here — that branch lazy-loads
+// Plotly in `CellOutputRenderer → PlotlyOutput`. Text + table only.
+// ---------------------------------------------------------------------------
+
+export interface PreprocessingNotebookCellFixture {
+  id: string;
+  executionIndex: number;
+  /** Plain-text Python source — copyable/accessible fallback. */
+  source: string;
+  /** Pre-baked Shiki `github-dark` HTML for visual fidelity. */
+  highlightedHtml: string;
+  /** RichOutput[] passed directly to <NotebookCellOutput outputs={…} />. */
+  outputs: RichOutput[];
+}
+
+/**
+ * Pre-highlighted with Shiki `github-dark` (matches the streamdown default).
+ * Regenerate with:
+ *   node -e "import('shiki').then(async ({codeToHtml}) => \
+ *     console.log(await codeToHtml(SOURCE, { lang: 'python', theme: 'github-dark' })))"
+ */
+const PP_CELL_1_CODE = `import pandas as pd
+
+df = pd.read_csv('customers.csv')
+print(df.shape)
+df.head()`;
+
+const PP_CELL_1_HTML =
+  '<pre class="shiki github-dark" style="background-color:#24292e;color:#e1e4e8" tabindex="0"><code>' +
+  '<span class="line"><span style="color:#F97583">import</span><span style="color:#E1E4E8"> pandas </span><span style="color:#F97583">as</span><span style="color:#E1E4E8"> pd</span></span>\n' +
+  '<span class="line"></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> pd.read_csv(</span><span style="color:#9ECBFF">\'customers.csv\'</span><span style="color:#E1E4E8">)</span></span>\n' +
+  '<span class="line"><span style="color:#B392F0">print</span><span style="color:#E1E4E8">(df.shape)</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df.head()</span></span>' +
+  '</code></pre>';
+
+const PP_CELL_2_CODE = `# Data quality repair — customers.csv
+df['mrr_usd'] = df['mrr_usd'].fillna(df['mrr_usd'].median())
+df['signup_dt'] = pd.to_datetime(df['signup_dt'], errors='coerce')
+df = df[df['api_calls'] < df['api_calls'].quantile(0.995)]
+df.head()`;
+
+const PP_CELL_2_HTML =
+  '<pre class="shiki github-dark" style="background-color:#24292e;color:#e1e4e8" tabindex="0"><code>' +
+  '<span class="line"><span style="color:#6A737D"># Data quality repair — customers.csv</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> df[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">].fillna(df[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">].median())</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df[</span><span style="color:#9ECBFF">\'signup_dt\'</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> pd.to_datetime(df[</span><span style="color:#9ECBFF">\'signup_dt\'</span><span style="color:#E1E4E8">], errors</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">\'coerce\'</span><span style="color:#E1E4E8">)</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> df[df[</span><span style="color:#9ECBFF">\'api_calls\'</span><span style="color:#E1E4E8">] </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> df[</span><span style="color:#9ECBFF">\'api_calls\'</span><span style="color:#E1E4E8">].quantile(</span><span style="color:#79B8FF">0.995</span><span style="color:#E1E4E8">)]</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df.head()</span></span>' +
+  '</code></pre>';
+
+const PP_CELL_3_CODE = `# Validate — nulls should be zero, dates parsed, no p99 blow-up
+print('nulls:', int(df[['mrr_usd', 'signup_dt']].isna().sum().sum()))
+print('rows: ', len(df))
+df[['mrr_usd', 'api_calls']].describe()`;
+
+const PP_CELL_3_HTML =
+  '<pre class="shiki github-dark" style="background-color:#24292e;color:#e1e4e8" tabindex="0"><code>' +
+  '<span class="line"><span style="color:#6A737D"># Validate — nulls should be zero, dates parsed, no p99 blow-up</span></span>\n' +
+  '<span class="line"><span style="color:#B392F0">print</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">\'nulls:\'</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">int</span><span style="color:#E1E4E8">(df[[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">\'signup_dt\'</span><span style="color:#E1E4E8">]].isna().sum().sum()))</span></span>\n' +
+  '<span class="line"><span style="color:#B392F0">print</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">\'rows: \'</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">len</span><span style="color:#E1E4E8">(df))</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df[[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">\'api_calls\'</span><span style="color:#E1E4E8">]].describe()</span></span>' +
+  '</code></pre>';
+
+export const preprocessingNotebookCells: PreprocessingNotebookCellFixture[] = [
+  {
+    id: 'pp_cell_1',
+    executionIndex: 1,
+    source: PP_CELL_1_CODE,
+    highlightedHtml: PP_CELL_1_HTML,
+    outputs: [
+      { type: 'text', content: '(2530, 14)' },
+      {
+        type: 'table',
+        content: 'df.head()',
+        data: {
+          columns: ['customer_id', 'mrr_usd', 'signup_dt', 'api_calls', 'plan_tier'],
+          rows: [
+            { customer_id: '1001', mrr_usd: '1,620', signup_dt: '2024-11-03', api_calls: '4,218',   plan_tier: 'Growth'  },
+            { customer_id: '1002', mrr_usd: 'NaN',   signup_dt: '2025-02-18', api_calls: '12,904',  plan_tier: 'Scale'   },
+            { customer_id: '1003', mrr_usd: '820',   signup_dt: '',           api_calls: '2,118',   plan_tier: 'Starter' },
+            { customer_id: '1004', mrr_usd: '4,300', signup_dt: '2023-08-22', api_calls: '892,448', plan_tier: 'Scale'   },
+            { customer_id: '1005', mrr_usd: '2,090', signup_dt: '2025-04-01', api_calls: '3,412',   plan_tier: 'Growth'  },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: 'pp_cell_2',
+    executionIndex: 2,
+    source: PP_CELL_2_CODE,
+    highlightedHtml: PP_CELL_2_HTML,
+    outputs: [
+      {
+        type: 'table',
+        content: 'df.head() — after fixes',
+        data: {
+          columns: ['customer_id', 'mrr_usd', 'signup_dt', 'api_calls', 'plan_tier'],
+          rows: [
+            { customer_id: '1001', mrr_usd: '1,620', signup_dt: '2024-11-03', api_calls: '4,218',  plan_tier: 'Growth'  },
+            { customer_id: '1002', mrr_usd: '1,620', signup_dt: '2025-02-18', api_calls: '12,904', plan_tier: 'Scale'   },
+            { customer_id: '1003', mrr_usd: '820',   signup_dt: 'NaT',        api_calls: '2,118',  plan_tier: 'Starter' },
+            { customer_id: '1005', mrr_usd: '2,090', signup_dt: '2025-04-01', api_calls: '3,412',  plan_tier: 'Growth'  },
+            { customer_id: '1006', mrr_usd: '3,410', signup_dt: '2024-06-11', api_calls: '8,740',  plan_tier: 'Scale'   },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: 'pp_cell_3',
+    executionIndex: 3,
+    source: PP_CELL_3_CODE,
+    highlightedHtml: PP_CELL_3_HTML,
+    outputs: [
+      { type: 'text', content: 'nulls: 0\nrows:  2517' },
+      {
+        type: 'table',
+        content: 'describe()',
+        data: {
+          columns: ['stat', 'mrr_usd', 'api_calls'],
+          rows: [
+            { stat: 'count', mrr_usd: '2,517',  api_calls: '2,517'   },
+            { stat: 'mean',  mrr_usd: '2,158',  api_calls: '8,942'   },
+            { stat: 'std',   mrr_usd: '1,807',  api_calls: '14,611'  },
+            { stat: 'min',   mrr_usd: '0',      api_calls: '0'       },
+            { stat: '50%',   mrr_usd: '1,620',  api_calls: '3,412'   },
+            { stat: 'max',   mrr_usd: '24,180', api_calls: '349,982' },
+          ],
+        },
+      },
+    ],
+  },
+];

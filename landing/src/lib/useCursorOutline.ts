@@ -3,8 +3,6 @@ import { useEffect, useRef } from 'react';
 interface UseCursorOutlineOptions {
   /** Distance in pixels from the element's edge at which the glow activates. */
   proximityThreshold?: number;
-  /** Additional reach of the glow ring; reserved for CSS coordination. */
-  ringReach?: number;
 }
 
 /**
@@ -17,7 +15,6 @@ interface UseCursorOutlineOptions {
  */
 export function useCursorOutline({
   proximityThreshold = 220,
-  ringReach: _ringReach = 24,
 }: UseCursorOutlineOptions = {}) {
   const ref = useRef<HTMLDivElement | null>(null);
 

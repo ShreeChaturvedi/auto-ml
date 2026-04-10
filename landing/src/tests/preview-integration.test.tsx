@@ -15,14 +15,19 @@ describe('AppPreviewFrame integration', () => {
     expect(frame?.className).toMatch(/cursor-outline/);
   });
 
-  it('displays the default Data Viewer tab content', () => {
+  it('displays the default Data Viewer tab content', async () => {
     render(<AppPreviewFrame />);
-    expect(screen.getByText(/which customers churned in Q2/i)).toBeInTheDocument();
+    // Tab views are lazy-loaded via React.lazy, so await resolution.
+    expect(
+      await screen.findByText(/which customers churned in Q2/i),
+    ).toBeInTheDocument();
   });
 
-  it('tab switching works via sidebar click', () => {
+  it('tab switching works via sidebar click', async () => {
     render(<AppPreviewFrame />);
     fireEvent.click(screen.getByRole('tab', { name: /experiments/i }));
-    expect(screen.getByText(/4 MODELS · SORTED BY F1/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/4 MODELS · SORTED BY F1/i),
+    ).toBeInTheDocument();
   });
 });

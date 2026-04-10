@@ -1,32 +1,5 @@
 /**
- * Preview component drift-detection smoke test
- * ----------------------------------------------
- *
- * The landing page reuses a handful of EASY-tier components directly from
- * `frontend/src/`. If any of their prop interfaces change, the landing page
- * breaks silently until visual QA catches it. This file imports each reused
- * component and constructs a realistic props object from the same fixtures
- * the real landing-page callsites use. The JSX expressions below are
- * fully type-checked against the real component interfaces, so a prop-
- * signature drift fails this file at compile time — that is the primary
- * drift detector the plan (Task 75) asks for.
- *
- * On top of the compile-time check we also attempt a runtime `render()` of
- * each component. That works whenever React is deduplicated across the
- * monorepo (as it is in the real astro build via
- * `ssr.noExternal: [/^@frontend\//]`). In the vitest environment, however,
- * landing and frontend currently pull in two different React copies
- * (19.2.x vs 19.1.x), so hook-based components throw
- * `Cannot read properties of null (reading 'useState')`. We treat that
- * specific React-duplication error as an accepted "compile passed, runtime
- * couldn't dedupe" outcome — the drift signal has already been captured by
- * TypeScript. Any *other* runtime error still fails the test, so this file
- * will upgrade to a full smoke test the moment the React versions are
- * aligned, without any further changes.
- *
- * If this file fails to compile, a frontend prop interface has drifted and
- * the corresponding landing-page callsite needs to be updated (see
- * `landing/src/components/deep-dives/*` and `landing/src/preview/tabs/*`).
+ * Smoke-test: imports + renders the 6 reused frontend components to catch prop drift.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -50,6 +23,7 @@ vi.mock('@frontend/components/data/PdfViewer', () => ({
 
 // Components under test — imported by the real paths so TypeScript
 // resolves each one's prop interface from the real `frontend/src/` source.
+import { TooltipProvider } from '@frontend/components/ui/tooltip';
 import { LlmChatComposer } from '@frontend/components/llm/LlmChatComposer';
 import type {
   AssistantModelOption,
@@ -158,42 +132,12 @@ const TOOL_RESULTS: ToolResult[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Helper: render a component with tolerance for the monorepo's known React
-// duplication. Any error thrown that is NOT the React-dup symptom is
-// re-raised so real drift still fails the test. The compile-time signal
-// (TypeScript checking the JSX props against the real component type) is
-// the primary drift detector; this helper makes the runtime check
-// best-effort.
-// ---------------------------------------------------------------------------
-
-const REACT_DUPLICATION_PATTERNS = [
-  /Cannot read properties of null \(reading 'use/,
-  /Invalid hook call/i,
-  /mismatching versions of React/i,
-];
-
-function renderTolerant(node: React.ReactElement): void {
-  try {
-    render(node);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const isReactDupError = REACT_DUPLICATION_PATTERNS.some((pat) =>
-      pat.test(message),
-    );
-    if (!isReactDupError) {
-      throw err;
-    }
-    // Accepted — compile-time prop check still ran.
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Smoke tests
 // ---------------------------------------------------------------------------
 
 describe('reused frontend components — prop-interface drift smoke tests', () => {
   it('LlmChatComposer (readOnly) accepts the ChatDeepDive prop shape', () => {
-    renderTolerant(
+    render(
       <LlmChatComposer
         readOnly
         chatInput={{
@@ -223,7 +167,7 @@ describe('reused frontend components — prop-interface drift smoke tests', () =
   });
 
   it('QuestionCards accepts the UploadView plan prop shape', () => {
-    renderTolerant(
+    render(
       <QuestionCards
         questions={PLAN_QUESTIONS}
         onSubmit={NOOP}
@@ -234,12 +178,18 @@ describe('reused frontend components — prop-interface drift smoke tests', () =
   });
 
   it('NotebookCellOutput accepts the NotebookDeepDive describe() table prop shape', () => {
-    renderTolerant(<NotebookCellOutput outputs={DESCRIBE_OUTPUTS} />);
+    // NotebookCellOutput uses Radix Tooltip, which requires a provider in
+    // the tree. The real app wraps this at a higher level.
+    render(
+      <TooltipProvider>
+        <NotebookCellOutput outputs={DESCRIBE_OUTPUTS} />
+      </TooltipProvider>,
+    );
     expect(true).toBe(true);
   });
 
   it('ComputeAnimation accepts its completed-state prop shape', () => {
-    renderTolerant(
+    render(
       <ComputeAnimation
         files={DEMO_FILES}
         results={DEMO_RESULTS}
@@ -255,7 +205,7 @@ describe('reused frontend components — prop-interface drift smoke tests', () =
     // but TypeScript still resolves the prop types from the real
     // `frontend/src/components/data/PdfViewer.tsx`, so prop drift
     // (e.g. a renamed `url` field) still fails at compile time.
-    renderTolerant(
+    render(
       <PdfViewer
         url="blob:mock-url"
         fileName="novacraft_business_context.pdf"
@@ -265,7 +215,7 @@ describe('reused frontend components — prop-interface drift smoke tests', () =
   });
 
   it('ToolIndicator accepts a minimal ToolCall + ToolResult pair', () => {
-    renderTolerant(
+    render(
       <ToolIndicator
         toolCalls={TOOL_CALLS}
         results={TOOL_RESULTS}

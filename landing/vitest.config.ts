@@ -1,40 +1,12 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type PluginOption } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { importerAwareAtAlias } from './config/importerAwareAtAlias.mjs';
 
-const landingSrc = fileURLToPath(new URL('./src', import.meta.url));
 const frontendSrc = fileURLToPath(new URL('../frontend/src', import.meta.url));
 
-/**
- * Importer-aware resolver for the `@/*` alias.
- *
- * The landing workspace uses `@/*` → `landing/src/*`, while the frontend
- * workspace uses `@/*` → `frontend/src/*`. When a landing file imports a
- * frontend file via `@frontend/*`, downstream `@/*` imports inside the
- * frontend tree must keep resolving to `frontend/src/*`, not leak into
- * `landing/src/*`. A single static alias can't express that — so we use a
- * Vite plugin `resolveId` hook that branches on the importer path.
- */
-function importerAwareAtAlias() {
-  return {
-    name: 'landing-importer-aware-at-alias',
-    enforce: 'pre' as const,
-    async resolveId(this: { resolve: (s: string, i?: string, o?: { skipSelf: boolean }) => Promise<{ id: string } | null> }, source: string, importer: string | undefined) {
-      if (!source.startsWith('@/')) return null;
-      const rel = source.slice(2);
-      const base = importer && importer.includes(`${path.sep}frontend${path.sep}`)
-        ? frontendSrc
-        : landingSrc;
-      const absolute = path.join(base, rel);
-      const resolved = await this.resolve(absolute, importer, { skipSelf: true });
-      return resolved?.id ?? absolute;
-    },
-  };
-}
-
 export default defineConfig({
-  plugins: [importerAwareAtAlias(), react()],
+  plugins: [importerAwareAtAlias() as PluginOption, react()],
   test: {
     globals: true,
     environment: 'jsdom',
@@ -44,6 +16,16 @@ export default defineConfig({
     // under jsdom.
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', 'src/**/*.spec.{ts,tsx}'],
+    // Force cross-workspace React consumers through Vite's module graph so
+    // `resolve.dedupe` below actually hits them. Without this, CJS copies of
+    // zustand / @radix-ui from `frontend/node_modules` bypass Vite and load
+    // their own `react`, causing "Cannot read properties of null" hook errors
+    // when landing tests render reused frontend components.
+    server: {
+      deps: {
+        inline: [/zustand/, /@radix-ui\//],
+      },
+    },
   },
   resolve: {
     // Force a single React copy across landing + @frontend imports. Without

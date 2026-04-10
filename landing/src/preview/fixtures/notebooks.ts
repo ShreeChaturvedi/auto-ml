@@ -1,6 +1,13 @@
 // Pre-rendered notebook cells for preprocessing, feature-engineering, and training tabs.
 // Format intentionally decoupled from frontend's internal NotebookCell shape so the
 // landing preview can render cells with its own lightweight component.
+//
+// The Feature Engineering tab was rebuilt to render its cell outputs through
+// the real frontend `<NotebookCellOutput>` leaf component. That export lives
+// at the bottom of this file (`featureEngineeringNotebookCells`) and uses
+// the real `RichOutput` shape from `@frontend/lib/api/execution`.
+
+import type { RichOutput } from '@frontend/lib/api/execution';
 
 export type NotebookCellKind = 'markdown' | 'code' | 'output';
 
@@ -210,6 +217,110 @@ shap.summary_plot(shap_values, X, plot_type='bar', max_display=8)`,
           { name: 'satisfaction_score',     value: 0.22 },
           { name: 'seats_purchased',        value: 0.18 },
         ],
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Feature Engineering tab — NotebookCellOutput-shaped cells.
+//
+// Consumed by the rebuilt <FeatureEngineeringView> via the real frontend
+// <NotebookCellOutput>. RichOutput[] shape — NO `type: 'chart'`, since that
+// branch lazy-loads Plotly (~4.9 MB) in CellOutputRenderer → PlotlyOutput.
+// Text + table only. Bundle-lean per landing spec §5.10.
+// ---------------------------------------------------------------------------
+
+export interface FeatureEngineeringNotebookCell {
+  id: string;
+  kind: 'markdown' | 'code';
+  source: string;
+  /** RichOutput[] passed directly to <NotebookCellOutput outputs={…} />. */
+  outputs?: RichOutput[];
+}
+
+export const featureEngineeringNotebookCells: FeatureEngineeringNotebookCell[] = [
+  {
+    id: 'fe2_md',
+    kind: 'markdown',
+    source: '## Feature engineering · NovaCraft customers',
+  },
+  {
+    id: 'fe2_code_1',
+    kind: 'code',
+    source: `# One-hot encode plan tier
+df = pd.get_dummies(df, columns=['plan_tier'], prefix='plan')
+df.filter(like='plan_').head()`,
+    outputs: [
+      {
+        type: 'text',
+        content: 'shape after one-hot: (2500, 34)',
+      },
+      {
+        type: 'table',
+        content: 'First 5 rows · plan_* columns',
+        data: {
+          columns: ['plan_Starter', 'plan_Growth', 'plan_Scale', 'plan_Enterprise'],
+          rows: [
+            { plan_Starter: 'True',  plan_Growth: 'False', plan_Scale: 'False', plan_Enterprise: 'False' },
+            { plan_Starter: 'False', plan_Growth: 'True',  plan_Scale: 'False', plan_Enterprise: 'False' },
+            { plan_Starter: 'False', plan_Growth: 'False', plan_Scale: 'True',  plan_Enterprise: 'False' },
+            { plan_Starter: 'False', plan_Growth: 'False', plan_Scale: 'False', plan_Enterprise: 'True'  },
+            { plan_Starter: 'False', plan_Growth: 'True',  plan_Scale: 'False', plan_Enterprise: 'False' },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: 'fe2_code_2',
+    kind: 'code',
+    source: `# Temporal features from signup_dt
+df['signup_dt'] = pd.to_datetime(df['signup_dt'])
+df['days_since_signup'] = (pd.Timestamp.now() - df['signup_dt']).dt.days
+df['signup_quarter']    = df['signup_dt'].dt.to_period('Q').astype(str)
+df[['days_since_signup', 'signup_quarter']].head()`,
+    outputs: [
+      {
+        type: 'table',
+        content: 'First 5 rows · temporal features',
+        data: {
+          columns: ['days_since_signup', 'signup_quarter'],
+          rows: [
+            { days_since_signup: 1284, signup_quarter: '2022Q4' },
+            { days_since_signup:  612, signup_quarter: '2024Q3' },
+            { days_since_signup:  198, signup_quarter: '2025Q3' },
+            { days_since_signup:  941, signup_quarter: '2023Q3' },
+            { days_since_signup:   74, signup_quarter: '2026Q1' },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: 'fe2_code_3',
+    kind: 'code',
+    source: `# Revenue-per-call ratio feature
+df['revenue_per_call'] = df['annual_revenue_usd'] / (df['api_calls'] + 1)
+df[['annual_revenue_usd', 'api_calls', 'revenue_per_call']].describe().round(2).head()`,
+    outputs: [
+      {
+        type: 'text',
+        content: 'final shape: (2500, 38) · 7 new feature columns',
+      },
+      {
+        type: 'table',
+        content: 'describe() · revenue_per_call',
+        data: {
+          columns: ['stat', 'annual_revenue_usd', 'api_calls', 'revenue_per_call'],
+          rows: [
+            { stat: 'count', annual_revenue_usd: '2500',       api_calls: '2500',   revenue_per_call: '2500'  },
+            { stat: 'mean',  annual_revenue_usd: '4870432.00', api_calls: '12004',  revenue_per_call: '612.48' },
+            { stat: 'std',   annual_revenue_usd: '8120544.00', api_calls: '18402',  revenue_per_call: '914.21' },
+            { stat: 'min',   annual_revenue_usd: '12000.00',   api_calls: '0',      revenue_per_call: '1.92'   },
+            { stat: '50%',   annual_revenue_usd: '1200000.00', api_calls: '4210',   revenue_per_call: '305.17' },
+          ],
+        },
       },
     ],
   },

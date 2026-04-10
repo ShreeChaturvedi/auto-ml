@@ -1,6 +1,33 @@
 import { Check, FileText } from 'lucide-react';
 import { mockPlan } from '@/preview/fixtures/plan';
+import { ComputeAnimation } from '@frontend/components/upload/ComputeAnimation';
+import type { ProcessingResult } from '@frontend/types/processing';
 import styles from './UploadView.module.css';
+
+const DEMO_FILES: Array<{ name: string; type: string }> = [
+  { name: 'customers.csv', type: 'text/csv' },
+];
+
+const DEMO_RESULTS: ProcessingResult[] = [
+  {
+    type: 'dataset_stats',
+    icon: 'bar-chart',
+    label: '2,530 rows',
+    detail: '14 columns',
+  },
+  {
+    type: 'schema_analysis',
+    icon: 'table',
+    label: '14 columns typed',
+    detail: '6 numeric · 8 categorical',
+  },
+  {
+    type: 'quality_check',
+    icon: 'alert-triangle',
+    label: '4 data-quality issues',
+    detail: 'nulls · duplicates · outliers',
+  },
+];
 
 export function UploadView() {
   return (
@@ -17,6 +44,13 @@ export function UploadView() {
           <span>482 KB</span>
         </div>
       </div>
+
+      <ComputeAnimation
+        files={DEMO_FILES}
+        results={DEMO_RESULTS}
+        isComplete={true}
+        durationScale={0.75}
+      />
 
       <div className={styles.planCard}>
         <h3 className={styles.planTitle}>{mockPlan.title}</h3>

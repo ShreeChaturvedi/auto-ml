@@ -5,7 +5,7 @@ import type { z } from 'zod';
 
 import { env } from '../../config.js';
 import { appLogger } from '../../logging/logger.js';
-import { normalizePlanExitPayload } from '../../routes/llm/planValidation.js';
+import { extractNormalizedPlanMarkdown, normalizePlanExitPayload, normalizePlanFilename } from '../../routes/llm/planValidation.js';
 import { normalizeUiPayload } from '../../routes/llm/uiNormalization.js';
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
 import { UiSchema } from '../../types/llmUi.js';
@@ -41,6 +41,43 @@ function buildOnboardingPlanRepairMessage(invalidMarkdown: string | undefined): 
     'Do NOT output plain assistant text.',
     excerpt
   ].join('\n');
+}
+
+function buildDirectOnboardingPlanRepairRequest(invalidMarkdown: string, planName?: string) {
+  const requestedName = normalizePlanFilename(planName);
+  return {
+    messages: [
+      {
+        role: 'system' as const,
+        content: [
+          'You repair malformed machine-learning project plans into valid Markdown.',
+          'Output ONLY the repaired Markdown plan body.',
+          'Begin exactly with a top-level heading like "# Project Plan: <title>".',
+          'Use these sections in order:',
+          '## Objective',
+          '## Data Summary',
+          '## Approach',
+          '## Feature Engineering',
+          '## Evaluation',
+          '## Risks & Assumptions',
+          '## Next Steps',
+          'Do not ask questions.',
+          'Do not wrap the answer in JSON or code fences.'
+        ].join('\n')
+      },
+      {
+        role: 'user' as const,
+        content: [
+          `Repair this malformed plan and keep it under the filename ${requestedName}.`,
+          '',
+          invalidMarkdown.trim()
+        ].join('\n')
+      }
+    ],
+    temperature: 0,
+    maxOutputTokens: 3000,
+    toolChoice: 'none' as const
+  };
 }
 
 const PLAN_MARKDOWN_MAX = 50_000;
@@ -226,6 +263,7 @@ async function streamWorkflowText(
   let latestMessage = '';
   let errorMessage: string | null = null;
   let invalidPlanMarkdown: string | undefined;
+  let invalidPlanName: string | undefined;
 
   const hasActionableOutput = () =>
     pendingToolCalls.length > 0
@@ -265,6 +303,7 @@ async function streamWorkflowText(
             planExitPayload = normalizePlanExitPayload(parsed.data);
             if (!planExitPayload) {
               invalidPlanMarkdown = parsed.data.planMarkdown;
+              invalidPlanName = parsed.data.planName;
               appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
               errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
             }
@@ -430,6 +469,7 @@ async function streamWorkflowText(
     latestMessage = '';
     errorMessage = null;
     invalidPlanMarkdown = undefined;
+    invalidPlanName = undefined;
 
     const originalRequest = state.request;
     state.request = {
@@ -452,6 +492,34 @@ async function streamWorkflowText(
       appLogger.warn(
         '[modelTurnCollector] onboarding plan_exit repair retry still failed (iteration=%d).',
         state.iteration
+      );
+    }
+  }
+
+  if (phase === 'onboarding' && invalidPlanMarkdown && !planExitPayload) {
+    appLogger.warn(
+      '[modelTurnCollector] onboarding plan_exit still malformed after stream retry (iteration=%d) — attempting direct markdown repair.',
+      state.iteration
+    );
+    try {
+      const repairedMarkdownRaw = await client.complete(
+        buildDirectOnboardingPlanRepairRequest(invalidPlanMarkdown, invalidPlanName)
+      );
+      const repairedMarkdown = extractNormalizedPlanMarkdown(repairedMarkdownRaw);
+      if (repairedMarkdown) {
+        planExitPayload = {
+          planName: normalizePlanFilename(invalidPlanName),
+          planMarkdown: repairedMarkdown
+        };
+        latestMessage = '';
+        errorMessage = null;
+        invalidPlanMarkdown = undefined;
+        invalidPlanName = undefined;
+      }
+    } catch (repairError) {
+      appLogger.warn(
+        '[modelTurnCollector] direct onboarding markdown repair failed: %s',
+        repairError instanceof Error ? repairError.message : String(repairError)
       );
     }
   }

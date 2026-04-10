@@ -4,6 +4,7 @@ import Nav from '@/components/Nav.astro';
 import Hero from '@/components/Hero.astro';
 import AppPreviewFrame from '@/components/AppPreviewFrame.tsx';
 import HowItWorks from '@/components/how-it-works/HowItWorks.tsx';
+import FeaturesSection from '@/components/FeaturesSection.astro';
 ---
 
 <Root>
@@ -12,5 +13,6 @@ import HowItWorks from '@/components/how-it-works/HowItWorks.tsx';
     <Hero />
     <AppPreviewFrame client:visible />
     <HowItWorks client:visible />
+    <FeaturesSection />
   </main>
 </Root>

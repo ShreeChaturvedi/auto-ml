@@ -1,5 +1,14 @@
 ---
-import DeepDive from './DeepDive.tsx';
+/**
+ * Section 4.5 — three feature deep-dives composed with the shared
+ * `<DeepDive>` Astro wrapper. Each wrapper renders its chrome (eyebrow,
+ * headline, body, kbd hint) server-side so the copy lands in the built
+ * HTML, and slots a live React visual as a `client:only` island. The
+ * visuals must be client-only because they mount real frontend composer
+ * components (LlmChatComposer, etc.) whose hooks rely on browser-only
+ * APIs and crash during Astro's SSR pass.
+ */
+import DeepDive from './DeepDive.astro';
 import ChatDeepDive from './deep-dives/ChatDeepDive.tsx';
 import PlanDeepDive from './deep-dives/PlanDeepDive.tsx';
 import NotebookDeepDive from './deep-dives/NotebookDeepDive.tsx';
@@ -7,7 +16,6 @@ import NotebookDeepDive from './deep-dives/NotebookDeepDive.tsx';
 
 <div id="features">
   <DeepDive
-    client:visible
     id="feature-chat"
     eyebrow="01 — CHAT"
     headlineBright="Talk to your data like a colleague."
@@ -17,11 +25,10 @@ import NotebookDeepDive from './deep-dives/NotebookDeepDive.tsx';
     kbdBadge="⌘K"
     reversed={false}
   >
-    <ChatDeepDive client:visible />
+    <ChatDeepDive client:only="react" />
   </DeepDive>
 
   <DeepDive
-    client:visible
     id="feature-plan"
     eyebrow="02 — PLAN"
     headlineBright="Turn intent into a training plan."
@@ -31,11 +38,10 @@ import NotebookDeepDive from './deep-dives/NotebookDeepDive.tsx';
     kbdBadge="Enter"
     reversed={true}
   >
-    <PlanDeepDive client:visible />
+    <PlanDeepDive client:only="react" />
   </DeepDive>
 
   <DeepDive
-    client:visible
     id="feature-notebook"
     eyebrow="03 — NOTEBOOK"
     headlineBright="A real notebook, not a pipeline."
@@ -45,6 +51,6 @@ import NotebookDeepDive from './deep-dives/NotebookDeepDive.tsx';
     kbdBadge="shift+enter"
     reversed={false}
   >
-    <NotebookDeepDive client:visible />
+    <NotebookDeepDive client:only="react" />
   </DeepDive>
 </div>

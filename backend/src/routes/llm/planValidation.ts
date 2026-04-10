@@ -12,6 +12,58 @@ const REQUIRED_PLAN_SECTIONS = [
   { name: 'Next Steps',          pattern: /^#{2,6}\s*(?:\d+\s*[.)-]\s*)?(?:next\s+steps|action\s+items|recommendations|timeline)\b[:\s-]*/im },
 ];
 
+function normalizeRecoveredPlanTitle(title: string | undefined): string {
+  const trimmed = title?.trim() ?? '';
+  if (!trimmed) {
+    return '# Project Plan';
+  }
+
+  const withoutMarkdown = trimmed.replace(/^#+\s*/, '').trim();
+  const withoutPlanPrefix = withoutMarkdown.replace(/^project\s+plan\s*:?\s*/i, '').trim();
+  const finalTitle = withoutPlanPrefix || withoutMarkdown;
+  return finalTitle ? `# Project Plan: ${finalTitle}` : '# Project Plan';
+}
+
+function recoverTopLevelHeading(unwrapped: string): string | null {
+  const lines = unwrapped
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+$/, ''));
+
+  const firstMeaningfulIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstMeaningfulIndex === -1) {
+    return null;
+  }
+
+  const nestedHeadingIndex = lines.findIndex((line, index) => index >= firstMeaningfulIndex && /^#{2,6}\s+.+$/.test(line.trim()));
+
+  if (nestedHeadingIndex === -1) {
+    return null;
+  }
+
+  const nestedHeadingLine = lines[nestedHeadingIndex].trim();
+  const prefaceLines = lines
+    .slice(firstMeaningfulIndex, nestedHeadingIndex)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const titleCandidate = prefaceLines.length === 1 && !prefaceLines[0].startsWith('#')
+    ? prefaceLines[0]
+    : undefined;
+
+  const recoveredHeading = normalizeRecoveredPlanTitle(titleCandidate);
+  const remainingLines = lines.slice(nestedHeadingIndex);
+  const recovered = [recoveredHeading, '', ...remainingLines].join('\n').trim();
+
+  // Guard against incorrectly wrapping arbitrary prose. Only recover when
+  // the remaining body is already structured as a plan section sequence.
+  const sectionMatches = REQUIRED_PLAN_SECTIONS
+    .filter(({ pattern }) => pattern.test(recovered));
+  if (sectionMatches.length < 2 && !/^##\s+/.test(nestedHeadingLine)) {
+    return null;
+  }
+
+  return recovered;
+}
+
 export function extractNormalizedPlanMarkdown(rawText: string): string | null {
   const trimmed = rawText.trim();
   if (!trimmed) {
@@ -25,11 +77,23 @@ export function extractNormalizedPlanMarkdown(rawText: string): string | null {
   const firstHeading = unwrapped.match(/^#\s+.+$/m);
   const headingMatch = projectPlanHeading ?? firstHeading;
 
-  if (!headingMatch || headingMatch.index === undefined) {
+  let candidateSource = unwrapped;
+  let resolvedHeadingMatch = headingMatch;
+
+  if (!resolvedHeadingMatch || resolvedHeadingMatch.index === undefined) {
+    const recovered = recoverTopLevelHeading(unwrapped);
+    if (!recovered) {
+      return null;
+    }
+    candidateSource = recovered;
+    resolvedHeadingMatch = candidateSource.match(/^#\s+.+$/m);
+  }
+
+  if (!resolvedHeadingMatch || resolvedHeadingMatch.index === undefined) {
     return null;
   }
 
-  const candidate = unwrapped.slice(headingMatch.index).trim();
+  const candidate = candidateSource.slice(resolvedHeadingMatch.index).trim();
   if (!candidate.startsWith('#')) {
     return null;
   }

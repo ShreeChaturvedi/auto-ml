@@ -1,106 +1,638 @@
-.root { display: grid; grid-template-rows: 44px 1fr; height: 100%; }
+/* ────────────────────────────────────────────────────────────── */
+/*  Layout shell                                                   */
+/* ────────────────────────────────────────────────────────────── */
 
-.subTabs {
+.root {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-1);
+}
+
+/* Ribbon (title + sub-tabs) */
+.ribbon {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 20px;
+  height: 56px;
   border-bottom: 0.8px solid var(--border);
   background: var(--surface-0);
-  padding: 0 20px;
 }
+
+.ribbonLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.deploymentName {
+  font-size: 14px;
+  font-weight: 510;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.deploymentVersion {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border: 0.8px solid var(--border);
+  border-radius: 4px;
+}
+
+.deploymentStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #4ADE80;
+  padding: 3px 8px;
+  border: 0.8px solid rgba(74, 222, 128, 0.25);
+  background: rgba(74, 222, 128, 0.08);
+  border-radius: 999px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ADE80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.7);
+}
+
+/* Sub-tabs nav */
+.subTabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 56px;
+}
+
 .subTab {
-  padding: 0 16px;
-  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 14px;
   background: transparent;
   border: 0;
   color: var(--text-muted);
   font-family: 'Geist Mono Variable', monospace;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
   position: relative;
   transition: color var(--dur-fast);
 }
+
 .subTab:hover { color: var(--text); }
+.subTab:focus-visible {
+  outline: none;
+  color: var(--text);
+}
+.subTab:focus-visible::before {
+  content: '';
+  position: absolute;
+  inset: 8px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--text);
+}
+
+.subTabIcon {
+  width: 13px;
+  height: 13px;
+}
+
 .subTabActive { color: var(--text); }
 .subTabActive::after {
   content: '';
   position: absolute;
-  bottom: 0; left: 14px; right: 14px;
+  bottom: 0;
+  left: 10px;
+  right: 10px;
   height: 2px;
   background: rgba(139, 92, 246, 0.9);
 }
 
-.content { padding: 24px 28px; overflow: auto; }
+/* Content area */
+.content {
+  padding: 24px 28px;
+  overflow: auto;
+  min-height: 0;
+}
 
-/* Overview */
-.statusRow {
-  display: flex;
+/* ────────────────────────────────────────────────────────────── */
+/*  Shared section helpers                                         */
+/* ────────────────────────────────────────────────────────────── */
+
+.section + .section { margin-top: 24px; }
+.section { margin-top: 24px; }
+
+.sectionTitle {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+.iconBtn {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
-.statusDot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: #4ADE80;
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
-}
-.statusLabel { font-size: 14px; font-weight: 510; }
-.statusVersion { font-family: 'Geist Mono Variable', monospace; font-size: 12px; color: var(--text-muted); }
+.iconBtn:hover { background: var(--surface-2); color: var(--text); }
+.iconBtnIcon { width: 13px; height: 13px; }
 
-.overviewGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-.statTile {
+/* ────────────────────────────────────────────────────────────── */
+/*  Overview                                                       */
+/* ────────────────────────────────────────────────────────────── */
+
+.overview { display: flex; flex-direction: column; }
+
+.statusCards {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+}
+
+.statusCard {
   padding: 16px;
   background: var(--surface-0);
   border: 0.8px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  min-width: 0;
 }
-.statLabel { font-family: 'Geist Mono Variable', monospace; font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
-.statValue { font-size: 22px; color: var(--text); margin-top: 4px; }
-.statUnit { font-size: 12px; color: var(--text-muted); margin-left: 2px; }
 
-.endpointBlock {
-  background: var(--surface-0);
-  border: 0.8px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
+.statusCardLabel {
   font-family: 'Geist Mono Variable', monospace;
-  font-size: 12px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.statusCardValue {
+  font-size: 26px;
+  font-weight: 510;
   color: var(--text);
-  overflow-x: auto;
-  white-space: nowrap;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
-
-/* Logs */
-.logsBlock {
-  background: #0C0C0D;
-  border: 0.8px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 11px;
-  line-height: 1.6;
+.statusCardUnit {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-left: 4px;
+  font-weight: 400;
 }
-.logRow { display: grid; grid-template-columns: 80px 60px 1fr; gap: 12px; }
-.logTime { color: var(--text-dim); }
-.logLevel { font-weight: 510; }
-.logLevelINFO  { color: #74AE9C; }
-.logLevelWARN  { color: #E5C76B; }
-.logLevelERROR { color: #E07B7B; }
-.logMsg { color: var(--text); }
-
-/* Monitoring */
-.chartsGrid { display: grid; grid-template-columns: 1fr; gap: 20px; }
-.chartCard {
-  padding: 20px;
-  background: var(--surface-0);
-  border: 0.8px solid var(--border);
-  border-radius: 8px;
-}
-.chartCardTitle {
+.statusCardSub {
   font-family: 'Geist Mono Variable', monospace;
   font-size: 11px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  margin: 0 0 12px;
+  margin-top: 4px;
 }
+
+.endpointRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.endpointUrl {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0.8px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Metadata grid */
+.metaGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 32px;
+  row-gap: 8px;
+  margin: 24px 0 0;
+  padding: 16px 20px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+}
+.metaGrid dt {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  align-self: center;
+}
+.metaGrid dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.metaMuted { color: var(--text-muted); font-size: 12px; }
+
+/* Recent requests table */
+.tableWrap {
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-0);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.table thead th {
+  text-align: left;
+  padding: 10px 14px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  font-weight: 510;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  border-bottom: 0.8px solid var(--border);
+  background: var(--surface-1);
+}
+.table tbody td {
+  padding: 10px 14px;
+  color: var(--text);
+  border-bottom: 0.8px solid rgba(255, 255, 255, 0.04);
+}
+.table tbody tr:last-child td { border-bottom: 0; }
+.tdMono { font-family: 'Geist Mono Variable', monospace; font-variant-numeric: tabular-nums; }
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  font-weight: 510;
+}
+.statusOk {
+  color: #4ADE80;
+  background: rgba(74, 222, 128, 0.08);
+  border: 0.8px solid rgba(74, 222, 128, 0.25);
+}
+.statusErr {
+  color: #F87171;
+  background: rgba(248, 113, 113, 0.08);
+  border: 0.8px solid rgba(248, 113, 113, 0.25);
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Playground                                                     */
+/* ────────────────────────────────────────────────────────────── */
+
+.playground {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.playgroundCard {
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 0.8px solid var(--border);
+  background: var(--surface-1);
+}
+.cardEyebrow {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.cardHeaderHint {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.playgroundForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.formRow { display: flex; flex-direction: column; gap: 4px; }
+.formLabel {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.formInput {
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--dur-fast);
+}
+.formInput:focus {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.predictBtn {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #F7F8F8, #E6E6E6);
+  color: #0A0A0B;
+  font-size: 13px;
+  font-weight: 510;
+  cursor: pointer;
+  transition: filter var(--dur-fast);
+}
+.predictBtn:hover { filter: brightness(0.97); }
+.predictBtnIcon { width: 13px; height: 13px; }
+
+/* Response panel body */
+.predictionHero {
+  padding: 20px 16px 16px;
+  border-bottom: 0.8px solid var(--border);
+}
+.predictionLabel {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.predictionValue {
+  font-size: 24px;
+  font-weight: 510;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+}
+.probabilityBarWrap {
+  margin-top: 10px;
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.probabilityBar {
+  height: 100%;
+  background: linear-gradient(90deg, #8B5CF6, #C4B5FD);
+  border-radius: inherit;
+}
+.predictionSub {
+  margin-top: 8px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.shapList {
+  padding: 14px 16px 18px;
+}
+.shapHeader {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.shapRow {
+  display: grid;
+  grid-template-columns: 120px 1fr 54px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+}
+.shapName {
+  font-family: 'Geist Mono Variable', monospace;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shapBarTrack {
+  position: relative;
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.shapBar { position: absolute; top: 0; bottom: 0; border-radius: inherit; }
+.shapBarPos { left: 50%; background: #4ADE80; }
+.shapBarNeg { right: 50%; background: #F87171; }
+.shapValue {
+  font-family: 'Geist Mono Variable', monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-size: 11px;
+}
+.shapValuePos { color: #4ADE80; }
+.shapValueNeg { color: #F87171; }
+
+/* ────────────────────────────────────────────────────────────── */
+/*  API                                                            */
+/* ────────────────────────────────────────────────────────────── */
+
+.api { display: flex; flex-direction: column; }
+
+.apiEndpointHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+}
+.methodBadge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #C4B5FD;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  font-weight: 510;
+  letter-spacing: 0.05em;
+}
+.apiPath {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.codeBlock {
+  margin: 0;
+  padding: 16px;
+  background: #0C0C0D;
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.schemaTable {
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-0);
+}
+.schemaRow {
+  display: grid;
+  grid-template-columns: 160px 80px 80px 1fr;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 0.8px solid rgba(255, 255, 255, 0.04);
+  align-items: center;
+  font-size: 12px;
+}
+.schemaRow:last-child { border-bottom: 0; }
+.schemaName {
+  font-family: 'Geist Mono Variable', monospace;
+  color: var(--text);
+  background: transparent;
+}
+.schemaType {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.schemaBadge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 0.8px solid var(--border);
+  background: var(--surface-1);
+  text-align: center;
+  width: fit-content;
+}
+.schemaBadgeRequired {
+  color: #C4B5FD;
+  border-color: rgba(139, 92, 246, 0.3);
+  background: rgba(139, 92, 246, 0.08);
+}
+.schemaDesc { color: var(--text-muted); font-size: 12px; }
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Logs                                                           */
+/* ────────────────────────────────────────────────────────────── */
+
+.logsBlock {
+  background: #0C0C0D;
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow: auto;
+  max-height: 520px;
+}
+.logRow {
+  display: grid;
+  grid-template-columns: 180px 44px 76px 1fr;
+  gap: 10px;
+  white-space: nowrap;
+}
+.logTime { color: var(--text-dim); }
+.logLevel { font-weight: 510; white-space: pre; }
+.logLevelINFO  { color: #74AE9C; }
+.logLevelWARN  { color: #E5C76B; }
+.logLevelERROR { color: #E07B7B; }
+.logReq { color: #8B5CF6; }
+.logMsg { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Monitoring                                                     */
+/* ────────────────────────────────────────────────────────────── */
+
+.chartsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.chartsGrid > :nth-child(3) { grid-column: 1 / -1; }
+
+.chartCard {
+  padding: 16px 18px 12px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+}
+.chartHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.chartCardTitle {
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--text);
+  margin: 0;
+}
+.chartCardSubtitle {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.chartBody { height: 180px; }

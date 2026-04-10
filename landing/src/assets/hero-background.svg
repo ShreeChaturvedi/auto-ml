@@ -1,5 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080" fill="none">
-  <rect x="40" y="40" width="1840" height="1000" rx="12" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="8 8"/>
-  <text x="960" y="538" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-family="monospace" font-size="18" letter-spacing="3">GEMINI · HERO BACKGROUND</text>
-  <text x="960" y="566" text-anchor="middle" fill="rgba(255,255,255,0.18)" font-family="monospace" font-size="12">Issue #309</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" fill="none">
+  <defs>
+    <pattern id="grid-small" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255, 255, 255, 0.025)" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="grid-large" width="200" height="200" patternUnits="userSpaceOnUse">
+      <rect width="200" height="200" fill="url(#grid-small)"/>
+      <path d="M 200 0 L 0 0 0 200" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  
+  <rect width="100%" height="100%" fill="url(#grid-large)"/>
+  
+  <g stroke="rgba(255, 255, 255, 0.035)" stroke-width="1">
+    <line x1="0" y1="1080" x2="1920" y2="0" stroke-dasharray="4 4" />
+    <line x1="0" y1="200" x2="1920" y2="800" />
+    <line x1="1920" y1="200" x2="0" y2="1000" />
+    <line x1="200" y1="0" x2="800" y2="1080" />
+    <line x1="1600" y1="0" x2="1200" y2="1080" />
+    <line x1="0" y1="400" x2="1920" y2="100" stroke-dasharray="2 6" />
+    <line x1="200" y1="1080" x2="1800" y2="0" stroke-dasharray="2 6" />
+  </g>
+
+  <g fill="rgba(255, 255, 255, 0.06)">
+    <circle cx="200" cy="200" r="2.5" />
+    <circle cx="800" cy="200" r="2.5" />
+    <circle cx="1400" cy="200" r="2.5" />
+    <circle cx="400" cy="600" r="2.5" />
+    <circle cx="1000" cy="600" r="2.5" />
+    <circle cx="1600" cy="600" r="2.5" />
+    <circle cx="600" cy="1000" r="2.5" />
+    <circle cx="1200" cy="1000" r="2.5" />
+    <circle cx="1800" cy="1000" r="2.5" />
+  </g>
+
+  <g stroke="rgba(255, 255, 255, 0.06)" stroke-width="1">
+    <path d="M 190 200 L 210 200 M 200 190 L 200 210" />
+    <path d="M 790 200 L 810 200 M 800 190 L 800 210" />
+    <path d="M 1390 200 L 1410 200 M 1400 190 L 1400 210" />
+    
+    <path d="M 390 600 L 410 600 M 400 590 L 400 610" />
+    <path d="M 990 600 L 1010 600 M 1000 590 L 1000 610" />
+    <path d="M 1590 600 L 1610 600 M 1600 590 L 1600 610" />
+    
+    <path d="M 590 1000 L 610 1000 M 600 990 L 600 1010" />
+    <path d="M 1190 1000 L 1210 1000 M 1200 990 L 1200 1010" />
+    <path d="M 1790 1000 L 1810 1000 M 1800 990 L 1800 1010" />
+  </g>
+
+  <g fill="rgba(255, 255, 255, 0.04)" font-family="monospace" font-size="10" letter-spacing="1">
+    <text x="210" y="190">A-01</text>
+    <text x="810" y="190">A-02</text>
+    <text x="1410" y="190">A-03</text>
+    <text x="410" y="590">B-01</text>
+    <text x="1010" y="590">B-02</text>
+    <text x="1610" y="590">B-03</text>
+    <text x="610" y="990">C-01</text>
+    <text x="1210" y="990">C-02</text>
+    <text x="1810" y="990">C-03</text>
+  </g>
 </svg>

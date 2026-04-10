@@ -4,32 +4,21 @@ import type {
   FakeUser,
   FakeProject,
   DeploymentSubTab,
-  QueryMode,
   QueryResultFixture,
 } from './types';
 import { mockUser, mockProject } from './fixtures/project';
 
 interface DataViewerState {
   activeFileTabId: string;
-  queryMode: QueryMode;
   queryResult: QueryResultFixture;
 }
 
-interface PreprocessingState { activeCellId: string | null }
-interface FeatureEngineeringState { activeCellId: string | null }
-interface TrainingState {
-  activeCellId: string | null;
-  selectedModelId: string | null;
-}
 interface ExperimentsState {
   selectedModelId: string | null;
-  sortBy: string;
-  filters: Record<string, unknown>;
 }
+
 interface DeploymentState {
   activeSubTab: DeploymentSubTab;
-  playgroundInput: string;
-  playgroundOutput: string;
 }
 
 interface PreviewStore {
@@ -44,25 +33,12 @@ interface PreviewStore {
   // Per-tab interaction state
   dataViewer: DataViewerState;
   setDataViewerFileTab: (id: string) => void;
-  setDataViewerQueryMode: (mode: QueryMode) => void;
-
-  preprocessing: PreprocessingState;
-  setPreprocessingActiveCell: (id: string | null) => void;
-
-  featureEngineering: FeatureEngineeringState;
-  setFeatureEngineeringActiveCell: (id: string | null) => void;
-
-  training: TrainingState;
-  setTrainingActiveCell: (id: string | null) => void;
-  setTrainingSelectedModel: (id: string | null) => void;
 
   experiments: ExperimentsState;
   selectExperimentModel: (id: string | null) => void;
-  setExperimentsSortBy: (sortBy: string) => void;
 
   deployment: DeploymentState;
   setDeploymentSubTab: (tab: DeploymentSubTab) => void;
-  setDeploymentPlaygroundInput: (v: string) => void;
 }
 
 const initialQueryResult: QueryResultFixture = {
@@ -86,41 +62,18 @@ export const usePreviewStore = create<PreviewStore>((set) => ({
 
   dataViewer: {
     activeFileTabId: 'customers_csv',
-    queryMode: 'english',
     queryResult: initialQueryResult,
   },
   setDataViewerFileTab: (id) =>
     set((s) => ({ dataViewer: { ...s.dataViewer, activeFileTabId: id } })),
-  setDataViewerQueryMode: (mode) =>
-    set((s) => ({ dataViewer: { ...s.dataViewer, queryMode: mode } })),
 
-  preprocessing: { activeCellId: null },
-  setPreprocessingActiveCell: (id) =>
-    set((s) => ({ preprocessing: { ...s.preprocessing, activeCellId: id } })),
-
-  featureEngineering: { activeCellId: null },
-  setFeatureEngineeringActiveCell: (id) =>
-    set((s) => ({ featureEngineering: { ...s.featureEngineering, activeCellId: id } })),
-
-  training: { activeCellId: null, selectedModelId: null },
-  setTrainingActiveCell: (id) =>
-    set((s) => ({ training: { ...s.training, activeCellId: id } })),
-  setTrainingSelectedModel: (id) =>
-    set((s) => ({ training: { ...s.training, selectedModelId: id } })),
-
-  experiments: { selectedModelId: null, sortBy: 'rank', filters: {} },
+  experiments: { selectedModelId: null },
   selectExperimentModel: (id) =>
     set((s) => ({ experiments: { ...s.experiments, selectedModelId: id } })),
-  setExperimentsSortBy: (sortBy) =>
-    set((s) => ({ experiments: { ...s.experiments, sortBy } })),
 
   deployment: {
     activeSubTab: 'overview',
-    playgroundInput: '',
-    playgroundOutput: '',
   },
   setDeploymentSubTab: (tab) =>
     set((s) => ({ deployment: { ...s.deployment, activeSubTab: tab } })),
-  setDeploymentPlaygroundInput: (v) =>
-    set((s) => ({ deployment: { ...s.deployment, playgroundInput: v } })),
 }));

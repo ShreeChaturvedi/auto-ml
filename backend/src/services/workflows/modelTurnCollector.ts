@@ -27,6 +27,22 @@ function emitEvent(sink: WorkflowEventSink | undefined, event: unknown): void {
   }
 }
 
+function buildOnboardingPlanRepairMessage(invalidMarkdown: string | undefined): string {
+  const trimmed = invalidMarkdown?.trim() ?? '';
+  const excerpt = trimmed
+    ? `\n\nPrevious invalid plan excerpt:\n---\n${trimmed.slice(0, 1200)}\n---`
+    : '';
+  return [
+    'CRITICAL: Your previous plan_exit payload was invalid because planMarkdown did not contain a recoverable top-level Markdown heading.',
+    'Re-emit the FULL plan via plan_exit only.',
+    'Begin exactly with a top-level heading like "# Project Plan: <title>".',
+    'Keep the plan in Markdown and include the required sections.',
+    'Do NOT ask follow-up questions.',
+    'Do NOT output plain assistant text.',
+    excerpt
+  ].join('\n');
+}
+
 const PLAN_MARKDOWN_MAX = 50_000;
 
 const PLAN_MARKDOWN_KEYS = [
@@ -209,6 +225,7 @@ async function streamWorkflowText(
   let uiPayload: z.infer<typeof UiSchema> | null = null;
   let latestMessage = '';
   let errorMessage: string | null = null;
+  let invalidPlanMarkdown: string | undefined;
 
   const hasActionableOutput = () =>
     pendingToolCalls.length > 0
@@ -247,6 +264,7 @@ async function streamWorkflowText(
           if (parsed.success) {
             planExitPayload = normalizePlanExitPayload(parsed.data);
             if (!planExitPayload) {
+              invalidPlanMarkdown = parsed.data.planMarkdown;
               appLogger.warn('[modelTurnCollector] plan_exit markdown extraction failed for input of length %d', parsed.data.planMarkdown.length);
               errorMessage = 'Plan could not be parsed: no top-level heading found. The plan must begin with a "# Project Plan" heading.';
             }
@@ -394,6 +412,47 @@ async function streamWorkflowText(
         state.iteration
       );
       errorMessage = 'Feature engineering turn stalled: the model produced text but no tool call while selected features still need implementation. Please click Generate Notebook Steps again.';
+    }
+  }
+
+  const canRetryInvalidOnboardingPlan =
+    phase === 'onboarding'
+    && Boolean(errorMessage)
+    && Boolean(invalidPlanMarkdown)
+    && !planExitPayload;
+
+  if (canRetryInvalidOnboardingPlan) {
+    appLogger.warn(
+      '[modelTurnCollector] onboarding plan_exit validation failed (iteration=%d) — retrying once with repair directive.',
+      state.iteration
+    );
+    const invalidPlanForRetry = invalidPlanMarkdown;
+    latestMessage = '';
+    errorMessage = null;
+    invalidPlanMarkdown = undefined;
+
+    const originalRequest = state.request;
+    state.request = {
+      ...originalRequest!,
+      messages: [
+        ...originalRequest!.messages,
+        {
+          role: 'user',
+          content: buildOnboardingPlanRepairMessage(invalidPlanForRetry)
+        }
+      ]
+    };
+    try {
+      await streamOnce();
+    } finally {
+      state.request = originalRequest;
+    }
+
+    if (!planExitPayload && errorMessage) {
+      appLogger.warn(
+        '[modelTurnCollector] onboarding plan_exit repair retry still failed (iteration=%d).',
+        state.iteration
+      );
     }
   }
 

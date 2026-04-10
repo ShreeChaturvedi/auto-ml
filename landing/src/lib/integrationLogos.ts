@@ -1,7 +1,33 @@
 // Integration logo lookups from simple-icons.
 // Each entry returns a pre-resolved SVG string at build time.
+//
+// IMPORTANT: imports are explicit (named) rather than `import * as si` so
+// Vite/esbuild can tree-shake and we don't load all ~3k icon modules at
+// build time just to resolve ~25 of them. Saves several seconds per build.
 
-import * as si from 'simple-icons';
+import type { SimpleIcon } from 'simple-icons';
+import {
+  siPostgresql,
+  siMysql,
+  siSqlite,
+  siAmazons3,
+  siGooglecloudstorage,
+  siGooglebigquery,
+  siSnowflake,
+  siDatabricks,
+  siApacheparquet,
+  siJson,
+  siDuckdb,
+  siDocker,
+  siKubernetes,
+  siPytorch,
+  siScikitlearn,
+  siHuggingface,
+  siLangchain,
+  siOpenai,
+  siAnthropic,
+  siGooglegemini,
+} from 'simple-icons';
 
 interface LogoEntry { name: string; iconKey: string }
 
@@ -41,11 +67,33 @@ export const ROW_2: LogoEntry[] = [
   { name: 'Groq',          iconKey: '' },
 ];
 
+// Static lookup map from iconKey -> simple-icons entry. Keys that aren't
+// present in simple-icons v13 (e.g. `microsoftazure`, `mistralai`) simply
+// aren't in the map and fall through to the `null` placeholder branch.
+const ICON_MAP: Record<string, SimpleIcon> = {
+  postgresql: siPostgresql,
+  mysql: siMysql,
+  sqlite: siSqlite,
+  amazons3: siAmazons3,
+  googlecloudstorage: siGooglecloudstorage,
+  googlebigquery: siGooglebigquery,
+  snowflake: siSnowflake,
+  databricks: siDatabricks,
+  apacheparquet: siApacheparquet,
+  json: siJson,
+  duckdb: siDuckdb,
+  docker: siDocker,
+  kubernetes: siKubernetes,
+  pytorch: siPytorch,
+  scikitlearn: siScikitlearn,
+  huggingface: siHuggingface,
+  langchain: siLangchain,
+  openai: siOpenai,
+  anthropic: siAnthropic,
+  googlegemini: siGooglegemini,
+};
+
 export function getLogoSvg(iconKey: string): string | null {
   if (!iconKey) return null;
-  // simple-icons exports icons as `siPostgresql` etc.
-  const key = `si${iconKey.charAt(0).toUpperCase()}${iconKey.slice(1)}`;
-  // @ts-expect-error dynamic key lookup into simple-icons namespace
-  const icon = si[key];
-  return icon?.svg ?? null;
+  return ICON_MAP[iconKey]?.svg ?? null;
 }

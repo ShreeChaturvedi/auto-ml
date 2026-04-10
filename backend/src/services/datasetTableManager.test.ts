@@ -67,9 +67,38 @@ describe('datasetTableManager', () => {
     };
 
     await expect(getDatasetQueryState(dataset)).resolves.toEqual({
-      tableName: 'support_tickets_11111111',
+      tableName: 'support_tickets',
       queryable: false,
       queryError: 'old load failed'
+    });
+  });
+
+  it('uses the persisted physical table name when determining queryability', async () => {
+    const dataset: DatasetProfile = {
+      datasetId: '33333333-3333-3333-3333-333333333333',
+      filename: 'synthetic_saas_usage_18000_processed_workbook_1.csv',
+      fileType: 'csv',
+      size: 10,
+      nRows: 2,
+      nCols: 2,
+      columns: [],
+      sample: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        tableName: 'synthetic_saas_usage_18000_processed_workbook_1'
+      }
+    };
+
+    const pool = {
+      query: vi.fn().mockResolvedValue({ rows: [{ exists: true }] })
+    };
+    const { getDbPool } = await import('../db.js');
+    vi.mocked(getDbPool).mockReturnValue(pool as never);
+
+    await expect(getDatasetQueryState(dataset)).resolves.toEqual({
+      tableName: 'synthetic_saas_usage_18000_processed_workbook_1',
+      queryable: true
     });
   });
 
@@ -117,7 +146,7 @@ describe('datasetTableManager', () => {
 
     expect(mockLoadDatasetIntoPostgres).toHaveBeenCalledOnce();
     const call = mockLoadDatasetIntoPostgres.mock.calls[0]?.[0];
-    expect(call?.tableName).toBe('support_tickets_22222222');
+    expect(call?.tableName).toBe('support_tickets');
     expect(call?.columns.map((column) => [column.name, column.dtype])).toEqual([
       ['ticket_id', 'string'],
       ['customer_id', 'string'],
@@ -131,7 +160,7 @@ describe('datasetTableManager', () => {
       ['agent_id', 'string'],
       ['created_at', 'date']
     ]);
-    expect(rebuilt.metadata?.tableName).toBe('support_tickets_22222222');
+    expect(rebuilt.metadata?.tableName).toBe('support_tickets');
     expect(rebuilt.metadata?.rowsLoaded).toBe(2);
     expect(rebuilt.metadata?.loadWarning).toBeUndefined();
     expect(updatedDataset?.sample).toEqual([

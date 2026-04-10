@@ -6,7 +6,7 @@ import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { createDatasetRepository, type DatasetRepository } from '../repositories/datasetRepository.js';
 import type { DatasetProfile } from '../types/dataset.js';
 
-import { buildDatasetTableName, loadDatasetIntoPostgres, parseDatasetRows, resolveDatasetTableName } from './datasetLoader.js';
+import { loadDatasetIntoPostgres, parseDatasetRows, resolveDatasetTableName } from './datasetLoader.js';
 import { profileDatasetRows } from './datasetProfiler.js';
 import { buildEdaSummary } from './edaSummary.js';
 
@@ -42,7 +42,7 @@ export async function getDatasetQueryState(dataset: DatasetProfile): Promise<{
   queryable: boolean;
   queryError?: string;
 }> {
-  const tableName = buildDatasetTableName(dataset.filename, dataset.datasetId);
+  const tableName = resolveDatasetTableName(dataset);
 
   if (!hasDatabaseConfiguration()) {
     return {
@@ -99,7 +99,7 @@ export async function rebuildDatasetTableFromSource(
     source: 'dataset-profile',
     totalRows: rows.length
   });
-  const tableName = buildDatasetTableName(dataset.filename, dataset.datasetId);
+  const tableName = resolveDatasetTableName(dataset);
 
   const { rowsLoaded } = await loadDatasetIntoPostgres({
     datasetId: dataset.datasetId,

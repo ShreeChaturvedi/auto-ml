@@ -1,0 +1,132 @@
+/* Preview shell styles. Scoped to elements inside the interactive app preview. */
+
+.preview-root {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 48px 1fr;
+  height: 100%;
+  background: var(--surface-1);
+  color: var(--text);
+  font-family: 'Inter Variable', sans-serif;
+}
+
+/* Sidebar */
+.preview-sidebar {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  background: var(--surface-0);
+  border-right: 0.8px solid var(--border);
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.preview-sidebar-project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 12px;
+  margin: 0 6px 8px;
+  border-bottom: 0.8px solid var(--border);
+}
+.preview-sidebar-project-chip {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.5), rgba(139, 92, 246, 0.15));
+  border: 0.8px solid rgba(139, 92, 246, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.preview-sidebar-project-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.9);
+}
+.preview-sidebar-project-info { flex: 1; min-width: 0; }
+.preview-sidebar-project-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--text);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.preview-sidebar-project-meta {
+  display: block;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.preview-sidebar-chevron { color: var(--text-dim); }
+
+.preview-sidebar-section-label {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 12px 18px 6px;
+}
+
+.preview-sidebar-phase-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px;
+  gap: 2px;
+}
+
+.preview-sidebar-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-linear-default),
+              color var(--dur-fast) var(--ease-linear-default);
+}
+.preview-sidebar-phase:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+.preview-sidebar-phase.is-active {
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--text);
+}
+.preview-sidebar-phase.is-active .preview-sidebar-phase-index { color: rgba(139, 92, 246, 0.9); }
+
+.preview-sidebar-phase-index {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 14px;
+  text-align: right;
+}
+.preview-sidebar-phase-icon { color: currentColor; opacity: 0.8; }
+.preview-sidebar-phase-label { flex: 1; }
+.preview-sidebar-phase-check { color: rgba(139, 92, 246, 0.7); }
+
+.preview-sidebar-new-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  margin: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background var(--dur-fast);
+}
+.preview-sidebar-new-project:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }

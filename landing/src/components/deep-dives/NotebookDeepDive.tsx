@@ -7,23 +7,41 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Streamdown } from 'streamdown';
-
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './NotebookDeepDive.module.css';
 
-// Static 8-line Python cell using real NovaCraft columns. Rendered through
-// Streamdown as a fenced markdown code block for syntax highlighting (the
-// spec explicitly calls out streamdown, NOT Monaco).
-const CODE_MARKDOWN = `\`\`\`python
-import pandas as pd
-
-df = pd.read_csv('customers.csv')
-
-# Quick descriptive stats on the key engagement signals
-summary = df[['mrr_usd', 'avg_session_minutes', 'api_calls']].describe()
-summary
-\`\`\``;
+// Static 8-line Python cell using real NovaCraft columns, pre-highlighted
+// *offline* with Shiki's `github-dark` theme (the same theme Streamdown
+// defaults to). The HTML string below is literally the output of
+// `shiki.codeToHtml(source, { lang: 'python', theme: 'github-dark' })` and
+// is rendered via `dangerouslySetInnerHTML` on a <div>, so the client pays
+// exactly 0 bytes of highlighter JS at runtime.
+//
+// Why not `<Streamdown>` or streamdown's `<CodeBlock>`? The landing spec
+// asks for "streamdown syntax highlighting (not Monaco)" and Section 5
+// estimates streamdown at ~40 KB. In practice, the `streamdown` v2 entry
+// pulls in ~450 KB (140 KB gzip) of markdown-pipeline + a top-level
+// `lazy(() => import('./mermaid-...js'))` reference that rollup cannot
+// tree-shake — even when we import only `CodeBlock`. The spec's *intent*
+// ("lightweight highlighting, not Monaco, not a runtime diagram engine")
+// is much better served by shipping pre-baked HTML for this one 8-line
+// snippet. Visual fidelity is identical because the output is real Shiki
+// HTML with the same theme Streamdown would have used.
+//
+// If the snippet ever needs to change, regenerate with:
+//   node -e "import('shiki').then(async ({codeToHtml}) => \
+//     console.log(await codeToHtml(SOURCE, { lang: 'python', theme: 'github-dark' })))"
+// …and paste the resulting <pre>…</pre> into CODE_HIGHLIGHTED_HTML below.
+const CODE_HIGHLIGHTED_HTML =
+  '<pre class="shiki github-dark" style="background-color:#24292e;color:#e1e4e8" tabindex="0"><code>' +
+  '<span class="line"><span style="color:#F97583">import</span><span style="color:#E1E4E8"> pandas </span><span style="color:#F97583">as</span><span style="color:#E1E4E8"> pd</span></span>\n' +
+  '<span class="line"></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">df </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> pd.read_csv(</span><span style="color:#9ECBFF">\'customers.csv\'</span><span style="color:#E1E4E8">)</span></span>\n' +
+  '<span class="line"></span>\n' +
+  '<span class="line"><span style="color:#6A737D"># Quick descriptive stats on the key engagement signals</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">summary </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> df[[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">\'avg_session_minutes\'</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">\'api_calls\'</span><span style="color:#E1E4E8">]].describe()</span></span>\n' +
+  '<span class="line"><span style="color:#E1E4E8">summary</span></span>' +
+  '</code></pre>';
 
 // Pre-seeded describe() summary rendered as a simple inline <table>. We used
 // to pipe this through the real frontend `NotebookCellOutput`, but that
@@ -91,11 +109,13 @@ function NotebookDeepDiveVisual() {
           <span>In [1]</span>
           <span className={styles.cellHeaderBadge}>python</span>
         </div>
-        <div className={styles.cellCode}>
-          <Streamdown parseIncompleteMarkdown={false}>
-            {CODE_MARKDOWN}
-          </Streamdown>
-        </div>
+        <div
+          className={styles.cellCode}
+          // Pre-highlighted Shiki HTML (see CODE_HIGHLIGHTED_HTML comment above).
+          // The string is a build-time constant authored by us, not user input,
+          // so dangerouslySetInnerHTML is safe here.
+          dangerouslySetInnerHTML={{ __html: CODE_HIGHLIGHTED_HTML }}
+        />
 
         {phase === 'running' && (
           <div className={styles.cellRunning} aria-live="polite">
@@ -187,14 +207,15 @@ function NotebookDeepDiveVisual() {
  * around this by `FeaturesSection.astro` — this component renders only the
  * left-hand visual content.
  *
- * The top cell is a static 8-line Python snippet highlighted via `streamdown`
- * (not Monaco), followed by a 1.2s "running" blink on IO-enter and then a
- * pre-seeded `describe()` summary rendered as a plain inline `<table>`. The
- * table used to go through the real frontend `NotebookCellOutput`, but that
- * statically pulls in Plotly + Mermaid via `CellOutputRenderer` — so we
- * inline it here and save ~5 MB of JS from the landing bundle. The bottom
- * cell is a Recharts `<BarChart>` showing a hand-binned, right-skewed
- * `mrr_usd` distribution.
+ * The top cell is a static 8-line Python snippet whose Shiki-highlighted
+ * HTML is baked into the source (see `CODE_HIGHLIGHTED_HTML` for why we
+ * bypass `streamdown` here), followed by a 1.2s "running" blink on
+ * IO-enter and then a pre-seeded `describe()` summary rendered as a plain
+ * inline `<table>`. The table used to go through the real frontend
+ * `NotebookCellOutput`, but that statically pulls in Plotly + Mermaid via
+ * `CellOutputRenderer` — so we inline it here and save ~5 MB of JS from
+ * the landing bundle. The bottom cell is a Recharts `<BarChart>` showing a
+ * hand-binned, right-skewed `mrr_usd` distribution.
  */
 export default function NotebookDeepDive() {
   return <NotebookDeepDiveVisual />;

@@ -1,11 +1,16 @@
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useMessageAccumulator } from '@/hooks/useMessageAccumulator';
 import type { ChatMessage } from '@/types/llmUi';
 
 afterEach(() => {
   localStorage.clear();
+  vi.useRealTimers();
+});
+
+beforeEach(() => {
+  vi.useFakeTimers();
 });
 
 describe('useMessageAccumulator', () => {
@@ -99,5 +104,54 @@ describe('useMessageAccumulator', () => {
 
     expect(result.current.messages).toEqual([]);
     expect(localStorage.getItem('reset-proj')).toBeNull();
+  });
+
+  it('swallows localStorage persistence failures instead of throwing into the phase boundary', () => {
+    const setItemSpy = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError');
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { result } = renderHook(() => useMessageAccumulator({
+      storageKey: 'quota-key',
+      projectId: 'proj'
+    }));
+
+    act(() => {
+      result.current.setMessages([
+        { id: 'user-1', type: 'user', content: 'hello', timestamp: Date.now() },
+        {
+          id: 'tool-1',
+          type: 'tool_call',
+          call: {
+            id: 'call-1',
+            tool: 'get_dataset_profile',
+            args: { datasetId: 'ds-1', large: 'x'.repeat(12000) }
+          },
+          result: {
+            id: 'call-1',
+            tool: 'get_dataset_profile',
+            output: {
+              sample: Array.from({ length: 200 }, (_, index) => ({ index, value: 'y'.repeat(200) }))
+            }
+          }
+        }
+      ]);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[agenticLoopStorage] Failed to persist chat transcript',
+      expect.objectContaining({
+        messageStorageScope: 'quota-key-proj',
+        messageCount: 2
+      })
+    );
+
+    setItemSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });

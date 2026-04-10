@@ -168,25 +168,31 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
 
         const hydratedIds = new Set([...hydratedFiles, ...hydratedDocuments].map((file) => file.id));
         const retainedProjectIds = new Set([...hydratedIds, ...retainedPendingFiles.map((file) => file.id)]);
-        const nextOpenFileTabs = state.openFileTabs.filter((tabId) => {
-          if (!previousProjectFileIds.has(tabId)) return true;
-          return retainedProjectIds.has(tabId);
-        });
-        const nextOpenSet = new Set(nextOpenFileTabs);
-        hydratedFiles.forEach((file) => {
-          if (!existingDatasetIds.has(file.id)) {
-            nextOpenSet.add(file.id);
-          }
+
+        // Drop file tabs whose underlying file is gone after hydration.
+        // Leave artifact/notebook tabs untouched — they aren't tied to dataset hydration.
+        const prunedOpenTabs = state.openFileTabs.filter((tab) => {
+          if (tab.type !== 'file') return true;
+          if (!previousProjectFileIds.has(tab.id)) return true;
+          return retainedProjectIds.has(tab.id);
         });
 
-        // Auto-select the first data file tab when no tab is currently active.
-        // Only act when activeFileTabId is null — if it points to another
-        // project's file, the DataViewerTab effect handles project-scoped selection.
-        const finalOpenTabs = Array.from(nextOpenSet);
+        const existingFileTabIds = new Set(
+          prunedOpenTabs.filter((tab) => tab.type === 'file').map((tab) => tab.id)
+        );
+        const appendedFileTabs = hydratedFiles
+          .filter((file) => !existingDatasetIds.has(file.id) && !existingFileTabIds.has(file.id))
+          .map((file) => ({ id: file.id, type: 'file' as const }));
+
+        const finalOpenTabs = [...prunedOpenTabs, ...appendedFileTabs];
+
+        // Auto-select the first tab when no tab is currently active. Preserve
+        // whichever type the first tab record carries (file vs. notebook).
         const activeTabUpdate: Partial<DataState> = {};
         if (state.activeFileTabId == null && finalOpenTabs.length > 0) {
-          activeTabUpdate.activeFileTabId = finalOpenTabs[0];
-          activeTabUpdate.fileTabType = 'file';
+          const firstTab = finalOpenTabs[0];
+          activeTabUpdate.activeFileTabId = firstTab.id;
+          activeTabUpdate.fileTabType = firstTab.type;
         }
 
         return {

@@ -7,12 +7,14 @@
 
 import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { DataEmptyIllustration } from '@/components/ui/illustrations';
 import { QueryPanel } from './QueryPanel';
 import { FileTabBar } from './FileTabBar';
 import { DataViewerContent } from './DataViewerContent';
 import { useDataStore } from '@/stores/dataStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import { cn } from '@/lib/utils';
 import {
   extractApiErrorMessage,
@@ -60,6 +62,11 @@ export function DataViewerTab() {
     () => allArtifacts.filter((artifact) => artifact.projectId === projectId),
     [allArtifacts, projectId]
   );
+  const standaloneNotebooks = useNotebookStore(
+    useShallow((state) =>
+      state.notebooks.filter((n) => n.kind === 'standalone' && n.projectId === projectId)
+    )
+  );
   const activeFile = useMemo(
     () => (fileTabType === 'file' ? files.find((file) => file.id === activeFileTabId) : undefined),
     [activeFileTabId, fileTabType, files]
@@ -76,16 +83,10 @@ export function DataViewerTab() {
     }
   }, [projectId]);
 
-  // Auto-select a tab when none is active or the active tab doesn't belong to this project
-  const openFileTabsForProject = useMemo(
-    () => openFileTabs.filter((tabId) => files.some((file) => file.id === tabId)),
-    [openFileTabs, files]
-  );
-  const queryArtifactIds = useMemo(
-    () => queryArtifacts.map((artifact) => artifact.id),
-    [queryArtifacts]
-  );
-
+  // Auto-select a tab when none is active, the active tab references a
+  // deleted entity, or the active tab no longer belongs to this project.
+  // The resolver preserves a valid persisted active tab (file/artifact/
+  // notebook) across reloads so users don't lose their view.
   const firstDataFileId = useMemo(
     () => files.find((f) => DATA_FILE_TYPES.has(f.type))?.id ?? null,
     [files]
@@ -123,10 +124,12 @@ export function DataViewerTab() {
 
   useEffect(() => {
     const selection = resolveDataViewerSelection({
-      hasActiveFile: Boolean(activeFile),
-      hasActiveArtifact: queryArtifacts.some((artifact) => artifact.id === activeFileTabId),
-      openFileTabsForProject,
-      queryArtifactIds,
+      openTabs: openFileTabs,
+      files,
+      queryArtifacts,
+      standaloneNotebooks,
+      persistedActiveId: activeFileTabId,
+      persistedActiveType: fileTabType,
       firstDataFileId,
     });
 
@@ -134,16 +137,19 @@ export function DataViewerTab() {
       setActiveFileTab(selection.id, selection.type);
     } else if (selection.kind === 'open-file') {
       openFileTab(selection.id);
+    } else if (selection.kind === 'none' && activeFileTabId !== null) {
+      setActiveFileTab(null, null);
     }
   }, [
-    activeFile,
     activeFileTabId,
+    fileTabType,
+    files,
     firstDataFileId,
     openFileTab,
-    openFileTabsForProject,
-    queryArtifactIds,
+    openFileTabs,
     queryArtifacts,
     setActiveFileTab,
+    standaloneNotebooks,
   ]);
 
   const datasetSchema = useMemo(() => buildDatasetSchema(files), [files]);
@@ -161,7 +167,9 @@ export function DataViewerTab() {
     extractApiErrorMessage
   });
 
-  if (files.length === 0) {
+  const isEmpty =
+    files.length === 0 && queryArtifacts.length === 0 && standaloneNotebooks.length === 0;
+  if (isEmpty) {
     return (
       <div className="flex h-full items-center justify-center p-6 empty-state-enter">
         <div className="text-center space-y-4 max-w-md">
@@ -190,8 +198,9 @@ export function DataViewerTab() {
 
         {/* Data Display */}
         <div className="flex-1 min-w-0 overflow-auto bg-background">
-          {activeFileTabId ? (
+          {activeFileTabId && projectId ? (
             <DataViewerContent
+              projectId={projectId}
               activeFileTabId={activeFileTabId}
               fileTabType={fileTabType}
               files={files}

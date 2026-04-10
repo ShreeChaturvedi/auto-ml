@@ -64,14 +64,14 @@ describe('dataStore hydrateFromBackend', () => {
           previewRows: 1
         }
       ],
-      openFileTabs: ['local-1']
+      openFileTabs: [{ id: 'local-1', type: 'file' }]
     });
 
     await useDataStore.getState().hydrateFromBackend('project-1');
 
     const state = useDataStore.getState();
     expect(state.files.some((file) => file.id === 'local-1')).toBe(true);
-    expect(state.openFileTabs).toContain('local-1');
+    expect(state.openFileTabs.some((tab) => tab.id === 'local-1' && tab.type === 'file')).toBe(true);
   });
 
   it('replaces matching local in-flight upload when backend has canonical dataset', async () => {
@@ -96,7 +96,7 @@ describe('dataStore hydrateFromBackend', () => {
           previewRows: 1
         }
       ],
-      openFileTabs: ['local-1']
+      openFileTabs: [{ id: 'local-1', type: 'file' }]
     });
 
     listDatasetsMock.mockResolvedValue({

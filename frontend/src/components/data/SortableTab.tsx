@@ -1,14 +1,17 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { X, FileText, Database } from 'lucide-react';
+import { X, FileText, Database, Notebook as NotebookIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { resolveFileIcon } from '@/lib/fileUtils';
+import { NOTEBOOK_ICON_CLASS } from '@/lib/notebookTheme';
 import { cn } from '@/lib/utils';
+import type { TabType } from '@/types/dataViewer';
 
 export interface SortableTabProps {
   id: string;
   name: string;
   isActive: boolean;
+  type?: TabType;
   fileType?: string;
   queryMode?: 'english' | 'sql';
   queryIconColorClassName?: string;
@@ -23,6 +26,7 @@ export function SortableTab({
   id,
   name,
   isActive,
+  type,
   fileType,
   queryMode,
   queryIconColorClassName,
@@ -49,6 +53,10 @@ export function SortableTab({
 
   // Get icon based on type
   const getIcon = () => {
+    if (type === 'notebook') {
+      return <NotebookIcon className={cn('h-4 w-4', NOTEBOOK_ICON_CLASS)} />;
+    }
+
     if (queryMode) {
       const colorClass = queryIconColorClassName ?? 'text-muted-foreground';
       return queryMode === 'sql' ? (

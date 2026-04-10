@@ -6,6 +6,8 @@ import type { NlGenerationResult, NlQueryStreamEvent } from '@/types/nlQuery';
 import type { QueryMode } from '@/types/file';
 import type { Project } from '@/types/project';
 
+import type { TabType } from '@/types/dataViewer';
+
 import { toNlGenerationResult } from '../queryUtils';
 import { withSqlIdentifierHint } from '../sqlIdentifiers';
 import {
@@ -23,7 +25,7 @@ interface UseDataViewerQueryHandlersOptions {
     projectId: string,
     metadata?: Record<string, unknown>,
   ) => string;
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => void;
+  setActiveFileTab: (id: string | null, type: TabType | 'plan' | null) => void;
   tableNames: string[];
 }
 

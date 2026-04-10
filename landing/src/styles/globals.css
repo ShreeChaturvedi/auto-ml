@@ -1,10 +1,9 @@
 @import '@fontsource-variable/inter/wght.css';
 @import '@fontsource-variable/geist-mono/wght.css';
+@import './theme.css';
+@import './motion-policy.css';
+@import './grain.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import './theme.css';
-@import './motion-policy.css';
-@import './grain.css';

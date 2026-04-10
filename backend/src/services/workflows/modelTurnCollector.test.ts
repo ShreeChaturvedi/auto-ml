@@ -114,6 +114,30 @@ describe('invokeModelNode', () => {
     '## Next Steps',
     'Review the plan and proceed to analysis.'
   ].join('\n');
+  const planWithoutTopHeading = [
+    'SaaS Usage',
+    '',
+    '## Objective',
+    'Forecast runtime prediction safely.',
+    '',
+    '## Data Summary',
+    'Use the uploaded dataset profile and sample.',
+    '',
+    '## Approach',
+    'Diagnose data quality risks before modeling.',
+    '',
+    '## Feature Engineering',
+    'Only add features with validated signal.',
+    '',
+    '## Evaluation',
+    'Measure accuracy and runtime tradeoffs.',
+    '',
+    '## Risks & Assumptions',
+    'Unknown labels may need follow-up.',
+    '',
+    '## Next Steps',
+    'Review the plan and proceed to analysis.'
+  ].join('\n');
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -459,6 +483,131 @@ describe('invokeModelNode', () => {
       nextStep: 'pause',
       planExitPayload: {
         planName: 'nested-runtime-plan.md',
+        planMarkdown: validPlanMarkdown
+      }
+    });
+  });
+
+  it('accepts structured onboarding plans that only omitted the top-level heading', async () => {
+    const streamMock = vi.fn(async (_request: LlmRequest, handlers: LlmStreamHandlers) => {
+      handlers.onToolCall?.({
+        name: 'plan_exit',
+        args: {
+          planMarkdown: planWithoutTopHeading,
+          planName: 'saas-usage-plan'
+        }
+      });
+      return '';
+    });
+    createLlmClientMock.mockReturnValue({
+      complete: llmCompleteMock,
+      stream: streamMock
+    });
+
+    const state = createBaseState();
+    state.turn.phase = 'onboarding';
+    state.request = {
+      messages: [
+        { role: 'system', content: 'Create a project plan.' },
+        { role: 'user', content: 'Diagnose data quality risks and then propose the plan.' }
+      ],
+      tools: [
+        {
+          name: 'plan_exit',
+          description: 'Finalize the plan.',
+          parameters: {
+            type: 'object',
+            properties: {
+              planName: { type: 'string' },
+              planMarkdown: { type: 'string' }
+            }
+          }
+        }
+      ]
+    };
+    state.controllerSummary = undefined;
+
+    const result = await invokeModelNode(state);
+
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      nextStep: 'pause',
+      planExitPayload: {
+        planName: 'saas-usage-plan.md'
+      }
+    });
+    expect(result.planExitPayload?.planMarkdown.startsWith('# Project Plan: SaaS Usage')).toBe(true);
+  });
+
+  it('retries onboarding once with a repair prompt when plan_exit markdown is malformed', async () => {
+    const malformedPlanMarkdown = [
+      'SaaS Usage plan',
+      '',
+      'Objective: Forecast runtime prediction safely.',
+      'Data Summary: Use the uploaded dataset profile and sample.',
+      'Approach: Diagnose data quality risks before modeling.'
+    ].join('\n');
+    const streamMock = vi.fn(async (request: LlmRequest, handlers: LlmStreamHandlers) => {
+      if (streamMock.mock.calls.length === 1) {
+        handlers.onToolCall?.({
+          name: 'plan_exit',
+          args: {
+            planMarkdown: malformedPlanMarkdown,
+            planName: 'runtime-plan'
+          }
+        });
+        return '';
+      }
+
+      handlers.onToolCall?.({
+        name: 'plan_exit',
+        args: {
+          planMarkdown: validPlanMarkdown,
+          planName: 'runtime-plan'
+        }
+      });
+      return '';
+    });
+    createLlmClientMock.mockReturnValue({
+      complete: llmCompleteMock,
+      stream: streamMock
+    });
+
+    const state = createBaseState();
+    state.turn.phase = 'onboarding';
+    state.request = {
+      messages: [
+        { role: 'system', content: 'Create a project plan.' },
+        { role: 'user', content: 'Diagnose data quality risks and then propose the plan.' }
+      ],
+      tools: [
+        {
+          name: 'plan_exit',
+          description: 'Finalize the plan.',
+          parameters: {
+            type: 'object',
+            properties: {
+              planName: { type: 'string' },
+              planMarkdown: { type: 'string' }
+            }
+          }
+        }
+      ]
+    };
+    state.controllerSummary = undefined;
+
+    const result = await invokeModelNode(state);
+
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    const retryRequest = streamMock.mock.calls[1][0] as LlmRequest;
+    const lastMessage = retryRequest.messages[retryRequest.messages.length - 1];
+    expect(lastMessage.role).toBe('user');
+    expect(lastMessage.content).toMatch(/CRITICAL/);
+    expect(lastMessage.content).toMatch(/top-level heading/i);
+    expect(result).toMatchObject({
+      nextStep: 'pause',
+      planExitPayload: {
+        planName: 'runtime-plan.md',
         planMarkdown: validPlanMarkdown
       }
     });

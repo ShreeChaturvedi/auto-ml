@@ -109,13 +109,20 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
       const remaining = plans.filter((p) => p.id !== planId);
       const nextSelected = remaining[0];
       const legacyCompat = nextSelected
-        ? { projectPlanName: nextSelected.name, projectPlan: nextSelected.content }
-        : { projectPlanName: undefined, projectPlan: undefined };
+        ? {
+            activePlanId: nextSelected.id,
+            projectPlanName: nextSelected.name,
+            projectPlan: nextSelected.content,
+          }
+        : {
+            activePlanId: null,
+            projectPlanName: '',
+            projectPlan: '',
+          };
       void updateProject(projectId, {
         metadata: {
           ...metadata,
           plans: remaining,
-          activePlanId: nextSelected?.id,
           ...legacyCompat,
         },
       });

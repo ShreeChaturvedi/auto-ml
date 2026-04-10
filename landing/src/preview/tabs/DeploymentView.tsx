@@ -15,6 +15,47 @@ const SUB_TABS: { id: DeploymentSubTab; label: string }[] = [
   { id: 'monitoring', label: 'Monitoring' },
 ];
 
+// Hoisted to module scope so Recharts doesn't see a new object identity each render.
+const CHART_TICK_STYLE = { fill: 'var(--text-dim)', fontSize: 10 } as const;
+const CHART_TOOLTIP_STYLE = {
+  background: 'var(--surface-2)',
+  border: '0.8px solid var(--border)',
+  fontSize: 11,
+} as const;
+
+interface MiniLineChartProps {
+  title: string;
+  data: ReadonlyArray<Record<string, number | string>>;
+  lines: ReadonlyArray<{ dataKey: string; color: string }>;
+}
+
+function MiniLineChart({ title, data, lines }: MiniLineChartProps) {
+  return (
+    <div className={styles.chartCard}>
+      <h4 className={styles.chartCardTitle}>{title}</h4>
+      <div style={{ height: 160 }}>
+        <ResponsiveContainer>
+          <LineChart data={data as Array<Record<string, number | string>>}>
+            <XAxis dataKey="t" tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} />
+            <YAxis tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} />
+            {lines.map((l) => (
+              <Line
+                key={l.dataKey}
+                type="monotone"
+                dataKey={l.dataKey}
+                stroke={l.color}
+                strokeWidth={1.5}
+                dot={false}
+              />
+            ))}
+            <RTooltip contentStyle={CHART_TOOLTIP_STYLE} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 export function DeploymentView() {
   const activeSub = usePreviewStore((s) => s.deployment.activeSubTab);
   const setSub = usePreviewStore((s) => s.setDeploymentSubTab);
@@ -132,51 +173,19 @@ function LogsPanel() {
   );
 }
 
+const LATENCY_LINES = [
+  { dataKey: 'p50', color: '#F7F8F8' },
+  { dataKey: 'p95', color: '#8A8F98' },
+] as const;
+const RPS_LINES = [{ dataKey: 'rps', color: '#F7F8F8' }] as const;
+const ERROR_LINES = [{ dataKey: 'rate', color: '#F7F8F8' }] as const;
+
 function MonitoringPanel() {
   return (
     <div className={styles.chartsGrid}>
-      <div className={styles.chartCard}>
-        <h4 className={styles.chartCardTitle}>Latency (ms)</h4>
-        <div style={{ height: 160 }}>
-          <ResponsiveContainer>
-            <LineChart data={mockLatencyHistory}>
-              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-dim)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Line type="monotone" dataKey="p50" stroke="#F7F8F8" strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="p95" stroke="#8A8F98" strokeWidth={1.5} dot={false} />
-              <RTooltip contentStyle={{ background: 'var(--surface-2)', border: '0.8px solid var(--border)', fontSize: 11 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className={styles.chartCard}>
-        <h4 className={styles.chartCardTitle}>Requests per second</h4>
-        <div style={{ height: 160 }}>
-          <ResponsiveContainer>
-            <LineChart data={mockRpsHistory}>
-              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-dim)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Line type="monotone" dataKey="rps" stroke="#F7F8F8" strokeWidth={1.5} dot={false} />
-              <RTooltip contentStyle={{ background: 'var(--surface-2)', border: '0.8px solid var(--border)', fontSize: 11 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className={styles.chartCard}>
-        <h4 className={styles.chartCardTitle}>Error rate</h4>
-        <div style={{ height: 160 }}>
-          <ResponsiveContainer>
-            <LineChart data={mockErrorHistory}>
-              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-dim)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Line type="monotone" dataKey="rate" stroke="#F7F8F8" strokeWidth={1.5} dot={false} />
-              <RTooltip contentStyle={{ background: 'var(--surface-2)', border: '0.8px solid var(--border)', fontSize: 11 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <MiniLineChart title="Latency (ms)" data={mockLatencyHistory} lines={LATENCY_LINES} />
+      <MiniLineChart title="Requests per second" data={mockRpsHistory} lines={RPS_LINES} />
+      <MiniLineChart title="Error rate" data={mockErrorHistory} lines={ERROR_LINES} />
     </div>
   );
 }

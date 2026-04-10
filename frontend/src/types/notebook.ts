@@ -75,10 +75,14 @@ export type CellSummary = z.infer<typeof CellSummarySchema>;
 // Notebook Types
 // ============================================================
 
+export const NotebookKindSchema = z.enum(['phase', 'standalone']);
+export type NotebookKind = z.infer<typeof NotebookKindSchema>;
+
 export const NotebookSchema = z.object({
   notebookId: z.string(),
   projectId: z.string(),
   name: z.string(),
+  kind: NotebookKindSchema.default('phase'),
   metadata: z.record(z.string(), z.unknown()).default({}),
   createdAt: z.string(),
   updatedAt: z.string()
@@ -171,6 +175,7 @@ export interface WSCellOutputMessage {
 
 export interface WSCellsResetMessage {
   type: 'notebook:cells_reset';
+  notebookId: string;
   cells: NotebookCell[];
 }
 
@@ -248,6 +253,7 @@ export interface NotebookPhaseMetadata {
 export interface CreateNotebookRequest {
   name?: string;
   metadata?: NotebookPhaseMetadata;
+  kind?: NotebookKind;
 }
 
 export interface UpdateNotebookRequest {
@@ -257,11 +263,24 @@ export interface UpdateNotebookRequest {
 
 export interface DeleteNotebookResponse {
   deletedNotebookId: string;
-  fallbackNotebookId: string;
+  /** Null when the deleted notebook was the only standalone one and no phase fallback is applicable. */
+  fallbackNotebookId: string | null;
 }
 
 export interface RunCellRequest {
   projectId: string;
+}
+
+/**
+ * Summary of a dataset created via `save_to_project()` in a standalone
+ * notebook cell. Returned in the run-cell HTTP response body so the client
+ * can re-hydrate and surface a confirmation toast.
+ */
+export interface ExportedDatasetSummary {
+  id: string;
+  name: string;
+  rows: number;
+  cols: number;
 }
 
 // ============================================================

@@ -6,17 +6,24 @@
   padding: 0 32px;
 }
 
-/* Ring wrapper owns the cursor-outline class + ref. It must NOT clip its
- * overflow so the ::before ring (inset: -24px) and the outer glow PNG
- * (inset: -160px) can bleed beyond the frame's visible edge. It matches the
- * frame's dimensions and border-radius so the cursor-outline ring aligns
- * visually with the rectangle the user sees. */
+/* Ring wrapper owns the cursor-outline class + ref.
+ *
+ * CRITICAL: `isolation: isolate` creates a local stacking context. Without
+ * it, the cursor-outline `::before` uses `z-index: -1` and slips BEHIND the
+ * page body, hiding the glow entirely. With isolation, `z-index: -1` is
+ * clamped to this stacking context, so the ring sits behind `.frame` but
+ * is still visible where it extends past the frame edge (inset: -24px).
+ *
+ * We do NOT clip overflow on this wrapper: the `::before` ring (inset:
+ * -24px) needs to extend beyond the frame. A defensive `overflow-x: clip`
+ * on the body (in theme.css) prevents those few px of overflow from ever
+ * creating a horizontal scrollbar. */
 .ringWrapper {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 10;
   border-radius: 12px;
-  /* No overflow:hidden — intentional. */
+  isolation: isolate;
 }
 
 .frame {
@@ -29,12 +36,14 @@
   isolation: isolate;
 }
 
-/* Pre-blurred outer glow PNG (deferred to Gemini). Lives in .ringWrapper so
- * its -160px halo is never clipped by the frame. */
+/* Pre-blurred outer glow PNG (deferred to Gemini). Lives INSIDE `.frame`
+ * so `.frame`'s `overflow: hidden` clips the -160px halo and it cannot
+ * contribute to document scroll. We lose a bit of halo bleed past the
+ * frame edge but the cursor-outline `::before` ring compensates visually. */
 .glow {
   position: absolute;
   inset: -160px;
-  z-index: -2;
+  z-index: 0;
   opacity: 0.55;
   pointer-events: none;
   /* Fallback radial gradient until the Gemini PNG lands (issue #310). */

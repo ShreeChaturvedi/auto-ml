@@ -20,10 +20,13 @@ export default function AppPreviewFrame() {
         className={`cursor-outline ${styles.ringWrapper}`}
         aria-label="Interactive Agentic AutoML Platform demo"
       >
-        {/* Outer monochrome glow — Gemini-deferred PNG (issue #310) with inline SVG fallback */}
-        <div className={styles.glow} aria-hidden="true" />
-
         <div className={styles.frame}>
+          {/* Outer monochrome glow — Gemini-deferred PNG (issue #310) with
+              inline SVG fallback. Lives INSIDE .frame so .frame's
+              overflow:hidden clips the -160px halo and it cannot contribute
+              to document scroll. The cursor-reactive .cursor-outline ::before
+              ring still extends past the frame edge for the interactive halo. */}
+          <div className={styles.glow} aria-hidden="true" />
           {/* Inner grain overlay — stronger than the app's default body grain */}
           <div
             className={`landing-grain landing-grain-strong ${styles.innerGrain}`}

@@ -46,6 +46,11 @@ body {
   min-height: 100vh;
   background-color: var(--bg);
   color: var(--text);
+  /* Defensive clip: decorative glows inside the app preview (cursor-outline
+   * ::before at inset: -24px, etc.) can extend a few px past their container.
+   * `overflow-x: clip` prevents those from creating horizontal scroll without
+   * establishing a scroll container. Vertical scroll remains normal. */
+  overflow-x: clip;
 }
 
 /* Selection */

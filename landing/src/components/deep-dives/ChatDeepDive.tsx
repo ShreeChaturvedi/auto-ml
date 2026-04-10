@@ -56,23 +56,26 @@ const REASONING_OPTIONS: readonly ReasoningEffortOption[] = [
 
 const NOOP = () => {};
 
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 function ChatDeepDiveVisual() {
-  const [value, setValue] = useState('');
+  // Seed state with the final values when the user prefers reduced motion so
+  // we never have to call setState synchronously inside the effect below.
+  // Lazy initializers ensure window.matchMedia is only read once, at mount.
+  const [value, setValue] = useState(() =>
+    prefersReducedMotion() ? SCRIPTED_TRANSCRIPTION : '',
+  );
   const [showCursor, setShowCursor] = useState(false);
-  const [toolsVisible, setToolsVisible] = useState(false);
+  const [toolsVisible, setToolsVisible] = useState(() => prefersReducedMotion());
 
   useEffect(() => {
     // Scripted sequence — kicks off shortly after mount. Honors reduced
-    // motion by skipping the typing animation and jumping straight to the
-    // final state so the composer still reads as filled in.
-    const reduced =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (reduced) {
-      setValue(SCRIPTED_TRANSCRIPTION);
-      setToolsVisible(true);
+    // motion by skipping the typing animation entirely (state was already
+    // seeded to the final frame at mount time via lazy initializers).
+    if (prefersReducedMotion()) {
       return;
     }
 

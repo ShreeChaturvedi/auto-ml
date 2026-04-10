@@ -63,17 +63,20 @@ const HISTOGRAM = [
 
 type Phase = 'idle' | 'running' | 'done';
 
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 function NotebookDeepDiveVisual() {
-  const [phase, setPhase] = useState<Phase>('idle');
+  // Seed to the final 'done' frame under reduced motion so we never need to
+  // call setState synchronously inside the effect below.
+  const [phase, setPhase] = useState<Phase>(() =>
+    prefersReducedMotion() ? 'done' : 'idle',
+  );
 
   useEffect(() => {
-    const reduced =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (reduced) {
-      setPhase('done');
+    if (prefersReducedMotion()) {
       return;
     }
 

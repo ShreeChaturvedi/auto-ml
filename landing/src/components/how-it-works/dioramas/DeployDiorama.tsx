@@ -23,7 +23,7 @@ export function DeployDiorama() {
   const data = useAmbientData();
   const [p95, setP95] = useState(58);
   useEffect(() => {
-    const id = setInterval(() => setP95((p) => 56 + Math.round(Math.random() * 6)), 2000);
+    const id = setInterval(() => setP95(() => 56 + Math.round(Math.random() * 6)), 2000);
     return () => clearInterval(id);
   }, []);
 

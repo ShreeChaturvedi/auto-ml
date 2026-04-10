@@ -39,7 +39,6 @@ const foregrounds = {
 } as const;
 
 const AA_BODY = 4.5;
-const AA_LARGE = 3.0;
 
 type FgKey = keyof typeof foregrounds;
 type BgKey = keyof typeof backgrounds;
@@ -89,7 +88,6 @@ describe("WCAG AA contrast: token matrix", () => {
       ({ fg, bg, r, threshold }) =>
         `${fg.padEnd(13)} on ${bg.padEnd(12)} = ${r.toFixed(2)}:1  (>= ${threshold.toFixed(1)})`,
     );
-    // eslint-disable-next-line no-console
     console.log(["contrast matrix:", ...rows].join("\n"));
     expect(rows.length).toBe(
       Object.keys(foregrounds).length * Object.keys(backgrounds).length,

@@ -1,29 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { QuestionCards } from '@frontend/components/upload/QuestionCards';
-import type { AskUserQuestion, QuestionAnswer } from '@frontend/types/llmUi';
+import type { AskUserQuestion } from '@frontend/types/llmUi';
 import styles from './PlanDeepDive.module.css';
 
-// Real AskUserQuestion shape (see frontend/src/types/llmUi.ts): requires
-// `header`, uses `type: 'single_select' | 'multi_select' | 'free_text'`, and
-// each option carries a `description`. Matches the fixture adapted for the
-// UploadView preview tab in Phase 6b / Task 39.
-const QUESTIONS: AskUserQuestion[] = [
+/**
+ * Deep-dive 2 — PLAN visual. Mounts the real frontend `<QuestionCards>`
+ * component wired to a 3-step static flow (target / task / compute) per
+ * spec §4.5. The component owns its own step navigation and Next button
+ * advancement; final submit is a no-op because the landing page runs in
+ * demo mode with zero API access.
+ *
+ * The shared `<DeepDive>` chrome (eyebrow, headline, body, kbd hint) is
+ * composed around this by `FeaturesSection.astro` — this component renders
+ * only the right-hand visual content. The `.cursor-outline` wrapper is
+ * applied by `DeepDive.astro` as well, so nothing extra is required here.
+ */
+
+// Real `AskUserQuestion` shape (see `frontend/src/types/llmUi.ts`). The zod
+// schema requires a `description` on every select option, so each option
+// carries a short explanatory string even though the spec prose only names
+// the labels.
+const PLAN_QUESTIONS: AskUserQuestion[] = [
   {
-    id: 'q1',
+    id: 'target',
     header: 'Target',
     question: "What's your target variable?",
     type: 'single_select',
+    allowCustom: false,
     options: [
-      { label: 'is_active', description: 'Customer churn (classification)' },
-      { label: 'mrr_usd', description: 'Recurring revenue (regression)' },
-      { label: 'escalated', description: 'Ticket escalation (classification)' },
+      { label: 'is_active', description: 'Boolean churn indicator' },
+      { label: 'mrr_usd', description: 'Monthly recurring revenue' },
+      { label: 'escalated', description: 'Ticket escalation flag' },
     ],
   },
   {
-    id: 'q2',
+    id: 'task',
     header: 'Task',
     question: 'Which modeling task?',
     type: 'single_select',
+    allowCustom: false,
     options: [
       { label: 'Classification', description: 'Predict a category' },
       { label: 'Regression', description: 'Predict a number' },
@@ -32,39 +47,77 @@ const QUESTIONS: AskUserQuestion[] = [
     ],
   },
   {
-    id: 'q3',
+    id: 'compute',
     header: 'Compute',
     question: 'How much compute?',
     type: 'single_select',
+    allowCustom: false,
     options: [
       { label: 'Quick (5 min)', description: 'Fast iteration' },
-      { label: 'Standard (15 min)', description: 'Balanced' },
+      { label: 'Standard (15 min)', description: 'Balanced search' },
       { label: 'Deep (1h)', description: 'Thorough search' },
     ],
   },
 ];
 
+// Spec §4.5: "Final Create plan button is no-op." The landing page runs in
+// demo mode with zero API access, so the submit handler is a pure noop.
+const NOOP_SUBMIT = () => {};
+
 export default function PlanDeepDive() {
-  const [answers, setAnswers] = useState<QuestionAnswer[]>([]);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // IO-enter animation: fade + 12px translateY over 500ms with --ease-out-quart
+  // per spec §4.5 shared anatomy. Reduced-motion: the CSS fallback paints the
+  // final frame instantly so the content stays visible if the effect never
+  // runs (SSR, older jsdom, or reduced-motion preference).
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    if (typeof window === 'undefined') return;
+
+    const reduced =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      node.style.opacity = '1';
+      return;
+    }
+    if (typeof IntersectionObserver === 'undefined') {
+      node.style.opacity = '1';
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const easing =
+            getComputedStyle(node).getPropertyValue('--ease-out-quart').trim() ||
+            'cubic-bezier(0.165, 0.84, 0.44, 1)';
+          node.animate(
+            [
+              { opacity: 0, transform: 'translateY(12px)' },
+              { opacity: 1, transform: 'translateY(0)' },
+            ],
+            { duration: 500, easing, fill: 'forwards' },
+          );
+          observer.unobserve(node);
+        }
+      },
+      { threshold: 0.2 },
+    );
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div className={styles.root}>
-      <p className={styles.title}>PLANNER · 3 QUESTIONS</p>
-      <div className={styles.stepProgress} aria-hidden="true">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className={`${styles.stepDot} ${i <= answers.length ? styles.stepDotActive : ''}`}
-          />
-        ))}
-      </div>
+    <div ref={rootRef} className={styles.root}>
       <QuestionCards
-        questions={QUESTIONS}
+        questions={PLAN_QUESTIONS}
+        onSubmit={NOOP_SUBMIT}
         disabled={false}
-        onSubmit={(answerSet) => {
-          // Demo-only — do not call any API. Just advance the progress dots.
-          setAnswers(answerSet);
-        }}
       />
     </div>
   );

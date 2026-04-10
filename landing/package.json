@@ -12,27 +12,28 @@
     "typecheck": "astro check && tsc --noEmit"
   },
   "dependencies": {
-    "astro": "^5.0.0",
+    "@astrojs/check": "^0.9.0",
     "@astrojs/react": "^4.2.0",
     "@astrojs/tailwind": "^5.1.0",
-    "@astrojs/check": "^0.9.0",
+    "@fontsource-variable/geist-mono": "^5.1.0",
+    "@fontsource-variable/inter": "^5.1.0",
+    "astro": "^5.0.0",
+    "clsx": "^2.1.1",
+    "gsap": "^3.12.5",
+    "lucide-react": "^0.544.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "gsap": "^3.12.5",
-    "zustand": "^5.0.8",
-    "@fontsource-variable/inter": "^5.1.0",
-    "@fontsource-variable/geist-mono": "^5.1.0",
+    "recharts": "^3.5.1",
     "simple-icons": "^13.14.0",
-    "clsx": "^2.1.1",
+    "streamdown": "^2.3.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
-    "recharts": "^3.5.1",
-    "streamdown": "^2.3.0",
-    "lucide-react": "^0.544.0"
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.50.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
@@ -42,9 +43,12 @@
     "@vitejs/plugin-react": "^5.0.3",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
     "jsdom": "^27.3.0",
     "postcss": "^8.5.6",
     "typescript": "~5.8.3",
+    "typescript-eslint": "^8.58.1",
     "vitest": "^4.0.18"
   }
 }

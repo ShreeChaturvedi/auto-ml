@@ -40,54 +40,31 @@ const {
   kbdBadge,
   reversed = false,
 } = Astro.props;
-
-const sectionClass = [styles.section, reversed ? styles.sectionReversed : '']
-  .filter(Boolean)
-  .join(' ');
 ---
 
-<section id={id} class={`deep-dive-section ${sectionClass}`} data-deep-dive>
-  {reversed ? (
-    <>
-      <div class={`cursor-outline ${styles.visual}`} aria-label={`${eyebrow} demo`}>
-        <slot />
-      </div>
-      <div class={styles.copy}>
-        <p class={styles.copyEyebrow}>{eyebrow}</p>
-        <h2 class={styles.copyHeadline}>
-          <span class={styles.copyHeadlineBright}>{headlineBright}</span>
-          <span class={styles.copyHeadlineMuted}>{headlineMuted}</span>
-        </h2>
-        <p class={styles.copyBody}>{body}</p>
-        {kbdLabel && kbdBadge && (
-          <span class={styles.kbdHint}>
-            <kbd class={styles.kbdBadge}>{kbdBadge}</kbd>
-            {kbdLabel}
-          </span>
-        )}
-      </div>
-    </>
-  ) : (
-    <>
-      <div class={styles.copy}>
-        <p class={styles.copyEyebrow}>{eyebrow}</p>
-        <h2 class={styles.copyHeadline}>
-          <span class={styles.copyHeadlineBright}>{headlineBright}</span>
-          <span class={styles.copyHeadlineMuted}>{headlineMuted}</span>
-        </h2>
-        <p class={styles.copyBody}>{body}</p>
-        {kbdLabel && kbdBadge && (
-          <span class={styles.kbdHint}>
-            <kbd class={styles.kbdBadge}>{kbdBadge}</kbd>
-            {kbdLabel}
-          </span>
-        )}
-      </div>
-      <div class={`cursor-outline ${styles.visual}`} aria-label={`${eyebrow} demo`}>
-        <slot />
-      </div>
-    </>
-  )}
+<section
+  id={id}
+  class={`deep-dive-section ${styles.section}`}
+  data-deep-dive
+  data-reversed={reversed ? 'true' : 'false'}
+>
+  <div class={styles.copy}>
+    <p class={styles.copyEyebrow}>{eyebrow}</p>
+    <h2 class={styles.copyHeadline}>
+      <span class={styles.copyHeadlineBright}>{headlineBright}</span>
+      <span class={styles.copyHeadlineMuted}>{headlineMuted}</span>
+    </h2>
+    <p class={styles.copyBody}>{body}</p>
+    {kbdLabel && kbdBadge && (
+      <span class={styles.kbdHint}>
+        <kbd class={styles.kbdBadge}>{kbdBadge}</kbd>
+        {kbdLabel}
+      </span>
+    )}
+  </div>
+  <div class={`cursor-outline ${styles.visual}`} aria-label={`${eyebrow} demo`}>
+    <slot />
+  </div>
 </section>
 
 <script>

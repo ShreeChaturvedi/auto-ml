@@ -10,8 +10,8 @@
   opacity: 0;
   will-change: opacity, transform;
 }
-.sectionReversed { direction: rtl; }
-.sectionReversed > * { direction: ltr; }
+.section[data-reversed='true'] > .copy   { grid-column: 2; grid-row: 1; }
+.section[data-reversed='true'] > .visual { grid-column: 1; grid-row: 1; }
 
 .copy {
   max-width: 520px;

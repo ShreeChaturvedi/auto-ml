@@ -8,9 +8,6 @@ import {
   YAxis,
 } from 'recharts';
 import { Streamdown } from 'streamdown';
-import { TooltipProvider } from '@frontend/components/ui/tooltip';
-import { NotebookCellOutput } from '@frontend/components/notebook/NotebookCellOutput';
-import type { RichOutput } from '@frontend/lib/api/execution';
 
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './NotebookDeepDive.module.css';
@@ -28,27 +25,29 @@ summary = df[['mrr_usd', 'avg_session_minutes', 'api_calls']].describe()
 summary
 \`\`\``;
 
-// Pre-seeded describe() summary, shaped as a NotebookCellOutput "table" row
-// so the real frontend renderer (CellOutputRenderer) parses it through
-// parseTableData({ columns, rows }) and displays it identically to a live
-// execution result.
-const DESCRIBE_TABLE: RichOutput = {
-  type: 'table',
-  content: 'describe() summary',
-  data: {
-    columns: ['stat', 'mrr_usd', 'avg_session_minutes', 'api_calls'],
-    rows: [
-      { stat: 'count', mrr_usd: '2,530',  avg_session_minutes: '2,280', api_calls: '2,530'   },
-      { stat: 'mean',  mrr_usd: '2,142',  avg_session_minutes: '18.4',  api_calls: '12,004'  },
-      { stat: 'std',   mrr_usd: '1,854',  avg_session_minutes: '12.7',  api_calls: '28,312'  },
-      { stat: 'min',   mrr_usd: '0',      avg_session_minutes: '0.3',   api_calls: '0'       },
-      { stat: '50%',   mrr_usd: '1,620',  avg_session_minutes: '15.2',  api_calls: '3,412'   },
-      { stat: 'max',   mrr_usd: '24,180', avg_session_minutes: '84.1',  api_calls: '892,448' },
-    ],
-  },
-};
+// Pre-seeded describe() summary rendered as a simple inline <table>. We used
+// to pipe this through the real frontend `NotebookCellOutput`, but that
+// transitively static-imports `PlotlyOutput` (react-plotly, ~4.9 MB) and
+// `ShadowHtml` (mermaid, ~490 KB) via `CellOutputRenderer`. The deep-dive
+// only ever shows this one 6-row table so we render it directly and keep
+// those chunks out of the landing bundle.
+const DESCRIBE_COLUMNS = [
+  'stat',
+  'mrr_usd',
+  'avg_session_minutes',
+  'api_calls',
+] as const;
 
-const DESCRIBE_OUTPUTS: RichOutput[] = [DESCRIBE_TABLE];
+type DescribeColumn = (typeof DESCRIBE_COLUMNS)[number];
+
+const DESCRIBE_ROWS: ReadonlyArray<Readonly<Record<DescribeColumn, string>>> = [
+  { stat: 'count', mrr_usd: '2,530',  avg_session_minutes: '2,280', api_calls: '2,530'   },
+  { stat: 'mean',  mrr_usd: '2,142',  avg_session_minutes: '18.4',  api_calls: '12,004'  },
+  { stat: 'std',   mrr_usd: '1,854',  avg_session_minutes: '12.7',  api_calls: '28,312'  },
+  { stat: 'min',   mrr_usd: '0',      avg_session_minutes: '0.3',   api_calls: '0'       },
+  { stat: '50%',   mrr_usd: '1,620',  avg_session_minutes: '15.2',  api_calls: '3,412'   },
+  { stat: 'max',   mrr_usd: '24,180', avg_session_minutes: '84.1',  api_calls: '892,448' },
+];
 
 // Hand-binned mrr_usd histogram (right-skewed: long tail of high-value
 // accounts). Rendered with Recharts per section 4.5 of the spec.
@@ -85,85 +84,100 @@ function NotebookDeepDiveVisual() {
   }, [reduced]);
 
   return (
-    <TooltipProvider delayDuration={150}>
-      <div className={styles.root}>
-        {/* Top cell — code + running indicator + inline output once done. */}
-        <div className={`${styles.cell} group`}>
-          <div className={styles.cellHeader}>
-            <span>In [1]</span>
-            <span className={styles.cellHeaderBadge}>python</span>
-          </div>
-          <div className={styles.cellCode}>
-            <Streamdown parseIncompleteMarkdown={false}>
-              {CODE_MARKDOWN}
-            </Streamdown>
-          </div>
-
-          {phase === 'running' && (
-            <div className={styles.cellRunning} aria-live="polite">
-              <span className={styles.runningDot} aria-hidden="true" />
-              Running cell…
-            </div>
-          )}
-
-          {phase === 'done' && (
-            <div className={styles.outputHost}>
-              <NotebookCellOutput outputs={DESCRIBE_OUTPUTS} />
-            </div>
-          )}
+    <div className={styles.root}>
+      {/* Top cell — code + running indicator + inline output once done. */}
+      <div className={`${styles.cell} group`}>
+        <div className={styles.cellHeader}>
+          <span>In [1]</span>
+          <span className={styles.cellHeaderBadge}>python</span>
+        </div>
+        <div className={styles.cellCode}>
+          <Streamdown parseIncompleteMarkdown={false}>
+            {CODE_MARKDOWN}
+          </Streamdown>
         </div>
 
-        {/* Bottom cell — Recharts histogram of mrr_usd (right-skewed). */}
+        {phase === 'running' && (
+          <div className={styles.cellRunning} aria-live="polite">
+            <span className={styles.runningDot} aria-hidden="true" />
+            Running cell…
+          </div>
+        )}
+
         {phase === 'done' && (
-          <div className={styles.cell}>
-            <div className={styles.cellHeader}>
-              <span>Out [1]</span>
-              <span className={styles.cellHeaderBadge}>chart</span>
-            </div>
-            <div className={styles.outputCell}>
-              <p className={styles.chartLabel}>mrr_usd distribution</p>
-              <div className={styles.chartBlock}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={HISTOGRAM}
-                    margin={{ top: 4, right: 8, bottom: 0, left: -20 }}
-                  >
-                    <XAxis
-                      dataKey="bucket"
-                      tick={{ fill: 'var(--text-dim)', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: 'var(--text-dim)', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <RTooltip
-                      cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                      contentStyle={{
-                        background: 'var(--surface-2)',
-                        border: '0.8px solid var(--border)',
-                        borderRadius: 6,
-                        fontFamily: 'Geist Mono Variable, monospace',
-                        fontSize: 11,
-                        color: 'var(--text)',
-                      }}
-                      labelStyle={{ color: 'var(--text-dim)' }}
-                    />
-                    <Bar
-                      dataKey="count"
-                      fill="#F7F8F8"
-                      radius={[2, 2, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+          <div className={styles.outputHost}>
+            <table className={styles.describeTable}>
+              <thead>
+                <tr>
+                  {DESCRIBE_COLUMNS.map((col) => (
+                    <th key={col}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {DESCRIBE_ROWS.map((row) => (
+                  <tr key={row.stat}>
+                    {DESCRIBE_COLUMNS.map((col) => (
+                      <td key={col}>{row[col]}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-    </TooltipProvider>
+
+      {/* Bottom cell — Recharts histogram of mrr_usd (right-skewed). */}
+      {phase === 'done' && (
+        <div className={styles.cell}>
+          <div className={styles.cellHeader}>
+            <span>Out [1]</span>
+            <span className={styles.cellHeaderBadge}>chart</span>
+          </div>
+          <div className={styles.outputCell}>
+            <p className={styles.chartLabel}>mrr_usd distribution</p>
+            <div className={styles.chartBlock}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={HISTOGRAM}
+                  margin={{ top: 4, right: 8, bottom: 0, left: -20 }}
+                >
+                  <XAxis
+                    dataKey="bucket"
+                    tick={{ fill: 'var(--text-dim)', fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: 'var(--text-dim)', fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RTooltip
+                    cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                    contentStyle={{
+                      background: 'var(--surface-2)',
+                      border: '0.8px solid var(--border)',
+                      borderRadius: 6,
+                      fontFamily: 'Geist Mono Variable, monospace',
+                      fontSize: 11,
+                      color: 'var(--text)',
+                    }}
+                    labelStyle={{ color: 'var(--text-dim)' }}
+                  />
+                  <Bar
+                    dataKey="count"
+                    fill="#F7F8F8"
+                    radius={[2, 2, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -174,9 +188,11 @@ function NotebookDeepDiveVisual() {
  * left-hand visual content.
  *
  * The top cell is a static 8-line Python snippet highlighted via `streamdown`
- * (not Monaco), followed by a 1.2s "running" blink on IO-enter and then the
- * real frontend {@link NotebookCellOutput} rendering a pre-seeded
- * `RichOutput[]` with the `describe()` summary as a parsed table. The bottom
+ * (not Monaco), followed by a 1.2s "running" blink on IO-enter and then a
+ * pre-seeded `describe()` summary rendered as a plain inline `<table>`. The
+ * table used to go through the real frontend `NotebookCellOutput`, but that
+ * statically pulls in Plotly + Mermaid via `CellOutputRenderer` — so we
+ * inline it here and save ~5 MB of JS from the landing bundle. The bottom
  * cell is a Recharts `<BarChart>` showing a hand-binned, right-skewed
  * `mrr_usd` distribution.
  */

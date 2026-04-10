@@ -103,14 +103,35 @@
   height: 180px;
 }
 
-/* NotebookCellOutput uses frontend Tailwind classes (bg-muted/30, border-t,
- * etc). Inside the landing cell frame we want a tighter look, so kill the
- * extra border and background and let our `.cell` chrome do the framing. */
-.outputHost > * {
-  border: none !important;
-  background: transparent !important;
-}
-
 .outputHost {
   border-top: 0.8px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 12px 18px;
+  overflow-x: auto;
+}
+
+.describeTable {
+  width: 100%;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  border-collapse: collapse;
+}
+
+.describeTable th,
+.describeTable td {
+  padding: 4px 10px;
+  text-align: left;
+  border-bottom: 0.8px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.describeTable tbody tr:last-child th,
+.describeTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.describeTable th {
+  color: var(--text);
+  font-weight: 510;
 }

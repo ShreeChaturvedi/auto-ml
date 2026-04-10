@@ -470,3 +470,74 @@ export const preprocessingNotebookCells: PreprocessingNotebookCellFixture[] = [
     ],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Training tab — NotebookCellOutput-shaped cells.
+//
+// Parallel to `featureEngineeringNotebookCells` and
+// `preprocessingNotebookCells` above. Consumed by the rebuilt
+// <TrainingView> via the real frontend <NotebookCellOutput>.
+// RichOutput[] shape — NO `type: 'chart'` (pulls in Plotly, ~4.9 MB).
+// ---------------------------------------------------------------------------
+
+export interface TrainingNotebookCell {
+  id: string;
+  kind: 'markdown' | 'code';
+  source: string;
+  /** RichOutput[] passed directly to <NotebookCellOutput outputs={…} />. */
+  outputs?: RichOutput[];
+}
+
+export const trainingNotebookCells: TrainingNotebookCell[] = [
+  {
+    id: 'tr2_md',
+    kind: 'markdown',
+    source: '## Train the champion · XGBoost',
+  },
+  {
+    id: 'tr2_code_1',
+    kind: 'code',
+    source: `from xgboost import XGBClassifier
+from sklearn.model_selection import cross_validate
+
+clf = XGBClassifier(
+    n_estimators=200,
+    max_depth=6,
+    learning_rate=0.05,
+    subsample=0.85,
+    colsample_bytree=0.78,
+    random_state=42,
+)
+scores = cross_validate(clf, X_train, y_train, cv=5, scoring=['f1', 'roc_auc'])
+print(f"F1:  {scores['test_f1'].mean():.4f}")
+print(f"AUC: {scores['test_roc_auc'].mean():.4f}")`,
+    outputs: [
+      { type: 'text', content: 'F1:  0.9117\nAUC: 0.9530' },
+    ],
+  },
+  {
+    id: 'tr2_code_2',
+    kind: 'code',
+    source: `clf.fit(X_train, y_train)
+pd.DataFrame({
+    'feature': X_train.columns,
+    'gain':    clf.feature_importances_,
+}).sort_values('gain', ascending=False).head(5)`,
+    outputs: [
+      {
+        type: 'table',
+        content: 'Top 5 features by gain',
+        data: {
+          columns: ['feature', 'gain'],
+          rows: [
+            { feature: 'recency_days',           gain: '0.2140' },
+            { feature: 'mrr_delta_30d',          gain: '0.1980' },
+            { feature: 'ticket_escalation_rate', gain: '0.1760' },
+            { feature: 'plan_tier',              gain: '0.1450' },
+            { feature: 'active_users_mean',      gain: '0.1310' },
+          ],
+        },
+      },
+    ],
+  },
+];

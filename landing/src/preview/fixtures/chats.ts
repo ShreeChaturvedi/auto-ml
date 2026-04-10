@@ -321,3 +321,85 @@ export const preprocessingChatTurns: PreprocessingChatTurn[] = [
     text: "Done. All 147 MRR nulls filled, dates parsed (zero coerced to NaT), and 13 outlier rows trimmed above the 99.5th percentile. The notebook cell on the right has the updated source and the new `df.head()` output — reversible via the savepoint I just wrote.",
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Training tab — ToolIndicator-shaped chat turns.
+//
+// The rebuilt Training tab renders tool calls through the real frontend
+// `<ToolIndicator>` leaf component, which expects `ToolCall` + `ToolResult`
+// arrays conforming to `@frontend/types/llmUi`. The tool names here are
+// picked from the `ToolNameSchema` z.enum so drift is caught at compile
+// time. Mirrors the feature-engineering turns shape above.
+// ---------------------------------------------------------------------------
+
+export interface TrainingChatTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+}
+
+export const trainingChatMessages: TrainingChatTurn[] = [
+  {
+    id: 'tr-u1',
+    role: 'user',
+    text: 'Which model should we try first?',
+  },
+  {
+    id: 'tr-a1',
+    role: 'assistant',
+    text: "Reading the feature-engineering notebook and comparing candidate templates for the configured experiment so I can recommend a starting point.",
+    toolCalls: [
+      {
+        id: 'tcall_list',
+        tool: 'list_cells',
+        args: { phase: 'training' },
+      },
+      {
+        id: 'tcall_read',
+        tool: 'read_cell',
+        args: { cellId: 'fe_code_3' },
+      },
+      {
+        id: 'tcall_plan',
+        tool: 'propose_training_plan',
+        args: { taskType: 'classification', target: 'is_active' },
+      },
+    ],
+    toolResults: [
+      {
+        id: 'tcall_list',
+        tool: 'list_cells',
+        output: { count: 8, cells: [{ id: 'fe_code_3', kind: 'code', title: 'Feature MI ranking' }] },
+      },
+      {
+        id: 'tcall_read',
+        tool: 'read_cell',
+        output: {
+          cellId: 'fe_code_3',
+          content:
+            "mi = mutual_info_classif(X, y)\ntop = pd.Series(mi, index=X.columns).sort_values(ascending=False)\ntop.head(10)",
+        },
+      },
+      {
+        id: 'tcall_plan',
+        tool: 'propose_training_plan',
+        output: {
+          candidates: [
+            { model: 'XGBoost', priority: 1, rationale: 'strong default for tabular classification' },
+            { model: 'LightGBM', priority: 2, rationale: 'diversity vs xgboost at similar accuracy' },
+            { model: 'RandomForest', priority: 3, rationale: 'bagged baseline' },
+            { model: 'LogisticRegression', priority: 4, rationale: 'interpretable floor' },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: 'tr-a2',
+    role: 'assistant',
+    text:
+      "Start with **XGBoost**. It's the strongest default for tabular classification with mixed feature types, handles the mild class imbalance in `is_active` natively via `scale_pos_weight`, and the top MI features (`recency_days`, `mrr_delta_30d`, `ticket_escalation_rate`) are exactly the kind of nonlinear interactions boosted trees exploit best. I'll follow up with LightGBM and RandomForest for model diversity, then pick the champion by held-out F1.",
+  },
+];

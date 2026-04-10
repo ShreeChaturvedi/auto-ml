@@ -1,0 +1,119 @@
+.root {
+  display: grid;
+  grid-template-rows: 40px 1fr;
+  height: 100%;
+}
+
+.fileTabs {
+  display: flex;
+  background: var(--surface-0);
+  border-bottom: 0.8px solid var(--border);
+  padding: 0 8px;
+  overflow-x: auto;
+}
+.fileTab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  height: 40px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 0;
+  border-right: 0.8px solid var(--border);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.fileTab:hover { color: var(--text); }
+.fileTabActive {
+  color: var(--text);
+  background: var(--surface-1);
+}
+.fileTabActive::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: rgba(139, 92, 246, 0.9);
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mainPanel { padding: 20px; overflow: auto; }
+.queryPanel {
+  border-left: 0.8px solid var(--border);
+  background: var(--surface-0);
+  padding: 20px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.table th {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  padding: 10px 12px;
+  border-bottom: 0.8px solid var(--border);
+  background: var(--surface-1);
+  position: sticky;
+  top: 0;
+}
+.table td {
+  padding: 10px 12px;
+  border-bottom: 0.8px solid var(--border);
+  color: var(--text);
+}
+.table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+.queryLabel {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.queryEnglish {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 16px;
+}
+.querySeparator {
+  border: 0;
+  border-top: 0.8px solid var(--border);
+  margin: 0 0 16px;
+}
+.querySql {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.queryResult {
+  margin-top: 16px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}

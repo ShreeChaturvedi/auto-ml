@@ -1,0 +1,76 @@
+.section {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 180px 32px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+  min-height: 720px;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.sectionReversed { direction: rtl; }
+.sectionReversed > * { direction: ltr; }
+
+.copy {
+  max-width: 520px;
+}
+.copyEyebrow {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 16px;
+}
+.copyHeadline {
+  font-family: 'Inter Variable', sans-serif;
+  font-size: clamp(32px, 3.5vw, 48px);
+  font-weight: 510;
+  letter-spacing: -0.022em;
+  line-height: 1.05;
+  margin: 0 0 24px;
+}
+.copyHeadlineBright { color: var(--text); display: block; }
+.copyHeadlineMuted  { color: var(--text-muted); display: block; }
+.copyBody {
+  font-size: 17px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 20px;
+}
+.kbdHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.kbdBadge {
+  background: #1C1C1F;
+  color: #D0D6E0;
+  border: 0.8px solid #34343A;
+  border-radius: 4.5px;
+  padding: 2px 6px;
+  font-size: 11px;
+  box-shadow: 0 0 0 0 transparent, inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.visual {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Reduced-motion: skip the WAAPI enter animation, show content instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .section {
+    opacity: 1;
+  }
+}

@@ -39,9 +39,18 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/tests/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Only .test.ts(x) is run by vitest. `.spec.ts` files are Playwright
+    // E2E tests (see landing/playwright.config.ts) and must not be loaded
+    // under jsdom.
+    include: ['src/**/*.test.{ts,tsx}'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/**/*.spec.{ts,tsx}'],
   },
   resolve: {
+    // Force a single React copy across landing + @frontend imports. Without
+    // this, vitest resolves one React from landing/node_modules and another
+    // from frontend/node_modules, causing duplicate-React errors when
+    // rendering imported frontend components under jsdom.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
     alias: {
       '@frontend': frontendSrc,
     },

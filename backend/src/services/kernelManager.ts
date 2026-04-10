@@ -161,6 +161,47 @@ def save_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     cache_key = "_automl_ds_" + df_name + "_" + str(dataset_id or "")
     globals().pop(cache_key, None)
 
+# Standalone-notebook export helper. Writes the dataframe to an internal
+# _exports directory and appends to a manifest the backend reads after the
+# cell finishes. The backend atomically persists each manifest entry as a
+# new project dataset, so users can promote exploration results without
+# leaving the notebook.
+def save_to_project(df, name):
+    """Save a DataFrame as a project dataset."""
+    import os, json, re, time, uuid
+    if not isinstance(df, __import__('pandas').DataFrame):
+        raise TypeError("save_to_project expects a pandas DataFrame")
+    name = str(name).strip()
+    if not re.match(r'^[\\w\\- ]+$', name):
+        raise ValueError("Dataset name can only contain letters, numbers, spaces, dashes, underscores")
+    if not name.endswith('.csv'):
+        name = name + '.csv'
+    export_dir = '/workspace/_exports'
+    os.makedirs(export_dir, exist_ok=True)
+    path = os.path.join(export_dir, name)
+    df.to_csv(path, index=False)
+    rows, cols = df.shape
+    manifest_path = os.path.join(export_dir, '.manifest.json')
+    entries = []
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path) as f:
+                entries = json.load(f)
+        except Exception:
+            entries = []
+    entries.append({
+        'name': name,
+        'rows': rows,
+        'cols': cols,
+        'timestamp': time.time(),
+        'exportId': str(uuid.uuid4()),
+    })
+    tmp = manifest_path + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(entries, f)
+    os.replace(tmp, manifest_path)
+    print(f"Saved '{name.rsplit('.csv', 1)[0]}' to project ({rows:,} rows x {cols} columns)")
+
 print("Kernel initialized")
 `.trim();
 

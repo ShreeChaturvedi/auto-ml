@@ -1,10 +1,27 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
+import { Mutex } from 'async-mutex';
+
 import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 import { ensureDirectoryForFile } from '../utils/fs.js';
+
+/**
+ * Process-local mutex guarding file-backed dataset metadata writes.
+ *
+ * Scope: this mutex serialises `create`/`update`/`delete` within a SINGLE
+ * Node process only. It will NOT protect against corruption if multiple
+ * Node processes share the same metadata JSON file.
+ *
+ * `FileDatasetRepository` is a development-only fallback — production
+ * deployments configure `DATABASE_URL` and use `PgDatasetRepository`,
+ * which relies on Postgres transactions for concurrency. Multi-process
+ * dev deployments (e.g. clustered `node` workers) should also set
+ * `DATABASE_URL` to avoid the file-store race window.
+ */
+const fileDatasetMutex = new Mutex();
 
 export interface DatasetRepository {
   list(): Promise<DatasetProfile[]>;
@@ -61,56 +78,62 @@ export class FileDatasetRepository implements DatasetRepository {
   }
 
   async create(input: DatasetProfileInput): Promise<DatasetProfile> {
-    const now = new Date().toISOString();
-    const dataset: DatasetProfile = {
-      datasetId: randomUUID(),
-      projectId: input.projectId,
-      filename: input.filename,
-      fileType: input.fileType,
-      size: input.size,
-      nRows: input.profile.nRows,
-      nCols: input.profile.columns.length,
-      columns: input.profile.columns,
-      sample: input.profile.sample,
-      createdAt: now,
-      updatedAt: now,
-      metadata: input.metadata
-    };
+    return fileDatasetMutex.runExclusive(() => {
+      const now = new Date().toISOString();
+      const dataset: DatasetProfile = {
+        datasetId: randomUUID(),
+        projectId: input.projectId,
+        filename: input.filename,
+        fileType: input.fileType,
+        size: input.size,
+        nRows: input.profile.nRows,
+        nCols: input.profile.columns.length,
+        columns: input.profile.columns,
+        sample: input.profile.sample,
+        createdAt: now,
+        updatedAt: now,
+        metadata: input.metadata
+      };
 
-    const all = this.readAll();
-    all.push(dataset);
-    this.writeAll(all);
-    return dataset;
+      const all = this.readAll();
+      all.push(dataset);
+      this.writeAll(all);
+      return dataset;
+    });
   }
 
   async update(
     datasetId: string,
     updater: (current: DatasetProfile) => DatasetProfile
   ): Promise<DatasetProfile | undefined> {
-    const all = this.readAll();
-    const index = all.findIndex((dataset) => dataset.datasetId === datasetId);
-    if (index === -1) return undefined;
+    return fileDatasetMutex.runExclusive(() => {
+      const all = this.readAll();
+      const index = all.findIndex((dataset) => dataset.datasetId === datasetId);
+      if (index === -1) return undefined;
 
-    const current = all[index];
-    const updated = updater(current);
-    all[index] = {
-      ...updated,
-      datasetId: current.datasetId,
-      createdAt: current.createdAt,
-      updatedAt: new Date().toISOString()
-    };
-    this.writeAll(all);
-    return all[index];
+      const current = all[index];
+      const updated = updater(current);
+      all[index] = {
+        ...updated,
+        datasetId: current.datasetId,
+        createdAt: current.createdAt,
+        updatedAt: new Date().toISOString()
+      };
+      this.writeAll(all);
+      return all[index];
+    });
   }
 
   async delete(datasetId: string): Promise<boolean> {
-    const all = this.readAll();
-    const index = all.findIndex((dataset) => dataset.datasetId === datasetId);
-    if (index === -1) return false;
+    return fileDatasetMutex.runExclusive(() => {
+      const all = this.readAll();
+      const index = all.findIndex((dataset) => dataset.datasetId === datasetId);
+      if (index === -1) return false;
 
-    all.splice(index, 1);
-    this.writeAll(all);
-    return true;
+      all.splice(index, 1);
+      this.writeAll(all);
+      return true;
+    });
   }
 }
 

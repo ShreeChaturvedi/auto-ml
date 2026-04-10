@@ -68,6 +68,10 @@ export function useTabNotebookSync({
 
   const notebookEnsureLocksRef = useRef(new Map<string, Promise<string | null>>());
   const notebookReconcileLockRef = useRef<Promise<void> | null>(null);
+  // Track the projectId for which ensureNotebookForTab has already hydrated
+  // the notebook list. Avoids O(N) refetches when multiple tabs each trigger
+  // ensure during a cold bootstrap.
+  const ensureHydratedForProjectRef = useRef<string | null>(null);
 
   const activateNotebookIfTabIsActive = useCallback(async (
     tabId: string,
@@ -102,15 +106,28 @@ export function useTabNotebookSync({
         await Promise.allSettled(pendingEnsureLocks);
       }
 
+      // Fetch notebooks ONCE at the start. Subsequent store mutations
+      // (createNotebook, renameNotebook, updateNotebookMetadata, deleteNotebook)
+      // all update the store in-place, so we can maintain a local array
+      // synchronized with those mutations instead of re-fetching.
       await loadNotebooksInStore();
-      let notebooks = useNotebookStore.getState().notebooks;
-      let notebookIds = new Set(notebooks.map((entry) => entry.notebookId));
+      ensureHydratedForProjectRef.current = projectId;
+      let notebooks = [...useNotebookStore.getState().notebooks];
+      // Track which tabs had metadata explicitly set during step 2 so step 2.5
+      // can skip them (we know their metadata is correct).
+      const metadataSetInStep2 = new Set<string>();
+      // Only phase notebooks are valid targets for preprocessing tabs. A
+      // binding to a standalone notebook must be considered stale so the
+      // reconcile loop can re-create/adopt a phase notebook.
+      const phaseNotebookIds = new Set(
+        notebooks.filter((entry) => entry.kind === 'phase').map((entry) => entry.notebookId)
+      );
       let nextTabs = tabsRef.current.map((tab) => ({ ...tab }));
       let tabsChanged = false;
 
-      // 1) Clear stale notebook bindings that no longer exist.
+      // 1) Clear stale notebook bindings (missing notebook OR wrong kind).
       nextTabs = nextTabs.map((tab) => {
-        if (tab.notebookId && !notebookIds.has(tab.notebookId)) {
+        if (tab.notebookId && !phaseNotebookIds.has(tab.notebookId)) {
           tabsChanged = true;
           return { ...tab, notebookId: null };
         }
@@ -123,7 +140,9 @@ export function useTabNotebookSync({
           .map((tab) => tab.notebookId)
           .filter((value): value is string => Boolean(value))
       );
-      const unassignedNotebooks = notebooks.filter((entry) => !mappedNotebookIds.has(entry.notebookId));
+      const unassignedNotebooks = notebooks.filter(
+        (entry) => !mappedNotebookIds.has(entry.notebookId) && entry.kind === 'phase'
+      );
 
       for (const tab of nextTabs) {
         if (tab.notebookId) {
@@ -143,13 +162,15 @@ export function useTabNotebookSync({
             await renameNotebook(adopted.notebookId, tab.name);
           }
           await updateNotebookMetadata(adopted.notebookId, buildPreprocessingMetadata(tab));
+          metadataSetInStep2.add(adopted.notebookId);
         } else {
           const created = await createNotebook(tab.name, buildPreprocessingMetadata(tab));
           assignedNotebookId = created?.notebookId ?? null;
-          if (assignedNotebookId) {
-            await loadNotebooksInStore();
-            notebooks = useNotebookStore.getState().notebooks;
-            notebookIds = new Set(notebooks.map((entry) => entry.notebookId));
+          if (created) {
+            // Append locally instead of re-fetching from the backend.
+            notebooks.push(created);
+            phaseNotebookIds.add(created.notebookId);
+            metadataSetInStep2.add(created.notebookId);
           }
         }
 
@@ -167,11 +188,13 @@ export function useTabNotebookSync({
       }
 
       // 2.5) Ensure all mapped notebooks have correct phase metadata.
-      //      Refresh from store so we see metadata set during step 2.
-      await loadNotebooksInStore();
+      //      Read the latest store snapshot (updateNotebookMetadata/createNotebook
+      //      mutate the store in-place, so no additional fetch is needed).
+      //      Skip notebooks whose metadata we already wrote in step 2.
       notebooks = useNotebookStore.getState().notebooks;
       for (const tab of nextTabs) {
         if (!tab.notebookId) continue;
+        if (metadataSetInStep2.has(tab.notebookId)) continue;
         const nb = notebooks.find((entry) => entry.notebookId === tab.notebookId);
         const meta = nb?.metadata as Record<string, unknown> | undefined;
         if (nb && (!meta?.phase || meta.tabId !== tab.id)) {
@@ -189,7 +212,11 @@ export function useTabNotebookSync({
           .map((tab) => tab.notebookId)
           .filter((value): value is string => Boolean(value))
       );
+      // Refresh from store one last time to pick up any updates and get
+      // the authoritative list for orphan detection.
+      notebooks = useNotebookStore.getState().notebooks;
       for (const notebook of notebooks) {
+        if (notebook.kind !== 'phase') continue;
         if (finalMappedNotebookIds.has(notebook.notebookId)) {
           continue;
         }
@@ -253,12 +280,21 @@ export function useTabNotebookSync({
 
       if (!forceCreate && tabState.notebookId) {
         const existingNotebookId = tabState.notebookId;
-        let hasNotebook = useNotebookStore.getState().notebooks.some((entry) => entry.notebookId === existingNotebookId);
-        if (!hasNotebook) {
+        // A preprocessing tab must be bound to a `phase` notebook. If the
+        // store entry is a standalone notebook (kind mismatch), clear the
+        // binding so the create/adopt path below can re-establish it.
+        const findPhaseNotebook = () =>
+          useNotebookStore
+            .getState()
+            .notebooks
+            .find((entry) => entry.notebookId === existingNotebookId && entry.kind === 'phase');
+        let matched = findPhaseNotebook();
+        if (!matched && ensureHydratedForProjectRef.current !== projectId) {
           await loadNotebooksInStore();
-          hasNotebook = useNotebookStore.getState().notebooks.some((entry) => entry.notebookId === existingNotebookId);
+          ensureHydratedForProjectRef.current = projectId ?? null;
+          matched = findPhaseNotebook();
         }
-        if (hasNotebook) {
+        if (matched) {
           const activated = await activateNotebookIfTabIsActive(tabState.id, existingNotebookId);
           if (activated || activeTabIdRef.current !== tabState.id) {
             return existingNotebookId;
@@ -271,7 +307,13 @@ export function useTabNotebookSync({
       if (!forceCreate) {
         const latestTabState = tabsRef.current.find((entry) => entry.id === currentTab.id) ?? tabState;
         if (!latestTabState.notebookId) {
-          await loadNotebooksInStore();
+          // Only hydrate once per project for the bootstrap path — subsequent
+          // tab ensures can rely on the in-memory store (which is kept in sync
+          // by create/rename/delete mutations).
+          if (ensureHydratedForProjectRef.current !== projectId) {
+            await loadNotebooksInStore();
+            ensureHydratedForProjectRef.current = projectId ?? null;
+          }
           const availableNotebooks = useNotebookStore.getState().notebooks;
           const tabsWithoutNotebook = tabsRef.current.filter((entry) => !entry.notebookId);
           const mappedNotebookIds = new Set(
@@ -280,7 +322,7 @@ export function useTabNotebookSync({
               .filter((value): value is string => Boolean(value))
           );
           const unassignedNotebooks = availableNotebooks.filter(
-            (entry) => !mappedNotebookIds.has(entry.notebookId)
+            (entry) => !mappedNotebookIds.has(entry.notebookId) && entry.kind === 'phase'
           );
           const exactMatch = unassignedNotebooks.find((entry) =>
             matchesPreprocessingTabNotebook(entry, latestTabState.id)
@@ -337,6 +379,7 @@ export function useTabNotebookSync({
   }, [
     createNotebook,
     loadNotebooksInStore,
+    projectId,
     renameNotebook,
     activateNotebookIfTabIsActive,
     setActiveNotebook,

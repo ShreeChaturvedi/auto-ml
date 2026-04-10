@@ -101,7 +101,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       const resolvedNotebookId =
         preferredNotebookId && notebooks.some((entry) => entry.notebookId === preferredNotebookId)
           ? preferredNotebookId
-          : notebooks[0]?.notebookId ?? null;
+          : notebooks.find((nb) => nb.kind === 'phase')?.notebookId ?? null;
       const resolvedNotebook =
         notebooks.find((entry) => entry.notebookId === resolvedNotebookId) ?? null;
 
@@ -189,7 +189,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
         const nextActiveNotebookId =
           state.activeNotebookId && notebooks.some((entry) => entry.notebookId === state.activeNotebookId)
             ? state.activeNotebookId
-            : notebooks[0]?.notebookId ?? null;
+            : notebooks.find((nb) => nb.kind === 'phase')?.notebookId ?? null;
 
         const nextNotebook =
           notebooks.find((entry) => entry.notebookId === nextActiveNotebookId) ?? null;
@@ -233,12 +233,23 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       wsClient.unsubscribe(currentNotebook.notebookId);
     }
 
+    // Abort any in-flight suggested-cell streams before clearing tracking
+    // state so they can't leak completions into the new notebook.
+    const { streamAbortControllers } = get();
+    for (const controller of streamAbortControllers.values()) {
+      try { controller.abort(); } catch { /* best-effort */ }
+    }
+
     set({
       activeNotebookId: notebookId,
       notebook: targetNotebook,
       cells: [],
       cellSummaries: [],
       lockedCells: new Map(),
+      suggestedCellIds: new Set(),
+      streamingCellIds: new Set(),
+      streamErrors: new Map(),
+      streamAbortControllers: new Map(),
       isLoading: true,
       error: null
     });
@@ -325,7 +336,13 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       }));
 
       if (get().activeNotebookId === notebookId) {
-        await get().setActiveNotebook(result.fallbackNotebookId);
+        if (result.fallbackNotebookId) {
+          await get().setActiveNotebook(result.fallbackNotebookId);
+        } else {
+          // Deleted the last standalone notebook: clear active selection.
+          // Callers (e.g. data-viewer tab close) will surface an empty state.
+          set({ activeNotebookId: null, notebook: null, cells: [], cellSummaries: [] });
+        }
       }
 
       return true;
@@ -385,6 +402,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       cells: [],
       cellSummaries: [],
       lockedCells: new Map(),
+      runAllRunningCellId: null,
       isLoading: false,
       isConnecting: false,
       isSaving: false,

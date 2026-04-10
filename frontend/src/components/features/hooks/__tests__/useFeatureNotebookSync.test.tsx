@@ -3,12 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useFeatureNotebookSync } from '../useFeatureNotebookSync';
 
-const notebookApiMocks = vi.hoisted(() => ({
-  notebooks: [] as Array<{ notebookId: string; metadata?: Record<string, unknown> }>,
-  listNotebooks: vi.fn(async () => [] as Array<{ notebookId: string; metadata?: Record<string, unknown> }>),
-  createNotebook: vi.fn(async () => ({ notebookId: 'created-nb', metadata: {} })),
-  updateNotebook: vi.fn(async () => ({ notebookId: 'created-nb', metadata: {} }))
-}));
+const notebookApiMocks = await vi.hoisted(async () => {
+  const { createNotebookApiMocks } = await import('@/test/notebookApiFixtures');
+  return createNotebookApiMocks();
+});
 
 const mockFeatureState = vi.hoisted(() => ({
   setVersionNotebookId: vi.fn()
@@ -37,6 +35,7 @@ describe('useFeatureNotebookSync', () => {
     notebookApiMocks.createNotebook.mockReset();
     (notebookApiMocks.createNotebook as ReturnType<typeof vi.fn>).mockImplementation(async (_projectId: string, request: { metadata?: Record<string, unknown> }) => ({
       notebookId: 'created-nb',
+      kind: 'phase',
       metadata: request.metadata ?? {}
     }));
     notebookApiMocks.updateNotebook.mockReset();
@@ -51,6 +50,7 @@ describe('useFeatureNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'prep-nb-1',
+        kind: 'phase',
         metadata: {
           phase: 'preprocessing',
           tabId: 'pre-wb-1'
@@ -59,6 +59,7 @@ describe('useFeatureNotebookSync', () => {
     ];
     notebookApiMocks.createNotebook.mockResolvedValue({
       notebookId: 'fe-nb-1',
+      kind: 'phase',
       metadata: {
         phase: 'feature-engineering',
         tabId: 'draft-1'
@@ -112,10 +113,90 @@ describe('useFeatureNotebookSync', () => {
     expect(mockFeatureState.setVersionNotebookId).toHaveBeenCalledWith('project-1', 'draft-1', 'fe-nb-1');
   });
 
+  it('NEVER adopts a standalone notebook via URL deep-link or binding reuse', async () => {
+    // Regression guard: a user's exploration notebook from the data viewer
+    // must never be adopted as a feature-engineering notebook, even when its
+    // metadata happens to match the current draft. `kind: 'standalone'` trumps
+    // any metadata match and the binding hint from `currentVersion.notebookId`.
+    notebookApiMocks.notebooks = [
+      {
+        notebookId: 'scratch-nb',
+        kind: 'standalone',
+        metadata: {
+          phase: 'feature-engineering',
+          tabId: 'draft-1'
+        }
+      }
+    ];
+    notebookApiMocks.createNotebook.mockResolvedValue({
+      notebookId: 'fe-nb-new',
+      kind: 'phase',
+      metadata: {
+        phase: 'feature-engineering',
+        tabId: 'draft-1'
+      }
+    });
+
+    const { result } = renderHook(() => useFeatureNotebookSync({
+      projectId: 'project-1',
+      currentVersion: {
+        id: 'draft-1',
+        projectId: 'project-1',
+        name: 'Draft Pipeline v1',
+        status: 'draft',
+        createdAt: new Date('2026-04-01T00:00:00.000Z').toISOString(),
+        readinessReport: {
+          dataSummary: {
+            addedColumns: [],
+            removedColumns: [],
+            renamedColumns: [],
+            typeChanges: [],
+            nullDeltas: [],
+            warnings: []
+          },
+          steps: []
+        },
+        // Deep-link hint — the hook must NOT adopt 'scratch-nb' even though
+        // currentVersion.notebookId points at it.
+        notebookId: 'scratch-nb'
+      }
+    }));
+
+    await waitFor(() => {
+      expect(result.current).toEqual({
+        notebookId: 'fe-nb-new',
+        isReady: true
+      });
+    });
+
+    // The standalone notebook is NEVER touched or adopted.
+    expect(notebookApiMocks.updateNotebook).not.toHaveBeenCalledWith(
+      'scratch-nb',
+      expect.anything()
+    );
+    expect(mockFeatureState.setVersionNotebookId).not.toHaveBeenCalledWith(
+      'project-1',
+      'draft-1',
+      'scratch-nb'
+    );
+    // And a fresh FE phase notebook was created instead.
+    expect(notebookApiMocks.createNotebook).toHaveBeenCalledWith(
+      'project-1',
+      expect.objectContaining({
+        name: 'Draft Pipeline v1',
+        metadata: expect.objectContaining({
+          phase: 'feature-engineering',
+          tabId: 'draft-1'
+        })
+      })
+    );
+  });
+
   it('adopts the notebook already tagged for the current FE draft', async () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'fe-nb-2',
+        kind: 'phase',
         metadata: {
           phase: 'feature-engineering',
           tabId: 'draft-2',

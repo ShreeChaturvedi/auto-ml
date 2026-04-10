@@ -56,26 +56,36 @@ export function setupWSHandlers(
 
   const unsubscribeCellDeleted = wsClient.on<WSServerMessage>('cell:deleted', (msg) => {
     if (msg.type === 'cell:deleted') {
+      // Guard: only act if this cell is already known to the active notebook.
+      // WS cell:deleted has no notebookId field, so we rely on membership.
+      const state = get();
+      if (!state.cells.some((c) => c.cellId === msg.cellId)) return;
       get().removeCellLocally(msg.cellId);
     }
   });
 
   const unsubscribeCellLocked = wsClient.on<WSServerMessage>('cell:locked', (msg) => {
     if (msg.type === 'cell:locked') {
+      const state = get();
+      if (!state.cells.some((c) => c.cellId === msg.cellId)) return;
       get().setCellLock(msg.cellId, msg.lockedBy as LockOwner);
     }
   });
 
   const unsubscribeCellUnlocked = wsClient.on<WSServerMessage>('cell:unlocked', (msg) => {
     if (msg.type === 'cell:unlocked') {
+      const state = get();
+      if (!state.cells.some((c) => c.cellId === msg.cellId)) return;
       get().clearCellLock(msg.cellId);
     }
   });
 
   const unsubscribeCellExecuting = wsClient.on<WSServerMessage>('cell:executing', (msg) => {
     if (msg.type === 'cell:executing') {
-      set((state) => ({
-        cells: state.cells.map((cell) =>
+      const state = get();
+      if (!state.cells.some((c) => c.cellId === msg.cellId)) return;
+      set((prev) => ({
+        cells: prev.cells.map((cell) =>
           cell.cellId === msg.cellId
             ? { ...cell, executionStatus: 'running' as const, output: [], outputRefs: [] }
             : cell
@@ -108,6 +118,11 @@ export function setupWSHandlers(
 
   const unsubscribeCellsReset = wsClient.on<WSServerMessage>('notebook:cells_reset', (msg) => {
     if (msg.type === 'notebook:cells_reset') {
+      // Reject cells_reset events targeting a different notebook than the
+      // currently active one. This stops a stale savepoint restore from
+      // clobbering cells after the user has switched notebooks.
+      if (msg.notebookId !== get().activeNotebookId) return;
+
       // Ensure safe defaults for fields the server may omit on restored cells
       const cells = [...msg.cells]
         .sort((a, b) => a.position - b.position)

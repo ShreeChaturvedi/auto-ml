@@ -197,7 +197,14 @@ export function AgenticShell({
     setChatInput('');
   }, [setEditingMessageId]);
 
-  const { clearAfter: savepointsClearAfter, getDiff: savepointsGetDiff } = savepoints;
+  const { clearAfter: savepointsClearAfter, getDiff: savepointsGetDiff, resetLocal: savepointsResetLocal } = savepoints;
+
+  // Clear the savepoint map and diff cache whenever the active notebook
+  // changes so savepoint ids from notebook A cannot be reused against
+  // notebook B after a switch.
+  useEffect(() => {
+    savepointsResetLocal();
+  }, [activeNotebookId, savepointsResetLocal]);
 
   const handleRevertToMessage = useCallback((messageId: string) => {
     const turnIdx = getTurnIndex(messages, messageId);

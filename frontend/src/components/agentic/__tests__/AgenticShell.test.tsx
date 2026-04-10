@@ -67,7 +67,8 @@ vi.mock('@/hooks/useSavepoints', () => ({
     loadingSavepointId: null,
     activeSavepointId: null,
     handleLoadSavepoint: vi.fn(),
-    handleDismissSavepoint: vi.fn()
+    handleDismissSavepoint: vi.fn(),
+    resetLocal: vi.fn()
   })
 }));
 

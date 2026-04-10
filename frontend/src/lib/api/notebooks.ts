@@ -1,5 +1,6 @@
 import type {
   Notebook,
+  NotebookKind,
   NotebookCell,
   CellSummary,
   CreateNotebookRequest,
@@ -8,7 +9,8 @@ import type {
   CreateCellRequest,
   UpdateCellRequest,
   ReorderCellsRequest,
-  ExecutionResult
+  ExecutionResult,
+  ExportedDatasetSummary
 } from '@/types/notebook';
 import { apiRequest, getApiBaseUrl } from './client';
 
@@ -16,18 +18,19 @@ import { apiRequest, getApiBaseUrl } from './client';
 // Notebook Endpoints
 // ============================================================
 
-/**
- * Get the default notebook for a project (legacy endpoint).
- */
-export async function getNotebook(projectId: string): Promise<Notebook> {
-  return apiRequest<Notebook>(`/projects/${projectId}/notebook`);
+export interface ListNotebooksOptions {
+  kind?: NotebookKind;
 }
 
 /**
- * List notebooks for a project.
+ * List notebooks for a project, optionally filtered by kind.
  */
-export async function listNotebooks(projectId: string): Promise<Notebook[]> {
-  return apiRequest<Notebook[]>(`/projects/${projectId}/notebooks`);
+export async function listNotebooks(
+  projectId: string,
+  options: ListNotebooksOptions = {}
+): Promise<Notebook[]> {
+  const query = options.kind ? `?kind=${encodeURIComponent(options.kind)}` : '';
+  return apiRequest<Notebook[]>(`/projects/${projectId}/notebooks${query}`);
 }
 
 /**
@@ -129,14 +132,23 @@ export async function deleteCell(cellId: string): Promise<void> {
 // Cell Execution Endpoints
 // ============================================================
 
+export interface RunCellResponse extends ExecutionResult {
+  /**
+   * Datasets created via `save_to_project()` during this cell's execution.
+   * Present only for standalone notebook cells. Populated by reading the
+   * `_exports/.manifest.json` file written by the Python helper.
+   */
+  exportedDatasets?: ExportedDatasetSummary[];
+}
+
 /**
  * Execute a code cell.
  */
 export async function runCell(
   cellId: string,
   projectId: string
-): Promise<ExecutionResult> {
-  return apiRequest<ExecutionResult>(`/cells/${cellId}/run`, {
+): Promise<RunCellResponse> {
+  return apiRequest<RunCellResponse>(`/cells/${cellId}/run`, {
     method: 'POST',
     body: { projectId }
   });

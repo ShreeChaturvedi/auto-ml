@@ -36,7 +36,6 @@ vi.mock('@/lib/api/notebooks', () => ({
   createNotebook: (...args: unknown[]) => createNotebookApiMock(...args),
   updateNotebook: (...args: unknown[]) => updateNotebookApiMock(...args),
   deleteNotebook: (...args: unknown[]) => deleteNotebookApiMock(...args),
-  getNotebook: vi.fn(),
   listCells: vi.fn().mockResolvedValue([]),
   getCell: vi.fn(),
   createCell: vi.fn(),
@@ -91,6 +90,7 @@ function makeNotebook(overrides: Partial<Notebook> = {}): Notebook {
     notebookId: 'nb-1',
     projectId: 'proj-1',
     name: 'Notebook 1',
+    kind: 'phase',
     metadata: {},
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -275,6 +275,7 @@ describe('useTabNotebookSync', () => {
     it('returns existing notebookId when tab already has a valid binding', async () => {
       const nb = makeNotebook({
         notebookId: 'nb-existing',
+        kind: 'phase',
         metadata: { phase: 'preprocessing', tabId: 'tab-bound', tabName: 'P1' }
       });
       const tab = makeTab({ id: 'tab-bound', name: 'P1', notebookId: 'nb-existing' });
@@ -300,10 +301,12 @@ describe('useTabNotebookSync', () => {
     it('does not clear or recreate a valid notebook binding for an inactive tab', async () => {
       const visibleNotebook = makeNotebook({
         notebookId: 'nb-visible',
+        kind: 'phase',
         metadata: { phase: 'preprocessing', tabId: 'tab-visible', tabName: 'Visible' }
       });
       const backgroundNotebook = makeNotebook({
         notebookId: 'nb-background',
+        kind: 'phase',
         metadata: { phase: 'preprocessing', tabId: 'tab-background', tabName: 'Background' }
       });
       const visibleTab = makeTab({ id: 'tab-visible', name: 'Visible', notebookId: 'nb-visible' });
@@ -332,6 +335,7 @@ describe('useTabNotebookSync', () => {
     it('restores the visible notebook after creating one for an inactive tab', async () => {
       const visibleNotebook = makeNotebook({
         notebookId: 'nb-visible',
+        kind: 'phase',
         metadata: { phase: 'preprocessing', tabId: 'tab-visible', tabName: 'Visible' }
       });
       const visibleTab = makeTab({ id: 'tab-visible', name: 'Visible', notebookId: 'nb-visible' });
@@ -833,6 +837,81 @@ describe('useTabNotebookSync', () => {
       });
 
       expect(listNotebooksMock).not.toHaveBeenCalled();
+    });
+
+    it('does NOT delete a standalone notebook during preprocessing reconcile', async () => {
+      // Regression guard: a standalone (exploration) notebook from the data
+      // viewer must never be deleted by the preprocessing reconcile loop, even
+      // when it has no binding to any preprocessing tab.
+      const boundNb = makeNotebook({
+        notebookId: 'nb-bound',
+        name: 'Processing 1',
+        kind: 'phase',
+        metadata: { phase: 'preprocessing', tabId: 'tab-1' }
+      });
+      const standaloneNb = makeNotebook({
+        notebookId: 'nb-standalone',
+        name: 'Scratch Notebook',
+        kind: 'standalone',
+        metadata: {}
+      });
+      const tab = makeTab({ id: 'tab-1', name: 'Processing 1', notebookId: 'nb-bound' });
+      const { result, tabsRef } = renderSyncHook({
+        tabs: [tab],
+        activeTabId: 'tab-1'
+      });
+      tabsRef.current = [tab];
+
+      enableStoreForProject('proj-1', [boundNb, standaloneNb]);
+      listNotebooksMock.mockResolvedValue([boundNb, standaloneNb]);
+
+      await act(async () => {
+        await result.current.reconcileTabNotebookMappings();
+      });
+
+      // Standalone notebook must never be deleted.
+      expect(deleteNotebookApiMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'nb-standalone'
+      );
+      // And it must still be present in the store.
+      const notebooks = useNotebookStore.getState().notebooks;
+      expect(notebooks.some((n) => n.notebookId === 'nb-standalone')).toBe(true);
+    });
+
+    it('does NOT adopt a standalone notebook for an unbound tab', async () => {
+      // An unassigned tab must create a fresh phase notebook instead of
+      // adopting a standalone one, even if the standalone has no binding.
+      const standaloneNb = makeNotebook({
+        notebookId: 'nb-standalone',
+        name: 'Scratch',
+        kind: 'standalone',
+        metadata: {}
+      });
+      const tab = makeTab({ id: 'tab-1', name: 'Processing 1', notebookId: null });
+      const { result, setTabNotebookIdMock, tabsRef } = renderSyncHook({
+        tabs: [tab],
+        activeTabId: 'tab-1'
+      });
+      tabsRef.current = [tab];
+
+      enableStoreForProject('proj-1', [standaloneNb]);
+      listNotebooksMock.mockResolvedValue([standaloneNb]);
+
+      await act(async () => {
+        await result.current.reconcileTabNotebookMappings();
+      });
+
+      // The standalone's id must never be assigned to the tab.
+      expect(setTabNotebookIdMock).not.toHaveBeenCalledWith('tab-1', 'nb-standalone');
+      // A new phase notebook should have been created instead.
+      expect(createNotebookApiMock).toHaveBeenCalled();
+      const createCall = createNotebookApiMock.mock.calls[0];
+      expect(createCall[1].metadata).toEqual({
+        phase: 'preprocessing',
+        tabId: 'tab-1',
+        tabName: 'Processing 1'
+      });
     });
 
     it('deletes orphan notebooks not bound to any tab', async () => {

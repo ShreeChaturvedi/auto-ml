@@ -54,17 +54,23 @@ function readMetadata(notebook: Pick<Notebook, 'metadata'> | undefined): Record<
 }
 
 function matchesTrainingWorkbookNotebook(
-  notebook: Pick<Notebook, 'notebookId' | 'metadata'>,
+  notebook: Pick<Notebook, 'notebookId' | 'kind' | 'metadata'>,
   workbookId: string
 ): boolean {
+  // Standalone notebooks must never be adopted by phase workflows, even if
+  // their metadata happens to match — they are user-owned exploration
+  // scratch spaces from the data viewer phase.
+  if (notebook.kind !== 'phase') return false;
   const metadata = readMetadata(notebook);
   return metadata?.phase === TRAINING_PHASE && metadata?.tabId === workbookId;
 }
 
 function isUsableTrainingNotebookBinding(
-  notebook: Pick<Notebook, 'notebookId' | 'metadata'>,
+  notebook: Pick<Notebook, 'notebookId' | 'kind' | 'metadata'>,
   workbookId: string
 ): boolean {
+  if (notebook.kind !== 'phase') return false;
+
   const metadata = readMetadata(notebook);
 
   // Unphased notebooks (null metadata OR empty object OR phase field

@@ -6,12 +6,10 @@ import type { WorkbookEntry } from '@/types/workbook';
 
 import { useTrainingNotebookSync } from '../useTrainingNotebookSync';
 
-const notebookApiMocks = vi.hoisted(() => ({
-  notebooks: [] as Array<{ notebookId: string; metadata?: Record<string, unknown> }>,
-  listNotebooks: vi.fn(async () => [] as Array<{ notebookId: string; metadata?: Record<string, unknown> }>),
-  createNotebook: vi.fn(async () => ({ notebookId: 'created-nb', metadata: {} })),
-  updateNotebook: vi.fn(async () => ({ notebookId: 'created-nb', metadata: {} }))
-}));
+const notebookApiMocks = await vi.hoisted(async () => {
+  const { createNotebookApiMocks } = await import('@/test/notebookApiFixtures');
+  return createNotebookApiMocks();
+});
 
 vi.mock('@/lib/api/notebooks', () => ({
   listNotebooks: (...args: unknown[]) => (notebookApiMocks.listNotebooks as (...a: unknown[]) => unknown)(...args),
@@ -39,6 +37,7 @@ describe('useTrainingNotebookSync', () => {
       async (_projectId: string, request: { name: string; metadata?: Record<string, unknown> }) => ({
         notebookId: 'created-training-nb',
         name: request.name,
+        kind: 'phase' as const,
         metadata: request.metadata ?? {}
       })
     );
@@ -47,6 +46,7 @@ describe('useTrainingNotebookSync', () => {
     (notebookApiMocks.updateNotebook as ReturnType<typeof vi.fn>).mockImplementation(
       async (notebookId: string, request: { metadata?: Record<string, unknown> }) => ({
         notebookId,
+        kind: 'phase' as const,
         metadata: request.metadata ?? {}
       })
     );
@@ -84,6 +84,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'bound-training-nb',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
       }
     ];
@@ -107,6 +108,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'orphan-training-nb',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-7', tabName: 'Workbook 7' }
       }
     ];
@@ -132,6 +134,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'fe-draft-nb',
+        kind: 'phase',
         metadata: { phase: 'feature-engineering', tabId: 'draft-1', tabName: 'Draft Pipeline v1' }
       }
     ];
@@ -166,6 +169,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'stale-nb',
+        kind: 'phase',
         metadata: { phase: 'feature-engineering', tabId: 'draft-x' }
       }
     ];
@@ -190,6 +194,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'legacy-nb',
+        kind: 'phase', // phase notebook with drifted metadata — adoptable
         metadata: {} // unphased legacy notebook — adoptable
       }
     ];
@@ -221,6 +226,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'fe-deep-linked',
+        kind: 'phase',
         metadata: { phase: 'feature-engineering', tabId: 'draft-1' }
       }
     ];
@@ -242,10 +248,39 @@ describe('useTrainingNotebookSync', () => {
     expect(setWorkbookNotebookId).not.toHaveBeenCalledWith(expect.any(String), 'fe-deep-linked');
   });
 
+  it('NEVER adopts a standalone notebook via URL deep-link — creates a new training notebook instead', async () => {
+    // Regression guard: a user's exploration notebook from the data viewer
+    // must never get adopted as a training notebook, even via deep-link URL.
+    notebookApiMocks.notebooks = [
+      {
+        notebookId: 'scratch-nb',
+        kind: 'standalone',
+        metadata: { phase: 'training', tabId: 'training-wb-1' } // Even with phase metadata, kind trumps.
+      }
+    ];
+    const setWorkbookNotebookId = vi.fn();
+
+    const { result } = renderHook(() => useTrainingNotebookSync({
+      projectId: 'project-1',
+      activeWorkbook: makeWorkbook({ id: 'training-wb-1', name: 'Workbook 1' }),
+      setWorkbookNotebookId,
+      initialNotebookId: 'scratch-nb'
+    }));
+
+    await waitFor(() => {
+      expect(result.current.notebookId).toBe('created-training-nb');
+    });
+
+    // The standalone notebook is NEVER touched or adopted, even with matching metadata.
+    expect(notebookApiMocks.updateNotebook).not.toHaveBeenCalledWith('scratch-nb', expect.anything());
+    expect(setWorkbookNotebookId).not.toHaveBeenCalledWith(expect.any(String), 'scratch-nb');
+  });
+
   it('adopts a URL deep-link pointing at a valid training notebook', async () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'deep-training-nb',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1' }
       }
     ];
@@ -304,6 +339,7 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'bound-training-nb',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
       }
     ];
@@ -381,10 +417,12 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'training-nb-old',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
       },
       {
         notebookId: 'training-nb-new',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
       }
     ];
@@ -430,10 +468,12 @@ describe('useTrainingNotebookSync', () => {
     notebookApiMocks.notebooks = [
       {
         notebookId: 'training-nb-old',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
       },
       {
         notebookId: 'training-nb-new',
+        kind: 'phase',
         metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
       }
     ];

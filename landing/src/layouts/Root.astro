@@ -1,0 +1,35 @@
+---
+import '@/styles/globals.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Agentic AutoML Platform — The fastest way to build production ML models, agentically.',
+  description = 'Upload a CSV. Describe your goal. Walk away. Come back to deployed models, ranked experiments, and a notebook that explains every decision.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0A0A0B" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>{title}</title>
+    <script is:inline>
+      // Mark demo mode so imported components can short-circuit API calls
+      window.__AGENTIC_DEMO_MODE__ = true;
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

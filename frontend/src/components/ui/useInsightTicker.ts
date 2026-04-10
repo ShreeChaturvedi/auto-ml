@@ -39,6 +39,7 @@ export function useInsightTicker(
   const isAnimatingRef = useRef(false);
   const itemTextLengthsRef = useRef(itemTextLengths);
   itemTextLengthsRef.current = itemTextLengths;
+  const itemSignature = (itemTextLengths ?? []).join('\u0000');
 
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -48,11 +49,23 @@ export function useInsightTicker(
 
   // Reset index if itemCount shrinks
   useEffect(() => {
-    if (itemCount > 0 && currentIndexRef.current >= itemCount) {
+    if (itemCount === 0) {
       currentIndexRef.current = 0;
+      isAnimatingRef.current = false;
       setCurrentIndex(0);
+      setIsAnimating(false);
+      setSkipTransition(false);
+      return;
     }
-  }, [itemCount]);
+
+    if (currentIndexRef.current >= itemCount) {
+      currentIndexRef.current = 0;
+      isAnimatingRef.current = false;
+      setCurrentIndex(0);
+      setIsAnimating(false);
+      setSkipTransition(false);
+    }
+  }, [itemCount, itemSignature]);
 
   useEffect(() => {
     const clearPending = () => {
@@ -113,7 +126,10 @@ export function useInsightTicker(
     };
   }, [itemCount, interval, prefersReducedMotion]);
 
-  const nextIndex = itemCount > 0 ? (currentIndex + 1) % itemCount : 0;
+  const safeCurrentIndex = itemCount > 0
+    ? Math.min(currentIndex, itemCount - 1)
+    : 0;
+  const nextIndex = itemCount > 0 ? (safeCurrentIndex + 1) % itemCount : 0;
 
   const outgoingTransition = skipTransition
     ? 'none'
@@ -123,7 +139,7 @@ export function useInsightTicker(
     : `transform ${SLIDE_DURATION_MS}ms ease-out`;
 
   return {
-    currentIndex,
+    currentIndex: safeCurrentIndex,
     nextIndex,
     isAnimating,
     outgoingTransition,
@@ -131,4 +147,3 @@ export function useInsightTicker(
     prefersReducedMotion,
   };
 }
-

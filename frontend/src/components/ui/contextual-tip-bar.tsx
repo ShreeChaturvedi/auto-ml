@@ -42,10 +42,14 @@ interface TipTickerProps {
 export function TipTicker({ tips, interval = 4000, className, rowClassName }: TipTickerProps) {
   const showTips = useSyncExternalStore(subscribeShowTipsPref, getShowTipsPref);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const safeTips = useMemo(
+    () => tips.filter((tip): tip is ContextualTip => Boolean(tip?.icon) && tip?.content != null),
+    [tips],
+  );
 
   const textLengths = useMemo(
-    () => tips.map((t) => (typeof t.content === 'string' ? t.content.length : 40)),
-    [tips],
+    () => safeTips.map((t) => (typeof t.content === 'string' ? t.content.length : 40)),
+    [safeTips],
   );
 
   const {
@@ -54,14 +58,17 @@ export function TipTicker({ tips, interval = 4000, className, rowClassName }: Ti
     isAnimating,
     outgoingTransition,
     incomingTransition,
-  } = useInsightTicker(tips.length, prefersReducedMotion ? 0 : interval, textLengths);
+  } = useInsightTicker(safeTips.length, prefersReducedMotion ? 0 : interval, textLengths);
 
-  if (!showTips || tips.length === 0) return null;
+  if (!showTips || safeTips.length === 0) return null;
+
+  const currentTip = safeTips[currentIndex] ?? safeTips[0];
+  const nextTip = safeTips[nextIndex] ?? currentTip;
 
   return (
     <div className={cn('relative overflow-hidden', className)}>
       <TipRow
-        tip={tips[currentIndex]}
+        tip={currentTip}
         className={rowClassName}
         style={{
           transform: isAnimating ? 'translateY(-100%)' : 'translateY(0)',
@@ -70,7 +77,7 @@ export function TipTicker({ tips, interval = 4000, className, rowClassName }: Ti
         }}
       />
       <TipRow
-        tip={tips[nextIndex]}
+        tip={nextTip}
         className={rowClassName}
         style={{
           transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',

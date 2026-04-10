@@ -78,7 +78,11 @@ export function InsightTicker({
   onAction,
 }: InsightTickerProps) {
   const [open, setOpen] = useState(false);
-  const itemTextLengths = useMemo(() => items.map(item => item.text.length), [items]);
+  const safeItems = useMemo(
+    () => items.filter((item): item is InsightTickerItem => Boolean(item?.icon) && typeof item?.text === 'string'),
+    [items],
+  );
+  const itemTextLengths = useMemo(() => safeItems.map(item => item.text.length), [safeItems]);
   const {
     currentIndex,
     nextIndex,
@@ -86,12 +90,12 @@ export function InsightTicker({
     outgoingTransition,
     incomingTransition,
     prefersReducedMotion,
-  } = useInsightTicker(items.length, interval, itemTextLengths);
+  } = useInsightTicker(safeItems.length, interval, itemTextLengths);
 
-  if (items.length === 0) return null;
+  if (safeItems.length === 0) return null;
 
-  const currentItem = items[currentIndex];
-  const nextItem = items[nextIndex];
+  const currentItem = safeItems[currentIndex] ?? safeItems[0];
+  const nextItem = safeItems[nextIndex] ?? currentItem;
 
   const ticker = (
     <div
@@ -132,9 +136,9 @@ export function InsightTicker({
       </div>
 
       {/* Counter */}
-      {items.length > 1 && (
+      {safeItems.length > 1 && (
         <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 ml-2">
-          {currentIndex + 1} of {items.length}
+          {currentIndex + 1} of {safeItems.length}
         </span>
       )}
     </div>
@@ -148,7 +152,7 @@ export function InsightTicker({
       <PopoverContent className="w-80 p-2" align="start">
         <TooltipProvider delayDuration={200}>
           <div className="space-y-1 max-h-64 overflow-y-auto">
-            {items.map((item, i) => {
+            {safeItems.map((item, i) => {
               const Icon = item.icon;
               const iconColor = severityColors[item.severity ?? 'low'];
               return (

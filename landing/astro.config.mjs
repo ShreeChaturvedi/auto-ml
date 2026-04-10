@@ -1,0 +1,18 @@
+import { defineConfig } from 'astro/config';
+import react from '@astrojs/react';
+import tailwind from '@astrojs/tailwind';
+
+export default defineConfig({
+  integrations: [
+    react(),
+    tailwind({ applyBaseStyles: false }),
+  ],
+  site: 'https://agentic-automl.dev',
+  output: 'static',
+  server: { port: 4321 },
+  vite: {
+    ssr: {
+      noExternal: ['@frontend/*', 'recharts', 'streamdown'],
+    },
+  },
+});

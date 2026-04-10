@@ -8,8 +8,10 @@
     "build": "astro build",
     "preview": "astro preview",
     "test": "vitest run",
+    "test:a11y": "playwright test src/tests/a11y.spec.ts",
     "lint": "eslint .",
-    "typecheck": "astro check && tsc --noEmit"
+    "typecheck": "astro check && tsc --noEmit",
+    "test:lighthouse": "lhci autorun"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.0",
@@ -34,6 +36,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
     "@eslint/js": "^9.39.4",
+    "@lhci/cli": "^0.14.0",
     "@playwright/test": "^1.50.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",

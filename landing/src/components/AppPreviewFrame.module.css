@@ -1,0 +1,50 @@
+.outer {
+  position: relative;
+  width: 100%;
+  max-width: 1680px;
+  margin: 64px auto 0;
+  padding: 0 32px;
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border-strong);
+  border-radius: 12px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Pre-blurred outer glow PNG (deferred to Gemini). */
+.glow {
+  position: absolute;
+  inset: -160px;
+  z-index: -2;
+  opacity: 0.55;
+  pointer-events: none;
+  /* Fallback radial gradient until the Gemini PNG lands (issue #310). */
+  background: radial-gradient(
+    ellipse 60% 60% at 50% 50%,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    transparent 70%
+  );
+}
+.glow[data-has-png='true'] {
+  background: none;
+}
+.glow[data-has-png='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/assets/preview-glow.png') center center / cover no-repeat;
+}
+
+.innerGrain {
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  z-index: 50;
+}

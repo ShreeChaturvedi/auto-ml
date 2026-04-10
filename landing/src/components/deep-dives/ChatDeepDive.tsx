@@ -7,6 +7,7 @@ import type {
 } from '@frontend/components/llm/modelOptions';
 import { Check, MousePointer2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './ChatDeepDive.module.css';
 
 const DYNAMIC_PLACEHOLDERS = [
@@ -56,26 +57,22 @@ const REASONING_OPTIONS: readonly ReasoningEffortOption[] = [
 
 const NOOP = () => {};
 
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 function ChatDeepDiveVisual() {
-  // Seed state with the final values when the user prefers reduced motion so
-  // we never have to call setState synchronously inside the effect below.
-  // Lazy initializers ensure window.matchMedia is only read once, at mount.
+  // Reactive hook so toggling OS reduced-motion mid-session is respected.
+  // State is seeded to the final frame when reduced motion is set at mount
+  // so we never call setState synchronously inside the effect below.
+  const reduced = usePrefersReducedMotion();
   const [value, setValue] = useState(() =>
-    prefersReducedMotion() ? SCRIPTED_TRANSCRIPTION : '',
+    reduced ? SCRIPTED_TRANSCRIPTION : '',
   );
   const [showCursor, setShowCursor] = useState(false);
-  const [toolsVisible, setToolsVisible] = useState(() => prefersReducedMotion());
+  const [toolsVisible, setToolsVisible] = useState(() => reduced);
 
   useEffect(() => {
     // Scripted sequence — kicks off shortly after mount. Honors reduced
     // motion by skipping the typing animation entirely (state was already
     // seeded to the final frame at mount time via lazy initializers).
-    if (prefersReducedMotion()) {
+    if (reduced) {
       return;
     }
 
@@ -105,7 +102,7 @@ function ChatDeepDiveVisual() {
       if (typingInterval) clearInterval(typingInterval);
       if (finalTimer) clearTimeout(finalTimer);
     };
-  }, []);
+  }, [reduced]);
 
   return (
     <div className={styles.root}>

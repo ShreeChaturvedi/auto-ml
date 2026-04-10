@@ -12,6 +12,7 @@ import { TooltipProvider } from '@frontend/components/ui/tooltip';
 import { NotebookCellOutput } from '@frontend/components/notebook/NotebookCellOutput';
 import type { RichOutput } from '@frontend/lib/api/execution';
 
+import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import styles from './NotebookDeepDive.module.css';
 
 // Static 8-line Python cell using real NovaCraft columns. Rendered through
@@ -63,20 +64,14 @@ const HISTOGRAM = [
 
 type Phase = 'idle' | 'running' | 'done';
 
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 function NotebookDeepDiveVisual() {
-  // Seed to the final 'done' frame under reduced motion so we never need to
-  // call setState synchronously inside the effect below.
-  const [phase, setPhase] = useState<Phase>(() =>
-    prefersReducedMotion() ? 'done' : 'idle',
-  );
+  // Reactive hook — also seeds the initial phase so we never call setState
+  // synchronously inside the effect below.
+  const reduced = usePrefersReducedMotion();
+  const [phase, setPhase] = useState<Phase>(() => (reduced ? 'done' : 'idle'));
 
   useEffect(() => {
-    if (prefersReducedMotion()) {
+    if (reduced) {
       return;
     }
 
@@ -87,7 +82,7 @@ function NotebookDeepDiveVisual() {
       window.clearTimeout(startTimer);
       window.clearTimeout(doneTimer);
     };
-  }, []);
+  }, [reduced]);
 
   return (
     <TooltipProvider delayDuration={150}>

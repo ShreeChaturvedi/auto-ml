@@ -12,6 +12,12 @@ interface UseCursorOutlineOptions {
  *
  * Respects `prefers-reduced-motion`: when reduced, no listeners are attached
  * and the element's opacity stays at 0.
+ *
+ * Performance:
+ * - The global `mousemove` handler is rAF-throttled so CSS-var writes cap at
+ *   ~60fps regardless of input device rate.
+ * - The listener is only attached while the target element is intersecting
+ *   the viewport, so off-screen previews pay zero cost during scroll.
  */
 export function useCursorOutline({
   proximityThreshold = 220,
@@ -34,12 +40,18 @@ export function useCursorOutline({
 
     if (reducedMotion) return;
 
-    const handleMouseMove = (event: MouseEvent) => {
+    let rafId: number | null = null;
+    let latestEvent: { clientX: number; clientY: number } | null = null;
+
+    const flush = () => {
+      rafId = null;
+      const ev = latestEvent;
       const node = ref.current;
-      if (!node) return;
+      if (!ev || !node) return;
+
       const rect = node.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
+      const x = ev.clientX - rect.left;
+      const y = ev.clientY - rect.top;
 
       // Shortest distance from cursor to element's rectangle.
       const clampedX = Math.max(0, Math.min(x, rect.width));
@@ -59,8 +71,62 @@ export function useCursorOutline({
       );
     };
 
-    document.addEventListener('mousemove', handleMouseMove, { passive: true });
-    return () => document.removeEventListener('mousemove', handleMouseMove);
+    const handleMouseMove = (event: MouseEvent) => {
+      latestEvent = { clientX: event.clientX, clientY: event.clientY };
+      if (rafId !== null) return;
+      if (typeof requestAnimationFrame === 'function') {
+        rafId = requestAnimationFrame(flush);
+      } else {
+        // Fallback for environments without rAF (older jsdom): run synchronously.
+        flush();
+      }
+    };
+
+    let attached = false;
+    const attach = () => {
+      if (attached) return;
+      document.addEventListener('mousemove', handleMouseMove, { passive: true });
+      attached = true;
+    };
+    const detach = () => {
+      if (!attached) return;
+      document.removeEventListener('mousemove', handleMouseMove);
+      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = null;
+      latestEvent = null;
+      // Fade out the glow when the element leaves the viewport.
+      const node = ref.current;
+      if (node) node.style.setProperty('--outline-opacity', '0');
+      attached = false;
+    };
+
+    // If IntersectionObserver is unavailable (SSR, older jsdom) or the ref
+    // isn't attached yet (tests assign it post-mount), fall back to attaching
+    // the listener unconditionally.
+    const el = ref.current;
+    if (typeof IntersectionObserver === 'undefined' || !el) {
+      attach();
+      return () => {
+        detach();
+      };
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) attach();
+        else detach();
+      },
+      { threshold: 0 },
+    );
+    io.observe(el);
+
+    return () => {
+      io.disconnect();
+      detach();
+    };
   }, [proximityThreshold]);
 
   return { ref };

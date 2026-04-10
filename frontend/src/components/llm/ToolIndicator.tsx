@@ -11,7 +11,7 @@
  * - Result count badge shown inline for data-returning tools
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import { ToolResultRenderer, EXPANDABLE_TOOLS } from '@/components/llm/ToolResultRenderer';
@@ -33,7 +33,9 @@ interface ToolDisplay {
     call: ToolCall;
     status: ToolStatus;
     result?: ToolResult;
-    label: string;
+    // ReactNode so dataset tool labels can inline a real file-type icon
+    // alongside the filename (see `datasetLabelWithFile`).
+    label: ReactNode;
     hasDropdown: boolean;
 }
 
@@ -151,7 +153,7 @@ export function ToolIndicator({
                 call,
                 status,
                 result,
-                label: getToolLabel(call, status),
+                label: getToolLabel(call, status, result),
                 hasDropdown: EXPANDABLE_TOOLS.has(call.tool)
             };
         });

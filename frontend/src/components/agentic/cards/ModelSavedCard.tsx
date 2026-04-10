@@ -13,7 +13,7 @@
  */
 
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ExternalLink, Sparkles, Target, TrendingUp, Shapes } from 'lucide-react';
+import { ArrowRight, BadgeCheck, ExternalLink, Target, TrendingUp, Shapes } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -138,7 +138,7 @@ export function ModelSavedCard({
 
   return (
     <ToolCardShell
-      icon={Sparkles}
+      icon={BadgeCheck}
       iconClassName="text-metric-positive"
       title="Model saved"
       subtitle={modelName}

@@ -84,7 +84,11 @@ function MonacoCodeBlock({
           overviewRulerBorder: false,
           overviewRulerLanes: 0,
           lineNumbers: showLineNumbers ? 'on' : 'off',
-          lineDecorationsWidth: showLineNumbers ? undefined : 0,
+          // Monaco has no "horizontal padding" knob. `lineDecorationsWidth`
+          // reserves a gutter between the viewport edge and the first glyph
+          // of source — set to 12px (matching the `<pre>` fallback's `p-3`)
+          // so code never visually touches the card's left border.
+          lineDecorationsWidth: 12,
           lineNumbersMinChars: showLineNumbers ? undefined : 0,
           fontSize: 12,
           lineHeight: 18,

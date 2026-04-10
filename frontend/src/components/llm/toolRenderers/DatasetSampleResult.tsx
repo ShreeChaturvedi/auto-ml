@@ -18,13 +18,11 @@ export function DatasetSampleResult({ data }: { data: DatasetSampleOutput }) {
 
   return (
     <div className="space-y-2">
-      {data.filename && (
-        <p className="text-[11px] text-muted-foreground">
-          Sample from <span className="font-medium text-foreground">{data.filename}</span>
-          {' · '}{sample.length} row{sample.length !== 1 ? 's' : ''}
-          {hasMoreCols && ` · showing ${displayCols.length} of ${columnNames.length} columns`}
-        </p>
-      )}
+      {/* Filename + file-type icon live in the parent `ToolIndicator` label. */}
+      <p className="text-[11px] text-muted-foreground">
+        {sample.length} row{sample.length !== 1 ? 's' : ''}
+        {hasMoreCols && ` · showing ${displayCols.length} of ${columnNames.length} columns`}
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full text-[10px]">
           <thead>

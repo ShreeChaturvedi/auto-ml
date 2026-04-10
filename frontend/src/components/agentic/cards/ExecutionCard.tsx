@@ -142,10 +142,13 @@ export function ExecutionCard({
     status === 'failed' && 'text-metric-negative',
   );
 
-  // IMPORTANT: these strings are preserved verbatim so that
-  // `useLifecycleCards.test.tsx` lines 50 + 77 still match.
+  // The running label drops its "..." in favour of the metallic
+  // `shimmer-text` sweep — the ellipsis and the shimmer were saying the
+  // same thing. The succeeded / failed strings are still checked verbatim
+  // by `useLifecycleCards.test.tsx` at lines 50 + 77, so they must not
+  // change.
   const title =
-    status === 'running' ? 'Executing...'
+    status === 'running' ? 'Executing'
       : status === 'success' ? 'Execution succeeded'
         : 'Execution failed';
 

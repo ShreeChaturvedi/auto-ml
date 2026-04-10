@@ -1,5 +1,3 @@
-import { Badge } from '@/components/ui/badge';
-import { resolveFileIconByFilename } from '@/lib/fileUtils';
 import { formatNumber, truncate, dtypeInfo } from './shared';
 import { DimensionPill } from './sharedComponents';
 
@@ -27,26 +25,16 @@ export interface DatasetProfileOutput {
 
 export function DatasetProfileResult({ data }: { data: DatasetProfileOutput }) {
   const columns = data.columns ?? [];
-  const { Icon, colorClass } = resolveFileIconByFilename(data.filename, data.fileType);
+  // Filename + file-type icon now live in the parent `ToolIndicator` label
+  // ("Read dataset profile for <icon> <name>"), so this renderer only shows
+  // the row × col dimension pill and the per-column stats table.
   return (
     <div className="space-y-3">
-      {/* Summary header */}
-      <div className="flex flex-wrap items-center gap-2">
-        {(data.nRows != null || data.nCols != null) && (
+      {(data.nRows != null || data.nCols != null) && (
+        <div className="flex flex-wrap items-center gap-2">
           <DimensionPill rows={data.nRows} cols={data.nCols} />
-        )}
-        {data.filename && (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground truncate">
-            <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${colorClass}`} />
-            {data.filename}
-          </span>
-        )}
-        {data.fileType && (
-          <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-mono">
-            {data.fileType}
-          </Badge>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Column stats table */}
       {columns.length > 0 && (

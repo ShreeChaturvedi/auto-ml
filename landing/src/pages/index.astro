@@ -1,19 +1,12 @@
 ---
 import Root from '@/layouts/Root.astro';
+import Nav from '@/components/Nav.astro';
+import Hero from '@/components/Hero.astro';
 ---
 
 <Root>
-  <main class="min-h-screen flex items-center justify-center">
-    <div class="text-center">
-      <p class="font-mono text-xs text-text-muted uppercase tracking-wider">
-        SCAFFOLD READY
-      </p>
-      <h1 class="mt-4 font-sans text-5xl font-medium tracking-tighter">
-        Agentic AutoML Platform
-      </h1>
-      <p class="mt-4 font-mono text-base text-text-muted">
-        Landing page — under construction.
-      </p>
-    </div>
+  <Nav />
+  <main>
+    <Hero />
   </main>
 </Root>

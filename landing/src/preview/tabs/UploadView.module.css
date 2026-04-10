@@ -1,0 +1,83 @@
+.root {
+  padding: 32px 40px;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1fr);
+  gap: 32px;
+  align-content: start;
+}
+
+.fileCard {
+  padding: 20px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+}
+.fileCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.fileCardName {
+  font-size: 14px;
+  font-weight: 510;
+  color: var(--text);
+}
+.fileCardStatus {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: rgba(139, 92, 246, 0.9);
+  background: rgba(139, 92, 246, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: auto;
+}
+.fileMetaRow {
+  display: flex;
+  gap: 16px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.planCard {
+  padding: 20px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+}
+.planTitle {
+  font-size: 14px;
+  font-weight: 510;
+  margin: 0 0 16px;
+}
+.planStep {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 0.8px solid var(--border);
+}
+.planStep:first-of-type { border-top: 0; }
+.planStepCheck {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.15);
+  color: rgba(139, 92, 246, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.planStepBody { flex: 1; min-width: 0; }
+.planStepLabel {
+  font-size: 13px;
+  color: var(--text);
+}
+.planStepDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}

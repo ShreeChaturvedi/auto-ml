@@ -1,17 +1,38 @@
-import { useEffect, useRef } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import './preview.css';
 import type { WorkflowPhase } from './types';
 import { PreviewSidebar } from './PreviewSidebar';
 import { PreviewTopbar } from './PreviewTopbar';
 import { usePreviewStore } from './previewStore';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
-import { UploadView } from './tabs/UploadView';
-import { DataViewerView } from './tabs/DataViewerView';
-import { PreprocessingView } from './tabs/PreprocessingView';
-import { FeatureEngineeringView } from './tabs/FeatureEngineeringView';
-import { TrainingView } from './tabs/TrainingView';
-import { ExperimentsView } from './tabs/ExperimentsView';
-import { DeploymentView } from './tabs/DeploymentView';
+
+// Tab views are lazy-split so the initial AppPreviewFrame island only ships
+// the default (Data Viewer) tab. The other six tabs are fetched on demand
+// when the user clicks into them. This keeps the first-paint bundle lean
+// while preserving the exhaustive switch below.
+const UploadView = lazy(() =>
+  import('./tabs/UploadView').then((m) => ({ default: m.UploadView })),
+);
+const DataViewerView = lazy(() =>
+  import('./tabs/DataViewerView').then((m) => ({ default: m.DataViewerView })),
+);
+const PreprocessingView = lazy(() =>
+  import('./tabs/PreprocessingView').then((m) => ({ default: m.PreprocessingView })),
+);
+const FeatureEngineeringView = lazy(() =>
+  import('./tabs/FeatureEngineeringView').then((m) => ({
+    default: m.FeatureEngineeringView,
+  })),
+);
+const TrainingView = lazy(() =>
+  import('./tabs/TrainingView').then((m) => ({ default: m.TrainingView })),
+);
+const ExperimentsView = lazy(() =>
+  import('./tabs/ExperimentsView').then((m) => ({ default: m.ExperimentsView })),
+);
+const DeploymentView = lazy(() =>
+  import('./tabs/DeploymentView').then((m) => ({ default: m.DeploymentView })),
+);
 
 function renderActiveView(activeTab: WorkflowPhase) {
   switch (activeTab) {
@@ -101,7 +122,9 @@ export function PreviewShell() {
         role="tabpanel"
         aria-labelledby={`preview-tab-${activeTab}`}
       >
-        {renderActiveView(activeTab)}
+        <Suspense fallback={<div className="preview-suspense" aria-hidden />}>
+          {renderActiveView(activeTab)}
+        </Suspense>
       </main>
     </div>
   );

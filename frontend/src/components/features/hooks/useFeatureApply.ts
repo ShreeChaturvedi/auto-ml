@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ApiError } from '@/lib/api/client';
 import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
@@ -24,6 +25,51 @@ interface UseFeatureApplyReturn {
   handleApplyFeatures: () => Promise<void>;
 }
 
+function getPayloadMessage(payload: unknown): string | null {
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+
+  for (const key of ['error', 'message', 'details']) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  const nestedError = record.error;
+  if (nestedError && typeof nestedError === 'object') {
+    const message = (nestedError as Record<string, unknown>).message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message.trim();
+    }
+  }
+
+  return null;
+}
+
+function formatApplyError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const payloadMessage = getPayloadMessage(error.payload);
+    if (payloadMessage) return payloadMessage;
+  }
+
+  if (error instanceof Error) {
+    return error.message
+      .replace(/^Request to .+? failed with status \d+:\s*/i, '')
+      .trim() || 'Failed to apply features.';
+  }
+
+  return 'Failed to apply features.';
+}
+
 export function useFeatureApply({
   projectId,
   notebookId,
@@ -41,13 +87,13 @@ export function useFeatureApply({
 
   // --- Apply message auto-dismiss effect ---
   useEffect(() => {
-    if (!applyMessage) return;
+    if (!applyMessage || applyStatus === 'error') return;
     const timer = setTimeout(() => {
       setApplyMessage(null);
       setApplyStatus('idle');
     }, 4000);
     return () => clearTimeout(timer);
-  }, [applyMessage]);
+  }, [applyMessage, applyStatus]);
 
   // --- Output format sync effect ---
   useEffect(() => {
@@ -178,7 +224,7 @@ export function useFeatureApply({
       setOutputName('');
     } catch (error) {
       setApplyStatus('error');
-      setApplyMessage(error instanceof Error ? error.message : 'Failed to apply features.');
+      setApplyMessage(formatApplyError(error));
     }
   }, [featureRunId, hydrateFromBackend, notebookId, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
 

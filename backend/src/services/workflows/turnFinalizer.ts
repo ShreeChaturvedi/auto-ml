@@ -31,8 +31,14 @@ export async function persistNewToolExecutionEvents(
 ) {
   const newToolCalls = result.toolCallHistory.slice(previousHistory.toolCalls.length);
   const newToolResults = result.toolResultHistory.slice(previousHistory.toolResults.length);
+  const persistedCallIds = new Set(previousHistory.toolCalls.map((call) => call.id));
 
   for (const [index, call] of newToolCalls.entries()) {
+    if (persistedCallIds.has(call.id)) {
+      continue;
+    }
+    persistedCallIds.add(call.id);
+
     await appendRunEvent(repository, run, 'tool_executed', {
       call,
       result: newToolResults[index] ?? null

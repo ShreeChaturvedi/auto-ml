@@ -6,6 +6,7 @@ import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workf
 import { fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import { interruptWorkflowRun } from '@/lib/api/llm';
 import * as notebooksApi from '@/lib/api/notebooks';
+import { archivePhaseNotebook } from '@/lib/notebook/archivePhaseNotebook';
 import type { PipelineVersion } from '@/types/feature';
 
 const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
@@ -276,7 +277,13 @@ export function useFeatureVersioning({
         await useNotebookStore.getState().initializeNotebook(projectId, nextNotebook.notebookId);
 
         if (oldNotebookId && oldNotebookId !== nextNotebook.notebookId) {
-          await notebooksApi.deleteNotebook(projectId, oldNotebookId);
+          await archivePhaseNotebook({
+            projectId,
+            notebookId: oldNotebookId,
+            phase: 'feature-engineering',
+            tabId: versionId,
+            tabName: versionName
+          });
           await useNotebookStore.getState().loadNotebooks(projectId);
         }
       } catch (error) {

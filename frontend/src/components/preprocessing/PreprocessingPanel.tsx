@@ -17,6 +17,7 @@ import {
 } from './PreprocessingToolbar';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import { usePhaseNotebookRecovery } from '@/hooks/usePhaseNotebookRecovery';
 import { usePreprocessingTabs } from './hooks/usePreprocessingTabs';
 import { DEFAULT_WORKBOOK_ID } from './preprocessingTabUtils';
 import { usePreprocessingPanelSearchState } from './usePreprocessingPanelSearchState';
@@ -169,58 +170,69 @@ export function PreprocessingPanel() {
     );
   }, [activeTab?.id, activeTab?.notebookId, buildTabStorageKey, projectId, selectedDatasetId, tables]);
 
+  const preprocessingStorageKey = buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID);
+  const { isRecoveryReady } = usePhaseNotebookRecovery({
+    projectId,
+    phase: 'preprocessing',
+    notebookId: activeTab?.notebookId,
+    storageKey: preprocessingStorageKey,
+    enabled: tabsReady
+  });
+
   return (
     <>
-      <AgenticShell
-        key={activeTab?.id ?? DEFAULT_WORKBOOK_ID}
-        projectId={projectId ?? ''}
-        domainAdapter={domainAdapter}
-        composerPlaceholders={composerPlaceholders}
-        beforeSubmit={preparePreprocessingPrompt}
-        storageKey={buildTabStorageKey(activeTab?.id ?? DEFAULT_WORKBOOK_ID)}
-        sessionVersion={activeTab?.storageVersion ?? 0}
-        initialPrompt={insightInitialPrompt}
-        notebookId={activeTab?.notebookId}
-        toolbarLeft={
-          <PreprocessingToolbarLeft
-            tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
-            activeTabId={activeTab?.id ?? ''}
-            onTabSwitch={handleTabSwitch}
-            onNewTab={handleNewTab}
-            onRenameTab={openRenameTabDialog}
-            onReplayCheck={handleReplayCheck}
-            onResetTab={resetActiveTab}
-            onDeleteTab={handleDeleteTab}
-            canReplay={!!selectedDatasetId}
-            canDelete={tabs.length > 1}
-          />
-        }
-        toolbarRight={
-          <PreprocessingToolbarRight
-            selectedDatasetId={selectedDatasetId ?? ''}
-            tables={tables}
-            onDatasetSelect={handleDatasetSelect}
-            isLoadingTables={isLoadingTables}
-          />
-        }
-        renderLeftPane={(renderProps) => (
-          <div className="mx-auto w-full max-w-5xl space-y-4 p-6 pb-28">
-            <ChatMessageRenderer
-              messages={renderProps.messages}
-              renderLifecycleCard={renderLifecycleCard}
-              activeTextMessageId={renderProps.activeTextMessageId}
-              activeThinkingMessageId={renderProps.activeThinkingMessageId}
-              hydratedMessageIds={renderProps.hydratedMessageIds}
-              onEditMessage={renderProps.onEditMessage}
-              onRevertToMessage={renderProps.onRevertToMessage}
-              editingMessageId={renderProps.editingMessageId}
-              turnDiffs={renderProps.turnDiffs}
-              isGenerating={renderProps.isGenerating}
-              onRetryWorkflow={renderProps.onRetryWorkflow}
+      {isRecoveryReady ? (
+        <AgenticShell
+          key={activeTab?.id ?? DEFAULT_WORKBOOK_ID}
+          projectId={projectId ?? ''}
+          domainAdapter={domainAdapter}
+          composerPlaceholders={composerPlaceholders}
+          beforeSubmit={preparePreprocessingPrompt}
+          storageKey={preprocessingStorageKey}
+          sessionVersion={activeTab?.storageVersion ?? 0}
+          initialPrompt={insightInitialPrompt}
+          notebookId={activeTab?.notebookId}
+          toolbarLeft={
+            <PreprocessingToolbarLeft
+              tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
+              activeTabId={activeTab?.id ?? ''}
+              onTabSwitch={handleTabSwitch}
+              onNewTab={handleNewTab}
+              onRenameTab={openRenameTabDialog}
+              onReplayCheck={handleReplayCheck}
+              onResetTab={resetActiveTab}
+              onDeleteTab={handleDeleteTab}
+              canReplay={!!selectedDatasetId}
+              canDelete={tabs.length > 1}
             />
-          </div>
-        )}
-      />
+          }
+          toolbarRight={
+            <PreprocessingToolbarRight
+              selectedDatasetId={selectedDatasetId ?? ''}
+              tables={tables}
+              onDatasetSelect={handleDatasetSelect}
+              isLoadingTables={isLoadingTables}
+            />
+          }
+          renderLeftPane={(renderProps) => (
+            <div className="mx-auto w-full max-w-5xl space-y-4 p-6 pb-28">
+              <ChatMessageRenderer
+                messages={renderProps.messages}
+                renderLifecycleCard={renderLifecycleCard}
+                activeTextMessageId={renderProps.activeTextMessageId}
+                activeThinkingMessageId={renderProps.activeThinkingMessageId}
+                hydratedMessageIds={renderProps.hydratedMessageIds}
+                onEditMessage={renderProps.onEditMessage}
+                onRevertToMessage={renderProps.onRevertToMessage}
+                editingMessageId={renderProps.editingMessageId}
+                turnDiffs={renderProps.turnDiffs}
+                isGenerating={renderProps.isGenerating}
+                onRetryWorkflow={renderProps.onRetryWorkflow}
+              />
+            </div>
+          )}
+        />
+      ) : null}
 
       <DatasetSelector
         tables={tables}

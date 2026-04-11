@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useMessageAccumulator } from '@/hooks/useMessageAccumulator';
+import { hydrateStoredMessages, persistStoredMessages } from '@/hooks/agenticLoopStorage';
 import type { ChatMessage } from '@/types/llmUi';
 
 afterEach(() => {
@@ -153,5 +154,78 @@ describe('useMessageAccumulator', () => {
 
     setItemSpy.mockRestore();
     warnSpy.mockRestore();
+  });
+
+  it('preserves feature suggestion UI items when compacting stored messages', () => {
+    const uiMessage: ChatMessage = {
+      id: 'ui-features',
+      type: 'ui',
+      schema: {
+        version: '1',
+        kind: 'feature_engineering',
+        sections: [{
+          id: 'proposals',
+          title: 'Feature Proposals',
+          items: [{
+            type: 'feature_suggestion',
+            id: 'feat-api-calls',
+            feature: {
+              sourceColumn: 'api_calls',
+              featureName: 'api_calls_log1p',
+              description: 'Compress heavy API call outliers before model training.',
+              method: 'log1p_transform',
+              params: {}
+            },
+            rationale: 'Compress heavy API call outliers before model training.',
+            impact: 'high'
+          }]
+        }]
+      }
+    };
+
+    persistStoredMessages('feature-storage', [uiMessage]);
+
+    const raw = localStorage.getItem('feature-storage');
+    expect(raw).not.toBeNull();
+    expect(raw).not.toContain('[truncated]');
+
+    const hydrated = hydrateStoredMessages('feature-storage');
+    const hydratedMessage = hydrated.messages[0] as Extract<ChatMessage, { type: 'ui' }>;
+    const item = hydratedMessage.schema.sections[0].items[0];
+
+    expect(item).toMatchObject({
+      type: 'feature_suggestion',
+      id: 'feat-api-calls',
+      rationale: 'Compress heavy API call outliers before model training.',
+      feature: {
+        sourceColumn: 'api_calls',
+        featureName: 'api_calls_log1p',
+        description: 'Compress heavy API call outliers before model training.'
+      }
+    });
+  });
+
+  it('drops corrupted persisted UI messages instead of hydrating invalid card items', () => {
+    localStorage.setItem('corrupt-feature-storage', JSON.stringify({
+      version: 2,
+      messages: [{
+        id: 'ui-corrupt',
+        type: 'ui',
+        schema: {
+          version: '1',
+          kind: 'feature_engineering',
+          sections: [{
+            id: 'proposals',
+            items: ['[truncated]']
+          }]
+        }
+      }],
+      savepoints: {}
+    }));
+
+    const hydrated = hydrateStoredMessages('corrupt-feature-storage');
+
+    expect(hydrated.messages).toEqual([]);
+    expect(hydrated.hydratedMessageIds.size).toBe(0);
   });
 });

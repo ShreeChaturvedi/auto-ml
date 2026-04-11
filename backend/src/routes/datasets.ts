@@ -14,6 +14,7 @@ import { resolveDatasetTableName } from '../services/datasetLoader.js';
 import { ensureProjectDatasetSqlNames, resolveDatasetSqlName } from '../services/datasetSqlNames.js';
 import { getDatasetQueryState, rebuildDatasetTableFromSource } from '../services/datasetTableManager.js';
 import { getWorkflowRepository } from '../services/workflows/repository/index.js';
+import * as notebookService from '../services/notebook/notebookService.js';
 import type { AuthRequest } from '../types/auth.js';
 import { getErrorMessage, sendNotFound } from '../utils/errors.js';
 import { getDatasetPath } from '../utils/pathUtils.js';
@@ -253,11 +254,49 @@ export function createDatasetUploadRouter(repository?: DatasetRepository) {
       const activeWorkflows = referencingRuns.filter(
         (r) => r.status === 'running' || r.status === 'paused'
       );
-      if (activeWorkflows.length > 0) {
+
+      const staleWorkflowIds = new Set<string>();
+      for (const run of activeWorkflows) {
+        if (!run.activeNotebookId) {
+          continue;
+        }
+        const notebook = await notebookService.getNotebook(run.activeNotebookId);
+        if (notebook) {
+          continue;
+        }
+        staleWorkflowIds.add(run.runId);
+        const interrupted = await workflowRepo.saveRun({
+          ...run,
+          status: 'interrupted',
+          pendingInputKind: undefined,
+          pauseReason: undefined,
+          activeNotebookId: undefined,
+          lastFailureCode: 'STALE_NOTEBOOK_REFERENCE',
+          lastFailureMessage: 'Workflow auto-interrupted because its notebook no longer exists.'
+        });
+        await workflowRepo.appendEvent(interrupted.runId, 'workflow_interrupted', {
+          reason: 'Workflow auto-interrupted because its notebook no longer exists.',
+          code: 'STALE_NOTEBOOK_REFERENCE'
+        });
+      }
+
+      const blockingWorkflows = activeWorkflows.filter((run) => !staleWorkflowIds.has(run.runId));
+      if (blockingWorkflows.length > 0) {
+        const activeWorkflowDetails = blockingWorkflows.map((run) => ({
+          runId: run.runId,
+          phase: run.phase,
+          status: run.status,
+          pendingInputKind: run.pendingInputKind ?? null,
+          activeNotebookId: run.activeNotebookId ?? null,
+          updatedAt: run.updatedAt
+        }));
         res.status(409).json({
           error: 'DATASET_IN_USE',
-          message: `Cannot delete dataset: referenced by ${activeWorkflows.length} active workflow(s).`,
-          activeRunIds: activeWorkflows.map((r) => r.runId)
+          message: `Cannot delete dataset: referenced by ${blockingWorkflows.length} active workflow(s).`,
+          datasetId,
+          datasetFilename: dataset.filename,
+          activeRunIds: blockingWorkflows.map((r) => r.runId),
+          activeWorkflows: activeWorkflowDetails
         });
         return;
       }

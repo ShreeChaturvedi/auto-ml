@@ -22,6 +22,7 @@ import { FeatureEngineeringLeftPane } from './FeatureEngineeringLeftPane';
 import { cn } from '@/lib/utils';
 import { useFeatureNotebookSync } from './hooks/useFeatureNotebookSync';
 import { useFeatureCodeGen } from './hooks/useFeatureCodeGen';
+import { usePhaseNotebookRecovery } from '@/hooks/usePhaseNotebookRecovery';
 
 import type { ChatMessage } from '@/types/llmUi';
 import type { UiItem } from '@/types/llmUi';
@@ -44,7 +45,7 @@ function getFeatureUiItemKey(item: UiItem, index: number): string {
   if ('text' in item) {
     return `${item.type}-${item.text}`;
   }
-  return `${item.type}-${index}`;
+  return `ui-item-${index}`;
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
@@ -135,14 +136,22 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     currentVersion
   });
 
+  const featureStorageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
+  const { isRecoveryReady } = usePhaseNotebookRecovery({
+    projectId,
+    phase: 'feature-engineering',
+    notebookId: resolvedNotebookId,
+    storageKey: featureStorageKey,
+    enabled: isFeatureNotebookReady
+  });
+
   useFeatureCodeGen(activeFeatures, selectedDatasetFile, resolvedNotebookId);
 
   const adapter = useMemo(() => {
-    const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
     const sessionKey = buildWorkflowSessionKey(
       projectId,
       [
-        storageKey,
+        featureStorageKey,
         selectedDatasetFile?.metadata?.datasetId ?? 'none',
         targetColumn ?? 'no-target'
       ].join(':')
@@ -170,6 +179,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     currentVersion,
     datasetFiles,
     documentFiles,
+    featureStorageKey,
     projectId,
     resolvedNotebookId,
     selectedDatasetFile,
@@ -233,12 +243,12 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
 
   return (
     <>
-      {isFeatureNotebookReady ? (
+      {isFeatureNotebookReady && isRecoveryReady ? (
       <AgenticShell
         key={currentVersion?.id ?? 'feature-engineering-default'}
         projectId={projectId}
         composerPlaceholders={composerPlaceholders}
-        storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
+        storageKey={featureStorageKey}
         sessionVersion={chatSessionVersion}
         beforeSubmit={prepareFeaturePrompt}
         domainAdapter={adapter}

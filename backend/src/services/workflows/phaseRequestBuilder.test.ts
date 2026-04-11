@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
 import {
+  buildFeatureProposalItems,
   MAX_FE_HISTORY_PAIRS,
   detectTrainingSelectionMismatch,
   resolveTrainingLifecycleNode,
+  selectCurrentTurnFeatureToolResults,
   selectFeatureRequestToolResults,
   shouldAllowFeatureCheckpointTool,
   shouldAllowFeatureProposeTool,
@@ -616,8 +618,41 @@ describe('selectFeatureRequestToolResults', () => {
     ).toEqual([]);
   });
 
+  it('slices current-turn FE results before filtering dataset profile noise', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: 'profile-old', tool: 'get_dataset_profile', output: { datasetId: 'dataset-1' } },
+      { id: 'proposal-old', tool: 'propose_feature', output: { featureId: 'feat-old' } },
+      { id: 'materialize-new', tool: 'materialize_feature_code', output: { featureId: 'feat-new' } },
+      { id: 'checkpoint-new', tool: 'checkpoint_feature_pipeline', output: { status: 'ok' } }
+    ];
+
+    expect(selectCurrentTurnFeatureToolResults(results, 2)).toEqual([
+      { id: 'materialize-new', tool: 'materialize_feature_code', output: { featureId: 'feat-new' } },
+      { id: 'checkpoint-new', tool: 'checkpoint_feature_pipeline', output: { status: 'ok' } }
+    ]);
+  });
+
+  it('does not skip current proposal results when previous history includes profile noise', () => {
+    const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: 'profile-old', tool: 'get_dataset_profile', output: { datasetId: 'dataset-1' } },
+      { id: 'checkpoint-old', tool: 'checkpoint_feature_pipeline', output: { status: 'ok' } },
+      { id: 'proposal-new', tool: 'propose_feature', output: { featureId: 'feat-new' } }
+    ];
+
+    expect(
+      selectFeatureRequestToolResults(
+        results,
+        2,
+        'Suggest useful features for this dataset.'
+      )
+    ).toEqual([
+      { id: 'proposal-new', tool: 'propose_feature', output: { featureId: 'feat-new' } }
+    ]);
+  });
+
   it('keeps full lifecycle history when selected feature IDs are present', () => {
     const results: WorkflowGraphState['toolResultHistory'] = [
+      { id: 'profile-1', tool: 'get_dataset_profile', output: { datasetId: 'dataset-1' } },
       { id: '1', tool: 'propose_feature', output: { featureId: 'feat-a' } },
       { id: '2', tool: 'register_feature', output: { featureId: 'feat-a', status: 'ok' } }
     ];
@@ -625,10 +660,59 @@ describe('selectFeatureRequestToolResults', () => {
     expect(
       selectFeatureRequestToolResults(
         results,
-        2,
+        3,
         'Selected feature IDs to implement: feat-a'
       )
-    ).toEqual(results);
+    ).toEqual(results.filter((result) => result.tool !== 'get_dataset_profile'));
+  });
+});
+
+describe('buildFeatureProposalItems', () => {
+  it('falls back to the propose_feature call rationale when the tool result only has a placeholder message', () => {
+    const items = buildFeatureProposalItems({
+      calls: [
+        {
+          id: 'call-feature-1',
+          tool: 'propose_feature',
+          args: {
+            featureId: 'feat-api-calls-log1p',
+            featureName: 'api_calls_log1p',
+            method: 'log1p_transform',
+            sourceColumns: ['api_calls'],
+            impact: 'high'
+          },
+          rationale: 'Compress heavy api_calls outliers so linear and ridge models can learn a smoother usage relationship.'
+        }
+      ],
+      results: [
+        {
+          id: 'call-feature-1',
+          tool: 'propose_feature',
+          output: {
+            status: 'proposed',
+            message: 'Feature proposed — awaiting user review',
+            featureId: 'feat-api-calls-log1p',
+            featureName: 'api_calls_log1p',
+            method: 'log1p_transform',
+            impact: 'high',
+            sourceColumns: ['api_calls']
+          }
+        }
+      ]
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: 'feat-api-calls-log1p',
+      rationale: 'Compress heavy api_calls outliers so linear and ridge models can learn a smoother usage relationship.',
+      feature: {
+        featureName: 'api_calls_log1p',
+        sourceColumn: 'api_calls',
+        method: 'log1p_transform',
+        description: 'Compress heavy api_calls outliers so linear and ridge models can learn a smoother usage relationship.'
+      },
+      impact: 'high'
+    });
   });
 });
 

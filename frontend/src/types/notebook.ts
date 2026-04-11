@@ -245,9 +245,13 @@ export interface ReorderCellsRequest {
 }
 
 export interface NotebookPhaseMetadata {
-  phase?: 'preprocessing' | 'feature-engineering' | 'training';
+  phase?: 'preprocessing' | 'feature-engineering' | 'training' | 'archived';
   tabId?: string;
   tabName?: string;
+  archivedFromPhase?: 'feature-engineering' | 'training';
+  archivedTabId?: string | null;
+  archivedTabName?: string | null;
+  archivedAt?: string;
 }
 
 export interface CreateNotebookRequest {

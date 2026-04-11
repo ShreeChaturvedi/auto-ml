@@ -11,6 +11,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { phaseConfig } from '@/types/phase';
 import { deleteDataset } from '@/lib/api/datasets';
 import { deleteDocument } from '@/lib/api/documents';
+import { ApiError } from '@/lib/api/client';
 import { DATA_FILE_TYPES, downloadFile } from '@/lib/fileUtils';
 import type { UploadedFile } from '@/types/file';
 
@@ -77,6 +78,47 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
 
   const markDeleted = useDataStore((s) => s.markDeleted);
 
+  const buildDeleteFailureDescription = useCallback((error: unknown) => {
+    if (!(error instanceof ApiError) || !error.payload || typeof error.payload !== 'object') {
+      return null;
+    }
+
+    const payload = error.payload as {
+      error?: string;
+      message?: string;
+      activeWorkflows?: Array<{
+        runId: string;
+        phase?: string | null;
+        status?: string | null;
+        pendingInputKind?: string | null;
+        activeNotebookId?: string | null;
+      }>;
+    };
+
+    if (payload.error !== 'DATASET_IN_USE') {
+      return typeof payload.message === 'string' ? payload.message : null;
+    }
+
+    const blockers = Array.isArray(payload.activeWorkflows) ? payload.activeWorkflows : [];
+    if (blockers.length === 0) {
+      return payload.message ?? 'This dataset is still referenced by an active workflow.';
+    }
+
+    const formatRef = (value: string | null | undefined) => (value ? value.slice(0, 8) : null);
+
+    return blockers
+      .map((workflow) => {
+        const phase = workflow.phase ? workflow.phase.replace(/_/g, ' ') : 'workflow';
+        const status = workflow.status ?? 'active';
+        const runRef = formatRef(workflow.runId) ?? 'unknown';
+        const pending = workflow.pendingInputKind ? `, waiting for ${workflow.pendingInputKind}` : '';
+        const notebookRef = formatRef(workflow.activeNotebookId);
+        const notebook = notebookRef ? `, notebook ${notebookRef}` : '';
+        return `${phase} run ${runRef} is ${status}${pending}${notebook}.`;
+      })
+      .join(' ');
+  }, []);
+
   const handleDeleteFile = useCallback(
     async (file: UploadedFile) => {
       try {
@@ -95,9 +137,14 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
         await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
       } catch (error) {
         console.error('Failed to delete file:', error);
+        toast.error(`Couldn't delete ${file.name}`, {
+          description:
+            buildDeleteFailureDescription(error)
+            ?? (error instanceof Error ? error.message : 'The server rejected the delete request.')
+        });
       }
     },
-    [removeFile, markDeleted, projectId]
+    [buildDeleteFailureDescription, removeFile, markDeleted, projectId]
   );
 
   const handleDownloadFile = useCallback(async (file: UploadedFile) => {

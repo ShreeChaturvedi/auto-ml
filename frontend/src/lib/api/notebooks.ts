@@ -22,6 +22,27 @@ export interface ListNotebooksOptions {
   kind?: NotebookKind;
 }
 
+export type RecoverableNotebookPhase = 'preprocessing' | 'feature-engineering' | 'training';
+
+export interface NotebookRecoveryCandidate {
+  runId: string;
+  sourceNotebookId: string;
+  cellCount: number;
+  phase: RecoverableNotebookPhase;
+  updatedAt: string;
+}
+
+export interface NotebookRecoveryResult {
+  status: 'noop' | 'recovered';
+  reason?:
+    | 'target_notebook_missing'
+    | 'target_notebook_not_empty'
+    | 'no_recoverable_run'
+    | 'phase_mismatch';
+  candidate?: NotebookRecoveryCandidate;
+  restoredCellIds?: string[];
+}
+
 /**
  * List notebooks for a project, optionally filtered by kind.
  */
@@ -68,6 +89,25 @@ export async function deleteNotebook(
 ): Promise<DeleteNotebookResponse> {
   return apiRequest<DeleteNotebookResponse>(`/projects/${projectId}/notebooks/${notebookId}`, {
     method: 'DELETE'
+  });
+}
+
+export async function getNotebookRecoveryCandidate(
+  notebookId: string,
+  phase: RecoverableNotebookPhase
+): Promise<NotebookRecoveryResult> {
+  return apiRequest<NotebookRecoveryResult>(
+    `/notebooks/${notebookId}/recovery-candidate?phase=${encodeURIComponent(phase)}`
+  );
+}
+
+export async function recoverNotebook(
+  notebookId: string,
+  phase: RecoverableNotebookPhase
+): Promise<NotebookRecoveryResult> {
+  return apiRequest<NotebookRecoveryResult>(`/notebooks/${notebookId}/recover`, {
+    method: 'POST',
+    body: { phase }
   });
 }
 

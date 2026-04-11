@@ -1,3 +1,4 @@
+import { UiSchema as UiSchemaSchema } from '@/types/llmUi';
 import type { ChatMessage } from '@/types/llmUi';
 
 /** V2 storage format: messages + savepoint map. */
@@ -58,6 +59,16 @@ function compactUnknown(value: unknown, depth = 0): unknown {
   return String(value);
 }
 
+type UiChatMessage = Extract<ChatMessage, { type: 'ui' }>;
+
+function compactUiSchema(schema: UiChatMessage['schema']): UiChatMessage['schema'] {
+  // UI messages are naturally deeper than generic tool payloads:
+  // schema -> sections -> section -> items -> feature -> params.
+  // The generic depth cap used to replace every feature_suggestion item with
+  // "[truncated]", which then crashed FE renderers after hydration.
+  return compactUnknown(schema, -3) as UiChatMessage['schema'];
+}
+
 function compactChatMessage(message: ChatMessage): ChatMessage {
   switch (message.type) {
     case 'user':
@@ -99,7 +110,7 @@ function compactChatMessage(message: ChatMessage): ChatMessage {
     case 'ui':
       return {
         ...message,
-        schema: compactUnknown(message.schema) as typeof message.schema
+        schema: compactUiSchema(message.schema)
       };
     case 'ask_user':
       return {
@@ -109,6 +120,25 @@ function compactChatMessage(message: ChatMessage): ChatMessage {
     default:
       return message;
   }
+}
+
+function sanitizeHydratedMessages(messages: unknown[]): ChatMessage[] {
+  return messages.filter((message): message is ChatMessage => {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) {
+      return false;
+    }
+
+    const record = message as Record<string, unknown>;
+    if (typeof record.id !== 'string' || typeof record.type !== 'string') {
+      return false;
+    }
+
+    if (record.type === 'ui') {
+      return UiSchemaSchema.safeParse(record.schema).success;
+    }
+
+    return true;
+  });
 }
 
 function buildStoredConversation(
@@ -147,9 +177,10 @@ export function hydrateStoredMessages(messageStorageScope: string | null): {
       if (!Array.isArray(conv.messages)) {
         return { messages: [], hydratedMessageIds: new Set(), savepoints: {} };
       }
+      const messages = sanitizeHydratedMessages(conv.messages);
       return {
-        messages: conv.messages,
-        hydratedMessageIds: new Set(conv.messages.map((m) => m.id)),
+        messages,
+        hydratedMessageIds: new Set(messages.map((m) => m.id)),
         savepoints: conv.savepoints && typeof conv.savepoints === 'object' && !Array.isArray(conv.savepoints)
           ? conv.savepoints
           : {}
@@ -158,7 +189,7 @@ export function hydrateStoredMessages(messageStorageScope: string | null): {
 
     // V1 format (raw ChatMessage[])
     if (Array.isArray(parsed)) {
-      const messages = parsed as ChatMessage[];
+      const messages = sanitizeHydratedMessages(parsed);
       return {
         messages,
         hydratedMessageIds: new Set(messages.map((m) => m.id)),

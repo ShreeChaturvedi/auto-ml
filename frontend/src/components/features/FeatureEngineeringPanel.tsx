@@ -24,9 +24,27 @@ import { useFeatureNotebookSync } from './hooks/useFeatureNotebookSync';
 import { useFeatureCodeGen } from './hooks/useFeatureCodeGen';
 
 import type { ChatMessage } from '@/types/llmUi';
+import type { UiItem } from '@/types/llmUi';
 
 interface FeatureEngineeringPanelProps {
   projectId: string;
+}
+
+function isRenderableUiItem(item: unknown): item is UiItem {
+  return Boolean(item && typeof item === 'object' && !Array.isArray(item) && 'type' in item);
+}
+
+function getFeatureUiItemKey(item: UiItem, index: number): string {
+  if (item.type === 'dataset_summary') {
+    return item.datasetId;
+  }
+  if ('id' in item) {
+    return item.id;
+  }
+  if ('text' in item) {
+    return `${item.type}-${item.text}`;
+  }
+  return `${item.type}-${index}`;
 }
 
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
@@ -189,9 +207,9 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                     (!section.layout || section.layout === 'column') && 'space-y-3'
                   )}
                 >
-                  {section.items.map((item) => (
+                  {section.items.filter(isRenderableUiItem).map((item, itemIndex) => (
                     <FeatureUiItemRenderer
-                      key={item.type === 'dataset_summary' ? item.datasetId : ('id' in item ? item.id : item.text)}
+                      key={getFeatureUiItemKey(item, itemIndex)}
                       item={item}
                       datasetColumns={datasetColumns}
                       suggestionDrafts={suggestionDrafts}

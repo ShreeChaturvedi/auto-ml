@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FeatureEngineeringPanel } from '../FeatureEngineeringPanel';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const mockState = vi.hoisted(() => ({
   files: [] as Array<{
@@ -332,11 +333,13 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
   });
 
   const renderPanel = (initialEntries = ['/']) => render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route path="*" element={<FeatureEngineeringPanel projectId="p1" />} />
-      </Routes>
-    </MemoryRouter>
+    <TooltipProvider>
+      <MemoryRouter initialEntries={initialEntries}>
+        <Routes>
+          <Route path="*" element={<FeatureEngineeringPanel projectId="p1" />} />
+        </Routes>
+      </MemoryRouter>
+    </TooltipProvider>
   );
 
   it('renders the FE build card and keeps notebook generation disabled with no active features', () => {
@@ -501,6 +504,199 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     expect(screen.queryByText('Buckets can capture nonlinear pay effects.')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /What this feature does/i }));
     expect(screen.getByText('Buckets can capture nonlinear pay effects.')).toBeInTheDocument();
+  });
+
+  it('ignores corrupted persisted UI items instead of crashing the phase', () => {
+    mockState.messages = [
+      {
+        id: 'ui-corrupted',
+        type: 'ui',
+        schema: {
+          version: '1',
+          kind: 'feature_engineering',
+          sections: [{
+            id: 'suggestions',
+            title: 'Feature Proposals',
+            items: ['[truncated]']
+          }]
+        }
+      }
+    ];
+
+    expect(() => renderPanel()).not.toThrow();
+    expect(screen.getByText('Feature Proposals')).toBeInTheDocument();
+  });
+
+  it('suppresses duplicate FE semantic cards when notebook write and run cards already show the work', () => {
+    mockState.messages = [
+      { id: 'user-1', type: 'user', content: 'Implement enabled features', timestamp: Date.now() },
+      {
+        id: 'materialize-1',
+        type: 'tool_call',
+        call: {
+          id: 'materialize-1',
+          tool: 'materialize_feature_code',
+          args: {
+            featureId: 'feat-1',
+            code: 'df["event_month"] = pd.to_datetime(df["event_date"]).dt.month'
+          }
+        },
+        result: {
+          id: 'materialize-1',
+          tool: 'materialize_feature_code',
+          output: { status: 'ok', featureId: 'feat-1' }
+        }
+      },
+      {
+        id: 'write-1',
+        type: 'tool_call',
+        call: {
+          id: 'write-1',
+          tool: 'write_cell',
+          args: {
+            content: 'df["event_month"] = pd.to_datetime(df["event_date"]).dt.month',
+            metadata: { phase: 'feature-engineering', featureId: 'feat-1' }
+          }
+        },
+        result: {
+          id: 'write-1',
+          tool: 'write_cell',
+          output: { cellId: 'cell-1' }
+        }
+      },
+      {
+        id: 'run-1',
+        type: 'tool_call',
+        call: {
+          id: 'run-1',
+          tool: 'run_cell',
+          args: {
+            cellId: 'cell-1',
+            metadata: { phase: 'feature-engineering', featureId: 'feat-1' }
+          }
+        },
+        result: {
+          id: 'run-1',
+          tool: 'run_cell',
+          output: { status: 'success', executionMs: 62 }
+        }
+      },
+      {
+        id: 'execute-1',
+        type: 'tool_call',
+        call: {
+          id: 'execute-1',
+          tool: 'execute_feature',
+          args: {
+            cellId: 'cell-1',
+            featureId: 'feat-1',
+            succeeded: true,
+            executionSource: 'notebook'
+          }
+        },
+        result: {
+          id: 'execute-1',
+          tool: 'execute_feature',
+          output: { status: 'ok', featureId: 'feat-1', succeeded: true, executionMs: 62 }
+        }
+      },
+      {
+        id: 'validate-1',
+        type: 'tool_call',
+        call: { id: 'validate-1', tool: 'validate_feature', args: { featureId: 'feat-1' } },
+        result: {
+          id: 'validate-1',
+          tool: 'validate_feature',
+          output: { status: 'ok', featureId: 'feat-1' }
+        }
+      },
+      {
+        id: 'register-1',
+        type: 'tool_call',
+        call: { id: 'register-1', tool: 'register_feature', args: { featureId: 'feat-1' } },
+        result: {
+          id: 'register-1',
+          tool: 'register_feature',
+          output: { status: 'ok', featureId: 'feat-1' }
+        }
+      }
+    ];
+
+    renderPanel();
+
+    expect(screen.getAllByText('Generated code')).toHaveLength(1);
+    expect(screen.getAllByText('Execution succeeded')).toHaveLength(1);
+    expect(screen.getByText('Validation passed')).toBeInTheDocument();
+    expect(screen.getByText('Committed')).toBeInTheDocument();
+  });
+
+  it('renders exact duplicate tool call ids only once after old persisted runs are rehydrated', () => {
+    const duplicateRegister = {
+      id: 'register-1',
+      type: 'tool_call' as const,
+      call: { id: 'register-1', tool: 'register_feature', args: { featureId: 'feat-1' } },
+      result: {
+        id: 'register-1',
+        tool: 'register_feature',
+        output: { status: 'ok', featureId: 'feat-1' }
+      }
+    };
+    mockState.messages = [
+      { id: 'user-1', type: 'user', content: 'Implement enabled features', timestamp: Date.now() },
+      duplicateRegister,
+      { ...duplicateRegister, id: 'register-1-copy' }
+    ];
+
+    renderPanel();
+
+    expect(screen.getAllByText('Committed')).toHaveLength(1);
+  });
+
+  it('keeps FE semantic error cards visible even when notebook cards exist', () => {
+    mockState.messages = [
+      { id: 'user-1', type: 'user', content: 'Implement enabled features', timestamp: Date.now() },
+      {
+        id: 'write-1',
+        type: 'tool_call',
+        call: {
+          id: 'write-1',
+          tool: 'write_cell',
+          args: {
+            content: 'df["event_month"] = pd.to_datetime(df["event_date"]).dt.month',
+            metadata: { phase: 'feature-engineering', featureId: 'feat-1' }
+          }
+        },
+        result: {
+          id: 'write-1',
+          tool: 'write_cell',
+          output: { cellId: 'cell-1' }
+        }
+      },
+      {
+        id: 'execute-1',
+        type: 'tool_call',
+        call: {
+          id: 'execute-1',
+          tool: 'execute_feature',
+          args: {
+            cellId: 'cell-1',
+            featureId: 'feat-1',
+            succeeded: false,
+            executionSource: 'notebook'
+          }
+        },
+        result: {
+          id: 'execute-1',
+          tool: 'execute_feature',
+          error: 'Feature execution failed after notebook run.'
+        }
+      }
+    ];
+
+    renderPanel();
+
+    expect(screen.getByText('Generated code')).toBeInTheDocument();
+    expect(screen.getByText('Feature execution failed after notebook run.')).toBeInTheDocument();
   });
 
   it('defaults output format to xlsx for excel datasets', async () => {

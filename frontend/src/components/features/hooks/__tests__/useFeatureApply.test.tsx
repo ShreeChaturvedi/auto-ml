@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '@/lib/api/client';
 import type { FeatureSpec } from '@/types/feature';
 
 import { useFeatureApply } from '../useFeatureApply';
@@ -140,6 +141,51 @@ describe('useFeatureApply', () => {
     expect(result.current.applyMessage).toContain('Created employees_features.xlsx');
     expect(result.current.applyMessage).toContain('database indexing failed');
     expect(mockState.setSelectedDataset).toHaveBeenCalledWith('derived-2');
+  });
+
+  it('shows backend apply errors without the low-level request prefix', async () => {
+    const backendMessage = 'Feature engineering produced no new columns in feature_v1.csv. Applied 3 feature(s) ["Feature adoption missing indicator", "Export share of usage", "Event month seasonality"] but the output schema matches the source exactly.';
+    mockState.applyFeatureEngineering.mockRejectedValueOnce(
+      new ApiError(
+        `Request to http://localhost:4000/api/feature-engineering/apply failed with status 400: ${backendMessage.slice(0, 80)}…`,
+        400,
+        { error: backendMessage }
+      )
+    );
+
+    const { result } = renderHook(() => useFeatureApply({
+      projectId: 'project-1',
+      notebookId: 'notebook-1',
+      projectFeatures: [{
+        id: 'feat-existing',
+        projectId: 'project-1',
+        sourceColumn: 'usage_count',
+        featureName: 'usage_count_log1p',
+        description: 'Already-applied feature',
+        method: 'log1p_transform',
+        category: 'numeric_transform',
+        params: {},
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        code: "df['usage_count_log1p'] = np.log1p(df['usage_count'])"
+      }],
+      selectedDatasetFile: {
+        id: 'file-1',
+        metadata: {
+          datasetId: 'dataset-1',
+          columns: ['usage_count', 'usage_count_log1p']
+        }
+      },
+      setSelectedDataset: mockState.setSelectedDataset
+    }));
+
+    await act(async () => {
+      await result.current.handleApplyFeatures();
+    });
+
+    expect(result.current.applyStatus).toBe('error');
+    expect(result.current.applyMessage).toBe(backendMessage);
+    expect(result.current.applyMessage).not.toContain('Request to http://localhost');
   });
 
   it('allows ratio features without secondaryColumn when feature.code is present (Department Usage Share regression)', async () => {

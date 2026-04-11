@@ -195,6 +195,67 @@ function extractFeatureIdFromToolResult(
   return typeof output.featureId === 'string' ? output.featureId : undefined;
 }
 
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+export function buildFeatureProposalItems(params: {
+  results: WorkflowGraphState['toolResultHistory'];
+  calls: WorkflowGraphState['toolCallHistory'];
+}) {
+  const proposalCallsById = new Map(
+    params.calls
+      .filter((call) => call.tool === 'propose_feature')
+      .map((call) => [call.id, call] as const)
+  );
+
+  return params.results
+    .filter((result) => result.tool === 'propose_feature' && !result.error && result.output)
+    .map((result) => {
+      const output = result.output as Record<string, unknown>;
+      const proposalCall = proposalCallsById.get(result.id);
+      const callArgs = proposalCall?.args && typeof proposalCall.args === 'object' && !Array.isArray(proposalCall.args)
+        ? proposalCall.args as Record<string, unknown>
+        : undefined;
+      const sourceColumns = Array.isArray(output.sourceColumns)
+        ? (output.sourceColumns as unknown[]).filter((column): column is string => typeof column === 'string')
+        : Array.isArray(callArgs?.sourceColumns)
+          ? (callArgs.sourceColumns as unknown[]).filter((column): column is string => typeof column === 'string')
+          : [];
+      const secondaryColumn = sourceColumns.length > 1 ? sourceColumns[1] : undefined;
+      const rationale = firstNonEmptyString(
+        output.rationale,
+        proposalCall?.rationale,
+        callArgs?.rationale,
+        output.message
+      ) ?? '';
+
+      return {
+        type: 'feature_suggestion' as const,
+        id: firstNonEmptyString(output.featureId, callArgs?.featureId) ?? `feat-${Date.now()}`,
+        feature: {
+          sourceColumn: sourceColumns[0] ?? '',
+          ...(secondaryColumn ? { secondaryColumn } : {}),
+          featureName: firstNonEmptyString(output.featureName, callArgs?.featureName) ?? 'unnamed',
+          description: rationale,
+          method: firstNonEmptyString(output.method, callArgs?.method) ?? 'custom',
+          params: (output.params && typeof output.params === 'object' && !Array.isArray(output.params)
+            ? output.params as Record<string, unknown>
+            : {})
+        },
+        rationale,
+        impact: (['high', 'medium', 'low'].includes(String(output.impact ?? callArgs?.impact))
+          ? String(output.impact ?? callArgs?.impact)
+          : 'medium') as 'high' | 'medium' | 'low'
+      };
+    });
+}
+
 function isRejectedRegisterResult(
   result: WorkflowGraphState['toolResultHistory'][number]
 ): boolean {
@@ -253,9 +314,30 @@ export function selectFeatureRequestToolResults(
   turnStartToolCallCount: number,
   prompt: string | undefined
 ): WorkflowGraphState['toolResultHistory'] {
-  return shouldRestrictFeatureToolsToProposalMode(toolResults, prompt)
-    ? toolResults.slice(turnStartToolCallCount)
-    : toolResults;
+  const featureToolResults = toolResults.filter((result) => result.tool !== 'get_dataset_profile');
+  const currentTurnFeatureResults = selectCurrentTurnFeatureToolResults(toolResults, turnStartToolCallCount);
+
+  return shouldRestrictFeatureToolsToProposalMode(featureToolResults, prompt)
+    ? currentTurnFeatureResults
+    : featureToolResults;
+}
+
+export function selectCurrentTurnFeatureToolResults(
+  toolResults: WorkflowGraphState['toolResultHistory'],
+  turnStartToolCallCount: number
+): WorkflowGraphState['toolResultHistory'] {
+  return toolResults
+    .slice(turnStartToolCallCount)
+    .filter((result) => result.tool !== 'get_dataset_profile');
+}
+
+function selectCurrentTurnFeatureToolCalls(
+  toolCalls: WorkflowGraphState['toolCallHistory'],
+  turnStartToolCallCount: number
+): WorkflowGraphState['toolCallHistory'] {
+  return toolCalls
+    .slice(turnStartToolCallCount)
+    .filter((call) => call.tool !== 'get_dataset_profile');
 }
 
 export function shouldAllowFeatureProposeTool(prompt: string | undefined): boolean {
@@ -770,7 +852,14 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
     const featureRawToolResults = state.toolResultHistory.filter(
       (r) => r.tool !== 'get_dataset_profile'
     );
-    const currentTurnResults = featureRawToolResults.slice(state.turnStartToolCallCount);
+    const currentTurnResults = selectCurrentTurnFeatureToolResults(
+      state.toolResultHistory,
+      state.turnStartToolCallCount
+    );
+    const currentTurnCalls = selectCurrentTurnFeatureToolCalls(
+      state.toolCallHistory,
+      state.turnStartToolCallCount
+    );
     const selectedFeatureIds = extractSelectedFeatureIds(turn.prompt);
     const restrictToProposalMode = shouldRestrictFeatureToolsToProposalMode(featureRawToolResults, turn.prompt);
 
@@ -787,7 +876,7 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
       restrictToProposalMode
     );
     const featureRequestToolResults = selectFeatureRequestToolResults(
-      featureRawToolResults,
+      state.toolResultHistory,
       state.turnStartToolCallCount,
       turn.prompt
     );
@@ -825,34 +914,10 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
         // Build feature_suggestion UI items from the proposal results so the
         // user gets interactive cards with Enable/Disable toggles.  This is
         // deterministic — no LLM call needed for the render_ui step.
-        const proposalItems = currentTurnLifecycleResults
-          .filter((r) => r.tool === 'propose_feature' && !r.error && r.output)
-          .map((r) => {
-            const out = r.output as Record<string, unknown>;
-            const sourceColumns = Array.isArray(out.sourceColumns)
-              ? (out.sourceColumns as unknown[]).filter((c): c is string => typeof c === 'string')
-              : [];
-            const secondaryColumn = sourceColumns.length > 1 ? sourceColumns[1] : undefined;
-            return {
-              type: 'feature_suggestion' as const,
-              id: (out.featureId as string) ?? `feat-${Date.now()}`,
-              feature: {
-                sourceColumn: sourceColumns[0] ?? '',
-                // Propagate the second source column for interaction features
-                // (ratio, difference, product, groupby-shares) so the frontend
-                // guard doesn't block them with a "needs secondary column" error.
-                ...(secondaryColumn ? { secondaryColumn } : {}),
-                featureName: (out.featureName as string) ?? 'unnamed',
-                description: (out.rationale as string) ?? (out.message as string) ?? '',
-                method: (out.method as string) ?? 'custom',
-                params: (out.params && typeof out.params === 'object' && !Array.isArray(out.params)
-                  ? out.params as Record<string, unknown>
-                  : {})
-              },
-              rationale: (out.rationale as string) ?? (out.message as string) ?? '',
-              impact: (['high', 'medium', 'low'].includes(out.impact as string) ? out.impact : 'medium') as 'high' | 'medium' | 'low'
-            };
-          });
+        const proposalItems = buildFeatureProposalItems({
+          results: currentTurnLifecycleResults,
+          calls: currentTurnCalls
+        });
 
         return {
           nextStep: 'complete',

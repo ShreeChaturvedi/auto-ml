@@ -8,8 +8,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { nextWorkbookName, createWorkbookId } from '@/components/preprocessing/preprocessingTabUtils';
-import { deleteNotebook } from '@/lib/api/notebooks';
+import { interruptWorkflowRun } from '@/lib/api/llm';
+import { archivePhaseNotebook } from '@/lib/notebook/archivePhaseNotebook';
 import type { WorkbookEntry } from '@/types/workbook';
 
 const DEFAULT_WORKBOOK_ID = 'training-wb-1';
@@ -71,6 +73,37 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
   const [chatSessionVersion, setChatSessionVersion] = useState(0);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameDialogValue, setRenameDialogValue] = useState('');
+
+  const interruptWorkbookWorkflow = useCallback(async (
+    workbookId: string,
+    reason: string
+  ) => {
+    if (!projectId) return;
+    const storageKey = buildMessageKey(workbookId, projectId);
+    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+    const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+    if (!session?.runId || !session.state) {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+      return;
+    }
+
+    if (session.state.status !== 'running' && session.state.status !== 'paused') {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+      return;
+    }
+
+    try {
+      await interruptWorkflowRun(session.runId, reason);
+    } catch (error) {
+      console.warn('[useTrainingWorkbooks] Failed to interrupt workbook workflow', {
+        workbookId,
+        runId: session.runId,
+        error
+      });
+    } finally {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+    }
+  }, [projectId]);
 
   // ---- Hydrate from localStorage (with one-time migration) ----------------
 
@@ -160,23 +193,33 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     const fallback = workbooks[idx - 1] ?? workbooks[idx + 1];
     if (!fallback) return;
 
-    if (projectId) {
-      localStorage.removeItem(buildMessageKey(current.id, projectId));
-      // Delete the bound training notebook so it can't be orphaned and later
-      // adopted by another workbook through the metadata-match path in
-      // useTrainingNotebookSync. Fire-and-forget; UI has already moved on.
-      if (current.notebookId) {
-        void deleteNotebook(projectId, current.notebookId).catch((error) => {
-          console.warn('[useTrainingWorkbooks] Failed to delete bound notebook', {
+    void (async () => {
+      if (projectId) {
+        await interruptWorkbookWorkflow(current.id, 'Training workbook deleted by user.');
+        localStorage.removeItem(buildMessageKey(current.id, projectId));
+        // Delete the bound training notebook so it can't be orphaned and later
+        // adopted by another workbook through the metadata-match path in
+        // useTrainingNotebookSync. If it already has cells, archive it instead
+        // of hard-deleting notebook history.
+        if (current.notebookId) {
+          await archivePhaseNotebook({
+            projectId,
             notebookId: current.notebookId,
-            error
+            phase: 'training',
+            tabId: current.id,
+            tabName: current.name
+          }).catch((error) => {
+            console.warn('[useTrainingWorkbooks] Failed to delete bound notebook', {
+              notebookId: current.notebookId,
+              error
+            });
           });
-        });
+        }
       }
-    }
-    setWorkbooks((prev) => prev.filter((wb) => wb.id !== current.id));
-    setActiveWorkbookId(fallback.id);
-  }, [activeWorkbookId, projectId, workbooks]);
+      setWorkbooks((prev) => prev.filter((wb) => wb.id !== current.id));
+      setActiveWorkbookId(fallback.id);
+    })();
+  }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, workbooks]);
 
   // Idempotent: short-circuits when the value is unchanged to prevent the
   // effect-setter-effect render loop that useTrainingNotebookSync would
@@ -263,29 +306,43 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
 
   const handleReset = useCallback(() => {
     if (!projectId) return;
-    // 1. Clear persisted chat messages. useMessageAccumulator stores under
-    //    `${storageKey}-${projectId}` where storageKey is already
-    //    `training-messages-v1-${workbookId}-${projectId}`. So the actual
-    //    localStorage key has projectId appended twice.
-    const storageKey = buildMessageKey(activeWorkbookId, projectId);
-    localStorage.removeItem(storageKey);
-    localStorage.removeItem(`${storageKey}-${projectId}`);
-    // 2. Unbind the notebook so useTrainingNotebookSync creates a fresh one
-    //    on the next render (same pattern as FE's handleReset which deletes
-    //    the old notebook and creates a new one).
-    const current = workbooks.find((wb) => wb.id === activeWorkbookId);
-    if (current?.notebookId) {
-      void deleteNotebook(projectId, current.notebookId).catch(() => undefined);
-      setWorkbooks((prev) =>
-        prev.map((wb) =>
-          wb.id === activeWorkbookId ? { ...wb, notebookId: null } : wb
-        )
-      );
-    }
-    // 3. Bump session version to force AgenticShell remount → picks up
-    //    the empty localStorage + fresh notebook binding.
-    setChatSessionVersion((v) => v + 1);
-  }, [activeWorkbookId, projectId, workbooks]);
+    void (async () => {
+      // 1. Interrupt any active workflow session tied to this workbook before
+      //    deleting the notebook, otherwise stale paused runs can keep
+      //    datasets undeletable.
+      await interruptWorkbookWorkflow(activeWorkbookId, 'Training workbook reset by user.');
+
+      // 2. Clear persisted chat messages. useMessageAccumulator stores under
+      //    `${storageKey}-${projectId}` where storageKey is already
+      //    `training-messages-v1-${workbookId}-${projectId}`. So the actual
+      //    localStorage key has projectId appended twice.
+      const storageKey = buildMessageKey(activeWorkbookId, projectId);
+      localStorage.removeItem(storageKey);
+      localStorage.removeItem(`${storageKey}-${projectId}`);
+
+      // 3. Unbind the notebook so useTrainingNotebookSync creates a fresh one
+      //    on the next render.
+      const current = workbooks.find((wb) => wb.id === activeWorkbookId);
+      if (current?.notebookId) {
+        await archivePhaseNotebook({
+          projectId,
+          notebookId: current.notebookId,
+          phase: 'training',
+          tabId: current.id,
+          tabName: current.name
+        }).catch(() => undefined);
+        setWorkbooks((prev) =>
+          prev.map((wb) =>
+            wb.id === activeWorkbookId ? { ...wb, notebookId: null } : wb
+          )
+        );
+      }
+
+      // 4. Bump session version to force AgenticShell remount → picks up
+      //    the empty localStorage + fresh notebook binding.
+      setChatSessionVersion((v) => v + 1);
+    })();
+  }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, workbooks]);
 
   return {
     workbooks,

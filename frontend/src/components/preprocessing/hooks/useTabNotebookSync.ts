@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
+import * as notebooksApi from '@/lib/api/notebooks';
 import { useNotebookStore } from '@/stores/notebookStore';
 import type { NotebookPhaseMetadata } from '@/types/notebook';
 import type { PreprocessingWorkbook } from '../preprocessingTabUtils';
@@ -20,6 +21,11 @@ function matchesPreprocessingTabNotebook(
     ? notebook.metadata as Record<string, unknown>
     : null;
   return metadata?.phase === 'preprocessing' && metadata?.tabId === tabId;
+}
+
+async function notebookHasPersistedCells(notebookId: string): Promise<boolean> {
+  const cells = await notebooksApi.listCells(notebookId);
+  return cells.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +229,9 @@ export function useTabNotebookSync({
         const meta = notebook.metadata as Record<string, unknown> | undefined;
         const phase = meta?.phase as string | undefined;
         if (phase && phase !== 'preprocessing') {
+          continue;
+        }
+        if (await notebookHasPersistedCells(notebook.notebookId)) {
           continue;
         }
         await deleteNotebook(notebook.notebookId);

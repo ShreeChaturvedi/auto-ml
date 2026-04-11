@@ -31,6 +31,7 @@ import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import { usePhaseNotebookRecovery } from '@/hooks/usePhaseNotebookRecovery';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 type TrainingProposalSelection = { title: string; selected: boolean };
@@ -581,6 +582,13 @@ export function TrainingPanel() {
   }, [handleRunCell]);
 
   const trainingStorageKey = buildTrainingStorageKey(activeTrainingWorkbookId);
+  const { isRecoveryReady } = usePhaseNotebookRecovery({
+    projectId,
+    phase: 'training',
+    notebookId: resolvedTrainingNotebookId,
+    storageKey: trainingStorageKey,
+    enabled: isTrainingNotebookReady
+  });
   const trainingSessionKey = useMemo(
     () => buildWorkflowSessionKey(
       projectId ?? 'training',
@@ -635,7 +643,7 @@ export function TrainingPanel() {
 
   return (
     <>
-      {isTrainingNotebookReady ? (
+      {isTrainingNotebookReady && isRecoveryReady ? (
       <AgenticShell
         key={`${activeTrainingWorkbookId}-${trainingChatSessionVersion}`}
         projectId={projectId ?? ''}

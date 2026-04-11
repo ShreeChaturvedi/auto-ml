@@ -27,6 +27,7 @@ import type { MutableRefObject } from 'react';
 // ── Mocks ─────────────────────────────────────────────────────
 
 const listNotebooksMock = vi.fn();
+const listCellsMock = vi.fn();
 const createNotebookApiMock = vi.fn();
 const updateNotebookApiMock = vi.fn();
 const deleteNotebookApiMock = vi.fn();
@@ -36,7 +37,7 @@ vi.mock('@/lib/api/notebooks', () => ({
   createNotebook: (...args: unknown[]) => createNotebookApiMock(...args),
   updateNotebook: (...args: unknown[]) => updateNotebookApiMock(...args),
   deleteNotebook: (...args: unknown[]) => deleteNotebookApiMock(...args),
-  listCells: vi.fn().mockResolvedValue([]),
+  listCells: (...args: unknown[]) => listCellsMock(...args),
   getCell: vi.fn(),
   createCell: vi.fn(),
   updateCell: vi.fn(),
@@ -171,6 +172,7 @@ describe('useTabNotebookSync', () => {
     vi.clearAllMocks();
     useNotebookStore.getState().reset();
     listNotebooksMock.mockResolvedValue([]);
+    listCellsMock.mockResolvedValue([]);
     createNotebookApiMock.mockImplementation(
       async (_pid: string, req: { name?: string; metadata?: unknown }) =>
         makeNotebook({
@@ -945,6 +947,53 @@ describe('useTabNotebookSync', () => {
 
       // The orphan should have been deleted
       expect(deleteNotebookApiMock).toHaveBeenCalled();
+    });
+  });
+
+  describe('reconcileTabNotebookMappings', () => {
+    it('does not delete orphan preprocessing notebooks that still have persisted cells', async () => {
+      const orphanNotebook = makeNotebook({
+        notebookId: 'nb-with-cells',
+        metadata: { phase: 'preprocessing', tabId: 'old-tab', tabName: 'Workbook 1' }
+      });
+      const activeNotebook = makeNotebook({
+        notebookId: 'nb-active',
+        metadata: { phase: 'preprocessing', tabId: 'tab-1', tabName: 'Workbook 1' }
+      });
+      const tab = makeTab({ id: 'tab-1', name: 'Workbook 1', notebookId: 'nb-active' });
+      const tabsRef = makeRef([tab]);
+      const activeTabIdRef = makeRef('tab-1');
+      const setTabNotebookIdMock = vi.fn();
+
+      useNotebookStore.setState({
+        currentProjectId: 'proj-1',
+        notebooks: [activeNotebook, orphanNotebook],
+        activeNotebookId: 'nb-active',
+        notebook: activeNotebook
+      });
+
+      listNotebooksMock.mockResolvedValue([activeNotebook, orphanNotebook]);
+      listCellsMock.mockImplementation(async (notebookId: string) =>
+        notebookId === 'nb-with-cells' ? [{ cellId: 'cell-1', position: 0, cellType: 'code' }] : []
+      );
+
+      const { result } = renderHook(() =>
+        useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady: true,
+          tabsRef,
+          activeTabIdRef,
+          tabs: [tab],
+          activeTab: undefined,
+          setTabNotebookId: setTabNotebookIdMock
+        })
+      );
+
+      await act(async () => {
+        await result.current.reconcileTabNotebookMappings();
+      });
+
+      expect(deleteNotebookApiMock).not.toHaveBeenCalledWith('nb-with-cells');
     });
   });
 });

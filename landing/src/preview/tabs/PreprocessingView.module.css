@@ -1,0 +1,221 @@
+/*
+ * PreprocessingView — split-pane using REAL frontend leaf components.
+ *
+ * Visual target is the canonical `PreprocessingPanel` inside the app: a
+ * resizable two-column workspace with a scrollable agentic chat log + composer
+ * on the left and a vertically-scrolling notebook on the right. The landing
+ * rebuild is read-only and the columns are fixed-ratio (no resizer) but the
+ * surface treatment, dividers, and chrome should feel identical.
+ */
+
+.root {
+  display: grid;
+  grid-template-columns: minmax(360px, 44%) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+
+/* ─── Left column: chat log + composer ────────────────────────────────── */
+
+.chatColumn {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-0);
+  border-right: 0.8px solid var(--border);
+}
+
+.chatLog {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar — match frontend ScrollArea look */
+.chatLog::-webkit-scrollbar { width: 8px; }
+.chatLog::-webkit-scrollbar-track { background: transparent; }
+.chatLog::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+.chatLog::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.14); }
+
+.userTurn {
+  align-self: flex-end;
+  max-width: 88%;
+}
+
+.userBubble {
+  background: var(--surface-2);
+  border: 0.8px solid var(--border);
+  border-radius: 14px 14px 4px 14px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.assistantTurn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.assistantText {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.assistantText strong { font-weight: 510; color: var(--text); }
+
+/* ToolIndicator is rendered inline — wrap it in a tinted card so the reused
+ * leaf component inherits the tab's visual rhythm without any override. */
+.toolStrip {
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 4px;
+}
+
+/* Composer sits at the bottom of the chat column. The real
+ * `<LlmChatComposer>` renders its own inner chrome (metallic border, toolbar,
+ * model selector, submit button) — we only provide the padding well. */
+.composerWell {
+  padding: 12px 16px 16px;
+  border-top: 0.8px solid var(--border);
+  background: var(--surface-0);
+  flex-shrink: 0;
+}
+
+/* ─── Right column: notebook ──────────────────────────────────────────── */
+
+.notebookColumn {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 28px 40px;
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.notebookColumn::-webkit-scrollbar { width: 8px; }
+.notebookColumn::-webkit-scrollbar-track { background: transparent; }
+.notebookColumn::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+.notebookTitle {
+  font-size: 11px;
+  font-family: 'Geist Mono Variable', monospace;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 2px;
+}
+
+.cell {
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cellHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 0.8px solid var(--border);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.cellExecCount {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.cellLanguageBadge {
+  padding: 2px 6px;
+  border: 0.8px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cellHeaderSpacer { flex: 1; }
+
+.cellKebab {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-dim);
+  align-items: center;
+  justify-content: center;
+}
+
+/* Shiki pre resets — the pre-baked HTML carries its own background, but we
+ * want it snug to the cell chrome and horizontally scrollable. */
+.cellCode {
+  padding: 0;
+  background: #24292e;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.cellCode :global(pre.shiki) {
+  margin: 0;
+  padding: 14px 18px;
+  background: transparent !important;
+  overflow-x: auto;
+  font-family: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.cellCode :global(pre.shiki code) {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* NotebookCellOutput host — the real component already ships its own
+ * border-top, muted surface, and OUTPUT label. We only scope it so its
+ * Tailwind-sourced colors resolve against the landing theme. */
+.outputHost {
+  --background: 15 16 17;            /* var(--surface-0) rgb-ish */
+  --foreground: 247 248 248;
+  --muted: 26 27 29;
+  --muted-foreground: 138 143 152;
+  --border: 255 255 255 / 0.06;
+  color: var(--text);
+}
+
+/* A tinted dataset label row at the top of each notebook-like example. */
+.notebookDatasetBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 0.8px solid var(--border);
+  border-radius: 999px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface-0);
+  width: fit-content;
+}

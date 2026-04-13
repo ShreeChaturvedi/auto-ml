@@ -47,4 +47,6 @@ export interface ComputeAnimationProps {
   accentClassName?: string;
   /** Fired once all entrance + completion animations have finished */
   onSettled?: () => void;
+  /** Multiplier applied to all internal animation durations. Default 1.0. */
+  durationScale?: number;
 }

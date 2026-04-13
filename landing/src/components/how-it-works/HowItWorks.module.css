@@ -1,0 +1,156 @@
+.intro {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 180px 32px 80px;
+}
+.introEyebrow {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 16px;
+}
+.introHeadline {
+  font-family: 'Inter Variable', sans-serif;
+  font-size: clamp(36px, 4vw, 48px);
+  font-weight: 510;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+  margin: 0;
+}
+.introHeadlineMuted { color: var(--text-muted); display: block; }
+
+.pinContainer {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.pinGrid {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 80px 32px;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 40px;
+}
+
+/* Left TOC */
+.toc {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: center;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.tocItem {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0;
+  position: relative;
+  color: var(--text-dim);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 14px;
+  transition: color var(--dur-fast) var(--ease-linear-default);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  text-align: left;
+}
+.tocItem:hover { color: var(--text-muted); }
+.tocItemActive { color: var(--text); }
+.tocItemActive::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 32px;
+  background: var(--text);
+}
+.tocProgressWrap {
+  margin-top: 32px;
+  height: 1px;
+  background: var(--border);
+  width: 200px;
+}
+.tocProgress {
+  height: 100%;
+  background: var(--text);
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+/* Right scrubbed scene */
+.sceneWrap {
+  position: relative;
+  align-self: center;
+  min-height: 540px;
+}
+.scene {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--dur-med) var(--ease-out-quart),
+              transform var(--dur-med) var(--ease-out-quart);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
+}
+.sceneActive { opacity: 1; transform: translateY(0); }
+
+/* Suspense placeholder while a lazy diorama chunk loads. Sized to match
+   the typical diorama height so the layout doesn't jump. */
+.sceneFallback {
+  width: 100%;
+  min-height: 320px;
+}
+
+.sceneCounter {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.sceneHeadline {
+  font-family: 'Inter Variable', sans-serif;
+  font-size: clamp(36px, 4vw, 56px);
+  font-weight: 510;
+  letter-spacing: -0.022em;
+  line-height: 1.05;
+  margin: 0;
+}
+.sceneHeadlineBright { color: var(--text); display: block; }
+.sceneHeadlineMuted  { color: var(--text-muted); display: block; }
+.sceneDiorama { max-width: 760px; }
+
+/* Fallback static stack (reduced motion) */
+.fallbackList {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 80px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 120px;
+  list-style: none;
+}
+.fallbackItem { display: grid; grid-template-columns: 120px 1fr; gap: 32px; }
+.fallbackFigure {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
+}
+.fallbackCode {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}

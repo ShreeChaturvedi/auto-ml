@@ -121,6 +121,14 @@ interface LlmChatComposerProps {
   reasoningConfig: ReasoningConfig;
   usageConfig?: UsageConfig;
   slots?: ComposerSlots;
+  /**
+   * Landing-page demo flag. When true, short-circuits the send action so the
+   * composer looks fully active but no message is dispatched. The visual
+   * appearance is identical to `readOnly={false}` — the button is NOT
+   * disabled or styled differently. Non-intrusive: the real app never sets
+   * this, it's purely for the marketing landing page's live demo islands.
+   */
+  readOnly?: boolean;
 }
 
 function useObservedWidth<T extends HTMLElement>(ref: RefObject<T | null>) {
@@ -157,7 +165,8 @@ export function LlmChatComposer({
   modelConfig,
   reasoningConfig,
   usageConfig,
-  slots = {}
+  slots = {},
+  readOnly = false
 }: LlmChatComposerProps) {
   const {
     value,
@@ -170,6 +179,11 @@ export function LlmChatComposer({
     onSend,
     onStop
   } = chatInput;
+
+  const handleSend = () => {
+    if (readOnly) return;
+    onSend();
+  };
 
   const {
     leftSlot,
@@ -319,7 +333,7 @@ export function LlmChatComposer({
 
               <InputGroupButton
                 size="sm"
-                onClick={isStreaming ? onStop : onSend}
+                onClick={isStreaming ? onStop : handleSend}
                 disabled={isStreaming ? false : !canSend}
                 aria-label={isStreaming ? 'Stop generating' : 'Send message'}
                 variant="ghost"

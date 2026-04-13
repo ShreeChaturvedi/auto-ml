@@ -1,0 +1,25 @@
+/*
+ * Deep-dive 2 — PLAN visual container. The surrounding chrome (eyebrow,
+ * headline, body, kbd hint) plus the `.cursor-outline` framing are applied
+ * upstream by `DeepDive.astro` / `FeaturesSection.astro`. This stylesheet
+ * only handles inner padding, scroll behavior, and the IO-enter initial
+ * opacity.
+ */
+.root {
+  position: relative;
+  padding: 28px;
+  height: 100%;
+  max-height: 560px;
+  overflow: auto;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+/* Reduced-motion: skip the WAAPI fade-in and paint the final frame instantly.
+ * The JS effect also sets opacity: 1 defensively, but this guarantees the
+ * content is visible even if the effect never runs (SSR, older jsdom). */
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,106 @@
+---
+// Sticky frosted navigation bar.
+// Permanent state — no scroll-change, no shrink. Matches Linear's static nav behavior.
+---
+
+<header class="nav-root">
+  <div class="nav-inner">
+    <a href="#top" class="nav-wordmark">Agentic AutoML</a>
+
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#product">Product</a>
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+    </nav>
+
+    <a href="/login" class="nav-cta">
+      Sign in
+      <span class="nav-cta-arrow" aria-hidden="true">→</span>
+    </a>
+  </div>
+</header>
+
+<style>
+  .nav-root {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: 72px;
+    background-image: linear-gradient(
+      rgba(10, 10, 11, 0.80) 0%,
+      rgba(10, 10, 11, 0.76) 100%
+    );
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 0.8px solid var(--border);
+  }
+
+  .nav-inner {
+    max-width: 1280px;
+    height: 100%;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 40px;
+  }
+
+  .nav-wordmark {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 16px;
+    font-weight: 590;
+    color: var(--text);
+    text-decoration: none;
+    letter-spacing: -0.01em;
+    transition: opacity var(--dur-fast) var(--ease-linear-default);
+  }
+  .nav-wordmark:hover { opacity: 0.8; }
+
+  .nav-links {
+    display: flex;
+    gap: 8px;
+  }
+
+  .nav-links a {
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0 12px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: color var(--dur-fast) var(--ease-linear-default);
+  }
+  .nav-links a:hover { color: var(--text); }
+
+  .nav-cta {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 14px;
+    font-weight: 510;
+    color: #0A0A0B;
+    text-decoration: none;
+    background: linear-gradient(180deg, #F7F8F8 0%, #E6E6E6 100%);
+    padding: 0 16px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 4px;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.2),
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+  }
+  .nav-cta:hover { transform: translateY(-1px); }
+  .nav-cta-arrow {
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+  }
+  .nav-cta:hover .nav-cta-arrow { transform: translateX(2px); }
+</style>

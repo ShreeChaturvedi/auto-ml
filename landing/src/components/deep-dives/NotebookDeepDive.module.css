@@ -1,0 +1,137 @@
+.root {
+  padding: 32px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.cell {
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cellHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 0.8px solid var(--border);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cellHeaderBadge {
+  color: var(--text-muted);
+}
+
+.cellCode {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  padding: 14px 18px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* Streamdown override: keep the code block flush with our cell padding and
+ * strip its default chrome so it reads like a bare notebook cell rather than
+ * a card inside a card. */
+.cellCode :global(.llm-streamdown),
+.cellCode :global(pre),
+.cellCode :global(code) {
+  margin: 0;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cellCode :global(pre) {
+  white-space: pre-wrap;
+}
+
+.cellRunning {
+  padding: 10px 18px;
+  border-top: 0.8px solid var(--border);
+  background: rgba(0, 0, 0, 0.15);
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runningDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.9);
+  animation: running-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes running-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
+.outputCell {
+  padding: 12px 18px;
+  border-top: 0.8px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.chartLabel {
+  margin: 0 0 8px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chartBlock {
+  height: 180px;
+}
+
+.outputHost {
+  border-top: 0.8px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 12px 18px;
+  overflow-x: auto;
+}
+
+.describeTable {
+  width: 100%;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  border-collapse: collapse;
+}
+
+.describeTable th,
+.describeTable td {
+  padding: 4px 10px;
+  text-align: left;
+  border-bottom: 0.8px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.describeTable tbody tr:last-child th,
+.describeTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.describeTable th {
+  color: var(--text);
+  font-weight: 510;
+}

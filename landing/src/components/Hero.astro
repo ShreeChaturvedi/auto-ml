@@ -1,0 +1,123 @@
+---
+// Hero — intentionally short so the app preview dominates the fold.
+// Pulse-dot announcement + mixed-color two-line H1 + mono subhead + single CTA.
+---
+
+<section class="hero" id="top">
+  <a href="#product" class="hero-pulse-link">
+    <span class="hero-pulse-dot" aria-hidden="true"></span>
+    <span class="hero-pulse-text">GPT 5.4 class reasoning, now live</span>
+    <span class="hero-pulse-arrow" aria-hidden="true">→</span>
+  </a>
+
+  <h1 class="hero-title">
+    <span class="hero-title-bright">The fastest way to build production ML models,</span>
+    <span class="hero-title-muted">agentically.</span>
+  </h1>
+
+  <p class="hero-subhead">
+    Upload a CSV. Describe your goal. Walk away. Come back to deployed models,
+    ranked experiments, and a notebook that explains every decision.
+  </p>
+
+  <div class="hero-cta-row">
+    <a href="/login" class="hero-cta">
+      Sign in to get started
+      <span class="hero-cta-arrow" aria-hidden="true">→</span>
+    </a>
+  </div>
+</section>
+
+<style>
+  .hero {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 184px 32px 0; /* 72 nav + 112 top gap */
+    text-align: center;
+  }
+
+  /* Pulse-dot announcement */
+  .hero-pulse-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 0.8px solid var(--border);
+    transition: color var(--dur-fast), border-color var(--dur-fast);
+  }
+  .hero-pulse-link:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .hero-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 0 0 0 rgba(247, 248, 248, 0.6);
+    animation: hero-pulse 2s ease-in-out infinite;
+  }
+  @keyframes hero-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(247, 248, 248, 0.6); }
+    50%      { box-shadow: 0 0 0 4px rgba(247, 248, 248, 0); }
+  }
+
+  /* H1 — mixed color cadence */
+  .hero-title {
+    margin: 32px 0 0;
+    font-family: 'Inter Variable', sans-serif;
+    font-weight: 510;
+    font-size: clamp(40px, 6vw, 72px);
+    line-height: 1;
+    letter-spacing: -0.022em;
+  }
+  .hero-title-bright { color: var(--text); display: block; }
+  .hero-title-muted  { color: var(--text-muted); display: block; }
+
+  /* Subhead */
+  .hero-subhead {
+    margin: 24px auto 0;
+    max-width: 620px;
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  /* CTA */
+  .hero-cta-row {
+    margin-top: 40px;
+    display: flex;
+    justify-content: center;
+  }
+  .hero-cta {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 16px;
+    font-weight: 510;
+    color: #0A0A0B;
+    text-decoration: none;
+    background: linear-gradient(180deg, #F7F8F8 0%, #E6E6E6 100%);
+    padding: 0 40px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.2),
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 8px 24px rgba(0, 0, 0, 0.08);
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+  }
+  .hero-cta:hover { transform: translateY(-1px); }
+  .hero-cta-arrow {
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+  }
+  .hero-cta:hover .hero-cta-arrow { transform: translateX(2px); }
+</style>

@@ -1,0 +1,88 @@
+---
+import { ROW_1, ROW_2, getLogoSvg } from '@/lib/integrationLogos';
+import MarqueeRow from './MarqueeRow.astro';
+
+const row1Logos = ROW_1.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
+const row2Logos = ROW_2.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
+---
+
+<section class="marquee-section" aria-labelledby="marquee-heading">
+  <div class="marquee-intro">
+    <p class="marquee-eyebrow">ECOSYSTEM</p>
+    <h2 class="marquee-headline" id="marquee-heading">
+      Plug into your data, your models,
+      <span class="marquee-headline-muted">and your frontier LLM of choice.</span>
+    </h2>
+  </div>
+
+  <div
+    class="marquee-container"
+    role="region"
+    aria-roledescription="marquee"
+    aria-label="Supported integrations"
+  >
+    <MarqueeRow logos={row1Logos} direction="left" />
+    <MarqueeRow logos={row2Logos} direction="right" />
+
+    <div class="marquee-fade marquee-fade-left" aria-hidden="true"></div>
+    <div class="marquee-fade marquee-fade-right" aria-hidden="true"></div>
+  </div>
+</section>
+
+<style>
+  .marquee-section { padding: 140px 0; }
+
+  .marquee-intro {
+    max-width: 1280px;
+    margin: 0 auto 80px;
+    padding: 0 32px;
+    text-align: center;
+  }
+  .marquee-eyebrow {
+    font-family: 'Geist Mono Variable', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 16px;
+  }
+  .marquee-headline {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: clamp(28px, 3.2vw, 40px);
+    font-weight: 510;
+    letter-spacing: -0.022em;
+    line-height: 1.1;
+    margin: 0;
+  }
+  .marquee-headline-muted { color: var(--text-muted); display: block; }
+
+  .marquee-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    overflow: hidden;
+  }
+
+  .marquee-fade {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 120px;
+    pointer-events: none;
+  }
+  .marquee-fade-left {
+    left: 0;
+    background: linear-gradient(to right,
+      var(--bg) 0%,
+      rgba(10, 10, 11, 0.9) 40%,
+      transparent 100%);
+  }
+  .marquee-fade-right {
+    right: 0;
+    background: linear-gradient(to left,
+      var(--bg) 0%,
+      rgba(10, 10, 11, 0.9) 40%,
+      transparent 100%);
+  }
+</style>

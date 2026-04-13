@@ -1,0 +1,90 @@
+---
+---
+
+<section class="footer-cta" aria-labelledby="footer-cta-heading">
+  <div class="footer-cta-vignette" aria-hidden="true"></div>
+  <p class="footer-cta-eyebrow">READY WHEN YOU ARE</p>
+  <h2 class="footer-cta-headline" id="footer-cta-heading">
+    Stop babysitting
+    <span class="footer-cta-headline-muted">your notebooks.</span>
+  </h2>
+  <p class="footer-cta-body">
+    The agent reads your data, writes the code, trains the models,
+    and hands you a reproducible result.
+  </p>
+  <a href="/login" class="footer-cta-button">
+    Sign in to get started
+    <span aria-hidden="true">→</span>
+  </a>
+</section>
+
+<style>
+  .footer-cta {
+    position: relative;
+    padding: 200px 32px;
+    text-align: center;
+    overflow: hidden;
+  }
+  .footer-cta-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(
+      ellipse 50% 50% at 50% 50%,
+      rgba(255, 255, 255, 0.04) 0%,
+      transparent 60%
+    );
+  }
+
+  .footer-cta-eyebrow {
+    font-family: 'Geist Mono Variable', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 32px;
+  }
+
+  .footer-cta-headline {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: clamp(48px, 7vw, 72px);
+    font-weight: 510;
+    letter-spacing: -0.022em;
+    line-height: 1;
+    margin: 0 0 40px;
+  }
+  .footer-cta-headline-muted {
+    display: block;
+    color: var(--text-muted);
+  }
+
+  .footer-cta-body {
+    font-family: 'Geist Mono Variable', monospace;
+    font-size: 18px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    max-width: 620px;
+    margin: 0 auto 48px;
+  }
+
+  .footer-cta-button {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 18px;
+    font-weight: 510;
+    color: #0A0A0B;
+    text-decoration: none;
+    background: linear-gradient(180deg, #F7F8F8 0%, #E6E6E6 100%);
+    padding: 0 48px;
+    height: 52px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.2),
+      0 2px 4px rgba(0, 0, 0, 0.04),
+      0 12px 32px rgba(0, 0, 0, 0.10);
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+  }
+  .footer-cta-button:hover { transform: translateY(-1px); }
+</style>

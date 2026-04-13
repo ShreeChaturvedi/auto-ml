@@ -1,0 +1,148 @@
+.frame {
+  width: 100%;
+  height: 440px;
+  background: var(--surface-0);
+  border: 0.8px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.dropZone {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 10px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--surface-1);
+  position: relative;
+}
+.cursorSprite {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 14px; height: 14px;
+  color: var(--text);
+  transform: translate(-30px, -20px);
+  animation: cursor-drop 4s ease-in-out infinite;
+}
+@keyframes cursor-drop {
+  0%, 20% { transform: translate(-120px, -80px); opacity: 1; }
+  45%     { transform: translate(-30px, -20px); opacity: 1; }
+  55%     { transform: translate(-30px, -20px); opacity: 0.4; }
+  70%     { transform: translate(-30px, -20px); opacity: 0; }
+  100%    { transform: translate(-120px, -80px); opacity: 1; }
+}
+
+.planPreview {
+  margin-top: 16px;
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.planLine {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.planLineCheck { color: rgba(139, 92, 246, 0.9); flex-shrink: 0; }
+
+.queryInput {
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.sqlBlock {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.resultBadge {
+  margin-top: 10px;
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.codeCell {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  background: var(--surface-1);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  color: var(--text);
+  line-height: 1.55;
+}
+.outputCell {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 0.8px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-muted);
+}
+.outputSuccess { color: rgba(139, 92, 246, 0.9); }
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+.barName { width: 120px; color: var(--text-muted); font-family: 'Geist Mono Variable', monospace; }
+.barTrack { flex: 1; height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.barFill { height: 100%; background: rgba(247, 248, 248, 0.8); }
+
+.modelRow {
+  display: grid;
+  grid-template-columns: 24px 1fr 60px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 0.8px solid var(--border);
+  font-size: 12px;
+}
+.modelRow:last-child { border-bottom: 0; }
+.modelRowChamp { color: rgba(139, 92, 246, 0.9); }
+
+.statusDot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #4ADE80;
+  box-shadow: 0 0 4px rgba(74, 222, 128, 0.6);
+  animation: pulse-green 2s ease-in-out infinite;
+}
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
+  50%      { box-shadow: 0 0 0 4px rgba(74, 222, 128, 0); }
+}
+
+.label {
+  font-family: 'Geist Mono Variable', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}

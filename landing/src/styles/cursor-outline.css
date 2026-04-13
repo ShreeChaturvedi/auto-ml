@@ -1,0 +1,57 @@
+/* Cursor-reactive outline glow.
+ * Companion to frontend's metallic-border but thicker and placed
+ * outside the element instead of on the 1px border strip.
+ *
+ * Usage:
+ *   <div className="cursor-outline" ref={ref}>...</div>
+ *   with useCursorOutline() populating --outline-x/y/opacity.
+ */
+
+.cursor-outline {
+  --outline-x: 0px;
+  --outline-y: 0px;
+  --outline-opacity: 0;
+  position: relative;
+  /* CRITICAL: creates a local stacking context so `::before`'s `z-index: -1`
+   * is clamped to THIS element. Without isolation, the negative z-index
+   * sends the ring all the way behind the page body, hiding the glow. With
+   * it, the ring sits behind the element's content but still in front of
+   * the element itself — visible where it extends past the edge via
+   * `inset: -24px`. This applies to every consumer (app preview frame,
+   * deep-dive islands) so all cursor-reactive glows work consistently. */
+  isolation: isolate;
+}
+
+.cursor-outline::before {
+  content: '';
+  position: absolute;
+  inset: -24px;               /* extends outside the element bounds */
+  border-radius: inherit;
+  padding: 24px;              /* ring thickness */
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(
+    circle 480px at var(--outline-x) var(--outline-y),
+    hsl(0 0% 100% / calc(var(--outline-opacity) * 0.35)) 0%,
+    hsl(0 0% 100% / calc(var(--outline-opacity) * 0.12)) 30%,
+    transparent 70%
+  );
+  filter: blur(14px);
+
+  /* Mask-composite trick: carve out the inner rectangle so the gradient
+     only appears in the 24px ring outside the element. */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+          mask-composite: exclude;
+  transition: opacity var(--dur-med) var(--ease-out-quart);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-outline::before { display: none; }
+  .cursor-outline { outline: 1px solid var(--border); outline-offset: 0; }
+}

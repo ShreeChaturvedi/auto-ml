@@ -1,26 +1,29 @@
 ---
-import SandboxSvg       from '@/assets/meta-sandbox.svg?raw';
 import OptimizationSvg  from '@/assets/meta-optimization.svg?raw';
 import OrchestrationSvg from '@/assets/meta-orchestration.svg?raw';
+import MetaSandboxAnimated from '@/components/MetaSandboxAnimated';
 
 const cards = [
   {
     eyebrow: 'SANDBOX',
     title: 'Executes in isolation.',
     body: 'Every agent action runs in a Docker-sandboxed Python runtime with strict resource limits. Your data never leaves your environment.',
-    svg: SandboxSvg,
+    svg: null,
+    rotatingSandbox: true,
   },
   {
     eyebrow: 'OPTIMIZATION',
     title: 'Finds the optimal model.',
     body: 'Optuna-backed hyperparameter search explores thousands of configurations, pruning weak branches early. You get the winner, not the search.',
     svg: OptimizationSvg,
+    rotatingSandbox: false,
   },
   {
     eyebrow: 'ORCHESTRATION',
     title: 'Sub-agents in lockstep.',
     body: 'LangGraph routes work between specialized agents for preprocessing, feature engineering, and training. A single loop, many hands.',
     svg: OrchestrationSvg,
+    rotatingSandbox: false,
   },
 ];
 ---
@@ -30,7 +33,13 @@ const cards = [
   <div class="meta-row-inner">
     {cards.map((card) => (
       <article class="meta-card">
-        <div class="meta-card-svg" aria-hidden="true" set:html={card.svg} />
+        <div class="meta-card-svg" aria-hidden="true">
+          {card.rotatingSandbox ? (
+            <MetaSandboxAnimated client:visible />
+          ) : (
+            <div class="meta-card-svg-static" set:html={card.svg} />
+          )}
+        </div>
         <p class="meta-card-eyebrow">{card.eyebrow}</p>
         <h3 class="meta-card-title">{card.title}</h3>
         <p class="meta-card-body">{card.body}</p>
@@ -84,7 +93,18 @@ const cards = [
     align-items: center;
     justify-content: center;
   }
-  .meta-card-svg :global(svg) {
+  .meta-card-svg :global(svg),
+  .meta-card-svg-static :global(svg) {
+    width: 100%;
+    height: 100%;
+  }
+
+  .meta-card-svg-static {
+    display: contents;
+  }
+
+  .meta-card-svg :global(astro-island) {
+    display: block;
     width: 100%;
     height: 100%;
   }

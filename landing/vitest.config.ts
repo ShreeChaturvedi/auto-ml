@@ -1,9 +1,18 @@
-import { defineConfig, type PluginOption } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import type { PluginOption } from 'vite';
 import { importerAwareAtAlias } from './config/importerAwareAtAlias.mjs';
 
 const frontendSrc = fileURLToPath(new URL('../frontend/src', import.meta.url));
+const landingReact = fileURLToPath(new URL('./node_modules/react', import.meta.url));
+const landingReactDom = fileURLToPath(new URL('./node_modules/react-dom', import.meta.url));
+const landingReactJsxRuntime = fileURLToPath(
+  new URL('./node_modules/react/jsx-runtime.js', import.meta.url),
+);
+const removeScrollBarConstants = fileURLToPath(
+  new URL('./node_modules/react-remove-scroll-bar/dist/es2019/constants.js', import.meta.url),
+);
 
 export default defineConfig({
   plugins: [importerAwareAtAlias() as PluginOption, react()],
@@ -23,7 +32,15 @@ export default defineConfig({
     // when landing tests render reused frontend components.
     server: {
       deps: {
-        inline: [/zustand/, /@radix-ui\//],
+        inline: [
+          /zustand/,
+          /@radix-ui\//,
+          /@tanstack\/react-table/,
+          /@tanstack\/react-virtual/,
+          /recharts/,
+          /react-router/,
+          /react-router-dom/,
+        ],
       },
     },
   },
@@ -32,9 +49,13 @@ export default defineConfig({
     // this, vitest resolves one React from landing/node_modules and another
     // from frontend/node_modules, causing duplicate-React errors when
     // rendering imported frontend components under jsdom.
-    dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-router', 'react-router-dom'],
     alias: {
       '@frontend': frontendSrc,
+      react: landingReact,
+      'react-dom': landingReactDom,
+      'react/jsx-runtime': landingReactJsxRuntime,
+      'react-remove-scroll-bar/constants': removeScrollBarConstants,
     },
   },
 });

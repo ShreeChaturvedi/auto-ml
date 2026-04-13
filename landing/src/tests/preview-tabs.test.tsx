@@ -1,37 +1,35 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { PreviewShell } from '@/preview/PreviewShell';
-import { usePreviewStore } from '@/preview/previewStore';
+import { DemoWorkspace, resetLandingDemoState } from '@frontend/demo/landing';
 
-describe('PreviewShell tab navigation', () => {
+describe('DemoWorkspace navigation', () => {
+  const fetchMock = vi.fn();
+
   beforeEach(() => {
-    usePreviewStore.setState(usePreviewStore.getInitialState());
+    resetLandingDemoState();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockReset();
   });
 
-  it('renders the Data Viewer tab by default', async () => {
-    render(<PreviewShell />);
-    // Data Viewer shows the mock English query in the query panel.
-    // Views are lazy-loaded via React.lazy, so await resolution.
-    expect(
-      await screen.findByText(/which customers churned in Q2/i),
-    ).toBeInTheDocument();
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it('switches to Experiments when that sidebar button is clicked', async () => {
-    render(<PreviewShell />);
-    const expButton = screen.getByRole('tab', { name: /experiments/i });
-    fireEvent.click(expButton);
-    expect(
-      await screen.findByText(/4 MODELS · SORTED BY F1/i),
-    ).toBeInTheDocument();
+  it('renders the training surface through the real app shell', async () => {
+    render(<DemoWorkspace initialPhase="training" />);
+    expect(await screen.findByText(/training in progress/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/NovaForest Classifier/i).length).toBeGreaterThan(0);
   });
 
-  it('Deployment sub-tab navigation works', async () => {
-    usePreviewStore.getState().setActiveTab('deployment');
-    render(<PreviewShell />);
-    const logsTab = await screen.findByRole('tab', { name: /logs/i });
-    fireEvent.click(logsTab);
-    // Logs panel renders the deployment logs
-    expect(screen.getByRole('log')).toBeInTheDocument();
+  it('navigates between phases without issuing backend fetches', async () => {
+    render(<DemoWorkspace initialPhase="data-viewer" />);
+
+    expect(await screen.findByText(/column overview/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('workflow-phase-button-feature-engineering'));
+    expect(await screen.findByText(/Build Enabled Features/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('workflow-phase-button-experiments'));
+    expect(await screen.findByText(/NovaForest Classifier/i)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,24 @@
+import { useEffect, useState, type ComponentType } from 'react';
 import { useCursorOutline } from '@/lib/useCursorOutline';
-import { PreviewShell } from '@/preview/PreviewShell';
 import styles from './AppPreviewFrame.module.css';
 
 export default function AppPreviewFrame() {
   const { ref } = useCursorOutline({ proximityThreshold: 220 });
+  const [DemoWorkspaceComponent, setDemoWorkspaceComponent] = useState<ComponentType | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void import('@frontend/demo/landing').then((module) => {
+      if (!cancelled) {
+        setDemoWorkspaceComponent(() => module.DemoWorkspace);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className={styles.outer} id="product">
@@ -32,7 +47,11 @@ export default function AppPreviewFrame() {
             className={`landing-grain landing-grain-strong ${styles.innerGrain}`}
             aria-hidden="true"
           />
-          <PreviewShell />
+          {DemoWorkspaceComponent ? (
+            <DemoWorkspaceComponent />
+          ) : (
+            <div className="h-full bg-background" data-testid="landing-demo-loading" />
+          )}
         </div>
       </div>
     </div>

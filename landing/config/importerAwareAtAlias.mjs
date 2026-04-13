@@ -1,10 +1,9 @@
-import { createRequire, builtinModules } from 'node:module';
+import { builtinModules } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const landingSrc = fileURLToPath(new URL('../src', import.meta.url));
 const frontendSrc = fileURLToPath(new URL('../../frontend/src', import.meta.url));
-const landingRequire = createRequire(new URL('../package.json', import.meta.url));
 const builtins = new Set(builtinModules);
 
 function isBareSpecifier(source) {
@@ -13,9 +12,7 @@ function isBareSpecifier(source) {
     !source.startsWith('/') &&
     !source.startsWith('\0') &&
     !source.startsWith('virtual:') &&
-    !source.startsWith('node:') &&
-    !source.startsWith('@/') &&
-    !source.startsWith('@frontend/')
+    !source.startsWith('node:')
   );
 }
 
@@ -30,9 +27,12 @@ function isBareSpecifier(source) {
  *
  * Shared between `landing/astro.config.mjs` and `landing/vitest.config.ts`.
  *
+ * @param {{ resolveBareSpecifiersFromLanding?: boolean }} [options]
  * @returns {import('vite').Plugin}
  */
-export function importerAwareAtAlias() {
+export function importerAwareAtAlias(options = {}) {
+  const { resolveBareSpecifiersFromLanding = false } = options;
+
   return {
     name: 'landing-importer-aware-at-alias',
     enforce: 'pre',
@@ -48,17 +48,18 @@ export function importerAwareAtAlias() {
         return resolved?.id ?? absolute;
       }
 
-      if (!importerIsFrontend || !isBareSpecifier(source) || builtins.has(source)) {
-        return null;
+      if (
+        resolveBareSpecifiersFromLanding &&
+        importerIsFrontend &&
+        isBareSpecifier(source) &&
+        !builtins.has(source)
+      ) {
+        const syntheticLandingImporter = path.join(landingSrc, '__resolver__.ts');
+        const resolved = await this.resolve(source, syntheticLandingImporter, { skipSelf: true });
+        return resolved?.id ?? null;
       }
 
-      try {
-        const resolved = landingRequire.resolve(source);
-        const viteResolved = await this.resolve(resolved, importer, { skipSelf: true });
-        return viteResolved?.id ?? resolved;
-      } catch {
-        return null;
-      }
+      return null;
     },
   };
 }

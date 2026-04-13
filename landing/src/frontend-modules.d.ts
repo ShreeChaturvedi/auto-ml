@@ -46,7 +46,7 @@ declare module '@frontend/components/upload/QuestionCards' {
 }
 
 declare module '@frontend/components/llm/MentionInput' {
-  export interface MentionInputHandle {}
+  export type MentionInputHandle = unknown;
 }
 
 declare module '@frontend/components/llm/modelOptions' {
@@ -72,13 +72,13 @@ declare module '@frontend/components/llm/modelOptions' {
 declare module '@frontend/components/llm/LlmChatComposer' {
   import type { ComponentType } from 'react';
 
-  export const LlmChatComposer: ComponentType<any>;
+  export const LlmChatComposer: ComponentType<Record<string, unknown>>;
 }
 
 declare module '@frontend/components/llm/ToolIndicator' {
   import type { ComponentType } from 'react';
 
-  export const ToolIndicator: ComponentType<any>;
+  export const ToolIndicator: ComponentType<Record<string, unknown>>;
 }
 
 declare module '@frontend/components/notebook/NotebookCellOutput' {

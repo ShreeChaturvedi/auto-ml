@@ -15,7 +15,7 @@ const removeScrollBarConstants = fileURLToPath(
 );
 
 export default defineConfig({
-  plugins: [importerAwareAtAlias() as PluginOption, react()],
+  plugins: [importerAwareAtAlias({ resolveBareSpecifiersFromLanding: true }) as PluginOption, react()],
   test: {
     globals: true,
     environment: 'jsdom',
@@ -45,10 +45,7 @@ export default defineConfig({
     },
   },
   resolve: {
-    // Force a single React copy across landing + @frontend imports. Without
-    // this, vitest resolves one React from landing/node_modules and another
-    // from frontend/node_modules, causing duplicate-React errors when
-    // rendering imported frontend components under jsdom.
+    // Force a single React copy across landing + @frontend imports.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-router', 'react-router-dom'],
     alias: {
       '@frontend': frontendSrc,

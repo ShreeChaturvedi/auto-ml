@@ -3,7 +3,7 @@
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +31,9 @@ import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
 import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import { useModelStore } from '@/stores/modelStore';
 import { usePhaseNotebookRecovery } from '@/hooks/usePhaseNotebookRecovery';
+import { useTrainingPanelSearchState } from './useTrainingPanelSearchState';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
 type TrainingProposalSelection = { title: string; selected: boolean };
@@ -256,8 +258,13 @@ function TrainingConversationPane({
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
   const composerPlaceholders = useWorkflowPlaceholders(projectId, 'training');
-  const [searchParams] = useSearchParams();
-  const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
+  const {
+    initialWorkbookId,
+    initialNotebookId,
+    requestedWorkbookId,
+    syncWorkbookParam
+  } = useTrainingPanelSearchState();
+  const initialNotebookIdRef = useRef(initialNotebookId);
 
   const {
     workbooks: trainingWorkbooks,
@@ -277,7 +284,10 @@ export function TrainingPanel() {
     renameDialogValue,
     setRenameDialogValue,
     openRenameDialog
-  } = useTrainingWorkbooks(projectId);
+  } = useTrainingWorkbooks(projectId, {
+    requestedWorkbookId: requestedWorkbookId ?? initialWorkbookId ?? undefined,
+    syncWorkbookParam
+  });
 
   // Resolve a training-scoped notebook for the active workbook. The hook
   // creates/adopts a notebook with metadata { phase: 'training', tabId, tabName }
@@ -352,6 +362,7 @@ export function TrainingPanel() {
     if (!projectId) return;
     hydrateFeatures(projectId);
     hydrateFromBackend(projectId);
+    void useModelStore.getState().refreshModels(projectId);
   }, [projectId, hydrateFeatures, hydrateFromBackend]);
 
   useEffect(() => {
@@ -645,7 +656,6 @@ export function TrainingPanel() {
     <>
       {isTrainingNotebookReady && isRecoveryReady ? (
       <AgenticShell
-        key={`${activeTrainingWorkbookId}-${trainingChatSessionVersion}`}
         projectId={projectId ?? ''}
         composerPlaceholders={composerPlaceholders}
         storageKey={trainingStorageKey}

@@ -66,7 +66,7 @@ describe('FileSubtabs', () => {
     }];
   });
 
-  it('renders existing files without hydrating on mount', () => {
+  it('hydrates files on mount and renders the current project datasets', () => {
     render(
       <TooltipProvider>
         <MemoryRouter initialEntries={['/project/p1/upload']}>
@@ -78,6 +78,6 @@ describe('FileSubtabs', () => {
     );
 
     expect(screen.getByText('employees.csv')).toBeInTheDocument();
-    expect(mockState.hydrateFromBackendMock).not.toHaveBeenCalled();
+    expect(mockState.hydrateFromBackendMock).toHaveBeenCalledWith('p1');
   });
 });

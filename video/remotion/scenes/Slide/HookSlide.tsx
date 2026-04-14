@@ -40,7 +40,9 @@ export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
     damping: 180,
   }) as FourChunks;
 
-  const footnoteOpacity = interpolate(pFootnote.t, [0, 1], [0, 0.55], {
+  // Final opacity lifted to 1.0 (was 0.55) — the previous value rendered the
+  // citation illegible against a white background even with full-black ink.
+  const footnoteOpacity = interpolate(pFootnote.t, [0, 1], [0, 1], {
     easing: EASE_OUT,
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -48,19 +50,24 @@ export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
 
   return (
     <SlideShell theme={theme} eyebrow="CSE 449 · CAPSTONE">
-      {/* Main line — ~42% vertical center leaves room for footnote below. */}
+      {/* Main line — top-anchored with fixed px line-height. Absolute-position
+       *  the whole block at a fixed `top` so TypeOnText growth cannot shift it
+       *  (previous version used `top: 42%` + `translateY(-50%)` which recentered
+       *  as content grew, producing a visible upward jump). The line-height is
+       *  set wider than the 80% glyph (132px) so all three visual lines carry
+       *  the same vertical gap — the previous `1.12` value let the 80% line
+       *  expand its line-box and created an asymmetric 1↔2 vs 2↔3 gap. */}
       <div
         style={{
           position: "absolute",
-          top: "42%",
+          top: 260,
           left: SAFE_AREA.contentLeft,
           right: SAFE_AREA.right,
-          transform: "translateY(-50%)",
           maxWidth: 1400,
           ...TITLE_FONT,
           color: c.WORD_COLOR_ON_BG_APPEARED,
           fontSize: 76,
-          lineHeight: 1.12,
+          lineHeight: 1.9,
           letterSpacing: "-0.015em",
           textWrap: "balance",
         }}
@@ -131,24 +138,26 @@ const FootnoteHairline: React.FC<{ theme: Theme; delay: number; opacity: number 
 }) => {
   const c = COLORS[theme];
   return (
-    <div style={{ position: "absolute", left: SAFE_AREA.contentLeft, bottom: SAFE_AREA.bottom + 24, opacity }}>
+    <div style={{ position: "absolute", left: SAFE_AREA.contentLeft, bottom: SAFE_AREA.bottom + 40, opacity }}>
       <MotionLine
         x1={0}
         y1={0}
-        x2={240}
+        x2={280}
         y2={0}
         delay={delay}
         durationInFrames={FOOTNOTE_HAIRLINE_FRAMES}
-        color={c.BORDER_COLOR}
-        svgWidth={240}
+        color={c.WORD_COLOR_ON_BG_APPEARED}
+        strokeWidth={2}
+        svgWidth={280}
         svgHeight={2}
       />
       <div
         style={{
           ...REGULAR_FONT,
-          fontSize: 18,
-          marginTop: 12,
-          color: c.WORD_COLOR_ON_BG_GREYED,
+          fontWeight: 500,
+          fontSize: 24,
+          marginTop: 14,
+          color: c.WORD_COLOR_ON_BG_APPEARED,
           letterSpacing: "0.01em",
         }}
       >

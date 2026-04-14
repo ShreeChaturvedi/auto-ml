@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import * as notebooksApi from '@/lib/api/notebooks';
+import { useNotebookStore } from '@/stores/notebookStore';
 import type { Notebook } from '@/types/notebook';
 import type { WorkbookEntry } from '@/types/workbook';
 
@@ -91,6 +92,28 @@ function isUsableTrainingNotebookBinding(
   return metadata.tabId === undefined || metadata.tabId === workbookId;
 }
 
+function resolveCachedTrainingNotebookId(
+  projectId: string,
+  workbookId: string,
+  boundNotebookId: string | null,
+  notebookProjectId: string | null,
+  notebooks: Array<Pick<Notebook, 'notebookId' | 'kind' | 'metadata'>>
+): string | null {
+  if (notebookProjectId !== projectId) {
+    return null;
+  }
+
+  if (boundNotebookId) {
+    const boundNotebook = notebooks.find((entry) => entry.notebookId === boundNotebookId);
+    if (boundNotebook && isUsableTrainingNotebookBinding(boundNotebook, workbookId)) {
+      return boundNotebook.notebookId;
+    }
+  }
+
+  const matchingNotebook = notebooks.find((entry) => matchesTrainingWorkbookNotebook(entry, workbookId));
+  return matchingNotebook?.notebookId ?? null;
+}
+
 export function useTrainingNotebookSync({
   projectId,
   activeWorkbook,
@@ -100,6 +123,18 @@ export function useTrainingNotebookSync({
   const workbookId = activeWorkbook?.id ?? null;
   const workbookName = activeWorkbook?.name ?? null;
   const workbookNotebookId = activeWorkbook?.notebookId ?? null;
+  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
+  const notebooks = useNotebookStore((state) => state.notebooks);
+  const cachedNotebookId =
+    projectId && workbookId
+      ? resolveCachedTrainingNotebookId(
+          projectId,
+          workbookId,
+          workbookNotebookId,
+          notebookProjectId,
+          notebooks
+        )
+      : null;
 
   // IMPORTANT: initialize state and refs to null — not to workbookNotebookId.
   // The workbook's persisted binding is UNVERIFIED at mount: the notebook
@@ -107,14 +142,14 @@ export function useTrainingNotebookSync({
   // We must always run at least one listNotebooks → validate cycle before
   // trusting the binding. Pre-populating the ref would let the same-
   // workbook early-exit skip that validation on first render.
-  const [notebookId, setNotebookId] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
+  const [notebookId, setNotebookId] = useState<string | null>(cachedNotebookId);
+  const [isReady, setIsReady] = useState(workbookId == null ? true : Boolean(cachedNotebookId));
   const notebookEnsureLockRef = useRef<{ workbookId: string; promise: Promise<string | null> } | null>(null);
-  const activeWorkbookIdRef = useRef<string | null>(null);
+  const activeWorkbookIdRef = useRef<string | null>(workbookId && cachedNotebookId ? workbookId : null);
   // The resolved notebook id is also tracked in a ref so the effect can
   // early-exit on re-runs without needing `notebookId` in its deps (which
   // would cause a redundant extra ensure round-trip per setState).
-  const resolvedNotebookIdRef = useRef<string | null>(null);
+  const resolvedNotebookIdRef = useRef<string | null>(cachedNotebookId);
   // Ensure the URL deep-link adoption only runs once per mount.
   const initialAdoptionRef = useRef(false);
 
@@ -153,7 +188,9 @@ export function useTrainingNotebookSync({
         && workbookNotebookId === null;
 
       if (workbookChanged) {
-        setIsReady(false);
+        if (!resolvedNotebookIdRef.current) {
+          setIsReady(false);
+        }
       } else if (resolvedNotebookIdRef.current) {
         // Same workbook, already resolved — but if the workbook binding was
         // cleared or rotated to a new notebook id, invalidate the cached

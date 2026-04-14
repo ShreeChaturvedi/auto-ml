@@ -1,6 +1,8 @@
 import React, { lazy, Suspense, useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
+import { DeploymentDashboard } from '@/components/deployment/DeploymentDashboard';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
@@ -11,13 +13,16 @@ const DataViewerTab = lazy(() => import('@/components/data/DataViewerTab').then(
 const PreprocessingPanel = lazy(() => import('@/components/preprocessing/PreprocessingPanel').then(m => ({ default: m.PreprocessingPanel })));
 const FeatureEngineeringPanel = lazy(() => import('@/components/features/FeatureEngineeringPanel').then(m => ({ default: m.FeatureEngineeringPanel })));
 const TrainingPanel = lazy(() => import('@/components/training/TrainingPanel').then(m => ({ default: m.TrainingPanel })));
-const ExperimentsDashboard = lazy(() => import('@/components/experiments/ExperimentsDashboard').then(m => ({ default: m.ExperimentsDashboard })));
-const DeploymentDashboard = lazy(() => import('@/components/deployment/DeploymentDashboard').then(m => ({ default: m.DeploymentDashboard })));
 
-const PHASE_BACKED_NOTEBOOK_PHASES = new Set<Phase>([
+const NOTEBOOK_SESSION_PRESERVED_PHASES = new Set<Phase>([
   'preprocessing',
   'feature-engineering',
-  'training'
+  'training',
+  // These routes do not render the notebook UI, but preserving the active
+  // phase notebook session avoids a visible reconnect/repaint when the user
+  // jumps back into FE or Training from them.
+  'experiments',
+  'deployment'
 ]);
 
 function shouldPreserveNotebookSession(
@@ -33,7 +38,7 @@ function shouldPreserveNotebookSession(
     return true;
   }
 
-  return PHASE_BACKED_NOTEBOOK_PHASES.has(phase);
+  return NOTEBOOK_SESSION_PRESERVED_PHASES.has(phase);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,18 +221,14 @@ export function ProjectWorkspace() {
     case 'experiments':
       return (
         <PhaseErrorBoundary>
-          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
-            <ExperimentsDashboard />
-          </Suspense>
+          <ExperimentsDashboard />
         </PhaseErrorBoundary>
       );
 
     case 'deployment':
       return (
         <PhaseErrorBoundary>
-          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
-            <DeploymentDashboard />
-          </Suspense>
+          <DeploymentDashboard />
         </PhaseErrorBoundary>
       );
 

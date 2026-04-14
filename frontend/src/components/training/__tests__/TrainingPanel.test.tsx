@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TrainingPanel } from '../TrainingPanel';
@@ -36,6 +36,7 @@ const mockState = vi.hoisted(() => ({
 
   // modelStore / executionStore
   executeCodeMock: vi.fn(),
+  refreshModelsMock: vi.fn(),
 
   // workbook registry
   setWorkbooksMock: vi.fn(),
@@ -43,7 +44,9 @@ const mockState = vi.hoisted(() => ({
   // agentic shell
   messages: [] as Array<unknown>,
   submitPromptMock: vi.fn(),
-  trainingAdapterArgs: [] as Array<Record<string, unknown>>
+  trainingAdapterArgs: [] as Array<Record<string, unknown>>,
+  agenticShellMounts: 0,
+  agenticShellUnmounts: 0
 }));
 
 // Mock AgenticShell so we can observe what notebookId it receives and skip
@@ -72,26 +75,37 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
       turnDiffs?: Map<string, unknown>;
       onRetryWorkflow?: () => void;
     }) => React.ReactNode;
-  }) => (
-    <div>
-      <div data-testid="training-notebook-id">{notebookId ?? ''}</div>
-      <div data-testid="toolbar-left">{toolbarLeft}</div>
-      <div data-testid="toolbar-right">{toolbarRight}</div>
-      {renderLeftPane
-        ? renderLeftPane({
-            messages: mockState.messages,
-            isGenerating: false,
-            error: null,
-            submitPrompt: mockState.submitPromptMock,
-            activeTextMessageId: null,
-            activeThinkingMessageId: null,
-            hydratedMessageIds: new Set<string>(),
-            editingMessageId: null,
-            turnDiffs: new Map()
-          })
-        : null}
-    </div>
-  )
+  }) => {
+    const instanceIdRef = React.useRef(`training-shell-${Math.random().toString(36).slice(2, 8)}`);
+    React.useEffect(() => {
+      mockState.agenticShellMounts += 1;
+      return () => {
+        mockState.agenticShellUnmounts += 1;
+      };
+    }, []);
+
+    return (
+      <div>
+        <div data-testid="training-shell-instance">{instanceIdRef.current}</div>
+        <div data-testid="training-notebook-id">{notebookId ?? ''}</div>
+        <div data-testid="toolbar-left">{toolbarLeft}</div>
+        <div data-testid="toolbar-right">{toolbarRight}</div>
+        {renderLeftPane
+          ? renderLeftPane({
+              messages: mockState.messages,
+              isGenerating: false,
+              error: null,
+              submitPrompt: mockState.submitPromptMock,
+              activeTextMessageId: null,
+              activeThinkingMessageId: null,
+              hydratedMessageIds: new Set<string>(),
+              editingMessageId: null,
+              turnDiffs: new Map()
+            })
+          : null}
+      </div>
+    );
+  }
 }));
 
 vi.mock('@/stores/dataStore', () => ({
@@ -122,6 +136,7 @@ vi.mock('@/stores/notebookStore', () => ({
     (selector: (state: unknown) => unknown) =>
       selector({
         activeNotebookId: null,
+        currentProjectId: 'p1',
         notebooks: mockState.notebooksInStore,
         initializeNotebook: mockState.initializeNotebookMock,
         disconnect: mockState.disconnectNotebookMock
@@ -129,6 +144,7 @@ vi.mock('@/stores/notebookStore', () => ({
     {
       getState: () => ({
         activeNotebookId: null,
+        currentProjectId: 'p1',
         notebooks: mockState.notebooksInStore,
         initializeNotebook: mockState.initializeNotebookMock,
         disconnect: mockState.disconnectNotebookMock
@@ -139,16 +155,29 @@ vi.mock('@/stores/notebookStore', () => ({
 
 vi.mock('@/stores/workbookRegistryStore', () => ({
   useWorkbookRegistryStore: {
-    getState: () => ({ setWorkbooks: mockState.setWorkbooksMock })
+    getState: () => ({
+      setWorkbooks: mockState.setWorkbooksMock,
+      setActiveWorkbookId: vi.fn()
+    })
   }
 }));
 
 vi.mock('@/stores/workflowSessionStore', () => ({
   buildWorkflowSessionKey: (a: string, b: string) => `${a}:${b}`,
   useWorkflowSessionStore: Object.assign(
-    () => ({ sessions: {}, updateSession: vi.fn(), clearSession: vi.fn() }),
+    () => ({
+      sessions: {},
+      getSession: vi.fn(),
+      updateSession: vi.fn(),
+      clearSession: vi.fn()
+    }),
     {
-      getState: () => ({ sessions: {}, updateSession: vi.fn(), clearSession: vi.fn() })
+      getState: () => ({
+        sessions: {},
+        getSession: vi.fn(),
+        updateSession: vi.fn(),
+        clearSession: vi.fn()
+      })
     }
   )
 }));
@@ -156,6 +185,7 @@ vi.mock('@/stores/workflowSessionStore', () => ({
 vi.mock('@/stores/modelStore', () => ({
   useModelStore: {
     getState: () => ({
+      refreshModels: mockState.refreshModelsMock,
       setCurrentStage: vi.fn(),
       updateTrainingRun: vi.fn(),
       clearTrainingRun: vi.fn()
@@ -214,16 +244,27 @@ vi.mock('../TrainingAdapter', () => ({
 
 // Toolbar/model-card children don't matter for isolation assertions.
 vi.mock('../TrainingToolbar', () => ({
-  TrainingToolbarLeft: ({ onReset }: { onReset: () => void }) => (
-    <button
-      type="button"
-      onClick={() => {
-        mockState.messages = [];
-        onReset();
-      }}
-    >
-      Reset workbook
-    </button>
+  TrainingToolbarLeft: ({
+    onReset,
+    onSwitch
+  }: {
+    onReset: () => void;
+    onSwitch: (workbookId: string) => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          mockState.messages = [];
+          onReset();
+        }}
+      >
+        Reset workbook
+      </button>
+      <button type="button" onClick={() => onSwitch('training-wb-2')}>
+        Switch workbook
+      </button>
+    </div>
   ),
   TrainingToolbarRight: () => null
 }));
@@ -271,10 +312,14 @@ describe('TrainingPanel', () => {
     mockState.initializeNotebookMock.mockReset();
     mockState.disconnectNotebookMock.mockReset();
     mockState.executeCodeMock.mockReset();
+    mockState.refreshModelsMock.mockReset();
+    mockState.refreshModelsMock.mockResolvedValue(undefined);
     mockState.setWorkbooksMock.mockReset();
     mockState.submitPromptMock.mockReset();
     mockState.messages = [];
     mockState.trainingAdapterArgs = [];
+    mockState.agenticShellMounts = 0;
+    mockState.agenticShellUnmounts = 0;
 
     mockState.listNotebooksMock.mockReset();
     mockState.listNotebooksMock.mockImplementation(async () => mockState.notebooksInApi);
@@ -300,8 +345,8 @@ describe('TrainingPanel', () => {
     mockState.deleteNotebookMock.mockResolvedValue({ success: true });
   });
 
-  const renderPanel = () => render(
-    <MemoryRouter initialEntries={['/project/p1/training']}>
+  const renderPanel = (initialPath = '/project/p1/training') => render(
+    <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/project/:projectId/training" element={<TrainingPanel />} />
       </Routes>
@@ -324,6 +369,14 @@ describe('TrainingPanel', () => {
     expect(screen.queryByRole('link', { name: /Open Feature Engineering/i })).not.toBeInTheDocument();
   });
 
+  it('preloads models for the active project so Experiments can reopen warm', async () => {
+    renderPanel();
+
+    await waitFor(() => {
+      expect(mockState.refreshModelsMock).toHaveBeenCalledWith('p1');
+    });
+  });
+
   it('uses a no-target training workflow session key until the user selects a target', async () => {
     renderPanel();
 
@@ -334,6 +387,32 @@ describe('TrainingPanel', () => {
     const lastArgs = mockState.trainingAdapterArgs.at(-1);
     expect(lastArgs?.sessionKey).toContain(':ds-1:no-target');
     expect(lastArgs?.targetColumn).toBeUndefined();
+  });
+
+  it('respects the workbook query param on first Training render', async () => {
+    localStorage.setItem('training-workbooks-v1-p1', JSON.stringify({
+      activeWorkbookId: 'training-wb-1',
+      workbooks: [
+        { id: 'training-wb-1', name: 'Workbook 1', notebookId: null },
+        { id: 'training-wb-2', name: 'Workbook 2', notebookId: null }
+      ]
+    }));
+
+    renderPanel('/project/p1/training?workbook=training-wb-2');
+
+    await waitFor(() => {
+      expect(mockState.createNotebookMock).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({
+          name: 'Workbook 2',
+          metadata: expect.objectContaining({
+            phase: 'training',
+            tabId: 'training-wb-2',
+            tabName: 'Workbook 2'
+          })
+        })
+      );
+    });
   });
 
   it('creates a training-scoped notebook and does NOT touch the pre-existing FE notebook', async () => {
@@ -493,5 +572,24 @@ describe('TrainingPanel', () => {
 
     expect(screen.queryByText(/Approve Model Training/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Train Selected Model/i })).not.toBeInTheDocument();
+  });
+
+  it('does not remount AgenticShell when switching training workbooks', async () => {
+    renderPanel();
+
+    let initialInstanceId = '';
+    await waitFor(() => {
+      expect(mockState.agenticShellMounts).toBe(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('training-notebook-id')).toHaveTextContent('new-training-nb');
+    });
+    initialInstanceId = screen.getByTestId('training-shell-instance').textContent ?? '';
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch workbook/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('training-shell-instance')).toHaveTextContent(initialInstanceId);
+    });
   });
 });

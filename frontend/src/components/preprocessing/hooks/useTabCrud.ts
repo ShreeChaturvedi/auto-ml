@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { AvailableTable } from '@/types/preprocessing';
@@ -32,6 +33,7 @@ interface UseTabCrudOptions {
     options?: { forceCreate?: boolean }
   ) => Promise<string | null>;
   onNeedsDatasetSelection: (firstDatasetId: string) => void;
+  reserveNextWorkbookName: () => string;
 }
 
 interface UseTabCrudResult {
@@ -65,7 +67,8 @@ export function useTabCrud({
   saveActiveSnapshot,
   applyTabSnapshot,
   ensureNotebookForTab,
-  onNeedsDatasetSelection
+  onNeedsDatasetSelection,
+  reserveNextWorkbookName
 }: UseTabCrudOptions): UseTabCrudResult {
   const [renameTabDialogOpen, setRenameTabDialogOpen] = useState(false);
   const [renameTabName, setRenameTabName] = useState('');
@@ -82,12 +85,13 @@ export function useTabCrud({
     const currentActiveTab = tabsRef.current.find((tab) => tab.id === activeTabIdRef.current);
     if (!currentActiveTab) return null;
 
-    const newTab = createNewTab(tabsRef.current);
+    const newTab = createNewTab(reserveNextWorkbookName());
     saveActiveSnapshot();
     updateTabs((previous) => [...previous, newTab]);
     activateTab(newTab);
+    toast.success(`${newTab.name} created`);
     return newTab.id;
-  }, [activeTabIdRef, activateTab, saveActiveSnapshot, tabsRef, updateTabs]);
+  }, [activeTabIdRef, activateTab, reserveNextWorkbookName, saveActiveSnapshot, tabsRef, updateTabs]);
 
   const adoptTab = useCallback((id: string, name: string) => {
     if (tabsRef.current.some((tab) => tab.id === id)) {
@@ -105,6 +109,7 @@ export function useTabCrud({
     const currentTabs = tabsRef.current;
     const deletedTab = currentTabs.find((tab) => tab.id === tabId) ?? null;
     if (!deletedTab || currentTabs.length <= 1) {
+      toast.error('Cannot delete the last workbook');
       return undefined;
     }
 
@@ -129,14 +134,22 @@ export function useTabCrud({
     }
 
     void (async () => {
-      let fallbackNotebookId: string | null = fallbackTab.notebookId;
-      if (isActiveTab) {
-        fallbackNotebookId = await ensureNotebookForTab(fallbackTab);
-      }
-      if (deletedTab.notebookId && deletedTab.notebookId !== fallbackNotebookId) {
-        await deleteNotebook(deletedTab.notebookId);
+      try {
+        let fallbackNotebookId: string | null = fallbackTab.notebookId;
+        if (isActiveTab) {
+          fallbackNotebookId = await ensureNotebookForTab(fallbackTab);
+        }
+        if (deletedTab.notebookId && deletedTab.notebookId !== fallbackNotebookId) {
+          await deleteNotebook(deletedTab.notebookId);
+        }
+      } catch (error) {
+        toast.error(`Deleted ${deletedTab.name} with cleanup issues`, {
+          description: error instanceof Error ? error.message : 'Failed to clean up the bound notebook.'
+        });
       }
     })();
+
+    toast.success(`${deletedTab.name} deleted`);
 
     return fallbackTab.id;
   }, [
@@ -203,11 +216,19 @@ export function useTabCrud({
     }
 
     void (async () => {
-      const nextNotebookId = await ensureNotebookForTab(resetTab, { forceCreate: true });
-      if (currentActiveTab.notebookId && currentActiveTab.notebookId !== nextNotebookId) {
-        await deleteNotebook(currentActiveTab.notebookId);
+      try {
+        const nextNotebookId = await ensureNotebookForTab(resetTab, { forceCreate: true });
+        if (currentActiveTab.notebookId && currentActiveTab.notebookId !== nextNotebookId) {
+          await deleteNotebook(currentActiveTab.notebookId);
+        }
+      } catch (error) {
+        toast.error(`Reset ${currentActiveTab.name} with cleanup issues`, {
+          description: error instanceof Error ? error.message : 'Failed to rotate the workbook notebook.'
+        });
       }
     })();
+
+    toast.success(`${currentActiveTab.name} reset`);
   }, [
     activeTabIdRef,
     applyTabSnapshot,

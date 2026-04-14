@@ -73,7 +73,21 @@ describe('ProjectWorkspace notebook session ownership', () => {
     projectStoreState.setActiveProject.mockReset();
   });
 
-  it('disconnects the notebook session when rendering a non-notebook-backed phase', () => {
+  it('keeps the notebook session alive while experiments is active', () => {
+    projectStoreState.projects[0].currentPhase = 'experiments';
+
+    render(
+      <MemoryRouter initialEntries={['/project/proj-1/experiments']}>
+        <Routes>
+          <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the notebook session alive while deployment is active', () => {
     projectStoreState.projects[0].currentPhase = 'deployment';
 
     render(
@@ -84,7 +98,7 @@ describe('ProjectWorkspace notebook session ownership', () => {
       </MemoryRouter>
     );
 
-    expect(notebookStoreMocks.disconnect).toHaveBeenCalledTimes(1);
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
   });
 
   it('keeps the notebook session alive while a notebook-backed phase is active', () => {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { streamWorkflowTurn } from '@/lib/api/llm';
+import { useModelStore } from '@/stores/modelStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { createTrainingAdapter } from '../TrainingAdapter';
@@ -12,6 +13,7 @@ vi.mock('@/lib/api/llm', () => ({
 describe('TrainingAdapter', () => {
   beforeEach(() => {
     useWorkflowSessionStore.setState({ sessions: {} });
+    useModelStore.getState().clearTrainingRun();
     useNotebookStore.setState({
       activeNotebookId: null,
       loadCells: vi.fn(async () => undefined),
@@ -364,5 +366,37 @@ describe('TrainingAdapter', () => {
 
     expect(contents).toContain('Using a derived dataset — features may already be materialized in the table');
     expect(contents).not.toContain('No feature pipeline — model trains on raw columns');
+  });
+
+  it('marks the run as registered when a model is registered', () => {
+    const adapter = createTrainingAdapter({
+      projectId: 'project-1',
+      datasetId: 'dataset-1',
+      targetColumn: undefined,
+      featureSummary: undefined,
+      datasetFiles: [],
+      documentFiles: [],
+      sessionKey: 'training-session'
+    });
+
+    adapter.toolRegistry.register_model.onResult?.(
+      {
+        id: 'register-1',
+        tool: 'register_model',
+        args: { experimentId: 'exp-1' }
+      },
+      {
+        id: 'register-1',
+        tool: 'register_model',
+        output: {
+          experimentId: 'exp-1',
+          modelName: 'Churn Baseline'
+        }
+      }
+    );
+
+    expect(useModelStore.getState().trainingRunStates['exp-1']).toMatchObject({
+      status: 'registered'
+    });
   });
 });

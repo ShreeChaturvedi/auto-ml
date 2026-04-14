@@ -1,12 +1,24 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WorkflowPhaseTree } from '../WorkflowPhaseTree';
 
 const fileSubtabsMock = vi.hoisted(() => ({ empty: false }));
 const notebookSubtabsMock = vi.hoisted(() => ({ empty: false }));
+const workbookRegistryState = vi.hoisted(() => ({
+  preprocessing: [] as Array<{ id: string; name: string; notebookId: string | null }>,
+  'feature-engineering': [] as Array<{ id: string; name: string; notebookId: string | null }>,
+  training: [] as Array<{ id: string; name: string; notebookId: string | null }>,
+  activeWorkbookIds: {} as Record<string, string>,
+  deleteHandlers: {},
+  setActiveWorkbookId: vi.fn()
+}));
+const featureStoreState = vi.hoisted(() => ({
+  currentVersionId: {} as Record<string, string>,
+  versions: {} as Record<string, Array<{ id: string }>>
+}));
 
 const projectState = {
   projects: [
@@ -38,8 +50,22 @@ vi.mock('@/stores/planChatStore', () => ({
 }));
 
 vi.mock('@/stores/workbookRegistryStore', () => ({
-  useWorkbookRegistryStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ preprocessing: [], 'feature-engineering': [], training: [], deleteHandlers: {} })
+  useWorkbookRegistryStore: Object.assign(
+    (selector: (state: Record<string, unknown>) => unknown) =>
+      selector(workbookRegistryState),
+    {
+      getState: () => workbookRegistryState
+    }
+  )
+}));
+
+vi.mock('@/stores/featureStore', () => ({
+  useFeatureStore: Object.assign(
+    () => undefined,
+    {
+      getState: () => featureStoreState
+    }
+  )
 }));
 
 vi.mock('@/hooks/useProjectThemeColor', () => ({
@@ -89,6 +115,11 @@ function renderTree(initialPath = '/project/p1/upload') {
   );
 }
 
+function LocationMarker() {
+  const location = useLocation();
+  return <div data-testid="location-marker">{location.pathname}{location.search}</div>;
+}
+
 /** Subtabs are lazily mounted on first expand; check expansion via data attribute. */
 function isSubtabExpanded(testId: string): boolean {
   const el = screen.queryByTestId(testId);
@@ -111,6 +142,14 @@ describe('WorkflowPhaseTree', () => {
       projectId === 'p1' && ['upload', 'data-viewer'].includes(phase);
     fileSubtabsMock.empty = false;
     notebookSubtabsMock.empty = false;
+    workbookRegistryState.preprocessing = [];
+    workbookRegistryState['feature-engineering'] = [];
+    workbookRegistryState.training = [];
+    workbookRegistryState.activeWorkbookIds = {};
+    workbookRegistryState.setActiveWorkbookId.mockReset();
+    featureStoreState.currentVersionId = {};
+    featureStoreState.versions = {};
+    localStorage.clear();
 
     globalThis.ResizeObserver = class WorkflowPhaseTreeResizeObserver {
       callback: ResizeObserverCallback;
@@ -277,6 +316,102 @@ describe('WorkflowPhaseTree', () => {
 
     const uploadPhase = screen.getByTestId('workflow-phase-upload');
     expect(uploadPhase).not.toHaveClass('bg-muted');
+  });
+
+  it('navigates to the last active FE draft when entering the phase from the sidebar', async () => {
+    projectState.projects[0].unlockedPhases = ['upload', 'data-viewer', 'feature-engineering'];
+    projectState.isPhaseUnlocked = (projectId: string, phase: string) =>
+      projectId === 'p1' && ['upload', 'data-viewer', 'feature-engineering'].includes(phase);
+    workbookRegistryState.activeWorkbookIds = { 'feature-engineering': 'draft-v2' };
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/project/p1/upload']}>
+        <Routes>
+          <Route
+            path="/project/:projectId/:phase"
+            element={
+              <>
+                <WorkflowPhaseTree projectId="p1" />
+                <LocationMarker />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await user.click(screen.getByRole('button', { name: /^Feature Engineering$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-marker')).toHaveTextContent('/project/p1/feature-engineering?workbook=draft-v2');
+    });
+  });
+
+  it('falls back to the persisted FE draft when the sidebar registry is cold', async () => {
+    projectState.projects[0].unlockedPhases = ['upload', 'data-viewer', 'feature-engineering'];
+    projectState.isPhaseUnlocked = (projectId: string, phase: string) =>
+      projectId === 'p1' && ['upload', 'data-viewer', 'feature-engineering'].includes(phase);
+    featureStoreState.currentVersionId = { p1: 'draft-v3' };
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/project/p1/upload']}>
+        <Routes>
+          <Route
+            path="/project/:projectId/:phase"
+            element={
+              <>
+                <WorkflowPhaseTree projectId="p1" />
+                <LocationMarker />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await user.click(screen.getByRole('button', { name: /^Feature Engineering$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-marker')).toHaveTextContent('/project/p1/feature-engineering?workbook=draft-v3');
+    });
+  });
+
+  it('falls back to the persisted Training workbook when the sidebar registry is cold', async () => {
+    projectState.projects[0].unlockedPhases = ['upload', 'data-viewer', 'training'];
+    projectState.isPhaseUnlocked = (projectId: string, phase: string) =>
+      projectId === 'p1' && ['upload', 'data-viewer', 'training'].includes(phase);
+    localStorage.setItem('training-workbooks-v1-p1', JSON.stringify({
+      activeWorkbookId: 'training-wb-8',
+      workbooks: [
+        { id: 'training-wb-1', name: 'Workbook 1', notebookId: null },
+        { id: 'training-wb-8', name: 'Workbook 8', notebookId: null }
+      ]
+    }));
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/project/p1/upload']}>
+        <Routes>
+          <Route
+            path="/project/:projectId/:phase"
+            element={
+              <>
+                <WorkflowPhaseTree projectId="p1" />
+                <LocationMarker />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await user.click(screen.getByRole('button', { name: /^Training$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-marker')).toHaveTextContent('/project/p1/training?workbook=training-wb-8');
+    });
   });
 
   it('shimmer fires on newly unlocked phases', async () => {

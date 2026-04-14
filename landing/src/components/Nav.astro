@@ -1,11 +1,30 @@
 ---
 // Sticky frosted navigation bar.
-// Permanent state — no scroll-change, no shrink. Matches Linear's static nav behavior.
+// Brand: logo + wordmark that loads as "Agentic AutoML ToolChain"
+// and collapses to "AutoML" after 1.6s. The brand's width is reserved
+// to the long form so nav links / CTA on the right never shift.
 ---
 
 <header class="nav-root">
   <div class="nav-inner">
-    <a href="#top" class="nav-wordmark">Agentic AutoML</a>
+    <a href="#top" class="nav-brand">
+      <svg
+        viewBox="0 0 32 32"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        class="nav-logo"
+        aria-hidden="true"
+      >
+        <circle cx="16" cy="4" r="3" fill="currentColor" />
+        <path d="M14 8L5 26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+        <path d="M18 8L27 26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity="0.4" />
+        <path d="M9 18H19.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+      </svg>
+      <span class="nav-wordmark" aria-label="Agentic AutoML">
+        <span class="nav-wordmark-long">Agentic AutoML ToolChain</span>
+        <span class="nav-wordmark-short" aria-hidden="true">AutoML</span>
+      </span>
+    </a>
 
     <nav class="nav-links" aria-label="Primary">
       <a href="#product">Product</a>
@@ -13,10 +32,10 @@
       <a href="#how-it-works">How it works</a>
     </nav>
 
-    <a href="/login" class="nav-cta">
-      Sign in
-      <span class="nav-cta-arrow" aria-hidden="true">→</span>
-    </a>
+    <div class="nav-right">
+      <a href="/login" class="nav-signin">Sign In</a>
+      <a href="/login" class="nav-cta">Get Started</a>
+    </div>
   </div>
 </header>
 
@@ -34,7 +53,7 @@
     );
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border-bottom: 0.8px solid var(--border);
+    border-bottom: 0.8px solid hsl(var(--border));
   }
 
   .nav-inner {
@@ -48,16 +67,68 @@
     gap: 40px;
   }
 
+  /* ── Brand: logo + wordmark ── */
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: opacity var(--dur-fast) var(--ease-linear-default);
+  }
+  .nav-brand:hover { opacity: 0.8; }
+
+  .nav-logo {
+    width: 24px;
+    height: 24px;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+
+  /* Width is reserved to the long form via the inline-block spacer (long).
+     The short form is positioned absolutely on top and cross-fades in after
+     a delay. Nothing on the right moves — no layout shift. */
   .nav-wordmark {
+    position: relative;
+    display: inline-block;
     font-family: 'Inter Variable', sans-serif;
     font-size: 16px;
     font-weight: 590;
     color: var(--text);
-    text-decoration: none;
     letter-spacing: -0.01em;
-    transition: opacity var(--dur-fast) var(--ease-linear-default);
+    white-space: nowrap;
+    line-height: 1.2;
   }
-  .nav-wordmark:hover { opacity: 0.8; }
+  .nav-wordmark-long,
+  .nav-wordmark-short {
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .nav-wordmark-long {
+    animation: nav-brand-long-out 700ms var(--ease-out-quart) 1600ms forwards;
+    transform-origin: left center;
+  }
+  .nav-wordmark-short {
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    transform: translateX(-2px);
+    animation: nav-brand-short-in 700ms var(--ease-out-quart) 2000ms forwards;
+  }
+
+  @keyframes nav-brand-long-out {
+    from { opacity: 1; filter: blur(0); }
+    to   { opacity: 0; filter: blur(4px); }
+  }
+  @keyframes nav-brand-short-in {
+    from { opacity: 0; transform: translateX(-2px); filter: blur(4px); }
+    to   { opacity: 1; transform: translateX(0);    filter: blur(0);   }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-wordmark-long  { animation: none; opacity: 0; }
+    .nav-wordmark-short { animation: none; opacity: 1; transform: none; filter: none; }
+  }
 
   .nav-links {
     display: flex;
@@ -79,6 +150,30 @@
   }
   .nav-links a:hover { color: var(--text); }
 
+  /* ── Right-side cluster: Sign In + CTA ── */
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* ── Sign In — muted text link, height-matched to CTA ── */
+  .nav-signin {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 14px;
+    font-weight: 510;
+    color: var(--text-muted);
+    text-decoration: none;
+    height: 32px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: color var(--dur-fast) var(--ease-linear-default);
+  }
+  .nav-signin:hover { color: var(--text); }
+
+  /* ── CTA — matches hero "Get Started" ── */
   .nav-cta {
     font-family: 'Inter Variable', sans-serif;
     font-size: 14px;
@@ -90,17 +185,27 @@
     height: 32px;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.2),
-      0 1px 2px rgba(0, 0, 0, 0.04),
-      0 2px 8px rgba(0, 0, 0, 0.08);
-    transition: transform var(--dur-fast) var(--ease-linear-default);
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.12);
+    transition: filter 180ms ease,
+                box-shadow 180ms ease;
   }
-  .nav-cta:hover { transform: translateY(-1px); }
-  .nav-cta-arrow {
-    transition: transform var(--dur-fast) var(--ease-linear-default);
+  .nav-cta:hover {
+    filter: brightness(1.08);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.12),
+      0 0 12px rgba(255, 255, 255, 0.08);
   }
-  .nav-cta:hover .nav-cta-arrow { transform: translateX(2px); }
+  .nav-cta:active {
+    filter: brightness(0.96);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      0 0 2px rgba(0, 0, 0, 0.16);
+  }
 </style>

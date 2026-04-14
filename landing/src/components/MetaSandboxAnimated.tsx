@@ -22,12 +22,12 @@ export default function MetaSandboxAnimated() {
     const reduced =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    const s = 56.57;
-    const h = 60;
+    const s = 79.2;
+    const h = 84;
     const cx = 180;
-    const cy = 150;
+    const cy = 160;
     const vs = 0.5;
-    const p = 5.66;
+    const p = 7.9;
 
     const V: [number, number, number][] = [
       [-s, 0, -s],
@@ -64,18 +64,18 @@ export default function MetaSandboxAnimated() {
     ];
 
     const ND: { x: number; z: number; h: number }[] = [
-      { x: -s, z: 0, h: 20 },
-      { x: s, z: 0, h: 30 },
-      { x: -s / 2, z: s, h: 15 },
-      { x: s / 2, z: -s, h: 30 },
+      { x: -s, z: 0, h: 28 },
+      { x: s, z: 0, h: 42 },
+      { x: -s / 2, z: s, h: 21 },
+      { x: s / 2, z: -s, h: 42 },
     ];
     const NL = ['a', 'b', 'c', 'd'] as const;
 
     const PB: [number, number, number][] = [
-      [-p, 8, -p],
-      [p, 8, -p],
-      [p, 8, p],
-      [-p, 8, p],
+      [-p, 11, -p],
+      [p, 11, -p],
+      [p, 11, p],
+      [-p, 11, p],
     ];
 
     function R(x: number, y: number, z: number, a: number): [number, number, number] {
@@ -162,10 +162,10 @@ export default function MetaSandboxAnimated() {
         if (circ) sC(circ, [n.x, nh, n.z], a);
       }
 
-      const po = 4 * Math.sin(t / 1000);
+      const po = 5 * Math.sin(t / 1000);
       const pb: [number, number, number][] = [];
       for (let i = 0; i < 4; i++) pb.push([PB[i][0], PB[i][1] + po, PB[i][2]]);
-      const pa: [number, number, number] = [0, 32 + po, 0];
+      const pa: [number, number, number] = [0, 45 + po, 0];
 
       $('pyr-base')?.setAttribute('points', pts(pb, a));
 
@@ -175,10 +175,10 @@ export default function MetaSandboxAnimated() {
           'points',
           pts(
             [
-              [pb[0][0], pb[0][1] - 3, pb[0][2]],
-              [pb[1][0], pb[1][1] - 3, pb[1][2]],
-              [pb[2][0], pb[2][1] - 3, pb[2][2]],
-              [pb[3][0], pb[3][1] - 3, pb[3][2]],
+              [pb[0][0], pb[0][1] - 4, pb[0][2]],
+              [pb[1][0], pb[1][1] - 4, pb[1][2]],
+              [pb[2][0], pb[2][1] - 4, pb[2][2]],
+              [pb[3][0], pb[3][1] - 4, pb[3][2]],
             ],
             a,
           ),
@@ -203,13 +203,13 @@ export default function MetaSandboxAnimated() {
       }
 
       const beam = $('beam') as SVGLineElement | null;
-      if (beam) sL(beam, [0, pa[1], 0], [0, 85 + po, 0], a);
+      if (beam) sL(beam, [0, pa[1], 0], [0, 119 + po, 0], a);
       const bkDot = $('bk-dot') as SVGCircleElement | null;
-      if (bkDot) sC(bkDot, [0, 85 + po, 0], a);
+      if (bkDot) sC(bkDot, [0, 119 + po, 0], a);
       const bkRing = $('bk-ring') as SVGCircleElement | null;
-      if (bkRing) sC(bkRing, [0, 85 + po, 0], a);
+      if (bkRing) sC(bkRing, [0, 119 + po, 0], a);
 
-      const rcy = cy - (8 + po);
+      const rcy = cy - (11 + po);
       $('ring-i')?.setAttribute('cy', rcy.toFixed(1));
       $('ring-o')?.setAttribute('cy', rcy.toFixed(1));
 

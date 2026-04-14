@@ -1,0 +1,473 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { background-color: #0A0A0B; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 40px; margin: 0; padding: 40px; }
+  .svg-container { display: flex; gap: 20px; }
+  .box { width: 360px; height: 240px; box-shadow: 0 0 0 1px rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; position: relative; }
+  .title { text-align: center; margin-bottom: 20px; font-weight: 500; letter-spacing: 1px; font-size: 14px; color: rgba(255,255,255,0.6); }
+</style>
+</head>
+<body>
+  <div class="svg-container">
+    <div>
+      <div class="title">SANDBOX</div>
+      <div class="box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" width="100%" height="100%" fill="none">
+  <defs>
+    <style>
+      .ms-beam-dash { stroke-dasharray: 2 3; animation: ms-bd 2s linear infinite; }
+      @keyframes ms-bd { to { stroke-dashoffset: -10; } }
+      .ms-bk-pulse { animation: ms-bp 2s ease-in-out infinite alternate; }
+      @keyframes ms-bp { 0% { r: 2; opacity: 0.8; } 100% { r: 2.8; opacity: 1; } }
+      .ms-bk-halo { animation: ms-bh 2.5s ease-in-out infinite alternate; }
+      @keyframes ms-bh { 0% { r: 6; opacity: 0.3; } 100% { r: 9; opacity: 0.15; } }
+      .ms-ri { animation: ms-ri 3s ease-in-out infinite alternate; }
+      @keyframes ms-ri { 0% { opacity: 0.15; } 100% { opacity: 0.35; } }
+      .ms-ro { animation: ms-ro 4s ease-in-out infinite alternate; }
+      @keyframes ms-ro { 0% { opacity: 0.08; } 100% { opacity: 0.2; } }
+      @media (prefers-reduced-motion: reduce) {
+        .ms-subanim * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+      }
+    </style>
+  </defs>
+
+  <polygon id="ms-floor" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.22)" stroke-width="1"/>
+
+  <g stroke="rgba(255,255,255,0.08)" stroke-width="0.5">
+    <line id="ms-gl0"/><line id="ms-gl1"/><line id="ms-gl2"/>
+    <line id="ms-gl3"/><line id="ms-gl4"/><line id="ms-gl5"/>
+  </g>
+
+  <polygon id="ms-w0"/><polygon id="ms-w1"/><polygon id="ms-w2"/><polygon id="ms-w3"/>
+
+  <line id="ms-pil0" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+  <line id="ms-pil1" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+  <line id="ms-pil2" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+  <line id="ms-pil3" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+
+  <polygon id="ms-scan" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.14)" stroke-width="0.5" stroke-dasharray="2 2"/>
+
+  <g stroke="rgba(255,255,255,0.28)" stroke-width="0.75">
+    <line id="ms-nla"/><circle id="ms-nda" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+    <line id="ms-nlb"/><circle id="ms-ndb" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+    <line id="ms-nlc"/><circle id="ms-ndc" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+    <line id="ms-nld"/><circle id="ms-ndd" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+  </g>
+
+  <g class="ms-subanim">
+    <ellipse id="ms-ring-o" cx="180" cy="142" rx="38" ry="19" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="0.5" class="ms-ro"/>
+    <ellipse id="ms-ring-i" cx="180" cy="142" rx="28" ry="14" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.5" stroke-dasharray="1 3" class="ms-ri"/>
+  </g>
+
+  <polygon id="ms-pyr-shadow" fill="rgba(255,255,255,0.06)" stroke="none"/>
+  <polygon id="ms-pyr-base" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.40)" stroke-width="0.5"/>
+  <polygon id="ms-pyrf0"/><polygon id="ms-pyrf1"/><polygon id="ms-pyrf2"/><polygon id="ms-pyrf3"/>
+
+  <g class="ms-subanim">
+    <line id="ms-beam" stroke="rgba(255,255,255,0.35)" stroke-width="1" class="ms-beam-dash"/>
+    <circle id="ms-bk-dot" r="2" fill="rgba(255,255,255,0.60)" class="ms-bk-pulse"/>
+    <circle id="ms-bk-ring" r="6" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.5" class="ms-bk-halo"/>
+  </g>
+
+  <polyline id="ms-edge-top" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.25"/>
+
+  <text x="25" y="38" fill="rgba(255,255,255,0.2)" font-family="ui-monospace, monospace" font-size="5" letter-spacing="1">ENV: SANDBOX</text>
+  <text x="335" y="215" fill="rgba(255,255,255,0.2)" font-family="ui-monospace, monospace" font-size="5" letter-spacing="1" text-anchor="end">SYS.READY</text>
+</svg>
+</div>
+    </div>
+    <div>
+      <div class="title">OPTIMIZATION</div>
+      <div class="box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" fill="none">
+  <defs>
+    <style>
+      .mo-base-path {
+        stroke-dasharray: 1;
+        stroke-dashoffset: 0;
+        animation: mo-draw 4s cubic-bezier(0.2, 0, 0.2, 1) infinite;
+      }
+      .mo-tracer {
+        stroke-dasharray: 0.1 1;
+        stroke-dashoffset: 1;
+        stroke-linecap: round;
+        animation: mo-trace 4s cubic-bezier(0.2, 0, 0.2, 1) infinite;
+      }
+      @keyframes mo-draw {
+        0% { stroke-dashoffset: 1; opacity: 0; }
+        10% { stroke-dashoffset: 1; opacity: 1; }
+        90% { stroke-dashoffset: 0; opacity: 1; }
+        100% { stroke-dashoffset: 0; opacity: 0; }
+      }
+      @keyframes mo-trace {
+        0% { stroke-dashoffset: 0.1; opacity: 0; }
+        10% { opacity: 1; }
+        85% { opacity: 1; }
+        95% { stroke-dashoffset: -1; opacity: 0; }
+        100% { stroke-dashoffset: -1; opacity: 0; }
+      }
+      .mo-node {
+        animation: mo-pulse 4s cubic-bezier(0.2, 0, 0.2, 1) infinite;
+      }
+      @keyframes mo-pulse {
+        0% { r: 0; opacity: 0; }
+        10% { r: 2.5; opacity: 1; }
+        15% { r: 1.5; opacity: 0.7; }
+        80% { r: 1.5; opacity: 0.7; }
+        100% { r: 0; opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .mo-tracer, .mo-base-path, .mo-node { animation: none !important; stroke-dasharray: none !important; opacity: 1 !important; }
+      }
+    </style>
+  </defs>
+
+  <path d="M 180,210 L 40,140 L 180,70 L 320,140 Z" fill="rgba(255,255,255,0.015)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <path d="M 40,140 L 180,210 L 180,220 L 40,150 Z" fill="rgba(255,255,255,0.01)" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"/>
+  <path d="M 180,210 L 320,140 L 320,150 L 180,220 Z" fill="rgba(255,255,255,0.005)" stroke="rgba(255,255,255,0.03)" stroke-width="0.5"/>
+  <path d="M 203.1,180.0 L 203.4,181.5 L 203.0,183.1 L 202.0,184.6 L 200.5,185.9 L 198.6,187.2 L 196.5,188.2 L 194.0,189.2 L 191.4,189.9 L 188.6,190.3 L 185.7,190.6 L 182.8,190.6 L 180.0,190.4 L 177.3,190.2 L 174.6,190.0 L 171.8,189.9 L 168.9,189.6 L 165.9,189.2 L 163.0,188.5 L 160.5,187.5 L 158.6,186.2 L 157.6,184.6 L 157.3,183.0 L 157.5,181.5 L 158.1,180.0 L 158.8,178.6 L 159.6,177.3 L 160.5,176.0 L 161.6,174.7 L 162.9,173.5 L 164.7,172.3 L 166.7,171.3 L 168.9,170.4 L 171.3,169.5 L 174.0,168.8 L 176.9,168.2 L 180.0,167.9 L 183.2,167.9 L 186.3,168.3 L 189.1,169.1 L 191.4,170.1 L 193.3,171.4 L 194.8,172.6 L 196.2,173.8 L 197.6,174.9 L 199.1,176.0 L 200.7,177.2 L 202.1,178.5 Z" fill="rgba(255,255,255,0.015)" stroke="rgba(255,255,255,0.100)" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M 225.0,172.5 L 225.8,175.5 L 225.2,178.6 L 223.2,181.5 L 220.2,184.1 L 216.5,186.5 L 212.2,188.6 L 207.4,190.4 L 202.2,191.7 L 196.6,192.6 L 190.9,192.9 L 185.4,192.8 L 180.0,192.5 L 174.9,192.0 L 169.7,191.7 L 164.3,191.5 L 158.4,191.2 L 152.4,190.5 L 146.5,189.2 L 141.5,187.3 L 137.8,184.7 L 135.9,181.6 L 135.4,178.5 L 136.2,175.4 L 137.5,172.5 L 139.1,169.8 L 140.7,167.2 L 142.4,164.7 L 144.5,162.2 L 147.1,159.9 L 150.3,157.7 L 154.2,155.7 L 158.4,153.8 L 163.1,152.2 L 168.3,150.7 L 173.9,149.4 L 180.0,148.7 L 186.3,148.7 L 192.3,149.5 L 197.8,151.1 L 202.2,153.3 L 205.6,155.8 L 208.4,158.3 L 210.9,160.6 L 213.6,162.8 L 216.7,164.9 L 220.0,167.1 L 222.9,169.7 Z" fill="rgba(255,255,255,0.017)" stroke="rgba(255,255,255,0.125)" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M 247.2,165.0 L 248.6,169.5 L 247.8,174.1 L 244.8,178.4 L 240.3,182.4 L 234.6,186.0 L 228.1,189.1 L 220.9,191.7 L 213.0,193.6 L 204.7,194.8 L 196.2,195.2 L 187.9,194.9 L 180.0,194.2 L 172.5,193.6 L 164.9,193.2 L 156.8,193.0 L 148.0,192.7 L 138.7,191.9 L 129.7,190.1 L 122.0,187.3 L 116.5,183.3 L 113.6,178.7 L 113.3,173.9 L 114.8,169.3 L 117.2,165.0 L 119.7,161.0 L 122.2,157.3 L 124.7,153.6 L 127.7,149.9 L 131.5,146.4 L 136.2,143.1 L 141.8,140.1 L 148.0,137.3 L 154.9,134.7 L 162.5,132.4 L 170.9,130.5 L 180.0,129.2 L 189.4,129.1 L 198.6,130.4 L 206.6,132.9 L 213.0,136.4 L 217.9,140.3 L 221.6,144.2 L 225.1,147.7 L 229.0,150.8 L 233.7,153.9 L 238.9,157.1 L 243.7,160.8 Z" fill="rgba(255,255,255,0.020)" stroke="rgba(255,255,255,0.150)" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M 269.5,157.5 L 271.7,163.5 L 270.7,169.7 L 266.8,175.5 L 260.7,180.8 L 253.0,185.5 L 244.2,189.6 L 234.5,193.0 L 223.9,195.5 L 212.7,197.0 L 201.4,197.4 L 190.3,196.8 L 180.0,195.8 L 170.2,194.8 L 160.3,194.3 L 149.6,194.2 L 137.7,194.1 L 125.0,193.4 L 112.5,191.2 L 101.9,187.5 L 94.5,182.2 L 90.9,176.0 L 90.9,169.4 L 93.4,163.2 L 97.0,157.5 L 100.7,152.3 L 104.1,147.3 L 107.5,142.5 L 111.3,137.7 L 116.1,133.0 L 122.2,128.6 L 129.5,124.6 L 137.7,120.9 L 146.7,117.3 L 156.7,114.0 L 167.8,111.3 L 180.0,109.5 L 192.7,109.3 L 204.9,111.0 L 215.6,114.6 L 223.9,119.5 L 230.0,124.9 L 234.5,130.2 L 238.8,135.0 L 243.9,139.1 L 250.3,142.9 L 257.5,147.1 L 264.4,151.9 Z" fill="rgba(255,255,255,0.022)" stroke="rgba(255,255,255,0.175)" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M 292.0,150.0 L 295.2,157.6 L 294.1,165.3 L 289.2,172.6 L 281.4,179.3 L 271.6,185.1 L 260.5,190.2 L 248.2,194.5 L 234.9,197.5 L 220.8,199.2 L 206.5,199.4 L 192.8,198.5 L 180.0,197.0 L 167.9,195.8 L 155.8,195.2 L 142.4,195.4 L 127.4,195.6 L 111.1,194.9 L 95.0,192.5 L 81.3,187.9 L 71.9,181.2 L 67.6,173.3 L 68.1,165.0 L 71.8,157.1 L 77.0,150.0 L 82.0,143.6 L 86.5,137.5 L 90.6,131.5 L 95.2,125.5 L 101.0,119.7 L 108.5,114.2 L 117.3,109.2 L 127.4,104.4 L 138.5,99.9 L 150.8,95.6 L 164.7,91.9 L 180.0,89.5 L 196.0,89.2 L 211.4,91.4 L 224.7,96.1 L 234.9,102.5 L 242.0,109.6 L 247.1,116.5 L 251.9,122.4 L 258.1,127.5 L 266.3,132.1 L 275.8,137.2 L 285.0,143.1 Z" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.200)" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M 314.7,142.5 L 319.0,151.7 L 317.9,161.0 L 312.0,169.8 L 302.4,177.8 L 290.5,184.9 L 276.9,191.0 L 262.0,196.0 L 245.9,199.5 L 228.8,201.4 L 211.6,201.4 L 195.1,200.0 L 180.0,198.0 L 165.8,196.4 L 151.4,195.9 L 135.4,196.3 L 117.1,197.0 L 97.0,196.6 L 77.2,193.9 L 60.2,188.4 L 48.7,180.4 L 43.9,170.7 L 45.0,160.6 L 50.3,151.0 L 57.2,142.5 L 63.7,134.8 L 69.2,127.7 L 74.1,120.6 L 79.4,113.5 L 86.2,106.5 L 94.9,99.9 L 105.3,93.8 L 117.1,88.0 L 130.2,82.4 L 144.9,77.0 L 161.5,72.3 L 180.0,69.3 L 199.4,68.8 L 218.0,71.5 L 233.9,77.4 L 245.9,85.5 L 253.8,94.4 L 259.2,102.9 L 264.5,110.1 L 271.7,116.0 L 281.8,121.4 L 293.7,127.3 L 305.6,134.2 Z" fill="rgba(255,255,255,0.028)" stroke="rgba(255,255,255,0.225)" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M 337.5,135.0 L 343.2,145.7 L 342.1,156.7 L 335.1,167.1 L 323.8,176.5 L 309.6,184.7 L 293.6,191.8 L 276.0,197.5 L 256.9,201.6 L 236.8,203.5 L 216.6,203.3 L 197.5,201.3 L 180.0,198.8 L 163.7,196.8 L 147.2,196.3 L 128.5,197.1 L 106.9,198.3 L 82.8,198.3 L 58.9,195.5 L 38.6,189.2 L 25.0,179.7 L 19.6,168.2 L 21.6,156.2 L 28.6,145.0 L 37.5,135.0 L 45.7,126.2 L 52.4,117.9 L 58.0,109.7 L 64.0,101.5 L 71.6,93.4 L 81.4,85.7 L 93.3,78.5 L 106.9,71.7 L 122.0,64.9 L 138.9,58.4 L 158.3,52.6 L 180.0,48.8 L 202.9,48.1 L 224.8,51.4 L 243.3,58.5 L 256.9,68.4 L 265.5,79.3 L 271.1,89.5 L 276.6,97.9 L 284.8,104.7 L 296.7,110.8 L 311.4,117.4 L 326.1,125.4 Z" fill="rgba(255,255,255,0.030)" stroke="rgba(255,255,255,0.250)" stroke-width="0.8" stroke-linejoin="round"/>
+  
+  <!-- Base faint path -->
+  <path d="M 256.9,68.4 L 265.7,111.2 L 279.3,139.2 L 271.6,166.9 L 236.2,185.1 L 202.7,191.6 L 182.5,190.5" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Animated drawing path -->
+  <path class="mo-base-path" d="M 256.9,68.4 L 265.7,111.2 L 279.3,139.2 L 271.6,166.9 L 236.2,185.1 L 202.7,191.6 L 182.5,190.5" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+  <!-- Thick glowing tracer -->
+  <path class="mo-tracer" d="M 256.9,68.4 L 265.7,111.2 L 279.3,139.2 L 271.6,166.9 L 236.2,185.1 L 202.7,191.6 L 182.5,190.5" fill="none" stroke="rgba(255,255,255,1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" pathLength="1" filter="drop-shadow(0 0 2px rgba(255,255,255,0.8))"/>
+
+  <circle cx="256.9" cy="68.4" r="1.5" fill="rgba(255,255,255,0.7)" class="mo-node" style="animation-delay: 0.1s" />
+  <circle cx="265.7" cy="111.2" r="1.5" fill="rgba(255,255,255,0.7)" class="mo-node" style="animation-delay: 0.4s" />
+  <circle cx="279.3" cy="139.2" r="1.5" fill="rgba(255,255,255,0.7)" class="mo-node" style="animation-delay: 0.9s" />
+  <circle cx="271.6" cy="166.9" r="1.5" fill="rgba(255,255,255,0.7)" class="mo-node" style="animation-delay: 1.5s" />
+  <circle cx="236.2" cy="185.1" r="1.5" fill="rgba(255,255,255,0.7)" class="mo-node" style="animation-delay: 2.1s" />
+  <circle cx="202.7" cy="191.6" r="1.5" fill="rgba(255,255,255,0.7)" class="mo-node" style="animation-delay: 2.7s" />
+  <circle cx="182.5" cy="190.5" r="3.5" fill="rgba(255,255,255,1)"/>
+  <circle cx="182.5" cy="190.5" r="8" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="0.6"/>
+</svg></div>
+    </div>
+    <div>
+      <div class="title">ORCHESTRATION</div>
+      <div class="box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" fill="none">
+  <defs>
+    <style>
+      .mo-dash {
+        stroke-dasharray: 4 4;
+        animation: mo-dash-anim 2s linear infinite;
+      }
+      @keyframes mo-dash-anim {
+        0% { stroke-dashoffset: 8; }
+        100% { stroke-dashoffset: 0; }
+      }
+      .mo-token {
+        animation: mo-float 4s ease-in-out infinite alternate;
+      }
+      .mo-token-fast {
+        animation: mo-float 3s ease-in-out infinite alternate-reverse;
+      }
+      @keyframes mo-float {
+        0% { transform: translateY(0px); }
+        100% { transform: translateY(-4px); }
+      }
+      .mo-glow-path {
+        stroke-dasharray: 40 100;
+        stroke-dashoffset: 40;
+        animation: shoot 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));
+      }
+      @keyframes shoot {
+        0% { stroke-dashoffset: 40; opacity: 0; }
+        10% { opacity: 1; }
+        90% { stroke-dashoffset: -100; opacity: 1; }
+        100% { stroke-dashoffset: -100; opacity: 0; }
+      }
+      .mo-pulse {
+        animation: pulse 2s ease-in-out infinite alternate;
+      }
+      @keyframes pulse {
+        0% { opacity: 0.3; }
+        100% { opacity: 0.8; }
+      }
+    </style>
+  </defs>
+<polygon points="180.00,70.00 320.00,140.00 180.00,210.00 40.00,140.00" fill="rgba(255,255,255,0.01)" stroke="rgba(255,255,255,0.06)" stroke-width="0.5" />
+
+    <polygon points="145.00,91.00 278.00,157.50 278.00,147.50 145.00,81.00" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="309.50,141.75 278.00,157.50 278.00,147.50 309.50,131.75" fill="rgba(255,255,255,0.05)" stroke="none" />
+    <polygon points="176.50,65.25 309.50,131.75 278.00,147.50 145.00,81.00" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    
+    <polygon points="96.00,115.50 229.00,182.00 229.00,172.00 96.00,105.50" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="264.00,164.50 229.00,182.00 229.00,172.00 264.00,154.50" fill="rgba(255,255,255,0.05)" stroke="none" />
+    <polygon points="131.00,88.00 264.00,154.50 229.00,172.00 96.00,105.50" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    
+    <polygon points="50.50,138.25 183.50,204.75 183.50,194.75 50.50,128.25" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="215.00,189.00 183.50,204.75 183.50,194.75 215.00,179.00" fill="rgba(255,255,255,0.05)" stroke="none" />
+    <polygon points="82.00,112.50 215.00,179.00 183.50,194.75 50.50,128.25" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    <line x1="167.75" y1="74.62" x2="286.75" y2="134.12" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" class="mo-dash" />
+<line x1="120.50" y1="98.25" x2="239.50" y2="157.75" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" class="mo-dash" />
+<line x1="73.25" y1="121.88" x2="192.25" y2="181.38" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" class="mo-dash" />
+<g class="mo-token">
+
+    <polygon points="178.25,83.88 192.25,90.88 192.25,82.88 178.25,75.88" fill="rgba(255,255,255,0.6)" stroke="none" />
+    <polygon points="206.25,83.88 192.25,90.88 192.25,82.88 206.25,75.88" fill="rgba(255,255,255,0.2)" stroke="none" />
+    <polygon points="192.25,68.88 206.25,75.88 192.25,82.88 178.25,75.88" fill="rgba(255,255,255,0.4)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    </g>
+<g class="mo-token-fast">
+
+    <polygon points="164.25,124.12 181.75,132.88 181.75,124.88 164.25,116.12" fill="rgba(255,255,255,0.7)" stroke="none" />
+    <polygon points="195.75,125.88 181.75,132.88 181.75,124.88 195.75,117.88" fill="rgba(255,255,255,0.3)" stroke="none" />
+    <polygon points="178.25,109.12 195.75,117.88 181.75,124.88 164.25,116.12" fill="rgba(255,255,255,0.5)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    </g>
+<g class="mo-token">
+
+    <polygon points="141.50,160.00 166.00,172.25 166.00,164.25 141.50,152.00" fill="rgba(255,255,255,0.5)" stroke="none" />
+    <polygon points="180.00,165.25 166.00,172.25 166.00,164.25 180.00,157.25" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="155.50,145.00 180.00,157.25 166.00,164.25 141.50,152.00" fill="rgba(255,255,255,0.3)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    </g>
+<line x1="167.75" y1="86.62" x2="167.75" y2="76.62" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="286.75" y1="146.12" x2="286.75" y2="136.12" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="120.50" y1="110.25" x2="120.50" y2="100.25" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="239.50" y1="169.75" x2="239.50" y2="159.75" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="73.25" y1="133.88" x2="73.25" y2="123.88" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="192.25" y1="193.38" x2="192.25" y2="183.38" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<path d="M 202.75,92.12 Q 180.00,80.50 155.50,115.75" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
+<path class="mo-glow-path" d="M 202.75,92.12 Q 180.00,80.50 155.50,115.75" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" pathLength="100" style="animation-delay: 0s;" />
+<path d="M 190.50,133.25 Q 169.50,120.75 143.25,156.88" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
+<path class="mo-glow-path" d="M 190.50,133.25 Q 169.50,120.75 143.25,156.88" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" pathLength="100" style="animation-delay: 1.5s;" />
+<path d="M 248.25,114.88 Q 201.00,95.50 153.75,162.12" fill="none" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3 3" stroke-width="1.5" />
+<path class="mo-glow-path" d="M 248.25,114.88 Q 201.00,95.50 153.75,162.12" fill="none" stroke="rgba(255,255,255,1)" stroke-width="1.5" pathLength="100" style="animation-delay: 0.8s;" />
+<circle cx="286.75" cy="134.12" r="2.5" fill="rgba(255,255,255,0.95)" class="mo-pulse" />
+<circle cx="239.50" cy="157.75" r="2.5" fill="rgba(255,255,255,0.95)" class="mo-pulse" style="animation-delay: 0.5s;" />
+<circle cx="192.25" cy="181.38" r="3.5" fill="rgba(255,255,255,1)" filter="drop-shadow(0 0 2px rgba(255,255,255,0.5))" />
+</svg></div>
+    </div>
+  </div>
+  
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const svgs = document.querySelectorAll('.box svg');
+    const svg = svgs[0];
+    if (!svg) return;
+
+    const $ = (suffix) => svg.querySelector('#ms-' + CSS.escape(suffix));
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const s = 79.2;
+    const h = 84;
+    const cx = 180;
+    const cy = 160;
+    const vs = 0.5;
+    const p = 7.9;
+
+    const V = [
+      [-s, 0, -s],
+      [s, 0, -s],
+      [s, 0, s],
+      [-s, 0, s],
+      [-s, h, -s],
+      [s, h, -s],
+      [s, h, s],
+      [-s, h, s],
+    ];
+
+    const GL = [
+      [[-s, 0, -s / 2], [s, 0, -s / 2]],
+      [[-s, 0, 0], [s, 0, 0]],
+      [[-s, 0, s / 2], [s, 0, s / 2]],
+      [[-s / 2, 0, -s], [-s / 2, 0, s]],
+      [[0, 0, -s], [0, 0, s]],
+      [[s / 2, 0, -s], [s / 2, 0, s]],
+    ];
+
+    const WI = [
+      [0, 1, 5, 4],
+      [1, 2, 6, 5],
+      [2, 3, 7, 6],
+      [3, 0, 4, 7],
+    ];
+
+    const WN = [
+      [0, 0, -1],
+      [1, 0, 0],
+      [0, 0, 1],
+      [-1, 0, 0],
+    ];
+
+    const ND = [
+      { x: -s, z: 0, h: 28 },
+      { x: s, z: 0, h: 42 },
+      { x: -s / 2, z: s, h: 21 },
+      { x: s / 2, z: -s, h: 42 },
+    ];
+    const NL = ['a', 'b', 'c', 'd'];
+
+    const PB = [
+      [-p, 11, -p],
+      [p, 11, -p],
+      [p, 11, p],
+      [-p, 11, p],
+    ];
+
+    function R(x, y, z, a) {
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      return [x * c - z * sn, y, x * sn + z * c];
+    }
+
+    function P(q, a) {
+      const r = R(q[0], q[1], q[2], a);
+      return [cx + r[0], cy + r[2] * vs - r[1]];
+    }
+
+    function pts(arr, a) {
+      let o = '';
+      for (let i = 0; i < arr.length; i++) {
+        if (i) o += ' ';
+        const q = P(arr[i], a);
+        o += q[0].toFixed(1) + ',' + q[1].toFixed(1);
+      }
+      return o;
+    }
+
+    function sL(el, a3, b3, ang) {
+      const p1 = P(a3, ang);
+      const p2 = P(b3, ang);
+      el.setAttribute('x1', p1[0].toFixed(1));
+      el.setAttribute('y1', p1[1].toFixed(1));
+      el.setAttribute('x2', p2[0].toFixed(1));
+      el.setAttribute('y2', p2[1].toFixed(1));
+    }
+
+    function sC(el, q, a) {
+      const r = P(q, a);
+      el.setAttribute('cx', r[0].toFixed(1));
+      el.setAttribute('cy', r[1].toFixed(1));
+    }
+
+    const spd = (Math.PI * 2) / 25000;
+    let raf = 0;
+
+    function frame(t) {
+      const a = Math.PI / 4 + t * spd;
+
+      const floor = $('floor');
+      if (floor) floor.setAttribute('points', pts([V[0], V[1], V[2], V[3]], a));
+
+      for (let i = 0; i < 6; i++) {
+        const line = $('gl' + i);
+        if (line) sL(line, GL[i][0], GL[i][1], a);
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const el = $('w' + i);
+        if (!el) continue;
+        const w = WI[i];
+        el.setAttribute('points', pts([V[w[0]], V[w[1]], V[w[2]], V[w[3]]], a));
+        const n = WN[i];
+        const zc = n[0] * Math.sin(a) + n[2] * Math.cos(a);
+        if (zc > 0) {
+          el.setAttribute('fill', 'rgba(255,255,255,0.04)');
+          el.setAttribute('stroke', 'rgba(255,255,255,0.10)');
+        } else {
+          el.setAttribute('fill', 'rgba(255,255,255,0.07)');
+          el.setAttribute('stroke', 'rgba(255,255,255,0.16)');
+        }
+        el.setAttribute('stroke-width', '1');
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const pil = $('pil' + i);
+        if (pil) sL(pil, V[i], V[i + 4], a);
+      }
+
+      const sy = 20 + 6 * Math.sin(t / 1200);
+      const scan = $('scan');
+      if (scan) scan.setAttribute('points', pts([[-s, sy, -s], [s, sy, -s], [s, sy, s], [-s, sy, s]], a));
+
+      for (let i = 0; i < 4; i++) {
+        const n = ND[i];
+        const l = NL[i];
+        const nh = n.h + 3 * Math.sin(t / 800 + i * 1.5);
+        const line = $('nl' + l);
+        const circ = $('nd' + l);
+        if (line) sL(line, [n.x, 0, n.z], [n.x, nh, n.z], a);
+        if (circ) sC(circ, [n.x, nh, n.z], a);
+      }
+
+      const po = 5 * Math.sin(t / 1000);
+      const pb = [];
+      for (let i = 0; i < 4; i++) pb.push([PB[i][0], PB[i][1] + po, PB[i][2]]);
+      const pa = [0, 45 + po, 0];
+
+      const pyrBase = $('pyr-base');
+      if (pyrBase) pyrBase.setAttribute('points', pts(pb, a));
+
+      const pyrShadow = $('pyr-shadow');
+      if (pyrShadow) {
+        pyrShadow.setAttribute(
+          'points',
+          pts(
+            [
+              [pb[0][0], pb[0][1] - 4, pb[0][2]],
+              [pb[1][0], pb[1][1] - 4, pb[1][2]],
+              [pb[2][0], pb[2][1] - 4, pb[2][2]],
+              [pb[3][0], pb[3][1] - 4, pb[3][2]],
+            ],
+            a
+          )
+        );
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        const el = $('pyrf' + i);
+        if (!el) continue;
+        el.setAttribute('points', pts([pb[i], pb[j], pa], a));
+        const fn = WN[i];
+        const fz = fn[0] * Math.sin(a) + fn[2] * Math.cos(a);
+        if (fz > 0) {
+          el.setAttribute('fill', 'rgba(255,255,255,0.18)');
+          el.setAttribute('stroke', 'rgba(255,255,255,0.35)');
+        } else {
+          el.setAttribute('fill', 'rgba(255,255,255,0.42)');
+          el.setAttribute('stroke', 'rgba(255,255,255,0.58)');
+        }
+        el.setAttribute('stroke-width', '0.75');
+      }
+
+      const beam = $('beam');
+      if (beam) sL(beam, [0, pa[1], 0], [0, 119 + po, 0], a);
+      const bkDot = $('bk-dot');
+      if (bkDot) sC(bkDot, [0, 119 + po, 0], a);
+      const bkRing = $('bk-ring');
+      if (bkRing) sC(bkRing, [0, 119 + po, 0], a);
+
+      const rcy = cy - (11 + po);
+      const ringI = $('ring-i');
+      if (ringI) ringI.setAttribute('cy', rcy.toFixed(1));
+      const ringO = $('ring-o');
+      if (ringO) ringO.setAttribute('cy', rcy.toFixed(1));
+
+      const edgeTop = $('edge-top');
+      if (edgeTop) edgeTop.setAttribute('points', pts([V[4], V[5], V[6], V[7], V[4]], a));
+    }
+
+    function loop(t) {
+      frame(t);
+      if (!reduced) raf = requestAnimationFrame(loop);
+    }
+
+    if (reduced) {
+      frame(typeof performance !== 'undefined' ? performance.now() : 0);
+    } else {
+      raf = requestAnimationFrame(loop);
+    }
+});
+</script>
+
+</body>
+</html>

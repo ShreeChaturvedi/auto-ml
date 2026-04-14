@@ -2,6 +2,7 @@ import type { DomainAdapter } from '@/types/agentic';
 import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
 import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
 import { AlertTriangle, Tags, BarChart2, Calendar, Bug } from 'lucide-react';
+import { toast } from 'sonner';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
@@ -58,15 +59,22 @@ export function createPreprocessingAdapter(
       }
       usePreprocessingStore.getState().processToolResult(call, result);
       if (call.tool === 'commit_transformation_step' && projectId) {
-        void useDataStore.getState().hydrateFromBackend(projectId, { force: true });
-
-        // Extract derivedDatasetId from the tool result so we can auto-select
-        // the processed file in the dropdown after the tables reload.
         const output = result.output as Record<string, unknown> | undefined;
         const derivedDatasetId = typeof output?.derivedDatasetId === 'string'
           ? output.derivedDatasetId
           : undefined;
+        void (async () => {
+          await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
+          const createdFile = derivedDatasetId
+            ? useDataStore.getState().files.find(
+              (file) => file.projectId === projectId && file.metadata?.datasetId === derivedDatasetId
+            )
+            : undefined;
+          toast.success(createdFile?.name ? `Created ${createdFile.name}` : 'Processed dataset created');
+        })();
 
+        // Extract derivedDatasetId from the tool result so we can auto-select
+        // the processed file in the dropdown after the tables reload.
         void usePreprocessingStore.getState().loadTables(projectId).then(() => {
           if (derivedDatasetId) {
             const { tables } = usePreprocessingStore.getState();

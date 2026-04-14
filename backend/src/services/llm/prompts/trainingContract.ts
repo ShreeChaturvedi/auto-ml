@@ -20,6 +20,7 @@ Use \`configure_experiment\` to set up the experiment parameters:
 - Do NOT reconfigure the same experiment
 - If the user requested multiple models, configure ALL requested experiments first, then call \`propose_training_plan\` ONCE per configured experiment
 - Choose model type based on the dataset and problem type
+- \`modelType\` is an open string, not a closed enum. If the user explicitly requests an algorithm/library (for example \`catboost\`, \`xgboost\`, \`lightgbm\`, \`prophet\`, or a specific statsmodels family), pass that literal algorithm name to \`configure_experiment\`. Do NOT substitute a proxy model and do NOT claim the requested model is unavailable just because it was not listed in an example.
 - Set appropriate hyperparameters (start with sensible defaults)
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)
 - Specify target column and feature columns

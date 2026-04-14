@@ -16,7 +16,7 @@ import { useTimeline } from "../../primitives/useTimeline";
 import type { SlideBodyProps } from "./index";
 
 /** 7-phase frame budget (60fps). Sum = 1560 = 26s.
- *   1. 0–20     eyebrow + spine
+ *   1. 0–20     eyebrow + header divider
  *   2. 20–110   heading; "six different tools" carries sole ACCENT_COLOR
  *   3. 110–200  cards stagger in (15f — mirrors app `card-enter` 250ms)
  *   4. 200–260  per-card headline types at LABEL_RATE + body fades 60→100%
@@ -132,7 +132,7 @@ export const ProblemTrioSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const closingFade = useFadeIn({ translateY: 8, delay: pClose.start });
 
   return (
-    <SlideShell theme={theme} eyebrow="THE PROBLEM" spine={true}>
+    <SlideShell theme={theme} eyebrow="THE PROBLEM">
       {/* Phase 2 — serif heading; accent-color segment inline. */}
       <div style={{ ...HEADING_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
         <TypeOnText text={HEADING_LEAD} delay={pHeading.start} caret={false} />

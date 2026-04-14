@@ -16,11 +16,6 @@ export type SlideShellProps = {
   divider?: boolean;
   /** If true, render the universal institutional footer. Default true. */
   footer?: boolean;
-  /**
-   * @deprecated Removed in favor of header divider; will be dropped next commit.
-   * Currently a no-op — retained so existing call sites still typecheck.
-   */
-  spine?: boolean;
   children: React.ReactNode;
 };
 

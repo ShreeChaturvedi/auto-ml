@@ -70,7 +70,7 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const metaFade = useFadeIn({ translateY: 4, delay: pMeta.start });
 
   return (
-    <SlideShell theme={theme} gradient spine={false}>
+    <SlideShell theme={theme} gradient>
       {/* Absolute-fill wrapper breaks out of SlideShell's `paddingLeft` inset so
        *  the centered composition ignores the left content column. */}
       <AbsoluteFill

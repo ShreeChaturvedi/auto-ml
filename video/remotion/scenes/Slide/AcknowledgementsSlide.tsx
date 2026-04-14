@@ -132,7 +132,7 @@ export const AcknowledgementsSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   );
 
   return (
-    <SlideShell theme={theme} eyebrow="WITH GRATITUDE" spine={true}>
+    <SlideShell theme={theme} eyebrow="WITH GRATITUDE">
       {/* Warm amber glow — first child so it sits behind text. `AbsoluteFill`
           ignores SlideShell's padding, letting the gradient bleed off-edge. */}
       <AbsoluteFill

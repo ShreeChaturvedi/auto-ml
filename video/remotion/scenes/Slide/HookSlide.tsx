@@ -2,7 +2,7 @@ import React from "react";
 import { interpolate } from "remotion";
 import { EASE_OUT } from "../../../config/easing";
 import { REGULAR_FONT, SERIF_FONT, TITLE_FONT } from "../../../config/fonts";
-import { DIMENSIONS, SAFE_AREA } from "../../../config/layout";
+import { SAFE_AREA } from "../../../config/layout";
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { MotionLine } from "../../primitives/MotionLine";
@@ -18,7 +18,6 @@ import type { SlideBodyProps } from "./index";
 /** 7-phase frame budget (60fps). Sum = 720 = 12s. */
 const PHASES = [20, 80, 40, 70, 100, 60, 350] as const;
 const CHUNK_STAGGER = 25; // Phase 5 cadence — 4 chunks × 25f = 100f window.
-const SPINE_DRAW_FRAMES = 20;
 /** Footnote hairline draw-in. 30f completes at frame 340, leaving phase 6
  *  (310–370) with a 30f coordinated settle before phase 7's long hold. */
 const FOOTNOTE_HAIRLINE_FRAMES = 30;
@@ -31,9 +30,8 @@ type FourChunks = [StaggeredItem, StaggeredItem, StaggeredItem, StaggeredItem];
  * ACCENT_COLOR; serif fragments create typographic contrast only.
  */
 export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
-  const [pSpine, pType, , pHero, pClause, pFootnote] = useTimeline([...PHASES]) as SevenPhases;
+  const [, pType, , pHero, pClause, pFootnote] = useTimeline([...PHASES]) as SevenPhases;
   const c = COLORS[theme];
-  const spineLength = DIMENSIONS.landscape.height - SAFE_AREA.top - SAFE_AREA.bottom;
 
   const chunks = useStaggeredFadeIn(4, {
     step: CHUNK_STAGGER,
@@ -49,29 +47,7 @@ export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   });
 
   return (
-    <SlideShell theme={theme} eyebrow="CSE 449 · CAPSTONE" spine={false}>
-      {/* Phase 1 — animated spine drawn top→bottom over 20f. */}
-      <div
-        style={{
-          position: "absolute",
-          top: SAFE_AREA.top,
-          left: SAFE_AREA.spineLeft,
-          pointerEvents: "none",
-        }}
-      >
-        <MotionLine
-          x1={0}
-          y1={0}
-          x2={0}
-          y2={spineLength}
-          delay={pSpine.start}
-          durationInFrames={SPINE_DRAW_FRAMES}
-          color={c.BORDER_COLOR}
-          svgWidth={2}
-          svgHeight={spineLength}
-        />
-      </div>
-
+    <SlideShell theme={theme} eyebrow="CSE 449 · CAPSTONE">
       {/* Main line — ~42% vertical center leaves room for footnote below. */}
       <div
         style={{
@@ -108,9 +84,14 @@ export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
         >
           <ScaleInNumber value="80%" delay={pHero.start} />
         </span>
-        <Chunk item={chunks[0]} font={REGULAR_FONT}>of their time </Chunk>
-        <Chunk item={chunks[1]} font={REGULAR_FONT}>on everything </Chunk>
-        <Chunk item={chunks[2]} font={SERIF_FONT}>except </Chunk>
+        {/* Non-breaking spaces (\u00A0) keep inter-chunk gaps visible:
+         *  a plain trailing " " inside an `inline-block` span is treated as
+         *  collapsible whitespace at the box edge, so adjacent chunks render
+         *  with no gap ("time"↔"on", "except"↔"training"). \u00A0 is a
+         *  non-collapsing character and so preserves the visual space. */}
+        <Chunk item={chunks[0]} font={REGULAR_FONT}>of their time{"\u00A0"}</Chunk>
+        <Chunk item={chunks[1]} font={REGULAR_FONT}>on everything{"\u00A0"}</Chunk>
+        <Chunk item={chunks[2]} font={SERIF_FONT}>except{"\u00A0"}</Chunk>
         <Chunk item={chunks[3]} font={SERIF_FONT}>training models.</Chunk>
       </div>
 

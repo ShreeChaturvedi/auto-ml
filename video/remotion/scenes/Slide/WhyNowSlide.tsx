@@ -219,7 +219,7 @@ export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   });
 
   return (
-    <SlideShell theme={theme} eyebrow="WHY NOW" spine={true}>
+    <SlideShell theme={theme} eyebrow="WHY NOW">
       {/* Phase 1 — heading. */}
       <div style={{ ...HEADING_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
         <TypeOnText

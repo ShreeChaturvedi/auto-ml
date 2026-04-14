@@ -134,8 +134,7 @@ const GRID_STYLE: React.CSSProperties = {
  * Data-driven via `scene.meta.chapters`. Defaults live in `Root.tsx`.
  *
  * Sole accent-color element: chapter 3's title pulses once in ACCENT_COLOR
- * during phase 5. The column divider is the grid element (left spine is
- * intentionally omitted on this slide to avoid parallel verticals).
+ * during phase 5. The column divider is the grid element.
  */
 export const AgendaSlide: React.FC<SlideBodyProps> = ({ theme, meta }) => {
   const [, pRows, pDivider, pRight] = useTimeline([...PHASES]) as SixPhases;
@@ -162,7 +161,7 @@ export const AgendaSlide: React.FC<SlideBodyProps> = ({ theme, meta }) => {
   });
 
   return (
-    <SlideShell theme={theme} eyebrow="AGENDA" spine={false} gradient={true}>
+    <SlideShell theme={theme} eyebrow="AGENDA" gradient={true}>
       {/* Phase 1 — heading. */}
       <div
         style={{

@@ -100,3 +100,19 @@ export const getHeroGradient = (t: Theme) => {
       : "rgba(122, 181, 241, 0.08)"; // dark theme accent with slightly more alpha
   return `radial-gradient(1200px 600px at 50% 0%, ${bloom}, transparent 60%)`;
 };
+
+/**
+ * Institutional / brand chrome colors.
+ * Used ONLY on SlideHeader's gradient divider and SlideFooter's Miami mark.
+ * Never mix with product ACCENT_COLOR — these are institutional identity,
+ * not product emphasis. Sourced from datafest26 dashboard theme.css:15,20.
+ */
+export const INSTITUTIONAL = {
+  MIAMI_RED: "#C41230",
+  DIVIDER_TAN: "#CCC9B8",
+} as const;
+
+/** 2px header divider: Miami Red 0-25%, Medium Tan 25-100%.
+ *  Matches datafest26 dashboard .section-divider pattern. */
+export const getDividerGradient = (): string =>
+  `linear-gradient(to right, ${INSTITUTIONAL.MIAMI_RED} 0%, ${INSTITUTIONAL.MIAMI_RED} 25%, ${INSTITUTIONAL.DIVIDER_TAN} 25%, ${INSTITUTIONAL.DIVIDER_TAN} 100%)`;

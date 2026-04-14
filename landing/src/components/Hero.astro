@@ -14,7 +14,7 @@
 
   <h1 class="hero-title">
     <span class="hero-title-bright">The fastest way to build production ML models,</span>
-    <span class="hero-title-muted">agentically.</span>
+    <span class="hero-title-muted"><span class="hero-agentically">agentically.</span></span>
   </h1>
 
   <p class="hero-subhead" id="hero-subhead">
@@ -33,14 +33,14 @@
 </section>
 
 <script>
-  // Word-by-word staggered fade-in for the subhead.
+  const reduced =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ── Word-by-word staggered fade-in for the subhead ──
   // Splits text into <span>s, each with incremental animation-delay.
   const subhead = document.getElementById('hero-subhead');
   if (subhead) {
-    const reduced =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     if (!reduced) {
       const text = subhead.textContent?.trim() ?? '';
       const words = text.split(/\s+/);
@@ -61,6 +61,28 @@
     } else {
       subhead.style.opacity = '1';
     }
+  }
+
+  // ── Auto-scroll: after entrance animations settle (~3.2s), smoothly
+  // scroll so the announcement pill is hidden above the viewport and
+  // the heading + app preview fill the visible area. ──
+  if (!reduced) {
+    let userScrolled = false;
+    const onScroll = () => { userScrolled = true; };
+    window.addEventListener('scroll', onScroll, { passive: true, once: true });
+
+    setTimeout(() => {
+      window.removeEventListener('scroll', onScroll);
+      // Bail if the user already scrolled (don't fight manual scrolling)
+      if (userScrolled || window.scrollY > 10) return;
+
+      const title = document.querySelector('.hero-title');
+      if (title) {
+        // Position heading just below the fixed nav (72px) + 16px breathing room
+        const offset = title.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+      }
+    }, 3200);
   }
 </script>
 
@@ -173,6 +195,40 @@
     animation: hero-title-deblur 780ms var(--ease-out-quart) 440ms forwards;
   }
 
+  .hero-agentically {
+    /* Metallic shimmer: matches frontend shimmer-effects.css pattern.
+     * Defined locally because shimmer-effects.css is scoped to the frontend
+     * bundle and is not available in the landing Astro document scope. */
+    background: linear-gradient(
+      90deg,
+      var(--text-muted) 0%,
+      var(--text-muted) 42%,
+      #E2E6ED 50%,
+      var(--text-muted) 58%,
+      var(--text-muted) 100%
+    );
+    background-size: 400% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: hero-shimmer-sweep 3.8s ease-in-out 1350ms infinite;
+  }
+
+  /* 400% background-size keeps the non-highlight portions covering the
+   * visible text at ALL positions between 0%–100%, while the highlight
+   * band (35%–65% of the gradient) moves fully off-screen at both ends.
+   * With 200%, extreme positions left gaps the browser filled via
+   * background-repeat: repeat — tiling the highlight back into view.
+   *
+   * Sweep-then-hold: 0%→40% sweeps left-to-right, 40%→100% holds
+   * off-screen right. Both the hold and the loop-restart are off-screen,
+   * so the transition is invisible. */
+  @keyframes hero-shimmer-sweep {
+    0%   { background-position: 100% 0; }
+    40%  { background-position: 0% 0; }
+    100% { background-position: 0% 0; }
+  }
+
   @keyframes hero-title-deblur {
     from {
       opacity: 0;
@@ -281,6 +337,11 @@
     .hero-subhead-word {
       opacity: 1;
       transform: none;
+      animation: none;
+    }
+    .hero-agentically {
+      -webkit-text-fill-color: unset; /* restore text visibility */
+      background: none;
       animation: none;
     }
   }

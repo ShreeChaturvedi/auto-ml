@@ -1,5 +1,9 @@
 image: node:22-slim
 
+variables:
+  NODE_OPTIONS: --max-old-space-size=4096
+  VERCEL_CLI_VERSION: "51.2.1"
+
 stages:
   - install
   - check
@@ -38,8 +42,6 @@ lint:
 
 build:
   stage: build
-  variables:
-    NODE_OPTIONS: --max-old-space-size=4096
   script:
     - npm run build
   cache:
@@ -54,8 +56,6 @@ build:
 
 test:
   stage: test
-  variables:
-    NODE_OPTIONS: --max-old-space-size=4096
   script:
     - npm run test
   cache:
@@ -72,6 +72,7 @@ landing:build:
   stage: build
   script:
     - npm --prefix landing ci
+    - npm --prefix landing run typecheck
     - npm --prefix landing run build
     - npm --prefix landing run test
     - npm --prefix landing run lint
@@ -90,10 +91,9 @@ landing:build:
 landing:vercel:preview:
   stage: deploy
   script:
-    - npm install -g vercel@latest
-    - vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
-    - vercel build --token="$VERCEL_TOKEN"
-    - vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+    - npx --yes vercel@"$VERCEL_CLI_VERSION" pull --yes --environment=preview --token="$VERCEL_TOKEN"
+    - npx --yes vercel@"$VERCEL_CLI_VERSION" build --yes --token="$VERCEL_TOKEN"
+    - npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --yes --token="$VERCEL_TOKEN" -m gitlabDeployment="1" -m gitlabCommitRef="$CI_COMMIT_REF_NAME" -m gitlabCommitSha="$CI_COMMIT_SHA"
   rules:
     - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
       changes:
@@ -108,10 +108,9 @@ landing:vercel:preview:
 landing:vercel:production:
   stage: deploy
   script:
-    - npm install -g vercel@latest
-    - vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-    - vercel build --prod --token="$VERCEL_TOKEN"
-    - vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+    - npx --yes vercel@"$VERCEL_CLI_VERSION" pull --yes --environment=production --token="$VERCEL_TOKEN"
+    - npx --yes vercel@"$VERCEL_CLI_VERSION" build --prod --yes --token="$VERCEL_TOKEN"
+    - npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" -m gitlabDeployment="1" -m gitlabCommitRef="$CI_COMMIT_REF_NAME" -m gitlabCommitSha="$CI_COMMIT_SHA"
   rules:
     - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       changes:

@@ -10,6 +10,8 @@ const hoisted = vi.hoisted(() => {
   const mockGetById = vi.fn();
   const mockUpdate = vi.fn();
   const mockDatasetGetById = vi.fn();
+  const mockWorkflowListRuns = vi.fn();
+  const mockWorkflowGetRun = vi.fn();
 
   return {
     mockOrchestrateContainerExecution,
@@ -17,6 +19,8 @@ const hoisted = vi.hoisted(() => {
     mockGetById,
     mockUpdate,
     mockDatasetGetById,
+    mockWorkflowListRuns,
+    mockWorkflowGetRun,
   };
 });
 
@@ -39,6 +43,13 @@ vi.mock('../../repositories/modelRepository.js', () => ({
 vi.mock('../../repositories/datasetRepository.js', () => ({
   createDatasetRepository: () => ({
     getById: hoisted.mockDatasetGetById,
+  }),
+}));
+
+vi.mock('../workflows/repository/index.js', () => ({
+  getWorkflowRepository: () => ({
+    listRuns: hoisted.mockWorkflowListRuns,
+    getRun: hoisted.mockWorkflowGetRun,
   }),
 }));
 
@@ -76,6 +87,8 @@ const {
   mockGetById,
   mockUpdate,
   mockDatasetGetById,
+  mockWorkflowListRuns,
+  mockWorkflowGetRun,
 } = hoisted;
 
 function makeModelRecord(overrides: Record<string, unknown> = {}) {
@@ -123,6 +136,8 @@ function makeContainer() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockWorkflowListRuns.mockResolvedValue([]);
+  mockWorkflowGetRun.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -212,6 +227,10 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('TreeExplainer');
     expect(script).toContain('LinearExplainer');
     expect(script).toContain('shap.json');
+    expect(script).toContain('result["warnings"] = []');
+    expect(script).toContain('Feature importance skipped:');
+    expect(script).toContain('Learning curve skipped:');
+    expect(script).toContain('Cross-validation skipped:');
     // Memory safety: subsample to 1000
     expect(script).toContain('1000');
   });
@@ -230,6 +249,11 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('fitted_model = pipeline.named_steps.get("regressor")');
     expect(script).toContain('fitted_model = pipeline.named_steps.get("classifier")');
     expect(script).toContain('fitted_model = pipeline.steps[-1][1]');
+    expect(script).toContain('fitted_model._get_cat_feature_indices()');
+    expect(script).toContain('fillna("__MISSING__").astype(str)');
+    expect(script).toContain('requires_refit_categorical_metadata = is_direct_catboost and len(categorical_columns) > 0');
+    expect(script).toContain('Learning curve skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
+    expect(script).toContain('Cross-validation skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
   });
 });
 
@@ -417,6 +441,139 @@ describe('runEvaluation', () => {
       const cfg = config as { scriptBuilder: () => string };
       const script = cfg.scriptBuilder();
       expect(script).toContain('test_size = 0.3');
+      return {
+        container,
+        executionResult: { status: 'success', stderr: '', executionMs: 5000 },
+      };
+    });
+
+    await runEvaluation('test-model-id');
+  });
+
+  it('installs stored or inferred runtime dependencies before evaluation execution', async () => {
+    const model = makeModelRecord({
+      algorithm: 'catboost_classifier',
+      metadata: {
+        runtimeDependencies: ['catboost'],
+      },
+    });
+    const container = makeContainer();
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { packagesToInstall?: string[] };
+      expect(cfg.packagesToInstall).toEqual(['catboost']);
+      return {
+        container,
+        executionResult: { status: 'success', stderr: '', executionMs: 5000 },
+      };
+    });
+
+    await runEvaluation('test-model-id');
+  });
+
+  it('replays notebook prep segments for llm-workflow models before running evaluation', async () => {
+    const model = makeModelRecord({
+      projectId: 'test-project',
+      taskType: 'regression',
+      metadata: {
+        source: 'llm-workflow',
+        experimentId: 'exp-1',
+      },
+    });
+    const container = makeContainer();
+    const dataset = {
+      datasetId: 'test-dataset',
+      filename: 'data.csv',
+      projectId: 'test-project',
+      columns: [{ name: 'feat1' }, { name: 'target' }],
+    };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockWorkflowListRuns.mockResolvedValue([
+      { runId: 'run-1', projectId: 'test-project', phase: 'training', updatedAt: new Date().toISOString() }
+    ]);
+    mockWorkflowGetRun.mockResolvedValue({
+      run: {
+        metadata: {
+          history: {
+            toolCalls: [
+              {
+                args: {
+                  metadata: {
+                    trainingDraft: {
+                      experimentId: 'exp-1',
+                      segments: [
+                        { content: 'DATASET_ID = "test-dataset"\nDATASET_FILENAME = "data.csv"\nTARGET_COLUMN = "target"\nTEST_SIZE = 0.2' },
+                        { content: 'dataset_path = resolve_dataset_path(DATASET_FILENAME, DATASET_ID)\ndf = pd.read_csv(dataset_path)\nX_train = df[[\"feat1\"]].iloc[:3].copy()\ny_train = df[TARGET_COLUMN].iloc[:3].copy()\nX_test = df[[\"feat1\"]].iloc[3:].copy()\ny_test = df[TARGET_COLUMN].iloc[3:].copy()' },
+                        { content: 'pipeline.fit(X_train, y_train)\ny_pred = pipeline.predict(X_test)' },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const script = (config as { scriptBuilder: () => string }).scriptBuilder();
+      expect(script).toContain('resolve_dataset_path(DATASET_FILENAME, DATASET_ID)');
+      expect(script).toContain('X_train = df[["feat1"]].iloc[:3].copy()');
+      expect(script).not.toContain('pipeline.fit(X_train, y_train)');
+      expect(script).not.toContain('X = df.drop(columns=[target_col])');
+      return {
+        container,
+        executionResult: { status: 'success', stderr: '', executionMs: 5000 },
+      };
+    });
+
+    await runEvaluation('test-model-id');
+
+    const backfillCall = mockUpdate.mock.calls.find(([, updater]) => {
+      const updated = (updater as (record: typeof model) => typeof model)(model);
+      const metadata = updated.metadata as Record<string, unknown> | undefined;
+      return Array.isArray(metadata?.workflowPrepSegments) && metadata.workflowPrepSegments.length === 2;
+    });
+    expect(backfillCall).toBeDefined();
+  });
+
+  it('normalizes legacy workflow prep syntax and infers runtime dependencies from replayed prep code', async () => {
+    const model = makeModelRecord({
+      algorithm: 'gradient_boosting_classifier',
+      metadata: {
+        source: 'llm-workflow',
+        experimentId: 'exp-1',
+        workflowPrepSegments: [
+          'from catboost import CatBoostClassifier',
+          'df["event_date"] = df["event_date"].view("int64")',
+          'X_train = df[["feat1"]].iloc[:3].copy()\ny_train = df["target"].iloc[:3].copy()\nX_test = df[["feat1"]].iloc[3:].copy()\ny_test = df["target"].iloc[3:].copy()',
+        ],
+      },
+    });
+    const container = makeContainer();
+    const dataset = {
+      datasetId: 'test-dataset',
+      filename: 'data.csv',
+      projectId: 'test-project',
+      columns: [{ name: 'feat1' }, { name: 'target' }],
+    };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const cfg = config as { packagesToInstall?: string[]; scriptBuilder: () => string };
+      expect(cfg.packagesToInstall).toEqual(['catboost']);
+      const script = cfg.scriptBuilder();
+      expect(script).toContain('.astype("int64")');
+      expect(script).not.toContain('.view("int64")');
       return {
         container,
         executionResult: { status: 'success', stderr: '', executionMs: 5000 },

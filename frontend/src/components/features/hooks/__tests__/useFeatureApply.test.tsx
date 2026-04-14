@@ -188,6 +188,41 @@ describe('useFeatureApply', () => {
     expect(result.current.applyMessage).not.toContain('Request to http://localhost');
   });
 
+  it('surfaces a success message when apply creates a dataset', async () => {
+    const { result } = renderHook(() => useFeatureApply({
+      projectId: 'project-1',
+      notebookId: 'notebook-1',
+      projectFeatures: [{
+        id: 'feat-salary-scale',
+        projectId: 'project-1',
+        sourceColumn: 'salary',
+        featureName: 'salary_scaled',
+        description: 'Scale salary',
+        method: 'standardize',
+        category: 'scaling',
+        params: {},
+        enabled: true,
+        createdAt: new Date().toISOString()
+      }],
+      selectedDatasetFile: {
+        id: 'file-1',
+        metadata: {
+          datasetId: 'dataset-1',
+          columns: ['salary']
+        }
+      },
+      setSelectedDataset: mockState.setSelectedDataset
+    }));
+
+    await act(async () => {
+      await result.current.handleApplyFeatures();
+    });
+
+    expect(result.current.applyStatus).toBe('success');
+    expect(result.current.applyMessage).toContain('Created employees_features.csv');
+    expect(mockState.setSelectedDataset).toHaveBeenCalledWith('derived-1');
+  });
+
   it('allows ratio features without secondaryColumn when feature.code is present (Department Usage Share regression)', async () => {
     const { result } = renderHook(() => useFeatureApply({
       projectId: 'project-1',
@@ -487,5 +522,114 @@ describe('useFeatureApply', () => {
       expect(call.features).toHaveLength(1);
       expect(call.features[0].code).toBeUndefined();
     });
+  });
+
+  it('ignores enabled features from another draft when applying the current draft', async () => {
+    mockState.storeFeatures = [{
+      id: 'feat-old-draft',
+      projectId: 'project-1',
+      versionId: 'draft-1',
+      sourceColumn: 'device_type',
+      featureName: 'device_type_encoded',
+      description: 'Old draft feature',
+      method: 'one_hot_encode',
+      category: 'encoding',
+      params: {},
+      enabled: true,
+      createdAt: new Date().toISOString()
+    }];
+
+    const { result } = renderHook(() => useFeatureApply({
+      projectId: 'project-1',
+      currentVersionId: 'draft-2',
+      notebookId: 'notebook-2',
+      projectFeatures: [],
+      selectedDatasetFile: {
+        id: 'file-1',
+        metadata: {
+          datasetId: 'dataset-1',
+          columns: ['device_type']
+        }
+      },
+      setSelectedDataset: mockState.setSelectedDataset
+    }));
+
+    await act(async () => {
+      await result.current.handleApplyFeatures();
+    });
+
+    expect(result.current.applyStatus).toBe('error');
+    expect(result.current.applyMessage).toBe('Select at least one feature.');
+    expect(mockState.applyFeatureEngineering).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current draft feature state usable after a successful apply', async () => {
+    mockState.storeFeatures = [{
+      id: 'feat-current-draft',
+      projectId: 'project-1',
+      versionId: 'draft-1',
+      sourceColumn: 'device_type',
+      featureName: 'device_type_encoded',
+      description: 'Current draft feature',
+      method: 'one_hot_encode',
+      category: 'encoding',
+      params: {},
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      code: "df['device_type_encoded'] = (df['device_type'] == 'mobile').astype('int8')"
+    }];
+
+    mockState.applyFeatureEngineering
+      .mockResolvedValueOnce({
+        dataset: {
+          datasetId: 'derived-1',
+          filename: 'draft1_features_v1.csv'
+        }
+      })
+      .mockResolvedValueOnce({
+        dataset: {
+          datasetId: 'derived-2',
+          filename: 'draft1_features_v2.csv'
+        }
+      });
+
+    const { result } = renderHook(() => useFeatureApply({
+      projectId: 'project-1',
+      currentVersionId: 'draft-1',
+      notebookId: 'notebook-1',
+      projectFeatures: [],
+      selectedDatasetFile: {
+        id: 'file-1',
+        metadata: {
+          datasetId: 'dataset-1',
+          columns: ['device_type']
+        }
+      },
+      setSelectedDataset: mockState.setSelectedDataset
+    }));
+
+    await act(async () => {
+      await result.current.handleApplyFeatures();
+    });
+
+    await act(async () => {
+      await result.current.handleApplyFeatures();
+    });
+
+    expect(mockState.applyFeatureEngineering).toHaveBeenCalledTimes(2);
+    expect(mockState.applyFeatureEngineering).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      notebookId: 'notebook-1',
+      features: expect.arrayContaining([
+        expect.objectContaining({ id: 'feat-current-draft', versionId: 'draft-1' })
+      ])
+    }));
+    expect(mockState.applyFeatureEngineering).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      notebookId: 'notebook-1',
+      features: expect.arrayContaining([
+        expect.objectContaining({ id: 'feat-current-draft', versionId: 'draft-1' })
+      ])
+    }));
+    expect(mockState.setSelectedDataset).toHaveBeenNthCalledWith(1, 'derived-1');
+    expect(mockState.setSelectedDataset).toHaveBeenNthCalledWith(2, 'derived-2');
   });
 });

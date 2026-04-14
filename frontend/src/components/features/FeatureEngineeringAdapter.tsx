@@ -16,6 +16,7 @@ import { resolveFeatureDescription } from './featureEngineeringUtils';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
+  currentVersionId?: string;
   datasetId: string | undefined;
   targetColumn: string | undefined;
   datasetFiles: UploadedFile[];
@@ -106,7 +107,7 @@ function resolveFeatureStepStatus(call: ToolCall, result: ToolResult): string {
   }
 }
 
-function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistry'] {
+function buildFeatureToolRegistry(projectId: string, currentVersionId?: string): DomainAdapter['toolRegistry'] {
   const toolHandlers: ToolHandlers = {
     onCall: (call: ToolCall) => {
       const store = useFeatureStore.getState();
@@ -160,6 +161,7 @@ function buildFeatureToolRegistry(projectId: string): DomainAdapter['toolRegistr
             store.upsertFeature({
               id: featureId,
               projectId: (output?.projectId as string) ?? existingFeature?.projectId ?? projectId,
+              ...(currentVersionId ? { versionId: currentVersionId } : {}),
               sourceColumn: existingFeature?.sourceColumn ?? sourceColumns?.[0] ?? existingStep?.name ?? '',
               ...(secondaryColumn ? { secondaryColumn } : {}),
               featureName: existingFeature?.featureName ?? existingStep?.name ?? featureName,
@@ -203,7 +205,7 @@ function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
-  const toolRegistry = buildFeatureToolRegistry(config.projectId);
+  const toolRegistry = buildFeatureToolRegistry(config.projectId, config.currentVersionId);
 
   return {
     buildRequest: async (rawPrompt, _toolCalls, _toolResults, onEvent, signal, options) => {
@@ -214,7 +216,10 @@ export function createFeatureEngineeringAdapter(
       // Enrich the prompt with enabled features so the LLM knows what to implement
       const featureStore = useFeatureStore.getState();
       const enabledFeatures = featureStore.features.filter(
-        (f) => f.projectId === config.projectId && f.enabled
+        (f) =>
+          f.projectId === config.projectId
+          && f.enabled
+          && (!config.currentVersionId || f.versionId === config.currentVersionId)
       );
       let prompt = rawPrompt;
       if (enabledFeatures.length > 0 && /\b(implement|apply|build|execute|run|make)\b/i.test(rawPrompt)) {

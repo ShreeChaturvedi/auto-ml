@@ -113,6 +113,11 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
           items: { type: 'string' },
           description: 'Notebook cell IDs that contain the training code.'
         },
+        prepSegments: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Notebook preparation code segments required to rebuild the training feature frame during later evaluation.'
+        },
         metrics: {
           type: 'object',
           description: 'Training metrics captured from execution output.',

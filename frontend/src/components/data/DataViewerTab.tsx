@@ -67,6 +67,8 @@ export function DataViewerTab() {
       state.notebooks.filter((n) => n.kind === 'standalone' && n.projectId === projectId)
     )
   );
+  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
+  const notebooksLoading = useNotebookStore((state) => state.isLoading);
   const activeFile = useMemo(
     () => (fileTabType === 'file' ? files.find((file) => file.id === activeFileTabId) : undefined),
     [activeFileTabId, fileTabType, files]
@@ -80,6 +82,12 @@ export function DataViewerTab() {
   useEffect(() => {
     if (projectId) {
       void useDataStore.getState().hydrateFromBackend(projectId);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (projectId) {
+      void useNotebookStore.getState().loadNotebooks(projectId);
     }
   }, [projectId]);
 
@@ -128,6 +136,7 @@ export function DataViewerTab() {
       files,
       queryArtifacts,
       standaloneNotebooks,
+      notebooksHydrated: notebookProjectId === projectId && !notebooksLoading,
       persistedActiveId: activeFileTabId,
       persistedActiveType: fileTabType,
       firstDataFileId,
@@ -147,6 +156,8 @@ export function DataViewerTab() {
     firstDataFileId,
     openFileTab,
     openFileTabs,
+    notebookProjectId,
+    notebooksLoading,
     queryArtifacts,
     setActiveFileTab,
     standaloneNotebooks,

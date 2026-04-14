@@ -59,6 +59,7 @@ Senior Design Project Proposal.pdf
 .cursor/
 .playwright-cli/
 .superpowers/
+.vercel/
 
 # Git worktrees
 .worktrees/

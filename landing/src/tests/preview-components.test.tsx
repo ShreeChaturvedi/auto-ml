@@ -209,11 +209,11 @@ describe('preview source guardrails', () => {
   });
 
   it('checks in Vercel project config for the landing workspace', () => {
-    expect(existsSync(path.resolve(landingRoot, '../vercel.json'))).toBe(true);
-    const vercelConfig = readFileSync(path.resolve(landingRoot, '../vercel.json'), 'utf8');
-    expect(vercelConfig).toContain('"outputDirectory": "dist"');
-    expect(vercelConfig).toContain('"buildCommand": "npm run build"');
-    expect(vercelConfig).toContain('"installCommand": "npm ci && npm ci --prefix ../frontend"');
+    expect(existsSync(path.resolve(landingRoot, '../../vercel.json'))).toBe(true);
+    const vercelConfig = readFileSync(path.resolve(landingRoot, '../../vercel.json'), 'utf8');
+    expect(vercelConfig).toContain('"outputDirectory": "landing/dist"');
+    expect(vercelConfig).toContain('"buildCommand": "npm run build:landing"');
+    expect(vercelConfig).toContain('"installCommand": "npm ci --prefix frontend && npm ci --prefix landing"');
     expect(vercelConfig).toContain('X-Frame-Options');
     expect(vercelConfig).toContain('SAMEORIGIN');
   });

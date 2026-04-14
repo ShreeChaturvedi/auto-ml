@@ -5,6 +5,7 @@ stages:
   - check
   - build
   - test
+  - deploy
 
 install:
   stage: install
@@ -85,3 +86,39 @@ landing:build:
     paths:
       - landing/dist/
     expire_in: 1 week
+
+landing:vercel:preview:
+  stage: deploy
+  script:
+    - npm install -g vercel@latest
+    - vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+    - vercel build --token="$VERCEL_TOKEN"
+    - vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+  rules:
+    - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        - .gitlab-ci.yml
+        - package.json
+        - package-lock.json
+        - vercel.json
+        - scripts/patch-csp-deps.mjs
+        - landing/**/*
+        - frontend/src/**/*
+
+landing:vercel:production:
+  stage: deploy
+  script:
+    - npm install -g vercel@latest
+    - vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+    - vercel build --prod --token="$VERCEL_TOKEN"
+    - vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+  rules:
+    - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - .gitlab-ci.yml
+        - package.json
+        - package-lock.json
+        - vercel.json
+        - scripts/patch-csp-deps.mjs
+        - landing/**/*
+        - frontend/src/**/*

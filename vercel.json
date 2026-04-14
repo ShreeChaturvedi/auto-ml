@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm ci && npm ci --prefix ../frontend",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "installCommand": "npm ci --prefix frontend && npm ci --prefix landing",
+  "buildCommand": "npm run build:landing",
+  "outputDirectory": "landing/dist",
   "cleanUrls": true,
   "headers": [
     {

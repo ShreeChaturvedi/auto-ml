@@ -129,6 +129,10 @@ describe('preview source guardrails', () => {
       path.resolve(landingRoot, 'components/deep-dives/NotebookDeepDive.tsx'),
       'utf8',
     );
+    const notebookStyles = readFileSync(
+      path.resolve(landingRoot, 'components/deep-dives/NotebookDeepDive.module.css'),
+      'utf8',
+    );
     expect(notebookSource).toContain('@frontend/demo/landing');
     expect(notebookSource).not.toContain('ResponsiveContainer');
     expect(notebookSource).not.toContain('BarChart');
@@ -149,6 +153,9 @@ describe('preview source guardrails', () => {
     expect(frontendNotebookSource).not.toContain('setAdaptiveSyntaxPref');
     expect(frontendNotebookSource).not.toContain('useProjectThemeColor');
     expect(frontendNotebookSource).not.toContain('useProjectStore');
+    expect(notebookStyles).toContain('.root');
+    expect(notebookStyles).toContain('height: 560px;');
+    expect(notebookStyles).toContain('overflow: hidden;');
   });
 
   it('renders plan deep-dive markdown through the app plan viewer pipeline with landing-safe title and stable question sizing', () => {

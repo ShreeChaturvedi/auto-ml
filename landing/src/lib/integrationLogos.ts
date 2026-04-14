@@ -1,98 +1,71 @@
 // Integration logo lookups from simple-icons.
-// Each entry returns a pre-resolved SVG string at build time.
+// Each entry returns a pre-resolved SVG path at build time.
 //
-// IMPORTANT: imports are explicit (named) rather than `import * as si` so
-// Vite/esbuild can tree-shake and we don't load all ~3k icon modules at
-// build time just to resolve ~25 of them. Saves several seconds per build.
+// CURATION: Every entry here is justified by actual usage in the codebase:
+//   Python      – sandboxed runtime language (Dockerfile.python-runtime)
+//   Pandas      – data manipulation in runtime (pip install pandas==2.2.2)
+//   NumPy       – computation library in runtime (pip install numpy==1.26.4)
+//   scikit-learn – ML training in runtime (pip install scikit-learn==1.5.1)
+//   Plotly       – interactive visualization in runtime (pip install plotly==5.23.0)
+//   Jupyter      – kernel gateway for notebook execution (jupyter_kernel_gateway)
+//   Postgres     – metadata store + dataset storage (db.ts, datasetLoader.ts)
+//   Docker       – container-based sandboxed execution (executionService.ts)
+//   OpenAI       – LLM provider for AI agent (embeddingService.ts, llm/*)
+//   LangGraph    – agentic preprocessing state machine (@langchain/langgraph)
 
 import type { SimpleIcon } from 'simple-icons';
 import {
-  siPostgresql,
-  siMysql,
-  siSqlite,
-  siAmazons3,
-  siGooglecloudstorage,
-  siGooglebigquery,
-  siSnowflake,
-  siDatabricks,
-  siApacheparquet,
-  siJson,
-  siDuckdb,
-  siDocker,
-  siKubernetes,
-  siPytorch,
+  siPython,
+  siNumpy,
+  siPandas,
   siScikitlearn,
-  siHuggingface,
-  siLangchain,
+  siPlotly,
+  siJupyter,
+  siPostgresql,
+  siDocker,
   siOpenai,
-  siAnthropic,
-  siGooglegemini,
+  siLangchain,
 } from 'simple-icons';
 
 interface LogoEntry { name: string; iconKey: string }
 
-// Row 1: data sources + compute
-export const ROW_1: LogoEntry[] = [
-  { name: 'Postgres',   iconKey: 'postgresql' },
-  { name: 'MySQL',      iconKey: 'mysql' },
-  { name: 'SQLite',     iconKey: 'sqlite' },
-  { name: 'Amazon S3',  iconKey: 'amazons3' },
-  { name: 'GCS',        iconKey: 'googlecloudstorage' },
-  { name: 'Azure Blob', iconKey: 'microsoftazure' },
-  { name: 'BigQuery',   iconKey: 'googlebigquery' },
-  { name: 'Snowflake',  iconKey: 'snowflake' },
-  { name: 'Databricks', iconKey: 'databricks' },
-  { name: 'Parquet',    iconKey: 'apacheparquet' },
-  { name: 'CSV',        iconKey: '' },
-  { name: 'JSON',       iconKey: 'json' },
-  { name: 'DuckDB',     iconKey: 'duckdb' },
-  { name: 'Docker',     iconKey: 'docker' },
-  { name: 'Kubernetes', iconKey: 'kubernetes' },
-];
-
-// Row 2: ML frameworks + LLM providers
-export const ROW_2: LogoEntry[] = [
-  { name: 'PyTorch',       iconKey: 'pytorch' },
+export const LOGOS: LogoEntry[] = [
+  { name: 'Python',       iconKey: 'python' },
+  { name: 'Pandas',       iconKey: 'pandas' },
+  { name: 'NumPy',        iconKey: 'numpy' },
   { name: 'scikit-learn',  iconKey: 'scikitlearn' },
-  { name: 'XGBoost',       iconKey: '' },
-  { name: 'LightGBM',      iconKey: '' },
-  { name: 'Optuna',        iconKey: '' },
-  { name: 'Hugging Face',  iconKey: 'huggingface' },
-  { name: 'LangGraph',     iconKey: 'langchain' },
-  { name: 'OpenAI',        iconKey: 'openai' },
-  { name: 'Anthropic',     iconKey: 'anthropic' },
-  { name: 'Google DeepMind', iconKey: 'googlegemini' },
-  { name: 'Mistral AI',    iconKey: 'mistralai' },
-  { name: 'Together AI',   iconKey: '' },
-  { name: 'Groq',          iconKey: '' },
+  { name: 'Plotly',       iconKey: 'plotly' },
+  { name: 'Jupyter',      iconKey: 'jupyter' },
+  { name: 'Postgres',     iconKey: 'postgresql' },
+  { name: 'Docker',       iconKey: 'docker' },
+  { name: 'OpenAI',       iconKey: 'openai' },
+  { name: 'LangGraph',    iconKey: 'langchain' },
 ];
 
-// Static lookup map from iconKey -> simple-icons entry. Keys that aren't
-// present in simple-icons v13 (e.g. `microsoftazure`, `mistralai`) simply
-// aren't in the map and fall through to the `null` placeholder branch.
+// Backward compat
+export const ROW_1 = LOGOS;
+export const ROW_2: LogoEntry[] = [];
+
 const ICON_MAP: Record<string, SimpleIcon> = {
-  postgresql: siPostgresql,
-  mysql: siMysql,
-  sqlite: siSqlite,
-  amazons3: siAmazons3,
-  googlecloudstorage: siGooglecloudstorage,
-  googlebigquery: siGooglebigquery,
-  snowflake: siSnowflake,
-  databricks: siDatabricks,
-  apacheparquet: siApacheparquet,
-  json: siJson,
-  duckdb: siDuckdb,
-  docker: siDocker,
-  kubernetes: siKubernetes,
-  pytorch: siPytorch,
+  python: siPython,
+  numpy: siNumpy,
+  pandas: siPandas,
   scikitlearn: siScikitlearn,
-  huggingface: siHuggingface,
-  langchain: siLangchain,
+  plotly: siPlotly,
+  jupyter: siJupyter,
+  postgresql: siPostgresql,
+  docker: siDocker,
   openai: siOpenai,
-  anthropic: siAnthropic,
-  googlegemini: siGooglegemini,
+  langchain: siLangchain,
 };
 
+/** Returns the full SimpleIcon entry (svg path, viewBox is always 0 0 24 24). */
+export function getLogoIcon(iconKey: string): SimpleIcon | null {
+  if (!iconKey) return null;
+  return ICON_MAP[iconKey] ?? null;
+}
+
+/** Legacy: returns raw SVG string. */
 export function getLogoSvg(iconKey: string): string | null {
   if (!iconKey) return null;
   return ICON_MAP[iconKey]?.svg ?? null;

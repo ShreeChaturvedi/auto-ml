@@ -1,4 +1,10 @@
 ---
+/**
+ * MarqueeRow – renders each integration as a combined inline SVG where
+ * the icon path and brand name text are a single monochrome unit.
+ * This creates the "full logo mark" effect (like Supabase's marquee)
+ * rather than "generic icon + separate HTML text".
+ */
 interface LogoWithSvg {
   name: string;
   iconKey: string;
@@ -12,29 +18,57 @@ interface Props {
 
 const { logos, direction } = Astro.props;
 const rowClass = direction === 'left' ? 'marquee-row-left' : 'marquee-row-right';
+
+/**
+ * Approximate the SVG text width (server-side, no DOM).
+ * Inter at ~9px per character is a rough heuristic; we add comfortable padding.
+ */
+function estimateTextWidth(text: string): number {
+  return text.length * 9.2 + 4;
+}
+
+/**
+ * Build a combined inline SVG string: icon (24×24 viewBox) + text.
+ * Both use `currentColor` via fill, producing a unified monochrome brand mark.
+ */
+function buildCombinedSvg(logo: LogoWithSvg): string {
+  const iconSize = 24;
+  const gap = 10;
+  const textStartX = iconSize + gap;
+  const textWidth = estimateTextWidth(logo.name);
+  const totalWidth = textStartX + textWidth;
+
+  // Extract just the <path> from simple-icons SVG (it wraps in <svg>).
+  // simple-icons .svg property is the raw SVG markup including the <svg> wrapper.
+  let pathContent = '';
+  if (logo.svg) {
+    // Extract inner content (paths) from the SVG wrapper; also strip <title>
+    const inner = logo.svg
+      .replace(/<svg[^>]*>/, '')
+      .replace(/<\/svg>/, '')
+      .replace(/<title>[^<]*<\/title>/, '');
+    pathContent = inner;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${iconSize}" fill="currentColor" role="img" aria-label="${logo.name}" class="brand-mark-svg">${pathContent ? `<g>${pathContent}</g>` : ''}<text x="${textStartX}" y="17.5" font-family="'Inter Variable', Inter, sans-serif" font-size="16" font-weight="460" letter-spacing="-0.01em">${logo.name}</text></svg>`;
+}
 ---
 
 <div class={`marquee-row ${rowClass}`}>
   {[...logos, ...logos].map((logo) => (
-    <span class="logo-chip" aria-label={logo.name}>
-      {logo.svg ? (
-        <span class="logo-icon" aria-hidden="true" set:html={logo.svg} />
-      ) : (
-        <span class="logo-icon-placeholder" aria-hidden="true" />
-      )}
-      <span class="logo-name">{logo.name}</span>
-    </span>
+    <span class="brand-mark" aria-label={logo.name} set:html={buildCombinedSvg(logo)} />
   ))}
 </div>
 
 <style>
   .marquee-row {
     display: flex;
-    gap: 16px;
+    align-items: center;
+    gap: 56px;
     width: max-content;
   }
-  .marquee-row-left  { animation: marquee-left  50s linear infinite; }
-  .marquee-row-right { animation: marquee-right 55s linear infinite; }
+  .marquee-row-left  { animation: marquee-left  90s linear infinite; }
+  .marquee-row-right { animation: marquee-right 95s linear infinite; }
   .marquee-row:hover { animation-play-state: paused; }
 
   @keyframes marquee-left {
@@ -46,41 +80,21 @@ const rowClass = direction === 'left' ? 'marquee-row-left' : 'marquee-row-right'
     100% { transform: translateX(0); }
   }
 
-  .logo-chip {
+  .brand-mark {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    height: 40px;
-    padding: 8px 20px;
-    background: var(--surface-0);
-    border: 0.8px solid hsl(var(--border));
-    border-radius: 20px;
-    color: var(--text-muted);
-    white-space: nowrap;
     flex-shrink: 0;
-    transition: color var(--dur-fast), border-color var(--dur-fast);
+    color: hsl(0 0% 40%);
+    transition: color 0.3s ease;
+    height: 28px;
   }
-  .marquee-row:hover .logo-chip { color: var(--text); }
-
-  .logo-icon {
-    width: 16px;
-    height: 16px;
-    display: inline-flex;
-    filter: grayscale(1) brightness(1.1);
-  }
-  .logo-icon :global(svg) { width: 100%; height: 100%; fill: currentColor; }
-
-  .logo-icon-placeholder {
-    width: 16px;
-    height: 16px;
-    border: 0.8px solid currentColor;
-    border-radius: 3px;
-    display: inline-block;
-    opacity: 0.6;
+  .marquee-row:hover .brand-mark {
+    color: hsl(0 0% 55%);
   }
 
-  .logo-name {
-    font-family: 'Inter Variable', sans-serif;
-    font-size: 14px;
+  .brand-mark :global(.brand-mark-svg) {
+    height: 100%;
+    width: auto;
+    fill: currentColor;
   }
 </style>

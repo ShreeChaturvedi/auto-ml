@@ -1,9 +1,8 @@
 ---
-import { ROW_1, ROW_2, getLogoSvg } from '@/lib/integrationLogos';
+import { LOGOS, getLogoSvg } from '@/lib/integrationLogos';
 import MarqueeRow from './MarqueeRow.astro';
 
-const row1Logos = ROW_1.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
-const row2Logos = ROW_2.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
+const logos = LOGOS.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
 ---
 
 <section class="marquee-section" aria-labelledby="marquee-heading">
@@ -21,8 +20,7 @@ const row2Logos = ROW_2.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
     aria-roledescription="marquee"
     aria-label="Supported integrations"
   >
-    <MarqueeRow logos={row1Logos} direction="left" />
-    <MarqueeRow logos={row2Logos} direction="right" />
+    <MarqueeRow logos={logos} direction="left" />
 
     <div class="marquee-fade marquee-fade-left" aria-hidden="true"></div>
     <div class="marquee-fade marquee-fade-right" aria-hidden="true"></div>
@@ -107,7 +105,6 @@ const row2Logos = ROW_2.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 24px;
     overflow: hidden;
   }
 

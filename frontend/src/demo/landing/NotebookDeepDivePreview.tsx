@@ -1,33 +1,19 @@
-import { useMemo, useRef, type CSSProperties } from 'react';
+import { useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { Check, Copy, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ThemeProvider, useTheme } from '@/components/theme-provider';
 import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
 import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { getEditorChromeColors } from '@/lib/color/editorColors';
-import { useProjectStore } from '@/stores/projectStore';
+import { computeSyntaxPalette, setSynVarsFromPalette } from '@/lib/color/syntaxPalette';
 
 import type { RichOutput } from '@/lib/api/execution';
 import type { CellOutput, NotebookCell } from '@/types/notebook';
 
 const NOW = '2026-04-13T15:30:00.000Z';
 const NOTEBOOK_ID = 'landing-standalone-notebook';
-const PROJECT_ID = 'landing-demo-project';
-
-const LANDING_PROJECT = {
-  id: PROJECT_ID,
-  title: 'Landing Demo',
-  icon: 'Rocket',
-  color: 'cyan',
-  createdAt: new Date(NOW),
-  updatedAt: new Date(NOW),
-  unlockedPhases: ['upload'],
-  currentPhase: 'upload',
-  completedPhases: [],
-  metadata: {},
-} as const;
+const NOTEBOOK_SYNTAX_HUE = 240;
+const NOTEBOOK_EDITOR_CHROME = getEditorChromeColors(true);
 
 const DESCRIBE_TABLE = {
   columns: ['stat', 'mrr_usd', 'avg_session_minutes', 'api_calls'],
@@ -78,35 +64,23 @@ const CELLS: NotebookCell[] = [
 ];
 
 export function NotebookDeepDivePreview() {
-  return (
-    <ThemeProvider defaultTheme="dark" storageKey="landing-notebook-theme">
-      <NotebookDeepDivePreviewInner />
-    </ThemeProvider>
-  );
-}
+  const previewRef = useRef<HTMLDivElement>(null);
 
-function NotebookDeepDivePreviewInner() {
-  const initializedRef = useRef(false);
-  const { resolvedTheme } = useTheme();
+  useLayoutEffect(() => {
+    if (!previewRef.current) {
+      return;
+    }
 
-  if (!initializedRef.current) {
-    initializedRef.current = true;
-    ensureLandingProjectTheme();
-  }
-
-  useProjectThemeColor();
-  const editorChromeColors = useMemo(
-    () => getEditorChromeColors(resolvedTheme === 'dark'),
-    [resolvedTheme],
-  );
+    setSynVarsFromPalette(previewRef.current, computeSyntaxPalette(NOTEBOOK_SYNTAX_HUE, true));
+  }, []);
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-auto p-4">
+    <div ref={previewRef} className="flex h-full flex-col gap-3 overflow-auto p-4">
       {CELLS.map((cell) => (
         <LandingNotebookCell
           key={cell.cellId}
           cell={cell}
-          editorChromeColors={editorChromeColors}
+          editorChromeColors={NOTEBOOK_EDITOR_CHROME}
         />
       ))}
     </div>
@@ -228,20 +202,6 @@ function formatExecutionDuration(durationMs: number): string {
   }
 
   return `${(durationMs / 1000).toFixed(1)}s`;
-}
-
-function ensureLandingProjectTheme() {
-  useProjectStore.setState((state) => {
-    const hasProject = state.projects.some((project) => project.id === PROJECT_ID);
-    if (hasProject && state.activeProjectId === PROJECT_ID) {
-      return state;
-    }
-
-    return {
-      activeProjectId: PROJECT_ID,
-      projects: hasProject ? state.projects : [...state.projects, LANDING_PROJECT],
-    };
-  });
 }
 
 type PythonTokenType =

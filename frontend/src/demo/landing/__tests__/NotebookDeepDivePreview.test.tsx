@@ -1,24 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
-import { useProjectStore } from '@/stores/projectStore';
-
 import { NotebookDeepDivePreview } from '../NotebookDeepDivePreview';
 
 describe('NotebookDeepDivePreview', () => {
   beforeEach(() => {
-    useProjectStore.setState((state) => ({
-      ...state,
-      projects: [],
-      activeProjectId: null,
-      isInitialized: false,
-      isLoading: false,
-      error: undefined,
-    }));
+    document.documentElement.removeAttribute('style');
   });
 
-  it('keeps plain identifiers on editor foreground while preserving syntax accents', () => {
-    render(<NotebookDeepDivePreview />);
+  it('scopes the app blue syntax palette to the preview while keeping plain identifiers readable', () => {
+    const { container } = render(<NotebookDeepDivePreview />);
+    const root = container.firstElementChild as HTMLDivElement;
+
+    expect(root.style.getPropertyValue('--syn-keyword')).not.toBe('');
+    expect(root.style.getPropertyValue('--syn-string')).not.toBe('');
 
     expect(screen.getByText('import').getAttribute('style')).toContain('color: hsl(var(--syn-keyword))');
     expect(screen.getByText('read_csv').getAttribute('style')).toContain('color: hsl(var(--syn-function))');

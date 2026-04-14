@@ -137,8 +137,9 @@ describe('preview source guardrails', () => {
       path.resolve(frontendRoot, 'demo/landing/NotebookDeepDivePreview.tsx'),
       'utf8',
     );
-    expect(frontendNotebookSource).toContain('useProjectThemeColor');
-    expect(frontendNotebookSource).toContain('useProjectStore');
+    expect(frontendNotebookSource).toContain('computeSyntaxPalette');
+    expect(frontendNotebookSource).toContain('setSynVarsFromPalette');
+    expect(frontendNotebookSource).toContain('NOTEBOOK_SYNTAX_HUE');
     expect(frontendNotebookSource).toContain('renderPythonLine');
     expect(frontendNotebookSource).toContain('aria-label="Run cell"');
     expect(frontendNotebookSource).toContain('CellOutputRenderer');
@@ -146,6 +147,8 @@ describe('preview source guardrails', () => {
     expect(frontendNotebookSource).not.toContain('NotebookCellOutput');
     expect(frontendNotebookSource).not.toContain('LazyMonacoEditor');
     expect(frontendNotebookSource).not.toContain('setAdaptiveSyntaxPref');
+    expect(frontendNotebookSource).not.toContain('useProjectThemeColor');
+    expect(frontendNotebookSource).not.toContain('useProjectStore');
   });
 
   it('renders plan deep-dive markdown through the app plan viewer pipeline with landing-safe title and stable question sizing', () => {

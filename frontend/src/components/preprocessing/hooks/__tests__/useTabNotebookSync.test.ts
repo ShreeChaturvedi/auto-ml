@@ -21,7 +21,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import type { MutableRefObject } from 'react';
 
 // ── Mocks ─────────────────────────────────────────────────────
@@ -195,6 +195,41 @@ describe('useTabNotebookSync', () => {
   // ── ensureNotebookForTab ────────────────────────────────────
 
   describe('ensureNotebookForTab', () => {
+    it('auto-resolves only the active workbook notebook on mount instead of reconciling every workbook', async () => {
+      const activeTab = makeTab({ id: 'tab-active', name: 'Workbook 1', notebookId: null });
+      const backgroundTab = makeTab({ id: 'tab-bg', name: 'Workbook 2', notebookId: null });
+      const tabsRef = makeRef([activeTab, backgroundTab]);
+      const activeTabIdRef = makeRef('tab-active');
+      const setTabNotebookIdMock = vi.fn();
+
+      useNotebookStore.setState({
+        currentProjectId: 'proj-1',
+        notebooks: [],
+        activeNotebookId: null,
+        notebook: null
+      });
+
+      renderHook(() =>
+        useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady: true,
+          tabsRef,
+          activeTabIdRef,
+          tabs: [activeTab, backgroundTab],
+          activeTab,
+          setTabNotebookId: setTabNotebookIdMock
+        })
+      );
+
+      await waitFor(() => {
+        expect(createNotebookApiMock).toHaveBeenCalledTimes(1);
+      });
+
+      expect(setTabNotebookIdMock).toHaveBeenCalledWith('tab-active', expect.any(String));
+      expect(setTabNotebookIdMock).not.toHaveBeenCalledWith('tab-bg', expect.anything());
+      expect(deleteNotebookApiMock).not.toHaveBeenCalled();
+    });
+
     it('creates a notebook WITH preprocessing metadata when forceCreate is true', async () => {
       const tab = makeTab({ id: 'tab-x', name: 'Processing X', notebookId: null });
       const { result } = renderSyncHook({ tabs: [tab], activeTabId: 'tab-x' });

@@ -3,7 +3,7 @@
  * Reuses SubtabItem for uniform sidebar spacing.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Download, Trash2, Pencil } from 'lucide-react';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -37,6 +37,10 @@ export function FileSubtabs({ projectId }: FileSubtabsProps) {
 
   const [renamingFile, setRenamingFile] = useState<UploadedFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
+
+  useEffect(() => {
+    void useDataStore.getState().hydrateFromBackend(projectId);
+  }, [projectId]);
 
   const openRenameDialog = (file: UploadedFile) => {
     setRenamingFile(file);

@@ -7,6 +7,7 @@ import { COLORS } from "../../../config/themes";
 import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { HookSlide } from "./HookSlide";
 import { IntroSlide } from "./IntroSlide";
+import { ProblemTrioSlide } from "./ProblemTrioSlide";
 import { SandboxSlide } from "./SandboxSlide";
 import { TeamSlide } from "./TeamSlide";
 import { TitleSlide } from "./TitleSlide";
@@ -51,6 +52,8 @@ const SlideBody: React.FC<{ id: string } & SlideBodyProps> = ({
       return <HookSlide theme={theme} meta={meta} />;
     case "title":
       return <TitleSlide theme={theme} meta={meta} />;
+    case "problem-trio":
+      return <ProblemTrioSlide theme={theme} meta={meta} />;
     case "intro":
       return <IntroSlide theme={theme} meta={meta} />;
     case "team":

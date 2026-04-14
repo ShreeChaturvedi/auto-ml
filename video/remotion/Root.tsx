@@ -22,6 +22,7 @@ import { calcMetadata } from "./calculate-metadata/calc-metadata";
 const DEFAULT_SCENES: SelectableScene[] = [
   { type: "slide", id: "hook", durationInFrames: 720 },
   { type: "slide", id: "title", durationInFrames: 540 },
+  { type: "slide", id: "problem-trio", durationInFrames: 1560 },
   // TEMP — primitives smoke test. Removed in Commit 10 (dispatcher integration).
   { type: "slide", id: "sandbox", durationInFrames: 360 },
   { type: "slide", id: "intro", durationInFrames: 360 },

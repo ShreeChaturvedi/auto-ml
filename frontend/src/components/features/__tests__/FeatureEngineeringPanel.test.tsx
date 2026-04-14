@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import React from 'react';
 
 import { FeatureEngineeringPanel } from '../FeatureEngineeringPanel';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -49,6 +50,7 @@ const mockState = vi.hoisted(() => ({
   upsertFeatureMock: vi.fn(),
   removeFeatureMock: vi.fn(),
   clearProjectFeaturesMock: vi.fn(),
+  clearVersionFeaturesMock: vi.fn(),
   hydrateFeaturesMock: vi.fn(),
   createDraftVersionMock: vi.fn(),
   removeVersionMock: vi.fn(),
@@ -89,7 +91,9 @@ const mockState = vi.hoisted(() => ({
   featureSteps: {} as Record<string, { status: string }>,
   currentStage: null as string | null,
   latestAdapterConfig: null as Record<string, unknown> | null,
-  latestBeforeSubmit: null as ((prompt: string) => Promise<string | null>) | null
+  latestBeforeSubmit: null as ((prompt: string) => Promise<string | null>) | null,
+  agenticShellMounts: 0,
+  agenticShellUnmounts: 0
 }));
 
 vi.mock('@/components/agentic/AgenticShell', () => ({
@@ -111,21 +115,30 @@ vi.mock('@/components/agentic/AgenticShell', () => ({
     domainLockReason?: string;
     notebookId?: string | null;
     beforeSubmit?: (prompt: string) => Promise<string | null>;
-  }) => (
-    <div>
-      <div data-testid="has-before-submit">{beforeSubmit ? 'yes' : 'no'}</div>
-      <div data-testid="toolbar-left">{toolbarLeft}</div>
-      <div data-testid="toolbar-right">{toolbarRight}</div>
-      <div data-testid="chat-meta">{chatMetaSlot}</div>
-      <div data-testid="notebook-id">{notebookId ?? ''}</div>
-      {domainLockReason ? <div data-testid="domain-lock">{domainLockReason}</div> : null}
-      {renderLeftPane
-        ? renderLeftPane({ messages: mockState.messages, isGenerating: false, error: null, submitPrompt: mockState.submitPromptMock })
-        : LeftPaneComponent
-          ? <LeftPaneComponent messages={mockState.messages} isGenerating={false} error={null} submitPrompt={mockState.submitPromptMock} />
-          : null}
-    </div>
-  )
+  }) => {
+    React.useEffect(() => {
+      mockState.agenticShellMounts += 1;
+      return () => {
+        mockState.agenticShellUnmounts += 1;
+      };
+    }, []);
+
+    return (
+      <div>
+        <div data-testid="has-before-submit">{beforeSubmit ? 'yes' : 'no'}</div>
+        <div data-testid="toolbar-left">{toolbarLeft}</div>
+        <div data-testid="toolbar-right">{toolbarRight}</div>
+        <div data-testid="chat-meta">{chatMetaSlot}</div>
+        <div data-testid="notebook-id">{notebookId ?? ''}</div>
+        {domainLockReason ? <div data-testid="domain-lock">{domainLockReason}</div> : null}
+        {renderLeftPane
+          ? renderLeftPane({ messages: mockState.messages, isGenerating: false, error: null, submitPrompt: mockState.submitPromptMock })
+          : LeftPaneComponent
+            ? <LeftPaneComponent messages={mockState.messages} isGenerating={false} error={null} submitPrompt={mockState.submitPromptMock} />
+            : null}
+      </div>
+    );
+  }
 }));
 
 vi.mock('../FeatureEngineeringAdapter', () => ({
@@ -157,6 +170,7 @@ vi.mock('@/stores/featureStore', () => {
       upsertFeature: mockState.upsertFeatureMock,
       removeFeature: mockState.removeFeatureMock,
       clearProjectFeatures: mockState.clearProjectFeaturesMock,
+      clearVersionFeatures: mockState.clearVersionFeaturesMock,
       hydrateFromProject: mockState.hydrateFeaturesMock,
       versions: mockState.versions,
       currentVersionId: mockState.currentVersionId,
@@ -276,6 +290,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.upsertFeatureMock.mockReset();
     mockState.removeFeatureMock.mockReset();
     mockState.clearProjectFeaturesMock.mockReset();
+    mockState.clearVersionFeaturesMock.mockReset();
     mockState.hydrateFeaturesMock.mockReset();
     mockState.createDraftVersionMock.mockReset();
     mockState.removeVersionMock.mockReset();
@@ -306,6 +321,8 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
     mockState.currentStage = null;
     mockState.latestAdapterConfig = null;
     mockState.latestBeforeSubmit = null;
+    mockState.agenticShellMounts = 0;
+    mockState.agenticShellUnmounts = 0;
     mockState.createNotebookApiMock.mockResolvedValue({
       notebookId: 'fe-notebook-1',
       projectId: 'p1',
@@ -375,6 +392,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
       {
         id: 'f1',
         projectId: 'p1',
+        versionId: 'v1',
         sourceColumn: 'Salary',
         featureName: 'Salary_Scaled',
         method: 'standardize',
@@ -404,6 +422,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
       {
         id: 'f1',
         projectId: 'p1',
+        versionId: 'v1',
         sourceColumn: 'Salary',
         featureName: 'Salary_Scaled',
         method: 'standardize',
@@ -432,6 +451,7 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
       {
         id: 'f1',
         projectId: 'p1',
+        versionId: 'v1',
         sourceColumn: 'Salary',
         featureName: 'Salary_Scaled',
         method: 'standardize',
@@ -827,6 +847,54 @@ describe('FeatureEngineeringPanel (Issue #44)', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('location-search')).toHaveTextContent('workbook=v1');
+    });
+  });
+
+  it('does not remount AgenticShell when switching FE drafts', async () => {
+    const view = renderPanel();
+
+    await waitFor(() => {
+      expect(mockState.agenticShellMounts).toBe(1);
+    });
+
+    mockState.versions = {
+      p1: [
+        ...mockState.versions.p1,
+        {
+          id: 'v2',
+          projectId: 'p1',
+          name: 'Draft Pipeline v2',
+          status: 'draft',
+          createdAt: new Date('2026-02-25T00:00:00.000Z').toISOString(),
+          readinessReport: {
+            dataSummary: {
+              addedColumns: [],
+              removedColumns: [],
+              renamedColumns: [],
+              typeChanges: [],
+              nullDeltas: [],
+              warnings: []
+            },
+            steps: []
+          }
+        }
+      ]
+    };
+    mockState.currentVersionId = { p1: 'v2' };
+
+    view.rerender(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="*" element={<FeatureEngineeringPanel projectId="p1" />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockState.agenticShellMounts).toBe(1);
+      expect(mockState.agenticShellUnmounts).toBe(0);
     });
   });
 });

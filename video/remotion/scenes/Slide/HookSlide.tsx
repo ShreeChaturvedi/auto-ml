@@ -2,7 +2,7 @@ import React from "react";
 import { interpolate } from "remotion";
 import { EASE_OUT } from "../../../config/easing";
 import { REGULAR_FONT, SERIF_FONT, TITLE_FONT } from "../../../config/fonts";
-import { DIMENSIONS } from "../../../config/layout";
+import { DIMENSIONS, SAFE_AREA } from "../../../config/layout";
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { MotionLine } from "../../primitives/MotionLine";
@@ -18,11 +18,10 @@ import type { SlideBodyProps } from "./index";
 /** 7-phase frame budget (60fps). Sum = 720 = 12s. */
 const PHASES = [20, 80, 40, 70, 100, 60, 350] as const;
 const CHUNK_STAGGER = 25; // Phase 5 cadence — 4 chunks × 25f = 100f window.
-const SPINE_X = 72;
-const SAFE_TOP = 96;
-const SAFE_BOTTOM = 120;
-const CONTENT_LEFT = 120;
 const SPINE_DRAW_FRAMES = 20;
+/** Footnote hairline draw-in. 30f completes at frame 340, leaving phase 6
+ *  (310–370) with a 30f coordinated settle before phase 7's long hold. */
+const FOOTNOTE_HAIRLINE_FRAMES = 30;
 
 type SevenPhases = [PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo];
 type FourChunks = [StaggeredItem, StaggeredItem, StaggeredItem, StaggeredItem];
@@ -34,7 +33,7 @@ type FourChunks = [StaggeredItem, StaggeredItem, StaggeredItem, StaggeredItem];
 export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const [pSpine, pType, , pHero, pClause, pFootnote] = useTimeline([...PHASES]) as SevenPhases;
   const c = COLORS[theme];
-  const spineLength = DIMENSIONS.landscape.height - SAFE_TOP - SAFE_BOTTOM;
+  const spineLength = DIMENSIONS.landscape.height - SAFE_AREA.top - SAFE_AREA.bottom;
 
   const chunks = useStaggeredFadeIn(4, {
     step: CHUNK_STAGGER,
@@ -55,8 +54,8 @@ export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
       <div
         style={{
           position: "absolute",
-          top: SAFE_TOP,
-          left: SPINE_X,
+          top: SAFE_AREA.top,
+          left: SAFE_AREA.spineLeft,
           pointerEvents: "none",
         }}
       >
@@ -78,8 +77,8 @@ export const HookSlide: React.FC<SlideBodyProps> = ({ theme }) => {
         style={{
           position: "absolute",
           top: "42%",
-          left: CONTENT_LEFT,
-          right: 96,
+          left: SAFE_AREA.contentLeft,
+          right: SAFE_AREA.right,
           transform: "translateY(-50%)",
           maxWidth: 1400,
           ...TITLE_FONT,
@@ -151,8 +150,18 @@ const FootnoteHairline: React.FC<{ theme: Theme; delay: number; opacity: number 
 }) => {
   const c = COLORS[theme];
   return (
-    <div style={{ position: "absolute", left: CONTENT_LEFT, bottom: SAFE_BOTTOM + 24, opacity }}>
-      <MotionLine x1={0} y1={0} x2={240} y2={0} delay={delay} color={c.BORDER_COLOR} svgWidth={240} svgHeight={2} />
+    <div style={{ position: "absolute", left: SAFE_AREA.contentLeft, bottom: SAFE_AREA.bottom + 24, opacity }}>
+      <MotionLine
+        x1={0}
+        y1={0}
+        x2={240}
+        y2={0}
+        delay={delay}
+        durationInFrames={FOOTNOTE_HAIRLINE_FRAMES}
+        color={c.BORDER_COLOR}
+        svgWidth={240}
+        svgHeight={2}
+      />
       <div
         style={{
           ...REGULAR_FONT,

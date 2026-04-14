@@ -1,5 +1,6 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
+import { SAFE_AREA } from "../../config/layout";
 import type { Theme } from "../../config/themes";
 import { COLORS, getHeroGradient } from "../../config/themes";
 import { EyebrowLabel } from "./EyebrowLabel";
@@ -15,14 +16,6 @@ export type SlideShellProps = {
   children: React.ReactNode;
 };
 
-/** Asymmetric safe-area: 96px top/left/right, 120px bottom for YouTube captions. */
-const SAFE_AREA_TOP = 96;
-const SAFE_AREA_SIDE = 96;
-const SAFE_AREA_BOTTOM = 120;
-/** Content inset — 120px from left edge so text starts 48px past the spine. */
-const CONTENT_LEFT = 120;
-/** Spine x-position. */
-const SPINE_LEFT = 72;
 /** Vertical gap between the eyebrow label and the title that follows it. */
 const EYEBROW_TO_TITLE_GAP = 32;
 
@@ -64,9 +57,9 @@ export const SlideShell: React.FC<SlideShellProps> = ({
         <div
           style={{
             position: "absolute",
-            top: SAFE_AREA_TOP,
-            bottom: SAFE_AREA_BOTTOM,
-            left: SPINE_LEFT,
+            top: SAFE_AREA.top,
+            bottom: SAFE_AREA.bottom,
+            left: SAFE_AREA.spineLeft,
             width: 1,
             background: c.BORDER_COLOR,
           }}
@@ -75,10 +68,10 @@ export const SlideShell: React.FC<SlideShellProps> = ({
 
       <AbsoluteFill
         style={{
-          paddingTop: SAFE_AREA_TOP,
-          paddingRight: SAFE_AREA_SIDE,
-          paddingBottom: SAFE_AREA_BOTTOM,
-          paddingLeft: CONTENT_LEFT,
+          paddingTop: SAFE_AREA.top,
+          paddingRight: SAFE_AREA.right,
+          paddingBottom: SAFE_AREA.bottom,
+          paddingLeft: SAFE_AREA.contentLeft,
           color: c.WORD_COLOR_ON_BG_APPEARED,
         }}
       >

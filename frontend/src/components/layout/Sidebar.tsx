@@ -8,6 +8,7 @@
  */
 
 import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Home, PanelLeft, Pencil } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
@@ -58,8 +59,10 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     const el = sidebarRef.current;
     // Suppress CSS transitions so the sidebar swap doesn't flash.
     if (el) el.dataset.instantNav = '';
-    setActiveProject(null);
-    navigate('/');
+    flushSync(() => {
+      setActiveProject(null);
+      navigate('/');
+    });
     // Double-rAF: first fires before paint, second fires after — ensures
     // transitions re-enable only once the final DOM state is on screen.
     requestAnimationFrame(() =>

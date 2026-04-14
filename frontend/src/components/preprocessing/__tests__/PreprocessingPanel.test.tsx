@@ -1,5 +1,5 @@
 import { render, waitFor } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import React, { type ReactElement } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,9 @@ import { PreprocessingPanel } from '../PreprocessingPanel';
 
 const mocks = vi.hoisted(() => ({
   agenticShell: vi.fn(),
+  agenticShellMounts: 0,
+  agenticShellUnmounts: 0,
+  activeTabId: 'tab-1',
   buildDatasetContinuityPrompt: vi.fn(),
   loadTables: vi.fn(),
   selectDataset: vi.fn(),
@@ -20,6 +23,12 @@ const mocks = vi.hoisted(() => ({
 // Mock AgenticShell — we already have a dedicated smoke test for it
 vi.mock('@/components/agentic/AgenticShell', () => ({
   AgenticShell: (props: unknown) => {
+    React.useEffect(() => {
+      mocks.agenticShellMounts += 1;
+      return () => {
+        mocks.agenticShellUnmounts += 1;
+      };
+    }, []);
     mocks.agenticShell(props);
     return <div data-testid="agentic-shell" />;
   }
@@ -76,8 +85,16 @@ vi.mock('../PreprocessingToolbar', () => ({
 
 vi.mock('../hooks/usePreprocessingTabs', () => ({
   usePreprocessingTabs: () => ({
-    tabs: [{ id: 'tab-1', label: 'Tab 1', notebookId: null }],
-    activeTab: { id: 'tab-1', label: 'Tab 1', notebookId: null },
+    tabs: [
+      { id: 'tab-1', label: 'Tab 1', notebookId: null, storageVersion: 0 },
+      { id: 'tab-2', label: 'Tab 2', notebookId: null, storageVersion: 0 }
+    ],
+    activeTab: {
+      id: mocks.activeTabId,
+      label: mocks.activeTabId === 'tab-2' ? 'Tab 2' : 'Tab 1',
+      notebookId: null,
+      storageVersion: 0
+    },
     tabsReady: true,
     buildTabStorageKey: (id: string) => `prep-${id}`,
     handleTabSwitch: vi.fn(),
@@ -130,18 +147,23 @@ vi.mock('@/stores/workflowSessionStore', () => ({
 }));
 
 describe('PreprocessingPanel smoke test', () => {
+  const renderPanel = () => render(
+    <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
+      <Routes>
+        <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
   it('loads preprocessing tables on mount', async () => {
     mocks.agenticShell.mockReset();
+    mocks.agenticShellMounts = 0;
+    mocks.agenticShellUnmounts = 0;
+    mocks.activeTabId = 'tab-1';
     mocks.loadTables.mockReset();
     mocks.toolbarRight.mockReset();
 
-    render(
-      <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
-        <Routes>
-          <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderPanel();
 
     await waitFor(() => {
       expect(mocks.loadTables).toHaveBeenCalledWith('test-project');
@@ -150,16 +172,13 @@ describe('PreprocessingPanel smoke test', () => {
 
   it('passes the current dataset state to the toolbar', async () => {
     mocks.agenticShell.mockReset();
+    mocks.agenticShellMounts = 0;
+    mocks.agenticShellUnmounts = 0;
+    mocks.activeTabId = 'tab-1';
     mocks.loadTables.mockReset();
     mocks.toolbarRight.mockReset();
 
-    render(
-      <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
-        <Routes>
-          <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderPanel();
 
     await waitFor(() => {
       expect(mocks.agenticShell).toHaveBeenCalledWith(expect.objectContaining({
@@ -187,33 +206,27 @@ describe('PreprocessingPanel smoke test', () => {
 
   it('mounts without "Maximum update depth exceeded" error', () => {
     mocks.agenticShell.mockReset();
+    mocks.agenticShellMounts = 0;
+    mocks.agenticShellUnmounts = 0;
+    mocks.activeTabId = 'tab-1';
     mocks.loadTables.mockReset();
     mocks.toolbarRight.mockReset();
 
     expect(() => {
-      render(
-        <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
-          <Routes>
-            <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
-          </Routes>
-        </MemoryRouter>
-      );
+      renderPanel();
     }).not.toThrow();
   });
 
   it('always prepares prompts to continue in the current workbook dataset', async () => {
     mocks.agenticShell.mockReset();
+    mocks.agenticShellMounts = 0;
+    mocks.agenticShellUnmounts = 0;
+    mocks.activeTabId = 'tab-1';
     mocks.buildDatasetContinuityPrompt.mockReset();
     mocks.buildDatasetContinuityPrompt.mockReturnValue('prepared prompt');
     mocks.setNextRunCellMode.mockReset();
 
-    render(
-      <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
-        <Routes>
-          <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderPanel();
 
     await waitFor(() => {
       expect(mocks.agenticShell).toHaveBeenCalled();
@@ -233,5 +246,32 @@ describe('PreprocessingPanel smoke test', () => {
         datasetLabel: 'test.csv'
       }
     );
+  });
+
+  it('does not remount AgenticShell when switching preprocessing workbooks', async () => {
+    mocks.agenticShell.mockReset();
+    mocks.agenticShellMounts = 0;
+    mocks.agenticShellUnmounts = 0;
+    mocks.activeTabId = 'tab-1';
+
+    const view = renderPanel();
+
+    await waitFor(() => {
+      expect(mocks.agenticShellMounts).toBe(1);
+    });
+
+    mocks.activeTabId = 'tab-2';
+    view.rerender(
+      <MemoryRouter initialEntries={['/project/test-project/preprocessing']}>
+        <Routes>
+          <Route path="/project/:projectId/:phase" element={<PreprocessingPanel />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(mocks.agenticShellMounts).toBe(1);
+      expect(mocks.agenticShellUnmounts).toBe(0);
+    });
   });
 });

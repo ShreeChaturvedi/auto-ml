@@ -34,6 +34,14 @@ const serifLatin = loadInstrumentSerif("normal", {
   subsets: ["latin"],
 });
 
+// Italic variant — required by AcknowledgementsSlide thanks-lines. Loading it
+// explicitly avoids the browser synthesizing a slanted "normal" glyph, which
+// Instrument Serif specifically does not render well.
+const serifLatinItalic = loadInstrumentSerif("italic", {
+  weights: ["400"],
+  subsets: ["latin"],
+});
+
 const monaspace = loadLocalFont({
   family: "Monaspace Neon",
   url: staticFile("fonts/MonaspaceNeon.woff2"),
@@ -47,6 +55,7 @@ export const waitForFonts = async (): Promise<void> => {
   await Promise.all([
     sansLatin.waitUntilDone(),
     serifLatin.waitUntilDone(),
+    serifLatinItalic.waitUntilDone(),
     monaspace,
   ]);
 };

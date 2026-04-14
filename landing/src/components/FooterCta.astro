@@ -2,7 +2,6 @@
 ---
 
 <section class="footer-cta" aria-labelledby="footer-cta-heading">
-  <div class="footer-cta-vignette" aria-hidden="true"></div>
   <p class="footer-cta-eyebrow">READY WHEN YOU ARE</p>
   <h2 class="footer-cta-headline" id="footer-cta-heading">
     Stop babysitting
@@ -13,27 +12,19 @@
     and hands you a reproducible result.
   </p>
   <a href="/login" class="footer-cta-button">
-    Sign in to get started
-    <span aria-hidden="true">→</span>
+    Get Started
+    <svg class="footer-cta-arrow" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
   </a>
 </section>
 
 <style>
   .footer-cta {
-    position: relative;
-    padding: 200px 32px;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 64px 32px;
     text-align: center;
-    overflow: hidden;
-  }
-  .footer-cta-vignette {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: radial-gradient(
-      ellipse 50% 50% at 50% 50%,
-      rgba(255, 255, 255, 0.04) 0%,
-      transparent 60%
-    );
   }
 
   .footer-cta-eyebrow {
@@ -84,7 +75,18 @@
       0 0 0 1px rgba(0, 0, 0, 0.2),
       0 2px 4px rgba(0, 0, 0, 0.04),
       0 12px 32px rgba(0, 0, 0, 0.10);
+    transition: transform var(--dur-fast) var(--ease-linear-default),
+                gap var(--dur-fast) var(--ease-linear-default);
+  }
+  .footer-cta-button:hover {
+    transform: translateY(-1px);
+    gap: 14px;
+  }
+  .footer-cta-arrow {
+    flex-shrink: 0;
     transition: transform var(--dur-fast) var(--ease-linear-default);
   }
-  .footer-cta-button:hover { transform: translateY(-1px); }
+  .footer-cta-button:hover .footer-cta-arrow {
+    transform: translateX(2px);
+  }
 </style>

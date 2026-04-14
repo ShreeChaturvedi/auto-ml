@@ -1,12 +1,12 @@
 .section {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 180px 32px;
+  padding: 64px 32px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 80px;
   align-items: center;
-  min-height: 720px;
+  min-height: 520px;
   opacity: 0;
   will-change: opacity, transform;
 }
@@ -63,7 +63,7 @@
   width: 100%;
   min-height: 420px;
   background: var(--surface-0);
-  border: 0.8px solid var(--border);
+  border: 0.8px solid hsl(var(--border));
   border-radius: 12px;
   overflow: hidden;
 }

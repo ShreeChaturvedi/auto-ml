@@ -32,7 +32,7 @@ const cards = [
   <h2 id="meta-row-heading" class="sr-only">Platform foundations</h2>
   <div class="meta-row-inner">
     {cards.map((card) => (
-      <article class="meta-card">
+      <article class="meta-card" data-scroll-reveal>
         <div class="meta-card-svg" aria-hidden="true">
           {card.rotatingSandbox ? (
             <MetaSandboxAnimated client:visible />
@@ -51,6 +51,46 @@ const cards = [
   </div>
 </section>
 
+<script>
+  {
+    const cards = document.querySelectorAll<HTMLElement>('[data-scroll-reveal]');
+    const reduced =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!reduced && typeof IntersectionObserver !== 'undefined') {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const node = entry.target as HTMLElement;
+            const easing =
+              getComputedStyle(node).getPropertyValue('--ease-out-quart').trim() ||
+              'cubic-bezier(0.165, 0.84, 0.44, 1)';
+            node.animate(
+              [
+                { opacity: 0, transform: 'translateY(24px)' },
+                { opacity: 1, transform: 'translateY(0)' },
+              ],
+              { duration: 500, easing, fill: 'forwards' },
+            );
+            observer.unobserve(node);
+          }
+        },
+        { threshold: 0.15 },
+      );
+
+      for (const card of cards) {
+        observer.observe(card);
+      }
+    } else {
+      for (const card of cards) {
+        card.style.opacity = '1';
+      }
+    }
+  }
+</script>
+
 <style>
   .sr-only {
     position: absolute;
@@ -63,7 +103,7 @@ const cards = [
   .meta-row-section {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 120px 32px;
+    padding: 64px 32px;
   }
 
   .meta-row-inner {
@@ -74,12 +114,20 @@ const cards = [
 
   .meta-card {
     background: var(--surface-0);
-    border: 0.8px solid var(--border);
+    border: 0.8px solid hsl(var(--border));
     border-radius: 12px;
     padding: 32px;
     display: flex;
     flex-direction: column;
     min-height: 480px;
+    opacity: 0;
+    will-change: opacity, transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .meta-card {
+      opacity: 1;
+    }
   }
 
   .meta-card-svg {

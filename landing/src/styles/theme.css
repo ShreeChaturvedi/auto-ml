@@ -12,8 +12,8 @@
   --surface-2:   #1A1B1D;   /* raised element */
 
   /* Borders */
-  --border:        rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.10);
+  --border: 0 0% 18%;
+  --border-strong: 0 0% 100% / 0.20;
 
   /* Text */
   --text:       #F7F8F8;

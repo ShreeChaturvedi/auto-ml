@@ -8,6 +8,16 @@ import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import { buildWorkbookTabsStateKey } from '../../storagePersistence';
 import { usePreprocessingTabs } from '../usePreprocessingTabs';
 
+const toastSuccessMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccessMock(...args),
+    error: (...args: unknown[]) => toastErrorMock(...args)
+  }
+}));
+
 const ensureNotebookForTabMock = vi.fn(async () => null);
 const reconcileTabNotebookMappingsMock = vi.fn(async () => undefined);
 
@@ -25,6 +35,8 @@ describe('usePreprocessingTabs', () => {
     ensureNotebookForTabMock.mockResolvedValue(null);
     reconcileTabNotebookMappingsMock.mockReset();
     reconcileTabNotebookMappingsMock.mockResolvedValue(undefined);
+    toastSuccessMock.mockReset();
+    toastErrorMock.mockReset();
     useNotebookStore.getState().reset();
     useWorkflowSessionStore.setState({ sessions: {} });
     useWorkbookRegistryStore.setState({
@@ -133,6 +145,7 @@ describe('usePreprocessingTabs', () => {
       replayReport: null
     });
     expect(onNeedsDatasetSelection).toHaveBeenCalledWith('dataset-1');
+    expect(toastSuccessMock).toHaveBeenCalledWith('Workbook 2 created');
   });
 
   it('deletes the active workbook without re-ensuring the fallback notebook when it is already bound', async () => {
@@ -237,6 +250,61 @@ describe('usePreprocessingTabs', () => {
     await waitFor(() => expect(result.current.tabs.map((tab) => tab.id)).toEqual(['tab-1']));
     await waitFor(() => expect(result.current.activeTabId).toBe('tab-1'));
     await waitFor(() => expect(deleteNotebookMock).toHaveBeenCalledWith('nb-2'));
+  });
+
+  it('does not recycle a deleted workbook number when creating a replacement workbook', async () => {
+    const deleteNotebookMock = vi.fn(async () => true);
+    useNotebookStore.setState({
+      ...useNotebookStore.getState(),
+      deleteNotebook: deleteNotebookMock
+    });
+
+    localStorage.setItem(
+      buildWorkbookTabsStateKey('proj-1'),
+      JSON.stringify({
+        activeTabId: 'tab-2',
+        nextDefaultWorkbookIndex: 3,
+        tabs: [
+          {
+            id: 'tab-1',
+            name: 'Workbook 1',
+            storageVersion: 0,
+            notebookId: 'nb-1',
+            selectedDatasetId: 'dataset-1'
+          },
+          {
+            id: 'tab-2',
+            name: 'Workbook 2',
+            storageVersion: 0,
+            notebookId: 'nb-2',
+            selectedDatasetId: 'dataset-1'
+          }
+        ]
+      })
+    );
+
+    const { result } = renderHook(() =>
+      usePreprocessingTabs({
+        projectId: 'proj-1',
+        onNeedsDatasetSelection: vi.fn()
+      })
+    );
+
+    await waitFor(() => expect(result.current.tabsReady).toBe(true));
+    await waitFor(() => expect(result.current.activeTabId).toBe('tab-2'));
+
+    act(() => {
+      result.current.handleDeleteTab();
+    });
+
+    await waitFor(() => expect(result.current.tabs.map((tab) => tab.name)).toEqual(['Workbook 1']));
+
+    act(() => {
+      result.current.handleNewTab();
+    });
+
+    await waitFor(() => expect(result.current.activeTab?.name).toBe('Workbook 3'));
+    expect(result.current.tabs.map((tab) => tab.name)).toEqual(['Workbook 1', 'Workbook 3']);
   });
 
   it('keeps each workbook dataset selection isolated after remounting from a different active workbook', async () => {

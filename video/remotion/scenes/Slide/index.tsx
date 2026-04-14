@@ -12,6 +12,7 @@ import { SandboxSlide } from "./SandboxSlide";
 import { TeamSlide } from "./TeamSlide";
 import { TitleSlide } from "./TitleSlide";
 import { ProblemSlide } from "./ProblemSlide";
+import { WhyNowSlide } from "./WhyNowSlide";
 
 type SlideSceneType = z.infer<typeof slideScene>;
 
@@ -54,6 +55,8 @@ const SlideBody: React.FC<{ id: string } & SlideBodyProps> = ({
       return <TitleSlide theme={theme} meta={meta} />;
     case "problem-trio":
       return <ProblemTrioSlide theme={theme} meta={meta} />;
+    case "why-now":
+      return <WhyNowSlide theme={theme} meta={meta} />;
     case "intro":
       return <IntroSlide theme={theme} meta={meta} />;
     case "team":

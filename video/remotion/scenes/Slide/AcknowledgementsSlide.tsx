@@ -2,11 +2,9 @@ import React from "react";
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { EASE_OUT } from "../../../config/easing";
 import { REGULAR_FONT, TITLE_FONT } from "../../../config/fonts";
-import { SAFE_AREA } from "../../../config/layout";
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
-import { MiamiMark } from "../../primitives/MiamiMark";
 import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
 import type { StaggeredItem } from "../../primitives/useStaggeredFadeIn";
@@ -19,7 +17,7 @@ import type { SlideBodyProps } from "./index";
  *   1.   0–30   eyebrow + heading fade
  *   2.  30–120  two advisor rows stagger in
  *   3. 120–300  per-row bullet stagger
- *   4. 300–780  hold; Miami M fades in @ 300; warm amber glow eases in ~500 */
+ *   4. 300–780  hold; warm amber glow eases in ~500 */
 const PHASES = [30, 90, 180, 480] as const;
 const ROW_STAGGER = 24;
 const BULLET_STAGGER = 12;
@@ -27,9 +25,6 @@ const AVATAR_SIZE = 180;
 const AVATAR_BORDER = 3;
 const AVATAR_GAP = 56;
 const ROW_GAP = 72;
-
-const MIAMI_DELAY = 300;
-const MIAMI_SIZE = 56;
 
 const GLOW_FADE_START = 500;
 const GLOW_FADE_END = 620;
@@ -125,7 +120,7 @@ export const AcknowledgementsSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   );
 
   return (
-    <SlideShell theme={theme} eyebrow="WITH GRATITUDE" pageNumber="04 / 07">
+    <SlideShell theme={theme} eyebrow="WITH GRATITUDE" pageNumber="04">
       {/* Warm amber glow — first child so it sits behind text. AbsoluteFill
           ignores SlideShell's padding, letting the gradient bleed off-edge. */}
       <AbsoluteFill
@@ -158,21 +153,6 @@ export const AcknowledgementsSlide: React.FC<SlideBodyProps> = ({ theme }) => {
             index={i}
           />
         ))}
-      </div>
-
-      {/* Miami block-M institutional anchor, bottom-center, above footer. */}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: SAFE_AREA.bottom + 40,
-          display: "flex",
-          justifyContent: "center",
-          pointerEvents: "none",
-        }}
-      >
-        <MiamiMark size={MIAMI_SIZE} delay={MIAMI_DELAY} />
       </div>
     </SlideShell>
   );

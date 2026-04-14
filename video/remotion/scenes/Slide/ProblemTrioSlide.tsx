@@ -147,7 +147,7 @@ export const ProblemTrioSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   }) as ThreePanels;
 
   return (
-    <SlideShell theme={theme} eyebrow="THE PROBLEM" pageNumber="05 / 07">
+    <SlideShell theme={theme} eyebrow="THE PROBLEM" pageNumber="05">
       {/* Phase 2 — heading types in as a single neutral block. */}
       <div style={{ ...HEADING_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
         <TypeOnText

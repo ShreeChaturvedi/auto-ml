@@ -27,7 +27,7 @@ const DEFAULT_SCENES: SelectableScene[] = [
   // TEMP — primitives smoke test. Removed in Commit 10 (dispatcher integration).
   { type: "slide", id: "sandbox", durationInFrames: 360 },
   { type: "slide", id: "intro", durationInFrames: 360 },
-  { type: "slide", id: "team", durationInFrames: 360 },
+  { type: "slide", id: "team", durationInFrames: 840 },
   { type: "slide", id: "problem", durationInFrames: 360 },
   { type: "tableofcontents", durationInFrames: 240 },
   { type: "endcard", durationInFrames: 360, channel: "capstone", links: [] },

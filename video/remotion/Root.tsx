@@ -45,9 +45,9 @@ const DEFAULT_SCENES: SelectableScene[] = [
   { type: "slide", id: "hook", durationInFrames: 720 },
   { type: "slide", id: "title", durationInFrames: 540 },
   { type: "slide", id: "team", durationInFrames: 840 },
+  { type: "slide", id: "acknowledgements", durationInFrames: 780 },
   { type: "slide", id: "problem-trio", durationInFrames: 2040 },
   { type: "slide", id: "why-now", durationInFrames: 1440 },
-  { type: "slide", id: "acknowledgements", durationInFrames: 780 },
   {
     type: "slide",
     id: "agenda",

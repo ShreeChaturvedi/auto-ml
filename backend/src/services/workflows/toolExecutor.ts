@@ -6,6 +6,7 @@ import { createDatasetRepository } from '../../repositories/datasetRepository.js
 import type { ToolResult } from '../../types/llm.js';
 import { ToolCallSchema } from '../../types/llm.js';
 import { buildFeatureCodeCellTitle, buildFeatureLoadCell } from '../featureEngineering/notebookCells.js';
+import { executeToolCall } from '../llm/tools.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
 import { buildToolEvent } from './eventWriter.js';
@@ -108,6 +109,31 @@ function getLatestTrainingRunCellTimeout(
     }
     const output = getToolOutputRecord(result);
     if ((output?.status as string | undefined)?.toLowerCase() === 'timeout') {
+      return result;
+    }
+  }
+
+  return null;
+}
+
+function getLatestTrainingPackageInstallFailure(
+  phase: WorkflowGraphState['turn']['phase'],
+  results: ToolResult[],
+): ToolResult | null {
+  if (phase !== 'training') {
+    return null;
+  }
+
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index];
+    if (result.tool !== 'install_package') {
+      continue;
+    }
+    if (typeof result.error === 'string' && result.error.trim()) {
+      return result;
+    }
+    const output = getToolOutputRecord(result);
+    if (output?.success === false) {
       return result;
     }
   }
@@ -219,6 +245,16 @@ async function executeWorkflowToolCall(
       output: phaseResult.output,
       error: phaseResult.error
     };
+  }
+
+  // MCP fallback for non-phase-specific tools (notebook, data tools).
+  if (call.tool === 'install_package' || call.tool === 'uninstall_package' || call.tool === 'list_packages') {
+    return executeToolCall(state.turn.projectId, {
+      id: call.id,
+      tool: call.tool,
+      args: enrichedArgs,
+      rationale: call.rationale
+    });
   }
 
   // MCP fallback for non-phase-specific tools (notebook, data tools).
@@ -682,6 +718,31 @@ export async function executeToolsNode(
       nextStep: 'fail',
       errorMessage: `${timeoutMessage} The kernel was interrupted to clear the stuck execution. Retry the training run or simplify the timed-out cell.`,
       errorCode: 'TRAINING_RUN_CELL_TIMEOUT'
+    };
+  }
+
+  const failedTrainingPackageInstall = getLatestTrainingPackageInstallFailure(state.turn.phase, nextResults);
+  if (failedTrainingPackageInstall) {
+    const failureOutput = getToolOutputRecord(failedTrainingPackageInstall);
+    const failureMessage = typeof failedTrainingPackageInstall.error === 'string' && failedTrainingPackageInstall.error.trim().length > 0
+      ? failedTrainingPackageInstall.error
+      : typeof failureOutput?.message === 'string' && failureOutput.message.trim().length > 0
+        ? failureOutput.message
+        : 'Training dependency installation failed.';
+    return {
+      toolCallHistory: state.pendingToolCalls,
+      toolResultHistory: nextResults,
+      pendingToolCalls: [],
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      latestMessage: '',
+      iteration: state.iteration + 1,
+      pendingInputKind: null,
+      pauseReason: null,
+      nextStep: 'fail',
+      errorMessage: `${failureMessage} Training stopped because the required model library could not be installed in the runtime.`,
+      errorCode: 'TRAINING_PACKAGE_INSTALL_FAILED'
     };
   }
 

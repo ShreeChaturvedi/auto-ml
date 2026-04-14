@@ -26,6 +26,17 @@ declare module '@frontend/types/llmUi' {
   }
 }
 
+declare module '@frontend/types/phase' {
+  export type Phase =
+    | 'upload'
+    | 'data-viewer'
+    | 'preprocessing'
+    | 'feature-engineering'
+    | 'training'
+    | 'experiments'
+    | 'deployment';
+}
+
 declare module '@frontend/lib/api/execution' {
   export interface RichOutput {
     type: string;

@@ -13,7 +13,7 @@ describe('preview source guardrails', () => {
       'utf8',
     );
     expect(pageSource).toContain('<AppPreviewFrame client:load />');
-    expect(pageSource).toContain('<HowItWorks client:load />');
+    expect(pageSource).toContain('<HowItWorks client:visible />');
     expect(pageSource).not.toContain('LandingPreviewExperience');
   });
 
@@ -200,9 +200,21 @@ describe('preview source guardrails', () => {
     expect(landingZodUtil).not.toContain('new F("");');
   });
 
-  it('provides a concrete login route for landing sign-in links', () => {
+  it('routes landing sign-in links to a static coming-soon page instead of the real app', () => {
     expect(existsSync(path.resolve(landingRoot, 'pages/login.astro'))).toBe(true);
     const loginPage = readFileSync(path.resolve(landingRoot, 'pages/login.astro'), 'utf8');
-    expect(loginPage).toContain('PUBLIC_APP_LOGIN_URL');
+    expect(loginPage).toContain('Coming Soon');
+    expect(loginPage).not.toContain('PUBLIC_APP_LOGIN_URL');
+    expect(loginPage).not.toContain('window.location.replace');
+  });
+
+  it('checks in Vercel project config for the landing workspace', () => {
+    expect(existsSync(path.resolve(landingRoot, '../vercel.json'))).toBe(true);
+    const vercelConfig = readFileSync(path.resolve(landingRoot, '../vercel.json'), 'utf8');
+    expect(vercelConfig).toContain('"outputDirectory": "dist"');
+    expect(vercelConfig).toContain('"buildCommand": "npm run build"');
+    expect(vercelConfig).toContain('"installCommand": "npm ci && npm ci --prefix ../frontend"');
+    expect(vercelConfig).toContain('X-Frame-Options');
+    expect(vercelConfig).toContain('SAMEORIGIN');
   });
 });

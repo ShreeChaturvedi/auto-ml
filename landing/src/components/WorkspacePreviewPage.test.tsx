@@ -2,7 +2,9 @@ import { act } from 'react';
 import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const demoWorkspaceMock = vi.hoisted(() => vi.fn(() => null));
+const demoWorkspaceMock = vi.hoisted(() => vi.fn(
+  (_props: { initialPhase?: string; phase?: string }) => null,
+));
 const enableDemoModeMock = vi.hoisted(() => vi.fn());
 const preloadPhaseMock = vi.hoisted(() => vi.fn());
 

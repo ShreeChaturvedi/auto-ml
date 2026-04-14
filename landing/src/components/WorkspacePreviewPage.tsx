@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DemoWorkspace } from '@frontend/demo/landing';
 import { enableDemoMode } from '@frontend/lib/demoMode';
 import { preloadProjectWorkspacePhase } from '@frontend/pages/projectWorkspacePhaseLoaders';
+import type { Phase } from '@frontend/types/phase';
 
 import {
   isWorkspacePreviewMessage,
@@ -10,15 +11,6 @@ import {
   WORKSPACE_PREVIEW_READY_MESSAGE_TYPE,
   WORKSPACE_PREVIEW_PHASES,
 } from '@/lib/workspacePreviewMessaging';
-
-type Phase =
-  | 'upload'
-  | 'data-viewer'
-  | 'preprocessing'
-  | 'feature-engineering'
-  | 'training'
-  | 'experiments'
-  | 'deployment';
 
 function getPhaseFromSearch(): Phase {
   if (typeof window === 'undefined') {

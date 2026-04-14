@@ -28,13 +28,19 @@ export function WorkspaceDiorama({
   preloadAll = true,
 }: WorkspaceDioramaProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const latestPhaseRef = useRef<Phase>(phase);
   const [bootPhase, setBootPhase] = useState<Phase>(phase);
   const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    latestPhaseRef.current = phase;
+  }, [phase]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
       if (!isWorkspacePreviewReadyMessage(event.data)) return;
+      setBootPhase(latestPhaseRef.current);
       setIsReady(true);
     };
 
@@ -44,7 +50,6 @@ export function WorkspaceDiorama({
 
   useEffect(() => {
     if (!isReady) {
-      setBootPhase(phase);
       return;
     }
 
@@ -77,7 +82,7 @@ export function WorkspaceDiorama({
         <iframe
           ref={iframeRef}
           className={`${styles.workspaceFrame} ${styles.workspaceFrameVisible}`}
-          src={`/workspace-preview?phase=${encodeURIComponent(bootPhase)}`}
+          src={`/workspace-preview?phase=${encodeURIComponent(isReady ? bootPhase : phase)}`}
           title={`${label} preview`}
           loading={preloadAll ? 'eager' : 'lazy'}
           tabIndex={-1}

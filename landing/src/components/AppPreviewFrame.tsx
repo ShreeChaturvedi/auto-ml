@@ -1,25 +1,76 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import {
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react';
 import styles from './AppPreviewFrame.module.css';
 
 export default function AppPreviewFrame() {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [shouldLoadPreview, setShouldLoadPreview] = useState(false);
   const [DemoWorkspaceComponent, setDemoWorkspaceComponent] = useState<ComponentType<{ initialPhase?: string }> | null>(null);
 
   useEffect(() => {
+    if (shouldLoadPreview) {
+      return;
+    }
+
+    let cancelled = false;
+    let fallbackTimer = 0;
+    let observer: IntersectionObserver | null = null;
+
+    const beginLoading = () => {
+      if (!cancelled) {
+        setShouldLoadPreview(true);
+      }
+    };
+
+    fallbackTimer = window.setTimeout(beginLoading, 250);
+
+    if (typeof IntersectionObserver === 'function' && frameRef.current) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            beginLoading();
+            observer?.disconnect();
+          }
+        },
+        { rootMargin: '300px 0px' },
+      );
+      observer.observe(frameRef.current);
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackTimer);
+      observer?.disconnect();
+    };
+  }, [shouldLoadPreview]);
+
+  useEffect(() => {
+    if (!shouldLoadPreview) {
+      return;
+    }
+
     let cancelled = false;
 
     void import('@frontend/demo/landing').then((module) => {
       if (!cancelled) {
-        setDemoWorkspaceComponent(() => module.DemoWorkspace);
+        startTransition(() => {
+          setDemoWorkspaceComponent(() => module.DemoWorkspace);
+        });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shouldLoadPreview]);
 
   return (
-    <div className={styles.outer} id="product">
+    <div ref={frameRef} className={styles.outer} id="product">
       <div
         className={styles.ringWrapper}
         aria-label="Interactive Agentic AutoML Platform demo"

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createPreprocessingAdapter } from '../PreprocessingAdapter';
 import { streamWorkflowTurn } from '@/lib/api/llm';
+import { useDataStore } from '@/stores/dataStore';
 import { usePreprocessingStore } from '@/stores/preprocessingStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { ToolCall } from '@/types/llmUi';
@@ -12,10 +13,28 @@ vi.mock('@/lib/api/llm', () => ({
 
 describe('PreprocessingAdapter prepareToolCalls', () => {
   beforeEach(() => {
+    useDataStore.setState({
+      files: [{
+        id: 'file-derived-1',
+        projectId: 'project-1',
+        name: 'dataset_workbook_1.csv',
+        type: 'csv',
+        size: 100,
+        uploadedAt: new Date('2026-04-14T00:00:00.000Z'),
+        metadata: {
+          datasetId: 'derived-1',
+          columns: []
+        }
+      }],
+      hydrateFromBackend: vi.fn(async () => undefined)
+    });
     usePreprocessingStore.setState({
       nextRunCellMode: 'continue',
       runId: null,
-      controllerSummary: null
+      controllerSummary: null,
+      processToolResult: vi.fn(),
+      loadTables: vi.fn(async () => undefined),
+      selectDataset: vi.fn()
     });
     useWorkflowSessionStore.setState({ sessions: {} });
   });
@@ -47,6 +66,39 @@ describe('PreprocessingAdapter prepareToolCalls', () => {
         datasetContinuityMode: 'continue'
       }
     });
+  });
+
+  it('hydrates datasets and re-selects the derived dataset when a commit creates one', async () => {
+    const adapter = createPreprocessingAdapter('project-1', 'dataset-1', [
+      {
+        datasetId: 'dataset-1',
+        name: 'dataset',
+        filename: 'dataset.csv',
+        sizeBytes: 123,
+        columns: []
+      }
+    ], 'prep-tab-a');
+
+    adapter.toolRegistry.commit_transformation_step.onResult?.(
+      {
+        id: 'call-commit-1',
+        tool: 'commit_transformation_step',
+        args: { stepId: 'step-1' }
+      },
+      {
+        id: 'call-commit-1',
+        tool: 'commit_transformation_step',
+        output: {
+          stepId: 'step-1',
+          derivedDatasetId: 'derived-1'
+        }
+      }
+    );
+
+    await Promise.resolve();
+
+    expect(useDataStore.getState().hydrateFromBackend).toHaveBeenCalledWith('project-1', { force: true });
+    expect(usePreprocessingStore.getState().loadTables).toHaveBeenCalledWith('project-1');
   });
 
   it('consumes restart mode for first run_cell then falls back to continue', () => {

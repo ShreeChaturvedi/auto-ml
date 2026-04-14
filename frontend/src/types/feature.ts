@@ -84,6 +84,7 @@ export interface FeatureTemplate {
 export interface FeatureSpec {
   id: string;
   projectId: string;
+  versionId?: string;
   sourceColumn: string;
   secondaryColumn?: string; // For interaction features (ratio, difference, product, groupby shares)
   featureName: string;
@@ -142,4 +143,3 @@ export interface PipelineVersion {
   /** Linked notebook ID for the 1:1 workbook model. Optional for backward compat. */
   notebookId?: string;
 }
-

@@ -2,8 +2,8 @@
  * Deep-dive 2 — PLAN visual container. The surrounding chrome (eyebrow,
  * headline, body, kbd hint) plus the `.cursor-outline` framing are applied
  * upstream by `DeepDive.astro` / `FeaturesSection.astro`. This stylesheet
- * only handles inner padding, scroll behavior, and the IO-enter initial
- * opacity.
+ * handles inner padding, scroll behavior, and the scripted cursor sprite
+ * used by the scroll-triggered walkthrough.
  */
 .root {
   position: relative;
@@ -11,15 +11,59 @@
   height: 100%;
   max-height: 560px;
   overflow: auto;
-  opacity: 0;
-  will-change: opacity, transform;
+  /* Stacking context so the absolutely-positioned cursor sprite layers
+   * above the QuestionCards form without leaking outside the frame. */
+  isolation: isolate;
 }
 
-/* Reduced-motion: skip the WAAPI fade-in and paint the final frame instantly.
- * The JS effect also sets opacity: 1 defensively, but this guarantees the
- * content is visible even if the effect never runs (SSR, older jsdom). */
+/* ---------------------------------------------------------------------------
+ * Cursor sprite — mirrors `ChatDeepDive.module.css` so the motion language is
+ * consistent across the three deep-dives. The sprite's `left` / `top` are
+ * driven by inline styles computed from the real target element's bounding
+ * rect (see PlanDeepDive.tsx `computeTargetPos`).
+ * ------------------------------------------------------------------------- */
+.cursorSprite {
+  position: absolute;
+  /* Default offscreen origin — overridden by inline left/top on glide. */
+  left: 16px;
+  top: 100%;
+  width: 16px;
+  height: 16px;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center;
+  will-change: left, top, transform, opacity;
+  transition:
+    left 700ms var(--ease-out-expo),
+    top 700ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-quart),
+    opacity 260ms var(--ease-out-quart);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+/* During glide — fully visible, smoothly translating to target. */
+.cursorSpriteGlided {
+  opacity: 1;
+}
+
+/* Click pulse — quick scale-down ripple to read as a tap. */
+.cursorSpriteClick {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(0.82);
+}
+
+/* Reduced-motion — freeze transitions. The TSX already short-circuits the
+ * timeline so nothing triggers these states, but we null them out defensively
+ * in case a CSS-only environment (tests, SSR) manages to class them. */
 @media (prefers-reduced-motion: reduce) {
-  .root {
-    opacity: 1;
+  .cursorSprite,
+  .cursorSpriteGlided,
+  .cursorSpriteClick {
+    transition: none;
+    animation: none;
+    opacity: 0;
   }
 }

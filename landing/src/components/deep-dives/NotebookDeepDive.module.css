@@ -1,137 +1,138 @@
+/*
+ * Deep-dive 3 — NOTEBOOK visual container. Hosts the real frontend
+ * `<NotebookDeepDivePreview>` and layers a scripted cursor sprite + a
+ * per-cell reveal mechanism on top. The surrounding chrome (eyebrow,
+ * headline, body, kbd hint) and `.cursor-outline` framing are applied
+ * upstream by `DeepDive.astro` / `FeaturesSection.astro`.
+ */
 .root {
-  padding: 32px;
+  position: relative;
+  padding: 0;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  max-height: 560px;
   overflow: auto;
+  /* Stacking context so the absolutely-positioned cursor sprite layers
+   * above the notebook cells without leaking outside the frame. */
+  isolation: isolate;
 }
 
-.cell {
-  background: var(--surface-1);
-  border: 0.8px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.cellHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 0.8px solid var(--border);
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.cellHeaderBadge {
-  color: var(--text-muted);
-}
-
-.cellCode {
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 12px;
-  padding: 14px 18px;
-  line-height: 1.55;
-  color: var(--text);
-}
-
-/* Streamdown override: keep the code block flush with our cell padding and
- * strip its default chrome so it reads like a bare notebook cell rather than
- * a card inside a card. */
-.cellCode :global(.llm-streamdown),
-.cellCode :global(pre),
-.cellCode :global(code) {
-  margin: 0;
-  background: transparent !important;
-  border: none !important;
-  padding: 0 !important;
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.cellCode :global(pre) {
-  white-space: pre-wrap;
-}
-
-.cellRunning {
-  padding: 10px 18px;
-  border-top: 0.8px solid var(--border);
-  background: rgba(0, 0, 0, 0.15);
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.runningDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(139, 92, 246, 0.9);
-  animation: running-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes running-pulse {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 1; }
-}
-
-.outputCell {
-  padding: 12px 18px;
-  border-top: 0.8px solid var(--border);
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.chartLabel {
-  margin: 0 0 8px;
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 11px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.chartBlock {
-  height: 180px;
-}
-
-.outputHost {
-  border-top: 0.8px solid var(--border);
-  background: rgba(0, 0, 0, 0.18);
-  padding: 12px 18px;
-  overflow-x: auto;
-}
-
-.describeTable {
+/* The inner host wraps the frontend preview so we can tag its immediate
+ * children (one per NotebookCellComponent) with `data-notebook-cell-wrapper`
+ * post-mount (see NotebookDeepDive.tsx). */
+.host {
   width: 100%;
-  font-family: 'Geist Mono Variable', monospace;
-  font-size: 11px;
-  border-collapse: collapse;
+  height: 100%;
 }
 
-.describeTable th,
-.describeTable td {
-  padding: 4px 10px;
-  text-align: left;
-  border-bottom: 0.8px solid var(--border);
-  color: var(--text-muted);
-  white-space: nowrap;
+/* ---------------------------------------------------------------------------
+ * Per-cell reveal. Outputs come from the static fixtures in
+ * NotebookDeepDivePreview.tsx, where every cell has executionStatus:'success'
+ * and output rows already populated — so the output panel is in the DOM from
+ * the moment the component mounts. We hide each cell's output (the
+ * `.border-t.bg-muted` panel that <NotebookCellOutput> renders) until the
+ * scripted cursor "runs" that cell, then reveal it with a soft fade.
+ *
+ * The TSX flips `data-output-visible='true'` on each tagged wrapper when the
+ * cursor clicks its Run button. We target the NotebookCellOutput's
+ * `.border-t.bg-muted/30` container — the only `.border-t` descendant
+ * directly under the cell root (the Monaco editor does not have `.border-t`
+ * on its immediate wrapper).
+ * ------------------------------------------------------------------------- */
+:global([data-notebook-cell-wrapper]) {
+  /* Smooth, unobtrusive highlight transition when the cell "runs". */
+  transition:
+    box-shadow 260ms var(--ease-out-quart),
+    transform 260ms var(--ease-out-quart);
 }
 
-.describeTable tbody tr:last-child th,
-.describeTable tbody tr:last-child td {
-  border-bottom: none;
+/* Hidden by default — inner `.border-t.bg-muted/30` (output panel) fades
+ * in on reveal. Selector is deliberately narrow so it can't hit the
+ * cell header's bottom border. */
+:global([data-notebook-cell-wrapper][data-output-visible='false']) :global(.border-t.bg-muted\/30) {
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 320ms var(--ease-out-quart),
+    transform 320ms var(--ease-out-quart);
+  pointer-events: none;
 }
 
-.describeTable th {
+:global([data-notebook-cell-wrapper][data-output-visible='true']) :global(.border-t.bg-muted\/30) {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 520ms var(--ease-out-quart) 80ms,
+    transform 520ms var(--ease-out-quart) 80ms;
+}
+
+/* Brief "just ran" highlight when the cursor clicks a cell. */
+:global([data-notebook-cell-wrapper][data-cell-active='true']) {
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.55),
+    0 6px 20px -8px hsl(var(--primary) / 0.35);
+  transform: translateY(-1px);
+}
+
+/* Reduced-motion: pre-reveal everything and kill transitions. The TSX
+ * already seeds `revealedIdx = CELL_IDS.length` when the preference is on,
+ * but we null the rule out defensively for SSR / older browsers. */
+.rootReduced :global([data-notebook-cell-wrapper]) :global(.border-t.bg-muted\/30) {
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global([data-notebook-cell-wrapper]) :global(.border-t.bg-muted\/30) {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  :global([data-notebook-cell-wrapper][data-cell-active='true']) {
+    box-shadow: none;
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Cursor sprite — same motion language as ChatDeepDive + PlanDeepDive so
+ * the three deep-dives feel consistent.
+ * ------------------------------------------------------------------------- */
+.cursorSprite {
+  position: absolute;
+  left: 16px;
+  top: 100%;
+  width: 16px;
+  height: 16px;
   color: var(--text);
-  font-weight: 510;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center;
+  will-change: left, top, transform, opacity;
+  transition:
+    left 750ms var(--ease-out-expo),
+    top 750ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-quart),
+    opacity 260ms var(--ease-out-quart);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+.cursorSpriteGlided {
+  opacity: 1;
+}
+
+.cursorSpriteClick {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursorSprite,
+  .cursorSpriteGlided,
+  .cursorSpriteClick {
+    transition: none;
+    animation: none;
+    opacity: 0;
+  }
 }

@@ -1,258 +1,256 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip as RTooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { NotebookCellOutput } from '@frontend/components/notebook/NotebookCellOutput';
-import { TooltipProvider } from '@frontend/components/ui/tooltip';
-import type { RichOutput } from '@frontend/lib/api/execution';
+import { MousePointer2 } from 'lucide-react';
+import { NotebookDeepDivePreview } from '@frontend/demo/landing/NotebookDeepDivePreview';
+import { cn } from '@/lib/cn';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
+import { useScrollPlayOnce } from './useScrollPlayOnce';
 import styles from './NotebookDeepDive.module.css';
 
-// Static 8-line Python cell using real NovaCraft columns, pre-highlighted
-// *offline* with Shiki's `github-dark` theme (the same theme Streamdown
-// defaults to). The HTML string below is literally the output of
-// `shiki.codeToHtml(source, { lang: 'python', theme: 'github-dark' })` and
-// is rendered via `dangerouslySetInnerHTML` on a <div>, so the client pays
-// exactly 0 bytes of highlighter JS at runtime.
-//
-// Why not `<Streamdown>` or streamdown's `<CodeBlock>`? The landing spec
-// asks for "streamdown syntax highlighting (not Monaco)" and Section 5
-// estimates streamdown at ~40 KB. In practice, the `streamdown` v2 entry
-// pulls in ~450 KB (140 KB gzip) of markdown-pipeline + a top-level
-// `lazy(() => import('./mermaid-...js'))` reference that rollup cannot
-// tree-shake — even when we import only `CodeBlock`. The spec's *intent*
-// ("lightweight highlighting, not Monaco, not a runtime diagram engine")
-// is much better served by shipping pre-baked HTML for this one 8-line
-// snippet. Visual fidelity is identical because the output is real Shiki
-// HTML with the same theme Streamdown would have used.
-//
-// If the snippet ever needs to change, regenerate with:
-//   node -e "import('shiki').then(async ({codeToHtml}) => \
-//     console.log(await codeToHtml(SOURCE, { lang: 'python', theme: 'github-dark' })))"
-// …and paste the resulting <pre>…</pre> into CODE_HIGHLIGHTED_HTML below.
-const CODE_HIGHLIGHTED_HTML =
-  '<pre class="shiki github-dark" style="background-color:#24292e;color:#e1e4e8" tabindex="0"><code>' +
-  '<span class="line"><span style="color:#F97583">import</span><span style="color:#E1E4E8"> pandas </span><span style="color:#F97583">as</span><span style="color:#E1E4E8"> pd</span></span>\n' +
-  '<span class="line"></span>\n' +
-  '<span class="line"><span style="color:#E1E4E8">df </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> pd.read_csv(</span><span style="color:#9ECBFF">\'customers.csv\'</span><span style="color:#E1E4E8">)</span></span>\n' +
-  '<span class="line"></span>\n' +
-  '<span class="line"><span style="color:#6A737D"># Quick descriptive stats on the key engagement signals</span></span>\n' +
-  '<span class="line"><span style="color:#E1E4E8">summary </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> df[[</span><span style="color:#9ECBFF">\'mrr_usd\'</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">\'avg_session_minutes\'</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">\'api_calls\'</span><span style="color:#E1E4E8">]].describe()</span></span>\n' +
-  '<span class="line"><span style="color:#E1E4E8">summary</span></span>' +
-  '</code></pre>';
+/**
+ * Deep-dive 3 — NOTEBOOK visual. Wraps the real frontend
+ * `<NotebookDeepDivePreview>` (which renders actual
+ * `<NotebookCellComponent>`s fed from a static seed) with a scripted
+ * cursor overlay that plays on scroll-into-view.
+ *
+ * Timeline (only fires on IO-enter past 35% threshold, via
+ * `useScrollPlayOnce`):
+ *   t≈500  — cursor glides to cell 1's Run button
+ *   t≈1350 — click pulse, cell 1 gets "run highlight", output fades in
+ *   t≈2600 — cursor glides to cell 2's Run button
+ *   t≈3450 — click pulse, cell 2 run highlight, output fades in
+ *   t≈4200 — cursor fades, final steady state (both outputs visible)
+ *
+ * The cells themselves are rendered with `executionStatus: 'success'` so
+ * their outputs exist in the DOM at mount time. We hide those outputs via
+ * CSS (`.output-hidden`) until the cursor "runs" each cell, at which point
+ * we flip a per-cell `data-output-visible` attribute to reveal them. This
+ * keeps all control flow external to the frontend module — the real
+ * NotebookCellComponent is untouched.
+ *
+ * `prefers-reduced-motion` short-circuits to the final steady state: no
+ * cursor, all outputs immediately visible. This matches Chat's behavior.
+ */
 
-// Pre-seeded describe() summary as a `RichOutput[]` fed straight to the real
-// `<NotebookCellOutput>` island — spec §4.5 explicitly requires the real
-// component here, not a hand-rolled <table>. The `type: 'table'` branch of
-// `CellOutputRenderer` handles this entirely with plain DOM; the only heavy
-// dependency in the renderer tree (`LazyPlot` → `react-plotly.js`, ~4.9 MB)
-// is a `React.lazy(() => import(...))` dynamic import that is ONLY resolved
-// when a `type: 'chart'` output is actually mounted. Because this deep-dive
-// never passes a chart output to NotebookCellOutput, Vite emits the plotly
-// chunk but never fetches it at runtime — verified post-build by confirming
-// NotebookDeepDive's emitted chunk only references `react-plotly.*.js`
-// through `__vite__mapDeps` (dynamic-import dep table), never statically.
-const DESCRIBE_OUTPUTS: RichOutput[] = [
-  {
-    type: 'table',
-    content: 'describe() summary · 3 numeric columns',
-    data: {
-      columns: ['stat', 'mrr_usd', 'avg_session_minutes', 'api_calls'],
-      rows: [
-        { stat: 'count', mrr_usd: '2,530',  avg_session_minutes: '2,280', api_calls: '2,530'   },
-        { stat: 'mean',  mrr_usd: '2,142',  avg_session_minutes: '18.4',  api_calls: '12,004'  },
-        { stat: 'std',   mrr_usd: '1,854',  avg_session_minutes: '12.7',  api_calls: '28,312'  },
-        { stat: 'min',   mrr_usd: '0',      avg_session_minutes: '0.3',   api_calls: '0'       },
-        { stat: '50%',   mrr_usd: '1,620',  avg_session_minutes: '15.2',  api_calls: '3,412'   },
-        { stat: 'max',   mrr_usd: '24,180', avg_session_minutes: '84.1',  api_calls: '892,448' },
-      ],
-    },
-  },
-];
+// Cell IDs match the ones hardcoded in
+// `frontend/src/demo/landing/NotebookDeepDivePreview.tsx`. We use them to
+// find each cell's wrapper + Run button in the rendered DOM.
+const CELL_IDS = [
+  'landing-notebook-cell-1',
+  'landing-notebook-cell-2',
+] as const;
 
-// Hand-binned mrr_usd histogram (right-skewed: long tail of high-value
-// accounts). Rendered as a standalone Recharts <BarChart> in its own cell
-// rather than routed through <NotebookCellOutput> via a `type: 'chart'`
-// RichOutput — that path mounts PlotlyOutput, which triggers the lazy
-// react-plotly.js chunk (~4.9 MB). Recharts is already in the landing
-// bundle for other deep-dives, so this histogram costs zero extra bytes.
-const HISTOGRAM = [
-  { bucket: '$0–500',   count: 280 },
-  { bucket: '$500–1k',  count: 540 },
-  { bucket: '$1k–2k',   count: 720 },
-  { bucket: '$2k–5k',   count: 610 },
-  { bucket: '$5k–10k',  count: 240 },
-  { bucket: '$10k–25k', count: 110 },
-  { bucket: '$25k+',    count:  30 },
-];
+type Phase =
+  | 'idle'
+  | 'cursor-glide'
+  | 'cursor-click'
+  | 'done';
 
-type Phase = 'idle' | 'running' | 'done';
+// Timing in ms. Chosen so the whole sequence lands in ~4.2s — same ballpark
+// as the Chat and Plan timelines, so all three reveal-sequences feel
+// rhythmically aligned when a user scrolls through the features stack.
+const TIMING = {
+  preGlide: 500,
+  glideDuration: 850,
+  clickHold: 260,
+  interCellGap: 650,
+  finalDwell: 480,
+} as const;
 
 function NotebookDeepDiveVisual() {
-  // Reactive hook — also seeds the initial phase so reduced-motion users
-  // land on the final state without any transitions.
   const reduced = usePrefersReducedMotion();
-  const [phase, setPhase] = useState<Phase>(() => (reduced ? 'done' : 'idle'));
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  const { ref: rootRef, hasPlayed } = useScrollPlayOnce<HTMLDivElement>(0.35);
+
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  // Which cell indices have had their output revealed so far.
+  // Reduced-motion: pre-reveal everything.
+  const [revealedIdx, setRevealedIdx] = useState<number>(() =>
+    reduced ? CELL_IDS.length : 0,
+  );
+  // Which cell index is currently "pulsing" from a cursor click.
+  const [activeCellIdx, setActiveCellIdx] = useState<number | null>(null);
+
+  const timelineStartedRef = useRef(false);
+
+  const computeTargetPos = (target: Element): { x: number; y: number } | null => {
+    const root = rootRef.current;
+    if (!root) return null;
+    const rootRect = root.getBoundingClientRect();
+    const tRect = target.getBoundingClientRect();
+    if (tRect.width === 0 && tRect.height === 0) return null;
+    return {
+      x: tRect.left - rootRect.left + tRect.width / 2,
+      y: tRect.top - rootRect.top + tRect.height / 2,
+    };
+  };
+
+  // Helper to find a cell's root + Run button in the DOM. Cells don't emit
+  // their own `cellId` attribute, so we rely on the stable order of cell
+  // wrappers as rendered by `NotebookDeepDivePreview`.
+  const getCellNodes = (index: number): {
+    cell: HTMLElement | null;
+    runButton: HTMLButtonElement | null;
+  } => {
+    const root = rootRef.current;
+    if (!root) return { cell: null, runButton: null };
+    // Each NotebookCellComponent renders as `<div class="group overflow-hidden rounded-lg ...">`
+    // at the top level of the preview's column. We target them by position.
+    const cells = root.querySelectorAll<HTMLElement>(
+      '[data-notebook-cell-wrapper]',
+    );
+    const cell = cells[index] ?? null;
+    const runButton = cell?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Run cell"]',
+    ) ?? null;
+    return { cell, runButton };
+  };
+
+  // After mount, wrap each cell in a `[data-notebook-cell-wrapper]` marker
+  // by walking the rendered DOM. This is cleaner than forking
+  // NotebookDeepDivePreview — we simply tag the real `.group` cell nodes
+  // post-render so our cursor targeting has stable selectors.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    // The preview mounts `<NotebookCellComponent>` for each seed cell.
+    // Each one renders as a direct child `.group` div inside the flex
+    // container. We tag them by position.
+    const tag = () => {
+      const host = root.querySelector<HTMLElement>(
+        '[data-testid="notebook-deep-dive-host"]',
+      );
+      if (!host) return;
+      // `<NotebookDeepDivePreview>` renders its own flex column wrapper as
+      // our host's single child; the real `<NotebookCellComponent>` roots
+      // sit one level below that. Walk there and tag each cell wrapper
+      // positionally so lookups stay O(1).
+      const column = host.firstElementChild as HTMLElement | null;
+      if (!column) return;
+      const kids = column.children;
+      for (let i = 0; i < kids.length; i += 1) {
+        const el = kids[i] as HTMLElement;
+        el.setAttribute('data-notebook-cell-wrapper', String(i));
+      }
+    };
+    tag();
+    // Re-tag after a tick in case of async hydration (Monaco, etc.).
+    const t = setTimeout(tag, 0);
+    return () => clearTimeout(t);
+    // `rootRef` is stable across renders (a `useRef` result from
+    // `useScrollPlayOnce`), so we explicitly exclude it from the deps to
+    // keep this effect as mount-once behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (reduced) {
-      return;
-    }
-    const node = rootRef.current;
-    if (!node) {
-      return;
-    }
+    if (reduced) return;
+    if (!hasPlayed) return;
+    if (timelineStartedRef.current) return;
+    timelineStartedRef.current = true;
 
-    let startTimer = 0;
-    let doneTimer = 0;
-    let fired = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const schedule = (fn: () => void, delay: number) => {
+      timers.push(setTimeout(fn, delay));
+    };
 
-    // Scripted sequence kicks off the first time the frame enters the
-    // viewport: short idle → 1.2s "running" blink → output reveal. Uses
-    // IntersectionObserver per spec §4.5 so the animation lines up with
-    // the reader's scroll position instead of hydration timing.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !fired) {
-            fired = true;
-            startTimer = window.setTimeout(() => setPhase('running'), 200);
-            doneTimer = window.setTimeout(() => setPhase('done'), 1400);
-            observer.disconnect();
-            break;
-          }
-        }
-      },
-      { threshold: 0.35 },
-    );
-    observer.observe(node);
+    let cursor = TIMING.preGlide;
+
+    CELL_IDS.forEach((_id, idx) => {
+      // --- Step A: glide cursor onto cell's Run button ------------------
+      schedule(() => {
+        const { runButton, cell } = getCellNodes(idx);
+        const target = runButton ?? cell;
+        if (!target) return;
+        const pos = computeTargetPos(target);
+        if (pos) setCursorPos(pos);
+        setPhase('cursor-glide');
+      }, cursor);
+
+      cursor += TIMING.glideDuration;
+
+      // --- Step B: click pulse, reveal output ---------------------------
+      schedule(() => {
+        setPhase('cursor-click');
+        setActiveCellIdx(idx);
+        // Reveal this cell's output — the CSS fades it in from below.
+        setRevealedIdx((prev) => Math.max(prev, idx + 1));
+      }, cursor);
+
+      cursor += TIMING.clickHold;
+
+      // Clear the active pulse once the ripple finishes so the next
+      // cell's pulse isn't "sticky".
+      schedule(() => {
+        setActiveCellIdx((prev) => (prev === idx ? null : prev));
+      }, cursor);
+
+      cursor += TIMING.interCellGap;
+    });
+
+    // --- Final: fade out cursor -----------------------------------------
+    schedule(() => {
+      setPhase('done');
+    }, cursor + TIMING.finalDwell);
 
     return () => {
-      observer.disconnect();
-      window.clearTimeout(startTimer);
-      window.clearTimeout(doneTimer);
+      for (const t of timers) clearTimeout(t);
     };
-  }, [reduced]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPlayed, reduced]);
+
+  // Keep the DOM's per-cell reveal attribute in sync with React state.
+  // We do this imperatively because the cell components themselves belong
+  // to the frontend module — we're layering animation on top, not forking
+  // them. A CSS selector in NotebookDeepDive.module.css matches
+  // `[data-notebook-cell-wrapper][data-output-visible='true']` to drive
+  // the fade-in.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const cells = root.querySelectorAll<HTMLElement>(
+      '[data-notebook-cell-wrapper]',
+    );
+    cells.forEach((el, i) => {
+      const visible = i < revealedIdx ? 'true' : 'false';
+      el.setAttribute('data-output-visible', visible);
+      const active = activeCellIdx === i ? 'true' : 'false';
+      el.setAttribute('data-cell-active', active);
+    });
+    // `rootRef` is stable (useRef from useScrollPlayOnce); including it
+    // would force the effect to re-run for no behavioral reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealedIdx, activeCellIdx]);
+
+  const renderCursor = !reduced && phase !== 'done' && phase !== 'idle';
+
+  const cursorStyle: React.CSSProperties = cursorPos
+    ? { left: `${cursorPos.x}px`, top: `${cursorPos.y}px` }
+    : {};
 
   return (
-    <div className={styles.root} ref={rootRef}>
-      {/* Top cell — code + running indicator + the real frontend
-       * <NotebookCellOutput> island once the scripted run finishes. */}
-      <div className={`${styles.cell} group`}>
-        <div className={styles.cellHeader}>
-          <span>In [1]</span>
-          <span className={styles.cellHeaderBadge}>python</span>
-        </div>
-        <div
-          className={styles.cellCode}
-          // Pre-highlighted Shiki HTML (see CODE_HIGHLIGHTED_HTML comment above).
-          // The string is a build-time constant authored by us, not user input,
-          // so dangerouslySetInnerHTML is safe here.
-          dangerouslySetInnerHTML={{ __html: CODE_HIGHLIGHTED_HTML }}
-        />
-
-        {phase === 'running' && (
-          <div className={styles.cellRunning} aria-live="polite">
-            <span className={styles.runningDot} aria-hidden="true" />
-            Running cell…
-          </div>
-        )}
-
-        {phase === 'done' && (
-          <div className={styles.outputHost}>
-            {/* Real <NotebookCellOutput> from frontend/src/. Wrapped in a
-             * TooltipProvider so its Radix copy/collapse tooltips have the
-             * ancestor they need (the rest of the landing page does not
-             * provide one). */}
-            <TooltipProvider delayDuration={150}>
-              <NotebookCellOutput outputs={DESCRIBE_OUTPUTS} />
-            </TooltipProvider>
-          </div>
-        )}
+    <div ref={rootRef} className={cn(styles.root, reduced && styles.rootReduced)}>
+      <div className={styles.host} data-testid="notebook-deep-dive-host">
+        <NotebookDeepDivePreview />
       </div>
 
-      {/* Bottom cell — standalone Recharts histogram of mrr_usd
-       * (right-skewed). See HISTOGRAM comment for why this does NOT go
-       * through NotebookCellOutput. */}
-      {phase === 'done' && (
-        <div className={styles.cell}>
-          <div className={styles.cellHeader}>
-            <span>Out [2]</span>
-            <span className={styles.cellHeaderBadge}>chart</span>
-          </div>
-          <div className={styles.outputCell}>
-            <p className={styles.chartLabel}>mrr_usd distribution</p>
-            <div className={styles.chartBlock}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={HISTOGRAM}
-                  margin={{ top: 4, right: 8, bottom: 0, left: -20 }}
-                >
-                  <XAxis
-                    dataKey="bucket"
-                    tick={{ fill: 'var(--text-dim)', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: 'var(--text-dim)', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <RTooltip
-                    cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                    contentStyle={{
-                      background: 'var(--surface-2)',
-                      border: '0.8px solid var(--border)',
-                      borderRadius: 6,
-                      fontFamily: 'Geist Mono Variable, monospace',
-                      fontSize: 11,
-                      color: 'var(--text)',
-                    }}
-                    labelStyle={{ color: 'var(--text-dim)' }}
-                  />
-                  <Bar
-                    dataKey="count"
-                    fill="#F7F8F8"
-                    radius={[2, 2, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
+      {renderCursor && (
+        <MousePointer2
+          className={cn(
+            styles.cursorSprite,
+            phase === 'cursor-glide' && styles.cursorSpriteGlided,
+            phase === 'cursor-click' && styles.cursorSpriteClick,
+          )}
+          style={cursorStyle}
+          aria-hidden="true"
+          size={16}
+        />
       )}
     </div>
   );
 }
 
-/**
- * Deep-dive 3 — NOTEBOOK visual. A minimal two-cell notebook preview. The
- * shared `<DeepDive>` chrome (eyebrow, headline, body, kbd hint) is composed
- * around this by `FeaturesSection.astro` — this component renders only the
- * left-hand visual content.
- *
- * The top cell is a static 8-line Python snippet whose Shiki-highlighted
- * HTML is baked into the source (see `CODE_HIGHLIGHTED_HTML` for why we
- * bypass `streamdown` here), followed by a 1.2s "running" blink on
- * IO-enter and then the real frontend `<NotebookCellOutput>` rendering a
- * `type: 'table'` `RichOutput` with the describe() summary stats — the
- * actual leaf component from `frontend/src/`, not a re-implementation.
- *
- * The bottom cell is a standalone Recharts `<BarChart>` histogram of
- * `mrr_usd`. It lives outside NotebookCellOutput on purpose: routing it
- * through a `type: 'chart'` RichOutput would mount PlotlyOutput and
- * trigger the `React.lazy(() => import('react-plotly.js'))` chunk
- * (~4.9 MB), which would dwarf the entire landing bundle. As long as we
- * never pass a chart RichOutput through NotebookCellOutput, Vite emits
- * the plotly chunk but never fetches it at runtime.
- */
 export default function NotebookDeepDive() {
   return <NotebookDeepDiveVisual />;
 }

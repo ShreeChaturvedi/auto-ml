@@ -102,26 +102,10 @@ const resourceLinks = [
           textLength="1500" lengthAdjust="spacingAndGlyphs"
           fill="transparent" stroke="hsl(0 0% 18%)" stroke-width="0.5">AUTOML</text>
 
-    <text class="agentic-chaser agentic-halo"
+    <text class="agentic-chaser"
           x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
           textLength="1500" lengthAdjust="spacingAndGlyphs"
-          stroke-dasharray="24 230"
-          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5"
-          stroke-opacity="0.22">AUTOML</text>
-
-    <text class="agentic-chaser agentic-mid"
-          x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
-          textLength="1500" lengthAdjust="spacingAndGlyphs"
-          stroke-dasharray="12 242"
-          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5"
-          stroke-opacity="0.55">AUTOML</text>
-
-    <text class="agentic-chaser agentic-core"
-          x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
-          textLength="1500" lengthAdjust="spacingAndGlyphs"
-          stroke-dasharray="6 248"
-          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5"
-          stroke-opacity="1">AUTOML</text>
+          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5">AUTOML</text>
   </svg>
 </div>
 
@@ -235,31 +219,19 @@ const resourceLinks = [
     paint-order: stroke;
   }
 
-  /* Three stacked pulse layers (halo / mid / core) all chase in sync via a
-     shared --chaser-offset custom property. Each layer has a progressively
-     wider dash but they share the same cycle length (254), and each is offset
-     so their dashes stay concentric on the core's dash center — creating a
-     per-pulse "gradient shine" (dim halo → medium ring → bright core). */
-  @property --chaser-offset {
-    syntax: '<number>';
-    inherits: false;
-    initial-value: 0;
+  /* Single chasing pulse, same stroke-width as the base outline. */
+  .agentic-chaser {
+    stroke-dasharray: 80 240;
+    stroke-dashoffset: 0;
+    animation: agentic-chase 3s linear infinite;
   }
 
-  .footer-giant-svg {
-    animation: agentic-chase 2.8s linear infinite;
-  }
   @keyframes agentic-chase {
-    from { --chaser-offset: 0; }
-    to   { --chaser-offset: -254; }
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -320; }
   }
-
-  .agentic-core  { stroke-dashoffset: calc(var(--chaser-offset) + 0); }
-  .agentic-mid   { stroke-dashoffset: calc(var(--chaser-offset) + 3); }
-  .agentic-halo  { stroke-dashoffset: calc(var(--chaser-offset) + 9); }
 
   @media (prefers-reduced-motion: reduce) {
-    .footer-giant-svg { animation: none; }
-    .agentic-chaser   { opacity: 0.4; stroke-dasharray: none; }
+    .agentic-chaser { animation: none; stroke-dasharray: none; opacity: 0.4; }
   }
 </style>

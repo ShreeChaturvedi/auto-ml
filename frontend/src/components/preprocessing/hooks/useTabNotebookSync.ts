@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import * as notebooksApi from '@/lib/api/notebooks';
 import { useNotebookStore } from '@/stores/notebookStore';
@@ -398,24 +398,12 @@ export function useTabNotebookSync({
     updateNotebookMetadata
   ]);
 
-  // ---- Trigger notebook reconciliation when tabs change --------------------
-
-  const tabIdsSignature = useMemo(
-    () => tabs.map((tab) => tab.id).join('|'),
-    [tabs]
-  );
-
-  useEffect(() => {
-    if (!tabsReady || !projectId) {
-      return;
-    }
-    if (notebookProjectId !== projectId) {
-      return;
-    }
-    void reconcileTabNotebookMappings();
-  }, [notebookProjectId, projectId, reconcileTabNotebookMappings, tabIdsSignature, tabsReady]);
-
   // ---- Ensure the active tab has a notebook --------------------------------
+  // Processing used to eagerly reconcile every workbook notebook on mount.
+  // With large local workbook lists that caused notebook create/delete storms,
+  // websocket churn, and visible panel flicker. Keep notebook ownership lazy:
+  // only the active workbook gets resolved automatically, while delete/reset
+  // handlers explicitly clean up their own notebooks.
 
   useEffect(() => {
     if (!tabsReady || !activeTab) {

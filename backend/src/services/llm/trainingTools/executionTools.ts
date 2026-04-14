@@ -1,6 +1,7 @@
 import { appLogger } from '../../../logging/logger.js';
 import { executeMcpTool } from '../../mcp/mcpAdapter.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
+import { normalizeWorkflowPrepSegments } from './workflowPrepSegments.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
@@ -99,11 +100,15 @@ export const executeTraining: TrainingToolHandler = async (
     ? args.trainingDurationMs
     : Date.now() - startMs;
   const metrics = normalizeMetricsRecord(args.metrics);
+  const workflowPrepSegments = normalizeWorkflowPrepSegments(args.prepSegments);
 
   experiment.status = succeeded ? 'training' : 'failed';
   experiment.trainingCellIds = cellIds;
   experiment.trainingMetrics = metrics;
   experiment.trainingDurationMs = durationMs;
+  if (workflowPrepSegments.length > 0) {
+    experiment.workflowPrepSegments = workflowPrepSegments;
+  }
   experiment.errorMessage = succeeded ? undefined : (args.errorMessage ?? executionErrors.join('\n'));
   experiment.updatedAt = nowIso();
 

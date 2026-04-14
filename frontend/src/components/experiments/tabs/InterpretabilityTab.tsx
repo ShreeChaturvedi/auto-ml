@@ -21,8 +21,8 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
   }, [modelId, fetchShap]);
 
   // Determine fallback feature importance data
-  const fallbackImportance = evaluation.feature_importance.model_based
-    ?? evaluation.feature_importance.permutation;
+  const fallbackImportance = evaluation.feature_importance?.model_based
+    ?? evaluation.feature_importance?.permutation;
 
   // Loading state: fetchShap was called but data not yet in cache
   // We treat undefined as "still loading" and null-ish as "not available"
@@ -93,8 +93,9 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
       <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
         <p className="text-sm text-yellow-700 dark:text-yellow-300">
-          SHAP computation timed out or model type is unsupported. Feature
-          importance from model shown instead.
+          {fallbackImportance
+            ? 'SHAP computation timed out or model type is unsupported. Feature importance from the evaluation is shown instead.'
+            : 'Interpretability artifacts are unavailable for this evaluation. The model still trained successfully, but no feature importance output was produced.'}
         </p>
       </div>
 

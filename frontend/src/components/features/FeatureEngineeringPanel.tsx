@@ -158,6 +158,7 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     );
     return createFeatureEngineeringAdapter({
       projectId,
+      currentVersionId: currentVersion?.id,
       datasetId: selectedDatasetFile?.metadata?.datasetId,
       targetColumn,
       datasetFiles,
@@ -245,7 +246,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     <>
       {isFeatureNotebookReady && isRecoveryReady ? (
       <AgenticShell
-        key={currentVersion?.id ?? 'feature-engineering-default'}
         projectId={projectId}
         composerPlaceholders={composerPlaceholders}
         storageKey={featureStorageKey}

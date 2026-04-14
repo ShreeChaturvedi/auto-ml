@@ -132,9 +132,9 @@ export function useFileActions(projectId: string): UseFileActionsReturn {
         if (datasetId) await deleteDataset(datasetId);
         else if (documentId) await deleteDocument(documentId);
         removeFile(file.id);
-
         // Re-hydrate to reconcile local state with the backend's post-delete state.
         await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
+        toast.success(`${file.name} deleted`);
       } catch (error) {
         console.error('Failed to delete file:', error);
         toast.error(`Couldn't delete ${file.name}`, {

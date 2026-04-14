@@ -124,7 +124,7 @@ describe('preview source guardrails', () => {
     expect(dropdownSource).toContain('isDemoMode');
   });
 
-  it('renders notebook deep-dive from real notebook cell components', () => {
+  it('keeps notebook deep-dive Monaco-free while reusing notebook output chrome', () => {
     const notebookSource = readFileSync(
       path.resolve(landingRoot, 'components/deep-dives/NotebookDeepDive.tsx'),
       'utf8',
@@ -137,7 +137,57 @@ describe('preview source guardrails', () => {
       path.resolve(frontendRoot, 'demo/landing/NotebookDeepDivePreview.tsx'),
       'utf8',
     );
-    expect(frontendNotebookSource).toContain('NotebookCellComponent');
+    expect(frontendNotebookSource).toContain('useProjectThemeColor');
+    expect(frontendNotebookSource).toContain('useProjectStore');
+    expect(frontendNotebookSource).toContain('renderPythonLine');
+    expect(frontendNotebookSource).toContain('aria-label="Run cell"');
+    expect(frontendNotebookSource).toContain('CellOutputRenderer');
+    expect(frontendNotebookSource).not.toContain('NotebookCellComponent');
+    expect(frontendNotebookSource).not.toContain('NotebookCellOutput');
+    expect(frontendNotebookSource).not.toContain('LazyMonacoEditor');
+    expect(frontendNotebookSource).not.toContain('setAdaptiveSyntaxPref');
+  });
+
+  it('renders plan deep-dive markdown through the app plan viewer pipeline with landing-safe title and stable question sizing', () => {
+    const planSource = readFileSync(
+      path.resolve(landingRoot, 'components/deep-dives/PlanDeepDive.tsx'),
+      'utf8',
+    );
+    const planStyles = readFileSync(
+      path.resolve(landingRoot, 'components/deep-dives/PlanDeepDive.module.css'),
+      'utf8',
+    );
+
+    expect(planSource).toContain('PlanViewerPane');
+    expect(planSource).toContain('className="dark"');
+    expect(planSource).toContain('name: \'Retention Recovery\'');
+    expect(planSource).not.toContain('Project Plan: Retention Recovery');
+    expect(planSource).toContain('className={styles.questionStage}');
+    expect(planSource).not.toContain('PlanMarkdownMock');
+    expect(planStyles).toContain('.questionStage');
+    expect(planStyles).toContain('.root');
+    expect(planStyles).toContain('min-height: 420px;');
+    expect(planStyles).not.toContain('height: 100%;');
+  });
+
+  it('keeps landing workspace CSP dependency patches aligned with frontend', () => {
+    const landingPackage = readFileSync(
+      path.resolve(landingRoot, '../package.json'),
+      'utf8',
+    );
+    const patchScript = readFileSync(
+      path.resolve(landingRoot, '../../scripts/patch-csp-deps.mjs'),
+      'utf8',
+    );
+    const landingZodUtil = readFileSync(
+      path.resolve(landingRoot, '../node_modules/zod/v4/core/util.js'),
+      'utf8',
+    );
+
+    expect(landingPackage).toContain('"postinstall": "node ../scripts/patch-csp-deps.mjs"');
+    expect(patchScript).toContain('landing');
+    expect(landingZodUtil).toContain('export const allowsEval = cached(() => false);');
+    expect(landingZodUtil).not.toContain('new F("");');
   });
 
   it('provides a concrete login route for landing sign-in links', () => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { MousePointer2 } from 'lucide-react';
+import { MousePointer2, Search, List, Copy, Download } from 'lucide-react';
 import { QuestionCards } from '@frontend/components/upload/QuestionCards';
+import { PlanViewerPane } from '@frontend/components/upload/PlanViewerPane';
 import type { AskUserQuestion } from '@frontend/types/llmUi';
 import { cn } from '@/lib/cn';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
@@ -80,8 +81,48 @@ const SCRIPTED_CHOICES: Record<string, string> = {
 
 const NOOP_SUBMIT = () => {};
 
-// Phase names mirror ChatDeepDive's nomenclature — timeline orchestration
-// flips between them to drive the cursor sprite + click pulses.
+const PLAN_RESULT = {
+  id: 'landing-plan-preview',
+  name: 'Retention Recovery',
+  content: `# Retention Recovery
+
+## Objective
+
+Predict **is_active** (binary churn indicator) using a classification pipeline. Primary metric: **F1** (macro). Secondary: AUC-ROC, calibration.
+
+## Data Summary
+
+\`customers.csv\` - 2,530 rows, 14 columns. Target is boolean \`is_active\` with ~18% churn rate. Key signals: \`mrr_usd\`, \`avg_session_minutes\`, \`support_tickets_90d\`, \`account_tier\`.
+
+## Approach
+
+Diagnose data quality risks before modeling. Impute missing support signals with zeros (confirmed absent = no tickets). Normalize spend columns. Stratified 5-fold CV across all candidates.
+
+## Feature Engineering
+
+1. **Temporal aggregates** - rolling 7/14/30-day windows for \`mrr_usd\`, \`avg_session_minutes\`, \`api_calls\`
+2. **Ratio features** - \`support_ticket_velocity\`, \`expansion_ratio\` (current MRR / first-month MRR)
+3. **Encoding** - ordinal-encode \`account_tier\` (starter -> pro -> enterprise)
+
+## Model Candidates
+
+- XGBoost (\`xgboost\`) - 40 Optuna trials
+- LightGBM (\`lightgbm\`) - 40 trials
+- Random Forest (\`sklearn\`) - 40 trials
+
+## Evaluation
+
+- Stratified 5-fold cross-validation
+- Primary: F1 (macro-averaged)
+- Secondary: AUC-ROC, precision, recall
+- Calibration curve + Brier score on hold-out set
+
+## Compute Budget
+
+Standard - 15 minutes wall-clock, 120 Optuna trials total.`,
+} as const;
+
+
 type Phase = 'idle' | 'cursor-glide' | 'cursor-click' | 'done';
 
 // Timing constants — kept in one place so the overall rhythm is easy to
@@ -102,10 +143,8 @@ function PlanDeepDiveVisual() {
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
     null,
   );
+  const [showPlan, setShowPlan] = useState(false);
 
-  // Track the final "done" state so we know when to stop rendering the
-  // cursor sprite. We also use it to prevent timeline replays if the hook
-  // ever re-fires (it shouldn't — latch is in the hook).
   const timelineStartedRef = useRef(false);
 
   // Compute the center of a target DOM node relative to `.root` so the
@@ -190,23 +229,22 @@ function PlanDeepDiveVisual() {
       // --- Step D: click Next / Submit -----------------------------------
       schedule(() => {
         setPhase('cursor-click');
-        if (isLast) {
-          // For submit we intentionally do NOT actually click — the card
-          // would vanish on success handlers. Instead we just show the
-          // click pulse so it reads as "committed" and leave the final
-          // question visible.
-          return;
+        if (!isLast) {
+          findNext()?.click();
         }
-        findNext()?.click();
       }, cursor);
 
       cursor += TIMING.holdAfterClick + TIMING.questionGap;
     });
 
-    // Final: hide the cursor, leave the last question on screen.
+    // After submit click: fade cursor out, then reveal plan result.
     schedule(() => {
       setPhase('done');
     }, cursor);
+
+    schedule(() => {
+      setShowPlan(true);
+    }, cursor + 300);
 
     return () => {
       for (const t of timers) clearTimeout(t);
@@ -224,11 +262,45 @@ function PlanDeepDiveVisual() {
 
   return (
     <div ref={rootRef} className={styles.root}>
-      <QuestionCards
-        questions={PLAN_QUESTIONS}
-        onSubmit={NOOP_SUBMIT}
-        disabled={false}
-      />
+      {!showPlan && (
+        <div className={styles.questionStage}>
+          <QuestionCards
+            questions={PLAN_QUESTIONS}
+            onSubmit={NOOP_SUBMIT}
+            disabled={false}
+          />
+        </div>
+      )}
+
+      {showPlan && (
+        <div className={styles.planViewer}>
+          <div className={styles.planToolbar}>
+            <span className={styles.planToolbarTitle}>Retention Recovery</span>
+            <div className={styles.planToolbarActions}>
+              <button type="button" className={styles.planToolbarBtn} tabIndex={-1} aria-label="Search">
+                <Search size={14} />
+              </button>
+              <button type="button" className={styles.planToolbarBtn} tabIndex={-1} aria-label="Table of contents">
+                <List size={14} />
+              </button>
+              <button type="button" className={styles.planToolbarBtn} tabIndex={-1} aria-label="Copy">
+                <Copy size={14} />
+              </button>
+              <button type="button" className={styles.planToolbarBtn} tabIndex={-1} aria-label="Export">
+                <Download size={14} />
+              </button>
+            </div>
+          </div>
+          <div className={styles.planBody}>
+            <div className={styles.planContent}>
+              <div className="dark">
+                <PlanViewerPane plan={PLAN_RESULT} searchQuery="" />
+              </div>
+            </div>
+            <div className={styles.planFade} />
+          </div>
+        </div>
+      )}
 
       {renderCursor && (
         <MousePointer2

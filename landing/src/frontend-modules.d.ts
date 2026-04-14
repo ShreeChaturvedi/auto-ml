@@ -45,6 +45,15 @@ declare module '@frontend/components/upload/QuestionCards' {
   }>;
 }
 
+declare module '@frontend/components/upload/PlanViewerPane' {
+  import type { ComponentType } from 'react';
+
+  export const PlanViewerPane: ComponentType<{
+    plan: { id: string; name: string; content: string };
+    searchQuery?: string;
+  }>;
+}
+
 declare module '@frontend/components/llm/MentionInput' {
   export type MentionInputHandle = unknown;
 }

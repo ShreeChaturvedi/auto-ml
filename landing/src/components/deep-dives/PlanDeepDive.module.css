@@ -8,12 +8,37 @@
 .root {
   position: relative;
   padding: 28px;
-  height: 100%;
+  height: 560px;
+  min-height: 420px;
   max-height: 560px;
-  overflow: auto;
-  /* Stacking context so the absolutely-positioned cursor sprite layers
-   * above the QuestionCards form without leaking outside the frame. */
+  overflow: hidden;
   isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse 55% 55% at 80% 20%, rgba(105, 15, 30, 0.85) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(80, 12, 40, 0.65) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 70% at 50% 10%, rgba(90, 20, 18, 0.75) 0%, transparent 60%),
+    #0c0406;
+  background-size: 200% 200%, 200% 200%, 200% 200%, 100% 100%;
+  animation: plan-fluid 20s ease-in-out infinite;
+}
+
+.questionStage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.questionStage :global(form) {
+  width: 100%;
+}
+
+@keyframes plan-fluid {
+  0%   { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
+  33%  { background-position: 60% 70%, 10% 20%, 90% 80%, 0% 0%; }
+  66%  { background-position: 100% 30%, 70% 90%, 20% 10%, 0% 0%; }
+  100% { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -24,7 +49,6 @@
  * ------------------------------------------------------------------------- */
 .cursorSprite {
   position: absolute;
-  /* Default offscreen origin — overridden by inline left/top on glide. */
   left: 16px;
   top: 100%;
   width: 16px;
@@ -44,21 +68,146 @@
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
 }
 
-/* During glide — fully visible, smoothly translating to target. */
 .cursorSpriteGlided {
   opacity: 1;
 }
 
-/* Click pulse — quick scale-down ripple to read as a tap. */
 .cursorSpriteClick {
   opacity: 1;
   transform: translate(-50%, -50%) scale(0.82);
 }
 
-/* Reduced-motion — freeze transitions. The TSX already short-circuits the
- * timeline so nothing triggers these states, but we null them out defensively
- * in case a CSS-only environment (tests, SSR) manages to class them. */
+/* ---------------------------------------------------------------------------
+ * Plan viewer mock — mimics the real PlanViewerPane / PlanViewerToolbar from
+ * the app. Shows a toolbar ribbon, rendered markdown, and a bottom fade.
+ * ------------------------------------------------------------------------- */
+.planViewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 0.8px solid hsl(var(--border));
+  background: hsl(var(--background));
+  animation: plan-result-in 520ms var(--ease-out-quart);
+}
+
+.planToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 0.8px solid hsl(var(--border));
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.planToolbarTitle {
+  font-family: 'Inter Variable', sans-serif;
+  font-size: 12px;
+  font-weight: 520;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planToolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.planToolbarBtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.planBody {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.planContent {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.planContent > :global(.dark) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.planContent :global([data-radix-scroll-area-root]) {
+  flex: 1;
+  min-height: 0;
+}
+
+.planContent :global(.prose) {
+  --tw-prose-body: hsl(var(--foreground) / 0.82);
+  --tw-prose-headings: hsl(var(--foreground));
+  --tw-prose-lead: hsl(var(--foreground) / 0.82);
+  --tw-prose-links: hsl(var(--foreground));
+  --tw-prose-bold: hsl(var(--foreground));
+  --tw-prose-counters: hsl(var(--muted-foreground));
+  --tw-prose-bullets: hsl(var(--muted-foreground));
+  --tw-prose-hr: hsl(var(--border));
+  --tw-prose-quotes: hsl(var(--foreground));
+  --tw-prose-quote-borders: hsl(var(--border));
+  --tw-prose-captions: hsl(var(--muted-foreground));
+  --tw-prose-code: hsl(var(--foreground));
+  --tw-prose-pre-code: hsl(var(--foreground));
+  --tw-prose-pre-bg: hsl(var(--muted));
+  --tw-prose-th-borders: hsl(var(--border));
+  --tw-prose-td-borders: hsl(var(--border));
+}
+
+.planFade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 140px;
+  z-index: 2;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    hsl(var(--background) / 0.5) 25%,
+    hsl(var(--background) / 0.88) 55%,
+    hsl(var(--background)) 100%
+  );
+  pointer-events: none;
+}
+
+@keyframes plan-result-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .root {
+    animation: none;
+  }
+  .planViewer {
+    animation: none;
+  }
   .cursorSprite,
   .cursorSpriteGlided,
   .cursorSpriteClick {

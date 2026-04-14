@@ -1,10 +1,33 @@
-import { NotebookCellComponent } from '@/components/notebook/NotebookCell';
+import { useMemo, useRef, type CSSProperties } from 'react';
+import { Check, Copy, Play } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ThemeProvider, useTheme } from '@/components/theme-provider';
+import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
+import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import { getEditorChromeColors } from '@/lib/color/editorColors';
+import { useProjectStore } from '@/stores/projectStore';
 
-import type { NotebookCell } from '@/types/notebook';
+import type { RichOutput } from '@/lib/api/execution';
+import type { CellOutput, NotebookCell } from '@/types/notebook';
 
 const NOW = '2026-04-13T15:30:00.000Z';
 const NOTEBOOK_ID = 'landing-standalone-notebook';
 const PROJECT_ID = 'landing-demo-project';
+
+const LANDING_PROJECT = {
+  id: PROJECT_ID,
+  title: 'Landing Demo',
+  icon: 'Rocket',
+  color: 'cyan',
+  createdAt: new Date(NOW),
+  updatedAt: new Date(NOW),
+  unlockedPhases: ['upload'],
+  currentPhase: 'upload',
+  completedPhases: [],
+  metadata: {},
+} as const;
 
 const DESCRIBE_TABLE = {
   columns: ['stat', 'mrr_usd', 'avg_session_minutes', 'api_calls'],
@@ -52,63 +75,321 @@ const CELLS: NotebookCell[] = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-  {
-    cellId: 'landing-notebook-cell-2',
-    notebookId: NOTEBOOK_ID,
-    cellType: 'code',
-    content: [
-      "top_segments = df.groupby('account_tier')['mrr_usd'].mean().sort_values(ascending=False)",
-      'top_segments.head(3)',
-    ].join('\n'),
-    position: 1,
-    metadata: {},
-    executionCount: 1,
-    executionOrder: 2,
-    executionStatus: 'success',
-    executionDurationMs: 96,
-    executedAt: NOW,
-    isDirty: false,
-    output: [
-      {
-        type: 'text',
-        content: [
-          'account_tier',
-          'enterprise    8420.3',
-          'pro           2311.8',
-          'starter        284.6',
-        ].join('\n'),
-      },
-    ],
-    outputRefs: [],
-    lockedBy: null,
-    lockedAt: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-  },
 ];
-
-const NOOP = () => {};
 
 export function NotebookDeepDivePreview() {
   return (
-    <div className="flex h-full flex-col gap-3 overflow-auto bg-background p-4">
-      {CELLS.map((cell, index) => (
-        <NotebookCellComponent
+    <ThemeProvider defaultTheme="dark" storageKey="landing-notebook-theme">
+      <NotebookDeepDivePreviewInner />
+    </ThemeProvider>
+  );
+}
+
+function NotebookDeepDivePreviewInner() {
+  const initializedRef = useRef(false);
+  const { resolvedTheme } = useTheme();
+
+  if (!initializedRef.current) {
+    initializedRef.current = true;
+    ensureLandingProjectTheme();
+  }
+
+  useProjectThemeColor();
+  const editorChromeColors = useMemo(
+    () => getEditorChromeColors(resolvedTheme === 'dark'),
+    [resolvedTheme],
+  );
+
+  return (
+    <div className="flex h-full flex-col gap-3 overflow-auto p-4">
+      {CELLS.map((cell) => (
+        <LandingNotebookCell
           key={cell.cellId}
           cell={cell}
-          isLocked={false}
-          lockOwner={null}
-          projectId={PROJECT_ID}
-          onContentChange={NOOP}
-          onDelete={NOOP}
-          onRun={NOOP}
-          onInterrupt={NOOP}
-          onMoveUp={NOOP}
-          onMoveDown={NOOP}
-          canMoveUp={index > 0}
-          canMoveDown={index < CELLS.length - 1}
+          editorChromeColors={editorChromeColors}
         />
       ))}
     </div>
   );
+}
+
+function LandingNotebookCell({
+  cell,
+  editorChromeColors,
+}: {
+  cell: NotebookCell;
+  editorChromeColors: ReturnType<typeof getEditorChromeColors>;
+}) {
+  const lines = cell.content.split('\n');
+  const editorTextStyle = useMemo<CSSProperties>(
+    () => ({ color: editorChromeColors.foreground }),
+    [editorChromeColors.foreground],
+  );
+  const lineNumberStyle = useMemo<CSSProperties>(
+    () => ({ color: editorChromeColors.lineNumber }),
+    [editorChromeColors.lineNumber],
+  );
+  const codeSurfaceStyle = useMemo<CSSProperties>(
+    () => ({ backgroundColor: editorChromeColors.background }),
+    [editorChromeColors.background],
+  );
+
+  return (
+    <div className="group overflow-hidden rounded-lg border border-border bg-card transition-colors duration-150">
+      <div className="flex h-9 items-center justify-between border-b px-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-foreground"
+            aria-label="Run cell"
+            tabIndex={-1}
+          >
+            <Play className="h-3.5 w-3.5" />
+          </button>
+          <span className="font-mono text-xs text-muted-foreground">
+            {cell.executionOrder != null ? `[${cell.executionOrder}]` : '[ ]'}
+          </span>
+          {cell.executionDurationMs != null && cell.executionDurationMs > 0 ? (
+            <span className="text-xs text-muted-foreground/60">
+              · {formatExecutionDuration(cell.executionDurationMs)}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto" style={codeSurfaceStyle}>
+        <div className="min-w-full px-3 py-2 font-mono text-[13px] leading-6">
+          {lines.map((line, index) => (
+            <div
+              key={`${cell.cellId}-${index}`}
+              className="grid min-w-full grid-cols-[auto_1fr] gap-x-3"
+            >
+              <span className="select-none text-right text-xs" style={lineNumberStyle}>
+                {index + 1}
+              </span>
+              <span className="whitespace-pre" style={editorTextStyle}>
+                {line.length > 0 ? renderPythonLine(line, `${cell.cellId}-${index}`) : ' '}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <LandingNotebookOutput outputs={cell.output} />
+    </div>
+  );
+}
+
+function LandingNotebookOutput({ outputs }: { outputs: CellOutput[] }) {
+  const [outputCopied, copyOutput] = useCopyToClipboard();
+
+  const handleCopyOutput = async () => {
+    const text = buildOutputCopyText(outputs as RichOutput[]);
+    if (text) {
+      await copyOutput(text);
+    }
+  };
+
+  if (outputs.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-t bg-muted/30">
+      <div className="flex min-h-[32px] items-center justify-between border-b px-3 py-1.5">
+        <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground">
+          OUTPUT
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6 [&_svg]:scale-[0.92]"
+          onClick={() => void handleCopyOutput()}
+          aria-label={outputCopied ? 'Copied output!' : 'Copy output'}
+          type="button"
+        >
+          {outputCopied ? (
+            <Check className="text-green-500" />
+          ) : (
+            <Copy />
+          )}
+        </Button>
+      </div>
+      <div className="p-3">
+        <CellOutputRenderer outputs={outputs as RichOutput[]} />
+      </div>
+    </div>
+  );
+}
+
+function formatExecutionDuration(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+
+  return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function ensureLandingProjectTheme() {
+  useProjectStore.setState((state) => {
+    const hasProject = state.projects.some((project) => project.id === PROJECT_ID);
+    if (hasProject && state.activeProjectId === PROJECT_ID) {
+      return state;
+    }
+
+    return {
+      activeProjectId: PROJECT_ID,
+      projects: hasProject ? state.projects : [...state.projects, LANDING_PROJECT],
+    };
+  });
+}
+
+type PythonTokenType =
+  | 'keyword'
+  | 'function'
+  | 'string'
+  | 'number'
+  | 'comment'
+  | 'operator'
+  | 'punctuation'
+  | 'identifier'
+  | 'whitespace';
+
+type PythonToken = {
+  text: string;
+  type: PythonTokenType;
+};
+
+const PYTHON_KEYWORDS = new Set([
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await',
+  'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+  'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda',
+  'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with',
+  'yield',
+]);
+
+const MULTI_CHAR_OPERATORS = new Set([
+  '==', '!=', '<=', '>=', '//', '**', '+=', '-=', '*=', '/=', '%=', '->',
+]);
+
+const PUNCTUATION_CHARS = new Set(['(', ')', '[', ']', '{', '}', '.', ',', ':']);
+
+const TOKEN_STYLE_BY_TYPE: Partial<Record<Exclude<PythonTokenType, 'whitespace'>, CSSProperties>> = {
+  keyword: { color: 'hsl(var(--syn-keyword))', fontWeight: 600 },
+  function: { color: 'hsl(var(--syn-function))' },
+  string: { color: 'hsl(var(--syn-string))' },
+  number: { color: 'hsl(var(--syn-number))' },
+  comment: { color: 'hsl(var(--syn-comment))', fontStyle: 'italic' },
+};
+
+function renderPythonLine(line: string, keyPrefix: string) {
+  return tokenizePythonLine(line).map((token, index) => {
+    const style = token.type === 'whitespace' ? undefined : TOKEN_STYLE_BY_TYPE[token.type];
+
+    if (!style) {
+      return (
+        <span key={`${keyPrefix}-${index}`}>
+          {token.text}
+        </span>
+      );
+    }
+
+    return (
+      <span
+        key={`${keyPrefix}-${index}`}
+        style={style}
+      >
+        {token.text}
+      </span>
+    );
+  });
+}
+
+function tokenizePythonLine(line: string): PythonToken[] {
+  const tokens: PythonToken[] = [];
+  let index = 0;
+
+  while (index < line.length) {
+    const char = line[index];
+
+    if (/\s/.test(char)) {
+      let end = index + 1;
+      while (end < line.length && /\s/.test(line[end])) end += 1;
+      tokens.push({ text: line.slice(index, end), type: 'whitespace' });
+      index = end;
+      continue;
+    }
+
+    if (char === '#') {
+      tokens.push({ text: line.slice(index), type: 'comment' });
+      break;
+    }
+
+    if (char === '"' || char === '\'') {
+      let end = index + 1;
+      while (end < line.length) {
+        if (line[end] === '\\') {
+          end += 2;
+          continue;
+        }
+        if (line[end] === char) {
+          end += 1;
+          break;
+        }
+        end += 1;
+      }
+      tokens.push({ text: line.slice(index, end), type: 'string' });
+      index = end;
+      continue;
+    }
+
+    if (/\d/.test(char)) {
+      let end = index + 1;
+      while (end < line.length && /[\d._]/.test(line[end])) end += 1;
+      tokens.push({ text: line.slice(index, end), type: 'number' });
+      index = end;
+      continue;
+    }
+
+    if (/[A-Za-z_]/.test(char)) {
+      let end = index + 1;
+      while (end < line.length && /[A-Za-z0-9_]/.test(line[end])) end += 1;
+      const word = line.slice(index, end);
+      const nextIndex = skipWhitespace(line, end);
+      const type: PythonTokenType = PYTHON_KEYWORDS.has(word)
+        ? 'keyword'
+        : line[nextIndex] === '('
+          ? 'function'
+          : 'identifier';
+      tokens.push({ text: word, type });
+      index = end;
+      continue;
+    }
+
+    const pair = line.slice(index, index + 2);
+    if (MULTI_CHAR_OPERATORS.has(pair)) {
+      tokens.push({ text: pair, type: 'operator' });
+      index += 2;
+      continue;
+    }
+
+    if (PUNCTUATION_CHARS.has(char)) {
+      tokens.push({ text: char, type: 'punctuation' });
+      index += 1;
+      continue;
+    }
+
+    tokens.push({ text: char, type: 'operator' });
+    index += 1;
+  }
+
+  return tokens;
+}
+
+function skipWhitespace(line: string, index: number) {
+  let nextIndex = index;
+  while (nextIndex < line.length && /\s/.test(line[nextIndex])) {
+    nextIndex += 1;
+  }
+  return nextIndex;
 }

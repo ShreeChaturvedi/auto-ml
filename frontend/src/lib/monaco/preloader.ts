@@ -7,6 +7,7 @@
 
 import type { Monaco } from '@monaco-editor/react';
 import type { SyntaxPalette } from '@/lib/color/syntaxPalette';
+import { buildEditorColors } from '@/lib/color/editorColors';
 import { STATIC_SYNTAX_PALETTE } from '@/lib/color/syntaxPalette';
 import { ensureMonacoBootstrap } from '@/lib/monaco/bootstrap'
 
@@ -30,19 +31,6 @@ function buildThemeRules(palette: SyntaxPalette) {
     { token: 'identifier', foreground: strip(palette.identifier) },
     { token: 'delimiter', foreground: strip(palette.punctuation) },
   ];
-}
-
-function buildEditorColors(palette: SyntaxPalette, isDark: boolean): Record<string, string> {
-  return {
-    'editor.background': isDark ? '#0a0a0a' : '#ffffff',
-    'editor.foreground': isDark ? '#fafafa' : '#1f2328',
-    'editor.lineHighlightBackground': palette.lineHighlight,
-    'editorLineNumber.foreground': isDark ? '#a3a3a3' : '#d4d4d4',
-    'editorLineNumber.activeForeground': isDark ? '#d4d4d4' : '#a3a3a3',
-    'editorCursor.foreground': palette.cursor,
-    'editor.selectionBackground': palette.selectionBg,
-    'editorGutter.background': isDark ? '#0a0a0a' : '#ffffff',
-  };
 }
 
 export function registerAdaptiveTheme(monaco: Monaco, palette: SyntaxPalette, isDark: boolean): void {

@@ -19,6 +19,11 @@ function isFeaturePipelineRunId(runId: string): boolean {
   return runId.startsWith('feat-') || runId.startsWith('feature-run-');
 }
 
+function belongsToCurrentVersion(versionId: string | undefined, featureVersionId: string | undefined): boolean {
+  if (!versionId) return true;
+  return featureVersionId === versionId;
+}
+
 interface UseFeaturePipelineStateReturn {
   // Dataset state
   selectedDataset: string | null;
@@ -171,7 +176,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
           return;
         }
 
-        hydrateFeatures(projectId, { force: true });
+        hydrateFeatures(projectId);
 
         // Hydrate feature lifecycle state from backend runs endpoint
         const store = useFeatureStore.getState();
@@ -275,8 +280,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
 
   // --- Derived feature data ---
   const projectFeatures = useMemo(
-    () => features.filter((feature) => feature.projectId === projectId),
-    [features, projectId]
+    () => features.filter((feature) =>
+      feature.projectId === projectId
+      && belongsToCurrentVersion(selectedVersionId, feature.versionId)
+    ),
+    [features, projectId, selectedVersionId]
   );
 
   const activeFeatures = useMemo(
@@ -304,6 +312,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     updateSuggestionControl,
   } = useSuggestionDrafts({
     projectId,
+    currentVersionId: selectedVersionId,
     featureById,
     setPanelError,
   });
@@ -321,6 +330,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleApplyFeatures,
   } = useFeatureApply({
     projectId,
+    currentVersionId: selectedVersionId,
     notebookId: currentVersionNotebookId,
     projectFeatures,
     selectedDatasetFile,

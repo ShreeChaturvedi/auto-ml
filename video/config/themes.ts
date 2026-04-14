@@ -4,8 +4,8 @@ import { z } from "zod";
  * Theme palette for the Remotion composition.
  *
  * Colors mirror frontend/src/styles/theme.css. The ACCENT color is the blue
- * from the product's `projectColorClasses.blue` token (light: 210 60% 50% =>
- * HSL converted to hex approx #3B82EB; dark: 210 65% 70% => #7AB5F1).
+ * from the product's `projectColorClasses.blue` token (light: blue-700 =>
+ * #1D4ED8, matching `text-blue-700`; dark: 210 65% 70% => #7AB5F1).
  *
  * To flip the video's baseline to light, set DEFAULT_THEME below to "light".
  * To swap the accent to Indigo (or any other project color), update
@@ -15,8 +15,8 @@ import { z } from "zod";
 export const theme = z.enum(["light", "dark"]);
 export type Theme = z.infer<typeof theme>;
 
-/** Video baseline theme. Dark reads more cinematic for product demos. */
-export const DEFAULT_THEME: Theme = "dark";
+/** Video baseline theme. The opening runway is a white-background design. */
+export const DEFAULT_THEME: Theme = "light";
 
 type ColorTheme = {
   /** Page background, gradient start. */
@@ -43,8 +43,9 @@ type ColorTheme = {
   ENDCARD_TEXT_COLOR: string;
 };
 
-// hsl(210 60% 50%) ≈ #3385CC (exact) — using the product's tuned hex
-const BLUE_LIGHT = "#3B82EB";
+// blue-700 — mirrors frontend `projectColorClasses.blue.text` (text-blue-700)
+// in frontend/src/types/project.ts.
+const BLUE_LIGHT = "#1D4ED8";
 // hsl(210 65% 70%) ≈ #85B8E8
 const BLUE_DARK = "#7AB5F1";
 
@@ -55,7 +56,7 @@ export const COLORS: { [key in Theme]: ColorTheme } = {
     CAPTIONS_BACKGROUND: "#F5F5F5",
     BORDER_COLOR: "#E5E5E5",
     WORD_COLOR_ON_BG_APPEARED: "#171717",
-    WORD_COLOR_ON_BG_GREYED: "rgba(23, 23, 23, 0.45)",
+    WORD_COLOR_ON_BG_GREYED: "rgba(23, 23, 23, 0.55)",
     WORD_HIGHLIGHT_COLOR: BLUE_LIGHT,
     ACCENT_COLOR: BLUE_LIGHT,
     CTA_BUTTON_COLOR: "#FFFFFF",
@@ -84,4 +85,18 @@ export const COLORS: { [key in Theme]: ColorTheme } = {
 export const getChromeGradient = (t: Theme) => {
   const c = COLORS[t];
   return `linear-gradient(135deg, ${c.BACKGROUND} 0%, ${c.BACKGROUND_ELEVATED} 100%)`;
+};
+
+/**
+ * Soft radial bloom used on hero slides (TitleSlide, AgendaSlide).
+ * 6% opacity of ACCENT_COLOR — readable as a brand wash without competing
+ * with foreground text. Pure white on other slides.
+ */
+export const getHeroGradient = (t: Theme) => {
+  // blue-700 #1D4ED8 → rgb(29, 78, 216). Keep in sync with ACCENT_COLOR.
+  const bloom =
+    t === "light"
+      ? "rgba(29, 78, 216, 0.06)"
+      : "rgba(122, 181, 241, 0.08)"; // dark theme accent with slightly more alpha
+  return `radial-gradient(1200px 600px at 50% 0%, ${bloom}, transparent 60%)`;
 };

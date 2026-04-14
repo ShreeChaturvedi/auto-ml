@@ -39,7 +39,7 @@ export const useFadeIn = ({
 
   const opacity = interpolate(progress, [0, 1], [0, 1]);
   const y = interpolate(progress, [0, 1], [translateY, 0]);
-  const transform = translateY === 0 ? undefined : `translateY(${y}px)`;
+  const transform = `translateY(${y}px)`;
 
   return { progress, opacity, translateY: y, transform };
 };

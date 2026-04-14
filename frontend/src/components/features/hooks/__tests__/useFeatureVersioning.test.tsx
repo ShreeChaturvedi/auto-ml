@@ -10,6 +10,16 @@ import {
 import { useFeatureVersioning } from '../useFeatureVersioning';
 import type { PipelineVersion } from '@/types/feature';
 
+const toastSuccessMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccessMock(...args),
+    error: (...args: unknown[]) => toastErrorMock(...args)
+  }
+}));
+
 function makeDraftVersion(overrides: Partial<PipelineVersion> & { id: string }): PipelineVersion {
   return {
     projectId: 'project-1',
@@ -33,7 +43,7 @@ function makeDraftVersion(overrides: Partial<PipelineVersion> & { id: string }):
 
 const interruptWorkflowRunMock = vi.fn();
 const createNotebookMock = vi.fn();
-const deleteNotebookMock = vi.fn();
+const archivePhaseNotebookMock = vi.fn();
 const initializeNotebookMock = vi.fn();
 const loadNotebooksMock = vi.fn();
 
@@ -43,7 +53,11 @@ vi.mock('@/lib/api/llm', () => ({
 
 vi.mock('@/lib/api/notebooks', () => ({
   createNotebook: (...args: unknown[]) => createNotebookMock(...args),
-  deleteNotebook: (...args: unknown[]) => deleteNotebookMock(...args)
+  deleteNotebook: vi.fn()
+}));
+
+vi.mock('@/lib/notebook/archivePhaseNotebook', () => ({
+  archivePhaseNotebook: (...args: unknown[]) => archivePhaseNotebookMock(...args)
 }));
 
 vi.mock('@/stores/notebookStore', () => ({
@@ -78,12 +92,14 @@ describe('useFeatureVersioning', () => {
     interruptWorkflowRunMock.mockResolvedValue({ run: { runId: 'feature-run-1' } });
     createNotebookMock.mockReset();
     createNotebookMock.mockResolvedValue({ notebookId: 'fresh-fe-nb-1' });
-    deleteNotebookMock.mockReset();
-    deleteNotebookMock.mockResolvedValue({ success: true, fallbackNotebookId: 'fresh-fe-nb-1' });
+    archivePhaseNotebookMock.mockReset();
+    archivePhaseNotebookMock.mockResolvedValue({ archived: true });
     initializeNotebookMock.mockReset();
     initializeNotebookMock.mockResolvedValue(undefined);
     loadNotebooksMock.mockReset();
     loadNotebooksMock.mockResolvedValue(undefined);
+    toastSuccessMock.mockReset();
+    toastErrorMock.mockReset();
     useFeatureStore.setState({
       ...initialFeatureState,
       versions: {
@@ -157,8 +173,24 @@ describe('useFeatureVersioning', () => {
       })
     }));
     expect(initializeNotebookMock).toHaveBeenCalledWith(projectId, 'fresh-fe-nb-1');
-    expect(deleteNotebookMock).toHaveBeenCalledWith(projectId, 'old-fe-nb-1');
+    expect(archivePhaseNotebookMock).toHaveBeenCalledWith(expect.objectContaining({
+      projectId,
+      notebookId: 'old-fe-nb-1',
+      phase: 'feature-engineering',
+      tabId: versionId,
+      tabName: 'Draft Pipeline v1'
+    }));
     expect(loadNotebooksMock).toHaveBeenCalledWith(projectId);
+  });
+
+  it('shows a success toast when creating a new draft', () => {
+    const { result } = renderVersioning();
+
+    act(() => {
+      result.current.handleNewDraft();
+    });
+
+    expect(toastSuccessMock).toHaveBeenCalledWith('New Draft Pipeline created');
   });
 
   describe('sidebar delete handler', () => {

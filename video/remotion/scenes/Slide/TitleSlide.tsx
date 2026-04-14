@@ -32,11 +32,12 @@ const TAGLINE_DELAY = 45;
 const META_DELAY = 70;
 
 const LOGO_SIZE = 256;
-const MIAMI_MARK_SIZE = 32;
+const MIAMI_MARK_SIZE = 48;
 const WORDMARK_FONT_SIZE = 120;
-const TAGLINE_FONT_SIZE = 34;
-const META_FONT_SIZE = 14;
-const META_LINE_GAP = 4;
+const TAGLINE_FONT_SIZE = 44;
+const META_FONT_SIZE_PRIMARY = 20;
+const META_FONT_SIZE_SECONDARY = 18;
+const META_LINE_GAP = 6;
 
 export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const c = COLORS[theme];
@@ -130,9 +131,9 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           <div
             style={{
               ...REGULAR_FONT,
-              fontWeight: 600,
-              fontSize: META_FONT_SIZE,
-              letterSpacing: "0.1em",
+              fontWeight: 700,
+              fontSize: META_FONT_SIZE_PRIMARY,
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
               color: c.WORD_COLOR_ON_BG_APPEARED,
               lineHeight: 1.2,
@@ -144,8 +145,8 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
             style={{
               ...REGULAR_FONT,
               fontWeight: 500,
-              fontSize: META_FONT_SIZE,
-              letterSpacing: "0.1em",
+              fontSize: META_FONT_SIZE_SECONDARY,
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
               color: c.WORD_COLOR_ON_BG_GREYED,
               lineHeight: 1.2,

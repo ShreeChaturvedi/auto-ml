@@ -32,6 +32,9 @@ const notebookApi = vi.hoisted(() => ({
   deleteNotebook: vi.fn(),
 }));
 
+const toastSuccessMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
+
 vi.mock('@/lib/api/notebooks', () => ({
   listNotebooks: (...args: unknown[]) => notebookApi.listNotebooks(...args),
   createNotebook: (...args: unknown[]) => notebookApi.createNotebook(...args),
@@ -62,8 +65,8 @@ vi.mock('@/stores/dataStore', () => {
 // Toast: silence it so tests don't need a toaster mounted.
 vi.mock('sonner', () => ({
   toast: {
-    success: vi.fn(),
-    error: vi.fn(),
+    success: (...args: unknown[]) => toastSuccessMock(...args),
+    error: (...args: unknown[]) => toastErrorMock(...args),
   },
 }));
 
@@ -101,6 +104,8 @@ describe('NotebookSubtabs', () => {
     notebookApi.createNotebook.mockReset();
     notebookApi.updateNotebook.mockReset();
     notebookApi.deleteNotebook.mockReset();
+    toastSuccessMock.mockReset();
+    toastErrorMock.mockReset();
     dataStoreState.activeFileTabId = null;
     dataStoreState.fileTabType = null;
     dataStoreState.openNotebookTab.mockReset();
@@ -155,6 +160,23 @@ describe('NotebookSubtabs', () => {
 
     // Dialog title should now be visible.
     expect(await screen.findByText('Create a standalone notebook in this project.')).toBeInTheDocument();
+  });
+
+  it('shows a success toast when a notebook is created', async () => {
+    notebookApi.listNotebooks.mockResolvedValue([]);
+    notebookApi.createNotebook.mockResolvedValue(
+      makeNotebook({ notebookId: 'nb-new', name: 'Notebook 1' })
+    );
+    const user = userEvent.setup();
+
+    renderSubtabs();
+
+    await user.click(await screen.findByText('New notebook'));
+    await user.click(await screen.findByRole('button', { name: /save/i }));
+
+    await waitFor(() => {
+      expect(toastSuccessMock).toHaveBeenCalledWith('Notebook 1 created');
+    });
   });
 
   it('clicking a notebook row opens the notebook tab and navigates to the data viewer', async () => {

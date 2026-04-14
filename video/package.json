@@ -1,0 +1,42 @@
+{
+  "name": "video",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion render remotion/index.ts main out/final.mp4 --crf 18",
+    "build:draft": "remotion render remotion/index.ts main out/draft.mp4 --crf 28 --scale 0.5 --x264-preset fast",
+    "build:only": "remotion render remotion/index.ts main out/partial.mp4",
+    "render:lambda": "tsx scripts/render-lambda.mts",
+    "voiceover": "tsx scripts/voiceover.mts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.448",
+    "@remotion/cli": "4.0.448",
+    "@remotion/fonts": "4.0.448",
+    "@remotion/google-fonts": "4.0.448",
+    "@remotion/media-utils": "4.0.448",
+    "@remotion/renderer": "4.0.448",
+    "@remotion/transitions": "4.0.448",
+    "@remotion/zod-types": "4.0.448",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.448",
+    "shiki": "^1.24.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.448",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "prettier-plugin-organize-imports": "3.2.3",
+    "tsx": "^4.19.2",
+    "typescript": "5.9.3"
+  }
+}

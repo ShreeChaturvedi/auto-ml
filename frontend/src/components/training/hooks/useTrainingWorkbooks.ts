@@ -7,39 +7,25 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
+
+import { archivePhaseNotebook } from '@/lib/notebook/archivePhaseNotebook';
+import { interruptWorkflowRun } from '@/lib/api/llm';
+import { nextWorkbookName, createWorkbookId } from '@/components/preprocessing/preprocessingTabUtils';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
-import { nextWorkbookName, createWorkbookId } from '@/components/preprocessing/preprocessingTabUtils';
-import { interruptWorkflowRun } from '@/lib/api/llm';
-import { archivePhaseNotebook } from '@/lib/notebook/archivePhaseNotebook';
 import type { WorkbookEntry } from '@/types/workbook';
 
-const DEFAULT_WORKBOOK_ID = 'training-wb-1';
+import {
+  DEFAULT_TRAINING_WORKBOOK_ID,
+  buildTrainingWorkbookMessageKey,
+  buildTrainingWorkbooksStateKey,
+  readStoredTrainingWorkbooksState
+} from '../trainingWorkbookPersistence';
 
-function buildStateKey(projectId: string): string {
-  return `training-workbooks-v1-${projectId}`;
-}
-
-function buildMessageKey(workbookId: string, projectId: string): string {
-  return `training-messages-v1-${workbookId}-${projectId}`;
-}
-
-interface StoredState {
-  activeWorkbookId: string;
-  workbooks: WorkbookEntry[];
-}
-
-function parseStoredState(raw: string | null): StoredState | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as StoredState;
-    if (!parsed.activeWorkbookId || !Array.isArray(parsed.workbooks) || parsed.workbooks.length === 0) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
+interface UseTrainingWorkbooksOptions {
+  requestedWorkbookId?: string;
+  syncWorkbookParam?: (workbookId: string, replace?: boolean) => void;
 }
 
 export interface UseTrainingWorkbooksResult {
@@ -47,7 +33,7 @@ export interface UseTrainingWorkbooksResult {
   activeWorkbookId: string;
   activeWorkbook: WorkbookEntry | undefined;
   ready: boolean;
-  /** Bumped on reset to force AgenticShell remount. */
+  /** Bumped on reset so the active chat session rehydrates cleanly. */
   chatSessionVersion: number;
   buildStorageKey: (workbookId: string) => string;
   handleSwitch: (workbookId: string) => void;
@@ -64,22 +50,37 @@ export interface UseTrainingWorkbooksResult {
   openRenameDialog: () => void;
 }
 
-export function useTrainingWorkbooks(projectId: string | undefined): UseTrainingWorkbooksResult {
-  const [workbooks, setWorkbooks] = useState<WorkbookEntry[]>([]);
-  const [activeWorkbookId, setActiveWorkbookId] = useState(DEFAULT_WORKBOOK_ID);
-  const [ready, setReady] = useState(false);
-  const hydratedRef = useRef<string | null>(null);
+export function useTrainingWorkbooks(
+  projectId: string | undefined,
+  options: UseTrainingWorkbooksOptions = {}
+): UseTrainingWorkbooksResult {
+  const { requestedWorkbookId, syncWorkbookParam } = options;
+  const initialStateRef = useRef(
+    readStoredTrainingWorkbooksState(projectId, requestedWorkbookId)
+  );
+  const [workbooks, setWorkbooks] = useState<WorkbookEntry[]>(
+    () => initialStateRef.current?.workbooks ?? []
+  );
+  const [activeWorkbookId, setActiveWorkbookId] = useState(
+    () => initialStateRef.current?.activeWorkbookId ?? DEFAULT_TRAINING_WORKBOOK_ID
+  );
+  const [ready, setReady] = useState(() => Boolean(initialStateRef.current));
+  const hydratedRef = useRef<string | null>(projectId ?? null);
   const skipPersistRef = useRef(false);
   const [chatSessionVersion, setChatSessionVersion] = useState(0);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameDialogValue, setRenameDialogValue] = useState('');
+
+  const syncRequestedWorkbookParam = useCallback((workbookId: string, replace = true) => {
+    syncWorkbookParam?.(workbookId, replace);
+  }, [syncWorkbookParam]);
 
   const interruptWorkbookWorkflow = useCallback(async (
     workbookId: string,
     reason: string
   ) => {
     if (!projectId) return;
-    const storageKey = buildMessageKey(workbookId, projectId);
+    const storageKey = buildTrainingWorkbookMessageKey(workbookId, projectId);
     const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
     const session = useWorkflowSessionStore.getState().getSession(sessionKey);
     if (!session?.runId || !session.state) {
@@ -105,89 +106,96 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     }
   }, [projectId]);
 
-  // ---- Hydrate from localStorage (with one-time migration) ----------------
-
   useEffect(() => {
     if (!projectId || hydratedRef.current === projectId) return;
     hydratedRef.current = projectId;
+    initialStateRef.current = null;
     skipPersistRef.current = true;
     setReady(false);
 
-    const stateKey = buildStateKey(projectId);
-    let state = parseStoredState(localStorage.getItem(stateKey));
-
-    if (!state) {
-      // Check for legacy flat training messages and migrate
-      const legacyKey = `training-messages-${projectId}`;
-      const legacyMessages = localStorage.getItem(legacyKey);
-
-      const defaultWb: WorkbookEntry = { id: DEFAULT_WORKBOOK_ID, name: 'Workbook 1', notebookId: null };
-      state = { activeWorkbookId: DEFAULT_WORKBOOK_ID, workbooks: [defaultWb] };
-
-      if (legacyMessages) {
-        // Copy legacy messages to new per-workbook key
-        localStorage.setItem(buildMessageKey(DEFAULT_WORKBOOK_ID, projectId), legacyMessages);
-        localStorage.removeItem(legacyKey);
-      }
-
-      localStorage.setItem(stateKey, JSON.stringify(state));
-    }
-
-    const entries: WorkbookEntry[] = state.workbooks.map((wb) => ({
-      id: wb.id,
-      name: wb.name,
-      notebookId: wb.notebookId
+    const state = readStoredTrainingWorkbooksState(projectId, requestedWorkbookId);
+    const entries: WorkbookEntry[] = (state?.workbooks ?? []).map((workbook) => ({
+      id: workbook.id,
+      name: workbook.name,
+      notebookId: workbook.notebookId
     }));
 
     setWorkbooks(entries);
-    setActiveWorkbookId(state.activeWorkbookId);
+    setActiveWorkbookId(state?.activeWorkbookId ?? DEFAULT_TRAINING_WORKBOOK_ID);
     setReady(true);
-  }, [projectId]);
-
-  // ---- Persist to localStorage on change ----------------------------------
+  }, [projectId, requestedWorkbookId]);
 
   useEffect(() => {
     if (!ready || !projectId || workbooks.length === 0) return;
-    if (skipPersistRef.current) { skipPersistRef.current = false; return; }
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false;
+      return;
+    }
+
     localStorage.setItem(
-      buildStateKey(projectId),
+      buildTrainingWorkbooksStateKey(projectId),
       JSON.stringify({
         activeWorkbookId,
-        workbooks: workbooks.map((wb) => ({
-          id: wb.id,
-          name: wb.name,
-          notebookId: wb.notebookId
+        workbooks: workbooks.map((workbook) => ({
+          id: workbook.id,
+          name: workbook.name,
+          notebookId: workbook.notebookId
         }))
       })
     );
   }, [activeWorkbookId, projectId, ready, workbooks]);
-
-  // ---- Sync to registry store for sidebar ---------------------------------
 
   useEffect(() => {
     if (!ready) return;
     useWorkbookRegistryStore.getState().setWorkbooks('training', workbooks);
   }, [ready, workbooks]);
 
-  // ---- CRUD ---------------------------------------------------------------
+  useEffect(() => {
+    if (!ready) return;
+    useWorkbookRegistryStore.getState().setActiveWorkbookId('training', activeWorkbookId);
+  }, [activeWorkbookId, ready]);
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+
+    if (requestedWorkbookId && requestedWorkbookId !== activeWorkbookId) {
+      const requestedWorkbook = workbooks.find((workbook) => workbook.id === requestedWorkbookId);
+      if (requestedWorkbook) {
+        setActiveWorkbookId(requestedWorkbook.id);
+        return;
+      }
+    }
+
+    if (activeWorkbookId) {
+      syncRequestedWorkbookParam(activeWorkbookId, true);
+    }
+  }, [activeWorkbookId, ready, requestedWorkbookId, syncRequestedWorkbookParam, workbooks]);
 
   const handleSwitch = useCallback((workbookId: string) => {
     setActiveWorkbookId(workbookId);
-  }, []);
+    syncRequestedWorkbookParam(workbookId, false);
+  }, [syncRequestedWorkbookParam]);
 
   const handleNew = useCallback(() => {
-    const newWb: WorkbookEntry = {
+    const newWorkbook: WorkbookEntry = {
       id: createWorkbookId(),
       name: nextWorkbookName(workbooks),
       notebookId: null
     };
-    setWorkbooks((prev) => [...prev, newWb]);
-    setActiveWorkbookId(newWb.id);
-  }, [workbooks]);
+    setWorkbooks((prev) => [...prev, newWorkbook]);
+    setActiveWorkbookId(newWorkbook.id);
+    syncRequestedWorkbookParam(newWorkbook.id, false);
+    toast.success(`${newWorkbook.name} created`);
+  }, [syncRequestedWorkbookParam, workbooks]);
 
   const handleDelete = useCallback(() => {
-    if (workbooks.length <= 1) return;
-    const current = workbooks.find((wb) => wb.id === activeWorkbookId);
+    if (workbooks.length <= 1) {
+      toast.error('Cannot delete the last workbook');
+      return;
+    }
+    const current = workbooks.find((workbook) => workbook.id === activeWorkbookId);
     if (!current) return;
     const idx = workbooks.indexOf(current);
     const fallback = workbooks[idx - 1] ?? workbooks[idx + 1];
@@ -196,11 +204,7 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
     void (async () => {
       if (projectId) {
         await interruptWorkbookWorkflow(current.id, 'Training workbook deleted by user.');
-        localStorage.removeItem(buildMessageKey(current.id, projectId));
-        // Delete the bound training notebook so it can't be orphaned and later
-        // adopted by another workbook through the metadata-match path in
-        // useTrainingNotebookSync. If it already has cells, archive it instead
-        // of hard-deleting notebook history.
+        localStorage.removeItem(buildTrainingWorkbookMessageKey(current.id, projectId));
         if (current.notebookId) {
           await archivePhaseNotebook({
             projectId,
@@ -216,23 +220,22 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
           });
         }
       }
-      setWorkbooks((prev) => prev.filter((wb) => wb.id !== current.id));
+      setWorkbooks((prev) => prev.filter((workbook) => workbook.id !== current.id));
       setActiveWorkbookId(fallback.id);
+      syncRequestedWorkbookParam(fallback.id, true);
+      toast.success(`${current.name} deleted`);
     })();
-  }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, workbooks]);
+  }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, syncRequestedWorkbookParam, workbooks]);
 
-  // Idempotent: short-circuits when the value is unchanged to prevent the
-  // effect-setter-effect render loop that useTrainingNotebookSync would
-  // otherwise trigger when it re-derives notebookId every run.
   const setWorkbookNotebookId = useCallback(
     (workbookId: string, notebookId: string | null) => {
       setWorkbooks((prev) => {
-        const target = prev.find((wb) => wb.id === workbookId);
+        const target = prev.find((workbook) => workbook.id === workbookId);
         if (!target || target.notebookId === notebookId) {
           return prev;
         }
-        return prev.map((wb) =>
-          wb.id === workbookId ? { ...wb, notebookId } : wb
+        return prev.map((workbook) =>
+          workbook.id === workbookId ? { ...workbook, notebookId } : workbook
         );
       });
     },
@@ -240,19 +243,19 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
   );
 
   const activeWorkbook = useMemo(
-    () => workbooks.find((wb) => wb.id === activeWorkbookId) ?? workbooks[0],
+    () => workbooks.find((workbook) => workbook.id === activeWorkbookId) ?? workbooks[0],
     [activeWorkbookId, workbooks]
   );
 
   const buildStorageKey = useCallback(
-    (workbookId: string) => projectId ? buildMessageKey(workbookId, projectId) : `training-messages-v1-${workbookId}`,
+    (workbookId: string) => projectId
+      ? buildTrainingWorkbookMessageKey(workbookId, projectId)
+      : `training-messages-v1-${workbookId}`,
     [projectId]
   );
 
-  // ---- Rename ---------------------------------------------------------------
-
   const openRenameDialog = useCallback(() => {
-    const current = workbooks.find((wb) => wb.id === activeWorkbookId);
+    const current = workbooks.find((workbook) => workbook.id === activeWorkbookId);
     if (!current) return;
     setRenameDialogValue(current.name);
     setRenameDialogOpen(true);
@@ -261,19 +264,15 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
   const handleRename = useCallback((name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    setWorkbooks((prev) => prev.map((wb) =>
-      wb.id === activeWorkbookId ? { ...wb, name: trimmed } : wb
+    setWorkbooks((prev) => prev.map((workbook) =>
+      workbook.id === activeWorkbookId ? { ...workbook, name: trimmed } : workbook
     ));
     setRenameDialogOpen(false);
   }, [activeWorkbookId]);
 
-  // ---- Replay (re-send the last user message) --------------------------------
-
   const handleReplay = useCallback(() => {
     if (!projectId) return;
-    const baseKey = buildMessageKey(activeWorkbookId, projectId);
-    // useMessageAccumulator stores at `${storageKey}-${projectId}` where
-    // storageKey already contains projectId, so the key has it twice.
+    const baseKey = buildTrainingWorkbookMessageKey(activeWorkbookId, projectId);
     const actualKey = `${baseKey}-${projectId}`;
     const raw = localStorage.getItem(actualKey) ?? localStorage.getItem(baseKey);
     if (!raw) return;
@@ -286,43 +285,37 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
           ? (parsed.messages as Array<Record<string, unknown>>)
           : [];
       let lastUserIdx = -1;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if ((messages[i] as Record<string, unknown>).type === 'user') { lastUserIdx = i; break; }
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if ((messages[index] as Record<string, unknown>).type === 'user') {
+          lastUserIdx = index;
+          break;
+        }
       }
       if (lastUserIdx >= 0) {
         const truncated = messages.slice(0, lastUserIdx + 1);
-        // Write back in the same format (V2 if it was V2)
         if (!Array.isArray(parsed) && parsed?.version === 2) {
           localStorage.setItem(usedKey, JSON.stringify({ ...parsed, messages: truncated }));
         } else {
           localStorage.setItem(usedKey, JSON.stringify(truncated));
         }
       }
-    } catch { /* ignore parse errors */ }
-    setChatSessionVersion((v) => v + 1);
+    } catch {
+      // ignore parse errors
+    }
+    setChatSessionVersion((value) => value + 1);
   }, [activeWorkbookId, projectId]);
-
-  // ---- Reset (clear chat + notebook + workflow session for the active workbook) --
 
   const handleReset = useCallback(() => {
     if (!projectId) return;
     void (async () => {
-      // 1. Interrupt any active workflow session tied to this workbook before
-      //    deleting the notebook, otherwise stale paused runs can keep
-      //    datasets undeletable.
+      let resetWarning: string | null = null;
       await interruptWorkbookWorkflow(activeWorkbookId, 'Training workbook reset by user.');
 
-      // 2. Clear persisted chat messages. useMessageAccumulator stores under
-      //    `${storageKey}-${projectId}` where storageKey is already
-      //    `training-messages-v1-${workbookId}-${projectId}`. So the actual
-      //    localStorage key has projectId appended twice.
-      const storageKey = buildMessageKey(activeWorkbookId, projectId);
+      const storageKey = buildTrainingWorkbookMessageKey(activeWorkbookId, projectId);
       localStorage.removeItem(storageKey);
       localStorage.removeItem(`${storageKey}-${projectId}`);
 
-      // 3. Unbind the notebook so useTrainingNotebookSync creates a fresh one
-      //    on the next render.
-      const current = workbooks.find((wb) => wb.id === activeWorkbookId);
+      const current = workbooks.find((workbook) => workbook.id === activeWorkbookId);
       if (current?.notebookId) {
         await archivePhaseNotebook({
           projectId,
@@ -330,17 +323,21 @@ export function useTrainingWorkbooks(projectId: string | undefined): UseTraining
           phase: 'training',
           tabId: current.id,
           tabName: current.name
-        }).catch(() => undefined);
+        }).catch((error) => {
+          resetWarning = error instanceof Error ? error.message : 'Failed to rotate the workbook notebook.';
+        });
         setWorkbooks((prev) =>
-          prev.map((wb) =>
-            wb.id === activeWorkbookId ? { ...wb, notebookId: null } : wb
+          prev.map((workbook) =>
+            workbook.id === activeWorkbookId ? { ...workbook, notebookId: null } : workbook
           )
         );
       }
 
-      // 4. Bump session version to force AgenticShell remount → picks up
-      //    the empty localStorage + fresh notebook binding.
-      setChatSessionVersion((v) => v + 1);
+      setChatSessionVersion((value) => value + 1);
+      toast.success(
+        `${current?.name ?? 'Workbook'} reset`,
+        resetWarning ? { description: resetWarning } : undefined
+      );
     })();
   }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, workbooks]);
 

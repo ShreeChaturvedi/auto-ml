@@ -1,6 +1,6 @@
 ---
 // Hero — intentionally short so the app preview dominates the fold.
-// Entrance sequence: pill fade → heading blur-focus → subhead word-fade → CTA rise.
+// Entrance sequence: pill fade → heading deblur → subhead word-fade → CTA rise.
 ---
 
 <section class="hero" id="top">
@@ -140,38 +140,49 @@
     transform: translateX(2px);
   }
 
-  /* ── H1 — blur → focus entrance ── */
+  /* ── H1 — actual deblur entrance ── */
   .hero-title {
     margin: 32px 0 0;
     font-family: 'Inter Variable', sans-serif;
     font-weight: 510;
     font-size: clamp(40px, 6vw, 72px);
-    line-height: 1;
+    line-height: 1.06;
     letter-spacing: -0.022em;
   }
   .hero-title-bright {
     color: var(--text);
     display: block;
     opacity: 0;
-    filter: blur(12px);
-    animation: hero-blur-in 800ms var(--ease-out-quart) 300ms forwards;
+    filter: blur(18px);
+    transform: translateY(14px) scale(0.985);
+    transform-origin: center;
+    will-change: opacity, transform, filter;
+    backface-visibility: hidden;
+    animation: hero-title-deblur 780ms var(--ease-out-quart) 300ms forwards;
   }
   .hero-title-muted {
     color: var(--text-muted);
     display: block;
+    padding-bottom: 0.08em;
     opacity: 0;
-    filter: blur(12px);
-    animation: hero-blur-in 800ms var(--ease-out-quart) 450ms forwards;
+    filter: blur(18px);
+    transform: translateY(14px) scale(0.985);
+    transform-origin: center;
+    will-change: opacity, transform, filter;
+    backface-visibility: hidden;
+    animation: hero-title-deblur 780ms var(--ease-out-quart) 440ms forwards;
   }
 
-  @keyframes hero-blur-in {
+  @keyframes hero-title-deblur {
     from {
       opacity: 0;
-      filter: blur(12px);
+      filter: blur(18px);
+      transform: translateY(14px) scale(0.985);
     }
     to {
       opacity: 1;
       filter: blur(0);
+      transform: translateY(0) scale(1);
     }
   }
 
@@ -261,6 +272,7 @@
       filter: none;
       animation: none;
       transform: none;
+      will-change: auto;
     }
     .hero-pulse-link {
       --pill-sweep: 360deg;

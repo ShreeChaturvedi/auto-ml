@@ -132,7 +132,7 @@ export const ProblemTrioSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const closingFade = useFadeIn({ translateY: 8, delay: pClose.start });
 
   return (
-    <SlideShell theme={theme} eyebrow="THE PROBLEM">
+    <SlideShell theme={theme} eyebrow="THE PROBLEM" pageNumber="04 / 07">
       {/* Phase 2 — serif heading; accent-color segment inline. */}
       <div style={{ ...HEADING_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
         <TypeOnText text={HEADING_LEAD} delay={pHeading.start} caret={false} />

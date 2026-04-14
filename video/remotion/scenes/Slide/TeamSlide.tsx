@@ -113,7 +113,7 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const heading = useFadeIn({ translateY: 8, delay: 0 });
 
   return (
-    <SlideShell theme={theme} eyebrow="BUILT BY">
+    <SlideShell theme={theme} eyebrow="BUILT BY" pageNumber="03 / 07">
       {/* Phase 1 — serif heading. */}
       <div
         style={{

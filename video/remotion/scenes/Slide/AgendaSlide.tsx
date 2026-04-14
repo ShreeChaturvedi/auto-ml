@@ -161,7 +161,7 @@ export const AgendaSlide: React.FC<SlideBodyProps> = ({ theme, meta }) => {
   });
 
   return (
-    <SlideShell theme={theme} eyebrow="AGENDA" gradient={true}>
+    <SlideShell theme={theme} eyebrow="AGENDA" gradient={true} pageNumber="07 / 07">
       {/* Phase 1 — heading. */}
       <div
         style={{

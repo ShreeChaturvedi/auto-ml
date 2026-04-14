@@ -16,6 +16,9 @@ export type SlideShellProps = {
   divider?: boolean;
   /** If true, render the universal institutional footer. Default true. */
   footer?: boolean;
+  /** Optional page number string (e.g., "03 / 07") shown bottom-left. Omit on
+   *  title-style slides (Hook, Title) where it would compete with the hero. */
+  pageNumber?: string;
   children: React.ReactNode;
 };
 
@@ -62,6 +65,7 @@ export const SlideShell: React.FC<SlideShellProps> = ({
   gradient = false,
   divider = true,
   footer = true,
+  pageNumber,
   children,
 }) => {
   const c = COLORS[theme];
@@ -105,7 +109,7 @@ export const SlideShell: React.FC<SlideShellProps> = ({
         {children}
       </AbsoluteFill>
 
-      {footer ? <SlideFooter theme={theme} /> : null}
+      {footer ? <SlideFooter theme={theme} pageNumber={pageNumber} /> : null}
     </AbsoluteFill>
   );
 };

@@ -23,8 +23,8 @@ const SAFE_AREA_BOTTOM = 120;
 const CONTENT_LEFT = 120;
 /** Spine x-position. */
 const SPINE_LEFT = 72;
-/** Eyebrow's offset below the top safe-area. */
-const EYEBROW_TOP_OFFSET = 48;
+/** Vertical gap between the eyebrow label and the title that follows it. */
+const EYEBROW_TO_TITLE_GAP = 32;
 
 /**
  * Absolute-fill wrapper used by every slide in the runway.
@@ -36,7 +36,7 @@ const EYEBROW_TOP_OFFSET = 48;
  *   - Optional hero gradient wash layered between the background and content
  *   - Optional vertical spine at `left: 72px` (static `div`; slides wanting an
  *     animated draw-in use `<MotionLine>` instead)
- *   - Optional eyebrow label anchored 48px below the top safe-area edge
+ *   - Optional eyebrow label with a 32px gap before the title that follows it
  */
 export const SlideShell: React.FC<SlideShellProps> = ({
   theme,
@@ -83,7 +83,7 @@ export const SlideShell: React.FC<SlideShellProps> = ({
         }}
       >
         {eyebrow ? (
-          <div style={{ marginBottom: EYEBROW_TOP_OFFSET - 16 }}>
+          <div style={{ marginBottom: EYEBROW_TO_TITLE_GAP }}>
             <EyebrowLabel theme={theme}>{eyebrow}</EyebrowLabel>
           </div>
         ) : null}

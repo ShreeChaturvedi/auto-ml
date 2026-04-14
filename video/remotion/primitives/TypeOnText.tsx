@@ -20,7 +20,7 @@ export type TypeOnTextProps = {
   children?: never;
 };
 
-/** One blink = ~500ms at 60fps. 30 frames on, 30 off. */
+/** 30 frames on, 30 frames off — one full blink cycle every 60f (~1 blink per second at 60fps). */
 const CARET_BLINK_PERIOD_FRAMES = 30;
 
 /**
@@ -56,7 +56,7 @@ export const TypeOnText: React.FC<TypeOnTextProps> = ({
   return (
     <span style={style}>
       {visibleText}
-      {caret ? (
+      {caret && !caretHidden ? (
         <span
           aria-hidden="true"
           style={{

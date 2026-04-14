@@ -8,8 +8,6 @@ export type MaskRevealProps = {
   delay?: number;
   /** Sweep duration in frames. Default 48 (800ms @60fps). */
   durationInFrames?: number;
-  /** Sweep direction. Default "right". Only "right" supported in v1. */
-  direction?: "right";
   style?: React.CSSProperties;
 };
 
@@ -28,7 +26,6 @@ export const MaskReveal: React.FC<MaskRevealProps> = ({
   children,
   delay = 0,
   durationInFrames = 48,
-  direction = "right",
   style,
 }) => {
   const frame = useCurrentFrame();
@@ -44,9 +41,7 @@ export const MaskReveal: React.FC<MaskRevealProps> = ({
   );
   const hardEdge = progress * 100;
   const softEdge = Math.min(100, hardEdge + SOFT_EDGE_PCT);
-  // `direction` reserved for future expansion (v1: right only).
-  const gradientDirection = direction === "right" ? "to right" : "to right";
-  const maskImage = `linear-gradient(${gradientDirection}, black ${hardEdge}%, transparent ${softEdge}%)`;
+  const maskImage = `linear-gradient(to right, black ${hardEdge}%, transparent ${softEdge}%)`;
 
   return (
     <div

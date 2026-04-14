@@ -6,6 +6,7 @@ import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { IntroSlide } from "./IntroSlide";
+import { SandboxSlide } from "./SandboxSlide";
 import { TeamSlide } from "./TeamSlide";
 import { ProblemSlide } from "./ProblemSlide";
 
@@ -50,6 +51,9 @@ const SlideBody: React.FC<{ id: string } & SlideBodyProps> = ({
       return <TeamSlide theme={theme} meta={meta} />;
     case "problem":
       return <ProblemSlide theme={theme} meta={meta} />;
+    case "sandbox":
+      // TEMP — removed in the dispatcher-integration commit (Commit 10).
+      return <SandboxSlide theme={theme} meta={meta} />;
     default:
       return (
         <AbsoluteFill

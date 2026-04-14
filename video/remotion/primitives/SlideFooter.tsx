@@ -19,12 +19,14 @@ export type SlideFooterProps = {
 
 /** Fade-in duration for the entire footer (both marks + text fade together). */
 const FADE_DURATION_FRAMES = 20;
-const MARK_SIZE = 24;
-const MARK_TO_TEXT_GAP = 8;
-const GROUP_TO_PIPE_GAP = 24;
-const PIPE_HEIGHT = 16;
-const FOOTER_BOTTOM_OFFSET = 32;
-const TEXT_SIZE = 14;
+const MARK_SIZE = 32;
+const MARK_TO_TEXT_GAP = 10;
+const GROUP_TO_PIPE_GAP = 28;
+const PIPE_WIDTH = 1.5;
+const PIPE_HEIGHT = 22;
+const FOOTER_BOTTOM_OFFSET = 40;
+const TEXT_SIZE = 18;
+const PAGE_NUMBER_SIZE = 20;
 
 /**
  * Universal slide footer — institutional chrome rendered on every slide.
@@ -58,10 +60,10 @@ export const SlideFooter: React.FC<SlideFooterProps> = ({
 
   const textStyle: React.CSSProperties = {
     ...REGULAR_FONT,
-    fontWeight: 500,
+    fontWeight: 600,
     fontSize: TEXT_SIZE,
     letterSpacing: "0.02em",
-    color: c.WORD_COLOR_ON_BG_GREYED,
+    color: c.WORD_COLOR_ON_BG_APPEARED,
     lineHeight: 1.2,
     marginLeft: MARK_TO_TEXT_GAP,
   };
@@ -75,10 +77,11 @@ export const SlideFooter: React.FC<SlideFooterProps> = ({
             bottom: FOOTER_BOTTOM_OFFSET,
             left: SAFE_AREA.left,
             ...MONOSPACE_FONT,
-            fontSize: TEXT_SIZE,
+            fontWeight: 500,
+            fontSize: PAGE_NUMBER_SIZE,
             fontVariantNumeric: "tabular-nums",
             letterSpacing: "0.08em",
-            color: c.WORD_COLOR_ON_BG_GREYED,
+            color: c.WORD_COLOR_ON_BG_APPEARED,
             lineHeight: 1.2,
             opacity,
             pointerEvents: "none",
@@ -103,15 +106,15 @@ export const SlideFooter: React.FC<SlideFooterProps> = ({
           size={MARK_SIZE}
           theme={theme}
           mode="static"
-          color={c.WORD_COLOR_ON_BG_GREYED}
+          variant="simple"
+          color={c.WORD_COLOR_ON_BG_APPEARED}
         />
         <div style={textStyle}>AutoML</div>
         <div
           style={{
-            width: 1,
+            width: PIPE_WIDTH,
             height: PIPE_HEIGHT,
-            background: c.BORDER_COLOR,
-            opacity: 0.4,
+            background: c.WORD_COLOR_ON_BG_APPEARED,
             marginLeft: GROUP_TO_PIPE_GAP,
             marginRight: GROUP_TO_PIPE_GAP,
           }}

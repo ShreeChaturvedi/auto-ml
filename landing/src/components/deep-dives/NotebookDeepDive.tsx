@@ -16,9 +16,7 @@ import styles from './NotebookDeepDive.module.css';
  * `useScrollPlayOnce`):
  *   t≈500  — cursor glides to cell 1's Run button
  *   t≈1350 — click pulse, cell 1 gets "run highlight", output fades in
- *   t≈2600 — cursor glides to cell 2's Run button
- *   t≈3450 — click pulse, cell 2 run highlight, output fades in
- *   t≈4200 — cursor fades, final steady state (both outputs visible)
+ *   t≈2100 — cursor fades, final steady state (output visible)
  *
  * The cells themselves are rendered with `executionStatus: 'success'` so
  * their outputs exist in the DOM at mount time. We hide those outputs via
@@ -36,7 +34,6 @@ import styles from './NotebookDeepDive.module.css';
 // find each cell's wrapper + Run button in the rendered DOM.
 const CELL_IDS = [
   'landing-notebook-cell-1',
-  'landing-notebook-cell-2',
 ] as const;
 
 type Phase =

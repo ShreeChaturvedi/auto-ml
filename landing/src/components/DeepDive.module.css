@@ -62,7 +62,6 @@
   position: relative;
   width: 100%;
   min-height: 420px;
-  background: var(--surface-0);
   border: 0.8px solid hsl(var(--border));
   border-radius: 12px;
   overflow: hidden;

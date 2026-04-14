@@ -12,6 +12,8 @@ interface UsePhaseNotebookRecoveryOptions {
   enabled?: boolean;
 }
 
+const attemptedRecoveryKeys = new Set<string>();
+
 export function usePhaseNotebookRecovery({
   projectId,
   phase,
@@ -20,7 +22,9 @@ export function usePhaseNotebookRecovery({
   enabled = true
 }: UsePhaseNotebookRecoveryOptions): { isRecoveryReady: boolean } {
   const initializeNotebook = useNotebookStore((state) => state.initializeNotebook);
-  const attemptedRef = useRef(new Set<string>());
+  const currentNotebookProjectId = useNotebookStore((state) => state.currentProjectId);
+  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
+  const attemptedRef = useRef(attemptedRecoveryKeys);
   const [isRecoveryReady, setIsRecoveryReady] = useState(true);
 
   useEffect(() => {
@@ -32,6 +36,11 @@ export function usePhaseNotebookRecovery({
     const messageStorageScope = `${storageKey}-${projectId}`;
     const hydrated = hydrateStoredMessages(messageStorageScope);
     if (hydrated.messages.length === 0) {
+      setIsRecoveryReady(true);
+      return;
+    }
+
+    if (currentNotebookProjectId === projectId && activeNotebookId === notebookId) {
       setIsRecoveryReady(true);
       return;
     }
@@ -69,7 +78,7 @@ export function usePhaseNotebookRecovery({
     return () => {
       cancelled = true;
     };
-  }, [enabled, initializeNotebook, notebookId, phase, projectId, storageKey]);
+  }, [activeNotebookId, currentNotebookProjectId, enabled, initializeNotebook, notebookId, phase, projectId, storageKey]);
 
   return { isRecoveryReady };
 }

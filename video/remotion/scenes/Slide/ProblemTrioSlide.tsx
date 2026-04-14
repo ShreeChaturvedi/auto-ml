@@ -38,14 +38,14 @@ type ThreePanels = [StaggeredItem, StaggeredItem, StaggeredItem];
 // Panel + layout geometry
 // -----------------------------------------------------------------------------
 const PANEL_WIDTH = 552;
-const PANEL_HEIGHT = 620;
+const PANEL_HEIGHT = 640;
 const PANEL_GAP = 24;
-const PANEL_PADDING = 36;
+const PANEL_PADDING = 40;
 const PANEL_RADIUS = 8;
 const PANEL_SHADOW = "0 2px 12px rgba(0, 0, 0, 0.04)";
 const PANEL_BORDER = "rgba(0, 0, 0, 0.10)";
 
-const PANEL_TEXT_HEIGHT = 260;
+const PANEL_TEXT_HEIGHT = 240;
 // Hairline separator sits between the top text region and the bottom visual.
 const PANEL_SEPARATOR_Y = PANEL_TEXT_HEIGHT;
 const PANEL_VISUAL_HEIGHT = PANEL_HEIGHT - PANEL_TEXT_HEIGHT - 1; // 1px hairline
@@ -97,7 +97,7 @@ const HEADING_STYLE: React.CSSProperties = {
   lineHeight: 1.15,
   maxWidth: 1500,
   marginTop: 8,
-  marginBottom: 40,
+  marginBottom: 32,
   textWrap: "balance",
 };
 const PANELS_ROW_STYLE: React.CSSProperties = {
@@ -107,16 +107,17 @@ const PANELS_ROW_STYLE: React.CSSProperties = {
 };
 const PANEL_HEADLINE_STYLE: React.CSSProperties = {
   ...TITLE_FONT,
-  fontSize: 34,
-  lineHeight: 1.18,
-  letterSpacing: "-0.015em",
-  minHeight: 82,
+  fontSize: 28,
+  fontWeight: 600,
+  lineHeight: 1.2,
+  letterSpacing: "-0.01em",
+  minHeight: 68,
 };
 const PANEL_BODY_STYLE: React.CSSProperties = {
   ...REGULAR_FONT,
-  fontSize: 22,
+  fontSize: 18,
   lineHeight: 1.5,
-  marginTop: 16,
+  marginTop: 18,
 };
 
 // -----------------------------------------------------------------------------
@@ -304,14 +305,14 @@ const TOOL_TILES: readonly string[] = [
   "mlflow",
   "streamlit",
 ] as const;
-const TOOL_TILE_WIDTH = 52;
-const TOOL_TILE_HEIGHT = 40;
-const TOOL_TILE_GAP = 28; // arrow length between tiles
+const TOOL_TILE_WIDTH = 62;
+const TOOL_TILE_HEIGHT = 52;
+const TOOL_TILE_GAP = 18; // arrow length between tiles
 const TOOL_TILE_STAGGER = 15;
 const TOOL_TILE_FADE_FRAMES = 18;
 const TOOL_ARROW_DRAW_FRAMES = 20;
 const TOOL_ARROW_OFFSET = 5; // frames after tile settles before arrow draws
-/** Total strip width: 6×52 + 5×28 = 452. Fits inside 552 − 72 = 480. */
+/** Total strip width: 6×62 + 5×18 = 462. Fits inside 552 − 80 = 472 with 10px margin. */
 const TOOL_STRIP_WIDTH =
   TOOL_TILES.length * TOOL_TILE_WIDTH + (TOOL_TILES.length - 1) * TOOL_TILE_GAP;
 
@@ -342,7 +343,7 @@ const ToolFragmentationVisual: React.FC<{
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 32,
+        gap: 40,
       }}
     >
       <div
@@ -376,7 +377,7 @@ const ToolFragmentationVisual: React.FC<{
                 top: 0,
                 width: TOOL_TILE_WIDTH,
                 height: TOOL_TILE_HEIGHT,
-                borderRadius: 4,
+                borderRadius: 6,
                 border: `1px solid ${c.BORDER_COLOR}`,
                 background: c.BACKGROUND_ELEVATED,
                 display: "flex",
@@ -385,8 +386,9 @@ const ToolFragmentationVisual: React.FC<{
                 opacity: tileOpacity,
                 transform: `translateY(${tileTranslate}px)`,
                 ...MONOSPACE_FONT,
-                fontSize: 12,
+                fontSize: 13,
                 fontVariantNumeric: "tabular-nums",
+                letterSpacing: "-0.01em",
                 color: c.WORD_COLOR_ON_BG_APPEARED,
               }}
             >
@@ -431,15 +433,27 @@ const ToolFragmentationVisual: React.FC<{
       <div
         style={{
           ...MONOSPACE_FONT,
-          fontSize: 14,
+          fontSize: 16,
           fontVariantNumeric: "tabular-nums",
           color: c.WORD_COLOR_ON_BG_GREYED,
           opacity: statOpacity,
-          letterSpacing: "0.01em",
+          letterSpacing: "0.02em",
           textAlign: "center",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 20,
         }}
       >
-        languages: 4   ·   context switches / hr: 11
+        <span>
+          <span style={{ color: c.WORD_COLOR_ON_BG_APPEARED, fontWeight: 600 }}>4</span>
+          {" languages"}
+        </span>
+        <span style={{ opacity: 0.5 }}>·</span>
+        <span>
+          <span style={{ color: c.WORD_COLOR_ON_BG_APPEARED, fontWeight: 600 }}>11</span>
+          {" context switches / hr"}
+        </span>
       </div>
     </div>
   );
@@ -461,11 +475,11 @@ const SKILL_ROWS: readonly SkillRow[] = [
   { label: "MLOps", fill: 0.25 },
 ] as const;
 
-const SKILL_LABEL_WIDTH = 90;
-const SKILL_LABEL_GAP = 14;
-const SKILL_TRACK_WIDTH = 300;
-const SKILL_TRACK_HEIGHT = 10;
-const SKILL_ROW_GAP = 14;
+const SKILL_LABEL_WIDTH = 110;
+const SKILL_LABEL_GAP = 16;
+const SKILL_TRACK_WIDTH = 260;
+const SKILL_TRACK_HEIGHT = 14;
+const SKILL_ROW_GAP = 12;
 const SKILL_BAR_DRAW_FRAMES = 15;
 const SKILL_BAR_STAGGER = 10;
 
@@ -493,12 +507,12 @@ const SkillStackVisual: React.FC<{
         width: "100%",
         height: "100%",
         display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
+        alignItems: "center",
         justifyContent: "center",
-        gap: 24,
+        gap: 28,
       }}
     >
+      {/* Left column — five skill bars. */}
       <div style={{ display: "flex", flexDirection: "column", gap: SKILL_ROW_GAP }}>
         {SKILL_ROWS.map((row, i) => {
           const barStart = focusStart + i * SKILL_BAR_STAGGER;
@@ -527,6 +541,7 @@ const SkillStackVisual: React.FC<{
                   textAlign: "right",
                   color: c.WORD_COLOR_ON_BG_APPEARED,
                   lineHeight: 1,
+                  fontVariantNumeric: "tabular-nums",
                 }}
               >
                 {row.label}
@@ -558,21 +573,24 @@ const SkillStackVisual: React.FC<{
         })}
       </div>
 
+      {/* Right column — 1.5 hero + source caption. */}
       <div
         style={{
           display: "flex",
-          alignItems: "baseline",
-          gap: 16,
-          marginLeft: 0,
+          flexDirection: "column",
+          alignItems: "flex-start",
+          justifyContent: "center",
+          minWidth: 134,
         }}
       >
         <div
           style={{
             ...TITLE_FONT,
-            fontSize: 96,
+            fontSize: 112,
+            fontWeight: 600,
             color: c.ACCENT_COLOR,
-            letterSpacing: "-0.03em",
-            lineHeight: 1,
+            letterSpacing: "-0.04em",
+            lineHeight: 0.95,
           }}
         >
           <ScaleInNumber value="1.5" delay={heroDelay} />
@@ -580,14 +598,29 @@ const SkillStackVisual: React.FC<{
         <div
           style={{
             ...REGULAR_FONT,
-            fontSize: 14,
-            color: c.WORD_COLOR_ON_BG_GREYED,
+            fontWeight: 600,
+            fontSize: 13,
+            color: c.WORD_COLOR_ON_BG_APPEARED,
             opacity: captionOpacity,
-            maxWidth: 240,
-            lineHeight: 1.35,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            marginTop: 10,
           }}
         >
-          of 5 disciplines · Stack Overflow Dev Survey, 2024
+          of 5 disciplines
+        </div>
+        <div
+          style={{
+            ...REGULAR_FONT,
+            fontSize: 12,
+            color: c.WORD_COLOR_ON_BG_GREYED,
+            opacity: captionOpacity,
+            lineHeight: 1.4,
+            marginTop: 6,
+            maxWidth: 124,
+          }}
+        >
+          Stack Overflow Dev Survey, 2024
         </div>
       </div>
     </div>
@@ -607,12 +640,12 @@ const GATES = [
   "regularize when?",
 ] as const;
 
-const PILL_WIDTH = 90;
-const PILL_HEIGHT = 34;
-const PILL_GAP = 20; // arrow length between pills
-const GATE_WIDTH = 120;
-const GATE_HEIGHT = 40;
-const GATE_CONNECTOR_HEIGHT = 24;
+const PILL_WIDTH = 108;
+const PILL_HEIGHT = 42;
+const PILL_GAP = 36; // arrow length between pills
+const GATE_WIDTH = 140;
+const GATE_HEIGHT = 46;
+const GATE_CONNECTOR_HEIGHT = 28;
 const GATE_STAGGER = 30;
 const GATE_CROSSFADE_FRAMES = 15;
 
@@ -638,7 +671,7 @@ const ApprovalGateVisual: React.FC<{
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 8,
+        gap: 0,
       }}
     >
       {/* Pipeline row — pills + arrows. */}
@@ -666,8 +699,8 @@ const ApprovalGateVisual: React.FC<{
               justifyContent: "center",
               ...TITLE_FONT,
               fontWeight: 600,
-              fontSize: 14,
-              letterSpacing: "0.08em",
+              fontSize: 16,
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
               color: c.WORD_COLOR_ON_BG_APPEARED,
             }}
@@ -779,8 +812,8 @@ const ApprovalGate: React.FC<{
           top: 0,
           width: 2,
           height: GATE_CONNECTOR_HEIGHT,
-          background: c.BORDER_COLOR,
-          opacity: 0.6,
+          background: c.WORD_COLOR_ON_BG_GREYED,
+          opacity: 0.4,
         }}
       />
       {/* Gate badge. */}
@@ -797,11 +830,11 @@ const ApprovalGate: React.FC<{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          gap: 6,
+          gap: 8,
           opacity: mutedOpacity,
           ...REGULAR_FONT,
           fontWeight: 500,
-          fontSize: 14,
+          fontSize: 16,
           color: textColor,
           whiteSpace: "nowrap",
         }}
@@ -812,14 +845,15 @@ const ApprovalGate: React.FC<{
           <span
             style={{
               position: "absolute",
-              left: 0,
+              left: -2,
+              right: -2,
               top: "50%",
               transform: "translateY(-50%)",
               pointerEvents: "none",
             }}
           >
             <StrikethroughUndraw
-              width={GATE_WIDTH - 40}
+              width={labelWidthHint(label)}
               delay={revealStart}
               color={c.WORD_COLOR_ON_BG_GREYED}
             />
@@ -830,7 +864,7 @@ const ApprovalGate: React.FC<{
           style={{
             color: c.ACCENT_COLOR,
             opacity: checkOpacity,
-            fontSize: 14,
+            fontSize: 18,
             fontWeight: 700,
             lineHeight: 1,
           }}
@@ -840,6 +874,21 @@ const ApprovalGate: React.FC<{
       </div>
     </>
   );
+};
+
+// Rough pixel-width hint for strikethrough line given 16px Plus Jakarta 500.
+// Avoids DOM measurement — labels are fixed copy.
+const labelWidthHint = (label: string): number => {
+  switch (label) {
+    case "drop rows?":
+      return 80;
+    case "encode how?":
+      return 100;
+    case "regularize when?":
+      return 136;
+    default:
+      return label.length * 8;
+  }
 };
 
 // -----------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import styles from './AppPreviewFrame.module.css';
 
 export default function AppPreviewFrame() {
   const { ref } = useCursorOutline({ proximityThreshold: 220 });
-  const [DemoWorkspaceComponent, setDemoWorkspaceComponent] = useState<ComponentType | null>(null);
+  const [DemoWorkspaceComponent, setDemoWorkspaceComponent] = useState<ComponentType<{ initialPhase?: string }> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +48,7 @@ export default function AppPreviewFrame() {
             aria-hidden="true"
           />
           {DemoWorkspaceComponent ? (
-            <DemoWorkspaceComponent />
+            <DemoWorkspaceComponent initialPhase="upload" />
           ) : (
             <div className="h-full bg-background" data-testid="landing-demo-loading" />
           )}

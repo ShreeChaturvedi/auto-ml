@@ -20,6 +20,27 @@
   --text-muted: #8A8F98;
   --text-dim:   #828794;
 
+  /* App surface contract (for embedded preview + Radix portals) */
+  --background: 0 0% 4%;
+  --foreground: 0 0% 97%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 97%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 97%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 10%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 10%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 10%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --input: 0 0% 18%;
+  --ring: 0 0% 55%;
+  --radius: 0.5rem;
+
   /* Motion — easing tokens (single source of truth) */
   --ease-out-quart:      cubic-bezier(0.165, 0.84, 0.44, 1);
   --ease-out-expo:       cubic-bezier(0.19,  1,    0.22, 1);

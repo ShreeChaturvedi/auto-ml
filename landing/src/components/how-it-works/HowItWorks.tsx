@@ -44,12 +44,13 @@ const DIORAMA_MAP: Record<PhaseSceneData['dioramaId'], ComponentType> = {
 
 interface PhaseSceneProps {
   scene: PhaseSceneData;
+  showDiorama?: boolean;
 }
 
 // File-local shared scene markup. Both the reduced-motion static list and
 // the pinned scrollytelling grid render this so the per-scene DOM is
 // identical (counter + headline + diorama).
-function PhaseScene({ scene }: PhaseSceneProps) {
+function PhaseScene({ scene, showDiorama = true }: PhaseSceneProps) {
   const Diorama = DIORAMA_MAP[scene.dioramaId];
   return (
     <>
@@ -62,9 +63,13 @@ function PhaseScene({ scene }: PhaseSceneProps) {
         <span className={styles.sceneHeadlineMuted}>{scene.headlineMuted}</span>
       </h3>
       <div className={styles.sceneDiorama}>
-        <Suspense fallback={<div className={styles.sceneFallback} aria-hidden />}>
-          <Diorama />
-        </Suspense>
+        {showDiorama ? (
+          <Suspense fallback={<div className={styles.sceneFallback} aria-hidden />}>
+            <Diorama />
+          </Suspense>
+        ) : (
+          <div className={styles.sceneFallback} aria-hidden />
+        )}
       </div>
     </>
   );
@@ -76,6 +81,24 @@ export default function HowItWorks() {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const prevIdxRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [shouldLoadDiorama, setShouldLoadDiorama] = useState(false);
+
+  useEffect(() => {
+    if (!pinRef.current || shouldLoadDiorama) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setShouldLoadDiorama(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '320px 0px' },
+    );
+
+    observer.observe(pinRef.current);
+    return () => observer.disconnect();
+  }, [shouldLoadDiorama]);
 
   useEffect(() => {
     if (reducedMotion || !pinRef.current) return;
@@ -147,7 +170,7 @@ export default function HowItWorks() {
             <li key={scene.code} className={styles.fallbackItem}>
               <span className={styles.fallbackCode}>{scene.code}</span>
               <figure className={styles.fallbackFigure}>
-                <PhaseScene scene={scene} />
+                <PhaseScene scene={scene} showDiorama={false} />
               </figure>
             </li>
           ))}
@@ -208,18 +231,9 @@ export default function HowItWorks() {
           </nav>
 
           <div className={styles.sceneWrap}>
-            {PHASE_SCENES.map((scene, i) => (
-              <figure
-                key={scene.code}
-                className={cn(
-                  styles.scene,
-                  activeIndex === i && styles.sceneActive,
-                )}
-                aria-hidden={activeIndex !== i}
-              >
-                <PhaseScene scene={scene} />
-              </figure>
-            ))}
+            <figure className={cn(styles.scene, styles.sceneActive)}>
+              <PhaseScene scene={PHASE_SCENES[activeIndex]} showDiorama={shouldLoadDiorama} />
+            </figure>
           </div>
         </div>
       </div>

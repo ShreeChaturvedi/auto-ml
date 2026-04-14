@@ -9,6 +9,26 @@
   overflow: hidden;
 }
 
+.workspaceViewport {
+  margin-top: 12px;
+  width: 100%;
+  height: 360px;
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: hsl(var(--background));
+}
+
+.workspaceFrame {
+  width: calc(100% / 0.56);
+  height: calc(100% / 0.56);
+  transform: scale(0.56);
+  transform-origin: top left;
+  border: 0;
+  background: hsl(var(--background));
+  pointer-events: none;
+}
+
 .dropZone {
   border: 1.5px dashed var(--border-strong);
   border-radius: 10px;

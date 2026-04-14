@@ -74,6 +74,10 @@ body {
   overflow-x: clip;
 }
 
+/* Hide scrollbar while keeping scroll functional. */
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; }
+
 /* Selection */
 ::selection {
   background-color: rgba(255, 255, 255, 0.18);

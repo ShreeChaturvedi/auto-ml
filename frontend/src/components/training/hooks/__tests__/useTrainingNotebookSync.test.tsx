@@ -11,10 +11,24 @@ const notebookApiMocks = await vi.hoisted(async () => {
   return createNotebookApiMocks();
 });
 
+const notebookStoreState = vi.hoisted(() => ({
+  currentProjectId: null as string | null,
+  notebooks: [] as Array<{ notebookId: string; kind: 'phase' | 'standalone'; metadata?: Record<string, unknown> }>
+}));
+
 vi.mock('@/lib/api/notebooks', () => ({
   listNotebooks: (...args: unknown[]) => (notebookApiMocks.listNotebooks as (...a: unknown[]) => unknown)(...args),
   createNotebook: (...args: unknown[]) => (notebookApiMocks.createNotebook as (...a: unknown[]) => unknown)(...args),
   updateNotebook: (...args: unknown[]) => (notebookApiMocks.updateNotebook as (...a: unknown[]) => unknown)(...args)
+}));
+
+vi.mock('@/stores/notebookStore', () => ({
+  useNotebookStore: Object.assign(
+    (selector: (state: typeof notebookStoreState) => unknown) => selector(notebookStoreState),
+    {
+      getState: () => notebookStoreState
+    }
+  )
 }));
 
 function makeWorkbook(overrides: Partial<WorkbookEntry> = {}): WorkbookEntry {
@@ -50,6 +64,8 @@ describe('useTrainingNotebookSync', () => {
         metadata: request.metadata ?? {}
       })
     );
+    notebookStoreState.currentProjectId = null;
+    notebookStoreState.notebooks = [];
   });
 
   it('creates a training-scoped notebook when none exists for the workbook', async () => {
@@ -102,6 +118,33 @@ describe('useTrainingNotebookSync', () => {
 
     expect(notebookApiMocks.createNotebook).not.toHaveBeenCalled();
     expect(notebookApiMocks.updateNotebook).not.toHaveBeenCalled(); // metadata already correct — no heal needed
+  });
+
+  it('starts ready immediately when the live notebook store already has the bound training notebook', async () => {
+    notebookStoreState.currentProjectId = 'project-1';
+    notebookStoreState.notebooks = [
+      {
+        notebookId: 'cached-training-nb',
+        kind: 'phase',
+        metadata: { phase: 'training', tabId: 'training-wb-1', tabName: 'Workbook 1' }
+      }
+    ];
+    notebookApiMocks.notebooks = notebookStoreState.notebooks;
+    const setWorkbookNotebookId = vi.fn();
+
+    const { result } = renderHook(() => useTrainingNotebookSync({
+      projectId: 'project-1',
+      activeWorkbook: makeWorkbook({ id: 'training-wb-1', notebookId: 'cached-training-nb' }),
+      setWorkbookNotebookId
+    }));
+
+    expect(result.current).toEqual({ notebookId: 'cached-training-nb', isReady: true });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ notebookId: 'cached-training-nb', isReady: true });
+    });
+
+    expect(notebookApiMocks.createNotebook).not.toHaveBeenCalled();
   });
 
   it('adopts an unbound training-phase notebook whose tabId matches the workbook', async () => {

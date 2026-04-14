@@ -8,12 +8,9 @@ import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { AcknowledgementsSlide } from "./AcknowledgementsSlide";
 import { AgendaSlide } from "./AgendaSlide";
 import { HookSlide } from "./HookSlide";
-import { IntroSlide } from "./IntroSlide";
 import { ProblemTrioSlide } from "./ProblemTrioSlide";
-import { SandboxSlide } from "./SandboxSlide";
 import { TeamSlide } from "./TeamSlide";
 import { TitleSlide } from "./TitleSlide";
-import { ProblemSlide } from "./ProblemSlide";
 import { WhyNowSlide } from "./WhyNowSlide";
 
 type SlideSceneType = z.infer<typeof slideScene>;
@@ -59,19 +56,12 @@ const SlideBody: React.FC<{ id: string } & SlideBodyProps> = ({
       return <ProblemTrioSlide theme={theme} meta={meta} />;
     case "why-now":
       return <WhyNowSlide theme={theme} meta={meta} />;
-    case "intro":
-      return <IntroSlide theme={theme} meta={meta} />;
     case "team":
       return <TeamSlide theme={theme} meta={meta} />;
     case "acknowledgements":
       return <AcknowledgementsSlide theme={theme} meta={meta} />;
     case "agenda":
       return <AgendaSlide theme={theme} meta={meta} />;
-    case "problem":
-      return <ProblemSlide theme={theme} meta={meta} />;
-    case "sandbox":
-      // TEMP — removed in the dispatcher-integration commit (Commit 10).
-      return <SandboxSlide theme={theme} meta={meta} />;
     default:
       return (
         <AbsoluteFill

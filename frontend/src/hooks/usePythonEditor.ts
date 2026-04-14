@@ -164,7 +164,10 @@ export function usePythonEditor({
           clearTimeout(saveTimeoutRef.current);
           saveTimeoutRef.current = null;
         }
-        const currentValue = editor.getModel()?.getValue() ?? '';
+        // During notebook/tab switches Monaco can dispose the model before the
+        // blur callback fires. Fall back to the latest local edit buffer so we
+        // do not persist an empty string over a valid cell body.
+        const currentValue = editor.getModel()?.getValue() ?? localContentRef.current;
         if (ignoreSaveContent && currentValue === ignoreSaveContent) return;
         onContentChangeRef.current(currentValue);
       });

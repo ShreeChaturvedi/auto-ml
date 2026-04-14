@@ -183,7 +183,6 @@ export function PreprocessingPanel() {
     <>
       {isRecoveryReady ? (
         <AgenticShell
-          key={activeTab?.id ?? DEFAULT_WORKBOOK_ID}
           projectId={projectId ?? ''}
           domainAdapter={domainAdapter}
           composerPlaceholders={composerPlaceholders}

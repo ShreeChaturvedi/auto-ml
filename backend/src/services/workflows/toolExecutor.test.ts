@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { executeToolCall } from '../llm/tools.js';
 import { executeMcpTool } from '../mcp/mcpAdapter.js';
 
 import type { WorkflowGraphState } from './graphState.js';
@@ -15,6 +16,10 @@ const { mockGetDatasetById } = vi.hoisted(() => ({
 
 vi.mock('../mcp/mcpAdapter.js', () => ({
   executeMcpTool: vi.fn()
+}));
+
+vi.mock('../llm/tools.js', () => ({
+  executeToolCall: vi.fn()
 }));
 
 vi.mock('../../repositories/datasetRepository.js', () => ({
@@ -170,6 +175,7 @@ describe('executeToolsNode', () => {
   beforeEach(() => {
     executePhaseSpecificToolMock.mockReset();
     vi.mocked(executeMcpTool).mockReset();
+    vi.mocked(executeToolCall).mockReset();
     mockGetDatasetById.mockReset();
     executePhaseSpecificToolMock.mockResolvedValue({
       output: {
@@ -560,6 +566,44 @@ describe('executeToolsNode', () => {
     expect(result.errorCode).toBe('TRAINING_RUN_CELL_TIMEOUT');
     expect(result.errorMessage).toContain('Request timed out');
     expect(result.errorMessage).toContain('kernel was interrupted');
+  });
+
+  it('fails training turns immediately when install_package cannot install the required library', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'generate_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-install-package',
+      tool: 'install_package',
+      args: {
+        packageName: 'catboost'
+      }
+    }];
+
+    vi.mocked(executeToolCall).mockResolvedValue({
+      id: 'wf-call-install-package',
+      tool: 'install_package',
+      output: {
+        success: false,
+        message: 'No compatible binary wheels found for catboost on this runtime.'
+      },
+    });
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('fail');
+    expect(result.errorCode).toBe('TRAINING_PACKAGE_INSTALL_FAILED');
+    expect(result.errorMessage).toContain('catboost');
+    expect(result.errorMessage).toContain('could not be installed');
+    expect(executeToolCall).toHaveBeenCalledWith('project-1', expect.objectContaining({
+      tool: 'install_package',
+      args: expect.objectContaining({ packageName: 'catboost' })
+    }));
+    expect(executeMcpTool).not.toHaveBeenCalled();
   });
 
   it('respects per-phase maxSingleToolCalls override', async () => {

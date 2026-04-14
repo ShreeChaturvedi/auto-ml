@@ -42,8 +42,8 @@ const DEFAULT_CHAPTERS = [
  * with a 1-item `scenes` array.
  */
 const DEFAULT_SCENES: SelectableScene[] = [
-  { type: "slide", id: "hook", durationInFrames: 720 },
   { type: "slide", id: "title", durationInFrames: 540 },
+  { type: "slide", id: "hook", durationInFrames: 720 },
   { type: "slide", id: "team", durationInFrames: 840 },
   { type: "slide", id: "acknowledgements", durationInFrames: 780 },
   { type: "slide", id: "problem-trio", durationInFrames: 2040 },

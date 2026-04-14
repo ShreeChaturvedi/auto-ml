@@ -191,7 +191,7 @@ describe('useFeaturePipelineState', () => {
 
     await waitFor(() => {
       expect(mockState.hydrateFromBackendMock).toHaveBeenCalledWith('p1');
-      expect(mockState.hydrateFeaturesMock).toHaveBeenCalledWith('p1', { force: true });
+      expect(mockState.hydrateFeaturesMock).toHaveBeenCalledWith('p1');
     });
 
     expect(callOrder).toEqual(['data', 'features']);

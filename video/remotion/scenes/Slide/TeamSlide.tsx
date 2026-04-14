@@ -1,9 +1,9 @@
 import React from "react";
-import { REGULAR_FONT, SERIF_FONT, TITLE_FONT } from "../../../config/fonts";
+import { Img, staticFile } from "remotion";
+import { REGULAR_FONT, TITLE_FONT } from "../../../config/fonts";
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
-import { MotionLine } from "../../primitives/MotionLine";
 import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
 import type { StaggeredItem } from "../../primitives/useStaggeredFadeIn";
@@ -12,128 +12,122 @@ import type { PhaseInfo } from "../../primitives/useTimeline";
 import { useTimeline } from "../../primitives/useTimeline";
 import type { SlideBodyProps } from "./index";
 
-/** 4-phase frame budget (60fps). Sum = 840 = 14s.
- *   1. 0–20    eyebrow + serif heading
- *   2. 20–80   two cards rise with 15f stagger
- *   3. 80–160  per-card reveals (name, hairline, role, supporting)
- *   4. 160–840 hold */
-const PHASES = [20, 60, 80, 680] as const;
-
-const CARD_STAGGER = 15;
-const CARD_MIN_WIDTH = 480;
-const CARD_GAP = 48;
-const CARD_PADDING = 36;
-const CARD_RADIUS = 8;
-/** Matches app `shadow-sm` (light-mode card.tsx). */
-const CARD_SHADOW = "0 2px 12px rgba(0, 0, 0, 0.04)";
-
-const HAIRLINE_WIDTH = 32;
-const HAIRLINE_DRAW_FRAMES = 24;
-
-/** Per-card beat offsets from phase-3 start (frame 80) + stagger·index.
- *  Name → +0, hairline → +20, role → +40, bio → +80 (40f after role starts). */
-const BEAT = { name: 0, hairline: 20, role: 40, bio: 80 } as const;
+/** 4-phase budget (60fps). Sum = 840 = 14s.
+ *   1.   0–30   eyebrow + heading
+ *   2.  30–120  two member rows stagger in (avatar + name + role + bullets)
+ *   3. 120–300  per-member bullet stagger
+ *   4. 300–840  hold */
+const PHASES = [30, 90, 180, 540] as const;
+const ROW_STAGGER = 24;
+const BULLET_STAGGER = 12;
+/** Avatar diameter. */
+const AVATAR_SIZE = 180;
+/** Avatar border width in px — black ring around the circle. */
+const AVATAR_BORDER = 3;
+/** Horizontal gap between avatar and text column. */
+const AVATAR_GAP = 56;
+/** Vertical gap between the two member rows. */
+const ROW_GAP = 72;
 
 const TEAM = [
   {
     name: "Shree Chaturvedi",
     role: "PRODUCT ARCHITECT",
-    bio: "Led the agentic orchestration layer, preprocessing FSM, and UI system.",
+    avatar: "team/shree.jpeg",
+    bullets: [
+      "Designed the 6-phase workflow and the LangGraph state machine that drives it.",
+      "Built the preprocessing FSM and the approval-gate UX across every phase.",
+      "Owns the design system — shadcn/ui, Tailwind tokens, project-theme layer.",
+    ],
   },
   {
     name: "Ayush Yadav",
     role: "LEAD ENGINEER",
-    bio: "Built the notebook runtime, sandbox execution, and evaluation pipeline.",
+    avatar: "team/ayush.jpeg",
+    bullets: [
+      "Built the Monaco + Jedi notebook runtime with live WebSocket sync.",
+      "Stood up the Docker sandbox — read-only rootfs, non-root user, CPU / memory limits.",
+      "Wrote the eval runner and the Optuna study streaming UI.",
+    ],
   },
 ] as const;
 
 type FourPhases = [PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo];
-type TwoCards = [StaggeredItem, StaggeredItem];
+type TwoRows = [StaggeredItem, StaggeredItem];
 
 const HEADING_STYLE: React.CSSProperties = {
-  ...SERIF_FONT,
-  fontSize: 40,
-  letterSpacing: "0em",
-  lineHeight: 1.25,
-  maxWidth: 1200,
-  textWrap: "balance",
+  ...TITLE_FONT,
+  fontSize: 56,
+  letterSpacing: "-0.02em",
+  lineHeight: 1.1,
+  maxWidth: 1400,
 };
+
 const NAME_STYLE: React.CSSProperties = {
   ...TITLE_FONT,
-  fontSize: 36,
-  lineHeight: 1.15,
-  letterSpacing: "-0.01em",
+  fontSize: 52,
+  letterSpacing: "-0.02em",
+  lineHeight: 1.1,
 };
+
 const ROLE_STYLE: React.CSSProperties = {
   ...REGULAR_FONT,
   fontWeight: 600,
-  fontSize: 14,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-  opacity: 0.85,
-  lineHeight: 1.2,
-  minHeight: 18,
-};
-const BIO_STYLE: React.CSSProperties = {
-  ...REGULAR_FONT,
   fontSize: 18,
-  lineHeight: 1.45,
-  marginTop: 16,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  lineHeight: 1.2,
+  marginTop: 10,
+  minHeight: 22,
 };
-const CARDS_ROW_STYLE: React.CSSProperties = {
-  position: "absolute",
-  top: "55%",
-  left: 0,
-  right: 0,
-  transform: "translateY(-50%)",
-  display: "flex",
-  gap: CARD_GAP,
-  justifyContent: "center",
-  alignItems: "flex-start",
-  paddingInline: 96,
+
+const BULLET_STYLE: React.CSSProperties = {
+  ...REGULAR_FONT,
+  fontWeight: 500,
+  fontSize: 24,
+  lineHeight: 1.5,
+  letterSpacing: "-0.005em",
 };
 
 /**
- * TeamSlide — 14s (840f) credits slide. Names fade in (never typewriter),
- * role eyebrows type at LABEL_RATE in Plus Jakarta 600 uppercase (not
- * monospace), and a 32px animated hairline separates name from role inside
- * each app-treatment card.
+ * TeamSlide — 14s (840f). Two engineers, side-by-side rows, avatar left /
+ * text right. No card chrome — the slide breathes. Bigger type than the
+ * prior card-treatment version; suitable for 1920 × 1080 projection.
  */
 export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
-  const [, pCards] = useTimeline([...PHASES]) as FourPhases;
+  const [, pRows] = useTimeline([...PHASES]) as FourPhases;
   const c = COLORS[theme];
 
-  const cards = useStaggeredFadeIn(TEAM.length, {
-    step: CARD_STAGGER,
-    startDelay: pCards.start,
+  const rows = useStaggeredFadeIn(TEAM.length, {
+    step: ROW_STAGGER,
+    startDelay: pRows.start,
     translateY: 24,
     damping: 200,
-  }) as TwoCards;
+  }) as TwoRows;
 
   const heading = useFadeIn({ translateY: 8, delay: 0 });
 
   return (
     <SlideShell theme={theme} eyebrow="BUILT BY" pageNumber="03 / 07">
-      {/* Phase 1 — serif heading. */}
       <div
         style={{
           ...HEADING_STYLE,
           color: c.WORD_COLOR_ON_BG_APPEARED,
           opacity: heading.opacity,
           transform: heading.transform,
+          marginBottom: 64,
         }}
       >
-        Shipped by two engineers across four sprints.
+        Two engineers, four sprints.
       </div>
 
-      {/* Phases 2–3 — two member cards, centered around ~55% vertical. */}
-      <div style={CARDS_ROW_STYLE}>
+      <div style={{ display: "flex", flexDirection: "column", gap: ROW_GAP }}>
         {TEAM.map((member, i) => (
-          <MemberCard
+          <MemberRow
             key={member.name}
             theme={theme}
             member={member}
-            enter={cards[i] as StaggeredItem}
+            enter={rows[i] as StaggeredItem}
             index={i}
           />
         ))}
@@ -142,81 +136,109 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   );
 };
 
-/** Per-member card. Name fades (NOT TypeOnText — letter-by-letter feels like
- *  a chyron flash on short strings); hairline animates; role types; bio fades. */
-const MemberCard: React.FC<{
+const MemberRow: React.FC<{
   theme: Theme;
   member: (typeof TEAM)[number];
   enter: StaggeredItem;
   index: number;
 }> = ({ theme, member, enter, index }) => {
   const c = COLORS[theme];
-  // Phase-3 begins at frame 80; each card's internal reveal trails by CARD_STAGGER
-  // so the cadence matches the entry stagger.
-  const base = 80 + index * CARD_STAGGER;
-  const name = useFadeIn({ translateY: 8, delay: base + BEAT.name });
-  const bio = useFadeIn({ translateY: 6, delay: base + BEAT.bio });
+  // Phase-3 begins at frame 120; each row's internal reveal trails by
+  // ROW_STAGGER so the cadence matches the row entry.
+  const base = 120 + index * ROW_STAGGER;
+
+  const bullets = useStaggeredFadeIn(member.bullets.length, {
+    step: BULLET_STAGGER,
+    startDelay: base + 60,
+    translateY: 6,
+    damping: 200,
+  });
 
   return (
     <div
       style={{
-        minWidth: CARD_MIN_WIDTH,
-        maxWidth: CARD_MIN_WIDTH,
-        padding: CARD_PADDING,
-        borderRadius: CARD_RADIUS,
-        background: c.BACKGROUND_ELEVATED,
-        border: `1px solid ${c.BORDER_COLOR}`,
-        boxShadow: CARD_SHADOW,
+        display: "flex",
+        alignItems: "center",
+        gap: AVATAR_GAP,
         opacity: enter.opacity,
         transform: enter.transform,
       }}
     >
+      {/* Circular avatar with black border. */}
       <div
         style={{
-          ...NAME_STYLE,
-          color: c.WORD_COLOR_ON_BG_APPEARED,
-          opacity: name.opacity,
-          transform: name.transform,
+          flexShrink: 0,
+          width: AVATAR_SIZE,
+          height: AVATAR_SIZE,
+          borderRadius: "50%",
+          overflow: "hidden",
+          border: `${AVATAR_BORDER}px solid ${c.WORD_COLOR_ON_BG_APPEARED}`,
+          boxSizing: "content-box",
         }}
       >
-        {member.name}
-      </div>
-
-      <div style={{ marginTop: 20, marginBottom: 20 }}>
-        <MotionLine
-          x1={0}
-          y1={0}
-          x2={HAIRLINE_WIDTH}
-          y2={0}
-          delay={base + BEAT.hairline}
-          durationInFrames={HAIRLINE_DRAW_FRAMES}
-          color={c.BORDER_COLOR}
-          svgWidth={HAIRLINE_WIDTH}
-          svgHeight={2}
+        <Img
+          src={staticFile(member.avatar)}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
         />
       </div>
 
-      {/* Role eyebrow — Plus Jakarta 600 uppercase tracking-wider, typed at
-          LABEL_RATE. Not `EyebrowLabel`: we want the typewriter to own the
-          motion, not a second fade stacked on top. */}
-      <div style={{ ...ROLE_STYLE, color: c.WORD_COLOR_ON_BG_GREYED }}>
-        <TypeOnText
-          text={member.role}
-          rate={LABEL_RATE}
-          delay={base + BEAT.role}
-          caret={false}
-        />
-      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ ...NAME_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
+          {member.name}
+        </div>
 
-      <div
-        style={{
-          ...BIO_STYLE,
-          color: c.WORD_COLOR_ON_BG_GREYED,
-          opacity: bio.opacity,
-          transform: bio.transform,
-        }}
-      >
-        {member.bio}
+        <div style={{ ...ROLE_STYLE, color: c.WORD_COLOR_ON_BG_GREYED }}>
+          <TypeOnText
+            text={member.role}
+            rate={LABEL_RATE}
+            delay={base + 30}
+            caret={false}
+          />
+        </div>
+
+        <ul
+          style={{
+            listStyle: "none",
+            padding: 0,
+            margin: "24px 0 0 0",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          {member.bullets.map((text, bi) => {
+            const b = bullets[bi];
+            return (
+              <li
+                key={text}
+                style={{
+                  ...BULLET_STYLE,
+                  color: c.WORD_COLOR_ON_BG_APPEARED,
+                  opacity: b?.opacity ?? 0,
+                  transform: b?.transform ?? "none",
+                  display: "flex",
+                  gap: 16,
+                }}
+              >
+                <span
+                  style={{
+                    color: c.WORD_COLOR_ON_BG_GREYED,
+                    lineHeight: 1.5,
+                    flexShrink: 0,
+                  }}
+                >
+                  —
+                </span>
+                <span style={{ flex: 1 }}>{text}</span>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );

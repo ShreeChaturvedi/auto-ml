@@ -8,26 +8,30 @@ import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
 import type { StaggeredItem } from "../../primitives/useStaggeredFadeIn";
 import { useStaggeredFadeIn } from "../../primitives/useStaggeredFadeIn";
-import type { PhaseInfo } from "../../primitives/useTimeline";
-import { useTimeline } from "../../primitives/useTimeline";
 import type { SlideBodyProps } from "./index";
 
-/** 4-phase budget (60fps). Sum = 840 = 14s.
- *   1.   0–30   eyebrow + heading
- *   2.  30–120  two member rows stagger in (avatar + name + role + bullets)
- *   3. 120–300  per-member bullet stagger
- *   4. 300–840  hold */
-const PHASES = [30, 90, 180, 540] as const;
-const ROW_STAGGER = 24;
-const BULLET_STAGGER = 12;
-/** Avatar diameter. */
+// -----------------------------------------------------------------------------
+// Timing (60fps). Total slide 14s / 840f.
+//
+// Per-row reveal order (makes sense as a reading order):
+//   1. row fades in       — avatar + name visible (the row's opacity carries it)
+//   2. role types in      — Plus Jakarta 600 uppercase, LABEL_RATE (3f/char)
+//   3. bullets fade in    — after the role finishes typing; 10f stagger between
+//
+// Row 1 trails row 0 by ROW_STAGGER so the cadence is rhythmic.
+// -----------------------------------------------------------------------------
+const ROW_START_BASE = 30;
+const ROW_STAGGER = 36;
+const ROLE_AFTER_ROW = 30;
+/** Longest role "PRODUCT ARCHITECT" is 17 chars × LABEL_RATE (3f) = 51f.
+ *  Give bullets a small breath after typing completes. */
+const BULLETS_AFTER_ROLE = 55;
+const BULLET_STAGGER = 10;
+
 const AVATAR_SIZE = 180;
-/** Avatar border width in px — black ring around the circle. */
 const AVATAR_BORDER = 3;
-/** Horizontal gap between avatar and text column. */
 const AVATAR_GAP = 56;
-/** Vertical gap between the two member rows. */
-const ROW_GAP = 72;
+const ROW_GAP = 80;
 
 const TEAM = [
   {
@@ -37,7 +41,7 @@ const TEAM = [
     bullets: [
       "Designed the 6-phase workflow and the LangGraph state machine that drives it.",
       "Built the preprocessing FSM and the approval-gate UX across every phase.",
-      "Owns the design system — shadcn/ui, Tailwind tokens, project-theme layer.",
+      "Built the UI system — shadcn/ui components, Tailwind theme tokens, project-theme hooks.",
     ],
   },
   {
@@ -52,15 +56,11 @@ const TEAM = [
   },
 ] as const;
 
-type FourPhases = [PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo];
-type TwoRows = [StaggeredItem, StaggeredItem];
-
 const HEADING_STYLE: React.CSSProperties = {
   ...TITLE_FONT,
-  fontSize: 56,
-  letterSpacing: "-0.02em",
-  lineHeight: 1.1,
-  maxWidth: 1400,
+  fontSize: 88,
+  letterSpacing: "-0.025em",
+  lineHeight: 1.05,
 };
 
 const NAME_STYLE: React.CSSProperties = {
@@ -74,10 +74,10 @@ const ROLE_STYLE: React.CSSProperties = {
   ...REGULAR_FONT,
   fontWeight: 600,
   fontSize: 18,
-  letterSpacing: "0.1em",
+  letterSpacing: "0.14em",
   textTransform: "uppercase",
   lineHeight: 1.2,
-  marginTop: 10,
+  marginTop: 12,
   minHeight: 22,
 };
 
@@ -90,20 +90,19 @@ const BULLET_STYLE: React.CSSProperties = {
 };
 
 /**
- * TeamSlide — 14s (840f). Two engineers, side-by-side rows, avatar left /
- * text right. No card chrome — the slide breathes. Bigger type than the
- * prior card-treatment version; suitable for 1920 × 1080 projection.
+ * TeamSlide — 14s (840f). Two engineers, stacked rows, avatar left / text
+ * right. No card chrome. Reveal order: name+avatar → role types → bullets
+ * stagger after role completes.
  */
 export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
-  const [, pRows] = useTimeline([...PHASES]) as FourPhases;
   const c = COLORS[theme];
 
   const rows = useStaggeredFadeIn(TEAM.length, {
     step: ROW_STAGGER,
-    startDelay: pRows.start,
+    startDelay: ROW_START_BASE,
     translateY: 24,
     damping: 200,
-  }) as TwoRows;
+  });
 
   const heading = useFadeIn({ translateY: 8, delay: 0 });
 
@@ -115,10 +114,10 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           color: c.WORD_COLOR_ON_BG_APPEARED,
           opacity: heading.opacity,
           transform: heading.transform,
-          marginBottom: 64,
+          marginBottom: 56,
         }}
       >
-        Two engineers, four sprints.
+        The Team
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: ROW_GAP }}>
@@ -128,7 +127,7 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
             theme={theme}
             member={member}
             enter={rows[i] as StaggeredItem}
-            index={i}
+            rowStart={ROW_START_BASE + i * ROW_STAGGER}
           />
         ))}
       </div>
@@ -140,16 +139,15 @@ const MemberRow: React.FC<{
   theme: Theme;
   member: (typeof TEAM)[number];
   enter: StaggeredItem;
-  index: number;
-}> = ({ theme, member, enter, index }) => {
+  rowStart: number;
+}> = ({ theme, member, enter, rowStart }) => {
   const c = COLORS[theme];
-  // Phase-3 begins at frame 120; each row's internal reveal trails by
-  // ROW_STAGGER so the cadence matches the row entry.
-  const base = 120 + index * ROW_STAGGER;
+  const roleDelay = rowStart + ROLE_AFTER_ROW;
+  const bulletStart = roleDelay + BULLETS_AFTER_ROLE;
 
   const bullets = useStaggeredFadeIn(member.bullets.length, {
     step: BULLET_STAGGER,
-    startDelay: base + 60,
+    startDelay: bulletStart,
     translateY: 6,
     damping: 200,
   });
@@ -164,7 +162,6 @@ const MemberRow: React.FC<{
         transform: enter.transform,
       }}
     >
-      {/* Circular avatar with black border. */}
       <div
         style={{
           flexShrink: 0,
@@ -196,7 +193,7 @@ const MemberRow: React.FC<{
           <TypeOnText
             text={member.role}
             rate={LABEL_RATE}
-            delay={base + 30}
+            delay={roleDelay}
             caret={false}
           />
         </div>
@@ -208,7 +205,7 @@ const MemberRow: React.FC<{
             margin: "24px 0 0 0",
             display: "flex",
             flexDirection: "column",
-            gap: 10,
+            gap: 12,
           }}
         >
           {member.bullets.map((text, bi) => {
@@ -222,18 +219,21 @@ const MemberRow: React.FC<{
                   opacity: b?.opacity ?? 0,
                   transform: b?.transform ?? "none",
                   display: "flex",
-                  gap: 16,
+                  alignItems: "baseline",
+                  gap: 18,
                 }}
               >
                 <span
+                  aria-hidden="true"
                   style={{
-                    color: c.WORD_COLOR_ON_BG_GREYED,
-                    lineHeight: 1.5,
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: c.WORD_COLOR_ON_BG_APPEARED,
                     flexShrink: 0,
+                    transform: "translateY(-4px)",
                   }}
-                >
-                  —
-                </span>
+                />
                 <span style={{ flex: 1 }}>{text}</span>
               </li>
             );

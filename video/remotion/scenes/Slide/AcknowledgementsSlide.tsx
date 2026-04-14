@@ -262,18 +262,21 @@ const AdvisorRow: React.FC<{
                   opacity: b?.opacity ?? 0,
                   transform: b?.transform ?? "none",
                   display: "flex",
-                  gap: 16,
+                  alignItems: "baseline",
+                  gap: 18,
                 }}
               >
                 <span
+                  aria-hidden="true"
                   style={{
-                    color: c.WORD_COLOR_ON_BG_GREYED,
-                    lineHeight: 1.5,
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: c.WORD_COLOR_ON_BG_APPEARED,
                     flexShrink: 0,
+                    transform: "translateY(-4px)",
                   }}
-                >
-                  —
-                </span>
+                />
                 <span style={{ flex: 1 }}>{text}</span>
               </li>
             );

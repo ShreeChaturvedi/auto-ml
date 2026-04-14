@@ -8,39 +8,17 @@ import { useFadeIn } from "../../helpers/useFadeIn";
 import { AnimatedLogoMark } from "../../primitives/AnimatedLogoMark";
 import { MiamiMark } from "../../primitives/MiamiMark";
 import { SlideShell } from "../../primitives/SlideShell";
-import type { PhaseInfo } from "../../primitives/useTimeline";
-import { useTimeline } from "../../primitives/useTimeline";
 import type { SlideBodyProps } from "./index";
 
 /**
- * 6-phase frame budget (60fps). Sum = 540 = 9s.
- *
- *   1. 0–15    Hero gradient bloom (SlideShell static; handled by SlideShell)
- *   2. 15–95   Product "A" builds (24 + 24 + 24 + 10 frames internally)
- *   3. 95–155  Wordmark settle
- *   4. 155–215 Tagline settle
- *   5. 215–275 Meta line + Miami mark fade-in
- *   6. 275–540 Hold
- */
-const PHASES = [15, 80, 60, 60, 60, 265] as const;
-
-type SixPhases = [
-  PhaseInfo, // p1 — gradient
-  PhaseInfo, // p2 — logo mark
-  PhaseInfo, // p3 — wordmark
-  PhaseInfo, // p4 — tagline
-  PhaseInfo, // p5 — meta line + Miami
-  PhaseInfo, // p6 — hold
-];
-
-const LOGO_SIZE = 256;
-const MIAMI_MARK_SIZE = 32;
-const WORDMARK_FONT_SIZE = 120;
-const TAGLINE_FONT_SIZE = 34;
-const META_FONT_SIZE = 14;
-
-/**
  * TitleSlide — brand reveal (9s / 540f).
+ *
+ * Overlapping entry cadence (all delays in frames):
+ *   - Logo draw:  starts at  5, completes  ~47 (42f internal, 2× faster than v1)
+ *   - Wordmark:   starts at 25 (while logo's right leg is drawing)
+ *   - Tagline:    starts at 45 (right as apex lands)
+ *   - Meta + Miami: starts at 70
+ *   - Hold:       ~95 → 540
  *
  * The only slide where both the product "A" mark and the Miami institutional
  * mark perform. The product mark is the ONLY element that performs a draw
@@ -48,31 +26,39 @@ const META_FONT_SIZE = 14;
  * carries solid ACCENT_COLOR — brand ambience comes from the 6% blue hero
  * gradient laid down by `SlideShell`.
  */
+const LOGO_DELAY = 5;
+const WORDMARK_DELAY = 25;
+const TAGLINE_DELAY = 45;
+const META_DELAY = 70;
+
+const LOGO_SIZE = 256;
+const MIAMI_MARK_SIZE = 32;
+const WORDMARK_FONT_SIZE = 120;
+const TAGLINE_FONT_SIZE = 34;
+const META_FONT_SIZE = 14;
+const META_LINE_GAP = 4;
+
 export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
-  const [, pLogo, pWordmark, pTagline, pMeta] = useTimeline([...PHASES]) as SixPhases;
   const c = COLORS[theme];
 
-  // Phase 3 — wordmark settle. Single spring, no letter-spacing interpolation.
   const wordmarkFade = useFadeIn({
     translateY: 16,
     damping: SPRING_SETTLE.damping,
-    delay: pWordmark.start,
+    delay: WORDMARK_DELAY,
   });
 
-  // Phase 4 — tagline settle.
   const taglineFade = useFadeIn({
     translateY: 8,
     damping: SPRING_SETTLE.damping,
-    delay: pTagline.start,
+    delay: TAGLINE_DELAY,
   });
 
-  // Phase 5 — meta line fade-in. Miami mark has its own internal fade-in.
-  const metaFade = useFadeIn({ translateY: 4, delay: pMeta.start });
+  const metaFade = useFadeIn({ translateY: 4, delay: META_DELAY });
 
   return (
     <SlideShell theme={theme} gradient>
-      {/* Absolute-fill wrapper breaks out of SlideShell's `paddingLeft` inset so
-       *  the centered composition ignores the left content column. */}
+      {/* Absolute-fill wrapper breaks out of SlideShell's `paddingLeft` inset
+       *  so the centered composition ignores the left content column. */}
       <AbsoluteFill
         style={{
           alignItems: "center",
@@ -81,17 +67,14 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           pointerEvents: "none",
         }}
       >
-        {/* Product "A" mark — dual-technique draw + spring apex. */}
         <AnimatedLogoMark
           size={LOGO_SIZE}
-          delay={pLogo.start}
+          delay={LOGO_DELAY}
           theme={theme}
           mode="draw"
           color={c.WORD_COLOR_ON_BG_APPEARED}
         />
 
-        {/* Wordmark — Plus Jakarta 700, 120px, -0.025em tracking, no-wrap.
-         *  Total width ≈ 1390px, inside 1728px usable canvas. */}
         <div
           style={{
             ...TITLE_FONT,
@@ -108,7 +91,6 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           Agentic AutoML Platform
         </div>
 
-        {/* Tagline — Instrument Serif 400, 34px, center-aligned, capped width. */}
         <div
           style={{
             ...SERIF_FONT,
@@ -127,9 +109,10 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
         </div>
       </AbsoluteFill>
 
-      {/* Meta line — bottom-center. Plus Jakarta 500 uppercase, 14px tracking-wider.
-       *  NOT EyebrowLabel (which forces weight 600). Miami M replaces the word
-       *  "MIAMI UNIVERSITY" — the mark IS the acknowledgement. */}
+      {/* Meta block — bottom-center. Miami M + institutional attribution on
+       *  two lines. "Department of Computer Science & Software Engineering"
+       *  is the VERY IMPORTANT part — this is a CSE capstone, not generic
+       *  CEC branding. */}
       <div
         style={{
           position: "absolute",
@@ -139,22 +122,37 @@ export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           opacity: metaFade.opacity,
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: 16,
         }}
       >
-        <MiamiMark size={MIAMI_MARK_SIZE} delay={pMeta.start} />
-        <div
-          style={{
-            ...REGULAR_FONT,
-            fontWeight: 500,
-            fontSize: META_FONT_SIZE,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-            color: c.WORD_COLOR_ON_BG_GREYED,
-            lineHeight: 1.2,
-          }}
-        >
-          CSE 449 Senior Design Capstone · April 2026
+        <MiamiMark size={MIAMI_MARK_SIZE} delay={META_DELAY} />
+        <div style={{ display: "flex", flexDirection: "column", gap: META_LINE_GAP }}>
+          <div
+            style={{
+              ...REGULAR_FONT,
+              fontWeight: 600,
+              fontSize: META_FONT_SIZE,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: c.WORD_COLOR_ON_BG_APPEARED,
+              lineHeight: 1.2,
+            }}
+          >
+            Miami University · College of Engineering and Computing
+          </div>
+          <div
+            style={{
+              ...REGULAR_FONT,
+              fontWeight: 500,
+              fontSize: META_FONT_SIZE,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: c.WORD_COLOR_ON_BG_GREYED,
+              lineHeight: 1.2,
+            }}
+          >
+            Department of Computer Science and Software Engineering
+          </div>
         </div>
       </div>
     </SlideShell>

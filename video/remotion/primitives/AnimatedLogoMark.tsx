@@ -21,11 +21,12 @@ export type AnimatedLogoMarkProps = {
   mode?: "draw" | "static";
 };
 
-/** Per-element draw durations (frames) for the sequential animation. */
-const LEG_FRAMES = 24;
-const CROSSBAR_FRAMES = 24;
-const RIGHT_LEG_FRAMES = 24;
-const APEX_FRAMES = 10;
+/** Per-element draw durations (frames) for the sequential animation.
+ *  Tightened ~2× from the original 24/24/24/10 — the original felt syrupy. */
+const LEG_FRAMES = 12;
+const CROSSBAR_FRAMES = 12;
+const RIGHT_LEG_FRAMES = 12;
+const APEX_FRAMES = 6;
 
 /** Right leg is held at 40% opacity throughout (matches source SVG). */
 const RIGHT_LEG_OPACITY = 0.4;
@@ -55,10 +56,10 @@ const computeDrawOffset = (
  * (lines 22–27); the viewBox is normalized to 0 0 32 32.
  *
  * Draw sequence (mode="draw", timings relative to `delay`):
- *   - 0..24:  Left leg draws in (EASE_OUT)
- *   - 24..48: Crossbar draws in (EASE_OUT)
- *   - 48..72: Right leg draws in (EASE_OUT), held at 40% opacity
- *   - 72..82: Apex circle scales 0→1 via SPRING_HERO + opacity 0→1
+ *   - 0..12:  Left leg draws in (EASE_OUT)
+ *   - 12..24: Crossbar draws in (EASE_OUT)
+ *   - 24..36: Right leg draws in (EASE_OUT), held at 40% opacity
+ *   - 36..42: Apex circle scales 0→1 via SPRING_HERO + opacity 0→1
  *
  * Static mode renders everything fully visible with no animation.
  */

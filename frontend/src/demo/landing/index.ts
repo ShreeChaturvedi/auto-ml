@@ -1,1 +1,2 @@
-export { DemoWorkspace, resetLandingDemoState } from './DemoWorkspace';
+export { DemoWorkspace } from './DemoWorkspace';
+export { resetLandingDemoState } from './demoState';

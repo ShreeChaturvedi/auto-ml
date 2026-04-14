@@ -103,6 +103,10 @@ declare module '@frontend/lib/api/client' {
   export function apiFetch(path: string, init?: RequestInit): Promise<unknown>;
 }
 
+declare module '@frontend/lib/demoMode' {
+  export function enableDemoMode(): void;
+}
+
 declare module '@frontend/demo/landing' {
   import type { ComponentType } from 'react';
 
@@ -111,4 +115,21 @@ declare module '@frontend/demo/landing' {
   }>;
 
   export function resetLandingDemoState(): void;
+}
+
+declare module '@frontend/stores/projectStore' {
+  export const useProjectStore: {
+    getState(): {
+      getActiveProject: () => { currentPhase?: string } | undefined;
+    };
+  };
+}
+
+declare module '@frontend/stores/dataStore' {
+  export const useDataStore: {
+    getState(): {
+      activeFileTabId: string | null;
+      fileTabType: string | null;
+    };
+  };
 }

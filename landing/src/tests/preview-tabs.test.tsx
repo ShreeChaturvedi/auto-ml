@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { DemoWorkspace, resetLandingDemoState } from '@frontend/demo/landing';
+import { useProjectStore } from '@frontend/stores/projectStore';
+import { useDataStore } from '@frontend/stores/dataStore';
 
 describe('DemoWorkspace navigation', () => {
   const fetchMock = vi.fn();
@@ -15,21 +17,77 @@ describe('DemoWorkspace navigation', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the training surface through the real app shell', async () => {
-    render(<DemoWorkspace initialPhase="training" />);
-    expect(await screen.findByText(/training in progress/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/NovaForest Classifier/i).length).toBeGreaterThan(0);
-  });
+  it('overrides stale persisted explorer tabs with the seeded demo file view', async () => {
+    window.localStorage.setItem(
+      'automl-data-viewer-tabs-v1',
+      JSON.stringify({
+        state: {
+          openFileTabs: [{ id: 'artifact-stale', type: 'artifact' }],
+          activeFileTabId: 'artifact-stale',
+          fileTabType: 'artifact',
+        },
+        version: 1,
+      }),
+    );
 
-  it('navigates between phases without issuing backend fetches', async () => {
+    resetLandingDemoState();
     render(<DemoWorkspace initialPhase="data-viewer" />);
 
-    expect(await screen.findByText(/column overview/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('workflow-phase-button-feature-engineering'));
-    expect(await screen.findByText(/Build Enabled Features/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('workflow-phase-button-data-viewer')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useDataStore.getState().fileTabType).toBe('file');
+      expect(useDataStore.getState().activeFileTabId).toBe('landing-demo-file');
+    });
+  });
 
-    fireEvent.click(screen.getByTestId('workflow-phase-button-experiments'));
-    expect(await screen.findByText(/NovaForest Classifier/i)).toBeInTheDocument();
+  it('defaults the landing demo to the data upload phase', async () => {
+    render(<DemoWorkspace />);
+
+    expect(await screen.findByTestId('workflow-phase-button-upload')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('upload');
+    });
+  });
+
+  it('renders the training surface through the real app shell', async () => {
+    render(<DemoWorkspace initialPhase="training" />);
+    expect(await screen.findByText(/NovaCraft Growth/i)).toBeInTheDocument();
+    expect(screen.getByTestId('workflow-phase-button-training')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('training');
+    });
+  });
+
+  it('does not stall feature engineering on notebook preparation in demo mode', async () => {
+    render(<DemoWorkspace initialPhase="feature-engineering" />);
+
+    expect(await screen.findByTestId('workflow-phase-button-feature-engineering')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('feature-engineering');
+      expect(screen.queryByText(/Preparing feature notebook/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('does not stall training on notebook preparation in demo mode', async () => {
+    render(<DemoWorkspace initialPhase="training" />);
+
+    expect(await screen.findByTestId('workflow-phase-button-training')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('training');
+      expect(screen.queryByText(/Preparing training notebook/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('renders the landing demo as an inert preview shell', async () => {
+    render(<DemoWorkspace initialPhase="data-viewer" />);
+
+    const demoRoot = await screen.findByTestId('landing-demo-workspace');
+    expect(demoRoot).toHaveStyle({ pointerEvents: 'none' });
+    expect(await screen.findByTestId('workflow-phase-button-data-viewer')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('data-viewer');
+    });
+
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

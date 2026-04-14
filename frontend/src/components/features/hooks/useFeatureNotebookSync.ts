@@ -4,6 +4,7 @@ import { useFeatureStore } from '@/stores/featureStore';
 import type { PipelineVersion } from '@/types/feature';
 import type { Notebook } from '@/types/notebook';
 import * as notebooksApi from '@/lib/api/notebooks';
+import { isDemoMode } from '@/lib/demoMode';
 
 interface UseFeatureNotebookSyncOptions {
   projectId: string;
@@ -73,6 +74,15 @@ export function useFeatureNotebookSync({
         activeVersionIdRef.current = null;
         if (!cancelled) {
           setNotebookId(null);
+          setIsReady(true);
+        }
+        return;
+      }
+
+      if (isDemoMode()) {
+        const fallbackNotebookId = currentVersionNotebookId ?? `demo-${currentVersionId}`;
+        if (!cancelled) {
+          setNotebookId(fallbackNotebookId);
           setIsReady(true);
         }
         return;

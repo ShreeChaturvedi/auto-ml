@@ -26,6 +26,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as notebooksApi from '@/lib/api/notebooks';
 import type { Notebook } from '@/types/notebook';
 import type { WorkbookEntry } from '@/types/workbook';
+import { isDemoMode } from '@/lib/demoMode';
 
 const TRAINING_PHASE = 'training' as const;
 
@@ -136,6 +137,17 @@ export function useTrainingNotebookSync({
         resolvedNotebookIdRef.current = null;
         if (!cancelled) {
           setNotebookId(null);
+          setIsReady(true);
+        }
+        return;
+      }
+
+      if (isDemoMode()) {
+        const fallbackNotebookId = workbookNotebookId ?? `training-demo-${workbookId}`;
+        resolvedNotebookIdRef.current = fallbackNotebookId;
+        setWorkbookNotebookId(workbookId, fallbackNotebookId);
+        if (!cancelled) {
+          setNotebookId(fallbackNotebookId);
           setIsReady(true);
         }
         return;

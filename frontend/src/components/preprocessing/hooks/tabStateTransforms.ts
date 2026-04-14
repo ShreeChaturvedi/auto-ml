@@ -1,7 +1,6 @@
 import {
   createEmptyTabSnapshot,
-  createWorkbookId,
-  nextWorkbookName
+  createWorkbookId
 } from '../preprocessingTabUtils';
 import type { PreprocessingWorkbook, PreprocessingTabSnapshot } from '../preprocessingTabUtils';
 
@@ -29,10 +28,10 @@ export function setTabNotebookBinding(
   return updateTab(tabs, tabId, (tab) => ({ ...tab, notebookId }));
 }
 
-export function createNewTab(tabs: PreprocessingWorkbook[]): PreprocessingWorkbook {
+export function createNewTab(name: string): PreprocessingWorkbook {
   return {
     id: createWorkbookId(),
-    name: nextWorkbookName(tabs),
+    name,
     notebookId: null,
     snapshot: createEmptyTabSnapshot(),
     storageVersion: 0

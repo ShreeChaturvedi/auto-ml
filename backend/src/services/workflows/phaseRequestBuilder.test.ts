@@ -441,6 +441,49 @@ describe('resolveTrainingLifecycleNode', () => {
     expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('generate_code');
   });
 
+  it('keeps the lifecycle at generate_code after a failed training run_cell so repair/install logic can execute', () => {
+    const state = createState({
+      iteration: 1,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        currentNode: 'generate_code'
+      },
+      toolCallHistory: [
+        {
+          id: 'write-1',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-1',
+                segments: [{ title: 'Cell 1', content: 'from catboost import CatBoostClassifier' }]
+              }
+            }
+          }
+        },
+        { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } }
+      ],
+      toolResultHistory: [
+        { id: 'write-1', tool: 'write_cell', output: { cellId: 'cell-1' } },
+        {
+          id: 'run-1',
+          tool: 'run_cell',
+          output: { status: 'error', stderr: "ModuleNotFoundError: No module named 'catboost'" }
+        }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('generate_code');
+  });
+
   it('ignores a previously registered model completion when resolving the next write_code stage', () => {
     const state = createState({
       iteration: 1,
@@ -491,6 +534,78 @@ describe('resolveTrainingLifecycleNode', () => {
         { id: 'run-1', tool: 'run_cell', output: { status: 'success', stdout: '__TRAIN_COMPLETE__|{"rmse":0.5}' } },
         { id: 'register-1', tool: 'register_model', output: { experimentId: 'exp-1', modelId: 'model-1', status: 'registered' } },
         { id: 'write-2', tool: 'write_cell', output: { cellId: 'cell-2' } }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, state.toolResultHistory)).toBe('write_code');
+  });
+
+  it('keeps the active draft in write_code after a successful rerun fixed an earlier dependency failure', () => {
+    const state = createState({
+      iteration: 1,
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        currentNode: 'write_code'
+      },
+      toolCallHistory: [
+        {
+          id: 'write-1',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-1',
+                segments: [
+                  { title: 'Imports', content: 'from catboost import CatBoostClassifier' },
+                  { title: 'Prep', content: 'print(\"prep\")' },
+                  { title: 'Fit', content: 'print(\"fit\")' },
+                  { title: 'Save', content: 'print(\"save\")' }
+                ]
+              }
+            }
+          }
+        },
+        { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } },
+        { id: 'install-1', tool: 'install_package', args: { packageName: 'catboost' } },
+        { id: 'run-2', tool: 'run_cell', args: { cellId: 'cell-1' } },
+        {
+          id: 'write-2',
+          tool: 'write_cell',
+          args: {
+            metadata: {
+              trainingDraft: {
+                draftId: 'draft-1',
+                segments: [
+                  { title: 'Imports', content: 'from catboost import CatBoostClassifier' },
+                  { title: 'Prep', content: 'print(\"prep\")' },
+                  { title: 'Fit', content: 'print(\"fit\")' },
+                  { title: 'Save', content: 'print(\"save\")' }
+                ]
+              }
+            }
+          }
+        },
+        { id: 'run-3', tool: 'run_cell', args: { cellId: 'cell-2' } }
+      ],
+      toolResultHistory: [
+        { id: 'write-1', tool: 'write_cell', output: { cellId: 'cell-1' } },
+        {
+          id: 'run-1',
+          tool: 'run_cell',
+          output: { status: 'error', stderr: "ModuleNotFoundError: No module named 'catboost'" }
+        },
+        { id: 'install-1', tool: 'install_package', output: { success: true, message: 'installed' } },
+        { id: 'run-2', tool: 'run_cell', output: { status: 'success', stdout: 'imports ok' } },
+        { id: 'write-2', tool: 'write_cell', output: { cellId: 'cell-2' } },
+        { id: 'run-3', tool: 'run_cell', output: { status: 'success', stdout: 'prep ok' } }
       ],
       turnStartToolCallCount: 0
     });

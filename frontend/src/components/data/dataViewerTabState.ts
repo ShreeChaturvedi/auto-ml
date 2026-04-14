@@ -19,6 +19,8 @@ export interface ResolveDataViewerSelectionInput {
   queryArtifacts: Pick<QueryArtifact, 'id'>[];
   /** Standalone notebooks scoped to the current project. */
   standaloneNotebooks: Pick<Notebook, 'notebookId'>[];
+  /** Whether the standalone notebook list for this project has been loaded. */
+  notebooksHydrated?: boolean;
   /** The most-recently-active tab id (from zustand persist rehydration). */
   persistedActiveId: string | null;
   /** The most-recently-active tab type (from zustand persist rehydration). */
@@ -48,6 +50,12 @@ function persistedTargetIsValid(
     case 'artifact':
       return input.queryArtifacts.some((a) => a.id === id);
     case 'notebook':
+      if (
+        input.notebooksHydrated === false
+        && input.openTabs.some((tab) => tab.type === 'notebook' && tab.id === id)
+      ) {
+        return true;
+      }
       return input.standaloneNotebooks.some((n) => n.notebookId === id);
     case 'plan':
       // Plan panels are ephemeral and don't map to a persistent entity; treat

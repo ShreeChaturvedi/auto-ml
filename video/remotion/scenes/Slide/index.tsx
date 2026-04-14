@@ -9,6 +9,7 @@ import { HookSlide } from "./HookSlide";
 import { IntroSlide } from "./IntroSlide";
 import { SandboxSlide } from "./SandboxSlide";
 import { TeamSlide } from "./TeamSlide";
+import { TitleSlide } from "./TitleSlide";
 import { ProblemSlide } from "./ProblemSlide";
 
 type SlideSceneType = z.infer<typeof slideScene>;
@@ -48,6 +49,8 @@ const SlideBody: React.FC<{ id: string } & SlideBodyProps> = ({
   switch (id) {
     case "hook":
       return <HookSlide theme={theme} meta={meta} />;
+    case "title":
+      return <TitleSlide theme={theme} meta={meta} />;
     case "intro":
       return <IntroSlide theme={theme} meta={meta} />;
     case "team":

@@ -83,8 +83,47 @@ const resourceLinks = [
     © 2026 Agentic AutoML Platform · All rights reserved.
   </div>
 
-  <h1 class="footer-giant-wordmark" aria-hidden="true">AGENTIC AUTOML</h1>
 </footer>
+
+<div class="footer-giant-wordmark" aria-hidden="true">
+  <svg class="footer-giant-svg" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <linearGradient id="agentic-chase-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1200" y2="0">
+        <stop offset="0%"   stop-color="#fb923c" />
+        <stop offset="25%"  stop-color="#facc15" />
+        <stop offset="55%"  stop-color="#a3e635" />
+        <stop offset="100%" stop-color="#10b981" />
+      </linearGradient>
+
+    </defs>
+
+    <text class="agentic-base"
+          x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+          textLength="1500" lengthAdjust="spacingAndGlyphs"
+          fill="transparent" stroke="hsl(0 0% 18%)" stroke-width="0.5">AUTOML</text>
+
+    <text class="agentic-chaser agentic-halo"
+          x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+          textLength="1500" lengthAdjust="spacingAndGlyphs"
+          stroke-dasharray="24 230"
+          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5"
+          stroke-opacity="0.22">AUTOML</text>
+
+    <text class="agentic-chaser agentic-mid"
+          x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+          textLength="1500" lengthAdjust="spacingAndGlyphs"
+          stroke-dasharray="12 242"
+          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5"
+          stroke-opacity="0.55">AUTOML</text>
+
+    <text class="agentic-chaser agentic-core"
+          x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+          textLength="1500" lengthAdjust="spacingAndGlyphs"
+          stroke-dasharray="6 248"
+          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5"
+          stroke-opacity="1">AUTOML</text>
+  </svg>
+</div>
 
 <style>
   .footer {
@@ -92,8 +131,7 @@ const resourceLinks = [
     margin: 0 auto;
     padding: 80px 32px 48px;
     position: relative;
-    overflow: clip;
-    border-top: 0.8px solid var(--border);
+    /* No clipping: the giant wordmark deliberately bleeds to the viewport edges */
   }
 
   .footer-columns {
@@ -162,7 +200,7 @@ const resourceLinks = [
 
   .footer-copyright {
     padding-top: 24px;
-    border-top: 0.8px solid var(--border);
+    border-top: 0.8px solid hsl(var(--border));
     font-family: 'Geist Mono Variable', monospace;
     font-size: 12px;
     color: var(--text-dim);
@@ -170,18 +208,58 @@ const resourceLinks = [
     margin-bottom: 64px;
   }
 
+  /* Wordmark lives OUTSIDE the footer. Full-viewport width, fixed box height
+     with overflow clipping. The SVG inside is explicitly taller so the top
+     ~65% of the text is visible and the bottom ~35% is clipped. Significantly
+     oversized since the text is now only "AutoML". */
   .footer-giant-wordmark {
-    font-family: 'Inter Variable', sans-serif;
-    font-size: clamp(120px, 18vw, 320px);
-    font-weight: 510;
-    letter-spacing: -0.035em;
-    color: #141415;
-    text-align: center;
-    line-height: 0.9;
-    white-space: nowrap;
+    display: block;
+    width: 100vw;
+    height: 280px;
+    margin: -60px 0 0 0;
+    overflow: hidden;
     user-select: none;
-    margin: 0;
-    position: relative;
-    translate: 0 35%;
+    pointer-events: none;
+  }
+  .footer-giant-svg {
+    display: block;
+    width: 100vw;
+    height: 440px;
+    overflow: visible;
+  }
+  .footer-giant-svg text {
+    font-family: 'Inter Variable', sans-serif;
+    font-weight: 510;
+    font-size: 460px;
+    letter-spacing: -15px;
+    paint-order: stroke;
+  }
+
+  /* Three stacked pulse layers (halo / mid / core) all chase in sync via a
+     shared --chaser-offset custom property. Each layer has a progressively
+     wider dash but they share the same cycle length (254), and each is offset
+     so their dashes stay concentric on the core's dash center — creating a
+     per-pulse "gradient shine" (dim halo → medium ring → bright core). */
+  @property --chaser-offset {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
+  }
+
+  .footer-giant-svg {
+    animation: agentic-chase 2.8s linear infinite;
+  }
+  @keyframes agentic-chase {
+    from { --chaser-offset: 0; }
+    to   { --chaser-offset: -254; }
+  }
+
+  .agentic-core  { stroke-dashoffset: calc(var(--chaser-offset) + 0); }
+  .agentic-mid   { stroke-dashoffset: calc(var(--chaser-offset) + 3); }
+  .agentic-halo  { stroke-dashoffset: calc(var(--chaser-offset) + 9); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .footer-giant-svg { animation: none; }
+    .agentic-chaser   { opacity: 0.4; stroke-dasharray: none; }
   }
 </style>

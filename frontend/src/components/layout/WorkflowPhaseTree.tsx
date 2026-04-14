@@ -18,6 +18,7 @@ import { ChevronRight, Plus } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore } from '@/stores/planChatStore';
+import { useFeatureStore } from '@/stores/featureStore';
 import { useWorkbookRegistryStore, type WorkbookPhase } from '@/stores/workbookRegistryStore';
 import { createWorkbookId, nextWorkbookName } from '@/components/preprocessing/preprocessingTabUtils';
 import type { Phase } from '@/types/phase';
@@ -34,6 +35,7 @@ import { NotebookSubtabs } from './sidebar/NotebookSubtabs';
 import { WorkbookSubtabs } from './sidebar/WorkbookSubtabs';
 import { ModelSubtabs } from './sidebar/ModelSubtabs';
 import { DeploymentSubtabs } from './sidebar/DeploymentSubtabs';
+import { getStoredTrainingActiveWorkbookId } from '@/components/training/trainingWorkbookPersistence';
 
 const EXPANDABLE_PHASES = new Set<Phase>([
   'upload',
@@ -82,6 +84,26 @@ const PLUS_ACTION_PHASES = new Set<Phase>([
   'training',
   'experiments',
 ]);
+
+function getPreferredPhaseWorkbookId(projectId: string, phase: WorkbookPhase): string | undefined {
+  const registryActiveWorkbookId = useWorkbookRegistryStore.getState().activeWorkbookIds[phase];
+  if (registryActiveWorkbookId) {
+    return registryActiveWorkbookId;
+  }
+
+  if (phase === 'feature-engineering') {
+    const featureStore = useFeatureStore.getState();
+    return featureStore.currentVersionId[projectId]
+      ?? featureStore.versions[projectId]?.[0]?.id
+      ?? undefined;
+  }
+
+  if (phase === 'training') {
+    return getStoredTrainingActiveWorkbookId(projectId);
+  }
+
+  return undefined;
+}
 
 // ─── PhaseItem ───────────────────────────────────────────────────────────────
 
@@ -408,6 +430,13 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
     const unlocked = useProjectStore.getState()
       .projects.find((p) => p.id === projectId)?.unlockedPhases;
     if (projectId && unlocked?.includes(phase)) {
+      if (WORKBOOK_PHASES.has(phase)) {
+        const activeWorkbookId = getPreferredPhaseWorkbookId(projectId, phase as WorkbookPhase);
+        if (activeWorkbookId) {
+          navigate(`/project/${projectId}/${phase}?workbook=${activeWorkbookId}`);
+          return;
+        }
+      }
       navigate(`/project/${projectId}/${phase}`);
     }
   }, [projectId, navigate]);

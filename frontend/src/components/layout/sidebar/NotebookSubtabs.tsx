@@ -112,6 +112,7 @@ export function NotebookSubtabs({ projectId }: NotebookSubtabsProps) {
       const nb = await createNotebookApi(projectId, { name, kind: 'standalone' });
       await useNotebookStore.getState().loadNotebooks(projectId);
       setCreateOpen(false);
+      toast.success(`${nb.name} created`);
       useDataStore.getState().openNotebookTab(nb.notebookId);
       if (!isOnDataViewer) {
         navigate(`/project/${projectId}/data-viewer`);

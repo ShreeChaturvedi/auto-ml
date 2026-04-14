@@ -9,7 +9,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import type { SyntaxThemeId } from '@/lib/color/syntaxPalette';
-import { useResolvedEditorTheme } from '@/hooks/useResolvedEditorTheme';
 import { useTheme } from '@/components/theme-provider';
 import { initMonaco } from '@/lib/monaco/preloader';
 import {
@@ -66,8 +65,7 @@ export function usePythonEditor({
   completionOptions = {},
   preloadMonaco = true
 }: UsePythonEditorOptions): UsePythonEditorReturn {
-  const { theme } = useTheme();
-  const resolvedTheme = useResolvedEditorTheme(theme);
+  const { resolvedTheme } = useTheme();
   const { syntaxThemeId } = useProjectThemeColor();
 
   const [localContent, setLocalContent] = useState(content);

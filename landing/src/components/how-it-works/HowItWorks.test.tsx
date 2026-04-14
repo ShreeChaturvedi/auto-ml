@@ -63,6 +63,12 @@ describe('HowItWorks (reduced-motion fallback)', () => {
     expect(items).toHaveLength(PHASE_SCENES.length);
   });
 
+  it('renders only one workspace preview iframe per fallback scene', () => {
+    const { container } = render(<HowItWorks />);
+    const iframes = container.querySelectorAll('iframe');
+    expect(iframes).toHaveLength(PHASE_SCENES.length);
+  });
+
   it('does not render pinned scroll scaffolding (no progressbar, no tabs)', () => {
     render(<HowItWorks />);
     // Reduced-motion branch must not expose the pinned TOC tabs or the

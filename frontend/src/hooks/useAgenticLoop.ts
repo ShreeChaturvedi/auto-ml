@@ -64,6 +64,7 @@ export function useAgenticLoop({
     setIsStreaming(false);
     setError(null);
     setUiSchema(null);
+    setEditingMessageId(null);
   }, [ // eslint-disable-line react-hooks/exhaustive-deps
     messageStorageScope, sessionVersion, cancelCurrentRequest, resetStreamRefs,
     resetToolHistory, setIsStreaming, setError

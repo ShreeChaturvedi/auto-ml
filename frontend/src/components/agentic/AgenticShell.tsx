@@ -129,6 +129,11 @@ export function AgenticShell({
     inputRef: mentionInputRef
   });
 
+  useEffect(() => {
+    setChatInput('');
+    mention.dismiss();
+  }, [storageKey, sessionVersion, mention.dismiss]);
+
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
 
   // Track the latest truthy notebookId in a ref so that when it transitions

@@ -3,50 +3,76 @@
   width: 100%;
   max-width: 1680px;
   margin: 64px auto 0;
-  padding: 0 32px;
+  padding: 0 clamp(32px, 8vw, 96px);
 }
 
-/* Ring wrapper owns the cursor-outline class + ref.
- *
- * CRITICAL: `isolation: isolate` creates a local stacking context. Without
- * it, the cursor-outline `::before` uses `z-index: -1` and slips BEHIND the
- * page body, hiding the glow entirely. With isolation, `z-index: -1` is
- * clamped to this stacking context, so the ring sits behind `.frame` but
- * is still visible where it extends past the frame edge (inset: -24px).
- *
- * We do NOT clip overflow on this wrapper: the `::before` ring (inset:
- * -24px) needs to extend beyond the frame. A defensive `overflow-x: clip`
- * on the body (in theme.css) prevents those few px of overflow from ever
- * creating a horizontal scrollbar. */
 .ringWrapper {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 10;
-  border-radius: 12px;
+  border-radius: 17px;
   isolation: isolate;
 }
 
 .frame {
   position: absolute;
-  inset: 0;
+  inset: 1px;
   background: var(--surface-0);
-  border: 0.8px solid hsl(var(--border-strong));
-  border-radius: 12px;
+  border: 1px solid hsl(0 0% 20%);
+  border-radius: 16px;
   overflow: hidden;
   isolation: isolate;
 }
 
-/* Pre-blurred outer glow PNG (deferred to Gemini). Lives INSIDE `.frame`
- * so `.frame`'s `overflow: hidden` clips the -160px halo and it cannot
- * contribute to document scroll. We lose a bit of halo bleed past the
- * frame edge but the cursor-outline `::before` ring compensates visually. */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.ringWrapper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  z-index: 10;
+  background: conic-gradient(
+    from var(--border-angle),
+    transparent 0%,
+    hsl(0 0% 100% / 0.7) 4%,
+    hsl(0 0% 85% / 0.4) 10%,
+    transparent 18%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+          mask-composite: exclude;
+  animation: rotate-border 5s linear infinite;
+}
+
+@keyframes rotate-border {
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ringWrapper::before { display: none; }
+}
+
 .glow {
   position: absolute;
   inset: -160px;
   z-index: 0;
   opacity: 0.55;
   pointer-events: none;
-  /* Fallback radial gradient until the Gemini PNG lands (issue #310). */
   background: radial-gradient(
     ellipse 60% 60% at 50% 50%,
     rgba(255, 255, 255, 0.07) 0%,

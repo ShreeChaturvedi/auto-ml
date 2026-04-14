@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/client';
 import { applyFeatureEngineering } from '@/lib/api/featureEngineering';
 import { useDataStore } from '@/stores/dataStore';
@@ -7,6 +8,7 @@ import type { FeatureSpec } from '@/types/feature';
 
 interface UseFeatureApplyOptions {
   projectId: string;
+  currentVersionId?: string;
   notebookId?: string;
   projectFeatures: FeatureSpec[];
   selectedDatasetFile: { id: string; metadata?: { datasetId?: string; columns?: string[] } } | undefined;
@@ -72,6 +74,7 @@ function formatApplyError(error: unknown): string {
 
 export function useFeatureApply({
   projectId,
+  currentVersionId,
   notebookId,
   projectFeatures,
   selectedDatasetFile,
@@ -133,13 +136,17 @@ export function useFeatureApply({
     // missed for any reason, the step still holds the code from materialize.
     const storeState = useFeatureStore.getState();
     const storeFeatures = storeState.features.filter(
-      (feature) => feature.projectId === projectId
+      (feature) =>
+        feature.projectId === projectId
+        && (!currentVersionId || feature.versionId === currentVersionId)
     );
     // Also filter the prop fallback by projectId so a future refactor that
     // wires projectFeatures from a different source cannot leak cross-project
     // features into the apply payload.
     const propFeatures = projectFeatures.filter(
-      (feature) => feature.projectId === projectId
+      (feature) =>
+        feature.projectId === projectId
+        && (!currentVersionId || feature.versionId === currentVersionId)
     );
     const sourceFeatures = storeFeatures.length > 0 ? storeFeatures : propFeatures;
     const enabledFeatures = sourceFeatures
@@ -221,12 +228,13 @@ export function useFeatureApply({
           ? `Created ${response.dataset.filename}. ${response.warning}`
           : `Created ${response.dataset.filename}`
       );
+      toast.success(`Created ${response.dataset.filename}`, response.warning ? { description: response.warning } : undefined);
       setOutputName('');
     } catch (error) {
       setApplyStatus('error');
       setApplyMessage(formatApplyError(error));
     }
-  }, [featureRunId, hydrateFromBackend, notebookId, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
+  }, [currentVersionId, featureRunId, hydrateFromBackend, notebookId, outputFormat, outputName, projectFeatures, projectId, selectedDatasetFile, setSelectedDataset]);
 
   return {
     outputName,

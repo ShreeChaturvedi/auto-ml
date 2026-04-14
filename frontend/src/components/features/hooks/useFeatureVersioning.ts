@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
@@ -63,6 +64,7 @@ export function useFeatureVersioning({
   const approveVersion = useFeatureStore((state) => state.approveVersion);
   const setCurrentVersion = useFeatureStore((state) => state.setCurrentVersion);
   const clearProjectFeatures = useFeatureStore((state) => state.clearProjectFeatures);
+  const clearVersionFeatures = useFeatureStore((state) => state.clearVersionFeatures);
   const clearDraft = useFeatureStore((state) => state.clearDraft);
   const setVersionNotebookId = useFeatureStore((state) => state.setVersionNotebookId);
 
@@ -129,6 +131,12 @@ export function useFeatureVersioning({
     );
   }, [versions]);
 
+  useEffect(() => {
+    useWorkbookRegistryStore
+      .getState()
+      .setActiveWorkbookId('feature-engineering', currentVersionId ?? null);
+  }, [currentVersionId]);
+
   // --- Derived version data ---
   const currentVersion = (() => {
     if (!currentVersionId) return versions[0];
@@ -156,25 +164,32 @@ export function useFeatureVersioning({
 
   const handleNewDraft = useCallback(() => {
     createDraftVersion(projectId, 'New Draft Pipeline');
-    // clearProjectFeatures drops the features array from the store; because
-    // suggestionDrafts is now derived from featureById in useSuggestionDrafts,
-    // we no longer need to also reset local draft state here.
-    clearProjectFeatures(projectId);
-  }, [clearProjectFeatures, createDraftVersion, projectId]);
+    clearDraft();
+    clearEphemeralState();
+    toast.success('New Draft Pipeline created');
+  }, [clearDraft, clearEphemeralState, createDraftVersion, projectId]);
 
   // --- Core delete logic (shared by toolbar dialog + sidebar handler) ---
   const deleteDraftById = useCallback((versionId: string): string | undefined => {
     const store = useFeatureStore.getState();
     const projectVersions = store.versions[projectId] ?? [];
     const target = projectVersions.find((v) => v.id === versionId);
-    if (!target || target.status !== 'draft') return undefined;
+    if (!target) {
+      toast.error('Draft not found');
+      return undefined;
+    }
+    if (target.status !== 'draft') {
+      toast.error('Only draft pipelines can be deleted');
+      return undefined;
+    }
 
     if (projectVersions.length <= 1) {
       store.createDraftVersion(projectId, 'Draft Pipeline v1');
     }
     store.removeVersion(projectId, versionId);
-    store.clearProjectFeatures(projectId);
+    store.clearVersionFeatures(projectId, versionId);
     store.clearDraft();
+    toast.success(`${target.name} deleted`);
 
     return useFeatureStore.getState().currentVersionId[projectId] || undefined;
   }, [projectId]);
@@ -259,6 +274,7 @@ export function useFeatureVersioning({
     const oldNotebookId = currentVersion?.notebookId ?? null;
     const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
     const messageStorageScope = `${storageKey}-${projectId}`;
+    let resetWarning: string | null = null;
 
     await interruptDraftWorkflow(currentVersion?.id, 'Draft reset by user.');
 
@@ -288,17 +304,24 @@ export function useFeatureVersioning({
         }
       } catch (error) {
         console.warn('[feature-engineering] Failed to rotate draft notebook during reset', error);
+        resetWarning = error instanceof Error ? error.message : 'Failed to rotate the draft notebook.';
       }
     }
 
     useWorkflowSessionStore.getState().clearSession(buildWorkflowSessionKey(projectId, storageKey));
     globalThis.localStorage?.removeItem(messageStorageScope);
     clearDraft();
-    clearProjectFeatures(projectId);
+    if (currentVersion?.id) {
+      clearVersionFeatures(projectId, currentVersion.id);
+    } else {
+      clearProjectFeatures(projectId);
+    }
     clearEphemeralState();
     setChatSessionVersion((value) => value + 1);
+    toast.success(`${versionName ?? 'Draft'} reset`, resetWarning ? { description: resetWarning } : undefined);
   }, [
     clearDraft,
+    clearVersionFeatures,
     clearProjectFeatures,
     currentVersion?.id,
     currentVersion?.name,

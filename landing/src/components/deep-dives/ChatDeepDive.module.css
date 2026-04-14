@@ -1,9 +1,7 @@
 /*
  * Chat deep-dive visual (spec §4.5 deep-dive 1). Hosts the real
  * `<LlmChatComposer readOnly>` + `<ToolIndicator>` island plus a CSS-only
- * cursor sprite and a scripted send-button pulse. The outer `.cursor-outline`
- * frame lives on `DeepDive.astro`'s wrapper, so this root intentionally has
- * no border / background — it's just the content area.
+ * cursor sprite and a scripted send-button pulse.
  */
 
 .root {
@@ -14,9 +12,28 @@
   flex-direction: column;
   justify-content: center;
   gap: 24px;
-  /* Stacking context so the absolutely-positioned cursor sprite layers
-   * above the composer without leaking outside the frame. */
+  border-radius: inherit;
   isolation: isolate;
+  background:
+    radial-gradient(ellipse 60% 55% at 15% 25%, rgba(130, 65, 8, 0.85) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 85% 75%, rgba(100, 45, 5, 0.65) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 45% at 50% 95%, rgba(85, 55, 12, 0.75) 0%, transparent 60%),
+    #0c0804;
+  background-size: 200% 200%, 200% 200%, 200% 200%, 100% 100%;
+  animation: chat-fluid 18s ease-in-out infinite;
+}
+
+@keyframes chat-fluid {
+  0%   { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
+  33%  { background-position: 50% 80%, 20% 30%, 80% 10%, 0% 0%; }
+  66%  { background-position: 100% 20%, 60% 80%, 10% 60%, 0% 0%; }
+  100% { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
+}
+
+/* Force an opaque background on the InputGroup so the gradient doesn't
+ * bleed through the semi-transparent `dark:bg-input/30`. */
+.root :global([data-slot="input-group"]) {
+  background: hsl(var(--background));
 }
 
 /* ---------------------------------------------------------------------------
@@ -137,6 +154,9 @@
  * `done`), so we only need to freeze any CSS-driven animation + transition.
  * ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
+  .root {
+    animation: none;
+  }
   .cursorSprite,
   .cursorSpriteStart,
   .cursorSpriteGlided,

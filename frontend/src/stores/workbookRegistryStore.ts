@@ -18,9 +18,11 @@ interface WorkbookRegistryState {
   preprocessing: WorkbookEntry[];
   'feature-engineering': WorkbookEntry[];
   training: WorkbookEntry[];
+  activeWorkbookIds: Partial<Record<WorkbookPhase, string>>;
   deleteHandlers: Partial<Record<WorkbookPhase, WorkbookDeleteHandler>>;
 
   setWorkbooks: (phase: WorkbookPhase, workbooks: WorkbookEntry[]) => void;
+  setActiveWorkbookId: (phase: WorkbookPhase, workbookId: string | null) => void;
   addWorkbook: (phase: WorkbookPhase, workbook: WorkbookEntry) => void;
   removeWorkbook: (phase: WorkbookPhase, workbookId: string) => void;
   updateWorkbook: (phase: WorkbookPhase, workbookId: string, updates: Partial<WorkbookEntry>) => void;
@@ -33,6 +35,7 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
   preprocessing: [],
   'feature-engineering': [],
   training: [],
+  activeWorkbookIds: {},
   deleteHandlers: {},
 
   setWorkbooks: (phase, workbooks) =>
@@ -47,6 +50,21 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
         return state;
       }
       return { [phase]: workbooks };
+    }),
+
+  setActiveWorkbookId: (phase, workbookId) =>
+    set((state) => {
+      const previousId = state.activeWorkbookIds[phase];
+      if (previousId === workbookId || (!workbookId && previousId == null)) {
+        return state;
+      }
+      const nextActiveWorkbookIds = { ...state.activeWorkbookIds };
+      if (workbookId) {
+        nextActiveWorkbookIds[phase] = workbookId;
+      } else {
+        delete nextActiveWorkbookIds[phase];
+      }
+      return { activeWorkbookIds: nextActiveWorkbookIds };
     }),
 
   addWorkbook: (phase, workbook) =>

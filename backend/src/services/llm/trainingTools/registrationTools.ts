@@ -6,7 +6,16 @@ import { appLogger } from '../../../logging/logger.js';
 import { createModelRepository } from '../../../repositories/modelRepository.js';
 import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
 import { runEvaluation } from '../../evaluationService.js';
+import {
+  extractSuccessfulRuntimeDependenciesFromHistory,
+  inferRuntimeDependenciesFromModelType,
+  normalizeRuntimeDependencies,
+} from '../../runtimeDependencies.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
+import {
+  extractWorkflowPrepSegmentsFromToolCalls,
+  normalizeWorkflowPrepSegments,
+} from './workflowPrepSegments.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
@@ -220,8 +229,35 @@ export const registerModel: TrainingToolHandler = async (
   const hyperparameters = (args.hyperparameters && typeof args.hyperparameters === 'object'
     ? args.hyperparameters
     : {}) as Record<string, unknown>;
+  const featureColumns = Array.isArray(experiment.featureColumns)
+    ? experiment.featureColumns.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : undefined;
+  const workflowPrepSegments = (() => {
+    const stored = normalizeWorkflowPrepSegments(experiment.workflowPrepSegments);
+    if (stored.length > 0) {
+      return stored;
+    }
+    const cellIds = Array.isArray(experiment.trainingCellIds)
+      ? experiment.trainingCellIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : null;
+    const history = (run.metadata as { history?: unknown } | undefined)?.history as { toolCalls?: unknown[] } | undefined;
+    return extractWorkflowPrepSegmentsFromToolCalls(history?.toolCalls, String(experiment.experimentId ?? ''), cellIds);
+  })();
   const modelName = typeof args.modelName === 'string' ? args.modelName : 'Untitled Model';
   const modelType = typeof args.modelType === 'string' ? args.modelType : 'unknown';
+  const runtimeDependencies = (() => {
+    const stored = normalizeRuntimeDependencies(experiment.runtimeDependencies);
+    const history = (run.metadata as { history?: unknown } | undefined)?.history as {
+      toolCalls?: unknown[];
+      toolResults?: unknown[];
+    } | undefined;
+    const installed = extractSuccessfulRuntimeDependenciesFromHistory(
+      history?.toolCalls,
+      history?.toolResults,
+    );
+    const inferred = inferRuntimeDependenciesFromModelType(modelType);
+    return normalizeRuntimeDependencies([...stored, ...installed, ...inferred]);
+  })();
   const taskType = inferTaskType(experiment, modelType, metricsRecord);
   const artifactPath = typeof args.artifactPath === 'string' ? args.artifactPath.trim() : '';
   if (!artifactPath) {
@@ -272,12 +308,16 @@ export const registerModel: TrainingToolHandler = async (
       targetColumn: typeof experiment.targetColumn === 'string'
         ? experiment.targetColumn
         : undefined,
+      featureColumns,
       // Artifact is populated after the permanent copy succeeds below.
       evaluationStatus: 'pending',
       metadata: {
+        workflowRunId: run.runId,
         experimentId: experiment.experimentId,
         source: 'llm-workflow',
-        tags: args.tags ?? []
+        tags: args.tags ?? [],
+        ...(workflowPrepSegments.length > 0 ? { workflowPrepSegments } : {}),
+        ...(runtimeDependencies.length > 0 ? { runtimeDependencies } : {}),
       }
     });
 
@@ -312,11 +352,15 @@ export const registerModel: TrainingToolHandler = async (
     experiment.persistedModelId = record.modelId;
     experiment.status = 'registered';
     experiment.registeredModelName = modelName;
+    experiment.modelType = modelType;
     experiment.registeredModelType = modelType;
     experiment.registeredHyperparameters = hyperparameters;
     experiment.registeredMetrics = metricsRecord;
     experiment.artifactPath = artifact.path;
     experiment.tags = args.tags;
+    if (runtimeDependencies.length > 0) {
+      experiment.runtimeDependencies = runtimeDependencies;
+    }
     experiment.updatedAt = nowIso();
 
     // Fire-and-forget evaluation so the model gets eval metrics like the direct API path.

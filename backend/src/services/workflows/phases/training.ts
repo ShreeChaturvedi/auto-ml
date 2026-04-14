@@ -6,10 +6,18 @@ import { ToolCallSchema } from '../../../types/llm.js';
 import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import type { LlmClient, LlmToolDefinition } from '../../llm/llmClient.js';
 import { TRAINING_LIFECYCLE_CONTRACT } from '../../llm/prompts/trainingContract.js';
-import { LLM_TRAINING_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
+import { LLM_ALL_TOOLS, LLM_TRAINING_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import { TRAINING_TOOL_NAMES } from '../../llm/tools/trainingTools.js';
+import {
+  extractMissingModuleName,
+  resolvePackageRequirementForMissingModule,
+} from '../../runtimeDependencies.js';
 import { TRAINING_TOOL_HANDLERS } from '../../llm/trainingTools/index.js';
 import { toTrainingToolContext } from '../../llm/trainingTools/types.js';
+import {
+  extractWorkflowPrepSegmentsFromSegments,
+  normalizeWorkflowPrepSegments,
+} from '../../llm/trainingTools/workflowPrepSegments.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
   LifecycleStageDefinition,
@@ -61,8 +69,8 @@ const STAGE_TOOL_ALLOWLIST: Record<string, string[]> = {
   answer: ['configure_experiment', 'propose_training_plan', ...DISCOVERY_TOOLS],
   configure_experiment: ['configure_experiment', ...DISCOVERY_TOOLS],
   propose_model: ['configure_experiment', 'propose_training_plan', ...DISCOVERY_TOOLS],
-  generate_code: [...TRAINING_EXECUTION_NOTEBOOK_TOOLS],
-  write_code: [...TRAINING_EXECUTION_NOTEBOOK_TOOLS],
+  generate_code: [...TRAINING_EXECUTION_NOTEBOOK_TOOLS, 'install_package'],
+  write_code: [...TRAINING_EXECUTION_NOTEBOOK_TOOLS, 'install_package'],
   execute_training: ['execute_training'],
   evaluate_results: ['evaluate_results'],
   await_review: ['register_model'],
@@ -70,7 +78,7 @@ const STAGE_TOOL_ALLOWLIST: Record<string, string[]> = {
   summarize: []
 };
 const TOOL_BY_NAME = new Map(
-  (LLM_TRAINING_LIFECYCLE_TOOLS as LlmToolDefinition[]).map((tool) => [tool.name, tool])
+  ([...LLM_TRAINING_LIFECYCLE_TOOLS, ...LLM_ALL_TOOLS] as LlmToolDefinition[]).map((tool) => [tool.name, tool])
 );
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
@@ -94,6 +102,14 @@ interface TrainingDraftNotebookActivity {
   runResults: import('../../../types/llm.js').ToolResult[];
   writtenCellIds: string[];
 }
+
+const TRAINING_MODEL_INFERENCE_PATTERNS: Array<{ pattern: RegExp; modelType: string }> = [
+  { pattern: /\bCatBoost(?:Classifier|Regressor)\b|\bfrom\s+catboost\s+import\b|\bimport\s+catboost\b/i, modelType: 'catboost' },
+  { pattern: /\bXGB(?:Classifier|Regressor)\b|\bfrom\s+xgboost\s+import\b|\bimport\s+xgboost\b/i, modelType: 'xgboost' },
+  { pattern: /\bLGBM(?:Classifier|Regressor)\b|\bfrom\s+lightgbm\s+import\b|\bimport\s+lightgbm\b/i, modelType: 'lightgbm' },
+  { pattern: /\bProphet\b|\bfrom\s+prophet\s+import\b|\bimport\s+prophet\b/i, modelType: 'prophet' },
+  { pattern: /\bSARIMAX\b|\bARIMA\b|\bfrom\s+statsmodels\b|\bimport\s+statsmodels\b/i, modelType: 'statsmodels' },
+];
 
 // Training now runs in mode='text' for every stage and uses stage-specific
 // allowed tool sets. This keeps the flexible streaming behavior while
@@ -255,6 +271,121 @@ function parseExplicitTrainingSegments(code: string): TrainingCellDraft[] {
 
   pushSegment();
   return sawMarker ? segments : [];
+}
+
+interface TrainingMissingDependencyRecovery {
+  moduleName: string;
+  packageName: string;
+  failedCellId: string | null;
+  installAttemptedAfterFailure: boolean;
+  installSucceededAfterFailure: boolean;
+  installFailedAfterFailure: boolean;
+  rerunSucceededAfterInstall: boolean;
+  hadSuccessfulInstallEarlierInTurn: boolean;
+}
+
+function getCurrentTurnCallResultPairs(state: WorkflowGraphState): Array<{
+  call?: WorkflowGraphState['toolCallHistory'][number];
+  result?: WorkflowGraphState['toolResultHistory'][number];
+}> {
+  const calls = state.toolCallHistory.slice(state.turnStartToolCallCount);
+  const results = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const pairCount = Math.max(calls.length, results.length);
+  return Array.from({ length: pairCount }, (_, index) => ({
+    call: calls[index],
+    result: results[index],
+  }));
+}
+
+function getTrainingMissingDependencyRecovery(
+  state: WorkflowGraphState,
+): TrainingMissingDependencyRecovery | null {
+  const currentTurnPairs = getCurrentTurnCallResultPairs(state);
+  let failureIndex = -1;
+  let failedCellId: string | null = null;
+  let packageName: string | null = null;
+  let moduleName: string | null = null;
+
+  for (let index = currentTurnPairs.length - 1; index >= 0; index -= 1) {
+    const { call, result } = currentTurnPairs[index];
+    if (!result || !['run_cell', 'write_cell', 'edit_cell', 'insert_cell'].includes(result.tool)) {
+      continue;
+    }
+    const errorMessage = getToolErrorMessage(result);
+    const missingModuleName = extractMissingModuleName(errorMessage);
+    const resolvedPackage = resolvePackageRequirementForMissingModule(missingModuleName);
+    if (!missingModuleName || !resolvedPackage) {
+      continue;
+    }
+
+    const output = getOutputRecord(result);
+    failureIndex = index;
+    moduleName = missingModuleName;
+    packageName = resolvedPackage;
+    failedCellId = asString(output?.cellId) ?? asString(asRecord(call.args)?.cellId) ?? null;
+    break;
+  }
+
+  if (failureIndex === -1 || !moduleName || !packageName) {
+    return null;
+  }
+
+  let installAttemptedAfterFailure = false;
+  let installSucceededAfterFailure = false;
+  let installFailedAfterFailure = false;
+  let rerunSucceededAfterInstall = false;
+  let hadSuccessfulInstallEarlierInTurn = false;
+  let successfulInstallIndexAfterFailure = -1;
+
+  for (let index = 0; index < currentTurnPairs.length; index += 1) {
+    const { call, result } = currentTurnPairs[index];
+    if (!call || call.tool !== 'install_package') {
+      continue;
+    }
+    const requestedPackage = resolvePackageRequirementForMissingModule(asString(asRecord(call.args)?.packageName));
+    if (requestedPackage !== packageName) {
+      continue;
+    }
+
+    const output = getOutputRecord(result);
+    const succeeded = result?.error == null && output?.success === true;
+    const failed = Boolean(result?.error) || output?.success === false;
+
+    if (index > failureIndex) {
+      installAttemptedAfterFailure = true;
+      if (succeeded && successfulInstallIndexAfterFailure === -1) {
+        successfulInstallIndexAfterFailure = index;
+      }
+      installSucceededAfterFailure = installSucceededAfterFailure || succeeded;
+      installFailedAfterFailure = installFailedAfterFailure || failed;
+    } else if (succeeded) {
+      hadSuccessfulInstallEarlierInTurn = true;
+    }
+  }
+
+  if (successfulInstallIndexAfterFailure !== -1 && failedCellId) {
+    for (let index = successfulInstallIndexAfterFailure + 1; index < currentTurnPairs.length; index += 1) {
+      const { call, result } = currentTurnPairs[index];
+      if (!call || call.tool !== 'run_cell' || asString(asRecord(call.args)?.cellId) !== failedCellId) {
+        continue;
+      }
+      if (result && isSuccessfulRunCell(result)) {
+        rerunSucceededAfterInstall = true;
+        break;
+      }
+    }
+  }
+
+  return {
+    moduleName,
+    packageName,
+    failedCellId,
+    installAttemptedAfterFailure,
+    installSucceededAfterFailure,
+    installFailedAfterFailure,
+    rerunSucceededAfterInstall,
+    hadSuccessfulInstallEarlierInTurn,
+  };
 }
 
 function firstLineMatchIndex(lines: string[], patterns: RegExp[], start = 0): number {
@@ -422,6 +553,25 @@ async function buildTrainingCodeGenerationAction(
   const stderr = asString(lastRunOutput?.stderr) ?? asString(lastRunOutput?.error) ?? '';
   const stdout = asString(lastRunOutput?.stdout) ?? '';
   const latestDraft = extractLatestTrainingDraftMetadata(state);
+  const missingDependencyRecovery = getTrainingMissingDependencyRecovery(state);
+
+  if (
+    missingDependencyRecovery
+    && !missingDependencyRecovery.installAttemptedAfterFailure
+    && !missingDependencyRecovery.hadSuccessfulInstallEarlierInTurn
+  ) {
+    const parsedInstall = ToolCallSchema.safeParse({
+      id: `wf-call-auto-install-training-${missingDependencyRecovery.packageName.replace(/[^a-z0-9]+/gi, '-')}`,
+      tool: 'install_package',
+      args: {
+        packageName: missingDependencyRecovery.packageName,
+      },
+      rationale: `Install missing Python dependency "${missingDependencyRecovery.packageName}" required by the training notebook before retrying the failed cell.`
+    });
+    if (parsedInstall.success) {
+      return [parsedInstall.data];
+    }
+  }
 
   if (isFailedToolResult(lastRunCell) && latestDraft) {
     const failingSegmentIndex = Math.max(0, Math.min(
@@ -693,6 +843,21 @@ async function buildTrainingWriteCodeAction(
 
   const draftActivity = collectTrainingDraftNotebookActivity(state, draft.draftId);
   const lastNotebookResult = draftActivity.notebookResults.at(-1) ?? null;
+  const missingDependencyRecovery = getTrainingMissingDependencyRecovery(state);
+  if (
+    missingDependencyRecovery?.installSucceededAfterFailure
+    && !missingDependencyRecovery.rerunSucceededAfterInstall
+    && missingDependencyRecovery.failedCellId
+    && draftActivity.writtenCellIds.includes(missingDependencyRecovery.failedCellId)
+  ) {
+    const parsedRetry = ToolCallSchema.safeParse({
+      id: `wf-call-auto-rerun-training-${draft.draftId}-${missingDependencyRecovery.packageName.replace(/[^a-z0-9]+/gi, '-')}`,
+      tool: 'run_cell',
+      args: { cellId: missingDependencyRecovery.failedCellId },
+      rationale: `Retry the failed training cell now that "${missingDependencyRecovery.packageName}" has been installed in the runtime.`
+    });
+    return parsedRetry.success ? [parsedRetry.data] : [];
+  }
   if (isFailedToolResult(lastNotebookResult)) {
     return [];
   }
@@ -849,6 +1014,9 @@ function getToolErrorMessage(result: import('../../../types/llm.js').ToolResult 
   if (typeof output.errorMessage === 'string' && output.errorMessage.trim()) {
     return output.errorMessage;
   }
+  if (typeof output.stderr === 'string' && output.stderr.trim()) {
+    return output.stderr;
+  }
   return '';
 }
 
@@ -903,6 +1071,9 @@ async function buildTrainingExecuteAction(
   }
 
   const cellIds = collectTrainingDraftNotebookActivity(state, draft.draftId).writtenCellIds;
+  const prepSegments = extractWorkflowPrepSegmentsFromSegments(
+    draft.segments.map((segment) => ({ content: segment.content }))
+  );
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-auto-execute-training-${experimentId}`,
     tool: 'execute_training',
@@ -910,7 +1081,8 @@ async function buildTrainingExecuteAction(
       experimentId,
       succeeded: true,
       metrics: parsedMetrics,
-      cellIds
+      cellIds,
+      ...(prepSegments.length > 0 ? { prepSegments } : {})
     },
     rationale: 'Record successful training execution from the completed notebook run.'
   });
@@ -973,6 +1145,7 @@ async function buildTrainingRegisterAction(
   if (!metrics || Object.keys(metrics).length === 0) {
     return [];
   }
+  const resolvedModelType = resolveRegisteredTrainingModelType(experiment);
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-auto-register-training-${experimentId}`,
@@ -980,14 +1153,14 @@ async function buildTrainingRegisterAction(
     args: {
       experimentId,
       modelName: asString(experiment?.experimentName) ?? `model-${experimentId}`,
-      modelType: asString(experiment?.modelType) ?? 'unknown',
+      modelType: resolvedModelType,
       metrics,
       hyperparameters: asRecord(experiment?.hyperparameters) ?? {},
       artifactPath: asString(experiment?.artifactPath) ?? 'model.joblib',
       tags: [
         'baseline',
         asString(experiment?.splitStrategy) ?? 'train-test',
-        String(asString(experiment?.modelType) ?? 'model').replace(/_/g, '-')
+        resolvedModelType.replace(/_/g, '-')
       ]
     },
     rationale: 'Register the successfully evaluated training artifact and metrics.'
@@ -995,10 +1168,48 @@ async function buildTrainingRegisterAction(
   return parsed.success ? [parsed.data] : [];
 }
 
+function resolveRegisteredTrainingModelType(experiment: Record<string, unknown> | null): string {
+  const configuredModelType = asString(experiment?.registeredModelType)
+    ?? asString(experiment?.modelType)
+    ?? 'unknown';
+  const prepSegments = normalizeWorkflowPrepSegments(experiment?.workflowPrepSegments);
+  const inferredModelType = inferModelTypeFromTrainingPrepSegments(prepSegments);
+  return inferredModelType ?? configuredModelType;
+}
+
+function inferModelTypeFromTrainingPrepSegments(segments: string[]): string | null {
+  const combined = segments.join('\n');
+  if (!combined.trim()) {
+    return null;
+  }
+
+  for (const { pattern, modelType } of TRAINING_MODEL_INFERENCE_PATTERNS) {
+    if (pattern.test(combined)) {
+      return modelType;
+    }
+  }
+
+  return null;
+}
+
 function resolveNextTrainingStage(
   current: string,
   toolResults: import('../../../types/llm.js').ToolResult[]
 ): string | null {
+  if (current === 'generate_code') {
+    const lastNotebookFailure = [...toolResults].reverse().find((result) =>
+      ['write_cell', 'edit_cell', 'insert_cell', 'run_cell'].includes(result.tool)
+      && isFailedToolResult(result)
+    ) ?? null;
+    if (lastNotebookFailure) {
+      const lastInstall = getLastToolResult(toolResults, 'install_package');
+      if (lastInstall && !isFailedToolResult(lastInstall)) {
+        return 'write_code';
+      }
+      return 'generate_code';
+    }
+  }
+
   if (current === 'execute_training') {
     const lastExecute = getLastToolResult(toolResults, 'execute_training');
     if (!lastExecute) {
@@ -1016,11 +1227,10 @@ function resolveNextTrainingStage(
   }
 
   if (current === 'write_code') {
-    const lastNotebookFailure = [...toolResults].reverse().find((result) =>
+    const lastNotebookResult = [...toolResults].reverse().find((result) =>
       ['write_cell', 'edit_cell', 'insert_cell', 'run_cell'].includes(result.tool)
-      && isFailedToolResult(result)
     ) ?? null;
-    if (lastNotebookFailure) {
+    if (isFailedToolResult(lastNotebookResult)) {
       return 'generate_code';
     }
     const lastRunCell = getLastToolResult(toolResults, 'run_cell');

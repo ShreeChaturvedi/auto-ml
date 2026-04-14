@@ -45,7 +45,7 @@ const PANEL_RADIUS = 8;
 const PANEL_SHADOW = "0 2px 12px rgba(0, 0, 0, 0.04)";
 const PANEL_BORDER = "rgba(0, 0, 0, 0.10)";
 
-const PANEL_TEXT_HEIGHT = 240;
+const PANEL_TEXT_HEIGHT = 260;
 // Hairline separator sits between the top text region and the bottom visual.
 const PANEL_SEPARATOR_Y = PANEL_TEXT_HEIGHT;
 const PANEL_VISUAL_HEIGHT = PANEL_HEIGHT - PANEL_TEXT_HEIGHT - 1; // 1px hairline
@@ -118,6 +118,10 @@ const PANEL_BODY_STYLE: React.CSSProperties = {
   fontSize: 18,
   lineHeight: 1.5,
   marginTop: 18,
+  // Force every panel's body region to occupy the same vertical space so the
+  // three text regions land their bottom edges at the same y regardless of
+  // whether the copy actually wraps to 2 or 3 lines. 3 lines × 1.5 em = 4.5 em.
+  minHeight: "4.5em",
 };
 
 // -----------------------------------------------------------------------------
@@ -643,11 +647,18 @@ const GATES = [
 const PILL_WIDTH = 108;
 const PILL_HEIGHT = 42;
 const PILL_GAP = 36; // arrow length between pills
-const GATE_WIDTH = 140;
+// Gate width tightened to give the rightmost gate breathing room against the
+// panel edge + keep ≥ 18px between adjacent gates. At 14px font, the longest
+// label ("regularize when?") measures ~92px — fits inside 124 − 26 = 98px
+// inner space (badge gap + ✓).
+const GATE_WIDTH = 124;
 const GATE_HEIGHT = 46;
 const GATE_CONNECTOR_HEIGHT = 28;
 const GATE_STAGGER = 30;
 const GATE_CROSSFADE_FRAMES = 15;
+/** Gate body font size. Tightened from 16 → 14 so "regularize when?" fits
+ *  inside the narrower gate without label clipping. */
+const GATE_LABEL_FONT_SIZE = 14;
 
 const ApprovalGateVisual: React.FC<{
   theme: Theme;
@@ -834,7 +845,7 @@ const ApprovalGate: React.FC<{
           opacity: mutedOpacity,
           ...REGULAR_FONT,
           fontWeight: 500,
-          fontSize: 16,
+          fontSize: GATE_LABEL_FONT_SIZE,
           color: textColor,
           whiteSpace: "nowrap",
         }}
@@ -876,18 +887,18 @@ const ApprovalGate: React.FC<{
   );
 };
 
-// Rough pixel-width hint for strikethrough line given 16px Plus Jakarta 500.
-// Avoids DOM measurement — labels are fixed copy.
+// Rough pixel-width hint for strikethrough line at GATE_LABEL_FONT_SIZE
+// Plus Jakarta 500. Avoids DOM measurement — labels are fixed copy.
 const labelWidthHint = (label: string): number => {
   switch (label) {
     case "drop rows?":
-      return 80;
+      return 62;
     case "encode how?":
-      return 100;
+      return 74;
     case "regularize when?":
-      return 136;
+      return 92;
     default:
-      return label.length * 8;
+      return label.length * 7;
   }
 };
 

@@ -96,7 +96,8 @@ export function usePreprocessingTabs({
     tabsRef,
     activeTabIdRef,
     buildTabStorageKey,
-    buildScopedTabStorageKey
+    buildScopedTabStorageKey,
+    reserveNextWorkbookName
   } = useTabPersistence({ projectId });
 
   const initialAppliedRef = useRef(false);
@@ -124,6 +125,11 @@ export function usePreprocessingTabs({
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0],
     [activeTabId, tabs]
   );
+
+  useEffect(() => {
+    if (!tabsReady) return;
+    useWorkbookRegistryStore.getState().setActiveWorkbookId('preprocessing', activeTab?.id ?? null);
+  }, [activeTab?.id, tabsReady]);
 
   const syncWorkbookSelection = useCallback((tabId: string, replace = true) => {
     syncedWorkbookIdRef.current = tabId;
@@ -216,7 +222,8 @@ export function usePreprocessingTabs({
     saveActiveSnapshot,
     applyTabSnapshot,
     ensureNotebookForTab,
-    onNeedsDatasetSelection
+    onNeedsDatasetSelection,
+    reserveNextWorkbookName
   });
 
   useEffect(() => {

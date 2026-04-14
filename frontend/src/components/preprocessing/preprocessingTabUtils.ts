@@ -45,6 +45,10 @@ export function createDefaultWorkbook(): PreprocessingWorkbook {
   };
 }
 
+export function formatWorkbookName(index: number): string {
+  return `Workbook ${index}`;
+}
+
 export function parseWorkbookIndex(name: string): number | null {
   // Accept both "Processing N" (legacy) and "Workbook N"
   const match = /^(?:Processing|Workbook)\s+(\d+)$/i.exec(name.trim());
@@ -56,18 +60,19 @@ export function parseWorkbookIndex(name: string): number | null {
 }
 
 export function nextWorkbookName(workbooks: Pick<PreprocessingWorkbook, 'name'>[]): string {
-  const used = new Set<number>();
+  let highest = 0;
   workbooks.forEach((wb) => {
     const index = parseWorkbookIndex(wb.name);
     if (index) {
-      used.add(index);
+      highest = Math.max(highest, index);
     }
   });
-  let candidate = 1;
-  while (used.has(candidate)) {
-    candidate += 1;
-  }
-  return `Workbook ${candidate}`;
+  return formatWorkbookName(highest + 1);
+}
+
+export function inferNextWorkbookIndex(workbooks: Pick<PreprocessingWorkbook, 'name'>[]): number {
+  const nextName = nextWorkbookName(workbooks);
+  return parseWorkbookIndex(nextName) ?? 2;
 }
 
 export function normalizeWorkbookNames<T extends Pick<PreprocessingWorkbook, 'name'>>(workbooks: T[]): T[] {
@@ -87,7 +92,7 @@ export function normalizeWorkbookNames<T extends Pick<PreprocessingWorkbook, 'na
     used.add(candidate);
     return {
       ...wb,
-      name: `Workbook ${candidate}`
+      name: formatWorkbookName(candidate)
     };
   });
 }

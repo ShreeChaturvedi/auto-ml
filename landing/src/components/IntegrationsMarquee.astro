@@ -1,8 +1,6 @@
 ---
-import { LOGOS, getLogoSvg } from '@/lib/integrationLogos';
+import { LOGOS } from '@/lib/integrationLogos';
 import MarqueeRow from './MarqueeRow.astro';
-
-const logos = LOGOS.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
 ---
 
 <section class="marquee-section" aria-labelledby="marquee-heading">
@@ -20,7 +18,7 @@ const logos = LOGOS.map((l) => ({ ...l, svg: getLogoSvg(l.iconKey) }));
     aria-roledescription="marquee"
     aria-label="Supported integrations"
   >
-    <MarqueeRow logos={logos} direction="left" />
+    <MarqueeRow logos={LOGOS} />
 
     <div class="marquee-fade marquee-fade-left" aria-hidden="true"></div>
     <div class="marquee-fade marquee-fade-right" aria-hidden="true"></div>

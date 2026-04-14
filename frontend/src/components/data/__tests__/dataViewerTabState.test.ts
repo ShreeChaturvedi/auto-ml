@@ -83,6 +83,24 @@ describe('dataViewerTabState', () => {
       expect(result).toEqual({ kind: 'keep-active' });
     });
 
+    it('keeps an active notebook selection while standalone notebooks are still hydrating', () => {
+      const result = resolveDataViewerSelection(
+        baseInput({
+          openTabs: [
+            { id: 'file-a', type: 'file' },
+            { id: 'nb-pending', type: 'notebook' },
+          ],
+          files: [{ id: 'file-a' }],
+          standaloneNotebooks: [],
+          notebooksHydrated: false,
+          persistedActiveId: 'nb-pending',
+          persistedActiveType: 'notebook',
+          firstDataFileId: 'file-a',
+        }),
+      );
+      expect(result).toEqual({ kind: 'keep-active' });
+    });
+
     it('falls back to the first open file when a persisted notebook no longer exists', () => {
       expect(
         resolveDataViewerSelection(
@@ -93,6 +111,7 @@ describe('dataViewerTabState', () => {
             ],
             files: [{ id: 'file-a' }],
             standaloneNotebooks: [],
+            notebooksHydrated: true,
             persistedActiveId: 'nb-gone',
             persistedActiveType: 'notebook',
             firstDataFileId: 'file-a',
@@ -106,6 +125,7 @@ describe('dataViewerTabState', () => {
         resolveDataViewerSelection(
           baseInput({
             openTabs: [{ id: 'nb-gone', type: 'notebook' }],
+            notebooksHydrated: true,
             persistedActiveId: 'nb-gone',
             persistedActiveType: 'notebook',
           }),
